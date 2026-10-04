@@ -1,0 +1,105 @@
+{
+  "scope": {
+    "country": "US",
+    "marketplaceId": "MKT-RESUS-US-AMAZON",
+    "marketplaceText": "Amazon"
+  },
+  "options": {
+    "countries": [
+      {
+        "v": "",
+        "t": "Select Country"
+      },
+      {
+        "v": "AU",
+        "t": "AU"
+      },
+      {
+        "v": "CA",
+        "t": "CA"
+      },
+      {
+        "v": "EU",
+        "t": "EU"
+      },
+      {
+        "v": "JP",
+        "t": "JP"
+      },
+      {
+        "v": "UK",
+        "t": "UK"
+      },
+      {
+        "v": "US",
+        "t": "US"
+      }
+    ],
+    "marketplaces": [
+      {
+        "v": "",
+        "t": "Select Marketplace"
+      },
+      {
+        "v": "MKT-RESTW-AU-AMAZON",
+        "t": "Amazon (ResTW)"
+      },
+      {
+        "v": "MKT-RESTW-CA-AMAZON",
+        "t": "Amazon (ResTW)"
+      },
+      {
+        "v": "MKT-RESTW-EU-AMAZON",
+        "t": "Amazon (ResTW)"
+      },
+      {
+        "v": "MKT-RESTW-JP-AMAZON",
+        "t": "Amazon (ResTW)"
+      },
+      {
+        "v": "MKT-RESTW-UK-AMAZON",
+        "t": "Amazon (ResTW)"
+      },
+      {
+        "v": "MKT-RESUS-US-AMAZON",
+        "t": "Amazon (ResUS)"
+      },
+      {
+        "v": "MKT-RESUS-US-EBAY",
+        "t": "EBay"
+      },
+      {
+        "v": "MKT-KM-CA-KMAMAZON",
+        "t": "KM Amazon (KM)"
+      },
+      {
+        "v": "MKT-KM-US-KMAMAZON",
+        "t": "KM Amazon (KM)"
+      },
+      {
+        "v": "MKT-KM-US-KMWALMART",
+        "t": "KM Walmart"
+      },
+      {
+        "v": "MKT-KM-US-NEWEGG",
+        "t": "Newegg"
+      },
+      {
+        "v": "MKT-KM-US-SHOPIFY",
+        "t": "Shopify"
+      },
+      {
+        "v": "MKT-KM-US-TARGET",
+        "t": "Target"
+      },
+      {
+        "v": "MKT-RESUS-US-WALMART",
+        "t": "Walmart"
+      },
+      {
+        "v": "MKT-KM-US-WAYFAIR",
+        "t": "Wayfair"
+      }
+    ]
+  }
+}

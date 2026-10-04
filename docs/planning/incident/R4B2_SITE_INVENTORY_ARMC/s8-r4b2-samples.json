@@ -1,0 +1,516 @@
+{
+  "at": "2026-10-04T08:59:58.097Z",
+  "samples": [
+    {
+      "id": "CC1",
+      "arm": "IMMEDIATE_REPEAT_CORRECTED",
+      "expectRequest": true,
+      "networkIds": [
+        "44876.196",
+        "44876.199"
+      ],
+      "startedAt": 1791104324848,
+      "wallMs": 25404,
+      "meta": {
+        "server_execution_ms": 16578,
+        "tables_read": 19,
+        "rows_returned": 7085,
+        "recent_window": {
+          "amazon_daily_sales_snapshot": {
+            "before": 9779,
+            "after": 3814,
+            "dropped": 5965,
+            "keep": 14
+          },
+          "amazon_weekly_sales_snapshot": {
+            "before": 247,
+            "after": 247,
+            "dropped": 0,
+            "keep": 4
+          }
+        },
+        "request_id": "REQ-C000001",
+        "recent_window_requested": true,
+        "recent_window_applied": true,
+        "only_requested": null,
+        "open_ms": 190,
+        "slowest_tables": [
+          {
+            "table": "amazon_daily_sales_snapshot",
+            "ms": 2809,
+            "rows": 3814
+          },
+          {
+            "table": "marketplace_skus",
+            "ms": 1128,
+            "rows": 495
+          },
+          {
+            "table": "warehouses",
+            "ms": 976,
+            "rows": 361
+          },
+          {
+            "table": "sku_details",
+            "ms": 898,
+            "rows": 192
+          },
+          {
+            "table": "shipping_allocation_draft_lines",
+            "ms": 898,
+            "rows": 14
+          }
+        ],
+        "server_entry": {
+          "routerEntryAt": 1791104329076,
+          "routerEntryMethod": "GET",
+          "routerRequestId": "REQ-C000001",
+          "routerBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41",
+          "routerToHandlerMs": 1
+        },
+        "server_stages": [
+          {
+            "stage": "OPEN_SPREADSHEET",
+            "started_ms": 1791104329077,
+            "elapsed_ms": 190
+          },
+          {
+            "stage": "READ_TABLES",
+            "started_ms": 1791104329077,
+            "elapsed_ms": 16496
+          },
+          {
+            "stage": "BUILD_VIEW_MODEL",
+            "started_ms": 1791104345573,
+            "elapsed_ms": 82
+          },
+          {
+            "stage": "SERIALIZE_AND_EXIT",
+            "started_ms": 1791104329077,
+            "elapsed_ms": 16578
+          }
+        ],
+        "server_handler": "handleInventoryReplenishmentWorkspaceGet_",
+        "server_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R5",
+        "server_lock": null,
+        "counts": {
+          "marketplaces": 15,
+          "marketplace_skus": 495,
+          "sku_details": 192,
+          "warehouses": 361,
+          "amazon_inventory_snapshot": 259,
+          "amazon_inventory_health_snapshot": 345,
+          "amazon_daily_sales_snapshot": 3814,
+          "amazon_weekly_sales_snapshot": 247,
+          "fc_regular_forecast": 496,
+          "fc_target_rules": 0,
+          "fc_special_events": 431,
+          "overseas_inventory_snapshot": 260,
+          "factory_stock": 112,
+          "shipments": 4,
+          "shipment_lines": 10,
+          "shipping_plans": 6,
+          "shipping_plan_lines": 12,
+          "shipping_allocation_drafts": 12,
+          "shipping_allocation_draft_lines": 14
+        },
+        "at": 1791104347132
+      },
+      "requests": [
+        {
+          "networkId": "44876.196",
+          "km_rid": "REQ-C000001",
+          "startedAt": 1791104324851,
+          "urlClass": "EXEC",
+          "hops": [
+            {
+              "status": 302,
+              "statusText": "",
+              "method": "GET",
+              "from": "EXEC",
+              "to": "ECHO",
+              "location_present": true,
+              "location_class": "ECHO",
+              "km_rid": null,
+              "user_content_key": "uck#1sm229h"
+            }
+          ],
+          "status": 200,
+          "encodedBytes": 356970,
+          "finishedAt": 1791104347121,
+          "sample": "CC1",
+          "finalClass": "ECHO"
+        },
+        {
+          "networkId": "44876.199",
+          "km_rid": "REQ-C000003",
+          "startedAt": 1791104347372,
+          "urlClass": "EXEC",
+          "hops": [
+            {
+              "status": 302,
+              "statusText": "",
+              "method": "GET",
+              "from": "EXEC",
+              "to": "ECHO",
+              "location_present": true,
+              "location_class": "ECHO",
+              "km_rid": null,
+              "user_content_key": "uck#1sebir8"
+            }
+          ],
+          "status": 200,
+          "encodedBytes": 8564,
+          "finishedAt": 1791104352473,
+          "sample": "CC1",
+          "finalClass": "ECHO"
+        }
+      ],
+      "note": null,
+      "kick": "ok",
+      "lastState": {
+        "status": "READY",
+        "inFlight": false,
+        "hasModel": true,
+        "metaAt": 1791104347132
+      },
+      "settledBy": "SEARCH_STATE",
+      "requestCount": 2
+    },
+    {
+      "id": "CC2",
+      "arm": "IMMEDIATE_REPEAT_CORRECTED",
+      "expectRequest": true,
+      "networkIds": [
+        "44876.200"
+      ],
+      "startedAt": 1791104350262,
+      "wallMs": 23913,
+      "meta": {
+        "server_execution_ms": 16382,
+        "tables_read": 19,
+        "rows_returned": 7085,
+        "recent_window": {
+          "amazon_daily_sales_snapshot": {
+            "before": 9779,
+            "after": 3814,
+            "dropped": 5965,
+            "keep": 14
+          },
+          "amazon_weekly_sales_snapshot": {
+            "before": 247,
+            "after": 247,
+            "dropped": 0,
+            "keep": 4
+          }
+        },
+        "request_id": "REQ-C000004",
+        "recent_window_requested": true,
+        "recent_window_applied": true,
+        "only_requested": null,
+        "open_ms": 133,
+        "slowest_tables": [
+          {
+            "table": "amazon_daily_sales_snapshot",
+            "ms": 4404,
+            "rows": 3814
+          },
+          {
+            "table": "amazon_weekly_sales_snapshot",
+            "ms": 1031,
+            "rows": 247
+          },
+          {
+            "table": "warehouses",
+            "ms": 924,
+            "rows": 361
+          },
+          {
+            "table": "shipping_allocation_draft_lines",
+            "ms": 887,
+            "rows": 14
+          },
+          {
+            "table": "sku_details",
+            "ms": 810,
+            "rows": 192
+          }
+        ],
+        "server_entry": {
+          "routerEntryAt": 1791104355964,
+          "routerEntryMethod": "GET",
+          "routerRequestId": "REQ-C000004",
+          "routerBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41",
+          "routerToHandlerMs": 1
+        },
+        "server_stages": [
+          {
+            "stage": "OPEN_SPREADSHEET",
+            "started_ms": 1791104355965,
+            "elapsed_ms": 133
+          },
+          {
+            "stage": "READ_TABLES",
+            "started_ms": 1791104355965,
+            "elapsed_ms": 16294
+          },
+          {
+            "stage": "BUILD_VIEW_MODEL",
+            "started_ms": 1791104372259,
+            "elapsed_ms": 88
+          },
+          {
+            "stage": "SERIALIZE_AND_EXIT",
+            "started_ms": 1791104355965,
+            "elapsed_ms": 16382
+          }
+        ],
+        "server_handler": "handleInventoryReplenishmentWorkspaceGet_",
+        "server_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R5",
+        "server_lock": null,
+        "counts": {
+          "marketplaces": 15,
+          "marketplace_skus": 495,
+          "sku_details": 192,
+          "warehouses": 361,
+          "amazon_inventory_snapshot": 259,
+          "amazon_inventory_health_snapshot": 345,
+          "amazon_daily_sales_snapshot": 3814,
+          "amazon_weekly_sales_snapshot": 247,
+          "fc_regular_forecast": 496,
+          "fc_target_rules": 0,
+          "fc_special_events": 431,
+          "overseas_inventory_snapshot": 260,
+          "factory_stock": 112,
+          "shipments": 4,
+          "shipment_lines": 10,
+          "shipping_plans": 6,
+          "shipping_plan_lines": 12,
+          "shipping_allocation_drafts": 12,
+          "shipping_allocation_draft_lines": 14
+        },
+        "at": 1791104373835
+      },
+      "requests": [
+        {
+          "networkId": "44876.200",
+          "km_rid": "REQ-C000004",
+          "startedAt": 1791104350265,
+          "urlClass": "EXEC",
+          "hops": [
+            {
+              "status": 302,
+              "statusText": "",
+              "method": "GET",
+              "from": "EXEC",
+              "to": "ECHO",
+              "location_present": true,
+              "location_class": "ECHO",
+              "km_rid": null,
+              "user_content_key": "uck#1jelbt0"
+            }
+          ],
+          "status": 200,
+          "encodedBytes": 356997,
+          "finishedAt": 1791104373826,
+          "sample": "CC2",
+          "finalClass": "ECHO"
+        }
+      ],
+      "note": null,
+      "kick": "ok",
+      "lastState": {
+        "status": "READY",
+        "inFlight": false,
+        "hasModel": true,
+        "metaAt": 1791104373835
+      },
+      "settledBy": "SEARCH_STATE",
+      "requestCount": 1
+    },
+    {
+      "id": "CC3",
+      "arm": "IMMEDIATE_REPEAT_CORRECTED",
+      "expectRequest": true,
+      "networkIds": [
+        "44876.201"
+      ],
+      "startedAt": 1791104374187,
+      "wallMs": 23904,
+      "meta": {
+        "server_execution_ms": 17597,
+        "tables_read": 19,
+        "rows_returned": 7085,
+        "recent_window": {
+          "amazon_daily_sales_snapshot": {
+            "before": 9779,
+            "after": 3814,
+            "dropped": 5965,
+            "keep": 14
+          },
+          "amazon_weekly_sales_snapshot": {
+            "before": 247,
+            "after": 247,
+            "dropped": 0,
+            "keep": 4
+          }
+        },
+        "request_id": "REQ-C000005",
+        "recent_window_requested": true,
+        "recent_window_applied": true,
+        "only_requested": null,
+        "open_ms": 183,
+        "slowest_tables": [
+          {
+            "table": "amazon_daily_sales_snapshot",
+            "ms": 3621,
+            "rows": 3814
+          },
+          {
+            "table": "fc_regular_forecast",
+            "ms": 1593,
+            "rows": 496
+          },
+          {
+            "table": "sku_details",
+            "ms": 913,
+            "rows": 192
+          },
+          {
+            "table": "warehouses",
+            "ms": 889,
+            "rows": 361
+          },
+          {
+            "table": "amazon_inventory_health_snapshot",
+            "ms": 780,
+            "rows": 345
+          }
+        ],
+        "server_entry": {
+          "routerEntryAt": 1791104378407,
+          "routerEntryMethod": "GET",
+          "routerRequestId": "REQ-C000005",
+          "routerBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41",
+          "routerToHandlerMs": 0
+        },
+        "server_stages": [
+          {
+            "stage": "OPEN_SPREADSHEET",
+            "started_ms": 1791104378407,
+            "elapsed_ms": 183
+          },
+          {
+            "stage": "READ_TABLES",
+            "started_ms": 1791104378407,
+            "elapsed_ms": 17445
+          },
+          {
+            "stage": "BUILD_VIEW_MODEL",
+            "started_ms": 1791104395852,
+            "elapsed_ms": 152
+          },
+          {
+            "stage": "SERIALIZE_AND_EXIT",
+            "started_ms": 1791104378407,
+            "elapsed_ms": 17597
+          }
+        ],
+        "server_handler": "handleInventoryReplenishmentWorkspaceGet_",
+        "server_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R5",
+        "server_lock": null,
+        "counts": {
+          "marketplaces": 15,
+          "marketplace_skus": 495,
+          "sku_details": 192,
+          "warehouses": 361,
+          "amazon_inventory_snapshot": 259,
+          "amazon_inventory_health_snapshot": 345,
+          "amazon_daily_sales_snapshot": 3814,
+          "amazon_weekly_sales_snapshot": 247,
+          "fc_regular_forecast": 496,
+          "fc_target_rules": 0,
+          "fc_special_events": 431,
+          "overseas_inventory_snapshot": 260,
+          "factory_stock": 112,
+          "shipments": 4,
+          "shipment_lines": 10,
+          "shipping_plans": 6,
+          "shipping_plan_lines": 12,
+          "shipping_allocation_drafts": 12,
+          "shipping_allocation_draft_lines": 14
+        },
+        "at": 1791104397741
+      },
+      "requests": [
+        {
+          "networkId": "44876.201",
+          "km_rid": "REQ-C000005",
+          "startedAt": 1791104374194,
+          "urlClass": "EXEC",
+          "hops": [
+            {
+              "status": 302,
+              "statusText": "",
+              "method": "GET",
+              "from": "EXEC",
+              "to": "ECHO",
+              "location_present": true,
+              "location_class": "ECHO",
+              "km_rid": null,
+              "user_content_key": "uck#v7fd2e"
+            }
+          ],
+          "status": 200,
+          "encodedBytes": 356986,
+          "finishedAt": 1791104397731,
+          "sample": "CC3",
+          "finalClass": "ECHO"
+        }
+      ],
+      "note": null,
+      "kick": "ok",
+      "lastState": {
+        "status": "READY",
+        "inFlight": false,
+        "hasModel": true,
+        "metaAt": 1791104397741
+      },
+      "settledBy": "SEARCH_STATE",
+      "requestCount": 1
+    }
+  ],
+  "safety": {
+    "WRITE_ACTIONS_SENT": 0,
+    "GAP_JOB_STATUS_REQUEST_SENT_COUNT": 0,
+    "GAP_JOB_STATUS_REQUEST_INTERCEPTED_COUNT": 0,
+    "GAP_JOB_START_COUNT": 0,
+    "GAP_WRITE_COUNT": 0,
+    "UNKNOWN_APPLICATION_REQUEST_ABORT_COUNT": 0,
+    "UNKNOWN_APPLICATION_REQUEST_SENT_COUNT": 0
+  },
+  "ledger": {
+    "REQUEST_COUNT_TOTAL": 115,
+    "APPLICATION_READ_REQUEST_COUNT": 8,
+    "STATIC_ASSET_REQUEST_COUNT": 99,
+    "THIRD_PARTY_REQUEST_COUNT": 8,
+    "FORBIDDEN_REQUEST_ABORT_COUNT": 0,
+    "UNKNOWN_REQUEST_ABORT_COUNT": 0,
+    "byAction": {
+      "getClientCapabilities": 1,
+      "inventoryScope.registry.get": 1,
+      "inventoryReplenishment.workspace.get": 4,
+      "inventoryReplenishmentGap.get": 1,
+      "recommendation.workspace.get": 1
+    },
+    "aborted": []
+  },
+  "actionsSeen": {
+    "getClientCapabilities": 1,
+    "inventoryScope.registry.get": 1,
+    "inventoryReplenishment.workspace.get": 4,
+    "inventoryReplenishmentGap.get": 1,
+    "recommendation.workspace.get": 1
+  },
+  "cdpTimeouts": 0
+}
