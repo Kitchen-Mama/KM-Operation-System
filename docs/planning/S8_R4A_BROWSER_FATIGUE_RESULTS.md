@@ -57,25 +57,36 @@ Between a fifth of a second and one second of the twelve-to-sixteen seconds is t
 path is not the cost.** Any repair that targets the client on these three surfaces is targeting 2–7 % of the
 problem. The cost is the Apps Script read, and the second-order cost is that these three do not cache.
 
-## 3. Cold open: the retry storm
+## 3. Cold open: repeated server executions
+
+> **CORRECTED 2026-10-04 (S8-R4B audit).** This section originally called the repeats a **client retry**.
+> That was wrong. Every repeat shares **one Chrome `networkId`**, and a client retry would allocate a new
+> fetch and therefore a new id — so this is **one browser fetch following a redirect chain**, not the client
+> asking again. The observable cost is unchanged and so is every number below; the owner is not. The
+> correction matters because a repair aimed at client retry policy would change nothing. The original
+> wording is replaced rather than annotated in place, because a wrong attribution left standing in an
+> accepted results document is how it gets built on.
 
 `PAGE_DATA_READY_MS` on a cold FC Summary is 60.1 s, against 7.4 s for the same read warm. The waterfall
-says why. Each logical read is `exec → echo`; a repeat with the **same `km_rid`** and a **new
-`user_content_key`** is a re-execution, not a redirect hop.
+says why. Each logical read should be `exec → echo`. On a bounced request the `echo` hop instead redirects
+**back to `/exec`**, and each `/exec` hop carries the **same `km_rid`** but produces a **new
+`user_content_key`** — a second and third full execution of the handler.
 
 ```
-FC Summary, cold mount
-  +0 s      REQ-C000001  exec -> echo   200, 14.0 s          two concurrent workspace reads
-  +0 s      REQ-C000002  exec -> echo   (no response)         dispatched in the same millisecond
-  +24.7 s   REQ-C000002  exec -> echo   (no response)         retry 1  — a second server execution
-  +40.0 s   REQ-C000002  exec -> echo   ERR_ABORTED, 20.0 s   retry 2  — a third server execution
+FC Summary, cold mount        (all hops share networkId …1968.195 — ONE fetch)
+  +0 s      REQ-C000001  exec -> echo   200, 14.0 s           two concurrent workspace reads
+  +0 s      REQ-C000002  exec                                  dispatched in the same millisecond
+  +6.9 s    REQ-C000002  -> echo                               server execution 1 done, redirected
+  +24.7 s   REQ-C000002  -> exec                               BOUNCED BACK — server execution 2
+  +40.0 s   REQ-C000002  -> exec   ERR_ABORTED                 server execution 3; client 45 s bound fires
   +62.2 s   page stable
 ```
 
 ```
-SKU Details, cold mount
-  +0 s      REQ-C000001  exec -> echo   (no response)
-  +44.2 s   REQ-C000001  exec -> echo   200, 12.4 s           retry 1 — a second server execution
+SKU Details, cold mount       (networkId …1968.388)
+  +0 s      REQ-C000001  exec
+  +13.6 s                -> echo
+  +44.2 s                -> exec   200, 12.4 s                 server execution 2
   +59.1 s   page stable
 ```
 
@@ -83,20 +94,24 @@ Two findings, and the second is the expensive one:
 
 1. **FC Summary dispatches two concurrent `fcSummary.workspace.get` on mount**, in the same millisecond
    (the `bootstrap` and `regular` slices). This was already seen in R3B and is confirmed here.
-2. **A read that has not answered is retried, and each retry is a full server execution.** One logical read
-   became three. The retries are serialized behind one another, so the page waits for the whole chain —
-   62 s for a surface that costs 2.4 s warm.
+2. **A bounced request executes the handler two or three times.** The client asked once. The executions are
+   serialized behind one another, so the page waits for the whole chain — 62 s for a surface that costs
+   2.4 s warm. The `ERR_ABORTED` endings are the client's own 45 s bound expiring against the *chain*, which
+   also means a read whose single execution would have returned in ~14 s is reported as a timeout.
 
-This matches the recorded cold-boot contention behaviour: a client timeout starts at dispatch, so a read
-racing the boot spends its own budget queueing, times out, and retries — and the retry joins the same queue.
-Concurrency makes it worse rather than better: two reads issued in the same millisecond do not overlap, they
-divide the same server.
-
-**Scope:** cold boot only. Warm and cycle mounts show no retries anywhere in 161 windows.
+**Scope:** 7 of 145 application reads bounced (4.8 %), all on cold or first-mount paths. Warm and cycle
+mounts issue no reads at all on nine of twelve surfaces and so cannot bounce.
 
 ## 4. Site Inventory root cause
 
-**Site Inventory is not slow. It renders nothing.**
+> **SCOPE CORRECTION 2026-10-04 (S8-R4B audit).** Everything below is true of the **pre-Search shell**, and
+> only of that. The surface's table is fed by `inventoryReplenishment.workspace.get` **and only by a
+> confirmed Search** (`inventory-replenishment.js:8988`) — a read this matrix never issued, because the
+> gate below is exactly what stopped it. R3B's `~31.7 s → ~71.4 s → ~133.8 s` degradation of that read is
+> therefore **neither reproduced nor refuted here**, and this section must not be read as evidence against
+> it.
+
+**Before a Search, Site Inventory is not slow. It renders nothing.**
 
 - Cycle stable 2 116 ms — the second fastest of the twelve.
 - `rows = 0` and `chars = 594` in every one of the 8 cycles.
@@ -131,7 +146,7 @@ overseasStock.workspace.get 6 · system.health 5 · inventoryScope.registry.get 
 ```
 
 The preflight's claim was read off the source rather than measured, and it was wrong. The leading suspect
-for the unexplained page time is the retry chain in §3, not a wide read.
+for the unexplained page time is the bounced execution chain in §3, not a wide read.
 
 ## 6. The exception to PASS
 
@@ -183,7 +198,7 @@ not client accumulation. SKU Details drifts **−2 560 ms**, in the opposite dir
 then 0 on every subsequent mount. Three tables fetched once is not an N+1; it is three tables.
 
 **Duplicate requests:** 3 in 161 windows (FC Summary ×2, SKU Details ×1), all on cold mounts, all accounted
-for by the retry chain in §3.
+for by the bounced execution chain in §3.
 
 **Listener / lifecycle duplication: none detectable.** Row counts and character counts are byte-identical
 across all 8 cycles on every surface that renders rows (FC Summary 1, SKU Regional 50, Factory 112, Overseas
