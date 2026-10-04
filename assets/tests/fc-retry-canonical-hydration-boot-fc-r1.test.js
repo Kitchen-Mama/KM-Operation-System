@@ -950,9 +950,29 @@ if (BASE_JS !== '__git_unavailable__') {
       eq((dbNow.match(new RegExp('function ' + n + '\\(', 'g')) || []).length, 1,
         'H8b.' + (i + 1) + ' ' + n + ' still has exactly ONE definition — no second normalizer');
     });
-    eq(read('assets/js/api/km-api-foundation.js').replace(/\r\n/g, '\n'),
-      atBase('assets/js/api/km-api-foundation.js').replace(/\r\n/g, '\n'),
-      'H9 §5 km-api-foundation.js is byte-identical');
+    // S8-R4B-2D — km-api-foundation.js LEAVES THE BYTE PIN, on the precedent H8 set four lines above and
+    // for the identical reason: a working-tree byte pin says "this round did not touch the file", and read
+    // against whatever the tree holds today it becomes "no round ever may". R4B-2D widens the request DTO
+    // under an authorised scope — the Inventory Replenishment exposure read must be able to name its SITE,
+    // and the DTO is a WHITELIST, so a field it does not name never reaches Apps Script at all.
+    //
+    // What this pin actually protected is narrower and is asserted instead: the FC workspace's own request
+    // builder is untouched, and the only growth is the siteScope whitelist in a DIFFERENT builder.
+    var FOUND_NOW = read('assets/js/api/km-api-foundation.js').replace(/\r\n/g, '\n');
+    var FOUND_BASE = atBase('assets/js/api/km-api-foundation.js').replace(/\r\n/g, '\n');
+    function _fnAt(src, name) {
+      var a = src.indexOf('function ' + name + '(');
+      if (a < 0) return null;
+      var i = src.indexOf('{', a), d = 0;
+      for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(a, i + 1); } }
+      return null;
+    }
+    eq(_fnAt(FOUND_NOW, 'buildFcSummaryRequestDTO'), _fnAt(FOUND_BASE, 'buildFcSummaryRequestDTO'),
+      'H9 §5 the FC workspace request builder in km-api-foundation.js is byte-identical — it was not widened');
+    ok(FOUND_NOW.length > FOUND_BASE.length && FOUND_NOW.indexOf('payload.siteScope') > -1,
+      'H9a and the only growth is the S8-R4B-2D siteScope whitelist', FOUND_NOW.length - FOUND_BASE.length);
+    eq((FOUND_NOW.match(/payload\.siteScope =/g) || []).length, 1,
+      'H9b which appears exactly ONCE — in the Inventory Replenishment builder and nowhere else');
   }
 
   // =================================================================================================

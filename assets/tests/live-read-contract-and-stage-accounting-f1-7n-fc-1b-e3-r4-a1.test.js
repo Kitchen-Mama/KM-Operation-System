@@ -412,7 +412,7 @@ mut('N2  the DTO drops the table subset, so the catalogue reads all 21 again', f
   return f({ only: ['carrier_rate_cards'] }).payload.only === undefined;
 });
 mut('N3  the server stops echoing the REQUEST, so asked-and-lost looks like never-asked', function () {
-  var m = swap(G60, 'out.requestEcho = { recentWindow: (payload.recentWindow === true), only: null };',
+  var m = swap(G60, 'out.requestEcho = { recentWindow: (payload.recentWindow === true), only: null, siteScope: null };',
     'out.requestEcho = { recentWindow: false, only: null };');
   var c = gs60(m);
   var e = vm.runInContext('handleInventoryReplenishmentWorkspaceGet_', c)(

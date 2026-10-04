@@ -196,12 +196,22 @@ eq(rtrDecl, rtrExpect, 'E1 the router stamp and the health mirror agree — they
 // was already CUT, against a tree whose owner set is 63_ alone and which deliberately carries 01_ at R39 -
 // so stamping the router R40 made one id name two different trees, and the release ledger caught it in
 // three places. R41 is the release this change actually belongs to.
-eq(rtrDecl, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41',
+var R41_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
+var RO_ORDER = require('./_release-order.js').OWNER_STAMPS;
+eq(rtrDecl, R41_ID,
    'E2 the router stamp advanced to R41, because 01_router.gs changed');
 var headRelease = (HEALTH.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
-eq(rtrDecl, headRelease,
-   'E2a and it equals the HEAD release, which is what makes 01_ an OWNER of it rather than a file carried '
-   + 'into it');
+// S8-R4B-2D - E2a WAS A CLAIM ABOUT R4B-1, WRITTEN AS A CLAIM ABOUT EVERY RELEASE AFTER IT. "the router
+// stamp equals the HEAD release" is what OWNERSHIP looks like, and it was true for exactly as long as 01_
+// was the newest release's owner. R42 changes 60_ and moves no route, so the router is CARRIED now - and
+// a stamp that equals the head release while the file has not changed is the marched stamp this whole
+// ledger exists to forbid. The claim R4B-1 actually earned is pinned at BOTH ends instead: the router
+// declares R41, and R41 was the head release when it did.
+eq(rtrDecl, R41_ID,
+   'E2a 01_ declares R41 — the round its routing table really changed, which is what a module stamp is');
+ok(headRelease === R41_ID || RO_ORDER.indexOf(headRelease) > RO_ORDER.indexOf(R41_ID),
+   'E2a1 and the HEAD release is R41 or a LATER one — the router is an owner of R41, carried by whatever '
+   + 'follows it, and never marched forward to look current', R41_ID + ' -> ' + headRelease);
 ok(headRelease !== 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40',
    'E2b R40 was NOT reopened to absorb this change - an id that names two trees cannot answer the question '
    + 'it exists for, which is the rule the ledger states against R30, R31 and now R41', headRelease);
@@ -287,12 +297,16 @@ mut('the router stamp is not rotated with the file it belongs to', ROUTER_F,
     var src = read(ROUTER_F).replace("-R7-R41';", "-R7-R40';");
     return (src.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== headRelease;
   });
+// S8-R4B-2D - ANCHORED ON THE DECLARED HEAD RELEASE, NOT ON A LITERAL. The literal R41 stopped existing
+// in 63_ the moment R42 was cut, and a mutant whose target is absent injects no fault at all - it reports
+// a passing grade for a tree it never changed. The fault is the same one either way: the release moves and
+// 63_'s own build stamp is left behind.
+var _HEALTH_BUILD_LINE = "var SYS_BUILD_VERSION_ = '" + headRelease + "';";
 mut('the release is cut but 63_ keeps the build stamp of the previous one', HEALTH_F,
-  "var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';",
-  "var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';",
+  _HEALTH_BUILD_LINE, "var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R1';",
   function () {
-    var src = read(HEALTH_F).replace("var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';",
-      "var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';");
+    var src = read(HEALTH_F).replace(_HEALTH_BUILD_LINE,
+      "var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R1';");
     var own = (src.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1];
     return (src.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== own;
   });

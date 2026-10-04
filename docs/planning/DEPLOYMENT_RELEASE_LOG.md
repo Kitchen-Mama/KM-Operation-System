@@ -4211,3 +4211,169 @@ GIT_PUSH_REQUIRED                YES - USER-owned, after review
 ```
 
 **STATUS: NOT DEPLOYED · NOT SYNCED.**
+
+---
+
+## S8-R4B-2D — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42` — THE SITE INVENTORY EXPOSURE READ STOPS SERVING EVERY SITE
+
+```
+BASE    8856aeb   S8-R4B-1A's release commit; R41 ends there
+BRANCH  feature/product-strategy-board-p0   main = origin/main = 8856aeb
+DATE    2026-10-04
+SCOPE   READ PROJECTION. The Inventory Replenishment workspace read gains an optional siteScope on its
+        EXPOSURE-only request contract. No action added or removed, no route moved, no handler for any
+        write touched, no schema, no stored row, zero DB writes. One runtime file plus the manifest.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42
+PURPOSE                      Site Inventory exposure Site-scope correctness
+SUPERSEDES                   nothing. R41 is CUT and remains valid; R42 follows it.
+STATUS                       PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries it,
+                             no Web App version exists, and Production is NOT R42.
+
+WHY A NEW RELEASE AND NOT A RIDE-ALONG ON R41
+-------------------------------------------------------------------------------------------------------
+  The same rule R41 was itself cut for. R41 is already CUT, against a tree in which 60_ had not changed -
+  its owner set is 01_ + 63_ - so absorbing a 60_ change into it would make one id name two trees. 01_
+  LEAVES ownership here and keeps the R41 it earned one release ago: R42 moves no route.
+
+WHY IT IS A BACKEND ROUND AT ALL, HAVING BEEN RULED A FRONTEND ONE
+-------------------------------------------------------------------------------------------------------
+  S8-R4B-2A concluded BACKEND_RELEASE_REQUIRED = NO, and that was TRUE of what it was asked. Lazy-once
+  needed only the `only` contract, which had shipped. The OPERATOR then required that the second layer
+  return only the ACTIVE site's exposure truth, and S8-R4B-2C proved what the shipped request actually
+  was: a per-Site CACHE KEY in front of an all-Site QUERY. The handler reads payload.only, payload.include
+  and payload.recentWindow and nothing else; sirWsRowsToObjects_ is getDataRange().getValues(); and the
+  frontend DTO builder whitelists three fields. The finding did not become wrong - its premise was
+  replaced - and no arrangement of frontend bytes can scope a query the server has no parameter for.
+
+WHAT CHANGED
+-------------------------------------------------------------------------------------------------------
+  60_api_v1_inventory_replenishment_workspace.gs
+                   SIR_EXPOSURE_TABLES_ / SIR_SITE_SCOPE_FIELDS_; sirWsSiteScope_ (normalise + refuse),
+                   sirWsScopeApplicable_ (exposure family only), sirWsSiteScopeClosure_ (the lineage
+                   reachability closure); the projection inside sirWorkspaceBuild_; the orchestrator's
+                   pre-open refusal; meta.siteScopeRequested / meta.siteScopeApplied.
+  63_api_v1_system_health.gs
+                   the release, its own build stamp, and 60_'s expected stamp - the row it carries.
+
+  Frontend (published separately, by the user):
+  assets/js/api/km-api-foundation.js        buildInventoryReplenishmentRequestDTO whitelists siteScope.
+  assets/js/pages/inventory-replenishment.js
+                   _irExposureSite_ resolves the triple from the FIRST-layer marketplaces master; the
+                   exposure request carries it; a site the master cannot name issues NO request.
+
+THE CLOSURE, AND WHY IT IS NOT SIX ROW FILTERS
+-------------------------------------------------------------------------------------------------------
+  Filtering all six tables on company/country/marketplace is wrong in two ways that both LOSE QUANTITY
+  SILENTLY, which is the failure mode this page has already paid for once:
+
+    1  shipments.marketplace is MULTI on a merged shipment BY CONSTRUCTION. Its lines reach their real
+       sites through frozen shipping_plan_line lineage - the machinery exists for nothing else - so a
+       header filter deletes exactly the shipments it was built to attribute.
+    2  shipping_plan_lines.marketplace is the LINE's real marketplace. The shipped client deliberately
+       attributes a line to its PARENT PLAN's triple instead. Scoping on the line's own column would be a
+       SECOND business interpretation of shipment ownership.
+
+  So the server reproduces the shipped rule rather than reinventing it:
+    P  = shipping_plans      whose own triple is this site AND is a SPECIFIC receiver
+    PL = shipping_plan_lines whose shipping_plan_id is in P
+    SL = shipment_lines      lineage in PL, OR lineage BLANK and the parent header is this site
+    S  = shipments           named by SL (this is what retains a MULTI header), plus in-scope headers
+    D  = shipping_allocation_drafts / DL = their lines, by the client's own draft scope rule
+  A PRESENT-but-unresolvable lineage FAILS CLOSED and never falls back to the header.
+
+SCOPE IDENTITY - THE TRIPLE, NOT THE ID
+-------------------------------------------------------------------------------------------------------
+  None of the six exposure tables stores marketplace_id. Scoping on it would force this handler to open
+  the marketplaces master to translate it - a SEVENTH sheet read, at the 0.8-1.3 s per-sheet floor R4B-2
+  measured - to learn a triple the browser already holds. The browser's CACHE KEY keeps marketplace_id.
+  A map key and a request identity are allowed to differ, and conflating them buys that read for nothing.
+
+FAIL CLOSED
+-------------------------------------------------------------------------------------------------------
+  An incomplete or malformed siteScope is REFUSED by name - INVENTORY_REPLENISHMENT_SITE_SCOPE_INCOMPLETE
+  - before the spreadsheet is opened, costing zero sheet reads. It is NEVER widened to all-Site. The
+  frontend DTO FORWARDS a blank field rather than dropping it, because dropping it would turn a caller's
+  bug into an all-Site read indistinguishable from a correct one. The refusal exists in BOTH the
+  orchestrator and the pure builder: no single mutation removes it.
+
+WHAT THIS IS NOT
+-------------------------------------------------------------------------------------------------------
+  IT IS NOT A LATENCY FIX AND MUST NOT BE APPROVED AS ONE. readTable reads every row before a predicate
+  can run, and the closure needs four of the six tables in memory anyway. The six sheets hold 58 rows in
+  total across every site. ROW_SCOPE_CAN_AVOID_WHOLE_SHEET_READ = NO, EXPECTED_LATENCY_BENEFIT = LOW.
+  The purposes are a correct Site data boundary, a smaller scoped payload, and a per-Site cache whose
+  contents are finally true. R4C measures the payload and the time.
+
+STAMP MOVEMENT - OLD -> NEW
+-------------------------------------------------------------------------------------------------------
+  63_  SYS_DEPLOYMENT_RELEASE_    R41     -> R42       the RELEASE
+  63_  SYS_BUILD_VERSION_         R41     -> R42       63_ own module stamp (63_ changed)
+  60_  SIR_BUILD_VERSION_         R6-R5   -> R42       the request contract changed
+  01_  RTR_BUILD_VERSION_         R41     -> R41       UNCHANGED. No action added or removed, no route
+                                                       moved. 01_ is NOT an R42 owner.
+  90_  KM_BUNDLE_CONTENT_HASH_    unchanged            no assets/js/core module moved; no rebuild
+
+RELEASE OWNERS
+-------------------------------------------------------------------------------------------------------
+  60_api_v1_inventory_replenishment_workspace.gs   runtime owner  (first ownership since R6-R5)
+  63_api_v1_system_health.gs                       manifest owner
+
+ACTION CONTRACT
+-------------------------------------------------------------------------------------------------------
+  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 18, UNCHANGED, and the browser's pin stays 18.
+  The rule is "bump whenever a router ACTION is added or removed". None was. siteScope is an OPTIONAL
+  field on the payload of inventoryReplenishment.workspace.get, which already exists and is unchanged.
+  Bumping for an optional payload field would make the number mean something it has never meant.
+  SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14: no page gained a mount dependency.
+
+DEPLOY ORDER - FROZEN, NOT YET EXECUTED
+-------------------------------------------------------------------------------------------------------
+  0  rotate the application + IR CSS cache-token families on the FINAL runtime bytes  (S8-R4C-P1)
+  1  Apps Script backend sync: 60_api_v1_inventory_replenishment_workspace.gs,
+     63_api_v1_system_health.gs
+  2  save all required backend files
+  3  create ONE new deployment version on the existing Production Web App
+  4  verify system.health reports R42 coherent (deployment_build == R42, mixed_deployment == false,
+     stale_modules == [], absent_modules == [], missing_actions == [], contract version == 18,
+     workspace_module_build == R42)
+  5  publish frontend/main
+  6  Production R4C acceptance: Site A / Site B first exposure = 1 request each, return = 0, unvisited
+     Site C = 0 rows leaked, per-site payload bytes recorded separately
+
+  THE ORDER IS LOAD-BEARING IN ONE DIRECTION ONLY, AND IT IS NOT THE OBVIOUS ONE. A published frontend
+  against a pre-R42 backend sends siteScope to a handler that IGNORES it and returns every site - which
+  is exactly today's behaviour, and the CLIENT-SIDE scope filtering is deliberately retained as the
+  second boundary, so the screen stays correct. The backend goes first anyway, because "correct but
+  silently unscoped" is the state this release exists to end, and nothing should be able to report it as
+  finished while it persists.
+
+KNOWN LEDGER GAP, NOT INTRODUCED HERE
+-------------------------------------------------------------------------------------------------------
+  R14..R40 remain unlogged, frozen as a census by K1a. They are not backfilled here: this round has no
+  evidence about what those rounds intended beyond their stamps, and inventing the record is worse than
+  admitting the gap.
+```
+
+```
+GS_FILES_CHANGED                 60_api_v1_inventory_replenishment_workspace.gs,
+                                 63_api_v1_system_health.gs
+APPS_SCRIPT_SYNC_REQUIRED        YES - 60_api_v1_inventory_replenishment_workspace.gs,
+                                 63_api_v1_system_health.gs
+APPS_SCRIPT_NEW_VERSION_REQUIRED YES
+BUNDLE_REBUILD_REQUIRED          NO - no assets/js/core module changed
+PRODUCTION_BACKEND_RELEASE       NOT R42. Production is R41-unsynced; the live probe last read R14.
+DB_SCHEMA_CHANGE                 NONE
+DB_WRITES                        0
+DB_DELETES                       0
+DB_READS                         6 - shipments, shipment_lines, shipping_plans, shipping_plan_lines,
+                                 shipping_allocation_drafts, shipping_allocation_draft_lines
+FRONTEND_DEPLOY_REQUIRED         YES - assets/js/api/km-api-foundation.js,
+                                 assets/js/pages/inventory-replenishment.js
+CACHE_TOKEN_ROTATION_REQUIRED    YES - DEFERRED to S8-R4C-P1, on the FINAL bytes
+APPS_SCRIPT_DEPLOYMENT_PERFORMED NO
+FRONTEND_PUBLICATION_PERFORMED   NO
+GIT_PUSH_REQUIRED                YES - USER-owned, after review
+```
+
+**STATUS: NOT DEPLOYED · NOT SYNCED.**

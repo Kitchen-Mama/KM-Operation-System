@@ -48,7 +48,11 @@
 // returns all twenty-one tables and reports no echo — while the browser believes it asked for two. That is
 // precisely the shape of failure this round spent its evidence on, and it must be a named fault rather than a
 // number someone has to notice is too large.
-var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5';
+// S8-R4B-2D - R42. THIS FILE GAINED A REQUEST CONTRACT, SO A DEPLOYMENT THAT DOES NOT CARRY IT IS NOW A
+// NAMED FAULT RATHER THAN A QUIET ONE. A pre-R42 60_ ignores `payload.siteScope` SILENTLY and returns every
+// site's exposure rows while the browser believes it asked for one - the same shape of failure the R4-A1
+// paragraph above was written for, and the reason that paragraph exists is that it already happened once.
+var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42';
 
 var SIR_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -155,6 +159,188 @@ function sirWsOnlySet_(payload) {
   return m;
 }
 
+// --------------------------------------------------------------------------------------------------------
+// S8-R4B-2D §2/§7 — THE SITE SCOPE. A PER-SITE CACHE KEY IN FRONT OF AN ALL-SITE READ IS NOT A PER-SITE READ.
+//
+// R4B-2B gave the browser a per-Site exposure cache and the request that filled it carried no scope at all,
+// so every Site was served every Site's rows and then told to keep them under its own key. The cache was
+// per-Site; the DATA was not. This is the contract that makes the second half true.
+//
+// THE IDENTITY IS THE TRIPLE, NOT THE ID. None of the six exposure tables stores marketplace_id — all six
+// store company / country / marketplace — so scoping on the id would force this handler to open the
+// marketplaces master to translate it: a SEVENTH sheet read, at the 0.8-1.3 s per-sheet floor R4B-2 measured,
+// to learn a triple the browser already holds. The browser's CACHE KEY keeps marketplace_id, because a map
+// key and a request identity are allowed to differ and conflating them buys that read for nothing.
+var SIR_EXPOSURE_TABLES_ = ['shipments', 'shipment_lines', 'shipping_plans', 'shipping_plan_lines',
+  'shipping_allocation_drafts', 'shipping_allocation_draft_lines'];
+var SIR_SITE_SCOPE_FIELDS_ = ['company', 'country', 'marketplace'];
+
+// null          -> no scope was requested; the response is byte-for-byte what it was before this round.
+// {ok:false}    -> a scope WAS requested and is incomplete. REFUSE. Never widen: a request that asked for one
+//                  site and silently received every site is the exact defect this round exists to close, and
+//                  it would be invisible from the browser because the extra rows all look like real data.
+// {ok:true}     -> the three fields, trimmed.
+function sirWsSiteScope_(payload) {
+  var raw = (payload && payload.siteScope);
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'object' || Object.prototype.toString.call(raw) === '[object Array]') {
+    return { ok: false, missing: SIR_SITE_SCOPE_FIELDS_.slice(), reason: 'NOT_AN_OBJECT' };
+  }
+  var scope = {}, missing = [];
+  for (var i = 0; i < SIR_SITE_SCOPE_FIELDS_.length; i++) {
+    var f = SIR_SITE_SCOPE_FIELDS_[i];
+    var v = String(raw[f] === undefined || raw[f] === null ? '' : raw[f]).trim();
+    if (!v) missing.push(f); else scope[f] = v;
+  }
+  if (missing.length) return { ok: false, missing: missing, reason: 'INCOMPLETE' };
+  return { ok: true, scope: scope };
+}
+
+// §5 — THE SCOPE APPLIES TO THE EXPOSURE CONTRACT AND NOTHING ELSE. `only` is a generic mechanism with three
+// shipped callers; redefining what it means for all of them to serve one page would be the silent kind of
+// change. So a scoped request must name the exposure family and only the exposure family, and a scope
+// arriving on any other request is REFUSED rather than ignored — ignoring it would widen it.
+function sirWsScopeApplicable_(onlyList) {
+  if (!onlyList || !onlyList.length) return false;
+  for (var i = 0; i < onlyList.length; i++) {
+    if (SIR_EXPOSURE_TABLES_.indexOf(onlyList[i]) === -1) return false;
+  }
+  return true;
+}
+
+// --------------------------------------------------------------------------------------------------------
+// §7 — A REACHABILITY CLOSURE, NOT SIX ROW FILTERS. THIS IS THE LOAD-BEARING PART.
+//
+// The obvious implementation — filter all six tables on company/country/marketplace — is wrong in two ways
+// that both LOSE QUANTITY SILENTLY, which is the failure mode the Qty-0 defect taught this page to fear.
+//
+//   1. FILTERING `shipments` ON ITS OWN MARKETPLACE DELETES EXACTLY THE MERGED HEADERS. A merged shipment
+//      carries marketplace = MULTI by construction. Its lines belong to real sites and reach them through
+//      frozen shipping_plan_line lineage — that lineage machinery exists for no other reason. A header
+//      filter would drop every one of them and the Shipping card would show less incoming inventory than
+//      exists, with nothing on screen saying so.
+//   2. `shipping_plan_lines.marketplace` IS NOT THE SCOPE FIELD. It is the line's REAL marketplace, and the
+//      shipped client deliberately attributes a line to its PARENT PLAN's triple instead
+//      (_irBuildExposureIndexes_ builds lineReceiverById from planById, never from the line). Scoping on the
+//      line's own column would be a SECOND business interpretation of shipment ownership.
+//
+// So the closure follows the shipped rule, which is reproduced here and not reinvented:
+//
+//   P  = shipping_plans                    whose OWN triple is this site AND is a SPECIFIC receiver
+//   PL = shipping_plan_lines               whose shipping_plan_id is in P
+//   SL = shipment_lines                    whose shipping_plan_line_id is in PL
+//                                          OR whose lineage is BLANK and whose parent header is this site
+//   S  = shipments                         named by SL, PLUS in-scope headers (MULTI headers are retained
+//                                          through SL, which is the whole point)
+//   D  = shipping_allocation_drafts        matching the client's own draft scope rule
+//   DL = shipping_allocation_draft_lines   whose allocation_draft_id is in D
+//
+// A PRESENT-BUT-UNRESOLVABLE lineage FAILS CLOSED — dropped, never fallen back to the header — because that
+// is what _irBuildShipmentRemainingByReceiver does, and a server that disagreed with the client about which
+// shipment belongs to whom would be worse than one that does not scope at all.
+//
+// PURE. Raw snake_case rows in, raw snake_case rows out, unmodified: the adapter and the normalizers see
+// exactly the rows they saw before, there are simply fewer of them.
+function sirWsSiteScopeClosure_(tables, scope) {
+  tables = tables || {}; scope = scope || {};
+  function lo(v) { return String(v === undefined || v === null ? '' : v).trim().toLowerCase(); }
+  function id(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  var S_CO = lo(scope.company), S_CY = lo(scope.country), S_MK = lo(scope.marketplace);
+  // Mirrors the client's _irIsSpecificReceiver verbatim: company + country + a NON-merged marketplace.
+  function specific(co, cy, mk) {
+    var m = lo(mk);
+    return lo(co).length > 0 && lo(cy).length > 0 && m.length > 0 && !/multi|merged|mixed|combined/.test(m);
+  }
+  function isScope(co, cy, mk) {
+    return specific(co, cy, mk) && lo(co) === S_CO && lo(cy) === S_CY && lo(mk) === S_MK;
+  }
+
+  // P — the plans this site owns.
+  var planIds = {}, plans = [];
+  var srcP = tables.shipping_plans || [];
+  for (var i = 0; i < srcP.length; i++) {
+    var p = srcP[i] || {};
+    if (!isScope(p.company, p.country, p.marketplace)) continue;
+    plans.push(srcP[i]);
+    var pid = id(p.shipping_plan_id);
+    if (pid) planIds[pid] = true;
+  }
+
+  // PL — their lines. The line's own `marketplace` is READ BY NOBODY HERE, on purpose (see §7.2 above).
+  var planLineIds = {}, planLines = [];
+  var srcPL = tables.shipping_plan_lines || [];
+  for (var j = 0; j < srcPL.length; j++) {
+    var pl = srcPL[j] || {};
+    if (!planIds[id(pl.shipping_plan_id)]) continue;
+    planLines.push(srcPL[j]);
+    var plid = id(pl.shipping_plan_line_id);
+    if (plid) planLineIds[plid] = true;
+  }
+
+  // The shipment headers, by id — needed for the BLANK-lineage fallback before we know which to keep.
+  var hdrById = {};
+  var srcS = tables.shipments || [];
+  for (var k = 0; k < srcS.length; k++) {
+    var h = srcS[k] || {};
+    var hid = id(h.shipment_id);
+    if (hid && !hdrById[hid]) hdrById[hid] = h;
+  }
+
+  // SL — frozen lineage wins; blank lineage uses the header; present-but-unresolvable fails closed.
+  var keepHdr = {}, shipLines = [];
+  var srcSL = tables.shipment_lines || [];
+  for (var m2 = 0; m2 < srcSL.length; m2++) {
+    var ln = srcSL[m2] || {};
+    var lineage = id(ln.shipping_plan_line_id);
+    var keep;
+    if (lineage) {
+      keep = planLineIds[lineage] === true;          // not ours, or dangling -> dropped, never fallen back
+    } else {
+      var hb = hdrById[id(ln.shipment_id)];
+      keep = !!hb && isScope(hb.company, hb.country, hb.marketplace);
+    }
+    if (!keep) continue;
+    shipLines.push(srcSL[m2]);
+    var sid = id(ln.shipment_id);
+    if (sid) keepHdr[sid] = true;
+  }
+
+  // S — every header a kept line names (THIS is what retains a MULTI header), plus this site's own headers
+  // even when they carry no line, so a scoped read can never return fewer headers than the site has.
+  var shipments = [];
+  for (var n = 0; n < srcS.length; n++) {
+    var s2 = srcS[n] || {};
+    if (keepHdr[id(s2.shipment_id)] || isScope(s2.company, s2.country, s2.marketplace)) shipments.push(srcS[n]);
+  }
+
+  // D — the client's OWN draft scope rule, reproduced rather than re-decided: country + marketplace must
+  // match, and a draft row with a BLANK company is admitted (_shippingDraftLinesFor tolerates it). Status is
+  // NOT read here: scope is a boundary, and dropping a cancelled draft server-side would be this handler
+  // authoring business logic it is forbidden to author.
+  var draftIds = {}, drafts = [];
+  var srcD = tables.shipping_allocation_drafts || [];
+  for (var q = 0; q < srcD.length; q++) {
+    var d = srcD[q] || {};
+    if (lo(d.country) !== S_CY || lo(d.marketplace) !== S_MK) continue;
+    if (lo(d.company) && lo(d.company) !== S_CO) continue;
+    drafts.push(srcD[q]);
+    var did = id(d.allocation_draft_id);
+    if (did) draftIds[did] = true;
+  }
+  var draftLines = [];
+  var srcDL = tables.shipping_allocation_draft_lines || [];
+  for (var r = 0; r < srcDL.length; r++) {
+    var dl = srcDL[r] || {};
+    if (draftIds[id(dl.allocation_draft_id)]) draftLines.push(srcDL[r]);
+  }
+
+  return {
+    shipments: shipments, shipment_lines: shipLines,
+    shipping_plans: plans, shipping_plan_lines: planLines,
+    shipping_allocation_drafts: drafts, shipping_allocation_draft_lines: draftLines
+  };
+}
+
 // PURE. Keeps, for each key, the rows whose period is among that key's `keep` most recent DISTINCT periods.
 // A row with no readable period is ALWAYS kept: it cannot be placed in time, and dropping what we cannot
 // order would be a guess. Returns the rows in their original order (the consumers sort for themselves, but
@@ -243,7 +429,7 @@ function sirWorkspaceBuild_(tables, payload) {
   // caller asked and the request never arrived" produced the identical null. That is exactly the ambiguity
   // the live log fell into. The REQUEST is now echoed separately from the RESULT, so a null result beside a
   // true request is a visible contradiction rather than a silent one.
-  out.requestEcho = { recentWindow: (payload.recentWindow === true), only: null };
+  out.requestEcho = { recentWindow: (payload.recentWindow === true), only: null, siteScope: null };
   // §A1 — RESOLVED INLINE, ON PURPOSE. This function is documented PURE and four suites lift it BY
   // ITSELF, with no other function from this file in scope. Calling a sibling helper here broke every one of
   // them with a ReferenceError — not a wrong answer, but a harness that could no longer run at all. Six
@@ -260,6 +446,49 @@ function sirWorkspaceBuild_(tables, payload) {
     else onlyList = null;
   }
   if (onlySet) out.requestEcho.only = onlyList;
+  // S8-R4B-2D §4/§5/§7 — THE SITE SCOPE, APPLIED BEFORE ANYTHING IS COUNTED OR CAPPED.
+  //
+  // REACHED ONLY WHEN A SCOPE WAS ASKED FOR, and that guard is the contract, not a micro-optimisation. This
+  // function is documented PURE and FOUR suites lift it ALONE — one of them with nothing in scope but
+  // SIR_WORKSPACE_TABLES_, sirCap_ and SIR_WS_ROW_MAX_. Calling a sibling helper unconditionally is the
+  // regression that once killed all four with a ReferenceError (T7b). An unscoped call must therefore never
+  // reach sirWsSiteScope_ / sirWsSiteScopeClosure_ at all, which is exactly what `!= null` buys.
+  var _scopeAsked = (payload.siteScope !== undefined && payload.siteScope !== null);
+  if (_scopeAsked) {
+    var _sc = sirWsSiteScope_(payload);
+    // §4 — FAIL CLOSED. The orchestrator refuses an incomplete scope before a sheet is opened; this is the
+    // SECOND of the two, and it is here rather than only there because a widened read is undetectable from
+    // the browser. Both of them have to be removed to widen it, and no mutant removes two things.
+    if (!_sc || !_sc.ok) {
+      var _e1 = new Error('siteScope was supplied without ' + ((_sc && _sc.missing) || SIR_SITE_SCOPE_FIELDS_).join(' / ')
+        + '. REFUSED rather than widened to every site.');
+      _e1.apiCode = 'INVENTORY_REPLENISHMENT_SITE_SCOPE_INCOMPLETE';
+      throw _e1;
+    }
+    // §5 — and it applies to the exposure contract alone. A scope on any other request is refused, because
+    // the alternative to refusing it is ignoring it, and ignoring a scope IS widening it.
+    if (!sirWsScopeApplicable_(onlyList)) {
+      var _e2 = new Error('siteScope is defined for the exposure table family only. REFUSED.');
+      _e2.apiCode = 'INVENTORY_REPLENISHMENT_SITE_SCOPE_NOT_APPLICABLE';
+      throw _e2;
+    }
+    out.requestEcho.siteScope = { company: _sc.scope.company, country: _sc.scope.country, marketplace: _sc.scope.marketplace };
+    var _proj = sirWsSiteScopeClosure_(tables, _sc.scope);
+    // A reduction nobody can see is indistinguishable from data loss — the same rule recentWindow follows.
+    var _scoped = {};
+    for (var _si = 0; _si < SIR_EXPOSURE_TABLES_.length; _si++) {
+      var _tn = SIR_EXPOSURE_TABLES_[_si];
+      var _before = (tables[_tn] || []).length, _after = (_proj[_tn] || []).length;
+      _scoped[_tn] = { before: _before, after: _after, dropped: _before - _after };
+    }
+    out.siteScope = { scope: out.requestEcho.siteScope, tables: _scoped };
+    // Rebind the source tables for the loop below. Non-exposure tables are untouched — a scoped request
+    // cannot ask for one (the applicability gate above), so there are none, but the copy says so.
+    var _rebound = {};
+    for (var _rk in tables) { if (Object.prototype.hasOwnProperty.call(tables, _rk)) _rebound[_rk] = tables[_rk]; }
+    for (var _sj = 0; _sj < SIR_EXPOSURE_TABLES_.length; _sj++) _rebound[SIR_EXPOSURE_TABLES_[_sj]] = _proj[SIR_EXPOSURE_TABLES_[_sj]] || [];
+    tables = _rebound;
+  }
   for (var i = 0; i < SIR_WORKSPACE_TABLES_.length; i++) {
     var spec = SIR_WORKSPACE_TABLES_[i];
     var name = spec.name;
@@ -345,6 +574,28 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
   try {
     var payload = (body && body.payload) || {};
     var include = (payload && payload.include && typeof payload.include === 'object') ? payload.include : {};
+    // S8-R4B-2D §4 — REFUSE BEFORE THE SPREADSHEET IS OPENED. A malformed scope costs zero sheet reads and
+    // returns a TYPED failure the browser can classify, rather than an all-site payload it would believe.
+    var scopeChk = (payload.siteScope !== undefined && payload.siteScope !== null) ? sirWsSiteScope_(payload) : null;
+    if (scopeChk && !scopeChk.ok) {
+      return sirBuildEnvelope_(false, null, [{ code: 'INVENTORY_REPLENISHMENT_SITE_SCOPE_INCOMPLETE',
+        message: 'siteScope was supplied without ' + scopeChk.missing.join(' / ')
+          + '. The request is REFUSED rather than widened to every site.',
+        details: { missing: scopeChk.missing, required: SIR_SITE_SCOPE_FIELDS_.slice(), reason: scopeChk.reason } }],
+        { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, entry: _entry, stages: _stages,
+          siteScopeRequested: true, siteScopeApplied: null,
+          handler: 'handleInventoryReplenishmentWorkspaceGet_', lock: null,
+          serverBuild: (typeof SIR_BUILD_VERSION_ !== 'undefined') ? SIR_BUILD_VERSION_ : null });
+    }
+    if (scopeChk && scopeChk.ok && !sirWsScopeApplicable_(sirWsOnlyList_(payload))) {
+      return sirBuildEnvelope_(false, null, [{ code: 'INVENTORY_REPLENISHMENT_SITE_SCOPE_NOT_APPLICABLE',
+        message: 'siteScope is defined for the exposure table family only, and this request names other tables. REFUSED.',
+        details: { exposureTables: SIR_EXPOSURE_TABLES_.slice(), onlyRequested: sirWsOnlyList_(payload) } }],
+        { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, entry: _entry, stages: _stages,
+          siteScopeRequested: true, siteScopeApplied: null,
+          handler: 'handleInventoryReplenishmentWorkspaceGet_', lock: null,
+          serverBuild: (typeof SIR_BUILD_VERSION_ !== 'undefined') ? SIR_BUILD_VERSION_ : null });
+    }
     var tOpen = io.now();
     var ss = io.openTarget();
     var openMs = io.now() - tOpen;
@@ -386,6 +637,11 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
       recentWindowRequested: (vm.requestEcho && vm.requestEcho.recentWindow === true),
       recentWindowApplied: (wKeys.length > 0),
       onlyRequested: (vm.requestEcho && vm.requestEcho.only) || null,
+      // S8-R4B-2D §4 — the same asked/applied pair the recentWindow contract already proved it needed. A
+      // true beside a null means the field was dropped on the way in, which is precisely how R4 shipped a
+      // projection nobody was running and nobody could see.
+      siteScopeRequested: (vm.requestEcho && vm.requestEcho.siteScope) || null,
+      siteScopeApplied: (vm.siteScope && vm.siteScope.tables) ? vm.siteScope.tables : null,
       openMs: openMs, slowestTables: slow.slice(0, 5),
       // R6-R5 §3 — the entry and stage evidence. `handlerExitAt` closes the interval, so the client can compare
       // (handlerExitAt - routerEntryAt) against its OWN elapsed time: a large difference is transport or queue,

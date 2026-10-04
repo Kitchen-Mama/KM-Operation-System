@@ -267,7 +267,16 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // for. R41 owns 01_ and this file. The Factory Guard HANDLER owner (71_) did NOT change and is NOT an R41
 // owner. No action was added or removed - the action already existed on the POST chain - so the
 // action-contract version stays at 18, and 90_'s content hash is untouched because no core module moved.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
+// S8-R4B-2D - R42. 60_api_v1_inventory_replenishment_workspace.gs gains a SITE SCOPE on the Inventory
+// Replenishment workspace read. The second layer of the Site Inventory read had a per-Site CACHE in front of
+// an all-Site QUERY, so every Site was served every Site's exposure rows and then told to keep them under
+// its own key; the handler has no scope parameter at all, which is why this cannot be a frontend round.
+// R42 owns 60_ and this file. 01_ did NOT change and keeps the R41 it earned - the router's table is
+// untouched, because NO ACTION WAS ADDED OR REMOVED: siteScope is an optional field on the payload of an
+// action that already exists, so the action-contract version stays at 18 and 90_'s content hash is
+// untouched. R41 cannot absorb this for the reason R41 itself was cut: R41 is already cut against a tree in
+// which 60_ had not changed.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -309,7 +318,8 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
 // S6-R7A - moved for the same reason again: the release above, its own expected stamp and 90_'s content hash.
 // S6-R8A - and again: the release above, its own expected stamp and 22_'s. 90_'s hash is unchanged.
 // S8-R4B-1 - and again: the release above, its own expected stamp and 01_'s. 90_'s hash is unchanged.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
+// S8-R4B-2D - and again: the release above, its own expected stamp and 60_'s. 90_'s hash is unchanged.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -580,7 +590,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -610,7 +620,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.
   { file: '61_api_v1_weekly_ai_plan.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate' },
-  { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log' },
+  { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log. R42 adds the SITE SCOPE: an exposure-only request may carry siteScope{company,country,marketplace} and is answered with a lineage reachability closure over the six exposure tables instead of every row of them. A pre-R42 copy ignores the field SILENTLY and returns every site - the same class of fault the recentWindow echo was added for, which is why this row exists rather than a comment' },
   // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
   // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
   // to an undefined handler, and the page has no fan-out left to fall back to.

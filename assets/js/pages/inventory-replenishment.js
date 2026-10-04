@@ -9065,6 +9065,29 @@ function _irExposureActiveEntry_() {
     var k = _irExposureScopeKey_();
     return k ? (_irExposureByScope[k] || null) : null;
 }
+// S8-R4B-2D §2 — THE SERVER'S IDENTITY, WHICH IS NOT THE CACHE'S. The map above is keyed by marketplace_id
+// because that is the applied selection and it is unambiguous. The REQUEST cannot use it: none of the six
+// exposure tables stores marketplace_id, so a server asked to scope by id would have to open the marketplaces
+// master to translate it - a seventh sheet, at the per-sheet floor, for a triple this page already holds.
+//
+// Deliberately NOT folded into _irExposureScopeKey_. That function answers "which cache entry", this one
+// answers "which site do we ask for", and the whole point of this round is that those are different
+// questions. Returns null when the master cannot name the site, and a null here issues NO request at all.
+function _irExposureSite_() {
+    var a = (typeof _irSearch !== 'undefined' && _irSearch) ? _irSearch.applied : null;
+    if (!a || !a.marketplaceId) return null;
+    var list = [];
+    try { list = _irWsGet('getMarketplaces') || []; } catch (e) { list = []; }
+    for (var i = 0; i < list.length; i++) {
+        var m = list[i];
+        if (!m || String(m.marketplaceId) !== String(a.marketplaceId)) continue;
+        var co = String(m.company || '').trim(), cy = String(m.country || a.country || '').trim(),
+            mk = String(m.marketplace || '').trim();
+        if (!co || !cy || !mk) return null;
+        return { company: co, country: cy, marketplace: mk };
+    }
+    return null;
+}
 // What the RENDER may assume. 'LEGACY' means the kill switch is off and the broad cache still holds all
 // nineteen tables, so there is no second layer and nothing about that path changes.
 function _irExposureStateForRender_() {
@@ -9130,13 +9153,30 @@ function _irEnsureExposureLoaded_(opts) {
         _irOnExposureSettled_(key);
         return Promise.resolve(_irExposureByScope[key]);
     }
+    // S8-R4B-2D §4 - NO SITE, NO REQUEST. The map above can key an entry from marketplace_id alone, but the
+    // SERVER needs the triple, and a request that cannot name its site could only be answered with every
+    // site's rows. FAILED is the honest outcome and it carries a Retry; issuing the read anyway would fill
+    // this site's cache with other sites' shipments, which is the defect this round closes.
+    var site = _irExposureSite_();
+    if (!site) {
+        _irExposureByScope[key] = { key: key, state: IR_EXPOSURE_STATES_.FAILED, promise: null, model: null,
+            indexes: null, loadedAt: 0, generation: ++_irExposureSeq,
+            error: { code: 'IR_EXPOSURE_SCOPE_INCOMPLETE',
+                message: 'The active site could not be named (company / country / marketplace). The shipment / allocation detail was NOT read.' } };
+        _irOnExposureSettled_(key);
+        return Promise.resolve(_irExposureByScope[key]);
+    }
     var gen = ++_irExposureSeq;
     var entry = { key: key, state: IR_EXPOSURE_STATES_.LOADING, promise: null, model: null, indexes: null,
         loadedAt: 0, generation: gen, error: null, requestedAt: (typeof _irNowMs_ === 'function') ? _irNowMs_() : 0 };
     _irExposureByScope[key] = entry;
     // The SAME canonical action the primary read uses, with an exposure-only `only` list. No new action, no
     // router change, no contract bump - 60_ has owned the `only` contract since the deployed SIR stamp.
-    var payload = { recentWindow: true, only: IR_EXPOSURE_TABLES_.slice() };
+    //
+    // S8-R4B-2D - AND THE SITE, which is what makes the per-site cache above a per-site READ. Without it the
+    // server returns every site's exposure rows and this entry stores them under one site's key: the key was
+    // per-site and the data never was.
+    var payload = { recentWindow: true, only: IR_EXPOSURE_TABLES_.slice(), siteScope: site };
     entry.promise = Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', payload))
         .then(function (env) {
             if (_irExposureByScope[key] !== entry) return entry;   // invalidated in flight - nothing to install
@@ -9205,6 +9245,7 @@ function _irExposureRefresh_(event, sku) {
 window._irExposureRefresh_ = _irExposureRefresh_;
 window._irEnsureExposureLoaded_ = _irEnsureExposureLoaded_;
 window._irExposureStateForRender_ = _irExposureStateForRender_;
+window._irExposureSite_ = _irExposureSite_;
 function _irExposureStateOf_(skuData) {
     return (skuData && skuData.exposureState) || _irExposureStateForRender_();
 }

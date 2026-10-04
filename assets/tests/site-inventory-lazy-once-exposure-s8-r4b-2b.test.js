@@ -177,7 +177,7 @@ var EXPOSURE_ROWS = {
   shipping_allocation_draft_lines: [{ allocationDraftLineId: 'DL1', allocationDraftId: 'D1' }]
 };
 var LIFTED = ['IR_FIRST_LAYER_TABLES_', 'IR_EXPOSURE_TABLES_', 'IR_EXPOSURE_GETTER_TABLE_', 'IR_EXPOSURE_STATES_'];
-var LIFTED_FNS = ['_irWsGet', '_irExposureScopeKey_', '_irExposureActiveEntry_', '_irExposureStateForRender_',
+var LIFTED_FNS = ['_irWsGet', '_irExposureScopeKey_', '_irExposureSite_', '_irExposureActiveEntry_', '_irExposureStateForRender_',
   '_irExposureGet_', '_irBuildExposureIndexes_', '_irEnsureExposureLoaded_', '_irOnExposureSettled_',
   '_irInvalidateExposureForKey_', '_irInvalidateActiveExposure_', '_irExposureRefresh_',
   '_irExposureStateOf_', '_irShipCardInnerHtml_', '_irRepaintExposureCard_'];
@@ -246,8 +246,14 @@ T.push((async function () {
   eq(h.calls[0].name, 'inventoryReplenishment', 'C2c through the EXISTING canonical action — no new action');
   eq(h.calls[0].payload.only.slice().sort(), EXPOSURE6.slice().sort(), 'C2d with an exposure-only `only` list');
   eq(h.calls[0].payload.recentWindow, true, 'C2e and the same recentWindow opt-in');
-  ok(!/"(company|country|marketplace|sku)"/.test(JSON.stringify(h.calls[0].payload)),
-    'C2f carrying no scope — the handler has never had one, and inventing one here would be a fiction');
+  // S8-R4B-2D REVERSED THIS, AND THE REVERSAL IS THE ROUND. C2f asserted the request carried no scope,
+  // which was TRUE and was the defect: a per-site cache key in front of an all-site read is not a per-site
+  // read. The claim is kept in the only form that still means something — no SKU, because a per-SKU identity
+  // would reintroduce the N+1 this file exists to prevent — and the site is now REQUIRED.
+  eq(h.calls[0].payload.siteScope, { company: 'ResUS', country: 'US', marketplace: 'Amazon' },
+    'C2f and the SITE — company/country/marketplace, the triple the six tables actually store');
+  ok(!/"sku"/.test(JSON.stringify(h.calls[0].payload)),
+    'C2f1 and still no SKU anywhere in it — the identity is the site, not the row');
   eq(h.api.state(), 'READY', 'C2g the entry is READY');
   eq(h.api.get('getShipments').length, 1, 'C2h and the getters now answer with rows');
   eq(h.indexBuilds.n, 1, 'C2i the joins were built ONCE');
@@ -453,10 +459,19 @@ Promise.all(T).then(function () {
     'E1  Suggested Qty reads NO exposure getter — it resolves through the materialised gap state');
   ok(/onTheWay: 0,/.test(LIVE), 'E2  On the Way is still the literal 0 it has always been (pending mapping)');
 
-  eq(/SIR_BUILD_VERSION_ = '([^']+)'/.exec(G60)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5',
-    'E3  BACKEND_RELEASE_REQUIRED = NO — 60_ still carries the DEPLOYED stamp');
+  // S8-R4B-2D REVERSED E3, AND THE PARAGRAPH IS KEPT RATHER THAN DELETED. R4B-2B's claim was true of
+  // R4B-2B: lazy-once needed no backend change, because `only` was already deployed. The OPERATOR then
+  // required that the second layer return only the ACTIVE site's rows, and the deployed handler has no scope
+  // parameter at all - so the finding did not become wrong, its premise was replaced. What this assertion
+  // must still pin is the half that has not changed: the ACTION, which is the thing a release is expensive
+  // about.
+  eq(/SIR_BUILD_VERSION_ = '([^']+)'/.exec(G60)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42',
+    'E3  BACKEND_RELEASE_REQUIRED = YES as of S8-R4B-2D — 60_ gained the siteScope contract and is stamped R42');
   ok(/if \(onlySet && !onlySet\[spec\.name\]\) continue;/.test(G60),
-    'E3a because the `only` contract this round uses was already shipped');
+    'E3a the `only` contract R4B-2B used was already shipped and is untouched');
+  ok(/action: 'inventoryReplenishment\.workspace\.get'/.test(G60) && !/SIR_NEW_ACTION|newAction/.test(G60),
+    'E3b and NO ACTION WAS ADDED — the scope is an optional payload field on the action that already existed, '
+    + 'which is why the action-contract version does not move');
 
   var LAZY = lazySrc(PAGE);
   ok(!/localStorage|sessionStorage|indexedDB|IndexedDB/.test(LAZY),

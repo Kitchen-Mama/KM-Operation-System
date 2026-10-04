@@ -1309,6 +1309,30 @@
       if (Array.isArray(params.only) && params.only.length) {
         payload.only = params.only.map(function (t) { return String(t); });
       }
+      // S8-R4B-2D §3/§4 — THE SITE SCOPE, AND WHY AN INCOMPLETE ONE IS FORWARDED RATHER THAN DROPPED.
+      //
+      // This builder is a WHITELIST: a field it does not name is discarded before the request is built, which
+      // is how R4 shipped a recentWindow the server never received. siteScope is named here or the scoped
+      // exposure read does not exist.
+      //
+      // The three fields are normalised (String + trim) and NOTHING ELSE from the caller's object travels —
+      // the whitelist is the point, and a pass-through would give it away.
+      //
+      // IT IS NOT DROPPED WHEN INCOMPLETE. Dropping a blank field here would turn a caller's bug into an
+      // ALL-SITE read that looks exactly like a correct one, which is the single failure this round exists to
+      // make impossible. A blank is forwarded, 60_ refuses it by name, and the browser gets a typed error
+      // instead of another site's shipments.
+      // A MALFORMED scope is forwarded too, for the same reason: `typeof === 'object'` as a GATE would
+      // silently drop a string or an array and issue the all-site read. Reading the three fields off a
+      // non-object yields blanks, the blanks reach 60_, and 60_ refuses by name.
+      if (params.siteScope !== undefined && params.siteScope !== null) {
+        var _ss = params.siteScope;
+        function _ssf(k) {
+          var v = (_ss && typeof _ss === 'object' && !Array.isArray(_ss)) ? _ss[k] : null;
+          return String(v === undefined || v === null ? '' : v).trim();
+        }
+        payload.siteScope = { company: _ssf('company'), country: _ssf('country'), marketplace: _ssf('marketplace') };
+      }
       return {
         apiVersion: API_VERSION, action: 'inventoryReplenishment.workspace.get', requestId: makeRequestId(params.requestId),
         payload: payload,

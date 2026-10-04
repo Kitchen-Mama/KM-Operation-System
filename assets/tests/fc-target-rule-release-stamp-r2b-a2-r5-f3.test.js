@@ -213,16 +213,39 @@ var RELEASE_OWNERS = {
   //
   // 90_ does NOT move: no core module changed, so the bundle is not rebuilt and its content hash is the
   // bytes it was at R36.
-  '01_router.gs':
-    'THE ROUTER. R41 adds factoryStockGuard.get to rtrGetReadHandlers_, the LAST approved read in the system '
-    + 'that still travelled on POST - and a POST cannot survive the /exec 302 to script.googleusercontent.com, '
-    + 'because the redirect drops the body. The POST branch is KEPT: every GET-routed read in this file is '
-    + 'reachable from both tables, so removing it would be the exception, not the cleanup. NO ACTION WAS '
-    + 'ADDED OR REMOVED - factoryStockGuard.get already existed on the POST chain - so the action-contract '
-    + 'version stays at 18 and the browser pin stays at 18. A transport reclassification is not a contract '
-    + 'change.',
+  // S8-R4B-2D - THE TWENTY-SECOND SWAP, and the ledger moving back the other way one release later again.
+  // 01_ LEAVES OWNERSHIP AT R42 after exactly one release as an owner and keeps the R41 it earned. R42 adds
+  // NO ACTION and moves NO route - siteScope is an optional field on the payload of an action that already
+  // exists - so the routing table did not change, and marching the router here would erase the fact the R41
+  // entry was written to record. The R41 paragraph is kept below in RELEASE_CARRIED rather than deleted,
+  // for the same reason the R40 one was: it is the evidence that the promotion was earned.
+  //
+  // 60_ ENTERS OWNERSHIP FOR THE FIRST TIME SINCE R6-R5. It is the file the operator's requirement lands in:
+  // the exposure read had a per-Site cache in front of an all-Site query, and the handler has no scope
+  // parameter at all, so this could not have been a frontend round however much one would have preferred it.
+  //
+  // 90_ does NOT move: no core module changed, so the bundle is not rebuilt and its content hash is the
+  // bytes it was at R36.
+  '60_api_v1_inventory_replenishment_workspace.gs':
+    'THE INVENTORY WORKSPACE READ. R42 gives it a SITE SCOPE. R4B-2B deferred six of the nineteen tables to '
+    + 'a lazy per-Site cache; R4B-2C then proved the request filling that cache carried no scope at all, so '
+    + 'every Site was served every Site\'s exposure rows and told to keep them under its own key - the KEY '
+    + 'was per-Site and the DATA never was. An exposure-only request may now carry '
+    + 'siteScope{company,country,marketplace} and is answered with a LINEAGE REACHABILITY CLOSURE, not six '
+    + 'row filters: filtering shipments on their own marketplace would delete exactly the merged MULTI '
+    + 'headers the lineage machinery exists to attribute, and shipping_plan_lines.marketplace is the line\'s '
+    + 'REAL marketplace where the shipped client deliberately uses the PARENT PLAN\'s. An INCOMPLETE scope '
+    + 'is REFUSED rather than widened, in both the orchestrator and the pure builder. NO ACTION WAS ADDED OR '
+    + 'REMOVED, so the action-contract version stays at 18; the identity is the TRIPLE and not marketplace_id, '
+    + 'because none of the six tables stores the id and resolving it would cost a SEVENTH sheet read.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R41 moves the release, its own build, and the ROUTER ROW IT CARRIES - which is the '
+    'THE MANIFEST. R42 moves the release, its own build, and 60_\'s expected stamp - which is the whole '
+    + 'reason those are separate constants: 60_ changed, so its row moves, and this file moves because it is '
+    + 'where that row is written down. 01_\'s expected stamp STAYS at R41 because 01_ did not change. The '
+    + 'action-contract version stays 18 and SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14: no action was added '
+    + 'or removed, and no page gained a mount dependency. 90_ is not rebuilt - no core module moved. '
+    + 'WHAT R41 CHANGED HERE IS STILL TRUE AND IS KEPT RATHER THAN OVERWRITTEN: '
+    + 'R41 moves the release, its own build, and the ROUTER ROW IT CARRIES - which is the '
     + 'whole reason those are separate constants: 01_ changed, so its expected stamp moves, and this file '
     + 'moves because it is where that stamp is written down. The action-contract version stays 18 and '
     + 'SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14: no action was added or removed, and no page gained a '
@@ -260,6 +283,11 @@ var RELEASE_CARRIED = {
   // RELEASE_OWNERS above because R41 changes its routing table for real. The R40 paragraph is kept rather
   // than deleted: it records WHY the router was held at R39 through a release that did not touch it, and
   // that reason is what makes R41's promotion evidence rather than drift.
+  // S8-R4B-2D — AND 01_ IS BACK HERE AT R42, after exactly one release as an owner, which is the second
+  // time this pair of lists has swapped the router in and out in three releases. That is not churn: R41
+  // changed its routing table and R42 does not touch it, so the stamp records two different facts and the
+  // ledger is able to say so. R42 adds no action and moves no route.
+  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41',
   // S7-R2A — THE EIGHTEENTH SWAP. 22_ LEAVES OWNERSHIP AT R38 after one release as an owner and keeps R37,
   // the round DECLARED_SOURCE_ONLY actually landed in. R38 changes a read projection and no handler.
   '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37',
@@ -1099,11 +1127,15 @@ mutant('M12', 'a release that adds an action and forgets to bump the action cont
   if (faked === HEALTH) throw new Error('M12 anchor drifted — the mutant would inject no fault');
   return Number(num(faked, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')) - Number(prior) !== ACTION_ADDING_RELEASES_SINCE_BASE;
 });
-mutant('M13', 'the router changes but is left out of the release owner set', function () {
-  // The fault: 01_ is edited, its stamp is rotated, and the ledger still calls it CARRIED. C3 reads
-  // the owner set, so a router that expects the release while sitting in RELEASE_CARRIED is exactly
-  // the half-done cut this round started from.
-  var owners = Object.keys(RELEASE_OWNERS).filter(function (f) { return f !== '01_router.gs'; });
+// S8-R4B-2D — PARAMETERISED ON THE RELEASE, NOT ON THE ROUTER. This mutant dropped '01_router.gs' from
+// the owner set by NAME, which was the right fault to inject for exactly as long as 01_ was a runtime
+// owner. At R42 it is not - 60_ is - so the mutation injected nothing and the predicate reported a
+// survivor against a tree it had never changed. The fault it exists to catch is round-independent: a
+// RUNTIME owner is edited and stamped, and the ledger still calls it carried. So it is stated that way.
+var RUNTIME_OWNERS = Object.keys(RELEASE_OWNERS).filter(function (f) { return f !== '63_api_v1_system_health.gs'; });
+mutant('M13', 'a runtime owner changes but is left out of the release owner set', function () {
+  if (!RUNTIME_OWNERS.length) throw new Error('M13 anchor drifted — this release has no runtime owner to drop');
+  var owners = Object.keys(RELEASE_OWNERS).filter(function (f) { return f !== RUNTIME_OWNERS[0]; });
   var atRel = manifestRows(HEALTH).filter(function (r) { return r.expected === RELEASE; })
     .map(function (r) { return r.file; }).sort();
   return JSON.stringify(atRel) !== JSON.stringify(owners.sort());
@@ -1147,7 +1179,12 @@ var vacuous = [];
      .map(function (r) { return r.file; }).sort();
    return JSON.stringify(atRel) === JSON.stringify(Object.keys(RELEASE_OWNERS).sort());
  }],
- ['M14', function () { return Object.prototype.hasOwnProperty.call(RELEASE_OWNERS, '01_router.gs'); }],
+ // S8-R4B-2D — M14 protects R40's HISTORY, and its vacuity guard was a proxy for it: "01_ is currently
+ // claimed as an owner". That proxy expires the moment 01_ leaves ownership, which it did at R42, and a
+ // vacuity guard that expires reports its own mutant as unchecked. The fact M14 actually defends is that
+ // the ledger places the router at the round it really changed in, which is R41 and is not R40.
+ ['M14', function () { return RELEASE_CARRIED['01_router.gs'] === PREV_RELEASE
+     && !/-R40$/.test(RELEASE_CARRIED['01_router.gs'] || ''); }],
  ['M15', function () { return RELEASE_LOG.indexOf(RELEASE) !== -1; }],
  // M12's predicate must be FALSE against the unmutated tree: the real contract DID move, once per
  // action-adding release in this span.

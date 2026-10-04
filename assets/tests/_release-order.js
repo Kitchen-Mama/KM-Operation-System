@@ -1568,7 +1568,21 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // R40 WAS NOT JOINED, and the reason is the one recorded against R30 and R31 above: R40 is already cut,
   // its owner set is 63_ alone, and its tree is not this one. An id that names two trees cannot answer the
   // question it exists for. APPEND-ONLY, at the end — stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41',
+  // S8-R4B-2D — THE SITE INVENTORY EXPOSURE READ STOPS SERVING EVERY SITE. 60_ gains a siteScope contract on
+  // the workspace read: an exposure-only request names its site and is answered with a lineage reachability
+  // closure over the six exposure tables. R4B-2B had given that layer a per-Site CACHE, and R4B-2C proved
+  // the request behind it carried no scope at all — the key was per-Site and the data never was.
+  //
+  // 01_ LEAVES OWNERSHIP AT R42 and keeps the R41 it earned ONE release ago. No action was added or removed
+  // — siteScope is an optional payload field on an action that already exists — so the routing table did not
+  // move, and marching the router here would erase the fact R41 was written to record. 63_ moves because it
+  // carries 60_'s manifest row and its own. 90_ is NOT rebuilt: no core module changed.
+  //
+  // R41 WAS NOT JOINED, for the reason R41 was itself cut rather than folded into R40: R41 is already cut,
+  // its owner set is 01_ + 63_, and its tree is not this one. APPEND-ONLY, at the end — stampAtOrAfter
+  // compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

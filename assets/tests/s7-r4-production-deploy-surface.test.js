@@ -284,22 +284,41 @@ eq(runtimeChanged.filter(function (f) { return f.indexOf('/TEMP_') === -1; }),
   ['assets/specs/active/apps-script/63_api_v1_system_health.gs'],
   'H2  exactly ONE runtime file changed IN R40, and the seven relocations are renames git reports '
   + 'separately');
-// S8-R4B-1A - THE CURRENT-HEAD HALF, stated rather than inherited. R41 reclassifies
-// factoryStockGuard.get from the POST write chain onto the GET read table, so the router changed and
-// the manifest that carries its expected stamp changed with it. TWO runtime files, named - and 71_ is
-// deliberately not among them: the Factory Guard handler was not touched, only the verb reaching it.
-var sinceR40 = cp.execFileSync('git', ['diff', '--name-only', POST_SHA, 'HEAD'],
-  { cwd: REPO, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
-eq(sinceR40.filter(function (f) {
-  return f.indexOf('assets/specs/active/apps-script/') === 0 && f.indexOf('/TEMP_') === -1;
-}), ['assets/specs/active/apps-script/01_router.gs',
-     'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
-  'H2a and since R40 ended, EXACTLY the two runtime files R41 owns have changed');
+// S8-R4B-1A - THE R41 HALF, PINNED AT BOTH ENDS. This read POST_SHA..HEAD, which is the same mistake
+// H2 itself was convened to repair one release earlier: a claim about ONE round, written as a claim
+// about every round that would ever follow it. It was correct for exactly as long as R41 was the newest
+// release, and S8-R4B-2D is the round that proves it by changing a third runtime file. R41's interval
+// now ENDS at R41's own release commit, and the current head gets its own paragraph below.
+var R41_POST_SHA = '8856aeb';   // S8-R4B-1A's release commit: R41 ends here
 var R41_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
+var R42_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42';
+function runtimeGsBetween(a, b) {
+  return cp.execFileSync('git', ['diff', '--name-only', a, b], { cwd: REPO, encoding: 'utf8' })
+    .trim().split('\n').filter(Boolean)
+    .filter(function (f) { return f.indexOf('assets/specs/active/apps-script/') === 0 && f.indexOf('/TEMP_') === -1; })
+    .sort();
+}
+eq(runtimeGsBetween(POST_SHA, R41_POST_SHA),
+  ['assets/specs/active/apps-script/01_router.gs',
+   'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
+  'H2a IN R41 - between R40 ending and R41 being cut - EXACTLY the two runtime files R41 owns changed');
 eq((read(GS + '01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R41_ID,
-  'H2b both of them declare R41 - the router, whose routing table changed');
-eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R41_ID,
-  'H2c ...and the manifest, which is where a release is cut');
+  'H2b and the router still declares R41 - the round its routing table changed, not the newest id in the tree');
+// S8-R4B-2D - THE CURRENT-HEAD HALF, stated rather than inherited, which is the whole lesson of H2.
+// R42 gives the Inventory Replenishment workspace read a SITE SCOPE: 60_ changes, and the manifest that
+// carries its expected stamp changes with it. TWO runtime files, named - and 01_ is deliberately not
+// among them, because R42 adds no action and moves no route.
+eq(runtimeGsBetween(R41_POST_SHA, 'HEAD'),
+  ['assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs',
+   'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
+  'H2c SINCE R41 ended, EXACTLY the two runtime files R42 owns have changed');
+eq((read(GS + '60_api_v1_inventory_replenishment_workspace.gs').match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1],
+  R42_ID, 'H2c1 60_ declares R42 - the workspace read, whose request contract changed');
+eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R42_ID,
+  'H2c2 ...and the manifest, which is where a release is cut');
+ok(!/R42/.test(read(GS + '01_router.gs')),
+  'H2c3 01_ is NOT stamped R42 - no action was added or removed and no route moved, and marching an '
+  + 'unchanged owner to make a release look complete is the one thing these stamps exist to prevent');
 ok(!/R41/.test(read(GS + '71_api_v1_factory_stock_guard.gs')),
   'H2d 71_ is NOT stamped R41 - the handler did not change, and stamping an unchanged owner to make '
   + 'a release look complete is the one thing these stamps exist to prevent');

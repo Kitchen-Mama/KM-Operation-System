@@ -643,6 +643,15 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   'assets/specs/active/apps-script/17_carrier_handlers.gs',
   'assets/specs/active/apps-script/01_router.gs',
   'assets/specs/active/apps-script/63_api_v1_system_health.gs',
+  // S8-R4B-2D — the Inventory Replenishment workspace read gains a SITE SCOPE. 60_ answers an exposure-only
+  // request with a lineage closure over six shipment/plan/draft tables instead of every row of them; 63_ is
+  // already declared above and carries 60_'s manifest row and the R42 release. NO ACTION was added or
+  // removed - siteScope is an optional payload field on an action that already exists - so the router did
+  // NOT change and is not re-listed for this round. Neither file reads a Product Strategy table, a pricing
+  // row or the staged-section registry, no capability field changed and no flag moved. Recorded here for
+  // the reason this list exists: a .gs moving without a stated reason is how an unrelated edit reaches
+  // production, and a visual round that touched a handler would still be caught.
+  'assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs',
   // S7-R4 — SEVEN RELOCATIONS, NOT SEVEN EDITS. These paths appear in the diff because the files LEFT
   // assets/specs/active/apps-script/ for assets/tools/, byte for byte. Membership in that folder is the
   // claim 'this is synced into the Apps Script project as runtime', and a demo seed that writes and clears

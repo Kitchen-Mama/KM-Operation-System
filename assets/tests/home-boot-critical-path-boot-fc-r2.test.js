@@ -696,8 +696,14 @@ function _s3r5aPolicySeal_(curr, base, label, eqFn) {
     eqFn(curr.indexOf(d) >= 0, true, label + ' — still present: ' + d);
   });
 }
-var SEALED = ['assets/js/api/km-api-foundation.js',
-  'assets/js/utils/resizable-columns.js', 'assets/js/utils/dual-layer-resize.js'];
+var SEALED = ['assets/js/utils/resizable-columns.js', 'assets/js/utils/dual-layer-resize.js'];
+// S8-R4B-2D — km-api-foundation.js LEAVES THE BYTE SEAL, on the precedent lifecycle.js and
+// operation-system-db-api.js already set below and for the identical reason: a working-tree seal turns
+// 'the Home round did not touch this' into 'no round ever may'. R4B-2D widens the Inventory Replenishment
+// request DTO under an authorised scope, so the exposure read can name its SITE — the builder is a
+// WHITELIST, and a field it does not name never reaches Apps Script. What the Home round actually cared
+// about is narrower and is asserted immediately below: its boot entrypoints are untouched.
+var FOUND_R4B2D = 'assets/js/api/km-api-foundation.js';
 // S4-R2 §7 — lifecycle.js leaves the BYTE seal, on the precedent the two entries below already set
 // and for the identical reason: the byte seal was the Home round saying it had not touched the
 // navigation manager, and read against the working tree it became a rule that nobody may. S4-R2 adds
@@ -751,6 +757,19 @@ if (base !== '__git_unavailable__') {
     'H14f §5 and the only growth since is the S4-R2 listener scope');
   ok(lcSwitch.indexOf('releaseListenerScope(currentPage)') > lcSwitch.indexOf('registry[currentPage].unmount(my)'),
     "H14g §5 which releases AFTER the page's own unmount hook, never before it");
+
+  // ---- the narrower claim that replaces the byte seal on km-api-foundation.js --------------------
+  var fdNow = read(FOUND_R4B2D).replace(/\r\n/g, '\n');
+  var fdThen = atRev('3b6d83f', FOUND_R4B2D);
+  ['getWorkspace', 'dispatchWorkspace', 'normalizeWorkspaceEnvelope', 'deepFreezeClone']
+    .forEach(function (fn, i) {
+      eq(fdNow.indexOf(fn) > -1, fdThen.indexOf(fn) > -1,
+        'H14h §5 the API foundation boot entrypoint ' + fn + ' still exists');
+    });
+  ok(fdNow.indexOf('payload.siteScope') > -1 && fdNow.length > fdThen.length,
+    'H14i §5 and the only growth since is the S8-R4B-2D siteScope whitelist', fdNow.length - fdThen.length);
+  eq((fdNow.match(/payload\.siteScope =/g) || []).length, 1,
+    'H14j §5 which appears exactly ONCE — in the Inventory Replenishment builder and nowhere else');
 
   // The narrower claim that replaces the byte seal on the db-api file.
   var dbNow = read(DBAPI_R3).replace(/\r\n/g, '\n');
