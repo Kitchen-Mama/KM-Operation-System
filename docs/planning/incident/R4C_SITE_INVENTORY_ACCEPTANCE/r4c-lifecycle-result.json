@@ -1,0 +1,632 @@
+{
+ "S0_BOOT": {
+  "ok": true
+ },
+ "S1_SITE_INVENTORY_READY": {
+  "countries": [
+   "",
+   "AU",
+   "CA",
+   "EU",
+   "JP",
+   "UK",
+   "US"
+  ]
+ },
+ "__searchCount": 6,
+ "searchAttempts": [
+  {
+   "label": "A",
+   "attempt": 1,
+   "status": "READY",
+   "error": null,
+   "firstLayerRequests": 1,
+   "wallMs": 26252
+  },
+  {
+   "label": "B",
+   "attempt": 1,
+   "status": "READY",
+   "error": null,
+   "firstLayerRequests": 0,
+   "wallMs": null
+  },
+  {
+   "label": "return A",
+   "attempt": 1,
+   "status": "READY",
+   "error": null,
+   "firstLayerRequests": 0,
+   "wallMs": null
+  },
+  {
+   "label": "return B",
+   "attempt": 1,
+   "status": "READY",
+   "error": null,
+   "firstLayerRequests": 0,
+   "wallMs": null
+  },
+  {
+   "label": "pre-route A",
+   "attempt": 1,
+   "status": "READY",
+   "error": null,
+   "firstLayerRequests": 0,
+   "wallMs": null
+  },
+  {
+   "label": "post-refresh B",
+   "attempt": 1,
+   "status": "READY",
+   "error": null,
+   "firstLayerRequests": 0,
+   "wallMs": null
+  }
+ ],
+ "A_FIRST_LAYER": {
+  "FIRST_LAYER_REQUEST_COUNT": 1,
+  "FIRST_LAYER_TABLE_COUNT": 13,
+  "FIRST_LAYER_EXPOSURE_TABLE_READ_COUNT": 0,
+  "tablesRead": 13,
+  "rowsReturned": 7027,
+  "serverMs": 19443,
+  "wallMs": 26252,
+  "bytes": 6168676,
+  "requestId": "REQ-C000001",
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "onlyTables": [
+   "marketplaces",
+   "marketplace_skus",
+   "sku_details",
+   "warehouses",
+   "amazon_inventory_snapshot",
+   "amazon_inventory_health_snapshot",
+   "amazon_daily_sales_snapshot",
+   "amazon_weekly_sales_snapshot",
+   "fc_regular_forecast",
+   "fc_target_rules",
+   "fc_special_events",
+   "overseas_inventory_snapshot",
+   "factory_stock"
+  ],
+  "exposureRequestsDuringFirstLayer": 0,
+  "allCalls": [
+   {
+    "action": "inventoryReplenishment.workspace.get",
+    "only": 13,
+    "status": 200
+   },
+   {
+    "action": "inventoryReplenishmentGap.get",
+    "only": null,
+    "status": null
+   },
+   {
+    "action": "recommendation.workspace.get",
+    "only": null,
+    "status": null
+   },
+   {
+    "action": "inventoryReplenishment.workspace.get",
+    "only": 2,
+    "status": null
+   }
+  ]
+ },
+ "A_ROWS": {
+  "skuCount": 100,
+  "first10": [
+   "CO1100-R",
+   "CO1100-S",
+   "CO1100-T",
+   "CO1100-W",
+   "CO1150-AG",
+   "CO1150-BM",
+   "CO1150-EM",
+   "CO1150-MB",
+   "CO1150-N",
+   "CO1150-OM"
+  ]
+ },
+ "B_SITE_A_EXPOSURE": {
+  "SITE_A_FIRST_EXPOSURE_REQUEST_COUNT": 1,
+  "FIRST_LAYER_TABLE_RE_READ_COUNT": 0,
+  "CROSS_SITE_PREFETCH_REQUEST_COUNT": 0,
+  "siteScopeSent": {
+   "company": "ResUS",
+   "country": "US",
+   "marketplace": "Amazon"
+  },
+  "only": [
+   "shipments",
+   "shipment_lines",
+   "shipping_plans",
+   "shipping_plan_lines",
+   "shipping_allocation_drafts",
+   "shipping_allocation_draft_lines"
+  ],
+  "rowsByTable": {
+   "shipments": 1,
+   "shipment_lines": 2,
+   "shipping_plans": 3,
+   "shipping_plan_lines": 4,
+   "shipping_allocation_drafts": 11,
+   "shipping_allocation_draft_lines": 9
+  },
+  "serverMs": 6352,
+  "wallMs": 11825,
+  "bytes": 31977,
+  "meta": {
+   "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+   "tablesRead": 6,
+   "rowsReturned": 30,
+   "onlyRequested": [
+    "shipments",
+    "shipment_lines",
+    "shipping_plans",
+    "shipping_plan_lines",
+    "shipping_allocation_drafts",
+    "shipping_allocation_draft_lines"
+   ],
+   "siteScopeRequested": {
+    "company": "ResUS",
+    "country": "US",
+    "marketplace": "Amazon"
+   },
+   "siteScopeApplied": [
+    "shipments",
+    "shipment_lines",
+    "shipping_plans",
+    "shipping_plan_lines",
+    "shipping_allocation_drafts",
+    "shipping_allocation_draft_lines"
+   ],
+   "requestId": "REQ-C000004",
+   "openMs": 220
+  },
+  "exposureState": "READY",
+  "cacheKey": "ResUS|US|MKT-RESUS-US-AMAZON",
+  "otherCalls": [
+   {
+    "action": "inventoryReplenishment.workspace.get",
+    "only": 6
+   }
+  ]
+ },
+ "B_SITE_A_ROWS_SAVED": {
+  "bytes": 28926
+ },
+ "C_READY_REUSE": {
+  "availableRows": 100,
+  "SECOND_SKU_EXPAND_REQUEST_COUNT": 0,
+  "TENTH_SKU_EXPAND_REQUEST_COUNT": 0,
+  "TWENTIETH_SKU_EXPAND_REQUEST_COUNT": 0,
+  "TOTAL_ADDITIONAL_EXPOSURE_REQUEST_COUNT_AFTER_READY": 0,
+  "detail": {
+   "sku_2": {
+    "sku": "CO1100-S",
+    "exposureRequests": 0,
+    "anyWorkspace": 0,
+    "actions": []
+   },
+   "sku_10": {
+    "sku": "CO1150-OM",
+    "exposureRequests": 0,
+    "anyWorkspace": 0,
+    "actions": []
+   },
+   "sku_20": {
+    "sku": "CO2102-FA",
+    "exposureRequests": 0,
+    "anyWorkspace": 0,
+    "actions": []
+   }
+  }
+ },
+ "D_SINGLE_FLIGHT": {
+  "CONCURRENT_EXPOSURE_CONSUMER_COUNT": 3,
+  "consumersSharedOnePromise": true,
+  "SINGLE_FLIGHT_REQUEST_COUNT": 1,
+  "state": "READY"
+ },
+ "E_SITE_B_FIRST_LAYER": {
+  "firstLayerRequests": 0,
+  "tables": null,
+  "serverMs": null,
+  "wallMs": null,
+  "siteAEntryStillPresent": null,
+  "exposureDuringSearch": 0
+ },
+ "E_SITE_B_PRE_EXPOSURE_STATE": {
+  "state": "NOT_LOADED",
+  "key": "ResTW|CA|MKT-RESTW-CA-AMAZON"
+ },
+ "E_SITE_B_ROWS": {
+  "skuCount": 51,
+  "first5": [
+   "CO1100-R",
+   "CO1100-S",
+   "CO1100-T",
+   "CO1100-W",
+   "CO1150-MB"
+  ]
+ },
+ "E_SITE_B_EXPOSURE": {
+  "SITE_B_FIRST_EXPOSURE_REQUEST_COUNT": 1,
+  "siteScopeSent": {
+   "company": "ResTW",
+   "country": "CA",
+   "marketplace": "Amazon"
+  },
+  "only": [
+   "shipments",
+   "shipment_lines",
+   "shipping_plans",
+   "shipping_plan_lines",
+   "shipping_allocation_drafts",
+   "shipping_allocation_draft_lines"
+  ],
+  "rowsByTable": {
+   "shipments": 0,
+   "shipment_lines": 0,
+   "shipping_plans": 0,
+   "shipping_plan_lines": 0,
+   "shipping_allocation_drafts": 0,
+   "shipping_allocation_draft_lines": 0
+  },
+  "SITE_B_EXPOSURE_ROWS_TOTAL": 0,
+  "SITE_B_CACHE_STATE": "READY",
+  "serverMs": 7593,
+  "wallMs": 15203,
+  "bytes": 3212,
+  "meta": {
+   "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+   "tablesRead": 6,
+   "rowsReturned": 0,
+   "onlyRequested": [
+    "shipments",
+    "shipment_lines",
+    "shipping_plans",
+    "shipping_plan_lines",
+    "shipping_allocation_drafts",
+    "shipping_allocation_draft_lines"
+   ],
+   "siteScopeRequested": {
+    "company": "ResTW",
+    "country": "CA",
+    "marketplace": "Amazon"
+   },
+   "siteScopeApplied": [
+    "shipments",
+    "shipment_lines",
+    "shipping_plans",
+    "shipping_plan_lines",
+    "shipping_allocation_drafts",
+    "shipping_allocation_draft_lines"
+   ],
+   "requestId": "REQ-C000008",
+   "openMs": 291
+  }
+ },
+ "F_RETURN_SITE_A": {
+  "RETURN_SITE_A_EXPOSURE_REQUEST_COUNT": 0,
+  "firstLayerRequests": 0,
+  "exposureStateOnArrival": "READY"
+ },
+ "F_RETURN_SITE_A_EXPAND": {
+  "exposureRequests": 0,
+  "state": "READY"
+ },
+ "G_RETURN_SITE_B": {
+  "RETURN_SITE_B_EXPOSURE_REQUEST_COUNT": 0,
+  "state": "READY"
+ },
+ "H_ROUTE_AWAY_RETURN": {
+  "ROUTE_RETURN_EXPOSURE_REQUEST_COUNT": 0,
+  "firstLayerRequests": 1,
+  "afterRoute": {
+   "state": "READY",
+   "key": "ResUS|US|MKT-RESUS-US-AMAZON",
+   "searchStatus": "READY"
+  },
+  "actions": [
+   "getTable",
+   "getTable",
+   "inventoryReplenishment.workspace.get"
+  ]
+ },
+ "I_REFRESH": {
+  "preRefresh": {
+   "state": "READY",
+   "key": "ResUS|US|MKT-RESUS-US-AMAZON"
+  },
+  "stateImmediatelyAfterRefresh": "LOADING",
+  "SITE_A_POST_REFRESH_EXPOSURE_REQUEST_COUNT": 1,
+  "gapJobRequests": 0,
+  "writeLike": 0,
+  "stateAfter": "READY"
+ },
+ "I_REFRESH_SITE_B_UNTOUCHED": {
+  "SITE_B_POST_REFRESH_RETURN_REQUEST_COUNT": 0,
+  "state": "READY"
+ },
+ "L_TRANSPORT": {
+  "allWorkspaceCalls": [
+   {
+    "n": 1,
+    "action": "getClientCapabilities",
+    "status": 200,
+    "bytes": 231,
+    "serverMs": null,
+    "wallMs": 5363,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": null
+   },
+   {
+    "n": 2,
+    "action": "inventoryScope.registry.get",
+    "status": 200,
+    "bytes": 3037,
+    "serverMs": null,
+    "wallMs": 5899,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": null
+   },
+   {
+    "n": 3,
+    "action": "inventoryReplenishment.workspace.get",
+    "status": 200,
+    "bytes": 6168676,
+    "serverMs": 19443,
+    "wallMs": 26252,
+    "only": 13,
+    "scope": null,
+    "requestId": "REQ-C000001",
+    "error": null
+   },
+   {
+    "n": 4,
+    "action": "inventoryReplenishmentGap.get",
+    "status": 200,
+    "bytes": 42835,
+    "serverMs": null,
+    "wallMs": 6077,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": null
+   },
+   {
+    "n": 5,
+    "action": "recommendation.workspace.get",
+    "status": 200,
+    "bytes": 327879,
+    "serverMs": 27217,
+    "wallMs": 32772,
+    "only": 0,
+    "scope": null,
+    "requestId": "REQ-C000002",
+    "error": null
+   },
+   {
+    "n": 6,
+    "action": "inventoryReplenishment.workspace.get",
+    "status": 200,
+    "bytes": 324262,
+    "serverMs": 2157,
+    "wallMs": 6527,
+    "only": 2,
+    "scope": null,
+    "requestId": "REQ-C000003",
+    "error": null
+   },
+   {
+    "n": 7,
+    "action": "inventoryReplenishment.workspace.get",
+    "status": 200,
+    "bytes": 31977,
+    "serverMs": 6352,
+    "wallMs": 11825,
+    "only": 6,
+    "scope": {
+     "company": "ResUS",
+     "country": "US",
+     "marketplace": "Amazon"
+    },
+    "requestId": "REQ-C000004",
+    "error": null
+   },
+   {
+    "n": 8,
+    "action": "inventoryReplenishment.workspace.get",
+    "status": 200,
+    "bytes": 31974,
+    "serverMs": 8522,
+    "wallMs": 12923,
+    "only": 6,
+    "scope": {
+     "company": "ResUS",
+     "country": "US",
+     "marketplace": "Amazon"
+    },
+    "requestId": "REQ-C000005",
+    "error": null
+   },
+   {
+    "n": 9,
+    "action": "inventoryReplenishmentGap.get",
+    "status": 200,
+    "bytes": 22089,
+    "serverMs": null,
+    "wallMs": 9128,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": null
+   },
+   {
+    "n": 10,
+    "action": "recommendation.workspace.get",
+    "status": 200,
+    "bytes": 154722,
+    "serverMs": 20178,
+    "wallMs": 26500,
+    "only": 0,
+    "scope": null,
+    "requestId": "REQ-C000006",
+    "error": null
+   },
+   {
+    "n": 11,
+    "action": "inventoryReplenishment.workspace.get",
+    "status": 200,
+    "bytes": 324263,
+    "serverMs": 2890,
+    "wallMs": 9039,
+    "only": 2,
+    "scope": null,
+    "requestId": "REQ-C000007",
+    "error": null
+   },
+   {
+    "n": 12,
+    "action": "inventoryReplenishment.workspace.get",
+    "status": 200,
+    "bytes": 3212,
+    "serverMs": 7593,
+    "wallMs": 15203,
+    "only": 6,
+    "scope": {
+     "company": "ResTW",
+     "country": "CA",
+     "marketplace": "Amazon"
+    },
+    "requestId": "REQ-C000008",
+    "error": null
+   },
+   {
+    "n": 13,
+    "action": "inventoryReplenishmentGap.get",
+    "status": 200,
+    "bytes": 42835,
+    "serverMs": null,
+    "wallMs": 7042,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": null
+   },
+   {
+    "n": 14,
+    "action": "inventoryReplenishmentGap.get",
+    "status": 200,
+    "bytes": 22089,
+    "serverMs": null,
+    "wallMs": 8308,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": null
+   },
+   {
+    "n": 15,
+    "action": "inventoryReplenishmentGap.get",
+    "status": 200,
+    "bytes": 42835,
+    "serverMs": null,
+    "wallMs": 5596,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": null
+   },
+   {
+    "n": 16,
+    "action": "getTable",
+    "status": null,
+    "bytes": null,
+    "serverMs": null,
+    "wallMs": 13,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": "Failed to fetch"
+   },
+   {
+    "n": 17,
+    "action": "getTable",
+    "status": null,
+    "bytes": null,
+    "serverMs": null,
+    "wallMs": 14,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": "Failed to fetch"
+   },
+   {
+    "n": 18,
+    "action": "inventoryReplenishment.workspace.get",
+    "status": 200,
+    "bytes": 6168672,
+    "serverMs": 24009,
+    "wallMs": 30719,
+    "only": 13,
+    "scope": null,
+    "requestId": "REQ-C000009",
+    "error": null
+   },
+   {
+    "n": 19,
+    "action": "inventoryReplenishment.workspace.get",
+    "status": 200,
+    "bytes": 31973,
+    "serverMs": 6598,
+    "wallMs": 10480,
+    "only": 6,
+    "scope": {
+     "company": "ResUS",
+     "country": "US",
+     "marketplace": "Amazon"
+    },
+    "requestId": "REQ-C000010",
+    "error": null
+   },
+   {
+    "n": 20,
+    "action": "inventoryReplenishmentGap.get",
+    "status": 200,
+    "bytes": 22089,
+    "serverMs": null,
+    "wallMs": 6784,
+    "only": 0,
+    "scope": null,
+    "requestId": null,
+    "error": null
+   }
+  ],
+  "consoleErrors": [],
+  "aborted": [
+   {
+    "at": "2026-10-05T02:48:20.537Z",
+    "action": "getTable",
+    "method": "GET",
+    "why": "UNKNOWN_ACTION",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=getTable&table=factory_stock&_ts=1791168500536"
+   },
+   {
+    "at": "2026-10-05T02:48:20.538Z",
+    "action": "getTable",
+    "method": "GET",
+    "why": "UNKNOWN_ACTION",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=getTable&table=sku_details&_ts=1791168500537"
+   }
+  ],
+  "dialogs": []
+ }
+}

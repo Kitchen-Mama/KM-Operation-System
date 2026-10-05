@@ -1,0 +1,49 @@
+{
+ "READY": {
+  "skus": 100
+ },
+ "J_NOT_LOADED_SNAPSHOT": {
+  "exposureState": "LOADING",
+  "shipCardAttr": "NOT_LOADED",
+  "shipCardText": "Shipping Shipment\nIncoming shipments load once for this site.\nWithin 18 days\n…\nWithin 30 days\n…\nWithin 45 days\n…\n45+ days\n…",
+  "panelMentionsZeroShip": false,
+  "panelMentionsNotGenerated": false,
+  "panelHasPending": true,
+  "snippet": "Site Inventory Monitor\nCountry\nSelect Country\nAU\nCA\nEU\nJP\nUK\nUS\nMarketplace\nSelect Marketplace\nAmazon\nEBay\nKM Amazon\nKM Walmart\nNewegg\nShopify\nTarget\nWalmart\nWayfair\nLTS Filter\nAll SKU\nOver 90+\nOver 180+\nSearch\n✦ AI Support\nSubmit Plan\n⋯ More Options\nAll\n100\nCutting Board\n3\nElectric Can Opener\n36\nGrinders\n11\nKitchen Scale\n3\nManual Opener\n5\nMilk Frother\n4\nSilicone Products\n15\nSilicone Spatulas\n20\nSmall Kitchen Gadgets\n1\nTongs\n2\nSKU\nPlanning Model\nInventory\nSales\nReplenishment\n工廠Stock\nAI Action\nCurrent Stock\n3rd Party Stock\nOn the Way\nAvg. Sales/day\n90 days FC\nUpcoming Event\nDays of Supply\nSuggested Qty\nCN\nTW\n▸\nCO1100-R\nCO1100-R\nCO1100-R\nClick row to close\n▸\nCO1100-S\n▸\nCO1100-T\n▸\nCO1100-W\n▸\nCO"
+ },
+ "J_READY_SNAPSHOT": {
+  "exposureState": "READY",
+  "shipCardAttr": "READY",
+  "shipCardText": "Shipping Shipment\nOverdue\n200\nWithin 18 days\n0\nWithin 30 days\n0\nWithin 45 days\n0\n45+ days\n0\nRefresh"
+ },
+ "K_FAILURE_STATE": {
+  "install": "INSTALLED",
+  "stateSequence": [
+   "FAILED",
+   "FAILED"
+  ],
+  "afterFiveRenders": {
+   "sim": 1,
+   "state": "FAILED"
+  },
+  "failedUi": {
+   "attr": null,
+   "text": null,
+   "hasRetry": false
+  },
+  "afterExplicitRetry": {
+   "sim": 2,
+   "state": "FAILED"
+  },
+  "recoveredState": "READY",
+  "realRequestsDuringSimulation": 1,
+  "allActionsDuringSim": [
+   "inventoryReplenishment.workspace.get"
+  ]
+ },
+ "TRANSPORT": {
+  "consoleErrors": [],
+  "aborted": [],
+  "dialogs": []
+ }
+}

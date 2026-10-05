@@ -1,0 +1,74 @@
+[
+ {
+  "i": 1,
+  "ok": true,
+  "wallMs": 88091,
+  "bytes": 6168704,
+  "serverMs": 22569,
+  "openMs": 399,
+  "tablesRead": 13,
+  "rowsReturned": 7027,
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "slowest": [
+   "amazon_daily_sales_snapshot=4435ms/3814r",
+   "fc_target_rules=2065ms/0r",
+   "fc_regular_forecast=2005ms/496r",
+   "warehouses=1876ms/361r",
+   "sku_details=1649ms/192r"
+  ]
+ },
+ {
+  "i": 2,
+  "ok": true,
+  "wallMs": 27941,
+  "bytes": 6168702,
+  "serverMs": 20156,
+  "openMs": 370,
+  "tablesRead": 13,
+  "rowsReturned": 7027,
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "slowest": [
+   "amazon_daily_sales_snapshot=4984ms/3814r",
+   "warehouses=1812ms/361r",
+   "sku_details=1712ms/192r",
+   "factory_stock=1316ms/112r",
+   "marketplace_skus=1202ms/495r"
+  ]
+ },
+ {
+  "i": 3,
+  "ok": true,
+  "wallMs": 25258,
+  "bytes": 6168706,
+  "serverMs": 18328,
+  "openMs": 352,
+  "tablesRead": 13,
+  "rowsReturned": 7027,
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "slowest": [
+   "amazon_daily_sales_snapshot=4077ms/3814r",
+   "sku_details=1803ms/192r",
+   "warehouses=1439ms/361r",
+   "marketplace_skus=1392ms/495r",
+   "fc_special_events=1114ms/431r"
+  ]
+ },
+ {
+  "i": 4,
+  "ok": true,
+  "wallMs": 27109,
+  "bytes": 6168716,
+  "serverMs": 20944,
+  "openMs": 558,
+  "tablesRead": 13,
+  "rowsReturned": 7027,
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "slowest": [
+   "amazon_daily_sales_snapshot=3604ms/3814r",
+   "warehouses=2622ms/361r",
+   "overseas_inventory_snapshot=1699ms/260r",
+   "sku_details=1671ms/192r",
+   "marketplace_skus=1411ms/495r"
+  ]
+ }
+]
