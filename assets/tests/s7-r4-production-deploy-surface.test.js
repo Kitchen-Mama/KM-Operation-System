@@ -292,6 +292,15 @@ eq(runtimeChanged.filter(function (f) { return f.indexOf('/TEMP_') === -1; }),
 var R41_POST_SHA = '8856aeb';   // S8-R4B-1A's release commit: R41 ends here
 var R41_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
 var R42_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42';
+var R42_POST_SHA = 'f6b4164';   // S8-R4C-P1's publication commit: R42 ends here, and it is the tree
+                                // Production was deployed from and S8-R4C accepted.
+var R43_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
+// Reads a file AS OF a commit, so a historical claim can be checked against the tree it was made
+// about rather than against whatever the working tree happens to hold today.
+function showAt(sha, rel) {
+  try { return cp.execFileSync('git', ['show', sha + ':' + rel], { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); }
+  catch (e) { return ''; }
+}
 function runtimeGsBetween(a, b) {
   return cp.execFileSync('git', ['diff', '--name-only', a, b], { cwd: REPO, encoding: 'utf8' })
     .trim().split('\n').filter(Boolean)
@@ -308,14 +317,30 @@ eq((read(GS + '01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])
 // R42 gives the Inventory Replenishment workspace read a SITE SCOPE: 60_ changes, and the manifest that
 // carries its expected stamp changes with it. TWO runtime files, named - and 01_ is deliberately not
 // among them, because R42 adds no action and moves no route.
-eq(runtimeGsBetween(R41_POST_SHA, 'HEAD'),
+// S8-R4D-C - AND H2c WAS PINNED AT ONE END, WHICH IS THE FAULT H2 ITSELF IS ABOUT. `..HEAD` turned a
+// claim about what R42 changed into a claim about every release since, so cutting R43 made a TRUE
+// statement about R42 fail. The interval is now CLOSED at R42's end, and the head half is stated
+// separately below as its own claim.
+eq(runtimeGsBetween(R41_POST_SHA, R42_POST_SHA),
   ['assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs',
    'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
-  'H2c SINCE R41 ended, EXACTLY the two runtime files R42 owns have changed');
+  'H2c IN R42 - between R41 ending and R42 being cut - EXACTLY the two runtime files R42 owns changed');
+eq((showAt(R42_POST_SHA, GS + '60_api_v1_inventory_replenishment_workspace.gs').match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1],
+  R42_ID, 'H2c1 at R42s own tree 60_ declared R42 - the workspace read, whose request contract changed');
+eq((showAt(R42_POST_SHA, GS + '63_api_v1_system_health.gs').match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1],
+  R42_ID, 'H2c2 ...and the manifest, which is where a release is cut');
+// S8-R4D-C - THE HEAD HALF. R43 removes the redundant header read from 60_'s io; 63_ carries its row.
+// The SAME two files, and 01_ is again deliberately not among them - R43 moves no action and no route.
+eq(runtimeGsBetween(R42_POST_SHA, 'HEAD'),
+  ['assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs',
+   'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
+  'H2e SINCE R42 ended, EXACTLY the two runtime files R43 owns have changed');
 eq((read(GS + '60_api_v1_inventory_replenishment_workspace.gs').match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1],
-  R42_ID, 'H2c1 60_ declares R42 - the workspace read, whose request contract changed');
-eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R42_ID,
-  'H2c2 ...and the manifest, which is where a release is cut');
+  R43_ID, 'H2e1 and at HEAD 60_ declares R43 - the read path, whose call count changed');
+eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R43_ID,
+  'H2e2 ...and the manifest declares R43, which is where a release is cut');
+ok(!/R43/.test(read(GS + '01_router.gs')),
+  'H2e3 01_ is NOT stamped R43 - no action, no route and no request field moved');
 ok(!/R42/.test(read(GS + '01_router.gs')),
   'H2c3 01_ is NOT stamped R42 - no action was added or removed and no route moved, and marching an '
   + 'unchanged owner to make a release look complete is the one thing these stamps exist to prevent');

@@ -220,6 +220,8 @@ var R6_PRE = 'c9429e6';
 // REACH A SHARED STYLESHEET — and it keeps its teeth, because an allowed file must still contain no
 // .psb-page selector in what it added. Anything not named here still fails outright.
 var SHARED_CSS_CHANGED_BY_LATER_ROUNDS = {
+  'assets/css/layout.css':
+    'HEADER-BASELINE-R2 - ONE declaration, display:block, on the header logo image. An INLINE image sits on a text baseline, so .logo-text reserved descender space BELOW its only child and the wrapper measured 47.59px around a 41px image; centring the wrapper centred that dead strip too. The declaration is added to a selector that ALREADY existed rather than appended as a second rule, because two rules for one selector is the duplication this file elsewhere refuses. Nothing is scoped to .psb-page, no Product Strategy selector was added, moved or removed, and no other declaration in the file changed.',
   'assets/css/components.css':
     'S4-R3 §5 - .km-route-script-error and .km-route-script-retry, the refusal a route shows when its ' +
     'OWN code could not be downloaded. It is router-level rather than page-level: any route that takes ' +
@@ -256,6 +258,8 @@ var SHARED_CSS_CHANGED_BY_LATER_ROUNDS = {
 // product-strategy-board.css may never appear on it — a leak into the page's OWN stylesheet is the one
 // thing this guard exists to catch and the list must never be able to excuse it.
 var PAGE_CSS_CHANGED_BY_LATER_ROUNDS = {
+  'assets/css/pages/inventory-replenishment.css':
+    'S8-R4B-2B - the four states the lazily-read shipment exposure can be in. The six exposure tables are now read ONCE per Site instead of with the first layer, so a card can be NOT_LOADED, LOADING, READY or FAILED - and before that round the five ETA buckets rendered `|| 0`, which made a site whose rows had not been read yet indistinguishable from a site with no incoming stock. That is the Qty-0 class of defect, and an unstyled pending state ships as an invisible one - the same reasoning the entries below record. Rules APPENDED only, every one scoped to #ops-section exactly as the existing .replen-* rules are; nothing existing was edited. .replen-card__value--pending, __note, __row--error, __row--meta, and the .ir-exposure-refresh / .ir-exposure-retry controls. Nothing here is scoped to .psb-page and no Product Strategy selector was added, moved or removed.',
   'assets/css/pages/sku-regional-details.css':
     'PRICING-R2 - the site-pricing panel, the per-field price editor and the template-import dialog. ' +
     'Rules APPENDED only, every one scoped to #sku-regional-details-section exactly as the rest of the ' +
