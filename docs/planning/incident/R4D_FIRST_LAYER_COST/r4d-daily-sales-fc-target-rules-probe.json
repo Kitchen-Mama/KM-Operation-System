@@ -1,0 +1,144 @@
+[
+ {
+  "ok": false,
+  "httpStatus": 404,
+  "wallMs": 50752,
+  "bodyHead": "<!DOCTYPE html><html lang=\"zh\"><head><script nonce=\"cYrdv1GRetHyrvqBjLDLGg\">window['ppConfig'] = {productName: '26981ed0"
+ },
+ {
+  "ok": true,
+  "httpStatus": 200,
+  "wallMs": 11797,
+  "bytes": 3989702,
+  "serverMs": 5507,
+  "openMs": 362,
+  "tablesRead": 2,
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "slowestTables": [
+   {
+    "table": "amazon_daily_sales_snapshot",
+    "ms": 3108,
+    "rows": 3814
+   },
+   {
+    "table": "fc_target_rules",
+    "ms": 1958,
+    "rows": 0
+   }
+  ],
+  "recentWindow": {
+   "amazon_daily_sales_snapshot": {
+    "before": 9779,
+    "after": 3814,
+    "dropped": 5965,
+    "keep": 14
+   }
+  },
+  "summary": {
+   "amazon_daily_sales_snapshot": 3814,
+   "fc_target_rules": 0
+  },
+  "dailyRowsReturned": 3814,
+  "dailyFields": [
+   "snapshot_date",
+   "country",
+   "marketplace",
+   "channel",
+   "sku",
+   "site_sku",
+   "asin",
+   "currency",
+   "sales_units",
+   "sales_amount",
+   "sales_amount_usd",
+   "return_units",
+   "total_orders",
+   "session",
+   "page_view",
+   "unit_session_percentage",
+   "buy_box_percentage",
+   "browser_session",
+   "browser_page_views",
+   "app_session",
+   "app_page_view",
+   "source_system",
+   "source_report",
+   "source_file_id",
+   "source_sheet_name",
+   "source_row_hash",
+   "sync_batch_id",
+   "synced_at",
+   "created_at",
+   "updated_at",
+   "data_window_start_date",
+   "data_window_end_date",
+   "latest_source_date",
+   "is_fallback_used",
+   "fallback_reason",
+   "data_age_days"
+  ],
+  "dailySampleJsonBytes": 1035,
+  "dailySample": {
+   "snapshot_date": "2026-07-18T16:00:00.000Z",
+   "country": "AU",
+   "marketplace": "Amazon",
+   "channel": "Amazon",
+   "sku": "CO1150-R",
+   "site_sku": "",
+   "asin": "",
+   "currency": "AUD",
+   "sales_units": 1,
+   "sales_amount": 55,
+   "sales_amount_usd": 35.86,
+   "return_units": "",
+   "total_orders": 1,
+   "session": 4,
+   "page_view": 5,
+   "unit_session_percentage": 25,
+   "buy_box_percentage": 100,
+   "browser_session": 3,
+   "browser_page_views": 3,
+   "app_session": 1,
+   "app_page_view": 2,
+   "source_system": "BigQuery Import",
+   "source_report": "Amazon Daily Sales",
+   "source_file_id": "amazon-database-489810.AmazonSales.Raw Daily Sales",
+   "source_sheet_name": "Raw Daily Sales",
+   "source_row_hash": "a1093199d0f7934e0650a79da98c34d7",
+   "sync_batch_id": "SYNC-amazon_daily_sales_snapshot-83a2bf30",
+   "synced_at": "2026-08-03T09:30:08.000Z",
+   "created_at": "2026-08-03T09:30:08.000Z",
+   "updated_at": "2026-08-03T09:30:08.000Z",
+   "data_window_start_date": "2026-06-02T16:00:00.000Z",
+   "data_window_end_date": "2026-07-30T16:00:00.000Z",
+   "latest_source_date": "2026-07-30T16:00:00.000Z",
+   "is_fallback_used": false,
+   "fallback_reason": "",
+   "data_age_days": 3
+  },
+  "rulesRows": 0,
+  "rulesFields": [],
+  "stages": [
+   {
+    "stage": "OPEN_SPREADSHEET",
+    "started_ms": 1791170675134,
+    "elapsed_ms": 362
+   },
+   {
+    "stage": "READ_TABLES",
+    "started_ms": 1791170675134,
+    "elapsed_ms": 5429
+   },
+   {
+    "stage": "BUILD_VIEW_MODEL",
+    "started_ms": 1791170680563,
+    "elapsed_ms": 78
+   },
+   {
+    "stage": "SERIALIZE_AND_EXIT",
+    "started_ms": 1791170675134,
+    "elapsed_ms": 5507
+   }
+  ]
+ }
+]
