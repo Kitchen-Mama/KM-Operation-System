@@ -491,12 +491,17 @@ eq(AS_FILES.filter(function (f) { return f.indexOf('TEMP_') === 0; }), [],
 var TOOLS_DIAG = lsdir('tools/apps-script-diagnostics').filter(function (f) { return /\.gs$/.test(f); });
 var TOOLS_MIG = lsdir('tools/apps-script-migrations').filter(function (f) { return /\.gs$/.test(f); });
 var TOOLS_SEED = lsdir('tools/apps-script-seeds').filter(function (f) { return /\.gs$/.test(f); });
-eq(TOOLS_DIAG.length, 35, 'F1a thirty-five diagnostics live under tools/, outside the deploy folder');
+// S8-R4D-D1 - 35 -> 36 DIAGNOSTICS. TEMP_S8_R4D_B1_ADVANCED_SHEETS_BENCHMARK.gs was added under
+// apps-script-diagnostics: the read-only paired benchmark for the Sheets batchGet candidate. The
+// census CORRECTLY classified it DIAGNOSTIC and writes:false without being told to, which is this
+// gate doing its job - a new TEMP tool is meant to be noticed, and the count moves only with a
+// written reason. It is PASTE/RUN/REPORT/REMOVE and is not a production runtime owner.
+eq(TOOLS_DIAG.length, 36, 'F1a thirty-six diagnostics live under tools/, outside the deploy folder');
 eq(TOOLS_MIG.length, 4, 'F1b four migrations');
 eq(TOOLS_SEED.length, 1, 'F1b1 and the one seed has a directory of its own, because burying the tool '
   + 'that can empty six tables among ordinary migrations loses the only fact about it that matters');
-eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 40, 'F1c TEMP_SCRIPT_COUNT = 40');
-eq(AS_TEMP.length, 40, 'F1d and the census below reads all 40, not the empty folder');
+eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 41, 'F1c TEMP_SCRIPT_COUNT = 41');
+eq(AS_TEMP.length, 41, 'F1d and the census below reads all 41, not the empty folder');
 
 var permTop = {};
 AS_PERM.forEach(function (f) { topLevelSymbols(SRC[f]).forEach(function (n) { permTop[n] = 1; }); });

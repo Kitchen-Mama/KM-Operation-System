@@ -357,9 +357,14 @@ eq(S.declared.filter(function (f) { return /login|role|capability|permission/i.t
 // ----------------------------------------------------------------------------------------------------------
 section('J  the whole TEMP census, so the reported count is asserted rather than claimed');
 // ----------------------------------------------------------------------------------------------------------
-eq(S.toolingByClass, { ONE_TIME_MIGRATION: 4, DIAGNOSTIC: 35, SEED: 1 },
-  'J1  TEMP tooling by class — 4 migrations, 35 diagnostics, 1 seed');
-eq(S.toolingCount, 40, 'J2  40 .gs tools live in the tooling directories');
+// S8-R4D-D1 - 35 -> 36 DIAGNOSTICS. TEMP_S8_R4D_B1_ADVANCED_SHEETS_BENCHMARK.gs was added under
+// apps-script-diagnostics: the read-only paired benchmark for the Sheets batchGet candidate. The
+// census CORRECTLY classified it DIAGNOSTIC and writes:false without being told to, which is this
+// gate doing its job - a new TEMP tool is meant to be noticed, and the count moves only with a
+// written reason. It is PASTE/RUN/REPORT/REMOVE and is not a production runtime owner.
+eq(S.toolingByClass, { ONE_TIME_MIGRATION: 4, DIAGNOSTIC: 36, SEED: 1 },
+  'J1  TEMP tooling by class — 4 migrations, 36 diagnostics, 1 seed');
+eq(S.toolingCount, 41, 'J2  41 .gs tools live in the tooling directories');
 
 // Two TEMP artifacts are in neither place, and both are accounted for rather than ignored.
 var LIVE_PASTE = 'tmp/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3_LIVE_PASTE.gs';
@@ -373,7 +378,7 @@ ok(fs.existsSync(path.join(REPO, SEALED)),
   'J4  and the fc_target_rules migration retired in R2B-A2-R6 survives as a SHA-256-sealed fixture — the '
   + 'precedent this round followed, one round before it was asked for');
 ok(!/\.gs$/.test(SEALED), 'J4a it is a .txt fixture, which is why it is not a deployable artifact');
-eq(S.toolingCount + 2, 42, 'J5  TEMP_ARTIFACT_COUNT = 42, and UNKNOWN_TEMP_CLASSIFICATION_COUNT = 0');
+eq(S.toolingCount + 2, 43, 'J5  TEMP_ARTIFACT_COUNT = 43, and UNKNOWN_TEMP_CLASSIFICATION_COUNT = 0');
 
 // ----------------------------------------------------------------------------------------------------------
 section('I  mutants — every guard above is load-bearing');
