@@ -1,0 +1,759 @@
+{
+ "success": true,
+ "ok": true,
+ "build_id": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+ "deployment_release": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+ "system_health_module_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+ "workspace_module_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+ "contract_version": "1",
+ "transport_contract_version": 1,
+ "router_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41",
+ "router_response_identity": {
+  "emits_handler": true,
+  "emits_received_method": true,
+  "emits_post_body_present": true,
+  "emits_action_present_in_query": true,
+  "emits_router_build": true
+ },
+ "handler": "doGet",
+ "received_method": "GET",
+ "request_order_send_diagnostic_owner": "66_api_v1_request_order_send.gs",
+ "deployed_action_contract_version": 18,
+ "inventory_registry_projection_version": "FB-3.1",
+ "inventory_ai_plan_db_generation_enabled": false,
+ "product_strategy_enabled": true,
+ "config_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11",
+ "required_action_list_version": 14,
+ "required_action_count": 46,
+ "missing_actions_is_self_referential": true,
+ "module_build_stamps": {
+  "deployment_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+  "modules": [
+   {
+    "file": "63_api_v1_system_health.gs",
+    "symbol": "SYS_BUILD_VERSION_",
+    "owns": "this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+    "matches_expected": true
+   },
+   {
+    "file": "73_api_v1_pricing_write.gs",
+    "symbol": "PRW_BUILD_VERSION_",
+    "owns": "the canonical pricing write AND the FX reconciliation: field-level manual ownership (three-state, blank = UNKNOWN), the per-field MANUAL / USE AUTO / NO_CHANGE contract, batch validation with zero writes until every line passes, the pricing_change_log audit writer with typed change_type, the frozen FX storage-precision table, and the auto_* rebuild that refreshes an effective price only where that field explicitly says AUTO",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25",
+    "matches_expected": true
+   },
+   {
+    "file": "58_api_v1_fc_summary_workspace.gs",
+    "symbol": "FCSWS_BUILD_VERSION_",
+    "owns": "the FC Summary READ workspace: the four primary-render tables, the bootstrap/regular/events/rules slices on one action, the server-derived filter facets that keep the page's non-cascading universes intact, one Sheets read per sheet per request, and the scoped pricing projection the Special Event group-card builder reads instead of the whole price list",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "matches_expected": true
+   },
+   {
+    "file": "00_config.gs",
+    "symbol": "CONFIG_BUILD_VERSION_",
+    "owns": "global constants + the feature flags of record (incl. Inventory AI Plan DB generation)",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11",
+    "matches_expected": true
+   },
+   {
+    "file": "61_api_v1_weekly_ai_plan.gs",
+    "symbol": "WAP_BUILD_VERSION_",
+    "owns": "weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5",
+    "matches_expected": true
+   },
+   {
+    "file": "60_api_v1_inventory_replenishment_workspace.gs",
+    "symbol": "SIR_BUILD_VERSION_",
+    "owns": "the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log. R42 adds the SITE SCOPE: an exposure-only request may carry siteScope{company,country,marketplace} and is answered with a lineage reachability closure over the six exposure tables instead of every row of them. A pre-R42 copy ignores the field SILENTLY and returns every site - the same class of fault the recentWindow echo was added for, which is why this row exists rather than a comment. R43 makes ONE range read per table instead of two or three: the header validators now receive row 0 of the full-sheet read the handler already performs, so thirteen tables cost thirteen reads rather than thirty. Nothing in the request or the response moved, which is why a pre-R43 copy is SLOW rather than WRONG - and why this row is the only way an acceptance can tell which deployment it measured",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+    "matches_expected": true
+   },
+   {
+    "file": "70_api_v1_overseas_stock_workspace.gs",
+    "symbol": "OSW_BUILD_VERSION_",
+    "owns": "Overseas Stock scoped read workspace",
+    "optional": false,
+    "expected_build": "F1-7N-FB-4E-R3",
+    "present": true,
+    "declared_build": "F1-7N-FB-4E-R3",
+    "matches_expected": true
+   },
+   {
+    "file": "72_api_v1_product_pricing_workspace.gs",
+    "symbol": "PPW_BUILD_VERSION_",
+    "owns": "the site-scoped Product Pricing workspace read: the marketplace_skus membership universe, the four-part regional join, the marketplace_sku_id pricing join, and the scoped category/series filter options derived from surviving rows",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24",
+    "matches_expected": true
+   },
+   {
+    "file": "66_api_v1_request_order_send.gs",
+    "symbol": "ROS_BUILD_VERSION_",
+    "owns": "Request Order Send orchestration + planning-cycle authority",
+    "optional": false,
+    "expected_build": "F1-7N-FB-4E-R4B-R3",
+    "present": true,
+    "declared_build": "F1-7N-FB-4E-R4B-R3",
+    "matches_expected": true
+   },
+   {
+    "file": "71_api_v1_factory_stock_guard.gs",
+    "symbol": "FSG_BUILD_VERSION_",
+    "owns": "the shared factory stock guard seam: the one pooled availability read, the AI hard-guard entry, the plan overage challenge/confirm gate, the REQUIRED (never lazily created) override audit ledger, and the journalled verified rollback the plan transition unwinds through",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1",
+    "matches_expected": true
+   },
+   {
+    "file": "67_api_v1_allocation_draft_identity.gs",
+    "symbol": "ADI_BUILD_VERSION_",
+    "owns": "allocation-draft identity diagnostic (unchanged since FB-3C)",
+    "optional": false,
+    "expected_build": "F1-7N-FB-3C",
+    "present": true,
+    "declared_build": "F1-7N-FB-3C",
+    "matches_expected": true
+   },
+   {
+    "file": "68_api_v1_execution_plan_conflict_diagnostic.gs",
+    "symbol": "EPC_BUILD_VERSION_",
+    "owns": "Execution Plan identity conflict diagnostic + routed read-only duplicate-line diagnostic",
+    "optional": false,
+    "expected_build": "F1-7N-FB-4E-R2",
+    "present": true,
+    "declared_build": "F1-7N-FB-4E-R2",
+    "matches_expected": true
+   },
+   {
+    "file": "16_shipping_allocation_handlers.gs",
+    "symbol": "SAD_BUILD_VERSION_",
+    "owns": "Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2",
+    "matches_expected": true
+   },
+   {
+    "file": "69_api_v1_route_identity_contract.gs",
+    "symbol": "RIC_BUILD_VERSION_",
+    "owns": "frozen route identity contract (canonical service, destination XOR, K4 key, typed schema refusals)",
+    "optional": false,
+    "expected_build": "F1-7N-FB-4F-B3",
+    "present": true,
+    "declared_build": "F1-7N-FB-4F-B3",
+    "matches_expected": true
+   },
+   {
+    "file": "11_shipping_plan_handlers.gs",
+    "symbol": "SP_BUILD_VERSION_",
+    "owns": "canonical shipping_plans / shipping_plan_lines Submit owner + the typed approval-recovery answer + the shared factory stock overage gate on submit/approve, the approval recheck, and the one journalled transaction the status cells / note / override audit are committed and rolled back as",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34",
+    "matches_expected": true
+   },
+   {
+    "file": "21_factory_inventory_handlers.gs",
+    "symbol": "FSTX_BUILD_VERSION_",
+    "owns": "THE single factory_stock mutation authority + the canonical seven-type movement vocabulary + reserved-balance reconciliation",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35",
+    "matches_expected": true
+   },
+   {
+    "file": "05_overseas_inventory_handlers.gs",
+    "symbol": "OVERSEAS_BUILD_VERSION_",
+    "owns": "the overseas inventory snapshot import (GROSS semantic: stored available = source available - the reservation this system holds, the row refused IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are already committed, and wh_reserved_stock never written by an import), the inventory adjustment handler, and the OVERSEAS RESERVATION LIFECYCLE — acquire / release / dispatch-consume over wh_available_stock and wh_reserved_stock, with ovsAllocatableTx_ as the single place the allocatable rule is written",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35",
+    "matches_expected": true
+   },
+   {
+    "file": "12_shipment_handlers.gs",
+    "symbol": "SHIPMENT_BUILD_VERSION_",
+    "owns": "Shipment Draft creation + reservation acquire, pre-dispatch cancellation + reservation release, and the updateShipment status allowlist. R33 adds SOURCE DOMAIN ROUTING: the sufficiency precheck, the acquire, the cancellation release and the source-warehouse change each ask whether the source warehouse is FACTORY or OVERSEAS and forward to that domain lifecycle — composed, never merged, because factory availability is derived (current - reserved) and overseas availability is stored. A cross-domain source change is REFUSED rather than guessed",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34",
+    "matches_expected": true
+   },
+   {
+    "file": "13_procurement_handlers.gs",
+    "symbol": "PROC_BUILD_VERSION_",
+    "owns": "PO receipt factory-stock handoff + the typed PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal (no silent clamp) + the procurement forecast’s per-month Target Rule delegation to the shared KMPD resolver (no local matcher)",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12",
+    "matches_expected": true
+   },
+   {
+    "file": "04_marketplace_forecast_import.gs",
+    "symbol": "FCREG_BUILD_VERSION_",
+    "owns": "the Regular Forecast batch writer: validate-all-before-first-mutation, the script lock over the authoritative read and the writes, column-bounded range writes and the one append block — AND the canonical pricing_list creation contract: base_currency read from sku_details, rate 1 only where the currencies are identical, fail-closed PENDING_FX across a currency boundary, and the ownership flags written FALSE at creation so the first reconciliation can finish the row",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24",
+    "matches_expected": true
+   },
+   {
+    "file": "14_fc_write_handlers.gs",
+    "symbol": "FCW_BUILD_VERSION_",
+    "owns": "the FC Summary write path: fc_special_events upsert/delete with its expected_row_version gate, its one-event-per-SKU-flag-year uniqueness refusal and unchanged short-circuit + the fc_target_rules upsert on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, and the saved-row receipt",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "matches_expected": true
+   },
+   {
+    "file": "20_campaign_write_handlers.gs",
+    "symbol": "CAMPAIGN_BUILD_VERSION_",
+    "owns": "the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock held around the WRITE only (resolve and classify run unlocked, and every zero-write outcome answers without taking it), the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate applied ONLY to a real header mutation, the resolve-and-reuse branch for an identical header, and the per-line unchanged short-circuit",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "matches_expected": true
+   },
+   {
+    "file": "90_generated_supply_planning_bundle.gs",
+    "symbol": "KM_BUNDLE_CONTENT_HASH_",
+    "owns": "the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp",
+    "optional": false,
+    "expected_build": "46ae3945061fefe45748f5fc7e8adf7624e20057da44b9ba9746be5a6eea5695",
+    "present": true,
+    "declared_build": "46ae3945061fefe45748f5fc7e8adf7624e20057da44b9ba9746be5a6eea5695",
+    "matches_expected": true
+   },
+   {
+    "file": "22_shipment_dispatch_handlers.gs",
+    "symbol": "CSD_BUILD_VERSION_",
+    "owns": "Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment's DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read — it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37",
+    "matches_expected": true
+   },
+   {
+    "file": "01_router.gs",
+    "symbol": "RTR_BUILD_VERSION_",
+    "owns": "doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41",
+    "matches_expected": true
+   },
+   {
+    "file": "47_api_v1_recommendation_generation.gs",
+    "symbol": "RECGEN_BUILD_VERSION_",
+    "owns": "recommendation generation + the bounded multi-scope order-draft readback",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29",
+    "matches_expected": true
+   },
+   {
+    "file": "56_api_v1_ai_plan_first_layer.gs",
+    "symbol": "APL_BUILD_VERSION_",
+    "owns": "Order Planning AI Plan first layer + the KMFSA factory site-allocation share",
+    "optional": false,
+    "expected_build": "F1-7N-FB-4E-R4B-R1",
+    "present": true,
+    "declared_build": "F1-7N-FB-4E-R4B-R1",
+    "matches_expected": true
+   },
+   {
+    "file": "59_api_v1_sku_details_workspace.gs",
+    "symbol": "SKD_BUILD_VERSION_",
+    "owns": "SKU Details / SKU Regional scoped read workspace, incl. the include.pricing site-price table",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21",
+    "matches_expected": true
+   },
+   {
+    "file": "66_api_v1_request_order_send.gs",
+    "symbol": "ROSEND_DIAG_BUILD_VERSION_",
+    "owns": "Request Order Send diagnostic status action + its configuration (single owner)",
+    "optional": false,
+    "expected_build": "F1-7N-FB-4G-A2-R4",
+    "present": true,
+    "declared_build": "F1-7N-FB-4G-A2-R4",
+    "matches_expected": true
+   },
+   {
+    "file": "69_api_v1_ai_plan_lifecycle.gs",
+    "symbol": "AIPL_BUILD_VERSION_",
+    "owns": "Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)",
+    "optional": false,
+    "expected_build": "F1-7N-FC-1B-E3-R4-A2-R1-R1",
+    "present": true,
+    "declared_build": "F1-7N-FC-1B-E3-R4-A2-R1-R1",
+    "matches_expected": true
+   },
+   {
+    "file": "TEMP_migrate_shipping_allocation_ai_lifecycle.gs",
+    "symbol": "TEMP_AIMIG_BUILD_VERSION_",
+    "owns": "AI Plan lifecycle schema migration (append-only columns + source-proven lineage backfill)",
+    "optional": true,
+    "expected_build": "F1-7N-FB-4C-ADDENDUM-MIGRATION",
+    "present": false,
+    "declared_build": null,
+    "matches_expected": false
+   }
+  ],
+  "runtime_authority": {
+   "checked": true,
+   "checks": [
+    {
+     "column_count": 30,
+     "writer_version": "SAD-HEADERS-30-BASE",
+     "writer_lifecycle_complete": false,
+     "lifecycle_version": null,
+     "expected_lifecycle_version": null,
+     "agree": true,
+     "error": null
+    },
+    {
+     "column_count": 34,
+     "writer_version": "FB4C-AI-LIFECYCLE-1",
+     "writer_lifecycle_complete": true,
+     "lifecycle_version": "FB4C-AI-LIFECYCLE-1",
+     "expected_lifecycle_version": "FB4C-AI-LIFECYCLE-1",
+     "agree": true,
+     "error": null
+    },
+    {
+     "column_count": 35,
+     "writer_version": "FB4F-B4-ROUTE-IDENTITY-1",
+     "writer_lifecycle_complete": true,
+     "lifecycle_version": "FB4F-B4-ROUTE-IDENTITY-1",
+     "expected_lifecycle_version": "FB4F-B4-ROUTE-IDENTITY-1",
+     "agree": true,
+     "error": null
+    },
+    {
+     "column_count": 36,
+     "writer_version": "FB4G-A2R3-CREATE-IDEMPOTENCY-1",
+     "writer_lifecycle_complete": true,
+     "lifecycle_version": "FB4G-A2R3-CREATE-IDEMPOTENCY-1",
+     "expected_lifecycle_version": "FB4G-A2R3-CREATE-IDEMPOTENCY-1",
+     "agree": true,
+     "error": null
+    }
+   ],
+   "divergent": [],
+   "missing_authority": [],
+   "uniform": true,
+   "contract": "where both authorities are present they must resolve the SAME version from the SAME header, at every known generation",
+   "verdict": "UNIFORM — the writer and the lifecycle resolve identically at every known schema generation"
+  },
+  "absent_modules": [],
+  "absent_optional_modules": [
+   "TEMP_migrate_shipping_allocation_ai_lifecycle.gs"
+  ],
+  "stale_modules": [],
+  "mixed_deployment": false,
+  "verdict": "UNIFORM — every probed owner file declares the build its manifest entry expects, AND the writer and lifecycle resolve identically at every known schema generation"
+ },
+ "mixed_deployment": false,
+ "deployment_uniformity_verdict": "UNIFORM — every probed owner file declares the build its manifest entry expects, AND the writer and lifecycle resolve identically at every known schema generation",
+ "caller_probe": null,
+ "api_contract_version": "1",
+ "build_version": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+ "environment_mode": "production",
+ "router_ready": true,
+ "entrypoints": {
+  "doGet": true,
+  "doPost": true
+ },
+ "required_actions": [
+  {
+   "action": "weeklyShipping.workspace.get",
+   "available": true,
+   "used_by": "Weekly Shipping Plan"
+  },
+  {
+   "action": "shipment.workspace.get",
+   "available": true,
+   "used_by": "Shipment Draft / Overview / Map"
+  },
+  {
+   "action": "purchaseOrder.workspace.get",
+   "available": true,
+   "used_by": "Purchase Order Workspace"
+  },
+  {
+   "action": "inventoryReplenishment.workspace.get",
+   "available": true,
+   "used_by": "Site Inventory"
+  },
+  {
+   "action": "inventoryScope.registry.get",
+   "available": true,
+   "used_by": "Site Inventory scope selectors"
+  },
+  {
+   "action": "system.shippingAllocationSchemaDiagnostic",
+   "available": true,
+   "used_by": "Execution Plan schema diagnostic"
+  },
+  {
+   "action": "system.requestOrderSendDiagnostic",
+   "available": true,
+   "used_by": "Send Request diagnostic"
+  },
+  {
+   "action": "system.twoVerticalFlowsDiagnostic",
+   "available": true,
+   "used_by": "Two-vertical flow diagnostic"
+  },
+  {
+   "action": "system.requestOrderSendReconcile",
+   "available": true,
+   "used_by": "Interrupted Send Request reconciliation"
+  },
+  {
+   "action": "requestOrder.send.orchestrate",
+   "available": true,
+   "used_by": "Send Request (server orchestration)"
+  },
+  {
+   "action": "requestOrder.sendWorkset.get",
+   "available": true,
+   "used_by": "Send Request (slim workset / confirmation counts)"
+  },
+  {
+   "action": "requestOrder.send.status",
+   "available": true,
+   "used_by": "Send Request (reload resume / progress)"
+  },
+  {
+   "action": "requestOrder.allocationDraft.ensureAndEdit",
+   "available": true,
+   "used_by": "Order Allocation quantity edit (canonical draft create/update)"
+  },
+  {
+   "action": "system.allocationDraftIdentityDiagnostic",
+   "available": true,
+   "used_by": "Allocation-draft identity reconciliation (read-only)"
+  },
+  {
+   "action": "upsertRequestOrderAllocationDraft",
+   "available": true,
+   "used_by": "Send Request (allocation draft)"
+  },
+  {
+   "action": "upsertRequestOrderAllocationDraftLines",
+   "available": true,
+   "used_by": "Send Request (allocation lines)"
+  },
+  {
+   "action": "submitRequestOrderAllocationDrafts",
+   "available": true,
+   "used_by": "Send Request (lifecycle advance)"
+  },
+  {
+   "action": "createRequestOrderDraft",
+   "available": true,
+   "used_by": "Send Request (Request Order)"
+  },
+  {
+   "action": "createPurchaseOrderFromRequest",
+   "available": true,
+   "used_by": "Request Order -> PO Draft"
+  },
+  {
+   "action": "requestOrder.workspace.get",
+   "available": true,
+   "used_by": "Request Order Workspace"
+  },
+  {
+   "action": "upsertShippingAllocationDraft",
+   "available": true,
+   "used_by": "Execution Plan route save (header)"
+  },
+  {
+   "action": "system.executionPlanConflictDiagnostic",
+   "available": true,
+   "used_by": "F1-7N-FB-4A §C read-only Execution Plan identity conflict diagnostic"
+  },
+  {
+   "action": "system.requestOrderSendDiagnosticStatus",
+   "available": true,
+   "used_by": "F1-7N-FB-4A addendum §G read-only Request Order Send diagnostic ownership + cycle resolution"
+  },
+  {
+   "action": "upsertShippingAllocationDraftLines",
+   "available": true,
+   "used_by": "Execution Plan route save (lines)"
+  },
+  {
+   "action": "upsertShippingAllocationDraftAtomic",
+   "available": true,
+   "used_by": "Execution Plan route CREATE/UPDATE (atomic header + line)"
+  },
+  {
+   "action": "getShippingAllocationDraftWorkspace",
+   "available": true,
+   "used_by": "Execution Plan persisted readback"
+  },
+  {
+   "action": "cancelShippingAllocationDraft",
+   "available": true,
+   "used_by": "Execution Plan draft cancel"
+  },
+  {
+   "action": "system.shippingAllocationDraftDiagnostic",
+   "available": true,
+   "used_by": "Execution Plan save diagnostic"
+  },
+  {
+   "action": "submitAllocationDraftsToShippingPlans",
+   "available": true,
+   "used_by": "Site Inventory Submit Plan"
+  },
+  {
+   "action": "factoryStockGuard.get",
+   "available": true,
+   "used_by": "Weekly Shipping Plan factory-availability indicator + operator guard preflight (read only)"
+  },
+  {
+   "action": "confirmShipmentAndDispatch",
+   "available": true,
+   "used_by": "Confirm Shipment"
+  },
+  {
+   "action": "createShipmentFromPlan",
+   "available": true,
+   "used_by": "Weekly Shipping Plan -- Retry Shipment Draft (approval recovery)"
+  },
+  {
+   "action": "cancelShipmentDraft",
+   "available": true,
+   "used_by": "Shipment Draft -- Cancel Shipment Draft (releases the factory stock reservation)"
+  },
+  {
+   "action": "updatePurchaseOrderStatus",
+   "available": true,
+   "used_by": "Send PO"
+  },
+  {
+   "action": "document.list",
+   "available": true,
+   "used_by": "Document Panels"
+  },
+  {
+   "action": "document.retry",
+   "available": true,
+   "used_by": "Document retry"
+  },
+  {
+   "action": "document.diagnostic.purchaseOrder",
+   "available": true,
+   "used_by": "PO diagnostic"
+  },
+  {
+   "action": "document.diagnostic.shipment",
+   "available": true,
+   "used_by": "Shipment diagnostic"
+  },
+  {
+   "action": "finalizeShipmentFinalOutput",
+   "available": true,
+   "used_by": "Shipment snapshot"
+  },
+  {
+   "action": "shipment.eta.update",
+   "available": true,
+   "used_by": "Shipment Map ETA edit (bounded eta-only writer; owner = 31_)"
+  },
+  {
+   "action": "shipment.route.advance",
+   "available": true,
+   "used_by": "Shipment Map route-point advance (owner = 31_)"
+  },
+  {
+   "action": "skuDetails.workspace.get",
+   "available": true,
+   "used_by": "SKU Details / SKU Regional Details scoped read (owner = 59_)"
+  },
+  {
+   "action": "system.executionPlanDuplicateLineDiagnostic",
+   "available": true,
+   "used_by": "F1-7N-FB-4E-R2 §3 read-only Execution Plan duplicate-line diagnostic (owner = 68_)"
+  },
+  {
+   "action": "overseasStock.workspace.get",
+   "available": true,
+   "used_by": "Overseas Inventory scoped read (owner = 70_)"
+  },
+  {
+   "action": "pricing.update",
+   "available": true,
+   "used_by": "SKU Regional Details — per-field price editor + price template import (owner = 73_)"
+  },
+  {
+   "action": "pricing.write.status",
+   "available": true,
+   "used_by": "SKU Regional Details — read-only commit-receipt lookup after a lost write response (owner = 73_)"
+  }
+ ],
+ "missing_actions": [],
+ "db_reachable": true,
+ "schema_ready": true,
+ "schema": {
+  "missing_table_count": 0,
+  "tables": [
+   {
+    "table": "shipping_allocation_drafts",
+    "present": true,
+    "header_count": 36,
+    "row_count": 12
+   },
+   {
+    "table": "shipping_allocation_draft_lines",
+    "present": true,
+    "header_count": 31,
+    "row_count": 14
+   },
+   {
+    "table": "shipping_plans",
+    "present": true,
+    "header_count": 49,
+    "row_count": 6
+   },
+   {
+    "table": "shipping_plan_lines",
+    "present": true,
+    "header_count": 23,
+    "row_count": 12
+   },
+   {
+    "table": "shipments",
+    "present": true,
+    "header_count": 59,
+    "row_count": 4
+   },
+   {
+    "table": "shipment_lines",
+    "present": true,
+    "header_count": 23,
+    "row_count": 10
+   },
+   {
+    "table": "shipment_line_allocations",
+    "present": true,
+    "header_count": 14,
+    "row_count": 0
+   },
+   {
+    "table": "shipment_routes",
+    "present": true,
+    "header_count": 24,
+    "row_count": 46
+   },
+   {
+    "table": "shipment_events",
+    "present": true,
+    "header_count": 20,
+    "row_count": 7
+   },
+   {
+    "table": "shipment_final_output_snapshots",
+    "present": true,
+    "header_count": 61,
+    "row_count": 0
+   },
+   {
+    "table": "shipment_final_output_lines",
+    "present": true,
+    "header_count": 27,
+    "row_count": 0
+   },
+   {
+    "table": "shipment_final_output_line_pos",
+    "present": true,
+    "header_count": 10,
+    "row_count": 0
+   },
+   {
+    "table": "generated_documents",
+    "present": true,
+    "header_count": 30,
+    "row_count": 0
+   },
+   {
+    "table": "document_templates",
+    "present": true,
+    "header_count": 30,
+    "row_count": 32
+   },
+   {
+    "table": "document_template_fields",
+    "present": true,
+    "header_count": 24,
+    "row_count": 574
+   },
+   {
+    "table": "warehouses",
+    "present": true,
+    "header_count": 28,
+    "row_count": 361
+   },
+   {
+    "table": "logistics_locations",
+    "present": true,
+    "header_count": 45,
+    "row_count": 398
+   }
+  ]
+ },
+ "server_timestamp": "2026-10-05 14:08:53",
+ "server_ms": 7788,
+ "request_id": "R-R4DC2H1-1791180519426",
+ "read_only": true,
+ "db_writes": 0,
+ "drive_writes": 0,
+ "status_transitions": 0,
+ "emails": 0,
+ "demo_mutations": 0
+}

@@ -4393,8 +4393,11 @@ SCOPE   READ-PATH COST ONLY. 60_'s own io.readTable stops fetching each table's 
 RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43
 PURPOSE                      Site Inventory first-layer service-call reduction (B3)
 SUPERSEDES                   nothing. R42 is CUT and DEPLOYED and remains valid; R43 follows it.
-STATUS                       PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries it,
-                             no Web App version exists, and Production is NOT R43.
+STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carried it,
+                             no Web App version existed, and Production was NOT R43.
+                             (Superseded by the STATUS line at the foot of this entry, which records
+                             the operator deployment and the live probe that confirmed it. This line
+                             is kept as what was true AT THE CUT, not rewritten to match today.)
 
 PRODUCTION TODAY             R42, verified live by system.health during the S8-R4C acceptance
                              (deployment_build = R42, mixed_deployment = false). The R42 entry above
@@ -4452,9 +4455,10 @@ DB_DELETES                       0
 DB_READS                         13 - the unchanged first-layer set
 FRONTEND_DEPLOY_REQUIRED         NO - no browser-served byte changed
 CACHE_TOKEN_ROTATION_REQUIRED    NO - no frontend file changed
-APPS_SCRIPT_DEPLOYMENT_PERFORMED NO
+APPS_SCRIPT_DEPLOYMENT_PERFORMED YES - S8-R4D-C2, operator-owned: 60_ and 63_ saved, NEW VERSION
+                                 on the EXISTING Production Web App
 FRONTEND_PUBLICATION_PERFORMED   NO
 GIT_PUSH_REQUIRED                YES - USER-owned, after review
 ```
 
-**STATUS: NOT DEPLOYED · NOT SYNCED.**
+**STATUS: DEPLOYED AND ACCEPTED.** Live `system.health` reports build_id = deployment_release = R43, workspace_module = R43, system_health = R43, router = R41, mixed_deployment = false. Accepted by S8-R4D-C2: median server time 17,529 ms against an R42 combined median of 20,944 ms (-16.3%, exact Mann-Whitney p = 0.0101), PRODUCTION_SEMANTIC_DIFF_COUNT = 0. Frontend unchanged, so no publication and no token rotation. `main` remains at f6b4164.

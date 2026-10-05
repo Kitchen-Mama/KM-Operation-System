@@ -1,0 +1,224 @@
+[
+ {
+  "sampleId": 1,
+  "ok": true,
+  "httpStatus": 200,
+  "wallMs": 48736,
+  "bytes": 6172496,
+  "serverMs": 40860,
+  "openMs": 755,
+  "tablesRead": 13,
+  "rowsReturned": 7031,
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "requestId": "R-R42-1-1791178756488",
+  "execHops": 2,
+  "finalUrl": "https://script.googleusercontent.com/macros/echo?user_conten",
+  "slowestTables": [
+   {
+    "table": "overseas_inventory_snapshot",
+    "ms": 15107,
+    "rows": 260
+   },
+   {
+    "table": "amazon_daily_sales_snapshot",
+    "ms": 4828,
+    "rows": 3817
+   },
+   {
+    "table": "marketplace_skus",
+    "ms": 3523,
+    "rows": 495
+   },
+   {
+    "table": "factory_stock",
+    "ms": 2678,
+    "rows": 112
+   },
+   {
+    "table": "sku_details",
+    "ms": 2672,
+    "rows": 192
+   }
+  ],
+  "recentWindow": {
+   "amazon_daily_sales_snapshot": {
+    "before": 9777,
+    "after": 3817,
+    "dropped": 5960,
+    "keep": 14
+   },
+   "amazon_weekly_sales_snapshot": {
+    "before": 247,
+    "after": 247,
+    "dropped": 0,
+    "keep": 4
+   }
+  },
+  "rowsByTable": {
+   "marketplaces": 15,
+   "marketplace_skus": 495,
+   "sku_details": 192,
+   "warehouses": 361,
+   "amazon_inventory_snapshot": 259,
+   "amazon_inventory_health_snapshot": 346,
+   "amazon_daily_sales_snapshot": 3817,
+   "amazon_weekly_sales_snapshot": 247,
+   "fc_regular_forecast": 496,
+   "fc_target_rules": 0,
+   "fc_special_events": 431,
+   "overseas_inventory_snapshot": 260,
+   "factory_stock": 112
+  },
+  "dailyFieldCount": 36,
+  "bounceContaminated": false,
+  "visibleFailure": null
+ },
+ {
+  "sampleId": 2,
+  "ok": true,
+  "httpStatus": 200,
+  "wallMs": 23910,
+  "bytes": 6172486,
+  "serverMs": 19035,
+  "openMs": 415,
+  "tablesRead": 13,
+  "rowsReturned": 7031,
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "requestId": "R-R42-2-1791178855258",
+  "execHops": 2,
+  "finalUrl": "https://script.googleusercontent.com/macros/echo?user_conten",
+  "slowestTables": [
+   {
+    "table": "amazon_daily_sales_snapshot",
+    "ms": 3586,
+    "rows": 3817
+   },
+   {
+    "table": "factory_stock",
+    "ms": 1795,
+    "rows": 112
+   },
+   {
+    "table": "amazon_inventory_snapshot",
+    "ms": 1683,
+    "rows": 259
+   },
+   {
+    "table": "warehouses",
+    "ms": 1415,
+    "rows": 361
+   },
+   {
+    "table": "sku_details",
+    "ms": 1290,
+    "rows": 192
+   }
+  ],
+  "recentWindow": {
+   "amazon_daily_sales_snapshot": {
+    "before": 9777,
+    "after": 3817,
+    "dropped": 5960,
+    "keep": 14
+   },
+   "amazon_weekly_sales_snapshot": {
+    "before": 247,
+    "after": 247,
+    "dropped": 0,
+    "keep": 4
+   }
+  },
+  "rowsByTable": {
+   "marketplaces": 15,
+   "marketplace_skus": 495,
+   "sku_details": 192,
+   "warehouses": 361,
+   "amazon_inventory_snapshot": 259,
+   "amazon_inventory_health_snapshot": 346,
+   "amazon_daily_sales_snapshot": 3817,
+   "amazon_weekly_sales_snapshot": 247,
+   "fc_regular_forecast": 496,
+   "fc_target_rules": 0,
+   "fc_special_events": 431,
+   "overseas_inventory_snapshot": 260,
+   "factory_stock": 112
+  },
+  "dailyFieldCount": 36,
+  "bounceContaminated": false,
+  "visibleFailure": null
+ },
+ {
+  "sampleId": 3,
+  "ok": true,
+  "httpStatus": 200,
+  "wallMs": 31226,
+  "bytes": 6172491,
+  "serverMs": 24216,
+  "openMs": 933,
+  "tablesRead": 13,
+  "rowsReturned": 7031,
+  "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42",
+  "requestId": "R-R42-3-1791178929193",
+  "execHops": 2,
+  "finalUrl": "https://script.googleusercontent.com/macros/echo?user_conten",
+  "slowestTables": [
+   {
+    "table": "amazon_daily_sales_snapshot",
+    "ms": 4930,
+    "rows": 3817
+   },
+   {
+    "table": "sku_details",
+    "ms": 2130,
+    "rows": 192
+   },
+   {
+    "table": "warehouses",
+    "ms": 1914,
+    "rows": 361
+   },
+   {
+    "table": "fc_special_events",
+    "ms": 1821,
+    "rows": 431
+   },
+   {
+    "table": "amazon_inventory_snapshot",
+    "ms": 1815,
+    "rows": 259
+   }
+  ],
+  "recentWindow": {
+   "amazon_daily_sales_snapshot": {
+    "before": 9777,
+    "after": 3817,
+    "dropped": 5960,
+    "keep": 14
+   },
+   "amazon_weekly_sales_snapshot": {
+    "before": 247,
+    "after": 247,
+    "dropped": 0,
+    "keep": 4
+   }
+  },
+  "rowsByTable": {
+   "marketplaces": 15,
+   "marketplace_skus": 495,
+   "sku_details": 192,
+   "warehouses": 361,
+   "amazon_inventory_snapshot": 259,
+   "amazon_inventory_health_snapshot": 346,
+   "amazon_daily_sales_snapshot": 3817,
+   "amazon_weekly_sales_snapshot": 247,
+   "fc_regular_forecast": 496,
+   "fc_target_rules": 0,
+   "fc_special_events": 431,
+   "overseas_inventory_snapshot": 260,
+   "factory_stock": 112
+  },
+  "dailyFieldCount": 36,
+  "bounceContaminated": false,
+  "visibleFailure": null
+ }
+]

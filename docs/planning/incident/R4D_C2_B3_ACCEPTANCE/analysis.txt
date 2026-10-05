@@ -1,0 +1,61 @@
+=== SERVER MS ===
+R42 today              n=3  min=19035  median=24216  mean=28037  max=40860
+R42 R4C (2026-10-05)   n=4  min=18328  median=20550  mean=20499  max=22569
+R42 combined           n=7  min=18328  median=20944  mean=23730  max=40860
+R43 today              n=5  min=13606  median=17529  mean=16680  max=19267
+
+R42 today  samples [19035,24216,40860]
+R42 R4C    samples [18328,20156,20944,22569]
+R43        samples [13606,15305,17529,17694,19267]
+
+=== EXACT MANN-WHITNEY (two-tailed) ===
+R43 vs R42(R4C)      U=1  p=0.0317  (n=5 vs 4)
+R43 vs R42(today)    U=1  p=0.0714  (n=5 vs 3)
+R43 vs R42(combined) U=2  p=0.0101  (n=5 vs 7)
+
+=== DELTAS ===
+vs R42 R4C             mean -3819 ms (-18.6%)   median -3021 ms (-14.7%)
+vs R42 today           mean -11357 ms (-40.5%)   median -6687 ms (-27.6%)
+vs R42 combined        mean -7050 ms (-29.7%)   median -3415 ms (-16.3%)
+
+R43 max (19267) vs R42 combined median (20944): R43's WORST clean sample is 1677 ms BELOW the R42 median
+overlap: R43 samples at or above R42 combined min (18328): 1 of 5
+
+=== WALL MS ===
+R42 today wall         n=3  min=23910  median=31226  mean=34624  max=48736
+R43 wall               n=5  min=21534  median=23498  mean=23012  max=24524
+
+=== §12/§13 OUTPUT EQUALITY ===
+tables                 R42 13   R43 13
+rowsReturned           R42 7031   R43 7031
+per-table row diffs    none
+daily field count      R42 36   R43 36
+recentWindow daily     R42 {"before":9777,"after":3817,"dropped":5960,"keep":14}
+                       R43 {"before":9777,"after":3817,"dropped":5960,"keep":14}
+payload bytes          R42 6172496/6172486/6172491   R43 6172481/6172486/6172510/6172497/6172481
+PRODUCTION_SEMANTIC_DIFF_COUNT = 0
+
+=== PER-TABLE (the mechanism) ===
+R42 (top-5 per sample)
+  amazon_daily_sales_snapshot         4828, 3586, 4930
+  amazon_inventory_snapshot           1683, 1815
+  factory_stock                       2678, 1795
+  fc_special_events                   1821
+  marketplace_skus                    3523
+  overseas_inventory_snapshot         15107
+  sku_details                         2672, 1290, 2130
+  warehouses                          1415, 1914
+R43 (top-5 per sample)
+  amazon_daily_sales_snapshot         3956, 3615, 3101, 3717, 3615
+  amazon_weekly_sales_snapshot        1270
+  factory_stock                       1327, 823
+  fc_regular_forecast                 924, 1201, 1272
+  fc_special_events                   2814, 1243
+  fc_target_rules                     1038
+  marketplace_skus                    870, 1687, 846
+  marketplaces                        1174, 3445
+  overseas_inventory_snapshot         1564, 1572
+  sku_details                         1328
+  warehouses                          1750, 3266, 790
+
+openMs   R42 755/415/933   R43 218/380/218/329/199
