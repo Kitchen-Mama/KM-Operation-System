@@ -1,0 +1,2356 @@
+{
+ "ok": true,
+ "serverBuild": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43",
+ "tables": {
+  "marketplaces": {
+   "rows": 15,
+   "columns": 15,
+   "byType": {
+    "string": [
+     "marketplace_id",
+     "company",
+     "country",
+     "marketplace",
+     "marketplace_display_name",
+     "marketplace_alias",
+     "currency",
+     "fulfillment_model",
+     "status",
+     "created_by",
+     "updated_by"
+    ],
+    "number": [
+     "allocation_priority"
+    ],
+    "ISO_DATE": [
+     "created_at",
+     "updated_at"
+    ],
+    "ALL_BLANK": [
+     "note"
+    ]
+   },
+   "cols": {
+    "marketplace_id": {
+     "types": {
+      "string": 15
+     },
+     "sample": "MKT-RESUS-US-AMAZON"
+    },
+    "company": {
+     "types": {
+      "string": 15
+     },
+     "sample": "ResUS"
+    },
+    "country": {
+     "types": {
+      "string": 15
+     },
+     "sample": "US"
+    },
+    "marketplace": {
+     "types": {
+      "string": 15
+     },
+     "sample": "Amazon"
+    },
+    "marketplace_display_name": {
+     "types": {
+      "string": 15
+     },
+     "sample": "Amazon"
+    },
+    "marketplace_alias": {
+     "types": {
+      "string": 15
+     },
+     "sample": "Amazon"
+    },
+    "currency": {
+     "types": {
+      "string": 15
+     },
+     "sample": "USD"
+    },
+    "fulfillment_model": {
+     "types": {
+      "string": 15
+     },
+     "sample": "platform_fulfilled"
+    },
+    "allocation_priority": {
+     "types": {
+      "number": 15
+     },
+     "sample": 100
+    },
+    "status": {
+     "types": {
+      "string": 15
+     },
+     "sample": "active"
+    },
+    "created_by": {
+     "types": {
+      "string": 15
+     },
+     "sample": "vic.zhou@shopkitchenmama.com"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 15
+     },
+     "sample": "2026-06-08T16:00:00.000Z"
+    },
+    "updated_by": {
+     "types": {
+      "string": 15
+     },
+     "sample": "vic.zhou@shopkitchenmama.com"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 15
+     },
+     "sample": "2026-06-08T16:00:00.000Z"
+    },
+    "note": {
+     "types": {
+      "blank": 15
+     }
+    }
+   }
+  },
+  "marketplace_skus": {
+   "rows": 495,
+   "columns": 15,
+   "byType": {
+    "string": [
+     "marketplace_sku_id",
+     "marketplace_id",
+     "sku",
+     "company",
+     "country",
+     "marketplace",
+     "site_sku",
+     "marketplace_product_id",
+     "currency",
+     "marketplace_sku_status",
+     "replenishment_model",
+     "fulfillment_model"
+    ],
+    "ISO_DATE": [
+     "launch_date",
+     "created_at",
+     "updated_at"
+    ]
+   },
+   "cols": {
+    "marketplace_sku_id": {
+     "types": {
+      "string": 495
+     },
+     "sample": "MPSKU-US-AMA-CO1100-R-de08c9"
+    },
+    "marketplace_id": {
+     "types": {
+      "string": 495
+     },
+     "sample": "MKT-RESUS-US-AMAZON"
+    },
+    "sku": {
+     "types": {
+      "string": 495
+     },
+     "sample": "CO1100-R"
+    },
+    "company": {
+     "types": {
+      "string": 495
+     },
+     "sample": "ResUS"
+    },
+    "country": {
+     "types": {
+      "string": 495
+     },
+     "sample": "US"
+    },
+    "marketplace": {
+     "types": {
+      "string": 495
+     },
+     "sample": "Amazon"
+    },
+    "site_sku": {
+     "types": {
+      "string": 495
+     },
+     "sample": "CO1100-R"
+    },
+    "marketplace_product_id": {
+     "types": {
+      "string": 293,
+      "blank": 202
+     },
+     "sample": "B07FVQLBL3"
+    },
+    "currency": {
+     "types": {
+      "string": 495
+     },
+     "sample": "USD"
+    },
+    "marketplace_sku_status": {
+     "types": {
+      "string": 495
+     },
+     "sample": "Active"
+    },
+    "replenishment_model": {
+     "types": {
+      "string": 495
+     },
+     "sample": "sales_driven"
+    },
+    "fulfillment_model": {
+     "types": {
+      "string": 495
+     },
+     "sample": "platform_fulfilled"
+    },
+    "launch_date": {
+     "types": {
+      "ISO_DATE": 495
+     },
+     "sample": "2019-08-05T16:00:00.000Z"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 495
+     },
+     "sample": "2026-06-08T16:00:00.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 495
+     },
+     "sample": "2026-06-08T16:00:00.000Z"
+    }
+   }
+  },
+  "sku_details": {
+   "rows": 192,
+   "columns": 42,
+   "byType": {
+    "number+string": [
+     "sku"
+    ],
+    "string": [
+     "product_name",
+     "product_name_cn",
+     "category",
+     "series",
+     "lifecycle",
+     "image_url",
+     "gs1_type",
+     "item_dimension_unit",
+     "item_weight_unit",
+     "package_dimension_unit",
+     "package_weight_unit",
+     "carton_dimension_unit",
+     "carton_weight_unit",
+     "product_use",
+     "material",
+     "battery_type",
+     "base_currency",
+     "pm"
+    ],
+    "number": [
+     "gs1_code",
+     "item_length",
+     "item_width",
+     "item_height",
+     "item_length_2",
+     "item_width_2",
+     "item_height_2",
+     "item_weight",
+     "package_length",
+     "package_width",
+     "package_height",
+     "package_weight",
+     "carton_length",
+     "carton_width",
+     "carton_height",
+     "carton_weight",
+     "units_per_carton",
+     "minimum_price",
+     "msrp",
+     "selling_price"
+    ],
+    "boolean": [
+     "magnet_type"
+    ],
+    "ISO_DATE": [
+     "created_at",
+     "updated_at"
+    ]
+   },
+   "cols": {
+    "sku": {
+     "types": {
+      "string": 188,
+      "number": 4
+     },
+     "sample": "CO2600-B"
+    },
+    "product_name": {
+     "types": {
+      "string": 192
+     },
+     "sample": "Mini Plus Rechargeable Electric Can Opener (Blue)"
+    },
+    "product_name_cn": {
+     "types": {
+      "string": 19,
+      "blank": 173
+     },
+     "sample": "Mini Plus 充電式電動開罐器 (藍)"
+    },
+    "category": {
+     "types": {
+      "string": 192
+     },
+     "sample": "Electric Can Opener"
+    },
+    "series": {
+     "types": {
+      "string": 192
+     },
+     "sample": "CO2600"
+    },
+    "lifecycle": {
+     "types": {
+      "string": 192
+     },
+     "sample": "Upcoming SKU"
+    },
+    "image_url": {
+     "types": {
+      "string": 178,
+      "blank": 14
+     },
+     "sample": "assets/img/products/CO2600-B.jpg"
+    },
+    "gs1_code": {
+     "types": {
+      "number": 185,
+      "blank": 7
+     },
+     "sample": 4711216781008
+    },
+    "gs1_type": {
+     "types": {
+      "string": 185,
+      "blank": 7
+     },
+     "sample": "EAN"
+    },
+    "item_length": {
+     "types": {
+      "number": 164,
+      "blank": 28
+     },
+     "sample": 12
+    },
+    "item_width": {
+     "types": {
+      "number": 164,
+      "blank": 28
+     },
+     "sample": 6
+    },
+    "item_height": {
+     "types": {
+      "number": 164,
+      "blank": 28
+     },
+     "sample": 5.5
+    },
+    "item_length_2": {
+     "types": {
+      "blank": 169,
+      "number": 23
+     },
+     "sample": 20.5
+    },
+    "item_width_2": {
+     "types": {
+      "blank": 169,
+      "number": 23
+     },
+     "sample": 3.3
+    },
+    "item_height_2": {
+     "types": {
+      "blank": 169,
+      "number": 23
+     },
+     "sample": 1.3
+    },
+    "item_dimension_unit": {
+     "types": {
+      "string": 192
+     },
+     "sample": "cm"
+    },
+    "item_weight": {
+     "types": {
+      "number": 181,
+      "blank": 11
+     },
+     "sample": 0.228
+    },
+    "item_weight_unit": {
+     "types": {
+      "string": 192
+     },
+     "sample": "kg"
+    },
+    "package_length": {
+     "types": {
+      "number": 186,
+      "blank": 6
+     },
+     "sample": 15.9
+    },
+    "package_width": {
+     "types": {
+      "number": 186,
+      "blank": 6
+     },
+     "sample": 8.9
+    },
+    "package_height": {
+     "types": {
+      "number": 186,
+      "blank": 6
+     },
+     "sample": 6.7
+    },
+    "package_dimension_unit": {
+     "types": {
+      "string": 192
+     },
+     "sample": "cm"
+    },
+    "package_weight": {
+     "types": {
+      "number": 186,
+      "blank": 6
+     },
+     "sample": 0.333
+    },
+    "package_weight_unit": {
+     "types": {
+      "string": 192
+     },
+     "sample": "kg"
+    },
+    "carton_length": {
+     "types": {
+      "number": 178,
+      "blank": 14
+     },
+     "sample": 56.8
+    },
+    "carton_width": {
+     "types": {
+      "number": 178,
+      "blank": 14
+     },
+     "sample": 45.8
+    },
+    "carton_height": {
+     "types": {
+      "number": 178,
+      "blank": 14
+     },
+     "sample": 18.5
+    },
+    "carton_dimension_unit": {
+     "types": {
+      "string": 192
+     },
+     "sample": "cm"
+    },
+    "carton_weight": {
+     "types": {
+      "number": 179,
+      "blank": 13
+     },
+     "sample": 14.2
+    },
+    "carton_weight_unit": {
+     "types": {
+      "string": 192
+     },
+     "sample": "kg"
+    },
+    "units_per_carton": {
+     "types": {
+      "number": 179,
+      "blank": 13
+     },
+     "sample": 40
+    },
+    "product_use": {
+     "types": {
+      "string": 192
+     },
+     "sample": "Home Kitchen + Restaurant + Travel"
+    },
+    "material": {
+     "types": {
+      "string": 136,
+      "blank": 56
+     },
+     "sample": "ABS Plastic + Stainless Steel"
+    },
+    "battery_type": {
+     "types": {
+      "string": 192
+     },
+     "sample": "lithium_battery"
+    },
+    "magnet_type": {
+     "types": {
+      "boolean": 192
+     },
+     "sample": true
+    },
+    "minimum_price": {
+     "types": {
+      "number": 145,
+      "blank": 47
+     },
+     "sample": 31.99
+    },
+    "msrp": {
+     "types": {
+      "number": 164,
+      "blank": 28
+     },
+     "sample": 49.99
+    },
+    "selling_price": {
+     "types": {
+      "number": 167,
+      "blank": 25
+     },
+     "sample": 39.99
+    },
+    "base_currency": {
+     "types": {
+      "string": 192
+     },
+     "sample": "USD"
+    },
+    "pm": {
+     "types": {
+      "string": 153,
+      "blank": 39
+     },
+     "sample": "Judy Tsai"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 192
+     },
+     "sample": "2026-06-01T08:55:41.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 10,
+      "blank": 182
+     },
+     "sample": "2026-07-22T04:21:56.000Z"
+    }
+   }
+  },
+  "warehouses": {
+   "rows": 361,
+   "columns": 28,
+   "byType": {
+    "string": [
+     "warehouse_id",
+     "warehouse_code",
+     "warehouse_name",
+     "warehouse_type",
+     "company",
+     "marketplace",
+     "warehouse_owner",
+     "logistics_region",
+     "address_line1",
+     "city",
+     "state",
+     "subdivision_code",
+     "country",
+     "contact_name",
+     "contact_email",
+     "created_by",
+     "updated_by",
+     "note"
+    ],
+    "boolean": [
+     "is_factory_warehouse",
+     "is_active"
+    ],
+    "ALL_BLANK": [
+     "address_line2",
+     "timezone",
+     "is_receiving_enabled",
+     "is_shipping_enabled"
+    ],
+    "number+string": [
+     "postal_code",
+     "contact_phone"
+    ],
+    "ISO_DATE": [
+     "created_at",
+     "updated_at"
+    ]
+   },
+   "cols": {
+    "warehouse_id": {
+     "types": {
+      "string": 361
+     },
+     "sample": "WH-TW-CN-FACTORY-YOUXIN"
+    },
+    "warehouse_code": {
+     "types": {
+      "string": 361
+     },
+     "sample": "CN_YOUXIN"
+    },
+    "warehouse_name": {
+     "types": {
+      "string": 361
+     },
+     "sample": "CN侑鑫"
+    },
+    "warehouse_type": {
+     "types": {
+      "string": 361
+     },
+     "sample": "FACTORY"
+    },
+    "company": {
+     "types": {
+      "string": 361
+     },
+     "sample": "ResTW"
+    },
+    "marketplace": {
+     "types": {
+      "blank": 12,
+      "string": 349
+     },
+     "sample": "Amazon"
+    },
+    "warehouse_owner": {
+     "types": {
+      "string": 361
+     },
+     "sample": "ResTW"
+    },
+    "is_factory_warehouse": {
+     "types": {
+      "boolean": 361
+     },
+     "sample": true
+    },
+    "is_active": {
+     "types": {
+      "boolean": 361
+     },
+     "sample": true
+    },
+    "logistics_region": {
+     "types": {
+      "blank": 14,
+      "string": 347
+     },
+     "sample": "US_EAST"
+    },
+    "address_line1": {
+     "types": {
+      "string": 352,
+      "blank": 9
+     },
+     "sample": "1st Floor, No. 245 Huaide Road"
+    },
+    "address_line2": {
+     "types": {
+      "blank": 361
+     }
+    },
+    "city": {
+     "types": {
+      "string": 353,
+      "blank": 8
+     },
+     "sample": "Humen Town"
+    },
+    "state": {
+     "types": {
+      "string": 353,
+      "blank": 8
+     },
+     "sample": "Guangdong"
+    },
+    "subdivision_code": {
+     "types": {
+      "string": 353,
+      "blank": 8
+     },
+     "sample": "CN-GD"
+    },
+    "postal_code": {
+     "types": {
+      "number": 249,
+      "blank": 8,
+      "string": 104
+     },
+     "sample": 523900
+    },
+    "country": {
+     "types": {
+      "string": 361
+     },
+     "sample": "CN"
+    },
+    "contact_name": {
+     "types": {
+      "string": 7,
+      "blank": 354
+     },
+     "sample": "Xiao"
+    },
+    "contact_email": {
+     "types": {
+      "blank": 357,
+      "string": 4
+     },
+     "sample": "amzlgns@gmail.com"
+    },
+    "contact_phone": {
+     "types": {
+      "number": 7,
+      "blank": 353,
+      "string": 1
+     },
+     "sample": 6699007923
+    },
+    "timezone": {
+     "types": {
+      "blank": 361
+     }
+    },
+    "is_receiving_enabled": {
+     "types": {
+      "blank": 361
+     }
+    },
+    "is_shipping_enabled": {
+     "types": {
+      "blank": 361
+     }
+    },
+    "created_by": {
+     "types": {
+      "string": 361
+     },
+     "sample": "vic.zhou"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 361
+     },
+     "sample": "2026-07-07T06:38:08.000Z"
+    },
+    "updated_by": {
+     "types": {
+      "string": 361
+     },
+     "sample": "vic.zhou"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 361
+     },
+     "sample": "2026-07-07T06:38:08.000Z"
+    },
+    "note": {
+     "types": {
+      "blank": 20,
+      "string": 341
+     },
+     "sample": "Sortable fulfillment center; Lehigh Valley. Verification: address_requires_seller_central_confirmation. Reference warehouse address stored for master-data, mapping and planning use; transaction ship-to remains the committed shipment address."
+    }
+   }
+  },
+  "amazon_inventory_snapshot": {
+   "rows": 259,
+   "columns": 33,
+   "byType": {
+    "ISO_DATE": [
+     "snapshot_date",
+     "synced_at",
+     "created_at",
+     "updated_at"
+    ],
+    "string": [
+     "country",
+     "marketplace",
+     "sku",
+     "asin",
+     "currency",
+     "source_system",
+     "source_report",
+     "source_file_id",
+     "source_sheet_name",
+     "source_row_hash",
+     "sync_batch_id"
+    ],
+    "ALL_BLANK": [
+     "site_sku"
+    ],
+    "number": [
+     "price",
+     "sales_last_30_days",
+     "units_sold_last_30_days",
+     "total_units",
+     "inbound_qty",
+     "available_qty",
+     "fc_transfer_qty",
+     "fc_processing_qty",
+     "customer_order_qty",
+     "unfulfillable_qty",
+     "working_qty",
+     "shipped_qty",
+     "receiving_qty",
+     "total_days_of_supply_including_open_shipments",
+     "days_of_supply_amazon_fulfillment_network"
+    ],
+    "boolean": [
+     "total_days_of_supply_including_open_shipments_is_capped",
+     "days_of_supply_amazon_fulfillment_network_is_capped"
+    ]
+   },
+   "cols": {
+    "snapshot_date": {
+     "types": {
+      "ISO_DATE": 259
+     },
+     "sample": "2026-10-03T16:00:00.000Z"
+    },
+    "country": {
+     "types": {
+      "string": 259
+     },
+     "sample": "US"
+    },
+    "marketplace": {
+     "types": {
+      "string": 259
+     },
+     "sample": "Amazon"
+    },
+    "sku": {
+     "types": {
+      "string": 259
+     },
+     "sample": "SP5120-R"
+    },
+    "site_sku": {
+     "types": {
+      "blank": 259
+     }
+    },
+    "asin": {
+     "types": {
+      "string": 259
+     },
+     "sample": "B0F1D2KHN1"
+    },
+    "currency": {
+     "types": {
+      "string": 259
+     },
+     "sample": "USD"
+    },
+    "price": {
+     "types": {
+      "number": 183,
+      "blank": 76
+     },
+     "sample": 17.99
+    },
+    "sales_last_30_days": {
+     "types": {
+      "number": 183,
+      "blank": 76
+     },
+     "sample": 899.5
+    },
+    "units_sold_last_30_days": {
+     "types": {
+      "number": 183,
+      "blank": 76
+     },
+     "sample": 50
+    },
+    "total_units": {
+     "types": {
+      "number": 259
+     },
+     "sample": 518
+    },
+    "inbound_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 320
+    },
+    "available_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 126
+    },
+    "fc_transfer_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 71
+    },
+    "fc_processing_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 1
+    },
+    "customer_order_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 0
+    },
+    "unfulfillable_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 5
+    },
+    "working_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 120
+    },
+    "shipped_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 200
+    },
+    "receiving_qty": {
+     "types": {
+      "number": 259
+     },
+     "sample": 0
+    },
+    "total_days_of_supply_including_open_shipments": {
+     "types": {
+      "blank": 206,
+      "number": 53
+     },
+     "sample": 200
+    },
+    "days_of_supply_amazon_fulfillment_network": {
+     "types": {
+      "blank": 206,
+      "number": 53
+     },
+     "sample": 60
+    },
+    "total_days_of_supply_including_open_shipments_is_capped": {
+     "types": {
+      "boolean": 259
+     },
+     "sample": false
+    },
+    "days_of_supply_amazon_fulfillment_network_is_capped": {
+     "types": {
+      "boolean": 259
+     },
+     "sample": false
+    },
+    "source_system": {
+     "types": {
+      "string": 259
+     },
+     "sample": "Google Sheet Import"
+    },
+    "source_report": {
+     "types": {
+      "string": 259
+     },
+     "sample": "Amazon Inventory"
+    },
+    "source_file_id": {
+     "types": {
+      "string": 259
+     },
+     "sample": "1B2oO9pOwVkLHpPo8utR1De6d50CK8jgntwuVgK_uNPE"
+    },
+    "source_sheet_name": {
+     "types": {
+      "string": 259
+     },
+     "sample": "Combined Sheet"
+    },
+    "source_row_hash": {
+     "types": {
+      "string": 259
+     },
+     "sample": "4c944e1440a976e9221d96f1df24cea1"
+    },
+    "sync_batch_id": {
+     "types": {
+      "string": 259
+     },
+     "sample": "SYNC-amazon_inventory_snapshot-845742e7"
+    },
+    "synced_at": {
+     "types": {
+      "ISO_DATE": 259
+     },
+     "sample": "2026-10-05T04:29:30.000Z"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 259
+     },
+     "sample": "2026-10-05T04:29:30.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 259
+     },
+     "sample": "2026-10-05T04:29:30.000Z"
+    }
+   }
+  },
+  "amazon_inventory_health_snapshot": {
+   "rows": 346,
+   "columns": 23,
+   "byType": {
+    "ISO_DATE": [
+     "snapshot_date",
+     "synced_at",
+     "created_at",
+     "updated_at"
+    ],
+    "string": [
+     "country",
+     "marketplace",
+     "sku",
+     "asin",
+     "source_system",
+     "source_report",
+     "source_file_id",
+     "source_sheet_name",
+     "source_row_hash",
+     "sync_batch_id"
+    ],
+    "ALL_BLANK": [
+     "site_sku"
+    ],
+    "number": [
+     "available_qty",
+     "inv_age_0_to_90_days",
+     "inv_age_91_to_180_days",
+     "inv_age_181_to_270_days",
+     "inv_age_271_to_365_days",
+     "inv_age_365_plus_days",
+     "inv_age_366_to_455_days",
+     "inv_age_456_plus_days"
+    ]
+   },
+   "cols": {
+    "snapshot_date": {
+     "types": {
+      "ISO_DATE": 346
+     },
+     "sample": "2026-10-03T16:00:00.000Z"
+    },
+    "country": {
+     "types": {
+      "string": 346
+     },
+     "sample": "US"
+    },
+    "marketplace": {
+     "types": {
+      "string": 346
+     },
+     "sample": "Amazon"
+    },
+    "sku": {
+     "types": {
+      "string": 346
+     },
+     "sample": "CO2100-P"
+    },
+    "site_sku": {
+     "types": {
+      "blank": 346
+     }
+    },
+    "asin": {
+     "types": {
+      "string": 346
+     },
+     "sample": "B083WL36T6"
+    },
+    "available_qty": {
+     "types": {
+      "number": 344,
+      "blank": 2
+     },
+     "sample": 0
+    },
+    "inv_age_0_to_90_days": {
+     "types": {
+      "blank": 97,
+      "number": 249
+     },
+     "sample": 100
+    },
+    "inv_age_91_to_180_days": {
+     "types": {
+      "blank": 97,
+      "number": 249
+     },
+     "sample": 0
+    },
+    "inv_age_181_to_270_days": {
+     "types": {
+      "blank": 97,
+      "number": 249
+     },
+     "sample": 0
+    },
+    "inv_age_271_to_365_days": {
+     "types": {
+      "blank": 97,
+      "number": 249
+     },
+     "sample": 0
+    },
+    "inv_age_365_plus_days": {
+     "types": {
+      "blank": 260,
+      "number": 86
+     },
+     "sample": 0
+    },
+    "inv_age_366_to_455_days": {
+     "types": {
+      "blank": 183,
+      "number": 163
+     },
+     "sample": 0
+    },
+    "inv_age_456_plus_days": {
+     "types": {
+      "blank": 183,
+      "number": 163
+     },
+     "sample": 0
+    },
+    "source_system": {
+     "types": {
+      "string": 346
+     },
+     "sample": "Google Sheet Import"
+    },
+    "source_report": {
+     "types": {
+      "string": 346
+     },
+     "sample": "Amazon Inventory Health"
+    },
+    "source_file_id": {
+     "types": {
+      "string": 346
+     },
+     "sample": "1ZQt9PPfm7k0bTepoQjBB7zDjzDUrzE0GJh3nhtOWto4"
+    },
+    "source_sheet_name": {
+     "types": {
+      "string": 346
+     },
+     "sample": "Combined Sheet"
+    },
+    "source_row_hash": {
+     "types": {
+      "string": 346
+     },
+     "sample": "b347db2e9f249fbdb1b0c30721ee2675"
+    },
+    "sync_batch_id": {
+     "types": {
+      "string": 346
+     },
+     "sample": "SYNC-amazon_inventory_health_snapshot-63453dea"
+    },
+    "synced_at": {
+     "types": {
+      "ISO_DATE": 346
+     },
+     "sample": "2026-10-05T04:30:47.000Z"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 346
+     },
+     "sample": "2026-10-05T04:30:47.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 346
+     },
+     "sample": "2026-10-05T04:30:47.000Z"
+    }
+   }
+  },
+  "amazon_daily_sales_snapshot": {
+   "rows": 3817,
+   "columns": 36,
+   "byType": {
+    "ISO_DATE": [
+     "snapshot_date",
+     "synced_at",
+     "created_at",
+     "updated_at",
+     "data_window_start_date",
+     "data_window_end_date",
+     "latest_source_date"
+    ],
+    "string": [
+     "country",
+     "marketplace",
+     "channel",
+     "sku",
+     "currency",
+     "source_system",
+     "source_report",
+     "source_file_id",
+     "source_sheet_name",
+     "source_row_hash",
+     "sync_batch_id"
+    ],
+    "ALL_BLANK": [
+     "site_sku",
+     "asin",
+     "fallback_reason"
+    ],
+    "number": [
+     "sales_units",
+     "sales_amount",
+     "sales_amount_usd",
+     "return_units",
+     "total_orders",
+     "session",
+     "page_view",
+     "unit_session_percentage",
+     "buy_box_percentage",
+     "browser_session",
+     "browser_page_views",
+     "app_session",
+     "app_page_view",
+     "data_age_days"
+    ],
+    "boolean": [
+     "is_fallback_used"
+    ]
+   },
+   "cols": {
+    "snapshot_date": {
+     "types": {
+      "ISO_DATE": 3817
+     },
+     "sample": "2026-07-18T16:00:00.000Z"
+    },
+    "country": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "AU"
+    },
+    "marketplace": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "Amazon"
+    },
+    "channel": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "Amazon"
+    },
+    "sku": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "CO1150-R"
+    },
+    "site_sku": {
+     "types": {
+      "blank": 3817
+     }
+    },
+    "asin": {
+     "types": {
+      "blank": 3817
+     }
+    },
+    "currency": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "AUD"
+    },
+    "sales_units": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 1
+    },
+    "sales_amount": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 55
+    },
+    "sales_amount_usd": {
+     "types": {
+      "number": 3802,
+      "blank": 15
+     },
+     "sample": 35.86
+    },
+    "return_units": {
+     "types": {
+      "blank": 408,
+      "number": 3409
+     },
+     "sample": 0
+    },
+    "total_orders": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 1
+    },
+    "session": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 4
+    },
+    "page_view": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 5
+    },
+    "unit_session_percentage": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 25
+    },
+    "buy_box_percentage": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 100
+    },
+    "browser_session": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 3
+    },
+    "browser_page_views": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 3
+    },
+    "app_session": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 1
+    },
+    "app_page_view": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 2
+    },
+    "source_system": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "BigQuery Import"
+    },
+    "source_report": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "Amazon Daily Sales"
+    },
+    "source_file_id": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "amazon-database-489810.AmazonSales.Raw Daily Sales"
+    },
+    "source_sheet_name": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "Raw Daily Sales"
+    },
+    "source_row_hash": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "a1093199d0f7934e0650a79da98c34d7"
+    },
+    "sync_batch_id": {
+     "types": {
+      "string": 3817
+     },
+     "sample": "SYNC-amazon_daily_sales_snapshot-83a2bf30"
+    },
+    "synced_at": {
+     "types": {
+      "ISO_DATE": 3817
+     },
+     "sample": "2026-08-03T09:30:08.000Z"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 3817
+     },
+     "sample": "2026-08-03T09:30:08.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 3817
+     },
+     "sample": "2026-08-03T09:30:08.000Z"
+    },
+    "data_window_start_date": {
+     "types": {
+      "ISO_DATE": 3817
+     },
+     "sample": "2026-06-02T16:00:00.000Z"
+    },
+    "data_window_end_date": {
+     "types": {
+      "ISO_DATE": 3817
+     },
+     "sample": "2026-07-30T16:00:00.000Z"
+    },
+    "latest_source_date": {
+     "types": {
+      "ISO_DATE": 3817
+     },
+     "sample": "2026-07-30T16:00:00.000Z"
+    },
+    "is_fallback_used": {
+     "types": {
+      "boolean": 3817
+     },
+     "sample": false
+    },
+    "fallback_reason": {
+     "types": {
+      "blank": 3817
+     }
+    },
+    "data_age_days": {
+     "types": {
+      "number": 3817
+     },
+     "sample": 3
+    }
+   }
+  },
+  "amazon_weekly_sales_snapshot": {
+   "rows": 247,
+   "columns": 29,
+   "byType": {
+    "string": [
+     "snapshot_week",
+     "country",
+     "marketplace",
+     "channel",
+     "sku",
+     "currency",
+     "source_system",
+     "source_report",
+     "source_file_id",
+     "source_sheet_name",
+     "source_row_hash",
+     "sync_batch_id"
+    ],
+    "ISO_DATE": [
+     "snapshot_month",
+     "week_start_date",
+     "week_end_date",
+     "synced_at",
+     "created_at",
+     "updated_at"
+    ],
+    "ALL_BLANK": [
+     "site_sku",
+     "asin",
+     "note"
+    ],
+    "number": [
+     "sales_units_7d",
+     "sales_amount_7d",
+     "sales_amount_usd_7d",
+     "return_units_7d",
+     "total_orders_7d",
+     "session_7d",
+     "page_view_7d",
+     "unit_session_percentage_7d"
+    ]
+   },
+   "cols": {
+    "snapshot_week": {
+     "types": {
+      "string": 247
+     },
+     "sample": "2026-09-21~2026-09-27"
+    },
+    "snapshot_month": {
+     "types": {
+      "ISO_DATE": 247
+     },
+     "sample": "2026-08-31T16:00:00.000Z"
+    },
+    "week_start_date": {
+     "types": {
+      "ISO_DATE": 247
+     },
+     "sample": "2026-09-20T16:00:00.000Z"
+    },
+    "week_end_date": {
+     "types": {
+      "ISO_DATE": 247
+     },
+     "sample": "2026-09-26T16:00:00.000Z"
+    },
+    "country": {
+     "types": {
+      "string": 247
+     },
+     "sample": "CA"
+    },
+    "marketplace": {
+     "types": {
+      "string": 247
+     },
+     "sample": "Amazon"
+    },
+    "channel": {
+     "types": {
+      "string": 247
+     },
+     "sample": "Amazon"
+    },
+    "sku": {
+     "types": {
+      "string": 247
+     },
+     "sample": "CO1100-R"
+    },
+    "site_sku": {
+     "types": {
+      "blank": 247
+     }
+    },
+    "asin": {
+     "types": {
+      "blank": 247
+     }
+    },
+    "currency": {
+     "types": {
+      "string": 247
+     },
+     "sample": "CAD"
+    },
+    "sales_units_7d": {
+     "types": {
+      "number": 247
+     },
+     "sample": 95
+    },
+    "sales_amount_7d": {
+     "types": {
+      "number": 247
+     },
+     "sample": 3799.05
+    },
+    "sales_amount_usd_7d": {
+     "types": {
+      "number": 217,
+      "blank": 30
+     },
+     "sample": 2765.7084
+    },
+    "return_units_7d": {
+     "types": {
+      "number": 247
+     },
+     "sample": 5
+    },
+    "total_orders_7d": {
+     "types": {
+      "number": 247
+     },
+     "sample": 92
+    },
+    "session_7d": {
+     "types": {
+      "number": 247
+     },
+     "sample": 1073
+    },
+    "page_view_7d": {
+     "types": {
+      "number": 247
+     },
+     "sample": 1485
+    },
+    "unit_session_percentage_7d": {
+     "types": {
+      "number": 247
+     },
+     "sample": 8.85
+    },
+    "source_system": {
+     "types": {
+      "string": 247
+     },
+     "sample": "Google Sheet Import"
+    },
+    "source_report": {
+     "types": {
+      "string": 247
+     },
+     "sample": "Amazon Weekly Sales"
+    },
+    "source_file_id": {
+     "types": {
+      "string": 247
+     },
+     "sample": "1O5BBJiJsubq8Ei_cRQggY2_1ZfIXGvs8o1f_hiMHQqA"
+    },
+    "source_sheet_name": {
+     "types": {
+      "string": 247
+     },
+     "sample": "Combined Sheet"
+    },
+    "source_row_hash": {
+     "types": {
+      "string": 247
+     },
+     "sample": "c18a167451ae30b1356b88bdd2f81d15"
+    },
+    "sync_batch_id": {
+     "types": {
+      "string": 247
+     },
+     "sample": "SYNC-amazon_weekly_sales_snapshot-f60de133"
+    },
+    "synced_at": {
+     "types": {
+      "ISO_DATE": 247
+     },
+     "sample": "2026-10-05T04:44:47.000Z"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 247
+     },
+     "sample": "2026-10-05T04:44:47.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 247
+     },
+     "sample": "2026-10-05T04:44:47.000Z"
+    },
+    "note": {
+     "types": {
+      "blank": 247
+     }
+    }
+   }
+  },
+  "fc_regular_forecast": {
+   "rows": 496,
+   "columns": 26,
+   "byType": {
+    "string": [
+     "forecast_id",
+     "company",
+     "country",
+     "marketplace",
+     "sku",
+     "category",
+     "series",
+     "forecast_status",
+     "source"
+    ],
+    "number": [
+     "year",
+     "jan",
+     "feb",
+     "mar",
+     "apr",
+     "may",
+     "jun",
+     "jul",
+     "aug",
+     "sep",
+     "oct",
+     "nov",
+     "dec",
+     "total_fc"
+    ],
+    "ALL_BLANK": [
+     "fc_share"
+    ],
+    "ISO_DATE": [
+     "created_at",
+     "updated_at"
+    ]
+   },
+   "cols": {
+    "forecast_id": {
+     "types": {
+      "string": 496
+     },
+     "sample": "FC-2026-540676b9"
+    },
+    "year": {
+     "types": {
+      "number": 496
+     },
+     "sample": 2026
+    },
+    "company": {
+     "types": {
+      "string": 496
+     },
+     "sample": "ResUS"
+    },
+    "country": {
+     "types": {
+      "string": 496
+     },
+     "sample": "US"
+    },
+    "marketplace": {
+     "types": {
+      "string": 496
+     },
+     "sample": "Amazon"
+    },
+    "sku": {
+     "types": {
+      "string": 496
+     },
+     "sample": "CO1100-R"
+    },
+    "category": {
+     "types": {
+      "string": 496
+     },
+     "sample": "Electric Can Opener"
+    },
+    "series": {
+     "types": {
+      "string": 496
+     },
+     "sample": "CO1100"
+    },
+    "jan": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 8557
+    },
+    "feb": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 7274
+    },
+    "mar": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 7500
+    },
+    "apr": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 6800
+    },
+    "may": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 6450
+    },
+    "jun": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 6300
+    },
+    "jul": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 6500
+    },
+    "aug": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 6800
+    },
+    "sep": {
+     "types": {
+      "number": 494,
+      "blank": 2
+     },
+     "sample": 7000
+    },
+    "oct": {
+     "types": {
+      "number": 496
+     },
+     "sample": 4282
+    },
+    "nov": {
+     "types": {
+      "number": 496
+     },
+     "sample": 7500
+    },
+    "dec": {
+     "types": {
+      "number": 496
+     },
+     "sample": 15000
+    },
+    "total_fc": {
+     "types": {
+      "number": 496
+     },
+     "sample": 89964
+    },
+    "fc_share": {
+     "types": {
+      "blank": 496
+     }
+    },
+    "forecast_status": {
+     "types": {
+      "string": 496
+     },
+     "sample": "draft"
+    },
+    "source": {
+     "types": {
+      "string": 496
+     },
+     "sample": "fc_summary_builder"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 496
+     },
+     "sample": "2026-06-08T16:00:00.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 496
+     },
+     "sample": "2026-09-21T16:00:00.000Z"
+    }
+   }
+  },
+  "fc_target_rules": {
+   "rows": 0,
+   "columns": 0,
+   "byType": {},
+   "cols": {}
+  },
+  "fc_special_events": {
+   "rows": 431,
+   "columns": 29,
+   "byType": {
+    "string": [
+     "event_fc_id",
+     "campaign_id",
+     "campaign_sku_line_id",
+     "marketplace_id",
+     "sku",
+     "company",
+     "country",
+     "marketplace",
+     "category",
+     "series",
+     "event_period",
+     "created_by",
+     "updated_by",
+     "note",
+     "scope_type",
+     "scope_id",
+     "event_name"
+    ],
+    "number": [
+     "year",
+     "event_month",
+     "fc_qty"
+    ],
+    "ALL_BLANK": [
+     "event",
+     "fc_share",
+     "source",
+     "status",
+     "event_id"
+    ],
+    "ISO_DATE": [
+     "event_start_date",
+     "event_end_date",
+     "created_at",
+     "updated_at"
+    ]
+   },
+   "cols": {
+    "event_fc_id": {
+     "types": {
+      "string": 431
+     },
+     "sample": "EFC-7953566C-9EF"
+    },
+    "campaign_id": {
+     "types": {
+      "string": 431
+     },
+     "sample": "CMP-808C4BD5-7"
+    },
+    "campaign_sku_line_id": {
+     "types": {
+      "string": 431
+     },
+     "sample": "CSL-927172FA-5"
+    },
+    "marketplace_id": {
+     "types": {
+      "string": 431
+     },
+     "sample": "MKT-RESUS-US-AMAZON"
+    },
+    "sku": {
+     "types": {
+      "string": 431
+     },
+     "sample": "CO1100-R"
+    },
+    "year": {
+     "types": {
+      "number": 431
+     },
+     "sample": 2026
+    },
+    "company": {
+     "types": {
+      "string": 431
+     },
+     "sample": "ResUS"
+    },
+    "country": {
+     "types": {
+      "string": 431
+     },
+     "sample": "US"
+    },
+    "marketplace": {
+     "types": {
+      "string": 431
+     },
+     "sample": "Amazon"
+    },
+    "category": {
+     "types": {
+      "string": 431
+     },
+     "sample": "Electric Can Opener"
+    },
+    "series": {
+     "types": {
+      "string": 431
+     },
+     "sample": "CO1100"
+    },
+    "event": {
+     "types": {
+      "blank": 431
+     }
+    },
+    "event_period": {
+     "types": {
+      "string": 431
+     },
+     "sample": "2026-11-19~2026-11-30"
+    },
+    "event_month": {
+     "types": {
+      "number": 431
+     },
+     "sample": 11
+    },
+    "event_start_date": {
+     "types": {
+      "ISO_DATE": 431
+     },
+     "sample": "2026-11-18T16:00:00.000Z"
+    },
+    "event_end_date": {
+     "types": {
+      "ISO_DATE": 431
+     },
+     "sample": "2026-11-29T16:00:00.000Z"
+    },
+    "fc_qty": {
+     "types": {
+      "number": 431
+     },
+     "sample": 13000
+    },
+    "fc_share": {
+     "types": {
+      "blank": 431
+     }
+    },
+    "source": {
+     "types": {
+      "blank": 431
+     }
+    },
+    "status": {
+     "types": {
+      "blank": 431
+     }
+    },
+    "created_by": {
+     "types": {
+      "string": 431
+     },
+     "sample": "fc-summary"
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 431
+     },
+     "sample": "2026-09-18T07:44:07.000Z"
+    },
+    "updated_by": {
+     "types": {
+      "string": 431
+     },
+     "sample": "fc-summary"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 431
+     },
+     "sample": "2026-09-22T06:50:30.000Z"
+    },
+    "note": {
+     "types": {
+      "string": 431
+     },
+     "sample": "FC Summary Special Event Builder"
+    },
+    "event_id": {
+     "types": {
+      "blank": 431
+     }
+    },
+    "scope_type": {
+     "types": {
+      "string": 431
+     },
+     "sample": "sku"
+    },
+    "scope_id": {
+     "types": {
+      "string": 431
+     },
+     "sample": "CO1100-R"
+    },
+    "event_name": {
+     "types": {
+      "string": 431
+     },
+     "sample": "BFCM"
+    }
+   }
+  },
+  "overseas_inventory_snapshot": {
+   "rows": 260,
+   "columns": 17,
+   "byType": {
+    "string": [
+     "overseas_inventory_id",
+     "warehouse_id"
+    ],
+    "ALL_BLANK": [
+     "snapshot_date",
+     "site_sku",
+     "wh_physical_stock",
+     "wh_on_the_way_eta",
+     "wh_on_the_way_bucket",
+     "last_movement_at",
+     "updated_by",
+     "note"
+    ],
+    "number+string": [
+     "sku"
+    ],
+    "number": [
+     "wh_available_stock",
+     "wh_reserved_stock",
+     "wh_damaged_stock",
+     "wh_on_the_way_qty"
+    ],
+    "ISO_DATE": [
+     "created_at",
+     "updated_at"
+    ]
+   },
+   "cols": {
+    "overseas_inventory_id": {
+     "types": {
+      "string": 260
+     },
+     "sample": "OISN-b604a348"
+    },
+    "snapshot_date": {
+     "types": {
+      "blank": 260
+     }
+    },
+    "warehouse_id": {
+     "types": {
+      "string": 260
+     },
+     "sample": "WH-RESTW-UK-3PL-WINIT"
+    },
+    "sku": {
+     "types": {
+      "string": 255,
+      "number": 5
+     },
+     "sample": "CO1100-T"
+    },
+    "site_sku": {
+     "types": {
+      "blank": 260
+     }
+    },
+    "wh_physical_stock": {
+     "types": {
+      "blank": 260
+     }
+    },
+    "wh_available_stock": {
+     "types": {
+      "number": 260
+     },
+     "sample": 128
+    },
+    "wh_reserved_stock": {
+     "types": {
+      "number": 260
+     },
+     "sample": 0
+    },
+    "wh_damaged_stock": {
+     "types": {
+      "number": 260
+     },
+     "sample": 0
+    },
+    "wh_on_the_way_qty": {
+     "types": {
+      "number": 260
+     },
+     "sample": 0
+    },
+    "wh_on_the_way_eta": {
+     "types": {
+      "blank": 260
+     }
+    },
+    "wh_on_the_way_bucket": {
+     "types": {
+      "blank": 260
+     }
+    },
+    "last_movement_at": {
+     "types": {
+      "blank": 260
+     }
+    },
+    "updated_by": {
+     "types": {
+      "blank": 260
+     }
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 260
+     },
+     "sample": "2026-08-17T16:00:00.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 260
+     },
+     "sample": "2026-08-17T16:00:00.000Z"
+    },
+    "note": {
+     "types": {
+      "blank": 260
+     }
+    }
+   }
+  },
+  "factory_stock": {
+   "rows": 112,
+   "columns": 8,
+   "byType": {
+    "string": [
+     "factory_stock_id",
+     "warehouse_id",
+     "sku"
+    ],
+    "number": [
+     "fac_current_stock",
+     "fac_reserved_stock"
+    ],
+    "ISO_DATE": [
+     "created_at",
+     "updated_at",
+     "last_transaction_at"
+    ]
+   },
+   "cols": {
+    "factory_stock_id": {
+     "types": {
+      "string": 112
+     },
+     "sample": "FS-WH-TW-CN-FACTORY-YOUXIN-CO1100-R"
+    },
+    "warehouse_id": {
+     "types": {
+      "string": 112
+     },
+     "sample": "WH-TW-CN-FACTORY-YOUXIN"
+    },
+    "sku": {
+     "types": {
+      "string": 112
+     },
+     "sample": "CO1100-R"
+    },
+    "fac_current_stock": {
+     "types": {
+      "number": 112
+     },
+     "sample": 2210
+    },
+    "fac_reserved_stock": {
+     "types": {
+      "number": 112
+     },
+     "sample": 0
+    },
+    "created_at": {
+     "types": {
+      "ISO_DATE": 112
+     },
+     "sample": "2026-08-19T16:00:00.000Z"
+    },
+    "updated_at": {
+     "types": {
+      "ISO_DATE": 112
+     },
+     "sample": "2026-08-19T16:00:00.000Z"
+    },
+    "last_transaction_at": {
+     "types": {
+      "blank": 108,
+      "ISO_DATE": 4
+     },
+     "sample": "2026-09-28T16:00:00.000Z"
+    }
+   }
+  }
+ }
+}
