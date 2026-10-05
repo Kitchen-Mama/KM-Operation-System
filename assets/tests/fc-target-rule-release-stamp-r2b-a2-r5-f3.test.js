@@ -227,7 +227,17 @@ var RELEASE_OWNERS = {
   // 90_ does NOT move: no core module changed, so the bundle is not rebuilt and its content hash is the
   // bytes it was at R36.
   '60_api_v1_inventory_replenishment_workspace.gs':
-    'THE INVENTORY WORKSPACE READ. R42 gives it a SITE SCOPE. R4B-2B deferred six of the nineteen tables to '
+    'THE INVENTORY WORKSPACE READ. R43 makes it read each table ONCE. io.readTable asked prodRequireSheet_ '
+    + 'to validate the header - one range read - then for the four tables carrying requiredCols asked '
+    + 'prodRequireColumns_ to re-read it, and only then read the whole sheet, whose row 0 IS that header. '
+    + 'Thirteen tables cost THIRTY range reads; they now cost thirteen. The validators are unchanged and '
+    + 'receive the same header array - classifySchemaMismatch never touched a Sheet in the first place - '
+    + 'so what is removed is the fetching and not the checking. 29_ is NOT touched: prodRequireSheet_ has '
+    + 'callers in more than twenty files and this handler owns its own io, so the fix cannot be observed '
+    + 'anywhere else. NO REQUEST FIELD AND NO RESPONSE FIELD MOVED, which is why a pre-R43 copy is SLOW '
+    + 'rather than WRONG, and why the action-contract version stays at 18. '
+    + 'WHAT R42 CHANGED HERE IS STILL TRUE AND IS KEPT RATHER THAN OVERWRITTEN: '
+    + 'R42 gives it a SITE SCOPE. R4B-2B deferred six of the nineteen tables to '
     + 'a lazy per-Site cache; R4B-2C then proved the request filling that cache carried no scope at all, so '
     + 'every Site was served every Site\'s exposure rows and told to keep them under its own key - the KEY '
     + 'was per-Site and the DATA never was. An exposure-only request may now carry '
@@ -239,7 +249,16 @@ var RELEASE_OWNERS = {
     + 'REMOVED, so the action-contract version stays at 18; the identity is the TRIPLE and not marketplace_id, '
     + 'because none of the six tables stores the id and resolving it would cost a SEVENTH sheet read.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R42 moves the release, its own build, and 60_\'s expected stamp - which is the whole '
+    'THE MANIFEST. R43 moves the release, its own build, and the row that names 60_ - the same three '
+    + 'constants R42 moved, and for the same structural reason: 60_ changed, so its row moves, and this '
+    + 'file moves because it is where that row is written down. 01_ STAYS at R41. The action-contract '
+    + 'version stays 18 and SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14 - no action was added or removed '
+    + 'and no page gained a mount dependency - and 90_ is not rebuilt. R43 CANNOT BE FOLDED INTO R42, '
+    + 'and here the usual precedent is not even needed: R42 is cut, DEPLOYED and ACCEPTED in Production, '
+    + 'so folding would leave the live system reporting ONE id for TWO different trees - and the entire '
+    + 'purpose of R43 is to let the acceptance that follows say which of them it measured. '
+    + 'WHAT R42 CHANGED HERE IS STILL TRUE AND IS KEPT RATHER THAN OVERWRITTEN: '
+    + 'R42 moves the release, its own build, and 60_\'s expected stamp - which is the whole '
     + 'reason those are separate constants: 60_ changed, so its row moves, and this file moves because it is '
     + 'where that row is written down. 01_\'s expected stamp STAYS at R41 because 01_ did not change. The '
     + 'action-contract version stays 18 and SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14: no action was added '
@@ -1183,7 +1202,12 @@ var vacuous = [];
  // claimed as an owner". That proxy expires the moment 01_ leaves ownership, which it did at R42, and a
  // vacuity guard that expires reports its own mutant as unchecked. The fact M14 actually defends is that
  // the ledger places the router at the round it really changed in, which is R41 and is not R40.
- ['M14', function () { return RELEASE_CARRIED['01_router.gs'] === PREV_RELEASE
+ // S8-R4D-C - AND THE REPLACEMENT PROXY EXPIRED TOO, ONE RELEASE LATER. `=== PREV_RELEASE` held at R42
+ // only because R42 happened to follow R41; at R43 the predecessor is R42 and the guard reported M14 as
+ // unchecked, exactly as the proxy it replaced did. The fact is not 'the router is carried at whatever
+ // came before', it is 'the router is carried at R41, the round it really changed in' - so that is what
+ // is asserted, pinned at BOTH ends: it is R41, and it is not R40.
+ ['M14', function () { return RELEASE_CARRIED['01_router.gs'] === 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'
      && !/-R40$/.test(RELEASE_CARRIED['01_router.gs'] || ''); }],
  ['M15', function () { return RELEASE_LOG.indexOf(RELEASE) !== -1; }],
  // M12's predicate must be FALSE against the unmutated tree: the real contract DID move, once per

@@ -52,7 +52,13 @@
 // NAMED FAULT RATHER THAN A QUIET ONE. A pre-R42 60_ ignores `payload.siteScope` SILENTLY and returns every
 // site's exposure rows while the browser believes it asked for one - the same shape of failure the R4-A1
 // paragraph above was written for, and the reason that paragraph exists is that it already happened once.
-var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42';
+// S8-R4D-C - R43. THE READ PATH NOW MAKES ONE RANGE READ PER TABLE INSTEAD OF TWO OR THREE. No request
+// field, no response field and no business rule changed; the only observable difference is how long the
+// handler takes and how many Spreadsheet calls the execution log shows. That makes a pre-R43 60_ a
+// PERFORMANCE difference rather than a wrong answer - which is why this stamp matters for a DIFFERENT reason
+// than R42's did: R42 told you a stale copy would lie to you, R43 tells you a stale copy is merely slow, and
+// an acceptance that cannot tell the two deployments apart cannot attribute the measurement it just took.
+var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
 
 var SIR_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -514,13 +520,48 @@ function sirWorkspaceBuild_(tables, payload) {
 // --------------------------------------------------------------------------------------------------------
 // IMPURE orchestrator — injectable io (default = live Apps Script). NEVER calls getOperationDb.
 // --------------------------------------------------------------------------------------------------------
-function sirWsRowsToObjects_(sheet) {
-  var data = sheet.getDataRange().getValues();
+// ========================================================================================================
+// S8-R4D-C §3 — ONE getValues() PER TABLE, BECAUSE data[0] IS THE HEADER ROW.
+//
+// R4D-B counted the calls this path actually makes and the number was not thirteen. `readTable` asked
+// prodRequireSheet_ to validate the header, which reads row 1; for the four tables carrying requiredCols it
+// then asked prodRequireColumns_, which reads row 1 AGAIN; and only then did sirWsRowsToObjects_ call
+// getDataRange().getValues() — whose data[0] is that same header row, already fetched, twice.
+//
+//   13 header reads + 4 repeated header reads + 13 full-sheet reads = 30 range reads for 13 tables.
+//
+// The header is now taken from the ONE full-sheet read and passed to the SAME validators. Nothing is
+// weakened: classifySchemaMismatch has always operated on a header ARRAY and never touched a Sheet, and the
+// requiredCols check is the identical set comparison prodRequireColumns_ performs, run against the identical
+// array. What is removed is the fetching, not the checking.
+//
+// WHY THIS IS LOCAL AND NOT A REFACTOR OF 29_. prodRequireSheet_ / prodRequireColumns_ have callers in more
+// than twenty files, and every one of them reads a different way. Changing the shared guard to serve this
+// path would put that blast radius behind a performance change. This handler owns its own `io`, so the fix
+// lives entirely inside it and no other caller can observe it.
+//
+// WHAT IS DELIBERATELY NOT REMOVED. getLastRow / getLastColumn / getSheetByName / getId are metadata
+// accessors, not range reads; HEADER_MISSING is still decided on sheet GEOMETRY exactly as prodRequireSheet_
+// decided it, because a sheet with no rows and a sheet whose first row is blank are different faults and
+// getDataRange() flattens them (an empty sheet answers [['']], not []).
+// ========================================================================================================
+function sirWsHeaderFromValues_(data) {
+  if (!data || !data.length || !data[0]) return [];
+  return data[0].map(function (h) { return String(h).trim(); });
+}
+// The row->object conversion, over values ALREADY fetched. Unchanged semantics: header from row 0, blank rows
+// dropped, every column carried verbatim.
+function sirWsRowsFromValues_(data) {
   if (!data || data.length < 2) return [];
-  var headers = data[0].map(function (h) { return String(h).trim(); });
+  var headers = sirWsHeaderFromValues_(data);
   var out = [];
   for (var r = 1; r < data.length; r++) { var o = {}, blank = true; for (var c = 0; c < headers.length; c++) { o[headers[c]] = data[r][c]; if (String(data[r][c]).trim() !== '') blank = false; } if (!blank) out.push(o); }
   return out;
+}
+// Retained at its original signature and behaviour — it is the single-read form, and keeping it means the
+// conversion has one owner whether the caller holds a Sheet or the values.
+function sirWsRowsToObjects_(sheet) {
+  return sirWsRowsFromValues_(sheet.getDataRange().getValues());
 }
 
 function sirWorkspaceDefaultIo_() {
@@ -535,10 +576,32 @@ function sirWorkspaceDefaultIo_() {
       return ss;
     },
     readTable: function (ss, name, requiredCols, optional) {
-      if (optional && !ss.getSheetByName(name)) return [];
-      var sheet = prodRequireSheet_(ss, name, []);
-      prodRequireColumns_(sheet, requiredCols);
-      return sirWsRowsToObjects_(sheet);
+      // §5 — ABSENCE IS DECIDED BEFORE ANY RANGE READ, and with ONE getSheetByName rather than two. An
+      // optional table that is absent is [] (the browser's graceful-empty); a required one fails closed.
+      var sheet = ss.getSheetByName(name);
+      if (!sheet) {
+        if (optional) return [];
+        throw prodSchemaError_('SCHEMA_NOT_PROVISIONED', name, null);
+      }
+      // The exact-Spreadsheet-ID gate prodRequireSheet_ ran per table, kept per table. Metadata only.
+      prodAssertDbTarget_(ss, null);
+      // HEADER_MISSING on geometry, as before — see the note above on why this is not folded into data[0].
+      if (sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) throw prodSchemaError_('HEADER_MISSING', name, null);
+      var data = sheet.getDataRange().getValues();            // THE ONE RANGE READ
+      var header = sirWsHeaderFromValues_(data);
+      // The SAME classifier, on the SAME header array prodRequireSheet_ used to fetch for itself.
+      var report = prodSafetyBundle_().classifySchemaMismatch({ exists: true, actualHeaders: header,
+        expectedHeaders: [], extraColumnsPolicy: 'ALLOW' });
+      if (!report.valid) throw prodSchemaError_(report.schemaStatus, name, report);
+      // §7 — requiredCols from that same array. prodRequireColumns_'s comparison, zero additional reads.
+      if (requiredCols && requiredCols.length) {
+        var have = {};
+        for (var h = 0; h < header.length; h++) { if (header[h] !== '') have[header[h]] = 1; }
+        var missing = [];
+        for (var q = 0; q < requiredCols.length; q++) { if (!have[requiredCols[q]]) missing.push(requiredCols[q]); }
+        if (missing.length) throw prodSchemaError_('MISSING_REQUIRED_HEADER', name, { missing: missing });
+      }
+      return sirWsRowsFromValues_(data);
     }
   };
 }

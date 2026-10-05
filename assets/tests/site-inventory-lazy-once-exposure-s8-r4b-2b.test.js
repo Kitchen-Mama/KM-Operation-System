@@ -465,8 +465,19 @@ Promise.all(T).then(function () {
   // parameter at all - so the finding did not become wrong, its premise was replaced. What this assertion
   // must still pin is the half that has not changed: the ACTION, which is the thing a release is expensive
   // about.
-  eq(/SIR_BUILD_VERSION_ = '([^']+)'/.exec(G60)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42',
-    'E3  BACKEND_RELEASE_REQUIRED = YES as of S8-R4B-2D — 60_ gained the siteScope contract and is stamped R42');
+  // S8-R4D-C — AND AN EXACT STAMP PIN EXPIRES THE NEXT TIME 60_ CHANGES, WHICH IT JUST DID
+  // (R43, the redundant-header-read removal). The fact E3 defends is not 'the stamp is the R42 literal'
+  // but 'this file carries the siteScope contract, so it is at R42 OR LATER' — pinned at BOTH
+  // ends: a pre-R42 copy is rejected, and a later release is not a failure. The ACTION is pinned
+  // separately below, and that is the half a release is expensive about.
+  var _ro60 = require(path.join(ROOT, 'assets/tests/_release-order.js'));
+  var _s60 = /SIR_BUILD_VERSION_ = '([^']+)'/.exec(G60)[1];
+  ok(_ro60.stampAtOrAfter(_s60, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42'),
+    'E3  BACKEND_RELEASE_REQUIRED = YES as of S8-R4B-2D — 60_ carries the siteScope contract,'
+    + ' so its stamp is R42 or later (is ' + _s60 + ')');
+  ok(!_ro60.stampAtOrAfter('F1-7N-FC-1B-E3-R4-A2-R1-R6-R5', _s60),
+    'E3a and the floor is a real floor — the pre-siteScope stamp 60_ held before R42 does not'
+    + ' reach it');
   ok(/if \(onlySet && !onlySet\[spec\.name\]\) continue;/.test(G60),
     'E3a the `only` contract R4B-2B used was already shipped and is untouched');
   ok(/action: 'inventoryReplenishment\.workspace\.get'/.test(G60) && !/SIR_NEW_ACTION|newAction/.test(G60),

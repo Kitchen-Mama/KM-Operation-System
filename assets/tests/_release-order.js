@@ -1608,7 +1608,18 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // R41 WAS NOT JOINED, for the reason R41 was itself cut rather than folded into R40: R41 is already cut,
   // its owner set is 01_ + 63_, and its tree is not this one. APPEND-ONLY, at the end — stampAtOrAfter
   // compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42',
+  // S8-R4D-C - R43. 60_'s io.readTable stops fetching each table's header row separately: the header
+  // validators now take row 0 of the full-sheet read the handler already performs, so thirteen tables cost
+  // thirteen range reads instead of thirty. Owner set is 60_ + 63_. 01_ keeps R41 - no action and no route
+  // moved, because nothing about the REQUEST changed; only how the handler obtains bytes it already
+  // obtained. 90_ is NOT rebuilt: no core module changed.
+  //
+  // R42 WAS NOT JOINED, and this time the reason is stronger than precedent: R42 is cut, DEPLOYED and
+  // ACCEPTED in Production. Folding R43's bytes into it would leave the live system reporting a release id
+  // that names two different trees - and the entire purpose of R43 is to let the acceptance that follows
+  // say which of the two it measured. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

@@ -4377,3 +4377,84 @@ GIT_PUSH_REQUIRED                YES - USER-owned, after review
 ```
 
 **STATUS: NOT DEPLOYED · NOT SYNCED.**
+
+---
+
+## S8-R4D-C — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43` — THE FIRST-LAYER READ STOPS FETCHING EACH HEADER TWICE
+
+```
+BASE    f6b4164   S8-R4C-P1's publication commit; R42 is CUT, DEPLOYED and ACCEPTED there
+BRANCH  feature/product-strategy-board-p0   main = origin/main = f6b4164
+DATE    2026-10-05
+SCOPE   READ-PATH COST ONLY. 60_'s own io.readTable stops fetching each table's header row separately.
+        No action added or removed, no route moved, no request field, no response field, no business
+        rule, no schema, no stored row, zero DB writes. One runtime file plus the manifest.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43
+PURPOSE                      Site Inventory first-layer service-call reduction (B3)
+SUPERSEDES                   nothing. R42 is CUT and DEPLOYED and remains valid; R43 follows it.
+STATUS                       PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries it,
+                             no Web App version exists, and Production is NOT R43.
+
+PRODUCTION TODAY             R42, verified live by system.health during the S8-R4C acceptance
+                             (deployment_build = R42, mixed_deployment = false). The R42 entry above
+                             still reads NOT DEPLOYED because entries record INTENT at cut time and are
+                             not rewritten; only a live probe states what Production runs.
+
+WHAT CHANGED, AND WHY IT IS NOT VISIBLE FROM THE BROWSER
+-------------------------------------------------------------------------------------------------------
+  io.readTable asked prodRequireSheet_ to validate the header, which reads row 1. For the four tables
+  carrying requiredCols it then asked prodRequireColumns_, which reads row 1 again. Only then did
+  sirWsRowsToObjects_ call getDataRange().getValues() - whose row 0 IS that header, already fetched,
+  twice. Thirteen tables cost THIRTY range reads.
+
+    13 prodRequireSheet_ header reads + 4 prodRequireColumns_ header reads + 13 full-sheet reads = 30
+    ->  13 full-sheet reads
+
+  The header now comes from the one full-sheet read and is handed to the SAME validators.
+  classifySchemaMismatch has always taken a header ARRAY and never touched a Sheet; the requiredCols
+  check is the identical set comparison. What is removed is the fetching, not the checking.
+
+WHY A NEW RELEASE AND NOT A RIDE-ALONG ON R42
+-------------------------------------------------------------------------------------------------------
+  R42 is not merely cut - it is DEPLOYED and ACCEPTED in Production. Folding R43's bytes into it would
+  leave the live system reporting one id for two different trees, and the whole purpose of R43 is to let
+  the acceptance that follows say which of them it measured. 01_ did not change and keeps R41.
+
+WHAT IS DELIBERATELY NOT IN THIS RELEASE
+-------------------------------------------------------------------------------------------------------
+  The R4D-A daily-sales column projection (A+C) is NOT applied: B3 must measure the causal effect of
+  reducing service-call count ALONE, and a payload change in the same release would make the result
+  unattributable. Advanced Sheets Service / batchGet (B1) is NOT enabled - no manifest change, no OAuth
+  scope change. If the call count falls 30 -> 13 and server time does NOT move, the round-trip
+  hypothesis is weakened and B1 must not proceed on the strength of it.
+
+STAMPS
+-------------------------------------------------------------------------------------------------------
+  63_  SYS_DEPLOYMENT_RELEASE_    R42     -> R43       the RELEASE
+  63_  SYS_BUILD_VERSION_         R42     -> R43       63_ own module stamp (63_ changed)
+  60_  SIR_BUILD_VERSION_         R42     -> R43       the read path changed
+  01_  RTR_BUILD_VERSION_         R41        R41       UNCHANGED - no action, no route, no request field
+                                                       moved. 01_ is NOT an R43 owner.
+
+RELEASE_OWNER_SET                60_api_v1_inventory_replenishment_workspace.gs,
+                                 63_api_v1_system_health.gs
+ACTION_CONTRACT_VERSION          18 - unchanged. No action added or removed.
+REQUIRED_ACTION_LIST_VERSION     14 - unchanged. No page gained a mount dependency.
+APPS_SCRIPT_SYNC_REQUIRED        YES - 60_api_v1_inventory_replenishment_workspace.gs,
+                                 63_api_v1_system_health.gs
+APPS_SCRIPT_NEW_VERSION_REQUIRED YES
+APPSSCRIPT_MANIFEST_CHANGE       NO - no advanced service, no OAuth scope change
+BUNDLE_REBUILD_REQUIRED          NO - no assets/js/core module changed
+DB_SCHEMA_CHANGE                 NONE
+DB_WRITES                        0
+DB_DELETES                       0
+DB_READS                         13 - the unchanged first-layer set
+FRONTEND_DEPLOY_REQUIRED         NO - no browser-served byte changed
+CACHE_TOKEN_ROTATION_REQUIRED    NO - no frontend file changed
+APPS_SCRIPT_DEPLOYMENT_PERFORMED NO
+FRONTEND_PUBLICATION_PERFORMED   NO
+GIT_PUSH_REQUIRED                YES - USER-owned, after review
+```
+
+**STATUS: NOT DEPLOYED · NOT SYNCED.**
