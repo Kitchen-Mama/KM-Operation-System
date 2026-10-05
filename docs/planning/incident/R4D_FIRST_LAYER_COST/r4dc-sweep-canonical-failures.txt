@@ -1,0 +1,24 @@
+### gap-job-done-notice-f1-small-r1.test.js  [EXIT1]
+  FAIL Order Planning: announceManualDone called EXACTLY once
+  FAIL OP manual done → announceManualDone(runId, formatDoneMessage(Order Planning,...))
+  FAIL OP announce lives inside the manual runJob (product ORDER_PLANNING) block
+### order-planning-monthly-projection-consumer-f1-4b-fm3d.test.js  [EXIT1]
+  FAIL K/W manual Order Qty default + Send Request path UNCHANGED (frozen write path)
+### positive-residual-and-submit-readiness-census-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r5-r1.test.js  [EXIT1]
+  FAIL M1a a live positive-residual world is READY_TO_AUTHORIZE
+  FAIL M1b with no condition unmet
+  FAIL M3e and no field is unknown or unreadable
+  FAIL M3f named individually rather than counted
+  FAIL M4a and the deployment build is the one this manifest was written against
+  FAIL M5  a BEFORE baseline was frozen
+### replen-header-toggle.test.js  [EXIT1]
+  FAIL A1: leaf header sequence (…Days of Supply, Suggested Qty, CN, TW)
+  FAIL A1: group leaf-spans sum to the number of leaf columns (9)
+  FAIL A1: leaf 7 is the first Replenishment leaf
+  FAIL A1: leaf 8 is the second (last) Replenishment leaf
+  FAIL A1: leaf 9 (CN) is the first Factory Stock leaf — NOT under Replenishment
+  FAIL A1: leaf 10 (TW) is the second Factory Stock leaf
+  FAIL A2: Suggested Qty cell shows value/status only (no button)
+### supply-planning-route-inventory.test.js  [EXIT1]
+  FAIL D: locked generation delegates to KMORCH
+  FAIL D: locked generation uses keyed-delta write
