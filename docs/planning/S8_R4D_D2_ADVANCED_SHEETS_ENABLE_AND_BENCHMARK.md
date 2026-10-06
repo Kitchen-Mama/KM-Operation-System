@@ -150,6 +150,30 @@ fired on any manifest edit would be useless to this round.
 ACTIVATION_SUITE = 362 passed · 0 failed · 20 mutants caught · 0 survived
 ```
 
+### Four more, found by the sweep — and they are a different shape
+
+One added line in `appsscript.json` turned six gates red. Three more than the two above, and the sweep is what
+found them, because **a git-reading gate cannot fail before the commit**: it compares SHAs, not the working
+tree, so the pre-commit run of the affected set was green.
+
+The new three are not open intervals. They are the wrong **filter**:
+
+| gate | what it read | repair |
+|---|---|---|
+| `s7-r4` `runtimeGsBetween` | the **folder**, not the extension — while every sentence built on it says "runtime files" | filter `.gs`, and assert the non-`.gs` half separately as H2f so nothing is dropped |
+| `action-registry…-fb-4e-r2` 8 | a register: every changed file must be **declared with a reason** | take the entry |
+| `product-strategy-visual…-r6` G6 | the same register shape | take the entry |
+
+For a register, declaring the entry is the repair and filtering by extension is not. These lists exist
+because a file moving in that folder without a stated reason is how an unrelated edit reaches Production —
+and a manifest is the one file that can silently un-deploy a feature, which makes it the worst possible place
+to start carving out exceptions by file type.
+
+```
+GATES_RE_AIMED = 6   D1 B1 · D1 A3a · activation G5 · release-ledger I1 · deploy-surface H2e · 2 registers
+INTERVALS_PINNED_AT_ONE_END_FOUND_THIS_PHASE = 6
+```
+
 ## 4. What this repository cannot prove
 
 ```
@@ -235,12 +259,40 @@ NO_GO_CLEANUP
   NO PRODUCT ROLLBACK. 60_ never changed. That is the point of this shape.
 ```
 
-## 8. State
+## 8. Evidence
+
+```
+TARGETED_TESTS   13 suites · 0 failures · 0 survived · 0 vacuous
+                 b1-advanced-sheets-benchmark-harness-s8-r4d-d1      59 passed · 14 mutants
+                 advanced-sheets-service-enable-transition-s8-r4d-d2 24 passed · 13 mutants
+                 product-strategy-activation-p1-b8d                 362 passed · 20 mutants
+                 fc-target-rule-release-stamp-r2b-a2-r5-f3          107 passed · 18 mutants
+                 s7-r4-production-deploy-surface                     97 passed · 12 mutants
+                 action-registry-and-router-completeness-fb-4e-r2   202 passed
+                 product-strategy-visual-integration-p1-b8d-r6      116 passed · 14 mutants
+                 + appsscript-manifest-oauth-scopes · s7-r1 · first-layer-redundant-header-read
+                 + site-inventory-lazy-once-exposure · deployment-r10 · identity-boundary-baseline
+
+FULL_SWEEP       612 suites · 607 OK · 0 timeouts · 19 FAIL lines · tree clean after
+CANONICAL_FIVE   gap-job-done-notice (3) · order-planning-monthly-projection-consumer (1)
+                 positive-residual-and-submit-readiness-census (6) · replen-header-toggle (7)
+                 supply-planning-route-inventory (2)
+CANONICAL_FAILURE_SET_CHANGED = NO   byte-identical to the R4C baseline, suite for suite and line for line
+```
+
+The first D2 sweep ran before the register repairs and showed **seven** failing suites; the two extra were
+the registers above. The re-run after the repairs is the one recorded here.
+
+## 9. State
 
 ```
 PRE_HEAD   = 3d71590
+POST_HEAD  = d6f2fb5
 BENCHMARK_EXECUTED = NO
-ADVANCED_SHEETS_SERVICE_LIVE = UNKNOWN
-OPERATOR_ACTION_REQUIRED = §6 runbook above
-NEXT = §7 operator completion input, then §8 availability probe
+ADVANCED_SHEETS_SERVICE_LIVE = UNKNOWN — operator-reported
+PRODUCT_RUNTIME_FILE_CHANGE_COUNT = 0
+R44_RELEASE_CUT = NO
+PRODUCTION_ROWS_WRITTEN = 0 · PRODUCTION_ROWS_DELETED = 0 · SCHEMA_CHANGES = 0
+OPERATOR_ACTION_REQUIRED = §5 runbook above
+NEXT = §7 operator completion input, then the §8 availability probe
 ```
