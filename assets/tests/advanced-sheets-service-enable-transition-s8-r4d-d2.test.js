@@ -168,6 +168,73 @@ ok(/NO-GO/.test(read(STATE_REL)) && /flips this back to false/.test(read(STATE_R
   + 'they moved forward together');
 
 // ===================================================================================================
+console.log('\n================ P — THE §8 AVAILABILITY PROBE IS READ ONLY ================\n');
+
+// The probe reaches PRODUCTION. It gets the same zero-write treatment the benchmark tool gets, for the
+// same reason: 'it only reads' is a claim about a file, and a claim about a file is testable.
+var PROBE_REL = 'assets/tools/apps-script-diagnostics/TEMP_S8_R4D_D2_SHEETS_AVAILABILITY_PROBE.gs';
+var PROBE = read(PROBE_REL);
+
+// Comments are stripped first. The probe's header EXPLAINS that it performs no write, and a detector
+// that punished the documentation it depends on would teach the next author to stop writing it.
+function stripComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ').replace(/[ \t]\/\/.*$/gm, ' ');
+}
+var PROBE_CODE = stripComments(PROBE);
+var WRITE_PRIMS = ['setValue', 'setValues', 'appendRow', 'insertRow', 'insertRows', 'deleteRow',
+  'deleteRows', 'insertSheet', 'deleteSheet', 'clearContents', 'clear(', 'setFormula', 'setBackground',
+  'PropertiesService', 'CacheService', 'DriveApp', 'MailApp', 'GmailApp', 'ScriptApp.newTrigger',
+  'Sheets.Spreadsheets.Values.update', 'Sheets.Spreadsheets.Values.append',
+  'Sheets.Spreadsheets.batchUpdate'];
+eq(WRITE_PRIMS.filter(function (w) { return PROBE_CODE.indexOf(w) !== -1; }), [],
+  'P1  WRITE_PRIMITIVE_COUNT = 0 — no sheet write, property, cache, drive, mail or trigger primitive');
+ok(/PASTE\s*[·.|-]\s*RUN\s*[·.|-]\s*REPORT\s*[·.|-]\s*REMOVE/i.test(PROBE),
+  'P2  the header declares PASTE / RUN / REPORT / REMOVE — it says what it is, in the file itself');
+
+// It must not become a measurement. A probe that reported milliseconds would have its number read as the
+// benchmark's, and the first call after a service is enabled is the worst sample that will ever be taken.
+ok(!/Date\.now\(\)|getTime\(\)|_MS\b|elapsed/i.test(PROBE_CODE),
+  'P3  it takes NO timing — §8 answers availability, and §15 answers speed, in pairs, separately');
+
+// One cell. A probe that pulled a whole sheet would be a small benchmark nobody controlled.
+var ranges = PROBE_CODE.match(/ranges:\s*\[([^\]]*)\]/);
+ok(!!ranges, 'P4  the batchGet call names its ranges literally, so the width is reviewable');
+eq((ranges ? ranges[1] : '').split(',').length, 1, 'P4a exactly ONE range');
+ok(/!A1:A1'/.test(ranges ? ranges[1] : ''), 'P4b and it is a single cell — A1:A1');
+ok(/fields:\s*'sheets\.properties\.title'/.test(PROBE_CODE),
+  'P4c and the metadata call is field-limited to titles, so it pulls no grid data');
+
+// No spreadsheet id is introduced by a diagnostic. It reads the one the runtime already declares.
+ok(/PRODUCTION_DB_SPREADSHEET_ID_/.test(PROBE_CODE),
+  'P5  the id comes from 00_config.gs — no literal id is introduced by a TEMP file');
+eq((PROBE_CODE.match(/1[A-Za-z0-9_-]{30,}/g) || []), [],
+  'P5a and no spreadsheet-id-shaped literal appears anywhere in it');
+
+// It is not product code: no action, no route, no handler reaches it.
+ok(!/registerAction|KMWRR|KM_ACTION|doGet|doPost/.test(PROBE_CODE),
+  'P6  it registers no action and defines no entry point the router could reach');
+eq(fs.readdirSync(path.join(ROOT, GS)).filter(function (f) {
+  return /\.gs$/.test(f) && /D2PROBE_/.test(read(GS + f)); }), [],
+  'P6a and no Apps Script runtime file calls it');
+
+// THE THREE QUESTIONS STAY THREE. Namespace, get and batchGet fail for three different reasons — the
+// service not added, the Cloud API not enabled, and a permission problem. Collapsing them discards the
+// only diagnosis the probe exists to produce, and a partial pass must never report LIVE.
+['SHEETS_NAMESPACE_RESOLVES', 'SPREADSHEETS_GET_OK', 'VALUES_BATCHGET_OK'].forEach(function (k) {
+  ok(PROBE_CODE.indexOf(k) !== -1, 'P7  it reports ' + k + ' on its own');
+});
+var liveExpr = (PROBE_CODE.match(/ADVANCED_SHEETS_SERVICE_LIVE\s*=\s*[\s\S]*?;/g) || []).join(' ');
+eq(['SHEETS_NAMESPACE_RESOLVES', 'SPREADSHEETS_GET_OK', 'VALUES_BATCHGET_OK']
+    .filter(function (k) { return liveExpr.indexOf(k) === -1; }), [],
+  'P7a and LIVE = YES requires ALL THREE — two of three would hand the benchmark a candidate arm that '
+  + 'cannot complete');
+
+// A failure must be reportable. Summarising the error text away is how a 403 SERVICE_DISABLED becomes
+// an indistinguishable false.
+eq((PROBE_CODE.match(/errors\.push\(/g) || []).length, 4,
+  'P8  every one of the three calls, plus the hard stop, pushes its RAW error text');
+
+// ===================================================================================================
 console.log('\n================ W — MUTANTS ================\n');
 
 // Mutations are applied to in-memory COPIES. Nothing is written to disk: a suite that rewrites a real source
@@ -175,9 +242,10 @@ console.log('\n================ W — MUTANTS ================\n');
 var TREE = {
   state: NOW_STATE_SRC,
   manifest: NOW_MANIFEST_SRC,
+  probe: PROBE,
   runtime: RUNTIME_GS.reduce(function (a, f) { a[f] = read(GS + f); return a; }, {})
 };
-function clone(t) { return { state: t.state, manifest: t.manifest, runtime: JSON.parse(JSON.stringify(t.runtime)) }; }
+function clone(t) { return { state: t.state, manifest: t.manifest, probe: t.probe, runtime: JSON.parse(JSON.stringify(t.runtime)) }; }
 function anyRuntime(t) { return Object.keys(t.runtime)[0]; }
 // The release mutant must land in a file that actually CARRIES the stamp. Pointed at an arbitrary runtime
 // file the replace is a silent no-op, and a no-op mutation reported as caught is a lie about coverage.
@@ -200,6 +268,18 @@ var dTimeZone = function (t) { return JSON.parse(t.manifest).timeZone !== preMan
 var dRuntimeConsumes = function (t) { return Object.keys(t.runtime).some(function (f) { return /\bSheets\.Spreadsheets\b/.test(t.runtime[f]); }); };
 var dRuntimeBatchGet = function (t) { return Object.keys(t.runtime).some(function (f) { return /\bbatchGet\b/.test(t.runtime[f]); }); };
 var dR44 = function (t) { return Object.keys(t.runtime).some(function (f) { return /R44/.test(t.runtime[f]); }); };
+var dProbeWrites = function (t) { var c = stripComments(t.probe); return WRITE_PRIMS.some(function (w) { return c.indexOf(w) !== -1; }); };
+var dProbeLive = function (t) {
+  var e = (stripComments(t.probe).match(/ADVANCED_SHEETS_SERVICE_LIVE\s*=\s*[\s\S]*?;/g) || []).join(' ');
+  return ['SHEETS_NAMESPACE_RESOLVES', 'SPREADSHEETS_GET_OK', 'VALUES_BATCHGET_OK']
+    .some(function (k) { return e.indexOf(k) === -1; });
+};
+var dProbeRange = function (t) {
+  var m = stripComments(t.probe).match(/ranges:\s*\[([^\]]*)\]/);
+  return !m || m[1].split(',').length !== 1 || !/!A1:A1'/.test(m[1]);
+};
+var dProbeId = function (t) { return (stripComments(t.probe).match(/1[A-Za-z0-9_-]{30,}/g) || []).length > 0; };
+var dProbeTiming = function (t) { return /Date\.now\(\)|getTime\(\)|_MS\b|elapsed/i.test(stripComments(t.probe)); };
 var dRollback = function (t) {
   var m = JSON.parse(t.manifest);
   m.dependencies.enabledAdvancedServices = m.dependencies.enabledAdvancedServices
@@ -233,7 +313,19 @@ var MUTANTS = [
   { id: 'M12', why: 'benchmark infrastructure cuts an R44 release',
     det: dR44, mut: function (t) { t.runtime[STAMPED_FILE] = t.runtime[STAMPED_FILE].replace(R43_ID, R43_ID.replace('R43', 'R44')); } },
   { id: 'M13', why: 'an unrelated manifest edit hides beside the service, so deletion no longer restores PRE',
-    det: dRollback, mut: function (t) { t.manifest = t.manifest.replace('"STACKDRIVER"', '"NONE"'); } }
+    det: dRollback, mut: function (t) { t.manifest = t.manifest.replace('"STACKDRIVER"', '"NONE"'); } },
+  // The §8 probe's own gates. It reaches Production, so its mutants run here rather than nowhere.
+  { id: 'M14', why: 'the probe gains a write primitive',
+    det: dProbeWrites, mut: function (t) { t.probe += '\nfunction z_(){ sh.getRange(1,1).setValue(1); }\n'; } },
+  { id: 'M15', why: 'LIVE is computed from two of the three answers, so a partial pass reports YES',
+    det: dProbeLive, mut: function (t) { t.probe = t.probe.replace('&& out.VALUES_BATCHGET_OK)', ')'); } },
+  { id: 'M16', why: 'the one-cell range is widened into an unmeasured read of a whole sheet',
+    det: dProbeRange, mut: function (t) { t.probe = t.probe.replace("marketplaces!A1:A1", 'marketplaces!A:AZ'); } },
+  { id: 'M17', why: 'a literal spreadsheet id is introduced by a TEMP diagnostic',
+    det: dProbeId, mut: function (t) { t.probe = t.probe.replace('PRODUCTION_DB_SPREADSHEET_ID_',
+      "'1EMe9l6ow0-OZkNY9ZP6IxHk84YGs5bqD5nVKHOPt-Kk'"); } },
+  { id: 'M18', why: 'the probe starts timing itself, inviting its number to be read as the benchmark',
+    det: dProbeTiming, mut: function (t) { t.probe += '\nvar t0 = Date.now();\n'; } }
 ];
 
 var survived = 0, vacuous = 0;
@@ -242,7 +334,7 @@ MUTANTS.forEach(function (m) {
   if (m.det(clean)) { vacuous++; console.log('VACUOUS ' + m.id + '  the detector already fires on the UNMUTATED tree — it is not detecting the fault'); return; }
   var t = clone(TREE);
   m.mut(t);
-  var changed = t.state !== clean.state || t.manifest !== clean.manifest
+  var changed = t.state !== clean.state || t.manifest !== clean.manifest || t.probe !== clean.probe
     || JSON.stringify(t.runtime) !== JSON.stringify(clean.runtime);
   if (!changed) { vacuous++; console.log('VACUOUS ' + m.id + '  the mutation changed NOTHING — a no-op cannot be caught, and reporting it as caught would be a lie'); return; }
   if (m.det(t)) { console.log('caught: ' + m.id + '  ' + m.why); }

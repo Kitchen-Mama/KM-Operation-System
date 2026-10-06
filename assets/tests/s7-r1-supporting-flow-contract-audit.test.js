@@ -496,12 +496,19 @@ var TOOLS_SEED = lsdir('tools/apps-script-seeds').filter(function (f) { return /
 // census CORRECTLY classified it DIAGNOSTIC and writes:false without being told to, which is this
 // gate doing its job - a new TEMP tool is meant to be noticed, and the count moves only with a
 // written reason. It is PASTE/RUN/REPORT/REMOVE and is not a production runtime owner.
-eq(TOOLS_DIAG.length, 36, 'F1a thirty-six diagnostics live under tools/, outside the deploy folder');
+// S8-R4D-D2 - 36 -> 37 DIAGNOSTICS. TEMP_S8_R4D_D2_SHEETS_AVAILABILITY_PROBE.gs joins the folder: the
+// §8 read-only probe that asks whether the newly enabled Sheets advanced service actually resolves in
+// the project, BEFORE any measurement is taken. The repository cannot prove a Google console action, so
+// the fact has to be asked rather than assumed - and asking it separately is what keeps a benchmark
+// failure from being ambiguous between 'the candidate is slow' and 'the candidate was never available'.
+// It takes no timing, reads at most one cell, and is PASTE/RUN/REPORT/REMOVE like its sibling. The census
+// classified it DIAGNOSTIC and writes:false unprompted, which is again this gate doing its job.
+eq(TOOLS_DIAG.length, 37, 'F1a thirty-seven diagnostics live under tools/, outside the deploy folder');
 eq(TOOLS_MIG.length, 4, 'F1b four migrations');
 eq(TOOLS_SEED.length, 1, 'F1b1 and the one seed has a directory of its own, because burying the tool '
   + 'that can empty six tables among ordinary migrations loses the only fact about it that matters');
-eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 41, 'F1c TEMP_SCRIPT_COUNT = 41');
-eq(AS_TEMP.length, 41, 'F1d and the census below reads all 41, not the empty folder');
+eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 42, 'F1c TEMP_SCRIPT_COUNT = 42');
+eq(AS_TEMP.length, 42, 'F1d and the census below reads all 42, not the empty folder');
 
 var permTop = {};
 AS_PERM.forEach(function (f) { topLevelSymbols(SRC[f]).forEach(function (n) { permTop[n] = 1; }); });
