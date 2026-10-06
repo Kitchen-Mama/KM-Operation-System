@@ -287,7 +287,8 @@ the registers above. The re-run after the repairs is the one recorded here.
 
 ```
 PRE_HEAD   = 3d71590
-POST_HEAD  = d6f2fb5
+POST_HEAD  = 755cc8f   this document's own commit; the transition landed across four:
+             b308984 the transition  534e814 two gates  d6f2fb5 two registers  755cc8f this write-up
 BENCHMARK_EXECUTED = NO
 ADVANCED_SHEETS_SERVICE_LIVE = UNKNOWN — operator-reported
 PRODUCT_RUNTIME_FILE_CHANGE_COUNT = 0
