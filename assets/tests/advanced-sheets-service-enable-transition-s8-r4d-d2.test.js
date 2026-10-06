@@ -37,6 +37,7 @@ var PRE_SHA = '3d71590';
 // baseline and the declaration baseline are the same tree here — asserted below rather than assumed.
 var MANIFEST_BASE_SHA = '4a4a7f8';
 var R43_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
+var R44_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
 
 var pass = 0, fail = 0;
 function ok(c, m, extra) { if (c) { pass++; console.log('ok   ' + m); } else { fail++; console.log('FAIL ' + m + (extra === undefined ? '' : '\n   ' + extra)); } }
@@ -116,30 +117,83 @@ eq(flipped.length, 1,
   + 'not never');
 
 // A green suite must not be read as "the service is live". Google's console is not in this repository.
-ok(/operator/i.test(read(STATE_REL)),
-  'T5  the declaration states that the Apps Script / Cloud switch is an OPERATOR action — this repository '
-  + 'declares INTENT and cannot prove ADVANCED_SHEETS_SERVICE_LIVE');
+// T5 asserted the WORD 'operator' appeared in the declaration. That is a proxy for the fact, and the fact is
+// what matters: this repository declares INTENT and cannot prove the service is live in the deployed
+// project. R44 makes the fact sharper rather than weaker - the product now DEPENDS on the service - so the
+// assertion moves to the two things that are actually load-bearing.
+ok(/two separate switches/i.test(read(STATE_REL)),
+  'T5  the declaration states that the repository and the Apps Script project are two separate switches — '
+  + 'this file is INTENT and cannot prove ADVANCED_SHEETS_SERVICE_LIVE');
+ok(/\bPRODUCT_RUNTIME_DEPENDENCY\b/.test(read(STATE_REL))
+  && require(path.join(ROOT, STATE_REL)).PRODUCT_RUNTIME_DEPENDENCY === true,
+  'T5a and it is now declared a PRODUCT RUNTIME dependency, not benchmark infrastructure — R44 cannot serve '
+  + 'its primary read without the service, which is a different kind of claim from "a benchmark used it"');
+ok(/runtime_authority|by EXECUTION/i.test(read(STATE_REL)),
+  'T5b and it points at the EXECUTED attestation, because a manifest in this repository is not necessarily '
+  + 'the manifest in the deployed project');
 
 // ===================================================================================================
 console.log('\n================ U — WHAT THE FLIP DID NOT BUY ================\n');
 
+// S8-R4D-E2 - PINNED AT BOTH ENDS, and this is the round that proves it was needed.
+//
+// U1/U2/U4 read the WORKING TREE and said 'no Product file consumes the service, and no R44 exists'. That
+// was the correct claim for S8-R4D-D2 and it was true for exactly as long as D2 was the newest round. R44
+// adopts the service deliberately, so a gate reading HEAD now fails while describing a tree that is right.
+//
+// The fact worth keeping is unchanged and is about D2: ENABLING A SERVICE FOR A BENCHMARK DID NOT ADOPT IT.
+// That is a statement about a closed interval, so it is now read at D2_END - the last tree before the
+// implementation round - and the head gets its own paragraph below, stating what R44 did on purpose.
+var D2_END = '8ba0097';        // S8-R4D-E1's freeze: the last tree in which B1 was NOT in the Product path
+function runtimeAt(sha) {
+  return git(['ls-tree', '--name-only', sha + ':' + GS]).trim().split(/\r?\n/)
+    .filter(function (f) { return /^\d\d_.*\.gs$/.test(f); });
+}
 var RUNTIME_GS = fs.readdirSync(path.join(ROOT, GS)).filter(function (f) { return /^\d\d_.*\.gs$/.test(f); });
 ok(RUNTIME_GS.length > 20, 'U0  the runtime scan sees ' + RUNTIME_GS.length + ' files — the checks below are '
   + 'not passing over an empty list');
 
-eq(RUNTIME_GS.filter(function (f) { return /\bSheets\.Spreadsheets\b/.test(read(GS + f)); }), [],
-  'U1  NO Product runtime file consumes the advanced service — enabling it for a benchmark is not adopting it');
-eq(RUNTIME_GS.filter(function (f) { return /\bbatchGet\b/.test(read(GS + f)); }), [],
-  'U2  and no Product runtime file calls batchGet — B1 PRODUCT IMPLEMENTATION = NOT AUTHORIZED (§1)');
+var RUNTIME_AT_D2 = runtimeAt(D2_END);
+ok(RUNTIME_AT_D2.length > 20, 'U0a and the ' + D2_END + ' scan sees ' + RUNTIME_AT_D2.length + ' files');
+eq(RUNTIME_AT_D2.filter(function (f) { return /\bSheets\.Spreadsheets\b/.test(showAt(D2_END, GS + f)); }), [],
+  'U1  AT ' + D2_END + ' no Product runtime file consumed the advanced service — enabling it for a '
+  + 'benchmark was not adopting it');
+eq(RUNTIME_AT_D2.filter(function (f) { return /\bbatchGet\b/.test(showAt(D2_END, GS + f)); }), [],
+  'U2  and none called batchGet — B1 PRODUCT IMPLEMENTATION was NOT AUTHORIZED in that round');
 ok(/\bSheets\.Spreadsheets\b/.test(read(TOOL_REL)),
   'U3  the TEMP benchmark tool DOES consume it — so U1 is a real exclusion, not a pattern that matches nothing');
 
-ok(new RegExp("var SIR_BUILD_VERSION_ = '" + R43_ID + "'").test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
-  'U4  60_ is still R43 — no R44 is cut by enabling a service for a benchmark');
-ok(new RegExp("var SYS_DEPLOYMENT_RELEASE_ = '" + R43_ID + "'").test(read(GS + '63_api_v1_system_health.gs')),
-  'U4a and the deployment release is still R43');
-eq(RUNTIME_GS.filter(function (f) { return /R44/.test(read(GS + f)); }), [],
-  'U4b and the string R44 appears in no runtime file at all');
+ok(new RegExp("var SIR_BUILD_VERSION_ = '" + R43_ID + "'").test(showAt(D2_END, GS + '60_api_v1_inventory_replenishment_workspace.gs')),
+  'U4  60_ was still R43 at ' + D2_END + ' — no R44 was cut by enabling a service for a benchmark');
+ok(new RegExp("var SYS_DEPLOYMENT_RELEASE_ = '" + R43_ID + "'").test(showAt(D2_END, GS + '63_api_v1_system_health.gs')),
+  'U4a and the deployment release was still R43 there');
+eq(RUNTIME_AT_D2.filter(function (f) { return /R44/.test(showAt(D2_END, GS + f)); }), [],
+  'U4b and the string R44 appeared in no runtime file at all');
+
+// THE HEAD HALF — what R44 did on purpose, stated rather than inherited. Adoption is now EXPECTED, and it is
+// expected in exactly one file: a second Product consumer appearing without its own round would still fail.
+// CONSUMING the service and ATTESTING it are different things, and 63_ does the second: it asks
+// `typeof Sheets` so a deployment that lost the service says so in system.health. That is a namespace
+// check, not a read, and it issues no request. So the detector matches CALL SITES over comment-stripped
+// source — otherwise the health attestation, and the prose describing it, would count as adoption.
+var CALL_RE = /Sheets\.Spreadsheets\.(get|Values\.batchGet)\s*\(/;
+eq(RUNTIME_GS.filter(function (f) { return CALL_RE.test(stripComments(read(GS + f))); }),
+  ['60_api_v1_inventory_replenishment_workspace.gs'],
+  'U5  AT HEAD exactly ONE Product runtime file CALLS the advanced service — the first-layer reader, '
+  + 'and nothing else drifted onto the dependency');
+eq(RUNTIME_GS.filter(function (f) { return /Values\.batchGet\s*\(/.test(stripComments(read(GS + f))); }),
+  ['60_api_v1_inventory_replenishment_workspace.gs'],
+  'U5a and exactly one calls batchGet');
+ok(/typeof Sheets/.test(stripComments(read(GS + '63_api_v1_system_health.gs')))
+  && !CALL_RE.test(stripComments(read(GS + '63_api_v1_system_health.gs'))),
+  'U5b 63_ ATTESTS the service without calling it — a typeof check costs no API call, which is what lets '
+  + 'the health probe answer honestly on a deployment that cannot serve the read at all');
+ok(new RegExp("var SIR_BUILD_VERSION_ = '" + R44_ID + "'").test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
+  'U6  and it declares R44 — the round its read transport changed');
+ok(new RegExp("var SYS_DEPLOYMENT_RELEASE_ = '" + R44_ID + "'").test(read(GS + '63_api_v1_system_health.gs')),
+  'U6a and the deployment release is R44');
+ok(!/R44/.test(read(GS + '01_router.gs')),
+  'U6b 01_ is NOT stamped R44 — no action, no route and no request field moved');
 
 var preManifest = JSON.parse(PRE_MANIFEST_SRC), nowManifest = JSON.parse(NOW_MANIFEST_SRC);
 eq(nowManifest.oauthScopes, preManifest.oauthScopes,
@@ -265,9 +319,23 @@ var dBigQueryGone = function (t) {
 var dScope = function (t) { return JSON.stringify(JSON.parse(t.manifest).oauthScopes) !== JSON.stringify(preManifest.oauthScopes); };
 var dWebapp = function (t) { return JSON.stringify(JSON.parse(t.manifest).webapp) !== JSON.stringify(preManifest.webapp); };
 var dTimeZone = function (t) { return JSON.parse(t.manifest).timeZone !== preManifest.timeZone; };
-var dRuntimeConsumes = function (t) { return Object.keys(t.runtime).some(function (f) { return /\bSheets\.Spreadsheets\b/.test(t.runtime[f]); }); };
-var dRuntimeBatchGet = function (t) { return Object.keys(t.runtime).some(function (f) { return /\bbatchGet\b/.test(t.runtime[f]); }); };
-var dR44 = function (t) { return Object.keys(t.runtime).some(function (f) { return /R44/.test(t.runtime[f]); }); };
+var B1_OWNER_ = '60_api_v1_inventory_replenishment_workspace.gs';
+function otherRuntime(t) { return Object.keys(t.runtime).filter(function (f) { return f !== B1_OWNER_; })[0]; }
+// EXACTLY ONE owner, named. 'none' stopped being the right answer at R44; 'exactly the declared one' is
+// stronger than either, because it still fails when a second file drifts onto the dependency.
+var dRuntimeConsumes = function (t) {
+  var hits = Object.keys(t.runtime).filter(function (f) { return /Sheets\.Spreadsheets\.(get|Values\.batchGet)\s*\(/.test(stripComments(t.runtime[f])); });
+  return hits.length !== 1 || hits[0] !== B1_OWNER_;
+};
+var dRuntimeBatchGet = function (t) {
+  var hits = Object.keys(t.runtime).filter(function (f) { return /Values\.batchGet\s*\(/.test(stripComments(t.runtime[f])); });
+  return hits.length !== 1 || hits[0] !== B1_OWNER_;
+};
+// R44 is now EXPECTED in the two owners and forbidden everywhere else — the same shape, one release later.
+var dR44 = function (t) {
+  var hits = Object.keys(t.runtime).filter(function (f) { return /R6-R7-R44/.test(t.runtime[f]); }).sort();
+  return JSON.stringify(hits) !== JSON.stringify([B1_OWNER_, '63_api_v1_system_health.gs']);
+};
 var dProbeWrites = function (t) { var c = stripComments(t.probe); return WRITE_PRIMS.some(function (w) { return c.indexOf(w) !== -1; }); };
 var dProbeLive = function (t) {
   var e = (stripComments(t.probe).match(/ADVANCED_SHEETS_SERVICE_LIVE\s*=\s*[\s\S]*?;/g) || []).join(' ');
@@ -306,12 +374,14 @@ var MUTANTS = [
     det: dWebapp, mut: function (t) { t.manifest = t.manifest.replace('"USER_DEPLOYING"', '"USER_ACCESSING"'); } },
   { id: 'M9', why: 'the manifest timezone moves, which silently moves every date cell the product reads',
     det: dTimeZone, mut: function (t) { t.manifest = t.manifest.replace('"Asia/Taipei"', '"America/Los_Angeles"'); } },
-  { id: 'M10', why: 'a Product runtime file starts consuming the advanced service',
-    det: dRuntimeConsumes, mut: function (t) { t.runtime[anyRuntime(t)] += '\nfunction x_(){ return Sheets.Spreadsheets.get(id); }\n'; } },
-  { id: 'M11', why: 'a Product runtime file starts calling batchGet',
-    det: dRuntimeBatchGet, mut: function (t) { t.runtime[anyRuntime(t)] += '\nfunction y_(){ return Sheets.Spreadsheets.Values.batchGet(id, {}); }\n'; } },
-  { id: 'M12', why: 'benchmark infrastructure cuts an R44 release',
-    det: dR44, mut: function (t) { t.runtime[STAMPED_FILE] = t.runtime[STAMPED_FILE].replace(R43_ID, R43_ID.replace('R43', 'R44')); } },
+  // S8-R4D-E2 - these two now mutate a SECOND consumer onto the dependency, because the FIRST one is the
+  // whole point of R44. The detectors compare against the declared single owner rather than against zero.
+  { id: 'M10', why: 'a SECOND Product runtime file starts consuming the advanced service',
+    det: dRuntimeConsumes, mut: function (t) { t.runtime[otherRuntime(t)] += '\nfunction x_(){ return Sheets.Spreadsheets.get(id, {}); }\n'; } },
+  { id: 'M11', why: 'a SECOND Product runtime file starts calling batchGet',
+    det: dRuntimeBatchGet, mut: function (t) { t.runtime[otherRuntime(t)] += '\nfunction y_(){ return Sheets.Spreadsheets.Values.batchGet(id, {}); }\n'; } },
+  { id: 'M12', why: 'a THIRD runtime file is marched to R44 to make the release look complete',
+    det: dR44, mut: function (t) { t.runtime[otherRuntime(t)] += '\n// ' + R44_ID + '\n'; } },
   { id: 'M13', why: 'an unrelated manifest edit hides beside the service, so deletion no longer restores PRE',
     det: dRollback, mut: function (t) { t.manifest = t.manifest.replace('"STACKDRIVER"', '"NONE"'); } },
   // The §8 probe's own gates. It reaches Production, so its mutants run here rather than nowhere.

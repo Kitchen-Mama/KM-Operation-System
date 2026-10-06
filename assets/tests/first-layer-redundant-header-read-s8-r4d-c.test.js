@@ -275,9 +275,19 @@ console.log('\n================ G — RELEASE IDENTITY ================\n');
 var RO = require(path.join(ROOT, 'assets/tests/_release-order.js'));
 var H63 = read(GS + '63_api_v1_system_health.gs');
 var R43 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
-eq(/var SIR_BUILD_VERSION_ = '([^']+)'/.exec(SRC60_POST)[1], R43, 'G1  60_ is stamped R43');
-eq(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(H63)[1], R43, 'G2  the RELEASE is R43');
-eq(/var SYS_BUILD_VERSION_ = '([^']+)'/.exec(H63)[1], R43, 'G3  63_ own stamp is R43 — it carries 60_ row');
+// S8-R4D-E2 — R43 IS A FLOOR, NOT AN EQUALITY. These read '=== R43', which is a sentence only one release
+// can satisfy: the next round to change either file makes it false while describing a correct tree. What
+// S8-R4D-C actually established is that its change SHIPPED IN R43 — so the stamp must be R43 OR LATER, and
+// a stamp from before R43 must still fail. R44 is the release that proves the distinction was needed.
+ok(RO.stampAtOrAfter(/var SIR_BUILD_VERSION_ = '([^']+)'/.exec(SRC60_POST)[1], R43),
+  'G1  60_ is stamped R43 or later — the round its call count changed');
+ok(RO.stampAtOrAfter(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(H63)[1], R43),
+  'G2  the RELEASE is R43 or later');
+ok(RO.stampAtOrAfter(/var SYS_BUILD_VERSION_ = '([^']+)'/.exec(H63)[1], R43),
+  'G3  63_ own stamp is R43 or later — it carries 60_ row');
+// The floor has to bite in the other direction too, or 'at or after' is just 'anything'.
+ok(!RO.stampAtOrAfter('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42', R43),
+  'G3a and a PRE-R43 stamp is still rejected — the floor is a floor, not a formality');
 eq(/var RTR_BUILD_VERSION_ = '([^']+)'/.exec(read(GS + '01_router.gs'))[1],
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41', 'G4  01_ is UNCHANGED at R41 — no action and no route moved');
 ok(RO.stampAtOrAfter(R43, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R42'), 'G5  R43 is after R42 in the release order');

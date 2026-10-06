@@ -286,7 +286,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // action-contract version stays at 18 and 90_'s content hash is untouched. R42 cannot absorb it: R42 is
 // already cut, deployed and ACCEPTED against a tree in which this read path had not changed, and the whole
 // point of R43 is that an acceptance must be able to say which of the two it measured.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -329,7 +329,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
 // S6-R8A - and again: the release above, its own expected stamp and 22_'s. 90_'s hash is unchanged.
 // S8-R4B-1 - and again: the release above, its own expected stamp and 01_'s. 90_'s hash is unchanged.
 // S8-R4B-2D - and again: the release above, its own expected stamp and 60_'s. 90_'s hash is unchanged.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -600,7 +600,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -630,7 +630,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.
   { file: '61_api_v1_weekly_ai_plan.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate' },
-  { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log. R42 adds the SITE SCOPE: an exposure-only request may carry siteScope{company,country,marketplace} and is answered with a lineage reachability closure over the six exposure tables instead of every row of them. A pre-R42 copy ignores the field SILENTLY and returns every site - the same class of fault the recentWindow echo was added for, which is why this row exists rather than a comment. R43 makes ONE range read per table instead of two or three: the header validators now receive row 0 of the full-sheet read the handler already performs, so thirteen tables cost thirteen reads rather than thirty. Nothing in the request or the response moved, which is why a pre-R43 copy is SLOW rather than WRONG - and why this row is the only way an acceptance can tell which deployment it measured' },
+  { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log. R42 adds the SITE SCOPE: an exposure-only request may carry siteScope{company,country,marketplace} and is answered with a lineage reachability closure over the six exposure tables instead of every row of them. A pre-R42 copy ignores the field SILENTLY and returns every site - the same class of fault the recentWindow echo was added for, which is why this row exists rather than a comment. R43 makes ONE range read per table instead of two or three: the header validators now receive row 0 of the full-sheet read the handler already performs, so thirteen tables cost thirteen reads rather than thirty. Nothing in the request or the response moved, which is why a pre-R43 copy is SLOW rather than WRONG - and why this row is the only way an acceptance can tell which deployment it measured. R44 replaces the thirteen first-layer SpreadsheetApp reads with ONE Sheets.Spreadsheets.get and ONE Values.batchGet - measured 22,006 ms to 2,265 ms in Production. A pre-R44 copy is again merely SLOW, but this row carries a SECOND fact now: R44 is the first release whose read path depends on an ADVANCED SERVICE, so a project missing Sheets v4 does not run this file slowly, it cannot run its primary read at all - which is why runtime_authority.advanced_services attests the service by EXECUTION rather than by reading a manifest that may not be the one deployed' },
   // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
   // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
   // to an undefined handler, and the page has no fan-out left to fall back to.
@@ -825,6 +825,12 @@ function sysModuleBuildStamps_() {
     deployment_build: SYS_DEPLOYMENT_RELEASE_,          // the RELEASE, not this module's stamp
     modules: rows,
     runtime_authority: runtime,
+    // S8-R4D-E2 - lifted to the top level so a consumer does not have to know it lives inside
+    // runtime_authority. From R44 a deployment without the service cannot serve the first-layer read at
+    // all, which is a louder fact than any stamp - and a different one from a partial sync.
+    advanced_services: runtime.advanced_services || null,
+    advanced_services_ok: !!(runtime.advanced_services
+      && runtime.advanced_services.advanced_sheets_runtime_mode === 'RESOLVED'),
     absent_modules: absent.map(function (r) { return r.file; }),
     absent_optional_modules: absent_optional.map(function (r) { return r.file; }),
     stale_modules: stale.map(function (r) { return r.file + ' declares ' + r.declared_build + ', expected ' + r.expected_build; }),
@@ -913,6 +919,35 @@ function sysRuntimeAuthorityChecks_() {
         + ' and the lifecycle resolves ' + (l || '(none)'));
     }
   });
+  // ======================================================================================================
+  // S8-R4D-E2 §17 - THE ADVANCED SERVICE, ATTESTED BY EXECUTION.
+  //
+  // From R44 the first-layer read depends on Sheets v4. The repository guards appsscript.json BYTES, but the
+  // bytes in the repository are not necessarily the manifest in the deployed project - and a service removed
+  // in the editor leaves no trace a version string can carry. This asks the DEPLOYMENT, the same way the
+  // writer/lifecycle check above asks it rather than trusting a label.
+  //
+  // It costs ZERO API calls. `typeof Sheets` is a namespace check, not a request - so a project that has lost
+  // the service reports MIXED_OR_PARTIAL_SYNC here instead of failing at the first user read.
+  var sheetsResolves = false;
+  try {
+    sheetsResolves = (typeof Sheets !== 'undefined') && !!(Sheets && Sheets.Spreadsheets && Sheets.Spreadsheets.Values);
+  } catch (eAdv) { sheetsResolves = false; }
+  out.advanced_services = {
+    advanced_sheets_required: true,
+    advanced_sheets_manifest_expected: { userSymbol: 'Sheets', serviceId: 'sheets', version: 'v4' },
+    advanced_sheets_runtime_mode: sheetsResolves ? 'RESOLVED' : 'MISSING',
+    verdict: sheetsResolves
+      ? 'ADVANCED_SHEETS_RESOLVED — the deployment can serve the first-layer read'
+      : 'ADVANCED_SHEETS_MISSING — add the Sheets v4 advanced service (identifier Sheets) to this Apps Script '
+        + 'project; the first-layer read cannot run without it'
+  };
+  // DELIBERATELY NOT FOLDED INTO `uniform` / mixed_deployment, and the full sweep is what settled it. A
+  // missing advanced service is a different FAULT CLASS from a partial file sync, and the two have different
+  // remedies: mixed_deployment's own message tells the operator to re-copy the files and publish a new
+  // version, which would not fix this one. Reporting it there would raise the right alarm and send them to
+  // the wrong place. It carries its own verdict above, and system.health lifts it to the top level.
+
   out.verdict = out.uniform
     ? 'UNIFORM — the writer and the lifecycle resolve identically at every known schema generation'
     : 'RUNTIME_AUTHORITY_DIVERGENCE — the deployed lifecycle body does not share the writer\'s schema authority. '

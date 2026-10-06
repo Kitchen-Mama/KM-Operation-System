@@ -512,8 +512,12 @@ mut('N14 km-api-foundation.js is left behind on a superseded token', function ()
     'km-api-foundation.js?v=fc1b-e3r4-scopedread-20260904');
   return RO.staleAppTokenRefs(INDEX).length === 0 && RO.staleAppTokenRefs(m).length > 0;
 });
+// S8-R4D-E2 - RE-AIMED, NOT LOOSENED. The loop variable became `rspec` when the read split into the batched
+// first layer and the per-sheet remainder. The fact this mutant defends is unchanged: on the per-sheet path,
+// every table is still timed. Under the BATCH reader there is no per-table timing to remove, which is a
+// deliberate trade covered by the E2 suite's timingMode assertions rather than by this one.
 mut('N15 the per-table timing is removed, so "which sheet" has no answer again', function () {
-  var m = swap(G60, 'tableMs[spec.name] = io.now() - tT;', '');
+  var m = swap(G60, 'tableMs[rspec.name] = io.now() - tF2;', '');
   var c = gs60(m);
   var e = vm.runInContext('handleInventoryReplenishmentWorkspaceGet_', c)({ payload: {} }, io60());
   return (e.meta.slowestTables || []).length === 0;

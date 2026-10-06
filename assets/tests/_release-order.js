@@ -1619,7 +1619,8 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // ACCEPTED in Production. Folding R43's bytes into it would leave the live system reporting a release id
   // that names two different trees - and the entire purpose of R43 is to let the acceptance that follows
   // say which of the two it measured. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43',
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

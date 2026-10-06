@@ -4380,6 +4380,88 @@ GIT_PUSH_REQUIRED                YES - USER-owned, after review
 
 ---
 
+## S8-R4D-E2 — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44` — THE FIRST-LAYER READ LEAVES SpreadsheetApp
+
+```
+BASE    998cf9a   S8-R4D-E's preflight publication; R43 is CUT, DEPLOYED and ACCEPTED
+BRANCH  feature/product-strategy-board-p0
+DATE    2026-10-06
+SCOPE   READ TRANSPORT ONLY. The thirteen first-layer tables move from thirteen SpreadsheetApp
+        full-sheet reads to one Sheets.Spreadsheets.get plus one Values.batchGet. No action added or
+        removed, no route moved, no request field, no response field, no business rule, no schema,
+        no stored row, zero DB writes. Two runtime files.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44
+PURPOSE                      Site Inventory first-layer read transport (B1)
+SUPERSEDES                   nothing. R43 is CUT, DEPLOYED and ACCEPTED; R44 follows it.
+OWNERS                       60_api_v1_inventory_replenishment_workspace.gs  (SIR_BUILD_VERSION_)
+                             63_api_v1_system_health.gs                      (SYS_BUILD_VERSION_)
+CARRIED                      01_router.gs stays at R41. No action, no route and no request field moved,
+                             and SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ stays 18.
+EDITOR-APPLIED               appsscript.json already carries Sheets v4 from the S8-R4D-D2 benchmark
+                             transition. It is applied through the Apps Script editor's Services UI,
+                             NEVER pasted, and is not in the copy list.
+
+STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries R44,
+                             no Web App version exists for it, and Production is NOT R44.
+```
+
+### The measurement this release exists for
+
+```
+Production, 5 alternating pairs, S8-R4D-D2, read-only benchmark:
+  13 x SpreadsheetApp getDataRange().getValues()   22,006 ms median   (1,693 ms per table)
+  1 x Spreadsheets.get + 1 x Values.batchGet        2,265 ms median
+  saving 19,830 ms / 90.1% · B1 won 5 of 5 · sign test p = 0.031 · zero semantic diffs
+```
+
+**The 90.1% is a transport-layer figure and is not an end-to-end forecast.** The benchmark's CONTROL arm
+(22,006 ms, editor, thirteen reads only) is 4,477 ms SLOWER than R43's whole Web App handler (17,529 ms,
+reads plus view model plus envelope). Different execution paths, different days — both real, not
+comparable. The page-level number is unknown until it is measured the way R43's was, against a same-day
+baseline through the Web App. That is S8-R4D-E3, and it is the acceptance this release must still pass.
+
+### What is new in kind, not only in speed
+
+R44 is the **first release whose primary read depends on an advanced service**. Every earlier release could
+be deployed partially and would run slowly or answer wrongly; a project missing Sheets v4 cannot serve this
+read at all. Two consequences are built in rather than documented:
+
+- `system.health.runtime_authority.advanced_services` attests the service **by execution** (`typeof Sheets`),
+  not by reading a manifest that may not be the one deployed. A project that lost the service reports
+  `MIXED_OR_PARTIAL_SYNC` instead of failing at the first user read. It costs zero API calls.
+- A **bounded transient fallback** to the R43 reader covers 429, 5xx and an unresolved namespace — once per
+  logical read, never for a 403 or a schema fault, and always reported in `meta.fallbackUsed`. An
+  unreported fallback is indistinguishable from the feature working.
+
+### The part the benchmark could not prove
+
+Under `UNFORMATTED_VALUE` + `SERIAL_NUMBER` a date and a number are the same wire value. The benchmark
+scored zero date diffs because it asked the OLD reader which columns were Dates — an oracle the product does
+not have. R44 therefore carries an **explicit declared date map** (`SIR_B1_DATE_MAP_`, 46 columns across the
+thirteen) and a drift detector outside the read path. Three live columns show why no heuristic was
+acceptable: `fc_special_events.event_month` is the number 11 in a column named `_month`,
+`amazon_weekly_sales_snapshot.snapshot_week` is a string range, and three `overseas_inventory_snapshot`
+date columns are 100% blank.
+
+### Apps Script sync set
+
+```
+COPY (paste into the Production Apps Script project, in this order):
+  60_api_v1_inventory_replenishment_workspace.gs
+  63_api_v1_system_health.gs
+
+EDITOR-APPLIED (already present from S8-R4D-D2 — verify, do not paste):
+  appsscript.json   Sheets v4, identifier `Sheets`, alongside BigQuery v2
+
+DELETE (confirm absent — S8-R4D-D2 TEMP diagnostics):
+  TEMP_S8_R4D_D2_SHEETS_AVAILABILITY_PROBE.gs
+  TEMP_S8_R4D_B1_ADVANCED_SHEETS_BENCHMARK.gs
+
+THEN create a NEW VERSION on the EXISTING Production Web App. Do not create a second Web App.
+VERIFY system.health: deployment_build = R44, mixed_deployment = false,
+       runtime_authority.advanced_services.advanced_sheets_runtime_mode = RESOLVED
+```
 ## S8-R4D-C — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43` — THE FIRST-LAYER READ STOPS FETCHING EACH HEADER TWICE
 
 ```

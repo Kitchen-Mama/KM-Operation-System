@@ -84,9 +84,16 @@ function stripComments(t) {
 // ----------------------------------------------------------------------------------------------------------
 var G60_HELPERS = ['sirWsStr_', 'sirCap_', 'sirWsRecentWindow_', 'sirWsOnlyList_', 'sirWsOnlySet_',
   'sirWsSiteScope_', 'sirWsScopeApplicable_', 'sirWsSiteScopeClosure_', 'sirWorkspaceBuild_', 'sirBuildEnvelope_',
-  'handleInventoryReplenishmentWorkspaceGet_'];
+  'handleInventoryReplenishmentWorkspaceGet_',
+  'sirWsIsB1Table_', 'sirWsColumnLetter_', 'sirWsPadRows_', 'sirWsSerialToDate_', 'sirWsApplyDateMap_',
+  'sirWsClassifySheetsError_', 'sirWsIsTransientClass_', 'sirWsB1Error_'];
+// S8-R4D-E2 - this suite REASSEMBLES the handler from a named list rather than running the file, so a new
+// helper the handler calls must be listed here or the rebuilt function throws ReferenceError and every
+// assertion below reports a refused read instead of the fault. The list is the price of the precision: it
+// builds exactly the handler under test and nothing else.
 var G60_VARS = ['SIR_WS_ROW_MAX_', 'SIR_WORKSPACE_TABLES_', 'SIR_WS_RECENT_WINDOW_', 'SIR_EXPOSURE_TABLES_',
-  'SIR_SITE_SCOPE_FIELDS_'];
+  'SIR_SITE_SCOPE_FIELDS_', 'SIR_B1_TABLES_', 'SIR_B1_DATE_MAP_VERSION_', 'SIR_B1_DATE_MAP_',
+  'SIR_B1_NON_DATE_TRAPS_', 'SIR_B1_FALLBACK_CLASSES_', 'SIR_B1_MAX_FALLBACK_'];
 function server(src) {
   src = src || G60;
   var parts = G60_VARS.map(function (v) { return extractVar(src, v); })

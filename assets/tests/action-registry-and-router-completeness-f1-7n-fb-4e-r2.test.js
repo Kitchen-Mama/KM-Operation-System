@@ -133,7 +133,16 @@ function makeDeployment(opts) {
     CacheService: { getScriptCache: function () { return { get: function () { return null; }, put: function () {} }; } },
     DriveApp: { createFile: forbid('DriveApp.createFile') }, UrlFetchApp: {},
     MailApp: { sendEmail: forbid('MailApp.sendEmail') }, GmailApp: {}, HtmlService: {},
-    ScriptApp: { newTrigger: forbid('ScriptApp.newTrigger') }
+    ScriptApp: { newTrigger: forbid('ScriptApp.newTrigger') },
+    // S8-R4D-E2 - THE ADVANCED SERVICE IS PART OF A SYNCED DEPLOYMENT FROM R44. 63_ attests it by
+    // EXECUTION (typeof Sheets), so a sandbox that omits it models a project that cannot serve the
+    // first-layer read at all - which system.health must report as MIXED. `opts.noAdvancedSheets`
+    // models exactly that, and G5c/G5d below execute it, so the omission is a tested state rather
+    // than a fixture oversight.
+    Sheets: opts.noAdvancedSheets ? undefined : {
+      Spreadsheets: { get: function () { return { sheets: [] }; },
+        Values: { batchGet: function () { return { valueRanges: [] }; } } }
+    }
   };
   sb.globalThis = sb;
   var ctx = vm.createContext(sb);
@@ -170,6 +179,9 @@ function jsonResp(text, url) {
 
 var DEP = makeDeployment();
 function post(body) { return JSON.parse(DEP.doPost({ postData: { contents: JSON.stringify(body), type: 'text/plain' }, parameter: {} }).getContent()); }
+// S8-R4D-E2 - a SECOND deployment, built WITHOUT the advanced service, so the inverse of the R44
+// attestation is executed rather than asserted about source text.
+function postOn(dep, body) { return JSON.parse(dep.doPost({ postData: { contents: JSON.stringify(body), type: 'text/plain' }, parameter: {} }).getContent()); }
 
 // =============================================================================================================
 section('§1 — ALL FOUR ACTIONS, TRACED MECHANICALLY ON EVERY AXIS');
@@ -520,6 +532,27 @@ eq(g5bad.length, 0, 'G5 every manifest entry matches the build its file declares
 eq(H.mixed_deployment, false, 'G5 EXECUTED: a fully-synced deployment reports mixed_deployment false');
 eq((H.module_build_stamps.stale_modules || []).length, 0, 'G5 EXECUTED: with no stale module');
 eq((H.module_build_stamps.absent_modules || []).length, 0, 'G5 EXECUTED: and no absent module');
+// S8-R4D-E2 - the advanced service, attested by EXECUTION rather than by a version string.
+var ADVS = (H.module_build_stamps.runtime_authority || {}).advanced_services || {};
+eq(ADVS.advanced_sheets_runtime_mode, 'RESOLVED',
+  'G5a EXECUTED: a fully-synced deployment resolves the Sheets v4 advanced service');
+eq(ADVS.advanced_sheets_required, true,
+  'G5b EXECUTED: and it is REQUIRED from R44 - the first-layer read cannot run without it');
+// THE INVERSE is the half that matters: a project that lost the service must SAY SO. Without this the
+// attestation could be hard-coded to RESOLVED and nothing above would notice.
+var HNOADV = postOn(makeDeployment({ noAdvancedSheets: true }), { action: 'system.health' });
+var ADVS2 = (HNOADV.module_build_stamps.runtime_authority || {}).advanced_services || {};
+eq(ADVS2.advanced_sheets_runtime_mode, 'MISSING',
+  'G5c EXECUTED: a deployment WITHOUT the advanced service reports MISSING');
+eq(HNOADV.module_build_stamps.advanced_services_ok, false,
+  'G5d EXECUTED: ...and advanced_services_ok is FALSE beside the other deployment verdicts');
+// NOT mixed_deployment. A missing service is a different FAULT CLASS from a partial file sync, and
+// mixed_deployment's own remedy - re-copy the files, publish a new version - would not fix it. The alarm
+// is right; pointing it at the sync verdict would send the operator to the wrong place.
+eq(HNOADV.mixed_deployment, false,
+  'G5e EXECUTED: ...while mixed_deployment stays FALSE, because no FILE is out of sync');
+eq(H.module_build_stamps.advanced_services_ok, true,
+  'G5f EXECUTED: and a fully-synced deployment with the service reports advanced_services_ok true');
 
 // G6 — the frontend must never synthesize availability. Every value in the identity comes off the wire.
 var cdc = DBAPI_SRC.slice(DBAPI_SRC.indexOf('window.KM.DB.checkDeploymentContract'),

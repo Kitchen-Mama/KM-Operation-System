@@ -58,7 +58,7 @@
 // PERFORMANCE difference rather than a wrong answer - which is why this stamp matters for a DIFFERENT reason
 // than R42's did: R42 told you a stale copy would lie to you, R43 tells you a stale copy is merely slow, and
 // an acceptance that cannot tell the two deployments apart cannot attribute the measurement it just took.
-var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
+var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
 
 var SIR_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -180,6 +180,234 @@ function sirWsOnlySet_(payload) {
 var SIR_EXPOSURE_TABLES_ = ['shipments', 'shipment_lines', 'shipping_plans', 'shipping_plan_lines',
   'shipping_allocation_drafts', 'shipping_allocation_draft_lines'];
 var SIR_SITE_SCOPE_FIELDS_ = ['company', 'country', 'marketplace'];
+
+// ========================================================================================================
+// S8-R4D-E2 - THE FIRST-LAYER BATCH READ. R44.
+//
+// WHAT CHANGED. The thirteen first-layer tables are read with TWO remote calls instead of thirteen:
+// Sheets.Spreadsheets.get for existence and width, then Values.batchGet for the values. Measured in
+// Production over five alternating pairs: 22,006 ms -> 2,265 ms, 5/5, zero semantic diffs. The cost was
+// never the payload - batchGet moves the same bytes in a tenth of the time - it is the SpreadsheetApp range
+// bridge, and the only way past it is to stop crossing it thirteen times.
+//
+// WHAT DID NOT CHANGE. No request field, no response shape, no business rule, no action. The other eight
+// tables this handler can read (the exposure family and the two carrier tables) stay on the per-sheet
+// reader in this same file. Every other workspace file has its own private readTable and is untouched.
+//
+// THE PART THAT CAN SILENTLY CORRUPT. Under UNFORMATTED_VALUE + SERIAL_NUMBER a date and a number are the
+// SAME wire value. SpreadsheetApp could tell them apart because the Sheet told it; batchGet cannot. The
+// benchmark scored zero date diffs only because it asked the OLD reader which columns were Dates - an
+// oracle this code does not have. So the map below is DECLARED, per column, and never inferred.
+// ========================================================================================================
+
+// The thirteen. Not a copy of SIR_WORKSPACE_TABLES_ - a deliberate, reviewable subset of it, so adding a
+// table to the workspace does not silently enrol it in a batch whose date columns nobody declared.
+var SIR_B1_TABLES_ = ['marketplaces', 'marketplace_skus', 'sku_details', 'warehouses',
+  'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot',
+  'amazon_weekly_sales_snapshot', 'fc_regular_forecast', 'fc_target_rules', 'fc_special_events',
+  'overseas_inventory_snapshot', 'factory_stock'];
+
+// THE DECLARED DATE MAP. 46 columns: 41 observed populated in the live census, plus 5 declared columns that
+// are entirely blank today and would arrive as bare serials the day they are filled. Over-declaring a blank
+// column is safe BECAUSE the coercion is type-gated (see sirWsApplyDateMap_); under-declaring is not, which
+// is why the blanks are in.
+//
+// THIS MAP IS NOT DERIVED AND MUST NOT BE. Three live counter-examples, each of which breaks one shortcut:
+//   fc_special_events.event_month              number 11 in a column named _month  -> a NAME heuristic
+//                                              would convert it to 1900-01-10 and destroy every FC window
+//   amazon_weekly_sales_snapshot.snapshot_week string '2026-09-21~2026-09-27'      -> likewise
+//   overseas_inventory_snapshot.snapshot_date  100% blank                          -> a VALUE heuristic
+//                                              cannot see it at all
+// And the writers are not an authority either: fcWriteTimestamp_ returns a STRING and the cell holds a Date,
+// because Sheets parses date-shaped strings on write. The SHEET decides the type, which is exactly why this
+// map is a copy of a truth living elsewhere - and why sirWsDateMapDrift_ exists to notice when it rots.
+var SIR_B1_DATE_MAP_VERSION_ = 'B1-DATE-MAP-R44-1';
+var SIR_B1_DATE_MAP_ = {
+  marketplaces:                     ['created_at', 'updated_at'],
+  marketplace_skus:                 ['launch_date', 'created_at', 'updated_at'],
+  sku_details:                      ['created_at', 'updated_at'],
+  warehouses:                       ['created_at', 'updated_at'],
+  amazon_inventory_snapshot:        ['snapshot_date', 'synced_at', 'created_at', 'updated_at'],
+  amazon_inventory_health_snapshot: ['snapshot_date', 'synced_at', 'created_at', 'updated_at'],
+  amazon_daily_sales_snapshot:      ['snapshot_date', 'synced_at', 'created_at', 'updated_at',
+                                     'data_window_start_date', 'data_window_end_date', 'latest_source_date'],
+  amazon_weekly_sales_snapshot:     ['snapshot_month', 'week_start_date', 'week_end_date', 'synced_at',
+                                     'created_at', 'updated_at'],
+  fc_regular_forecast:              ['created_at', 'updated_at'],
+  fc_target_rules:                  ['created_at', 'updated_at'],
+  fc_special_events:                ['event_start_date', 'event_end_date', 'created_at', 'updated_at'],
+  overseas_inventory_snapshot:      ['created_at', 'updated_at',
+                                     'snapshot_date', 'wh_on_the_way_eta', 'last_movement_at'],
+  factory_stock:                    ['created_at', 'updated_at', 'last_transaction_at']
+};
+
+// Declared NON-dates. Not decoration: these are the columns a careless map edit would add, and the drift
+// detector fails if any of them ever appears in SIR_B1_DATE_MAP_.
+var SIR_B1_NON_DATE_TRAPS_ = {
+  fc_special_events:            ['event_month', 'event_period'],
+  amazon_weekly_sales_snapshot: ['snapshot_week']
+};
+
+// §12 - the ONLY classes that may fall back, and they are all platform-transient. A 403 or a schema fault
+// must NOT fall back: it would convert a deployment error into a permanent silent 22-second path, which is
+// the failure mode the always-fallback option was rejected for.
+var SIR_B1_FALLBACK_CLASSES_ = ['SHEETS_QUOTA_EXCEEDED', 'SHEETS_SERVICE_ERROR',
+  'ADVANCED_SHEETS_SERVICE_UNAVAILABLE'];
+var SIR_B1_MAX_FALLBACK_ = 1;
+
+function sirWsIsB1Table_(name) {
+  return Object.prototype.hasOwnProperty.call(SIR_B1_DATE_MAP_, String(name));
+}
+function sirWsColumnLetter_(n) {
+  var out = '';
+  while (n > 0) { var r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); }
+  return out || 'A';
+}
+
+// §8 - PAD BEFORE ANYTHING ELSE. batchGet omits trailing empty cells; getDataRange() does not. Without this
+// the all-blank-row drop INVERTS, because String(undefined) is 'undefined', which is not empty - so blank
+// rows would survive into the view model. Three of the thirteen end in an all-blank column today.
+function sirWsPadRows_(values, width) {
+  var out = [];
+  for (var r = 0; r < values.length; r++) {
+    var row = values[r] || [], copy = new Array(width);
+    for (var c = 0; c < width; c++) copy[c] = (c < row.length && row[c] !== undefined && row[c] !== null) ? row[c] : '';
+    out.push(copy);
+  }
+  return out;
+}
+
+// §5 - the serial -> Date conversion, proven against the live reader over 41 columns and 5 pairs with zero
+// diffs. The timezone is the SPREADSHEET's, read at runtime - never a hard-coded offset, because the whole
+// reason a date cell renders as ...T16:00:00.000Z is that Asia/Taipei midnight is the previous UTC day, and
+// hard-coding that relationship is how it breaks the first time the sheet moves.
+function sirWsSerialToDate_(serial, tz) {
+  var ms = Math.round(Number(serial) * 86400000);
+  var wall = new Date(Date.UTC(1899, 11, 30) + ms);
+  var s = Utilities.formatDate(wall, 'UTC', 'yyyy-MM-dd HH:mm:ss');
+  return Utilities.parseDate(s, tz, 'yyyy-MM-dd HH:mm:ss');
+}
+
+// THE COERCION IS TYPE-GATED, and that is load-bearing rather than defensive. It fires ONLY on a number. A
+// string in a declared date column passes through untouched - not hypothetical: marketplace_skus.launch_date
+// is written as String(...).trim() by both write paths while all 495 live rows hold Dates, so a string in
+// that column is one upsert away. A blank stays blank.
+function sirWsApplyDateMap_(name, values, tz) {
+  var cols = SIR_B1_DATE_MAP_[name];
+  if (!cols || !cols.length || !values || values.length < 2) return 0;
+  var header = sirWsHeaderFromValues_(values);
+  var idx = [];
+  for (var c = 0; c < header.length; c++) { if (cols.indexOf(header[c]) !== -1) idx.push(c); }
+  if (!idx.length) return 0;
+  var converted = 0;
+  for (var r = 1; r < values.length; r++) {
+    for (var k = 0; k < idx.length; k++) {
+      var v = values[r][idx[k]];
+      if (typeof v === 'number') { values[r][idx[k]] = sirWsSerialToDate_(v, tz); converted++; }
+    }
+  }
+  return converted;
+}
+
+// §12/§13 - the error CLASS, from the platform's own words. Deliberately conservative: anything this cannot
+// positively identify as transient is NOT transient, so an unrecognised failure fails closed rather than
+// quietly taking the slow path forever.
+function sirWsClassifySheetsError_(e) {
+  if (e && e.sirB1Class) return e.sirB1Class;
+  var m = String((e && (e.message || e.details)) || e || '');
+  if (/\b429\b|rate limit|quota exceeded|RESOURCE_EXHAUSTED/i.test(m)) return 'SHEETS_QUOTA_EXCEEDED';
+  if (/\b(500|502|503|504)\b|backend error|UNAVAILABLE|INTERNAL/i.test(m)) return 'SHEETS_SERVICE_ERROR';
+  if (/SERVICE_DISABLED|has not been used in project|accessNotConfigured/i.test(m)) return 'SHEETS_API_DISABLED';
+  if (/\b403\b|PERMISSION_DENIED|forbidden/i.test(m)) return 'SHEETS_PERMISSION_DENIED';
+  if (/\b400\b|INVALID_ARGUMENT|Unable to parse range/i.test(m)) return 'SHEETS_RANGE_REJECTED';
+  return 'SHEETS_READ_FAILED';
+}
+function sirWsIsTransientClass_(token) {
+  return SIR_B1_FALLBACK_CLASSES_.indexOf(String(token)) !== -1;
+}
+function sirWsB1Error_(token, table, detail) {
+  var e = new Error('B1 read failed: ' + token + (table ? ' [' + table + ']' : ''));
+  e.sirB1Class = token; e.schemaStatus = token; e.table = table || ''; e.detail = detail || null;
+  return e;
+}
+
+// ========================================================================================================
+// S8-R4D-E2 §6 - THE DATE-MAP DRIFT DETECTOR.
+//
+// The map is a COPY of a truth that lives in the spreadsheet, so it can rot. It rots in two directions and
+// they need different evidence:
+//
+//   the MAP changed carelessly   -> comparable in the repository, every sweep, for free
+//   the SHEET changed underneath -> needs physical evidence, and the physical evidence is the number format
+//
+// WHY numberFormat IS THE AUTHORITY. SpreadsheetApp returns a Date when a cell is numeric AND its effective
+// number format type is DATE / DATE_TIME. Not when the writer meant a date: fcWriteTimestamp_ returns a
+// STRING and the cell holds a Date, because Sheets parses date-shaped strings on write. The format is the
+// mechanism that has always decided what this product sees.
+//
+// IT IS OUT OF THE READ PATH, AND IT ONLY DETECTS. Remapping on what it finds would be the runtime inference
+// §4 forbids, arriving through the back door. A drift raises DATE_MAP_DRIFT and a human decides.
+//
+// TWO HONEST BLIND SPOTS, stated rather than designed around:
+//   a column that is entirely blank AND never formatted carries no format to compare - the five declared
+//     blanks can be shown not to have become something else, never confirmed positively;
+//   a table with no data row has nothing to sample, so it reports UNDETECTABLE_NO_DATA and NEVER 'agrees'.
+// ========================================================================================================
+function sirWsDateMapDrift_(ss) {
+  if (typeof Sheets === 'undefined' || !Sheets || !Sheets.Spreadsheets) {
+    return { checked: false, verdict: 'ADVANCED_SHEETS_SERVICE_UNAVAILABLE', drift: [], undetectable: [] };
+  }
+  var id = ss.getId();
+  var names = SIR_B1_TABLES_.slice();
+  var ranges = names.map(function (n) { return "'" + String(n).replace(/'/g, "''") + "'!A2:2"; });
+  var resp;
+  try {
+    resp = Sheets.Spreadsheets.get(id, { ranges: ranges,
+      fields: 'sheets.properties.title,sheets.data.rowData.values.effectiveFormat.numberFormat.type' });
+  } catch (e) {
+    return { checked: false, verdict: sirWsClassifySheetsError_(e), drift: [], undetectable: [] };
+  }
+  // The HEADERS come from the same batch the reader uses, so the comparison is column-by-NAME and cannot
+  // drift on position.
+  var hdrResp;
+  try {
+    hdrResp = Sheets.Spreadsheets.Values.batchGet(id, { ranges: names.map(function (n) {
+      return "'" + String(n).replace(/'/g, "''") + "'!1:1"; }), valueRenderOption: 'UNFORMATTED_VALUE' });
+  } catch (e2) {
+    return { checked: false, verdict: sirWsClassifySheetsError_(e2), drift: [], undetectable: [] };
+  }
+  var sheets = (resp && resp.sheets) || [], vrs = (hdrResp && hdrResp.valueRanges) || [];
+  var byTitle = {};
+  for (var i = 0; i < sheets.length; i++) {
+    var t = ((sheets[i].properties || {}).title) || '';
+    var data = (sheets[i].data && sheets[i].data[0]) || {};
+    var rowData = (data.rowData && data.rowData[0] && data.rowData[0].values) || null;
+    byTitle[t] = rowData;
+  }
+  var drift = [], undetectable = [];
+  for (var k = 0; k < names.length; k++) {
+    var name = names[k];
+    var header = ((vrs[k] && vrs[k].values && vrs[k].values[0]) || []).map(function (h) { return String(h).trim(); });
+    var formats = byTitle[name];
+    if (!formats || !header.length) { undetectable.push({ table: name, reason: 'UNDETECTABLE_NO_DATA' }); continue; }
+    var declared = SIR_B1_DATE_MAP_[name] || [];
+    for (var c = 0; c < header.length; c++) {
+      var col = header[c];
+      if (col === '') continue;
+      var fmt = (formats[c] && formats[c].effectiveFormat && formats[c].effectiveFormat.numberFormat
+        && formats[c].effectiveFormat.numberFormat.type) || null;
+      var physicalDate = (fmt === 'DATE' || fmt === 'DATE_TIME');
+      var isDeclared = declared.indexOf(col) !== -1;
+      if (physicalDate && !isDeclared) drift.push({ table: name, column: col, physical: fmt, declared: false });
+      // A declared column with no format is the blind spot above, NOT a drift - it is reported separately so
+      // the gap stays visible instead of being counted as agreement.
+      else if (!physicalDate && isDeclared && fmt !== null) drift.push({ table: name, column: col, physical: fmt, declared: true });
+      else if (!physicalDate && isDeclared) undetectable.push({ table: name, column: col, reason: 'DECLARED_BUT_UNFORMATTED' });
+    }
+  }
+  return { checked: true, mapVersion: SIR_B1_DATE_MAP_VERSION_, drift: drift, undetectable: undetectable,
+    verdict: drift.length ? 'DATE_MAP_DRIFT' : 'DATE_MAP_AGREES_WHERE_OBSERVABLE' };
+}
 
 // null          -> no scope was requested; the response is byte-for-byte what it was before this round.
 // {ok:false}    -> a scope WAS requested and is incomplete. REFUSE. Never widen: a request that asked for one
@@ -602,6 +830,136 @@ function sirWorkspaceDefaultIo_() {
         if (missing.length) throw prodSchemaError_('MISSING_REQUIRED_HEADER', name, { missing: missing });
       }
       return sirWsRowsFromValues_(data);
+    },
+
+    // ====================================================================================================
+    // S8-R4D-E2 §2/§3 - THE TWO-CALL FIRST-LAYER READ.
+    //
+    // It lives on `io` so it can be stubbed, and so a stub that does NOT provide it falls through to the
+    // per-sheet reader above with readerMode saying so. That is not a silent degradation: every existing
+    // fixture reports SPREADSHEETAPP, which is exactly what it is doing.
+    // ====================================================================================================
+    batchReadTables: function (ss, specs, tz) {
+      if (typeof Sheets === 'undefined' || !Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
+        throw sirWsB1Error_('ADVANCED_SHEETS_SERVICE_UNAVAILABLE', '',
+          'The Sheets v4 advanced service does not resolve in this deployment.');
+      }
+      prodAssertDbTarget_(ss, null);
+      var id = ss.getId();
+      var out = {}, ranges = [], ordered = [], rowCounts = {};
+      var t0 = Date.now();
+
+      // CALL 1 - existence and width. The mask is the narrowest that answers both questions: no cell values,
+      // no formats, no formulas. It is NOT range-filtered, and it cannot be: naming a sheet that does not
+      // exist makes the call throw, which is precisely the state §10 requires us to detect. So it returns
+      // titles and grid dimensions for every sheet in the file - metadata, never contents.
+      var meta;
+      try {
+        meta = Sheets.Spreadsheets.get(id, { fields: 'sheets.properties(title,gridProperties(rowCount,columnCount))' });
+      } catch (e) {
+        throw sirWsB1Error_(sirWsClassifySheetsError_(e), '', String(e && e.message || e));
+      }
+      var metadataMs = Date.now() - t0;
+      var width = {}, present = {};
+      var sheets = (meta && meta.sheets) || [];
+      for (var m = 0; m < sheets.length; m++) {
+        var pr = sheets[m].properties || {};
+        if (!pr.title) continue;
+        present[String(pr.title)] = true;
+        width[String(pr.title)] = Number((pr.gridProperties && pr.gridProperties.columnCount) || 0);
+      }
+
+      // §10 - only EXISTING sheets become ranges. An absent optional sheet is [] and is simply not asked
+      // for; batchGet rejects the WHOLE request when a named range's sheet is missing, so naming it would
+      // take the other twelve down with it.
+      for (var i = 0; i < specs.length; i++) {
+        var spec = specs[i], nm = spec.name;
+        if (!present[nm]) {
+          if (spec.optional) { out[nm] = []; rowCounts[nm] = 0; continue; }
+          throw prodSchemaError_('SCHEMA_NOT_PROVISIONED', nm, null);
+        }
+        var cols = width[nm] > 0 ? width[nm] : 1;
+        // Column-bounded, ROW-OPEN. The width comes from metadata because the schema contract runs
+        // extraColumnsPolicy ALLOW and a frozen literal would truncate column 43 of sku_details in silence.
+        // The rows are left open on purpose: gridProperties.rowCount is the ALLOCATED grid (1000 on an empty
+        // sheet), not the last row with content, so bounding on it would ask for a thousand empty rows and,
+        // worse, would make an empty sheet indistinguishable from a full one.
+        ranges.push("'" + String(nm).replace(/'/g, "''") + "'!A:" + sirWsColumnLetter_(cols));
+        ordered.push(spec);
+      }
+
+      // CALL 2 - the values. UNFORMATTED_VALUE is required for IDENTITY as much as for arithmetic:
+      // sku_details.sku and overseas_inventory_snapshot.sku are mixed number/string columns, and a FORMATTED
+      // render would stringify them and change row identity.
+      var t1 = Date.now(), resp = { valueRanges: [] };
+      if (ranges.length) {
+        try {
+          resp = Sheets.Spreadsheets.Values.batchGet(id, { ranges: ranges,
+            valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER' });
+        } catch (e2) {
+          throw sirWsB1Error_(sirWsClassifySheetsError_(e2), '', String(e2 && e2.message || e2));
+        }
+      }
+      var batchGetMs = Date.now() - t1;
+      var vrs = (resp && resp.valueRanges) || [];
+
+      // §13 - A MISSING valueRange IS NOT AN EMPTY TABLE. batchGet returns one entry per requested range, in
+      // order; a range holding no data has no `values` KEY, which is a different thing from the ENTRY being
+      // absent. Treating the first as [] is correct. Treating the second as [] fabricates an empty business
+      // table out of a malformed response, and the two are one line apart.
+      if (vrs.length !== ordered.length) {
+        throw sirWsB1Error_('SHEETS_PARTIAL_RESPONSE', '',
+          'requested ' + ordered.length + ' ranges, received ' + vrs.length);
+      }
+
+      var t2 = Date.now();
+      for (var k = 0; k < ordered.length; k++) {
+        var sp = ordered[k], name = sp.name;
+        var values = (vrs[k] && vrs[k].values) || null;
+
+        // THE EMPTY CASE, AND WHY IT COSTS ONE METADATA ACCESSOR. R43 decides between HEADER_MISSING and
+        // HEADER_BLANK on sheet GEOMETRY, and batchGet cannot: a sheet with no rows at all and a sheet whose
+        // only row is blank BOTH come back without `values`. Collapsing them would change the token this
+        // handler raises for fc_target_rules, which §11 requires to be identical. getLastRow/getLastColumn
+        // are metadata accessors rather than range reads - the same ones R43 already ran per table - so the
+        // exact token is bought for nothing, and only for tables that came back empty.
+        if (!values || !values.length) {
+          var probe = ss.getSheetByName(name);
+          if (!probe) {
+            if (sp.optional) { out[name] = []; rowCounts[name] = 0; continue; }
+            throw prodSchemaError_('SCHEMA_NOT_PROVISIONED', name, null);
+          }
+          if (probe.getLastRow() < 1 || probe.getLastColumn() < 1) throw prodSchemaError_('HEADER_MISSING', name, null);
+          values = probe.getDataRange().getValues();   // non-empty geometry: let the SAME validator decide
+        }
+
+        var header = sirWsHeaderFromValues_(values);
+        // THE SAME CLASSIFIER, on the same header array the per-sheet reader hands it. The benchmark used a
+        // local re-implementation of these checks; the product must not, or the two readers would be
+        // equivalent only to each other.
+        var report = prodSafetyBundle_().classifySchemaMismatch({ exists: true, actualHeaders: header,
+          expectedHeaders: [], extraColumnsPolicy: 'ALLOW' });
+        if (!report.valid) throw prodSchemaError_(report.schemaStatus, name, report);
+        if (sp.requiredCols && sp.requiredCols.length) {
+          var have = {};
+          for (var h = 0; h < header.length; h++) { if (header[h] !== '') have[header[h]] = 1; }
+          var missing = [];
+          for (var q = 0; q < sp.requiredCols.length; q++) { if (!have[sp.requiredCols[q]]) missing.push(sp.requiredCols[q]); }
+          if (missing.length) throw prodSchemaError_('MISSING_REQUIRED_HEADER', name, { missing: missing });
+        }
+        // §8 then §4: pad to header width FIRST, then coerce declared date columns, then map to objects -
+        // the order is the contract, because the blank-row rule reads every cell of the padded row.
+        var padded = sirWsPadRows_(values, header.length);
+        sirWsApplyDateMap_(name, padded, tz);
+        var rows = sirWsRowsFromValues_(padded);
+        out[name] = rows;
+        rowCounts[name] = rows.length;
+      }
+      var normalizationMs = Date.now() - t2;
+
+      return { tables: out, metadataMs: metadataMs, batchGetMs: batchGetMs,
+        normalizationMs: normalizationMs, rangeCount: ranges.length, remoteCalls: ranges.length ? 2 : 1,
+        rowCounts: rowCounts };
     }
   };
 }
@@ -665,16 +1023,58 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
     _stage('OPEN_SPREADSHEET', tOpen);
     var onlySet = sirWsOnlySet_(payload);
     var tables = {}, readCount = 0, tableMs = {};
+
+    // S8-R4D-E2 §1 - THE PARTITION. The resolved request is split into the thirteen first-layer tables,
+    // which go to the batch reader, and everything else, which stays on the per-sheet reader in this same
+    // file. Two readers in one handler is a cost this round takes knowingly; the equality suite is what
+    // keeps them honest, and the eight remaining tables were never part of the benchmarked set.
+    var b1Specs = [], restSpecs = [];
     for (var i = 0; i < SIR_WORKSPACE_TABLES_.length; i++) {
       var spec = SIR_WORKSPACE_TABLES_[i];
       if (onlySet && !onlySet[spec.name]) continue;           // §A1: an explicit subset was requested
       if (spec.include && !include[spec.include]) continue;   // F1-7J-A2: skip un-requested include tables (no read cost)
+      if (sirWsIsB1Table_(spec.name)) b1Specs.push(spec); else restSpecs.push(spec);
+    }
+
+    var readerMode = 'SPREADSHEETAPP', b1Profile = null;
+    var fallbackUsed = false, fallbackReason = null, fallbackErrorClass = null, fallbackCount = 0;
+    var canBatch = b1Specs.length > 0 && typeof io.batchReadTables === 'function';
+    if (canBatch) {
+      var tz = (ss && typeof ss.getSpreadsheetTimeZone === 'function') ? ss.getSpreadsheetTimeZone() : null;
+      try {
+        b1Profile = io.batchReadTables(ss, b1Specs, tz);
+        for (var bt in b1Profile.tables) {
+          if (Object.prototype.hasOwnProperty.call(b1Profile.tables, bt)) { tables[bt] = b1Profile.tables[bt]; readCount++; }
+        }
+        readerMode = 'SHEETS_API';
+      } catch (b1err) {
+        // §12/§13 - ONE bounded fallback, and ONLY for platform-transient classes. Anything else fails
+        // closed: a 403 or a schema fault that fell back would turn a deployment error into a permanent
+        // silent slow path, and nobody would be told. There is no retry loop - this is the whole budget.
+        var cls = sirWsClassifySheetsError_(b1err);
+        if (!sirWsIsTransientClass_(cls) || fallbackCount >= SIR_B1_MAX_FALLBACK_) throw b1err;
+        fallbackUsed = true; fallbackCount = 1; fallbackErrorClass = cls;
+        fallbackReason = String((b1err && b1err.message) || cls);
+        for (var f = 0; f < b1Specs.length; f++) {
+          var fs2 = b1Specs[f], tF = io.now();
+          tables[fs2.name] = io.readTable(ss, fs2.name, fs2.requiredCols, fs2.optional === true);
+          tableMs[fs2.name] = io.now() - tF;
+          readCount++;
+        }
+        readerMode = 'SPREADSHEETAPP_FALLBACK';
+      }
+    } else {
+      restSpecs = b1Specs.concat(restSpecs);   // no batch reader available: every table takes the old path
+    }
+
+    for (var j = 0; j < restSpecs.length; j++) {
+      var rspec = restSpecs[j];
       // §A1 - TIME EACH SHEET. `serverDurationMs = 30833` names the total and nothing else, so the next
       // question ("which sheet") had no answer but a guess. Per-table timing is what turns one number into a
-      // decision about which table to stop reading.
-      var tT = io.now();
-      tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols, spec.optional === true);
-      tableMs[spec.name] = io.now() - tT;
+      // decision about which table to stop reading. It survives on this path, and CANNOT on the batch one.
+      var tF2 = io.now();
+      tables[rspec.name] = io.readTable(ss, rspec.name, rspec.requiredCols, rspec.optional === true);
+      tableMs[rspec.name] = io.now() - tF2;
       readCount++;
     }
     _stage('READ_TABLES', tOpen);
@@ -692,6 +1092,11 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
     var slow = [];
     for (var tn in tableMs) { if (Object.prototype.hasOwnProperty.call(tableMs, tn)) slow.push({ table: tn, ms: tableMs[tn], rows: (vm.counts[tn] || 0) }); }
     slow.sort(function (a, b) { return b.ms - a.ms; });
+    // The `rows` half of slowestTables, preserved for every table however it was read. Per-table TIMING is
+    // what the batch transport cannot produce; per-table ROW COUNTS it can, and dropping them too would lose
+    // information for no reason.
+    var perTableRows = {};
+    for (var pr2 in vm.counts) { if (Object.prototype.hasOwnProperty.call(vm.counts, pr2)) perTableRows[pr2] = vm.counts[pr2]; }
     return sirBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount,
       rowsReturned: rowsOut, recentWindow: (wKeys.length ? vm.recentWindow : null),
       // §A1 - THE REQUEST CONTRACT, echoed. `recentWindowRequested` is what the caller asked for and
@@ -705,7 +1110,32 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
       // projection nobody was running and nobody could see.
       siteScopeRequested: (vm.requestEcho && vm.requestEcho.siteScope) || null,
       siteScopeApplied: (vm.siteScope && vm.siteScope.tables) ? vm.siteScope.tables : null,
-      openMs: openMs, slowestTables: slow.slice(0, 5),
+      openMs: openMs,
+      // S8-R4D-E2 §15 - slowestTables STAYS AN ARRAY. The audit found three consumers; the one at
+      // inventory-replenishment.js:10200 calls .forEach on whatever arrives and sits in no try/catch, so a
+      // string or object sentinel would raise a TypeError on the page. Under the batch reader there is no
+      // per-table timing to report - one batchGet has one duration - so the array is EMPTY BY TRANSPORT and
+      // the typed marker lives beside it. Empty-because-batched and empty-because-nothing-was-read are
+      // different facts, which is what timingMode is for.
+      slowestTables: slow.slice(0, 5),
+      readerMode: readerMode,
+      timingMode: (readerMode === 'SHEETS_API') ? 'BATCH' : 'PER_TABLE',
+      perTableTiming: (readerMode === 'SHEETS_API') ? 'UNAVAILABLE_IN_BATCH_MODE' : 'AVAILABLE',
+      batchMetadataMs: b1Profile ? b1Profile.metadataMs : null,
+      batchValuesMs: b1Profile ? b1Profile.batchGetMs : null,
+      normalizationMs: b1Profile ? b1Profile.normalizationMs : null,
+      rangeCount: b1Profile ? b1Profile.rangeCount : null,
+      remoteCallCount: b1Profile ? b1Profile.remoteCalls : null,
+      perTableRows: perTableRows,
+      dateMapVersion: SIR_B1_DATE_MAP_VERSION_,
+      // §14 - NO SILENT FALLBACK. An unreported fallback is indistinguishable from the feature working,
+      // which is how a dependency outage hides until the day both readers fail at once.
+      primaryReader: 'SHEETS_API',
+      fallbackUsed: fallbackUsed,
+      fallbackReason: fallbackReason,
+      fallbackErrorClass: fallbackErrorClass,
+      fallbackCount: fallbackCount,
+      finalReader: (readerMode === 'SHEETS_API') ? 'SHEETS_API' : 'SPREADSHEET_APP',
       // R6-R5 §3 — the entry and stage evidence. `handlerExitAt` closes the interval, so the client can compare
       // (handlerExitAt - routerEntryAt) against its OWN elapsed time: a large difference is transport or queue,
       // a small one means the two clocks agree and the time was spent here.

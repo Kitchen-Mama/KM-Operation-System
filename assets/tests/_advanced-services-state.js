@@ -28,10 +28,14 @@ module.exports = {
   // from appsscript.json — the declaration and the manifest are one state, so they move in one commit.
   // ---------------------------------------------------------------------------------------------------
   SHEETS_ENABLED: true,
-  reason: 'S8-R4D-D2 enables the Sheets v4 advanced service for the READ-ONLY B1 benchmark ONLY. It does '
-    + 'NOT authorise the B1 product reader, an R44 release, or any fallback: 60_ still reads through '
-    + 'SpreadsheetApp and contains no batchGet. The repository declaration and the Apps Script project are '
-    + 'two separate switches - this one is the INTENT, and the operator owns the other.',
+  reason: 'S8-R4D-E2 PROMOTES this from a benchmark dependency to a PRODUCT RUNTIME dependency. R44 reads '
+    + 'the thirteen first-layer tables through Sheets.Spreadsheets.get + Values.batchGet, so a deployment '
+    + 'without the service cannot serve the primary Site Inventory read at all - it does not merely run '
+    + 'slowly. That is why 63_ now attests the service by EXECUTION (runtime_authority.advanced_services) '
+    + 'rather than by reading a manifest that may not be the one deployed: the repository declaration and '
+    + 'the Apps Script project remain two separate switches, and only one of them is in this file.',
+  PRODUCT_RUNTIME_DEPENDENCY: true,
+  PRODUCT_RUNTIME_DEPENDENT_RELEASE: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44',
 
   // The service as it must appear when it IS enabled. Re-derived from the shipped BigQuery entry's shape
   // rather than written from memory, so the syntax matches what this project already deploys.

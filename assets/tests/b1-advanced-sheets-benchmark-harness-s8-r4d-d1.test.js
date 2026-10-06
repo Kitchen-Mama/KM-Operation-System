@@ -60,10 +60,23 @@ if (!STATE.SHEETS_ENABLED) {
 // enabled, so nothing could use it. The branch where it earns its keep is the one that dropped it. It is
 // now unconditional and reads EVERY runtime .gs, not just 60_ — enabling a service for a benchmark does
 // not authorise a Product file to call it, and the whole point of §1 is that those are separate decisions.
+// S8-R4D-E2 — PINNED AT BOTH ENDS. A3b said 'no Product runtime file reaches for the service', which was
+// the correct claim while the benchmark was the only authorised consumer. R44 adopts it on purpose, so the
+// sentence now has to name its interval. D1_END is the last tree in which the claim was true; the head half
+// is asserted by the D2 transition suite (U5/U5a/U5b), which owns the current-release statement.
+var D1_END = '8ba0097';   // S8-R4D-E1's freeze — the last tree before the Product implementation
 var RUNTIME_GS = fs.readdirSync(path.join(ROOT, GS)).filter(function (f) { return /^\d\d_.*\.gs$/.test(f); });
-var reaching = RUNTIME_GS.filter(function (f) { return /\bSheets\.Spreadsheets\b/.test(read(GS + f)); });
-eq(reaching, [], 'A3b no Product runtime file reaches for the advanced service — the benchmark is the only '
-  + 'authorised consumer, and this holds in BOTH declared states');
+var RUNTIME_AT_D1 = cp.execFileSync('git', ['ls-tree', '--name-only', D1_END + ':' + GS],
+  { cwd: ROOT, encoding: 'utf8' }).trim().split(/\r?\n/).filter(function (f) { return /^\d\d_.*\.gs$/.test(f); });
+// maxBuffer: 90_generated_supply_planning_bundle.gs is over a megabyte, and the default 1 MB cap makes
+// spawnSync fail with ENOBUFS - which surfaces as a CRASHED suite rather than a failed assertion, i.e. a
+// suite that reports nothing at all.
+function showAtD1(rel) { return cp.execFileSync('git', ['show', D1_END + ':' + rel],
+  { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); }
+var reaching = RUNTIME_AT_D1.filter(function (f) { return /\bSheets\.Spreadsheets\b/.test(showAtD1(GS + f)); });
+eq(reaching, [], 'A3b AT ' + D1_END + ' no Product runtime file reached for the advanced service — building a '
+  + 'benchmark against it was not adopting it');
+ok(RUNTIME_AT_D1.length > 20, 'A3b1 and that scan saw ' + RUNTIME_AT_D1.length + ' files, so it is not vacuous');
 ok(RUNTIME_GS.length > 20, 'A3c ...and that scan actually saw the runtime (' + RUNTIME_GS.length + ' files), '
   + 'so A3b is not vacuously passing over an empty list');
 
@@ -88,7 +101,11 @@ eq((MANIFEST_RAW.match(/"serviceId"/g) || []).length, services.length,
 // ===================================================================================================
 console.log('\n================ B — THE PRODUCT RUNTIME DID NOT MOVE ================\n');
 
-var changedRuntime = cp.execFileSync('git', ['diff', '--name-only', PRE_SHA, 'HEAD', '--',
+// S8-R4D-E2 - PINNED AT BOTH ENDS. This read PRE_SHA..HEAD and said the Product runtime had not moved,
+// which was the correct claim for the benchmark-infrastructure rounds and is deliberately false now: R44
+// rewrites 60_'s read transport. The interval closes at D1_END, the last tree before the implementation,
+// and the head half is owned by the E2 suite, which asserts what R44 changed on purpose.
+var changedRuntime = cp.execFileSync('git', ['diff', '--name-only', PRE_SHA, D1_END, '--',
   'assets/specs/active/apps-script', 'assets/js', 'assets/css', 'index.html'],
   { cwd: ROOT, encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
 
@@ -109,7 +126,7 @@ eq(changedRuntime.filter(function (f) { return f !== MANIFEST_REL; }), [],
 // along would otherwise pass B1 as 'the manifest changed, which is allowed'.
 if (STATE.SHEETS_ENABLED) {
   var manifestPre = JSON.parse(cp.execFileSync('git', ['show', PRE_SHA + ':' + MANIFEST_REL],
-    { cwd: ROOT, encoding: 'utf8' }));
+    { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
   var strip = function (m) { var c = JSON.parse(JSON.stringify(m)); delete c.dependencies; return c; };
   eq(strip(MANIFEST), strip(manifestPre),
     'B1b and EVERY key outside dependencies is byte-identical to ' + PRE_SHA + ' — timezone, scopes, webapp, '
@@ -118,12 +135,12 @@ if (STATE.SHEETS_ENABLED) {
   eq(services.filter(function (x) { return x.serviceId !== 'sheets'; }), preServices,
     'B1c and the pre-existing service list survives the addition unchanged, in order');
 }
-ok(!/batchGet/.test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
-  'B2  60_ contains NO batchGet — the candidate lives outside the Product path, as §2 requires');
-ok(/var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43'/.test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
-  'B3  60_ is still R43 — R44 is NOT cut by benchmark infrastructure');
-ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43'/.test(read(GS + '63_api_v1_system_health.gs')),
-  'B3a and the release is still R43');
+ok(!/batchGet/.test(showAtD1(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
+  'B2  AT ' + D1_END + ' 60_ contained NO batchGet — the candidate lived outside the Product path');
+ok(/var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43'/.test(showAtD1(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
+  'B3  60_ was still R43 there — R44 was NOT cut by benchmark infrastructure');
+ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43'/.test(showAtD1(GS + '63_api_v1_system_health.gs')),
+  'B3a and the release was still R43 there');
 
 // ===================================================================================================
 console.log('\n================ C — THE TOOL IS READ ONLY ================\n');
