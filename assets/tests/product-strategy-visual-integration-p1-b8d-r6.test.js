@@ -667,7 +667,18 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   'assets/specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs',
   'assets/specs/active/apps-script/TEMP_migrate_shipping_allocation_ai_lifecycle.gs',
   'assets/specs/active/apps-script/TEMP_order_planning_draft_readback_diagnose.gs',
-  'assets/specs/active/apps-script/TEMP_request_order_send_diagnostics.gs'];
+  'assets/specs/active/apps-script/TEMP_request_order_send_diagnostics.gs',
+  // S8-R4D-D2 — the ONE non-.gs member, and the only one this register has ever had. appsscript.json
+  // declares the Sheets v4 advanced service so the READ-ONLY B1 benchmark can call batchGet. It is
+  // benchmark infrastructure, not a release: no action was added or removed, the router is untouched, no
+  // handler moved, 60_ still reads through SpreadsheetApp and contains no batchGet, and no OAuth scope,
+  // Web App setting or timezone changed. The service is declared and unused.
+  //
+  // Declared rather than filtered out, for the reason this register exists: a file moving in that folder
+  // without a stated reason is how an unrelated edit reaches Production. Excluding it by extension would
+  // be the worst possible place to start making exceptions — a manifest is the one file that can silently
+  // un-deploy a feature, and nothing else watched it until S8-R4D-D1 built a guard for it.
+  'assets/specs/active/apps-script/appsscript.json'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

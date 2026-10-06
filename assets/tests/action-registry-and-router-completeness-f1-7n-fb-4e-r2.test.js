@@ -762,6 +762,16 @@ GS_OWNED_SINCE_R1['TEMP_document_diagnostics.gs'] =
 GS_OWNED_SINCE_R1['TEMP_draft_migration_diagnostic.gs'] =
   'the draft migration readiness probe — DIAGNOSTIC despite its name: its own header says strictly '
   + 'READ-ONLY and it records no mutation' + S7R4_RELOCATED_;
+// S8-R4D-D2 — THE ONE NON-.gs MEMBER, and the only one this register has ever had. Declared rather than
+// filtered out by extension, for exactly the reason the S7-R4 relocations above are declared: a file moving
+// in that folder without a stated reason is how an unrelated edit reaches Production, and a manifest is the
+// one file that can silently un-deploy a feature. It is the worst possible place to start making exceptions.
+GS_OWNED_SINCE_R1['appsscript.json'] =
+  'S8-R4D-D2 the Sheets v4 ADVANCED SERVICE is declared so the READ-ONLY B1 benchmark can call batchGet. '
+  + 'Benchmark infrastructure, not a release: NO action was added or removed, the router is untouched and '
+  + 'no handler moved. 60_ still reads through SpreadsheetApp and contains no batchGet, so the service is '
+  + 'declared and UNUSED by every routed path this line measures. No OAuth scope, Web App setting or '
+  + 'timezone changed — the five added lines are one entry in enabledAdvancedServices and nothing else';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 
