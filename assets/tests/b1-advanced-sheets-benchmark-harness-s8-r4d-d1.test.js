@@ -49,14 +49,23 @@ eq(STATE.SHEETS_SERVICE, { userSymbol: 'Sheets', version: 'v4', serviceId: 'shee
 if (!STATE.SHEETS_ENABLED) {
   eq(sheetsEntries(services).length, 0,
     'A3  PRE_ENABLE — the manifest does NOT declare Sheets, which is the expected state for this round');
-  ok(!/\bSheets\.Spreadsheets\b/.test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
-    'A3a and no Product runtime file reaches for the service that is not enabled');
 } else {
   eq(sheetsEntries(services).length, 1,
     'A3  POST_ENABLE — the manifest declares Sheets EXACTLY ONCE (two entries would let a reader trust the stale one)');
   eq(sheetsEntries(services)[0], STATE.SHEETS_SERVICE,
     'A3a and it matches the declared entry byte for byte — serviceId, version and userSymbol');
 }
+
+// S8-R4D-D2. This guard used to sit INSIDE the PRE_ENABLE branch, where it could never fail: nothing was
+// enabled, so nothing could use it. The branch where it earns its keep is the one that dropped it. It is
+// now unconditional and reads EVERY runtime .gs, not just 60_ — enabling a service for a benchmark does
+// not authorise a Product file to call it, and the whole point of §1 is that those are separate decisions.
+var RUNTIME_GS = fs.readdirSync(path.join(ROOT, GS)).filter(function (f) { return /^\d\d_.*\.gs$/.test(f); });
+var reaching = RUNTIME_GS.filter(function (f) { return /\bSheets\.Spreadsheets\b/.test(read(GS + f)); });
+eq(reaching, [], 'A3b no Product runtime file reaches for the advanced service — the benchmark is the only '
+  + 'authorised consumer, and this holds in BOTH declared states');
+ok(RUNTIME_GS.length > 20, 'A3c ...and that scan actually saw the runtime (' + RUNTIME_GS.length + ' files), '
+  + 'so A3b is not vacuously passing over an empty list');
 
 // The services that already existed must SURVIVE. A round that adds Sheets and drops BigQuery would break the
 // Amazon import, and the diff would look like one line.
@@ -81,8 +90,34 @@ console.log('\n================ B — THE PRODUCT RUNTIME DID NOT MOVE =========
 
 var changedRuntime = cp.execFileSync('git', ['diff', '--name-only', PRE_SHA, 'HEAD', '--',
   'assets/specs/active/apps-script', 'assets/js', 'assets/css', 'index.html'],
-  { cwd: ROOT, encoding: 'utf8' }).trim();
-eq(changedRuntime, '', 'B1  PRODUCT_RUNTIME_FILE_CHANGE_COUNT = 0 — no runtime, manifest or frontend byte moved');
+  { cwd: ROOT, encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+
+// S8-R4D-D2. This read 'nothing under the spec folder moved', and appsscript.json lives there — so the
+// authorised manifest transition would have failed it. The fix is NOT to widen the pin: the expected set
+// is now derived from the DECLARED state, so a manifest that moves while SHEETS_ENABLED is false still
+// fails, and a .gs that moves still fails in either state. PRODUCT_RUNTIME_FILE_CHANGE_COUNT counts
+// runtime, and the manifest is benchmark infrastructure (§26) — they are different claims.
+var EXPECTED_CHANGED = STATE.SHEETS_ENABLED ? [MANIFEST_REL] : [];
+eq(changedRuntime, EXPECTED_CHANGED,
+  'B1  PRODUCT_RUNTIME_FILE_CHANGE_COUNT = 0 — the only file this round may move is the manifest, and only '
+  + 'because the repository declares the service enabled');
+eq(changedRuntime.filter(function (f) { return f !== MANIFEST_REL; }), [],
+  'B1a and NO .gs, .js, .css or index.html byte moved — stated separately so the manifest allowance cannot '
+  + 'quietly cover a runtime edit');
+
+// The manifest allowance is bounded to the service array. A scope, a timezone or a Web App setting riding
+// along would otherwise pass B1 as 'the manifest changed, which is allowed'.
+if (STATE.SHEETS_ENABLED) {
+  var manifestPre = JSON.parse(cp.execFileSync('git', ['show', PRE_SHA + ':' + MANIFEST_REL],
+    { cwd: ROOT, encoding: 'utf8' }));
+  var strip = function (m) { var c = JSON.parse(JSON.stringify(m)); delete c.dependencies; return c; };
+  eq(strip(MANIFEST), strip(manifestPre),
+    'B1b and EVERY key outside dependencies is byte-identical to ' + PRE_SHA + ' — timezone, scopes, webapp, '
+    + 'runtimeVersion and exceptionLogging are not collateral of a service addition');
+  var preServices = (manifestPre.dependencies || {}).enabledAdvancedServices || [];
+  eq(services.filter(function (x) { return x.serviceId !== 'sheets'; }), preServices,
+    'B1c and the pre-existing service list survives the addition unchanged, in order');
+}
 ok(!/batchGet/.test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
   'B2  60_ contains NO batchGet — the candidate lives outside the Product path, as §2 requires');
 ok(/var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43'/.test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),

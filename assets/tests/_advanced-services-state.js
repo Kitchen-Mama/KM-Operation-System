@@ -21,14 +21,17 @@
 
 module.exports = {
   // ---------------------------------------------------------------------------------------------------
-  // PRE_ENABLE. The Sheets advanced service is NOT declared, and that is the expected, asserted state.
-  // Flip to true ONLY in the commit that adds the service to appsscript.json for the benchmark, and say
-  // why in `reason`.
+  // POST_ENABLE - S8-R4D-D2 §3. The Sheets advanced service IS declared, and this flip is the commit that
+  // says a human decided it. The scope of that decision is the READ-ONLY BENCHMARK and nothing else: no
+  // Product runtime file may reach for `Sheets` while this stands, and A3a enforces exactly that.
+  // If the benchmark comes back NO-GO, the cleanup commit flips this back to false AND removes the entry
+  // from appsscript.json — the declaration and the manifest are one state, so they move in one commit.
   // ---------------------------------------------------------------------------------------------------
-  SHEETS_ENABLED: false,
-  reason: 'S8-R4D-D1 built the benchmark harness and the manifest guard; the service itself is NOT enabled. '
-    + 'Enabling it is S8-R4D-D2, and it is an OPERATOR action in both the Apps Script project and the '
-    + 'attached Cloud project, not an edit this repository can make on its own.',
+  SHEETS_ENABLED: true,
+  reason: 'S8-R4D-D2 enables the Sheets v4 advanced service for the READ-ONLY B1 benchmark ONLY. It does '
+    + 'NOT authorise the B1 product reader, an R44 release, or any fallback: 60_ still reads through '
+    + 'SpreadsheetApp and contains no batchGet. The repository declaration and the Apps Script project are '
+    + 'two separate switches - this one is the INTENT, and the operator owns the other.',
 
   // The service as it must appear when it IS enabled. Re-derived from the shipped BigQuery entry's shape
   // rather than written from memory, so the syntax matches what this project already deploys.

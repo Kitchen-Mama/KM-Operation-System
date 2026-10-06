@@ -572,12 +572,37 @@ var _b8dReg = (/var SYS_REQUIRED_ACTIONS_ = \[[\s\S]*?\n\];/.exec(SRC.health) ||
 eq((_b8dReg.match(/action: 'productPricing\./g) || []).length, 0,
   'G4a and the required-action list gained nothing from activation — no page depends on a productPricing action');
 
-/* THE MANIFEST AND THE SCOPES. Activation must not widen what the deployment may do. */
-var manifestDiff = cp.execFileSync('git', ['diff', '--name-only', 'a3889c2', '--',
-  'assets/specs/active/apps-script/appsscript.json'], { cwd: ROOT, encoding: 'utf8' }).trim();
-eq(manifestDiff, '', 'G5  appsscript.json is unchanged');
-ok(SRC.manifest.indexOf('oauthScopes') < 0 || /"oauthScopes"/.test(SRC.manifest),
-  'G5a (and whatever scopes it declares, this round declared none of them)');
+/* THE MANIFEST AND THE SCOPES. Activation must not widen what the deployment may do.
+
+   S8-R4D-D2 — PINNED AT BOTH ENDS, for exactly the reason G6 is, three paragraphs below. G5 read
+   `git diff --name-only a3889c2 -- appsscript.json` with NO second ref, so its right-hand side was the
+   WORKING TREE: a sentence about what the ACTIVATION round did to the manifest that silently became a
+   sentence about every round since. It was true for as long as nothing else ever touched the manifest,
+   and S8-R4D-D2 is the round that proves otherwise by adding the Sheets advanced service for a read-only
+   benchmark. The failure was not activation drifting; it was the assertion measuring the wrong interval.
+
+   G5 now ends where activation ended. G5b carries the part that SHOULD be permanent — and it is the
+   stronger half, because what G5 was really defending is not 'the file has no diff' but 'the deployment's
+   AUTHORITY has not widened'. A file-level diff cannot tell an added service from an added scope; G5b
+   can, and it still fails for every scope added in any round, including this one. */
+function manifestChangedBetween(fromRef, toRef) {
+  return cp.execFileSync('git', ['diff', '--name-only', fromRef, toRef, '--',
+    'assets/specs/active/apps-script/appsscript.json'], { cwd: ROOT, encoding: 'utf8' }).trim();
+}
+var B8D_PRE_SHA = 'a3889c2';
+eq(manifestChangedBetween(B8D_PRE_SHA, 'dc3f6fd2260ee91bb844e9b81427619b7ad55218'), '',
+  'G5  IN ACTIVATION — between B8D\'s base and the commit it completed at — appsscript.json did not move');
+
+/* G5a/G5b — THE PERMANENT CLAIM, and the one with teeth. The scope set the deployment runs under must be
+   the set activation inherited. A second `oauthScopes` key is checked separately because JSON.parse keeps
+   only the last duplicate, so a widened set injected ABOVE the real one would parse away to nothing. */
+eq((SRC.manifest.match(/"oauthScopes"/g) || []).length, 1,
+  'G5a the manifest declares oauthScopes EXACTLY ONCE — a duplicate key parses away and would hide G5b');
+eq(JSON.parse(SRC.manifest).oauthScopes,
+  JSON.parse(cp.execFileSync('git', ['show', B8D_PRE_SHA + ':assets/specs/active/apps-script/appsscript.json'],
+    { cwd: ROOT, encoding: 'utf8' })).oauthScopes,
+  'G5b and the scope set is STILL the one activation inherited — no round since has widened what the '
+  + 'deployment may do, which is what G5 was always defending');
 
 /* ==================================================================================================
    G6 — TWO EXACT SETS, TWO ROUNDS, TWO FIXED BOUNDARIES.   (split at P1-B8D-R10D)
@@ -1139,10 +1164,30 @@ mut('K13 a bare-class rule leaks out of .psb-page — J1/B8A', function () {
   return leaks > (SRC.css.match(/^\s*\.card\b/gm) || []).length;
 });
 
-mut('K14 appsscript.json gains an OAuth scope — G5', function () {
+/* S8-R4D-D2 — K14 ran no detector. It mutated the manifest and then checked only that its own mutation
+   had happened (`auth/drive` present after, absent before), which is true of any mutation whatsoever and
+   stays true if G5 is deleted outright. It now runs G5a/G5b's actual test against the mutated bytes. */
+function scopeGateFails(manifestSrc) {
+  if ((manifestSrc.match(/"oauthScopes"/g) || []).length !== 1) return true;        // G5a
+  var base = JSON.parse(cp.execFileSync('git', ['show', B8D_PRE_SHA + ':assets/specs/active/apps-script/appsscript.json'],
+    { cwd: ROOT, encoding: 'utf8' })).oauthScopes;
+  return JSON.stringify(JSON.parse(manifestSrc).oauthScopes) !== JSON.stringify(base);  // G5b
+}
+mut('K14 appsscript.json gains an OAuth scope — G5a/G5b', function () {
   var m = swapIn(SRC.manifest, '"timeZone"',
     '"oauthScopes": ["https://www.googleapis.com/auth/drive"],\n  "timeZone"');
-  return m.indexOf('auth/drive') > 0 && SRC.manifest.indexOf('auth/drive') < 0;
+  return m !== SRC.manifest && !scopeGateFails(SRC.manifest) && scopeGateFails(m);
+});
+mut('K14a a scope is APPENDED to the real list rather than duplicated — G5b', function () {
+  var m = swapIn(SRC.manifest, '"https://www.googleapis.com/auth/bigquery"',
+    '"https://www.googleapis.com/auth/bigquery",\n    "https://www.googleapis.com/auth/drive"');
+  return m !== SRC.manifest && !scopeGateFails(SRC.manifest) && scopeGateFails(m);
+});
+mut('K14b the advanced-service addition alone is NOT a scope widening — G5b stays green', function () {
+  // The inverse check. A gate that fired on ANY manifest edit would be useless to this round, so prove it
+  // distinguishes the authorised change from a widening rather than rejecting both.
+  var m = swapIn(SRC.manifest, '"serviceId": "sheets"', '"serviceId": "sheets", "_x": 1');
+  return m !== SRC.manifest && !scopeGateFails(m);
 });
 
 /* K15 — REPOINTED WITH G3a, and it needed to be: its anchor was the R9 literal, so once PRICING-R2
