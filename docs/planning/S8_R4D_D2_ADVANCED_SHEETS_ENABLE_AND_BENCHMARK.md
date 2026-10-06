@@ -17,6 +17,22 @@ test here can see, followed by a benchmark run against Production.
 
 ---
 
+## 0. CLOSED — the benchmark ran, and B1 is 9.7x faster on the transport
+
+```
+S8_R4D_D2_B1_READ_ONLY_BENCHMARK = PASS
+ADVANCED_SHEETS_SERVICE_LIVE = YES   (operator-run §8 probe: namespace, get, batchGet, 0 errors)
+CONTROL_MEDIAN_MS = 22006   B1_MEDIAN_MS = 2265   SAVING = 19830 ms / 90.1%
+B1_WIN_COUNT = 5 / 5   SEMANTIC_RESULT_DIFF_COUNT = 0   failures = []
+```
+
+The full five-pair table, the independent recomputation, the post-mortem on the wrong ~2.4 s
+estimate, and the caveat that the CONTROL arm is 4,477 ms slower than R43's whole Web App handler
+are in `S8_R4D_E_B1_PRODUCT_CONTRACT_PREFLIGHT.md` Part 1.
+
+`TEMP_BENCHMARK_FILE_PRESENT_POST` is **UNCONFIRMED**, not NO: no operator message has reported
+either TEMP file deleted from Production. Both must go, GO or NO-GO.
+
 ## 1. The transition is one state in two files
 
 `appsscript.json` says what the deployment *can* do. `assets/tests/_advanced-services-state.js` says what the
