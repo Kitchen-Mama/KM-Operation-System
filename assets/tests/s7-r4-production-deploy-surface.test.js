@@ -301,7 +301,16 @@ function showAt(sha, rel) {
   try { return cp.execFileSync('git', ['show', sha + ':' + rel], { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); }
   catch (e) { return ''; }
 }
+// S8-R4D-D2 - THE HELPER NOW FILTERS WHAT ITS NAME SAYS. It filtered the FOLDER, not the extension, so
+// appsscript.json counted as a runtime .gs. Every sentence built on it says 'the two runtime FILES this
+// release owns', and a manifest is not one: it carries no build stamp, is in no RELEASE_OWNERS set, and
+// is applied through the Apps Script editor rather than pasted. The manifest is not dropped from the
+// deploy surface by this - H2f below names it explicitly, which is stricter than counting it as a .gs,
+// because a .gs and a manifest reach Production by two different operator actions.
 function runtimeGsBetween(a, b) {
+  return appsScriptFilesBetween(a, b).filter(function (f) { return /\.gs$/.test(f); });
+}
+function appsScriptFilesBetween(a, b) {
   return cp.execFileSync('git', ['diff', '--name-only', a, b], { cwd: REPO, encoding: 'utf8' })
     .trim().split('\n').filter(Boolean)
     .filter(function (f) { return f.indexOf('assets/specs/active/apps-script/') === 0 && f.indexOf('/TEMP_') === -1; })
@@ -341,6 +350,20 @@ eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R43_ID,
   'H2e2 ...and the manifest declares R43, which is where a release is cut');
 ok(!/R43/.test(read(GS + '01_router.gs')),
   'H2e3 01_ is NOT stamped R43 - no action, no route and no request field moved');
+
+// S8-R4D-D2 - THE OTHER HALF OF THE SAME INTERVAL. Narrowing runtimeGsBetween to .gs would otherwise
+// mean a manifest change since R42 passes unremarked, and the manifest is the one file that can silently
+// un-deploy a feature. So the non-.gs half is asserted too, and just as exactly. Membership is read from
+// the repository's declared service state rather than from git: a set computed from the diff accepts
+// whatever it finds. S8-R4D-D2's NO-GO cleanup flips that state back and this set empties with it.
+var ADV = require(path.join(REPO, 'assets/tests/_advanced-services-state.js'));
+eq(appsScriptFilesBetween(R42_POST_SHA, 'HEAD').filter(function (f) { return !/\.gs$/.test(f); }),
+  ADV.SHEETS_ENABLED ? ['assets/specs/active/apps-script/appsscript.json'] : [],
+  'H2f and the only NON-.gs file to move since R42 is the manifest, and only while the repository '
+  + 'declares the advanced service enabled - S8-R4D-D2 benchmark infrastructure, not a release');
+ok(ADV.SHEETS_ENABLED === false || !/batchGet/.test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
+  'H2f1 ...and enabling it bought the Product runtime nothing - 60_ still reads through SpreadsheetApp, '
+  + 'so the deploy surface for R43 is unchanged by the manifest move');
 ok(!/R42/.test(read(GS + '01_router.gs')),
   'H2c3 01_ is NOT stamped R42 - no action was added or removed and no route moved, and marching an '
   + 'unchanged owner to make a release look complete is the one thing these stamps exist to prevent');

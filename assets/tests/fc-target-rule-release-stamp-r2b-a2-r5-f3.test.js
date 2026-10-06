@@ -161,6 +161,38 @@ var PRODUCTION_DELETE_SET_CANDIDATE = [
   'TEMP_request_order_send_diagnostics.gs'
 ];
 
+// S8-R4D-D2 - THE EDITOR-APPLIED SET. A THIRD THING THE OPERATOR DOES.
+//
+// I1's partition was copy-versus-delete, because for twenty-odd releases every file in this folder was
+// one or the other. appsscript.json is neither. An advanced service is added in the Apps Script editor
+// (Services + -> Google Sheets API -> v4), and the EDITOR rewrites its own manifest; pasting a manifest
+// over it is not how the change is applied and, for a Web App, is a good way to lose the deployment
+// settings that are not in the repository copy. So the file genuinely differs from BASE, genuinely must
+// reach Production, and genuinely must not be in the paste list.
+//
+// Widening I1 to accept it would have been the wrong repair for the same reason widening it to accept a
+// deletion was: two different operator actions in one list is a list nobody can follow. It is declared,
+// not discovered - a SECOND editor-applied file appearing here still fails.
+//
+// MEMBERSHIP IS CONDITIONAL, because this one is. The manifest differs from BASE only while the
+// repository declares the service enabled; the S8-R4D-D2 NO-GO cleanup reverts it and the set empties.
+// Reading that from _advanced-services-state.js rather than from git is the point - a set computed from
+// the diff would accept whatever it found, which is a mirror rather than a guard.
+var ADVANCED_SERVICES_STATE = require(path.join(REPO, 'assets/tests/_advanced-services-state.js'));
+var EDITOR_APPLIED_MEMBERS = ADVANCED_SERVICES_STATE.SHEETS_ENABLED ? ['appsscript.json'] : [];
+
+// Named rather than inlined so M16/M17 below exercise THE SAME partition I1 asserts on. A mutant that
+// re-implements the logic it is testing passes whenever the copy drifts from the original, which is the
+// one moment it was supposed to speak up.
+function partitionCopyList(copyList, editorMembers) {
+  return {
+    pasted: copyList.filter(function (f) { return editorMembers.indexOf(f) === -1; }).sort(),
+    editorApplied: copyList.filter(function (f) { return editorMembers.indexOf(f) !== -1; }).sort()
+  };
+}
+var I1_COPY_LIST = null;        // captured by I1 below, so the mutants run against the real git answer
+var I1_EXPECTED_PASTE = null;
+
 var RELEASE_OWNERS = {
   // S3-R10 — THE RELEASE SET IS REPLACED, NOT APPENDED TO, AND THAT IS WHAT C3 IS FOR.
   //
@@ -980,9 +1012,17 @@ section('I. THE SYNC LIST IS EXACTLY THE DECLARED OWNERS');
   // S5-R6 / S7-R2A: FOUR kinds of member, one copy list — changed this release, carried from an earlier
   // unshipped one, generated, and changed-but-stampless. All four are pasted; only the first expects the
   // current release.
-  eq(copy, Object.keys(RELEASE_OWNERS).concat(Object.keys(RELEASE_CARRIED))
-    .concat(Object.keys(GENERATED_OWNERS)).concat(Object.keys(STAMPLESS_OWNERS)).sort(),
+  // S8-R4D-D2 - and the copy list is now split once more. See EDITOR_APPLIED_MEMBERS above: a file the
+  // operator applies through the editor's Services UI is not a file the operator pastes.
+  I1_COPY_LIST = copy;
+  I1_EXPECTED_PASTE = Object.keys(RELEASE_OWNERS).concat(Object.keys(RELEASE_CARRIED))
+    .concat(Object.keys(GENERATED_OWNERS)).concat(Object.keys(STAMPLESS_OWNERS)).sort();
+  var split = partitionCopyList(copy, EDITOR_APPLIED_MEMBERS);
+  eq(split.pasted, I1_EXPECTED_PASTE,
     'I1  exactly the declared release owners are to be COPIED — no Apps Script file rode along');
+  eq(split.editorApplied, EDITOR_APPLIED_MEMBERS.slice().sort(),
+    'I1c and exactly the declared editor-applied files differ - applied through the Apps Script editor, '
+    + 'never pasted, and declared rather than discovered');
   // S7-R4 - THERE IS NOW A DELETE SET, AND IT IS DECLARED RATHER THAN DISCOVERED.
   //
   // This read `eq(gone, [])` because nothing had left the folder since BASE. Seven files left it in R40,
@@ -1170,6 +1210,22 @@ mutant('M14', 'R40 history rewritten so the router looks like it was an owner al
   // git is the witness, and it does not agree with the rewritten claim.
   return r40.indexOf(GS + '01_router.gs') === -1 && r40.length === 1;
 });
+// S8-R4D-D2 - THE EDITOR-APPLIED PARTITION IS NOT A HOLE. Both mutants run the real partitionCopyList.
+mutant('M16', 'a SECOND file rides along in the editor-applied bucket instead of being declared', function () {
+  var faked = I1_COPY_LIST.concat(['.clasp.json']);
+  var split = partitionCopyList(faked, EDITOR_APPLIED_MEMBERS.concat(['.clasp.json']));
+  // Declaring it would make it vanish from BOTH lists unless the declaration is also checked. I1c checks
+  // the declaration itself, so an undeclared-but-tolerated file is caught; here the bucket is widened to
+  // hide it and I1c still fails because EDITOR_APPLIED_MEMBERS is not what the round declares.
+  return JSON.stringify(split.editorApplied) !== JSON.stringify(EDITOR_APPLIED_MEMBERS.slice().sort());
+});
+mutant('M17', 'the manifest moves while the repository still declares the service DISABLED', function () {
+  // SHEETS_ENABLED false empties the editor-applied set, so a differing manifest falls through to the
+  // PASTE list - where it is not a declared owner, and I1 fails. That is the intended behaviour: the
+  // allowance exists only while the repository says the service is on.
+  var split = partitionCopyList(I1_COPY_LIST, []);
+  return JSON.stringify(split.pasted) !== JSON.stringify(I1_EXPECTED_PASTE);
+});
 mutant('M15', 'the release is cut in the source but never written into the governance ledger',
 function () {
   var stripped = RELEASE_LOG.split(RELEASE).join('R-NOT-LOGGED');
@@ -1210,6 +1266,11 @@ var vacuous = [];
  ['M14', function () { return RELEASE_CARRIED['01_router.gs'] === 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'
      && !/-R40$/.test(RELEASE_CARRIED['01_router.gs'] || ''); }],
  ['M15', function () { return RELEASE_LOG.indexOf(RELEASE) !== -1; }],
+ // M16/M17 must both be FALSE on the unmutated tree: the real partition agrees with both declarations.
+ ['M16', function () { return JSON.stringify(partitionCopyList(I1_COPY_LIST, EDITOR_APPLIED_MEMBERS).editorApplied)
+     === JSON.stringify(EDITOR_APPLIED_MEMBERS.slice().sort()); }],
+ ['M17', function () { return JSON.stringify(partitionCopyList(I1_COPY_LIST, EDITOR_APPLIED_MEMBERS).pasted)
+     === JSON.stringify(I1_EXPECTED_PASTE); }],
  // M12's predicate must be FALSE against the unmutated tree: the real contract DID move, once per
  // action-adding release in this span.
  ['M12', function () {
