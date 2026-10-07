@@ -147,6 +147,12 @@ DIAGNOSTIC_REQUEST_BODY_LOSS -> S8-R4D-E5, its own round. Reproduced through the
   recentWindow=false · only=null · tablesRead=19 · redirected=true · script.googleusercontent.com
   If km_body has never arrived, the `only` optimization has never been effective in Production.
   NOT folded in, so a PASS on normalizationMs and a FAIL on the request contract never share a verdict.
+  *** CLOSED by S8-R4D-E5: there was no body loss. "Through the shipped URL builder" was true of the URL
+  *** and false of the BODY — the probe sent a flat { recentWindow, only } instead of the DTO envelope that
+  *** 60_ reads at body.payload, so 19 tables was the correct answer to it.
+  *** PRIOR_19_TABLE_SAMPLE_CLASSIFICATION = INVALID_FOR_CANONICAL_FIRST_LAYER_MEASUREMENT
+  *** Live canonical request: tablesRead 13, recentWindowApplied true, 0 exposure tables.
+  *** The decision to keep it OUT of this round's verdict was right, and is what kept R45 clean.
 showSection is not defined   -> separate frontend round, low priority
 Candidate A / hot-cold split -> R46, decision-gated
 AMAZON_INVENTORY_BLANK_DATE  -> S8-R4D-G1, blocked on a source measurement

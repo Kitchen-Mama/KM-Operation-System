@@ -1,16 +1,105 @@
-# S8-R4D-E5 — KM_BODY REQUEST CONTRACT: ROOT-CAUSE PREFLIGHT
+# S8-R4D-E5 — KM_BODY REQUEST CONTRACT: ROOT CAUSE, AND THE LIVE DISCRIMINATOR THAT CLOSED IT
 
-## The root cause is in the DIAGNOSTIC, not in the transport. The probe sent a body shape the handler does not read.
+## The root cause was in the DIAGNOSTIC, not in the transport. Production has answered, and it answers 13.
 
 ```
-S8_R4D_E5_PREFLIGHT       = PASS
-ROOT_CAUSE_STAGE          = STAGE 0 — probe request construction, before any network hop
-ROOT_CAUSE_CLASS          = OTHER (invalid diagnostic sample). NOT encoding, redirect, router-parse,
-                            body-reconstruction, client-recovery or compatibility-fallback.
-ROOT_CAUSE_CONFIDENCE     = PROVEN for the observed sample, by execution of the shipped functions
+S8_R4D_E5                 = CLOSED
+S8_R4D_E5_LIVE_DISCRIMINATOR = PASS
+KM_BODY_RUNTIME_DEFECT    = NO     REDIRECT_CONTRACT_DEFECT = NO     ROUTER_PARSE_DEFECT = NO
+RUNTIME_REPAIR_REQUIRED   = NO
+ROOT_CAUSE_STAGE          = STAGE 0 — prior diagnostic probe construction, before any network hop
+ROOT_CAUSE_CLASS          = INVALID DIAGNOSTIC BODY SHAPE
+                            NOT encoding, redirect, router-parse, body-reconstruction, client-recovery
+                            or compatibility-fallback.
+ROOT_CAUSE_CONFIDENCE     = PROVEN — predicted from source, then confirmed live
 ARCHITECTURE_DECISION_REQUIRED = NO
 RUNTIME_MODIFIED = NO · PRODUCTION_WRITE = NO · DEPLOYED = NO · SCHEMA_CHANGES = 0
 ```
+
+---
+
+## 0. The live discriminator — the canonical request, through the shipped client
+
+Run on the sealed R45 deployment through `window.KM.api.getWorkspace('inventoryReplenishment',
+{ recentWindow: true, only: <13> })` — the only caller that builds the DTO envelope.
+
+```
+tablesRead             13        <- the preflight predicted 13; the prior probes reported 19
+recentWindowRequested  true      recentWindowApplied  true
+requestEcho            { recentWindow: true, only_count: 13 }
+onlyRequested_count    13
+data_keys              exactly the thirteen first-layer tables. NO exposure tables present.
+rowsReturned           7,299
+serverDurationMs       6,197     wall_ms 6,194
+batchMetadataMs 799 · batchValuesMs 2,033 · normalizationMs 464
+dateCellsConverted 79,454 · tzProbeCalls 84 · rangeCount 13 · remoteCallCount 2
+readerMode / primaryReader / finalReader  SHEETS_API · fallbackUsed false · fallbackCount 0
+```
+
+**The `only` contract has always worked.** Every stage the preflight traced from source behaves live exactly
+as traced. Q2 from the handoff — *"has the optimization ever been effective in Production?"* — is answered
+YES, and the three rounds that doubted it were doubting their own instrument.
+
+### The one number not to freeze
+
+```
+wall_ms 6,194  <  serverDurationMs 6,197
+```
+
+A client wall cannot be shorter than the server interval it contains — there is at minimum a redirect hop and
+a multi-megabyte parse inside it. Exactly one mechanism in this stack produces that reading: **in-flight
+coalescing.** `_workspaceInvoke` keys business reads on `canonicalScope({ v: apiVersion, p: dto.payload })`
+([km-api-foundation.js:868](../../assets/js/api/km-api-foundation.js#L868)) and hands them to
+`scopedSingleFlight` ([km-transport.js:633](../../assets/js/api/km-transport.js#L633)). The probe's payload is
+**byte-identical** to the page's own first-layer payload, so if a page read was in flight the probe attached to
+it and measured only the remainder.
+
+```
+TRUE_FIRST_LAYER_SERVER_MS = 6,197   TRUSTED — the handler's own measurement, one authority
+TRUE_FIRST_LAYER_WALL_MS   = 6,194   RECORDED, NOT TRUSTED as an end-to-end wall
+```
+
+This does not weaken the verdict — it strengthens it. If the read **was** coalesced, the physical request was
+**the page's own**, which proves the page's first-layer read returns thirteen tables more directly than the
+probe could. Either reading closes E5. One field settles which: `env.meta.coalesced`, beside
+`physicalRequestId` and `requestIdCorrelation`. Worth capturing on the next page load; not worth a round.
+
+## 0b. What the six exposure tables actually cost — measured for the first time
+
+Same deployment, same release, two different request shapes. **Not a before/after of one request** — the
+operator's instruction on this point is correct and is why the table is labelled by shape.
+
+```
+                        19-TABLE (INVALID SHAPE)   13-TABLE (CANONICAL)      delta
+serverDurationMs                   10,296                  6,197          -4,099  -39.8%
+  batchMetadataMs                     333                    799            +466
+  batchValuesMs                     2,049                  2,033             -16
+  normalizationMs                     433                    464             +31
+  rangeCount                           13                     13               0
+  remoteCallCount                       2                      2               0
+  dateCellsConverted               79,454                 79,454               0
+  tzProbeCalls                         84                     84               0
+wall_ms                            19,111                  6,194         -12,917
+```
+
+Five counters are **identical**, and that is the point: the batch reader only ever handled the thirteen B1
+tables: the six exposure tables went to the per-sheet reader and were never normalized. So the entire
+**4,099 ms** server delta is six per-sheet reads plus building and serialising their rows — ~683 ms per sheet.
+
+```
+LAZY_EXPOSURE_SPLIT_VALUE = 4,099 ms of server time, MEASURED. S8-R4C argued it; this is the first number.
+DATE_MAP_TOUCHES_ONLY_B1  = MEASURED, not inferred — dateCellsConverted is identical under both shapes,
+                            which the R45 acceptance could only assert from source.
+```
+
+Two cautions against over-reading a single sample:
+
+- **`batchMetadataMs` moved 333 -> 799 for provably identical work** (13 ranges, 2 remote calls). That is
+  ±470 ms of run-to-run variance on a 6.2 s total — about 7.5%. No sub-second difference here carries meaning.
+- **The unattributed residual is still the largest server block.** `6,197 - (799 + 2,033 + 464) = 2,901 ms`
+  (46.8%), and `openMs` was not reported in this sample, so the true residual is 2,901 minus openMs. It is
+  view-model build plus serialisation. It fell with the payload, which is consistent with that reading and does
+  not confirm it.
 
 ---
 
@@ -74,11 +163,11 @@ The bottom-right column reproduces the live Production observation **exactly** �
 ```
 KM_BODY_BUILT_CORRECTLY                     SHIPPED PAGE: YES    ONE-SHOT PROBE: NO
 KM_BODY_PRESENT_AT_FIRST_NETWORK_DISPATCH   YES — both. The one-shot refused to dispatch without `km_body=`.
-KM_BODY_SURVIVES_REDIRECT                   NOT DISPROVEN, and no longer suspected. The one observation that
-                                            pointed here is fully explained upstream of the network.
-KM_BODY_PRESENT_AT_DOGGET                   Consistent with arrival: the body PARSED. An absent km_body yields
-                                            body={} and could not have carried the action/requestId it did.
-KM_BODY_PRESENT_AFTER_ROUTER_PARSE          YES — rtrParseGetBody_ returns it intact for both shapes.
+KM_BODY_SURVIVES_REDIRECT                   YES — settled live by §0: a 13-table answer is only reachable
+                                            if the envelope crossed every hop intact.
+KM_BODY_PRESENT_AT_DOGGET                   YES — same evidence.
+KM_BODY_PRESENT_AFTER_ROUTER_PARSE          YES — rtrParseGetBody_ returns it intact for both shapes, and
+                                            the live echo confirms it for the shipped shape.
 
 RECENT_WINDOW_EXPECTED  true
 RECENT_WINDOW_OBSERVED  built true -> envelope true -> wire true -> parse true -> handler true   (shipped)
@@ -139,10 +228,14 @@ missing. The matrix then eliminated its way to the only remaining answer, "km_bo
 `e.parameter`", and that conclusion has been carried forward for three rounds.
 
 ```
-WHAT IS PROVEN      the observed Production output is produced, deterministically, by the probe's body shape
-WHAT IS NOT PROVEN  that the PAGE's own read returns 13. It is correct by construction and by execution of
-                    every shipped function in the chain — but it has never been MEASURED live.
+WHAT WAS PROVEN AT PREFLIGHT  the observed output is produced, deterministically, by the probe's body shape
+WHAT WAS STILL OPEN           that the PAGE's own read returns 13 — correct by construction, never measured
+NOW CLOSED BY §0              Production returns 13, with the thirteen table names and no exposure table
 ```
+
+The preflight deliberately stopped short of claiming the live system was clean. It predicted 13 and named the
+one call that could falsify it. That prediction held, which is the only reason this record gets to say PROVEN
+rather than ARGUED.
 
 Why it has never been measured: under R44 the page read **timed out at 60 s** on every attempt (the operator's
 `window.KM.api.getWorkspace` console run returned `wall_ms 60005`, `echo null`), so no echo ever came back.
@@ -232,17 +325,16 @@ measure of the parsed payload**, not the wire byte count — labelled, not confl
 
 ```
 PASS       tablesRead 13 · recentWindowRequested true · recentWindowApplied true · onlyRequested_count 13
-           table_names contains NONE of: shipments, shipment_lines, shipping_plans, shipping_plan_lines,
-           shipping_allocation_drafts, shipping_allocation_draft_lines
-           -> the contract has always worked; §0's finding was an instrument fault; E5 closes as NO DEFECT
-           -> the remaining Site Inventory cost is the REAL 13-table cost, and the auto-load decision reopens
-
+           table_names contains NONE of the six exposure tables
 FAIL       tablesRead 19 / recentWindowRequested false
-           -> a genuine runtime defect exists that this preflight did NOT find, and the audit reopens at the
-              network hops with the probe artifact removed as a confound. Do not repair before it is named.
+           -> a genuine runtime defect this preflight did NOT find; reopen the hop audit with the probe
+              artifact removed as a confound, and do not repair before the hop is named.
 ```
 
-Run it **once**, on a page that has finished loading. Do not retry on timeout — report the timeout instead.
+```
+*** EXECUTED. RESULT = PASS. See §0. The FAIL branch was never taken and is kept as the record of what
+*** would have falsified the preflight — a prediction with no falsifier is not a prediction.
+```
 
 ## 9. Carried, unchanged
 
@@ -258,13 +350,95 @@ NOT TOUCHED IN THIS ROUND, as instructed:
 
 ---
 
+---
+
+## 10. TRUE FIRST-LAYER BASELINE — frozen
+
+The first valid Production first-layer sample. Every earlier Site Inventory number was taken either from a
+read that timed out or from a request of the wrong shape.
+
 ```
-NEXT_STEP_PROPOSAL
-  1  operator runs §8 once and pastes the JSON        <- the only blocked step
-  2  PASS  -> close E5 as NO_RUNTIME_DEFECT, re-measure the true first-layer cost, reopen the auto-load
-             decision, and re-open R4D-F / E5-performance against a number that is real
-  3  FAIL  -> reopen the hop audit with the probe artifact eliminated; server-side instrumentation of
-             e.parameter KEY NAMES at router entry becomes justified, and it is a runtime change needing
-             its own authorization
+TRUE_FIRST_LAYER_SERVER_MS            6,197        <- authoritative
+TRUE_FIRST_LAYER_WALL_MS              6,194        <- recorded, NOT trusted end-to-end (see §0)
+TRUE_FIRST_LAYER_TABLE_COUNT             13
+TRUE_FIRST_LAYER_EXPOSURE_TABLE_COUNT     0
+TRUE_FIRST_LAYER_ROWS_RETURNED        7,299
+BATCH_METADATA_MS  799   BATCH_VALUES_MS  2,033   NORMALIZATION_MS  464
+DATE_CELLS_CONVERTED  79,454   TZ_PROBE_CALLS  84
+PRIMARY_READER  SHEETS_API   FALLBACK_USED  false   RANGE_COUNT 13   REMOTE_CALL_COUNT 2
+RELEASE  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45
+SAMPLE_COUNT  1 — single sample, and batchMetadataMs alone varies ±470 ms between samples.
+```
+
+## 11. Scalability contract — frozen
+
+```
+FIRST_LAYER_BOUNDARY                     = EXACT_13_TABLES
+LAZY_EXPOSURE_TABLES_READ_IN_FIRST_LAYER = NO          (measured: data_keys carried none of the six)
+SCALABILITY_CONTRACT_PRESERVED           = YES
+```
+
+Guaranteed by the allow-list gate `if (onlySet && !onlySet[spec.name]) continue;`, proven on the selection
+function itself in test H1: three hypothetical new lazy tables change the scoped selection by nothing. Shipment,
+allocation and carrier growth cannot reach the first layer.
+
+**One boundary this does NOT cover, named so it is not mistaken for covered.** The contract bounds the first
+layer in *table count*, not in *rows*. `amazon_daily_sales_snapshot` grows under its 90-day rolling retention,
+and 79,454 date cells are converted on every first-layer read. Growth inside the thirteen is a real cost path
+and this freeze does not close it.
+
+## 12. AUTO-LOAD DECISION GATE — operator decision required
+
+Now evaluable against a real number for the first time. **Nothing is changed here.**
+
+```
+MECHANISM   localStorage['km_site_inventory_last_scope_v1'] { country, marketplaceId, at }, TTL 30 days.
+            Fires ONLY for a scope that was previously applied successfully. A first-ever visitor takes
+            REGISTRY_ONLY: 1 registry request, ZERO workspace reads. US/Amazon is not a default.
+            A hard reload discards the in-memory model deliberately, so it always takes COALESCED.
+TRUE COST   ~6.2 s server · 13 tables · 7,299 rows · no exposure over-read
+```
+
+| | **A — KEEP AUTO-LOAD** | **B — RESTORE SCOPE, REQUIRE SEARCH** |
+|---|---|---|
+| returning-user convenience | data present, no click | one click every entry |
+| startup cost | ~6.2 s server per page entry | ~0 — registry only |
+| unnecessary request rate | one wasted read per entry where the scope was wrong or the user passed through — **rate unmeasured** | zero by construction |
+| perceived latency | 6.2 s under a painted LOADING state, overlapping the user orienting | instant paint; the same 6.2 s moves behind a click the user initiated |
+| stability risk | LOW — 6.2 s of a 60 s budget (10%). The old objection was 60 s timeouts under R44; that is gone | LOW, but needs an empty-ready state that reads as deliberate. Existing UI debt (`.psb-state` has no CSS, `showSection is not defined`) is a real prerequisite A does not have |
+| data growth | every entry pays the growth inside the thirteen (§11) | growth is paid only when asked for |
+
+```
+AUTO_LOAD_RECOMMENDATION = A — KEEP, conditionally
+```
+
+**Why A.** B does not make the data arrive sooner for the user who wants it — it moves the same 6.2 s behind a
+click. B only wins when the load was unwanted, and A's historical objection (timeouts) is measurably gone.
+A also has no UI prerequisite, while B needs a pre-search empty state that this codebase does not yet style.
+
+**What would flip it, stated plainly: a rate nobody has measured.** How often does opening Site Inventory end
+in using the restored scope rather than changing it? If usually the former, A is right; if usually the latter,
+B is right and the argument is not close. That question does not need telemetry — the operator can answer it
+from their own use, and it is the cheapest decisive input available.
+
+**The condition on A.** It rests on ~6.2 s, and `wall_ms` is the number §0 declines to trust. If the confirmed
+end-to-end wall is materially above ~10 s, A should be re-opened, because the auto-load is then a visible stall
+on every entry rather than a short wait.
+
+```
+AUTO_LOAD_DECISION_REQUIRED = YES — operator. No UX change made or proposed for implementation here.
+```
+
+---
+
+```
+S8_R4D_E5 = CLOSED
+NEXT_TASK_PROPOSAL
+  S8-R4D-F — ON-THE-WAY FIRST-LAYER AGGREGATE
+  frozen scope: company + marketplace/site + sku + on_the_way_qty. Full shipment detail STAYS LAZY —
+  and §0b now prices that split at 4,099 ms of server time, so the aggregate must not re-import it.
+  BLOCKED ON: the operator resolving §12, or explicitly deferring it.
+QUEUED, SEPARATE, NOT IMPLEMENTED
+  G1 Amazon inventory blank-date architecture decision · showSection UI debt
 STOP — no runtime change, no deployment, no push.
 ```

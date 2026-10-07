@@ -2,9 +2,11 @@
 ## HANDOFF. Not investigated yet, not repaired, not assumed. Audit before implementation.
 
 ```
-STATUS      SUPERSEDED BY THE PREFLIGHT — see S8_R4D_E5_KM_BODY_REDIRECT_CONTRACT_PREFLIGHT.md
-E5_PREFLIGHT_STATUS = DONE · ROOT_CAUSE_STAGE = probe request construction, Stage 0
-RAISED BY   S8-R4D-E3A (first sighting) · S8-R4D-E3D (one-shot) · S8-R4D-E4-C (one-shot)
+STATUS      CLOSED — DIAGNOSTIC INSTRUMENT FAULT. Superseded by S8_R4D_E5_KM_BODY_REDIRECT_CONTRACT_PREFLIGHT.md
+LIVE RESULT tablesRead 13 · recentWindowApplied true · onlyRequested_count 13 · 0 exposure tables
+KM_BODY_RUNTIME_DEFECT = NO · REDIRECT_CONTRACT_DEFECT = NO · ROUTER_PARSE_DEFECT = NO
+RAISED BY   S8-R4D-E3A (first sighting) · S8-R4D-E3D (one-shot) · S8-R4D-E4-C (one-shot) — all three
+            INVALID_FOR_CANONICAL_FIRST_LAYER_MEASUREMENT
 ```
 
 > **This brief's premise did not survive its own audit, and the text below is kept unedited as the record of

@@ -4589,6 +4589,21 @@ S8-R4D-E3D, ONE Production one-shot through the shipped URL builder, R44 deploye
     normalizationMs       74,621     <- 89% of server time, inside 60_
 ```
 
+> **S8-R4D-E5 CLASSIFICATION (2026-10-07).** This sample — and the matching R45 acceptance one-shot — was
+> taken with a **flat** `{ recentWindow, only }` body through `KM.transport.readUrl`, which serialises the
+> body it is handed and builds no envelope. `60_` reads `body.payload`, so both probes read **19 tables**
+> instead of 13.
+>
+> ```
+> PRIOR_19_TABLE_SAMPLE_CLASSIFICATION = INVALID_FOR_CANONICAL_FIRST_LAYER_MEASUREMENT
+> KM_BODY_FINDING_STATUS               = CLOSED — DIAGNOSTIC INSTRUMENT FAULT (no runtime defect)
+> ```
+>
+> **The R44 -> R45 comparison is NOT invalidated**: both one-shots used the same shape, and
+> `normalizationMs` does not depend on table count — `dateCellsConverted` is 79,454 under both. What these
+> figures may not be read as is the first layer's cost. The true first-layer baseline is **6,197 ms server,
+> 13 tables, 7,299 rows** — see `S8_R4D_E5_KM_BODY_REDIRECT_CONTRACT_PREFLIGHT.md`.
+
 R44 made the read ten times faster and then spent twenty-four times the saving converting serials to
 Dates. `sirWsSerialToDate_` computes `wallMs - offset(tz)` — arithmetic — and reached it through
 `Utilities.formatDate` + `Utilities.parseDate`: **76,694 bridge crossings over 38,347 declared cells**,

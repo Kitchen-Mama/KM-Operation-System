@@ -19,6 +19,12 @@ required-action list 14, transport contract 1, bundle hash `46ae3945…`, `appss
 One Production one-shot, `R45-ACCEPT-1`, through the shipped URL builder — the same method and the same
 diagnostic shape as the R44 baseline, which is what makes the comparison legitimate.
 
+> **S8-R4D-E5 NOTE.** That sentence turned out to be more load-bearing than it looked. Both one-shots sent a
+> **flat** body, so both read nineteen tables — which makes them a wrong-shaped request measured consistently.
+> The R44→R45 comparison below is therefore **unaffected**: it compares like with like, and `normalizationMs`
+> does not depend on table count (`dateCellsConverted` is 79,454 under both shapes, measured). What the
+> identical shape does NOT license is reading these figures as the first layer's cost — see §6 and §7.
+
 ```
                       R44 (frozen)      R45        delta           change
 normalizationMs            74,621       433       -74,188 ms      -99.42%
@@ -98,6 +104,12 @@ SITE_INVENTORY_FULL_PERFORMANCE_SEAL = NO   — the over-read is unrepaired, see
 The two are deliberately separate. R45 made a wrong-shaped request fast; it did not make it right-shaped,
 and it is not credited with doing so.
 
+> **CORRECTION (S8-R4D-E5).** There was no over-read to repair. The request the PAGE sends was always
+> right-shaped; only the probe's was not. `SITE_INVENTORY_FULL_PERFORMANCE_SEAL` is now **YES on request
+> shape** — 13 tables, 0 exposure tables, measured — and the remaining open question is cost inside the
+> thirteen, not scope. The sentence above stands as written because it was the correct refusal to make on the
+> evidence then available: a fast wrong-shaped request would still have been wrong-shaped.
+
 ## 5. Final health — every gate
 
 ```
@@ -148,7 +160,34 @@ One chain, not three candidates: `km_body` is lost → `only` never applies → 
 12.18 MB → 7,185 ms of build/serialize and 8,815 ms of transport. **E5 is now a performance round as well
 as a correctness round.**
 
-## 7. The km_body finding is CONFIRMED_OPEN
+> **CORRECTION (S8-R4D-E5).** The first link of that chain is false: `km_body` was never lost. The chain's
+> real first link is **the probe sent a flat body**, and every figure in this section is therefore a
+> measurement of the *wrong request shape* — `INVALID_FOR_CANONICAL_FIRST_LAYER_MEASUREMENT`. The canonical
+> first layer costs **6,197 ms of server time** for 13 tables and 7,299 rows, with the residual at 2,901 ms,
+> not 7,185 ms. The six exposure tables are now priced at **4,099 ms of server time** — which is the first
+> measurement of what the S8-R4C lazy split actually buys, and the only thing in this section that survives
+> intact. See the E5 preflight §0b.
+
+## 7. The km_body finding is CLOSED — DIAGNOSTIC INSTRUMENT FAULT
+
+> **CORRECTION (S8-R4D-E5, 2026-10-07). This section's finding is WITHDRAWN. The observation below is real
+> and is kept; the conclusion drawn from it was not.** The one-shot that produced it called
+> `KM.transport.readUrl(action, { recentWindow, only }, rid)` — a **flat body**. `readUrl` serialises the body
+> it is handed and builds no envelope; the shipped page body is the workspace DTO envelope and `60_:1082` reads
+> `body.payload`. A flat body therefore arrives as `{}`, excludes no table, and nineteen sheets is the correct
+> answer to the request that was actually sent. Nothing was lost at any hop.
+>
+> ```
+> PRIOR_19_TABLE_SAMPLE_CLASSIFICATION = INVALID_FOR_CANONICAL_FIRST_LAYER_MEASUREMENT
+> KM_BODY_FINDING_STATUS               = CLOSED — DIAGNOSTIC INSTRUMENT FAULT
+> KM_BODY_RUNTIME_DEFECT = NO · REDIRECT_CONTRACT_DEFECT = NO · ROUTER_PARSE_DEFECT = NO
+> ```
+>
+> The canonical request through `window.KM.api.getWorkspace` returns **tablesRead 13**, `recentWindowApplied
+> true`, `onlyRequested_count 13` and no exposure table — see
+> [S8_R4D_E5_KM_BODY_REDIRECT_CONTRACT_PREFLIGHT.md §0](./S8_R4D_E5_KM_BODY_REDIRECT_CONTRACT_PREFLIGHT.md).
+> **R45's normalization acceptance is unaffected** — it was a measurement of `normalizationMs`, which is
+> shape-independent: `dateCellsConverted` is 79,454 under both shapes.
 
 ```
 The SAME successful R45 response reported:
