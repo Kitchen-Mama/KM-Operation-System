@@ -97,7 +97,7 @@
 // below move in the same commit.
 // S8-R4B-1A: R40 -> R41, and the rule above held again. R41 is the Factory Guard read-transport cut;
 // this census did not change and still moves, because the pin follows the RELEASE and not this file.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7861,7 +7861,7 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // below move in the same commit.
 // S8-R4B-1A: R40 -> R41, and the rule above held again. R41 is the Factory Guard read-transport cut;
 // this census did not change and still moves, because the pin follows the RELEASE and not this file.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the

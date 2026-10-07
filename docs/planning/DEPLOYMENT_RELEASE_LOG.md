@@ -4544,3 +4544,125 @@ GIT_PUSH_REQUIRED                YES - USER-owned, after review
 ```
 
 **STATUS: DEPLOYED AND ACCEPTED.** Live `system.health` reports build_id = deployment_release = R43, workspace_module = R43, system_health = R43, router = R41, mixed_deployment = false. Accepted by S8-R4D-C2: median server time 17,529 ms against an R42 combined median of 20,944 ms (-16.3%, exact Mann-Whitney p = 0.0101), PRODUCTION_SEMANTIC_DIFF_COUNT = 0. Frontend unchanged, so no publication and no token rotation. `main` remains at f6b4164.
+
+---
+
+## S8-R4D-E4-B — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45` — THE DATE CONVERSION STOPS CROSSING THE BRIDGE
+
+```
+BASE    abbaa92   S8-R4D-G0; R44 is CUT and DEPLOYED, and its acceptance FAILED on performance
+BRANCH  feature/product-strategy-board-p0
+DATE    2026-10-07
+SCOPE   DATE NORMALIZATION COST ONLY. The declared date columns stop being converted with two
+        Utilities.* calls per cell. No action added or removed, no route moved, no request field, no
+        response field, no business rule, no schema, no stored row, zero DB writes. Row SELECTION is
+        untouched. Two runtime files, plus one diagnostic whose build pin tracks the release.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45
+PURPOSE                      Site Inventory first-layer date normalization cost (the R44 acceptance defect)
+SUPERSEDES                   nothing. R44 is CUT and DEPLOYED but NOT ACCEPTED; R45 repairs it and must
+                             keep its own identity, so the Production evidence that failed and the
+                             Production evidence that passes are never the same release id.
+OWNERS                       60_api_v1_inventory_replenishment_workspace.gs  (SIR_BUILD_VERSION_)
+                             63_api_v1_system_health.gs                      (SYS_BUILD_VERSION_)
+CARRIED                      01_router.gs stays at R41. No action, no route and no request field moved;
+                             SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ stays 18, required-action list 14,
+                             transport contract 1.
+PIN FOLLOWED                 TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs - R6R7_ACTIVATION_BUILD_ and
+                             TEMP_E3_CENSUS_BUILD_ move with the release. A diagnostic that expects an
+                             older build refuses a healthy deployment, which is why it is not optional.
+EDITOR-APPLIED               none. appsscript.json is unchanged - no advanced service, no OAuth scope.
+
+STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries R45,
+                             no Web App version exists for it, and Production is NOT R45.
+```
+
+### The measurement this release exists for
+
+```
+S8-R4D-E3D, ONE Production one-shot through the shipped URL builder, R44 deployed:
+  wall_ms             92,697
+  serverDurationMs    83,465
+    routerToHandlerMs          1
+    batchMetadataMs          426
+    batchValuesMs          3,110     <- the Sheets read R44 was cut for. It worked.
+    normalizationMs       74,621     <- 89% of server time, inside 60_
+```
+
+R44 made the read ten times faster and then spent twenty-four times the saving converting serials to
+Dates. `sirWsSerialToDate_` computes `wallMs - offset(tz)` — arithmetic — and reached it through
+`Utilities.formatDate` + `Utilities.parseDate`: **76,694 bridge crossings over 38,347 declared cells**,
+70% of them the seven date columns of `amazon_daily_sales_snapshot` over 3,814 rows.
+
+### What changed, and what deliberately did not
+
+The conversion is unchanged in output. The **route** to it is not: the spreadsheet zone's offset is probed
+once per DISTINCT YEAR present in the data (fourteen samples, flanking months included so a year covers its
+own edges) and the arithmetic runs in pure JS only where the probe proves the offset constant. A year the
+probe cannot prove keeps the original path — **cell by cell, not table by table**.
+
+The guard is not decoration. Asia/Taipei is +8h today and was **+9h in July 1979**, because Taiwan observed
+DST until 1980, so a hard-coded +8 would be wrong for real data and right for every test that only looks at
+modern dates. The suite converts a 1979 summer serial and fails on that constant.
+
+`sirWsSerialToDate_` is left **byte-identical** to R44. It is both the fallback and the differential oracle,
+so old code is compared against new code in one process rather than against a reimplementation.
+
+**Candidate A — moving normalization after the recent-window trim — was NOT implemented.** It was costed in
+the E4 preflight and is the only candidate that bounds the work as history grows, but it changes a row
+SELECTION function, so it is a separate decision-gated R46 candidate. `sirWsRecentWindow_` and
+`sirWorkspaceBuild_` are asserted byte-identical to the deployed a940059.
+
+```
+LOCAL EVIDENCE   38,347 date cells · 76,694 old bridge calls (executed) · 14 new · 5,478x fewer
+                 DATE_VALUE_DIFF_COUNT 0 · DATE_TYPE_DIFF_COUNT 0 · DATE_MAP_DIFF_COUNT 0
+                 NON_DATE_TRAP_DIFF_COUNT 0 · event_month still the number 11
+NEW DIAGNOSTICS  dateCellsConverted + tzProbeCalls, beside normalizationMs. R44's ratio is exactly two
+                 calls per cell; a ratio climbing back toward 2 is the guard failing open.
+```
+
+### Apps Script sync set
+
+```
+COPY (paste into the Production Apps Script project, in this order):
+  60_api_v1_inventory_replenishment_workspace.gs
+  63_api_v1_system_health.gs
+
+EDITOR-APPLIED (verify, do not paste):
+  appsscript.json   UNCHANGED - Sheets v4 beside BigQuery v2, already present since S8-R4D-D2
+
+DELETE (confirm absent):
+  nothing new. The S8-R4D-D2 TEMP probes should already be gone.
+
+THEN create a NEW VERSION on the EXISTING Production Web App. Do not create a second Web App.
+VERIFY system.health: deployment_release = R45, module_sync.verdict = UNIFORM,
+       runtime_authority.advanced_services.sheets = true
+```
+
+### Acceptance that must still happen
+
+```
+RELEASE_OWNER_SET                60_api_v1_inventory_replenishment_workspace.gs,
+                                 63_api_v1_system_health.gs
+ACTION_CONTRACT_VERSION          18 - unchanged. No action added or removed.
+REQUIRED_ACTION_LIST_VERSION     14 - unchanged.
+APPS_SCRIPT_SYNC_REQUIRED        YES - 60_, 63_
+APPS_SCRIPT_NEW_VERSION_REQUIRED YES
+APPSSCRIPT_MANIFEST_CHANGE       NO
+BUNDLE_REBUILD_REQUIRED          NO - no assets/js/core module changed
+DB_SCHEMA_CHANGE                 NONE
+DB_WRITES                        0
+DB_DELETES                       0
+DB_READS                         13 - the unchanged first-layer set
+FRONTEND_DEPLOY_REQUIRED         NO - no browser-served byte changed
+CACHE_TOKEN_ROTATION_REQUIRED    NO
+APPS_SCRIPT_DEPLOYMENT_PERFORMED NO
+FRONTEND_PUBLICATION_PERFORMED   NO
+GIT_PUSH_REQUIRED                YES - USER-owned, after review
+```
+
+**STATUS: PREPARED, NOT SYNCED, NOT DEPLOYED.** The acceptance is one Production one-shot by the same
+method as E3D, reported against the frozen R44 baseline above. The criterion is `normalizationMs`
+materially reduced with semantic diff counts at zero — **no latency target is asserted**, because none was
+measured. Carried forward separately and NOT repaired here: `DIAGNOSTIC_REQUEST_BODY_LOSS`
+(S8-R4D-E5) and the Production console error `showSection is not defined`.
