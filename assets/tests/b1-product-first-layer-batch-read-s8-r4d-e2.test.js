@@ -478,9 +478,22 @@ ok(!/SIR_B1_DATE_MAP_\[[^\]]+\]\s*=|SIR_B1_DATE_MAP_\[[^\]]+\]\.push/.test(strip
 // ---------------------------------------------------------------------------------------------------
 section('J — RELEASE, MANIFEST AND HEALTH');
 // ---------------------------------------------------------------------------------------------------
-eq((G60.match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R44, 'J1  60_ is stamped R44');
-eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R44, 'J2  the RELEASE is R44');
-eq((G63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1], R44, 'J3  63_ own stamp is R44');
+// S8-R4D-E4-B — R44 IS A FLOOR, NOT AN EQUALITY, for the reason E2 itself gave when it converted R43's
+// three pins: '=== R44' is a sentence only one release can satisfy, and the next round to change either file
+// makes it false while describing a correct tree. What E2 established is that the batch reader SHIPPED IN
+// R44 — so the stamp must be R44 OR LATER, and anything earlier must still fail. R45 is the release that
+// proves the distinction was needed again, and it needed it faster than R43 did: R44's own acceptance failed
+// on normalization cost, so the repair landed one round later.
+var RO_E2 = require(path.join(ROOT, 'assets/tests/_release-order.js'));
+ok(RO_E2.stampAtOrAfter((G60.match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R44),
+  'J1  60_ is stamped R44 or later — the round the batch reader shipped');
+ok(RO_E2.stampAtOrAfter((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R44),
+  'J2  the RELEASE is R44 or later');
+ok(RO_E2.stampAtOrAfter((G63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1], R44),
+  'J3  63_ own stamp is R44 or later — it carries 60_\'s row');
+// The floor has to bite in the other direction too, or 'at or after' is just 'anything'.
+ok(!RO_E2.stampAtOrAfter('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43', R44),
+  'J3a and a PRE-R44 stamp is still rejected — the floor is a floor, not a formality');
 eq((read(GS + '01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1],
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41', 'J4  01_ is UNCHANGED at R41 — no action and no route moved');
 eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1], '18',
@@ -628,7 +641,10 @@ mutant('M5', 'the drift detector is disabled', function (t) {
 mutant('M5a', 'the drift detector stops using number formats and guesses from values instead', function (t) {
   t.g60 = t.g60.split('effectiveFormat.numberFormat.type').join('effectiveValue.numberValue'); }, dDrift);
 mutant('M6', 'identity is coerced with String() so a type change passes', function (t) {
-  t.g60 = t.g60.replace("if (typeof v === 'number') { values[r][idx[k]] = sirWsSerialToDate_(v, tz); converted++; }",
+  // S8-R4D-E4-B — the anchor moved with the code. R45 routes the type-gated branch through
+  // sirWsSerialToDateGuarded_, so the R44 text no longer matches and the replace became a no-op: the mutant
+  // was reported VACUOUS rather than silently passing, which is the whole reason L2 counts them.
+  t.g60 = t.g60.replace("if (typeof v === 'number') { values[r][idx[k]] = sirWsSerialToDateGuarded_(v, tz, offsetByYear); converted++; }",
     "{ values[r][idx[k]] = String(v); converted++; }"); }, dStringCoerce);
 mutant('M7', 'the ragged-row padding is removed — the blank-row rule inverts', function (t) {
   t.g60 = t.g60.replace('sirWsPadRows_(values, header.length)', 'values'); }, dPad);

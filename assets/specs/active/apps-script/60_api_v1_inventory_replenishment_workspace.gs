@@ -58,7 +58,7 @@
 // PERFORMANCE difference rather than a wrong answer - which is why this stamp matters for a DIFFERENT reason
 // than R42's did: R42 told you a stale copy would lie to you, R43 tells you a stale copy is merely slow, and
 // an acceptance that cannot tell the two deployments apart cannot attribute the measurement it just took.
-var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
+var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
 
 var SIR_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -288,6 +288,72 @@ function sirWsSerialToDate_(serial, tz) {
   return Utilities.parseDate(s, tz, 'yyyy-MM-dd HH:mm:ss');
 }
 
+// ================================================================================================================
+// R45 §B - THE SAME CONVERSION WITHOUT THE BRIDGE.
+//
+// R44 measured 74,621 ms of normalizationMs inside 83,465 ms of serverDurationMs: 89% of the server cost was
+// this file, not the Sheets read (batchValuesMs was 3,110). The cause is arithmetic that is already pure
+// wrapped in TWO Utilities.* calls per cell - 38,347 declared cells is 76,694 bridge crossings, and 70% of
+// them are amazon_daily_sales_snapshot's seven date columns over 3,814 rows.
+//
+// sirWsSerialToDate_ above is UNCHANGED and stays the reference: everything below either reproduces it
+// exactly or calls it. What formatDate(…,'UTC') -> parseDate(…,tz) computes is `wallMs - offset(tz)`, so when
+// the offset is constant over the data's era the bridge buys nothing. When it is NOT constant the arithmetic
+// is wrong, and Asia/Taipei is the proof rather than a hypothetical: it is +8h in 2026 and +9h in July 1979,
+// because Taiwan observed DST until 1980. So the offset is PROBED, never assumed, and never hard-coded.
+//
+// THE BOUND THIS PROBE ACTUALLY CARRIES, stated rather than implied: fourteen samples per distinct year
+// (the 15th of every month, plus the flanking December and January so a year's edges are covered by its own
+// probe) detect any offset regime lasting a month or more. A regime shorter than one month would be missed.
+// No such regime exists in tzdata for any era this product reads; if one ever did, the failure would be a
+// wrong hour on cells inside it. That is the honest limit of sampling, and sampling is the only instrument
+// Apps Script offers - there is no API that enumerates a zone's transitions.
+//
+// Cost: O(distinct years) bridge calls per request instead of O(date cells). Thirteen tables over a 2023-2028
+// era is ~84 calls against 76,694.
+function sirWsSerialWallMs_(serial) {
+  return Date.UTC(1899, 11, 30) + Math.round(Number(serial) * 86400000);
+}
+
+// Memoized for the execution. Apps Script globals live exactly one execution, which IS the request-level
+// bound the preflight asked for - no cross-request cache can go stale here because none survives.
+var SIR_WS_TZ_YEAR_OFFSET_ = {};
+var SIR_WS_TZ_PROBE_CALLS_ = 0;
+
+// The offset at one instant, by the only route available: render the instant as wall-clock in the zone and
+// subtract. Uses the SAME pattern sirWsSerialToDate_ already relies on, so it inherits its proven behaviour.
+function sirWsTzOffsetMs_(tz, instantMs) {
+  SIR_WS_TZ_PROBE_CALLS_++;
+  var s = Utilities.formatDate(new Date(instantMs), tz, 'yyyy-MM-dd HH:mm:ss');
+  var wallUtc = Date.UTC(Number(s.substring(0, 4)), Number(s.substring(5, 7)) - 1, Number(s.substring(8, 10)),
+    Number(s.substring(11, 13)), Number(s.substring(14, 16)), Number(s.substring(17, 19)));
+  return wallUtc - instantMs;
+}
+
+// { constant: bool, offsetMs: n }. constant:false is NOT an error and NOT a reason to approximate - it routes
+// that year's cells, and only that year's cells, back through sirWsSerialToDate_.
+function sirWsTzYearOffset_(tz, year) {
+  var key = tz + '|' + year;
+  if (Object.prototype.hasOwnProperty.call(SIR_WS_TZ_YEAR_OFFSET_, key)) return SIR_WS_TZ_YEAR_OFFSET_[key];
+  var off = null, constant = true;
+  for (var m = -1; m <= 12; m++) {
+    var o = sirWsTzOffsetMs_(tz, Date.UTC(year, m, 15, 12, 0, 0));
+    if (off === null) { off = o; } else if (o !== off) { constant = false; break; }
+  }
+  var result = { constant: constant, offsetMs: constant ? off : null };
+  SIR_WS_TZ_YEAR_OFFSET_[key] = result;
+  return result;
+}
+
+// ONE cell. Identical output to sirWsSerialToDate_ by construction when the guard holds, and literally
+// sirWsSerialToDate_ when it does not.
+function sirWsSerialToDateGuarded_(serial, tz, offsetByYear) {
+  var wallMs = sirWsSerialWallMs_(serial);
+  var g = offsetByYear[new Date(wallMs).getUTCFullYear()];
+  if (!g || g.constant !== true) return sirWsSerialToDate_(serial, tz);
+  return new Date(wallMs - g.offsetMs);
+}
+
 // THE COERCION IS TYPE-GATED, and that is load-bearing rather than defensive. It fires ONLY on a number. A
 // string in a declared date column passes through untouched - not hypothetical: marketplace_skus.launch_date
 // is written as String(...).trim() by both write paths while all 495 live rows hold Dates, so a string in
@@ -299,11 +365,25 @@ function sirWsApplyDateMap_(name, values, tz) {
   var idx = [];
   for (var c = 0; c < header.length; c++) { if (cols.indexOf(header[c]) !== -1) idx.push(c); }
   if (!idx.length) return 0;
+  // R45 PASS 1 - which years are present, in pure JS. No bridge call, no conversion, nothing written. The
+  // scan is over the SAME cells pass 2 visits, so it cannot see a value the conversion does not.
+  var years = {};
+  for (var r1 = 1; r1 < values.length; r1++) {
+    for (var k1 = 0; k1 < idx.length; k1++) {
+      var v1 = values[r1][idx[k1]];
+      if (typeof v1 === 'number') { years[new Date(sirWsSerialWallMs_(v1)).getUTCFullYear()] = 1; }
+    }
+  }
+  // R45 PASS 1b - ONE probe per distinct year rather than two bridge calls per cell.
+  var offsetByYear = {};
+  for (var y in years) { if (years.hasOwnProperty(y)) offsetByYear[y] = sirWsTzYearOffset_(tz, Number(y)); }
+  // R45 PASS 2 - unchanged in every respect that a caller can observe: same cells, same type gate, same
+  // returned count, same Date values. Only the route to the Date is different, and only where it is proven.
   var converted = 0;
   for (var r = 1; r < values.length; r++) {
     for (var k = 0; k < idx.length; k++) {
       var v = values[r][idx[k]];
-      if (typeof v === 'number') { values[r][idx[k]] = sirWsSerialToDate_(v, tz); converted++; }
+      if (typeof v === 'number') { values[r][idx[k]] = sirWsSerialToDateGuarded_(v, tz, offsetByYear); converted++; }
     }
   }
   return converted;
@@ -913,6 +993,11 @@ function sirWorkspaceDefaultIo_() {
       }
 
       var t2 = Date.now();
+      // R45 §B - the two numbers that make the repair auditable in Production rather than asserted here.
+      // dateCellsConverted is the work; tzProbeCalls is what it cost in bridge crossings. Under R44 the
+      // second was exactly 2x the first. A ratio that climbs back toward 2 is the guard failing open.
+      var probeCallsAtStart = SIR_WS_TZ_PROBE_CALLS_;
+      var dateCellsConverted = 0;
       for (var k = 0; k < ordered.length; k++) {
         var sp = ordered[k], name = sp.name;
         var values = (vrs[k] && vrs[k].values) || null;
@@ -950,7 +1035,7 @@ function sirWorkspaceDefaultIo_() {
         // §8 then §4: pad to header width FIRST, then coerce declared date columns, then map to objects -
         // the order is the contract, because the blank-row rule reads every cell of the padded row.
         var padded = sirWsPadRows_(values, header.length);
-        sirWsApplyDateMap_(name, padded, tz);
+        dateCellsConverted += sirWsApplyDateMap_(name, padded, tz);
         var rows = sirWsRowsFromValues_(padded);
         out[name] = rows;
         rowCounts[name] = rows.length;
@@ -959,7 +1044,8 @@ function sirWorkspaceDefaultIo_() {
 
       return { tables: out, metadataMs: metadataMs, batchGetMs: batchGetMs,
         normalizationMs: normalizationMs, rangeCount: ranges.length, remoteCalls: ranges.length ? 2 : 1,
-        rowCounts: rowCounts };
+        rowCounts: rowCounts, dateCellsConverted: dateCellsConverted,
+        tzProbeCalls: SIR_WS_TZ_PROBE_CALLS_ - probeCallsAtStart };
     }
   };
 }
@@ -1124,6 +1210,9 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
       batchMetadataMs: b1Profile ? b1Profile.metadataMs : null,
       batchValuesMs: b1Profile ? b1Profile.batchGetMs : null,
       normalizationMs: b1Profile ? b1Profile.normalizationMs : null,
+      // R45 §B - the work and its bridge cost, side by side. R44's ratio was exactly 2 calls per cell.
+      dateCellsConverted: b1Profile ? b1Profile.dateCellsConverted : null,
+      tzProbeCalls: b1Profile ? b1Profile.tzProbeCalls : null,
       rangeCount: b1Profile ? b1Profile.rangeCount : null,
       remoteCallCount: b1Profile ? b1Profile.remoteCalls : null,
       perTableRows: perTableRows,

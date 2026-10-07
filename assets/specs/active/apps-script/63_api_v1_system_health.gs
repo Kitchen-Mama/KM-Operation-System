@@ -286,7 +286,20 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // action-contract version stays at 18 and 90_'s content hash is untouched. R42 cannot absorb it: R42 is
 // already cut, deployed and ACCEPTED against a tree in which this read path had not changed, and the whole
 // point of R43 is that an acceptance must be able to say which of the two it measured.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
+// S8-R4D-E4-B owns R45: 60_ and this file. R44 is cut, deployed and UNACCEPTED - its acceptance failed on
+// performance, not on correctness, and the number it failed on was its own. The E3D one-shot measured
+// normalizationMs 74,621 ms inside serverDurationMs 83,465 ms against batchValuesMs 3,110: R44 made the
+// Sheets read ten times faster and then spent twenty-four times the saving converting serials to Dates,
+// because the conversion crossed the Utilities bridge TWICE PER CELL over 38,347 declared cells. R45
+// removes the per-cell crossing and keeps the conversion: the zone offset is PROBED once per distinct year
+// and the arithmetic runs in pure JS only where the probe proves the offset constant - a year it cannot
+// prove keeps the original path, cell by cell. Nothing about row SELECTION moved; Candidate A (trimming
+// before normalizing) was considered, costed and deliberately NOT taken in this round.
+// R44 IS NOT JOINED. It is deployed, so folding R45's bytes into it would give the Production evidence that
+// failed and the Production evidence that passes the same release id - and telling those two apart is the
+// entire reason this round exists. No action moved, no request field moved, no response field moved, so the
+// action contract stays where it is; two diagnostic counters joined timings that were already reported.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -329,7 +342,10 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
 // S6-R8A - and again: the release above, its own expected stamp and 22_'s. 90_'s hash is unchanged.
 // S8-R4B-1 - and again: the release above, its own expected stamp and 01_'s. 90_'s hash is unchanged.
 // S8-R4B-2D - and again: the release above, its own expected stamp and 60_'s. 90_'s hash is unchanged.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
+// S8-R4D-E4-B - and again: the release above, its own expected stamp and 60_'s. 90_'s hash is unchanged,
+// and so is the action contract - a handler that reaches the same Dates by cheaper arithmetic is not a new
+// vocabulary.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -600,7 +616,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -630,7 +646,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.
   { file: '61_api_v1_weekly_ai_plan.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate' },
-  { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log. R42 adds the SITE SCOPE: an exposure-only request may carry siteScope{company,country,marketplace} and is answered with a lineage reachability closure over the six exposure tables instead of every row of them. A pre-R42 copy ignores the field SILENTLY and returns every site - the same class of fault the recentWindow echo was added for, which is why this row exists rather than a comment. R43 makes ONE range read per table instead of two or three: the header validators now receive row 0 of the full-sheet read the handler already performs, so thirteen tables cost thirteen reads rather than thirty. Nothing in the request or the response moved, which is why a pre-R43 copy is SLOW rather than WRONG - and why this row is the only way an acceptance can tell which deployment it measured. R44 replaces the thirteen first-layer SpreadsheetApp reads with ONE Sheets.Spreadsheets.get and ONE Values.batchGet - measured 22,006 ms to 2,265 ms in Production. A pre-R44 copy is again merely SLOW, but this row carries a SECOND fact now: R44 is the first release whose read path depends on an ADVANCED SERVICE, so a project missing Sheets v4 does not run this file slowly, it cannot run its primary read at all - which is why runtime_authority.advanced_services attests the service by EXECUTION rather than by reading a manifest that may not be the one deployed' },
+  { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log. R42 adds the SITE SCOPE: an exposure-only request may carry siteScope{company,country,marketplace} and is answered with a lineage reachability closure over the six exposure tables instead of every row of them. A pre-R42 copy ignores the field SILENTLY and returns every site - the same class of fault the recentWindow echo was added for, which is why this row exists rather than a comment. R43 makes ONE range read per table instead of two or three: the header validators now receive row 0 of the full-sheet read the handler already performs, so thirteen tables cost thirteen reads rather than thirty. Nothing in the request or the response moved, which is why a pre-R43 copy is SLOW rather than WRONG - and why this row is the only way an acceptance can tell which deployment it measured. R44 replaces the thirteen first-layer SpreadsheetApp reads with ONE Sheets.Spreadsheets.get and ONE Values.batchGet - measured 22,006 ms to 2,265 ms in Production. A pre-R44 copy is again merely SLOW, but this row carries a SECOND fact now: R44 is the first release whose read path depends on an ADVANCED SERVICE, so a project missing Sheets v4 does not run this file slowly, it cannot run its primary read at all - which is why runtime_authority.advanced_services attests the service by EXECUTION rather than by reading a manifest that may not be the one deployed. R45 repairs what the R44 acceptance itself caught: the declared date columns were converted with two Utilities calls per cell, which cost 74,621 ms of an 83,465 ms read while the Sheets call itself cost 3,110. The conversion is unchanged in output and now probes the spreadsheet timezone once per DISTINCT YEAR instead, falling back to the per-cell path for any year whose offset it cannot prove constant - so a pre-R45 copy is SLOW rather than wrong, and dateCellsConverted beside tzProbeCalls in the diagnostics is how an acceptance tells which one it measured, because the R44 ratio is exactly two calls per cell' },
   // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
   // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
   // to an undefined handler, and the page has no fan-out left to fall back to.

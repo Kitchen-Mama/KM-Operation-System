@@ -38,6 +38,13 @@ var PRE_SHA = '3d71590';
 var MANIFEST_BASE_SHA = '4a4a7f8';
 var R43_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43';
 var R44_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44';
+// S8-R4D-E4-B - THE RELEASE ID IS READ, NOT FROZEN. D2 owns a claim about the OWNER SET of the release
+// that enabled the advanced service - exactly 60_ and 63_, and no third file marched to it to look
+// complete. Written against the R44 literal that claim expires the moment a later release moves those two
+// files, which R45 does: it reports the owner set as EMPTY, and a detector that fires on an unmutated tree
+// is a vacuous mutant rather than a finding. Read from 63_, the same sentence survives every release and
+// still fails the moment a third file carries the id.
+var RELEASE_ID_NOW = /var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(read(GS + '63_api_v1_system_health.gs'))[1];
 
 var pass = 0, fail = 0;
 function ok(c, m, extra) { if (c) { pass++; console.log('ok   ' + m); } else { fail++; console.log('FAIL ' + m + (extra === undefined ? '' : '\n   ' + extra)); } }
@@ -188,10 +195,15 @@ ok(/typeof Sheets/.test(stripComments(read(GS + '63_api_v1_system_health.gs')))
   && !CALL_RE.test(stripComments(read(GS + '63_api_v1_system_health.gs'))),
   'U5b 63_ ATTESTS the service without calling it — a typeof check costs no API call, which is what lets '
   + 'the health probe answer honestly on a deployment that cannot serve the read at all');
-ok(new RegExp("var SIR_BUILD_VERSION_ = '" + R44_ID + "'").test(read(GS + '60_api_v1_inventory_replenishment_workspace.gs')),
-  'U6  and it declares R44 — the round its read transport changed');
-ok(new RegExp("var SYS_DEPLOYMENT_RELEASE_ = '" + R44_ID + "'").test(read(GS + '63_api_v1_system_health.gs')),
-  'U6a and the deployment release is R44');
+// S8-R4D-E4-B - floors, for the reason given at R44_ID above. The round the read transport changed is
+// still R44; what cannot be asserted is that nothing has shipped since.
+var RO_D2 = require(path.join(ROOT, 'assets/tests/_release-order.js'));
+ok(RO_D2.stampAtOrAfter(/var SIR_BUILD_VERSION_ = '([^']+)'/.exec(read(GS + '60_api_v1_inventory_replenishment_workspace.gs'))[1], R44_ID),
+  'U6  and it declares R44 or later — the round its read transport changed');
+ok(RO_D2.stampAtOrAfter(RELEASE_ID_NOW, R44_ID),
+  'U6a and the deployment release is R44 or later');
+ok(!RO_D2.stampAtOrAfter(R43_ID, R44_ID),
+  'U6c and a PRE-R44 stamp is still rejected — the floor is a floor, not a formality');
 ok(!/R44/.test(read(GS + '01_router.gs')),
   'U6b 01_ is NOT stamped R44 — no action, no route and no request field moved');
 
@@ -333,7 +345,7 @@ var dRuntimeBatchGet = function (t) {
 };
 // R44 is now EXPECTED in the two owners and forbidden everywhere else — the same shape, one release later.
 var dR44 = function (t) {
-  var hits = Object.keys(t.runtime).filter(function (f) { return /R6-R7-R44/.test(t.runtime[f]); }).sort();
+  var hits = Object.keys(t.runtime).filter(function (f) { return t.runtime[f].indexOf(RELEASE_ID_NOW) !== -1; }).sort();
   return JSON.stringify(hits) !== JSON.stringify([B1_OWNER_, '63_api_v1_system_health.gs']);
 };
 var dProbeWrites = function (t) { var c = stripComments(t.probe); return WRITE_PRIMS.some(function (w) { return c.indexOf(w) !== -1; }); };
@@ -380,8 +392,8 @@ var MUTANTS = [
     det: dRuntimeConsumes, mut: function (t) { t.runtime[otherRuntime(t)] += '\nfunction x_(){ return Sheets.Spreadsheets.get(id, {}); }\n'; } },
   { id: 'M11', why: 'a SECOND Product runtime file starts calling batchGet',
     det: dRuntimeBatchGet, mut: function (t) { t.runtime[otherRuntime(t)] += '\nfunction y_(){ return Sheets.Spreadsheets.Values.batchGet(id, {}); }\n'; } },
-  { id: 'M12', why: 'a THIRD runtime file is marched to R44 to make the release look complete',
-    det: dR44, mut: function (t) { t.runtime[otherRuntime(t)] += '\n// ' + R44_ID + '\n'; } },
+  { id: 'M12', why: 'a THIRD runtime file is marched to the release id to make it look complete',
+    det: dR44, mut: function (t) { t.runtime[otherRuntime(t)] += '\n// ' + RELEASE_ID_NOW + '\n'; } },
   { id: 'M13', why: 'an unrelated manifest edit hides beside the service, so deletion no longer restores PRE',
     det: dRollback, mut: function (t) { t.manifest = t.manifest.replace('"STACKDRIVER"', '"NONE"'); } },
   // The §8 probe's own gates. It reaches Production, so its mutants run here rather than nowhere.

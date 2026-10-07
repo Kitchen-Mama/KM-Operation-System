@@ -1620,7 +1620,21 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // that names two different trees - and the entire purpose of R43 is to let the acceptance that follows
   // say which of the two it measured. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43',
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44',
+  // S8-R4D-E4-B - R45. 60_'s declared date columns stop crossing the Utilities bridge twice per cell. The
+  // E3D one-shot measured normalizationMs 74,621 of serverDurationMs 83,465 - the Sheets read was 3,110, so
+  // 89% of the server cost was this file's own arithmetic wrapped in formatDate/parseDate. R45 probes the
+  // spreadsheet zone's offset ONCE PER DISTINCT YEAR and converts in pure JS where the probe proves the
+  // offset constant; a year it cannot prove keeps the original per-cell path. Owner set is 60_ + 63_.
+  // 01_ keeps R41 and the action contract does not move: no action, no request field and no response field
+  // changed - two diagnostic counters were added beside the timings that were already there.
+  //
+  // R44 WAS NOT JOINED, and the reason is the strongest yet: R44 is cut and DEPLOYED, and it is deployed
+  // UNACCEPTED - its acceptance failed on this very measurement. A release whose acceptance failed must
+  // keep its identity, because the repair has to be distinguishable from the thing it repairs. Folding
+  // R45's bytes into R44 would make the Production evidence that FAILED and the Production evidence that
+  // PASSES carry the same release id. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

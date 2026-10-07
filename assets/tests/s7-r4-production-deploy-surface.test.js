@@ -347,10 +347,18 @@ eq(runtimeGsBetween(R42_POST_SHA, 'HEAD'),
   ['assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs',
    'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
   'H2e SINCE R42 ended, EXACTLY the two runtime files R43 owns have changed');
-eq((read(GS + '60_api_v1_inventory_replenishment_workspace.gs').match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1],
-  R44_ID, 'H2e1 and at HEAD 60_ declares R44 - the read path, whose TRANSPORT changed');
-eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R44_ID,
-  'H2e2 ...and the manifest declares R44, which is where a release is cut');
+// S8-R4D-E4-B - FLOORS AT HEAD, EQUALITIES AT A SHA. The R42 pair above read a FROZEN tree (showAt a sha),
+// so equality there is permanent and correct. These two read HEAD, where equality says 'and nothing has
+// shipped since' - a claim this round makes false while describing a correct tree. R45 owns the same two
+// files for a different reason: R44 made the read fast and left the date normalization costing 74,621 ms
+// of it. What H2e owns is the OWNER SET, which is unchanged; the identity is a floor.
+var RO_S7 = require('./_release-order.js');
+ok(RO_S7.stampAtOrAfter((read(GS + '60_api_v1_inventory_replenishment_workspace.gs').match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R44_ID),
+  'H2e1 and at HEAD 60_ declares R44 or later - the read path, whose TRANSPORT changed');
+ok(RO_S7.stampAtOrAfter((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R44_ID),
+  'H2e2 ...and the manifest declares R44 or later, which is where a release is cut');
+ok(!RO_S7.stampAtOrAfter('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43', R44_ID),
+  'H2e3 and a PRE-R44 stamp is still rejected - the floor is a floor');
 ok(!/R44/.test(read(GS + '01_router.gs')),
   'H2e3 01_ is NOT stamped R44 - no action, no route and no request field moved');
 ok(!/R43/.test(read(GS + '01_router.gs')),
