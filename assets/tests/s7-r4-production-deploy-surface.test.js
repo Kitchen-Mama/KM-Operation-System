@@ -413,9 +413,14 @@ section('J  the whole TEMP census, so the reported count is asserted rather than
 // failure from being ambiguous between 'the candidate is slow' and 'the candidate was never available'.
 // It takes no timing, reads at most one cell, and is PASTE/RUN/REPORT/REMOVE like its sibling. The census
 // classified it DIAGNOSTIC and writes:false unprompted, which is again this gate doing its job.
-eq(S.toolingByClass, { ONE_TIME_MIGRATION: 4, DIAGNOSTIC: 37, SEED: 1 },
-  'J1  TEMP tooling by class — 4 migrations, 37 diagnostics, 1 seed');
-eq(S.toolingCount, 42, 'J2  42 .gs tools live in the tooling directories');
+// S8-R4D-G1 adds a thirty-eighth: TEMP_S8_R4D_G1_INVENTORY_BLANK_DATE_KEY_SAFETY.gs, which measures
+// whether amazon_inventory_snapshot's natural key could drop snapshot_date without collapsing two
+// source rows into one. The census classified it DIAGNOSTIC and writes:false unprompted — this gate
+// doing its job again, which is why the count is RAISED deliberately rather than loosened to >=.
+// A total that is pinned is a total that cannot grow by accident.
+eq(S.toolingByClass, { ONE_TIME_MIGRATION: 4, DIAGNOSTIC: 38, SEED: 1 },
+  'J1  TEMP tooling by class — 4 migrations, 38 diagnostics, 1 seed');
+eq(S.toolingCount, 43, 'J2  43 .gs tools live in the tooling directories');
 
 // Two TEMP artifacts are in neither place, and both are accounted for rather than ignored.
 var LIVE_PASTE = 'tmp/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3_LIVE_PASTE.gs';
@@ -429,7 +434,7 @@ ok(fs.existsSync(path.join(REPO, SEALED)),
   'J4  and the fc_target_rules migration retired in R2B-A2-R6 survives as a SHA-256-sealed fixture — the '
   + 'precedent this round followed, one round before it was asked for');
 ok(!/\.gs$/.test(SEALED), 'J4a it is a .txt fixture, which is why it is not a deployable artifact');
-eq(S.toolingCount + 2, 44, 'J5  TEMP_ARTIFACT_COUNT = 44, and UNKNOWN_TEMP_CLASSIFICATION_COUNT = 0');
+eq(S.toolingCount + 2, 45, 'J5  TEMP_ARTIFACT_COUNT = 45, and UNKNOWN_TEMP_CLASSIFICATION_COUNT = 0');
 
 // ----------------------------------------------------------------------------------------------------------
 section('I  mutants — every guard above is load-bearing');
