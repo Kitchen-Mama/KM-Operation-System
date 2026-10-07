@@ -503,12 +503,24 @@ var TOOLS_SEED = lsdir('tools/apps-script-seeds').filter(function (f) { return /
 // failure from being ambiguous between 'the candidate is slow' and 'the candidate was never available'.
 // It takes no timing, reads at most one cell, and is PASTE/RUN/REPORT/REMOVE like its sibling. The census
 // classified it DIAGNOSTIC and writes:false unprompted, which is again this gate doing its job.
-eq(TOOLS_DIAG.length, 37, 'F1a thirty-seven diagnostics live under tools/, outside the deploy folder');
+// S8-R4D-G1 - 37 -> 38 DIAGNOSTICS. TEMP_S8_R4D_G1_INVENTORY_BLANK_DATE_KEY_SAFETY.gs joins the folder:
+// it measures whether amazon_inventory_snapshot's natural key could drop snapshot_date without two
+// source rows collapsing into one. The repository cannot read the source Google Sheet, so the count has
+// to be asked rather than assumed. It calls the SHIPPED importer predicates and refuses without them,
+// holds no literal spreadsheet id, returns counts and header names but never row contents, and is
+// PASTE/RUN/REPORT/REMOVE. The census classified it DIAGNOSTIC and writes:false unprompted - this gate
+// doing its job for the third time.
+//
+// THIS IS THE SECOND TEMP CENSUS IN THE REPOSITORY. s7-r4-production-deploy-surface carries the other,
+// and the G1 round updated that one first and missed this one - which the full sweep then caught. Both
+// are pinned totals on purpose: a total that is pinned cannot grow by accident, and the right response
+// to a new artifact is to raise it deliberately, never to loosen it to >=.
+eq(TOOLS_DIAG.length, 38, 'F1a thirty-eight diagnostics live under tools/, outside the deploy folder');
 eq(TOOLS_MIG.length, 4, 'F1b four migrations');
 eq(TOOLS_SEED.length, 1, 'F1b1 and the one seed has a directory of its own, because burying the tool '
   + 'that can empty six tables among ordinary migrations loses the only fact about it that matters');
-eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 42, 'F1c TEMP_SCRIPT_COUNT = 42');
-eq(AS_TEMP.length, 42, 'F1d and the census below reads all 42, not the empty folder');
+eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 43, 'F1c TEMP_SCRIPT_COUNT = 43');
+eq(AS_TEMP.length, 43, 'F1d and the census below reads all 43, not the empty folder');
 
 var permTop = {};
 AS_PERM.forEach(function (f) { topLevelSymbols(SRC[f]).forEach(function (n) { permTop[n] = 1; }); });
