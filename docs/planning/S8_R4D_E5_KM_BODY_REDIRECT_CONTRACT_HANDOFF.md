@@ -2,10 +2,19 @@
 ## HANDOFF. Not investigated yet, not repaired, not assumed. Audit before implementation.
 
 ```
-STATUS      OPEN · CONFIRMED IN PRODUCTION UNDER R45 · NO CAUSE ASSIGNED
-RAISED BY   S8-R4D-E3A (first sighting) · S8-R4D-E3D (through shipped code) · S8-R4D-E4-C (confirmed sealed-R45)
-E5_PREFLIGHT_STATUS = NOT STARTED — this file is the brief, not the audit
+STATUS      SUPERSEDED BY THE PREFLIGHT — see S8_R4D_E5_KM_BODY_REDIRECT_CONTRACT_PREFLIGHT.md
+E5_PREFLIGHT_STATUS = DONE · ROOT_CAUSE_STAGE = probe request construction, Stage 0
+RAISED BY   S8-R4D-E3A (first sighting) · S8-R4D-E3D (one-shot) · S8-R4D-E4-C (one-shot)
 ```
+
+> **This brief's premise did not survive its own audit, and the text below is kept unedited as the record of
+> what was believed.** All three sightings were probes built to the WRONG BODY SHAPE: the shipped body is the
+> workspace DTO envelope and `60_` reads `body.payload`, while every probe sent a flat `{ recentWindow, only }`
+> through `KM.transport.readUrl` — which serialises the body it is handed and builds no envelope. The server
+> answered that request correctly, and nineteen tables is the correct answer to it. §3 below says the URL
+> builder is shared and therefore not a candidate; that is true and it is also not enough, because the builder
+> is shared and **the body is not**. Nothing is proven lost at any hop. One read-only Production call through
+> `window.KM.api.getWorkspace` settles what remains — PREFLIGHT §8.
 
 ---
 

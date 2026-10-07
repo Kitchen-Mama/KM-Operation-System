@@ -36,9 +36,19 @@ From [km-transport.js:699-710](../../assets/js/api/km-transport.js) and
 OUTER QUERY   action=<action>  (+ km_via=get · km_tc=<contract> · km_rid=<id>)
 BODY PARAM    km_body
 ENCODING      encodeURIComponent(JSON.stringify(body)) — ONE encode; Apps Script decodes into e.parameter
-BODY SHAPE    flat, no envelope: { action?, recentWindow?, only?[], siteScope?{}, include?{}, requestId? }
+BODY SHAPE    *** WRONG — CORRECTED BY S8-R4D-E5, SEE BELOW ***
 READ BY       60_ handler, from the PARSED BODY (the read table forwards _rtrGet.body, not the query merge)
 ```
+
+> **CORRECTION (S8-R4D-E5, 2026-10-07).** This line read *"flat, no envelope: { action?, recentWindow?,
+> only?[], siteScope?{}, include?{}, requestId? }"*. **That is not the shipped shape.** The shipped body is the
+> workspace **DTO envelope** — `{ apiVersion, action, requestId, payload: { include, recentWindow, only,
+> siteScope }, context }` — built by `buildInventoryReplenishmentRequestDTO` and passed whole to
+> `transport.request({ payload: dto })`. `60_:1082` reads `body.payload`, so a flat body reaches the handler as
+> `{}`. Two later probes were hand-built to this wrong shape and their results were read as transport loss.
+> Proven by execution in
+> [`km-body-request-contract-s8-r4d-e5.test.js`](../../assets/tests/km-body-request-contract-s8-r4d-e5.test.js);
+> see [`S8_R4D_E5_KM_BODY_REDIRECT_CONTRACT_PREFLIGHT.md`](./S8_R4D_E5_KM_BODY_REDIRECT_CONTRACT_PREFLIGHT.md).
 
 A read is a GET on purpose: a POST crossing the Apps Script 302 loses its body by specification, so the body
 travels where the redirect cannot remove it.
@@ -62,6 +72,12 @@ tables. The shipped parser was extracted and executed against every candidate sh
 MANUAL_B1_REQUEST_ROOT_CAUSE = F — km_body never reached e.parameter
 MANUAL_B1_SAMPLE_VALID = NO        MANUAL URL B1 PROBE = RETIRED
 ```
+
+> **CORRECTION (S8-R4D-E5, 2026-10-07).** Cases 1 and 4 above were run with a FLAT body and scored by reading
+> `body.recentWindow`, which the handler never reads — so their `recentWindow=true / only=13` verdicts are
+> wrong. More importantly the matrix has a **missing row: "flat body PRESENT"**, which produces all four
+> observed facts exactly as case 3 does. The elimination below is therefore unsound, and `MANUAL_B1_REQUEST_
+> ROOT_CAUSE = F` is **withdrawn**. Which hop dropped it was never proven because nothing had been dropped.
 
 Only case 3 produces all four observed facts at once. **Double-encoding is disproven** — it refuses, and no
 refusal was seen. **Wrong parameter name is disproven** — `km_body` is what the shipped client sends. The
