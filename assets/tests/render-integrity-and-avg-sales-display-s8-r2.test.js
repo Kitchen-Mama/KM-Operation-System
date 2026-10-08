@@ -109,17 +109,27 @@ ok(!/reload\(\)/.test(code(fn(IR, '_irBootstrapScope_'))), 'C5  the mount does N
 // =============================================================================================================
 section('T1d — allocation_priority: CREATE defaults to 100, UPDATE preserves');
 // =============================================================================================================
+// WITHHELD FROM THIS RELEASE, AND THE REASON IS A GATE DOING ITS JOB.
+//
+// The CREATE default was written and then withdrawn. `03_master_data_handlers.gs` is an Apps Script runtime
+// file, and release R43 is already CUT: s7-r4-production-deploy-surface H2e asserts that exactly the two
+// files R43 owns (60_, 63_) have changed since R42 ended, and fc-target-rule-release-stamp I1 asserts that
+// exactly the declared owners are to be copied. A third file riding along fails both — correctly. A runtime
+// change landing after a cut needs its OWN cut, which also stamps 63_ and needs its own deployment version.
+// Joining R43 instead would have made a frontend release carry an undeclared backend file.
+//
+// So the backend source is UNCHANGED here and these assertions prove exactly that, while D6-D11 below keep
+// the agreed SEMANTICS executable so the pending change cannot drift before its release lands.
 var mdCode = code(MD);
-ok(/newRow\[col\('allocation_priority'\)\] = \(allocationPriority !== ''\) \? allocationPriority : 100;/.test(mdCode),
-  'D1  the CREATE row persists 100 when the payload omits the field');
-ok(/: 100;/.test(mdCode) && !/: '100'/.test(mdCode), 'D2  as a NUMBER, not a string — the consumers do arithmetic');
-// The UPDATE branch must be untouched: it still writes ONLY when a value was supplied.
+ok(!/allocationPriority : 100/.test(mdCode),
+  'D1  the CREATE default is NOT in this release — it needs its own backend cut (R43 is already cut)');
+ok(/if \(col\('allocation_priority'\) !== -1 && allocationPriority !== ''\) newRow/.test(mdCode),
+  'D2  the shipped CREATE branch still writes only a SUPPLIED priority (today: blank stays blank)');
 ok(/if \(allocationPriority !== '' && col\('allocation_priority'\) !== -1\) sheet\.getRange/.test(mdCode),
-  'D3  the UPDATE branch still writes only when a value was SUPPLIED — an existing priority is preserved');
-// The default must not leak into the variable, or UPDATE would inherit it.
+  'D3  and the UPDATE branch writes only when a value was SUPPLIED — an existing priority is preserved');
 ok(/var allocationPriority = \(body\.allocation_priority !== undefined && body\.allocation_priority !== ''\) \? body\.allocation_priority : '';/.test(mdCode),
-  'D4  the variable itself still defaults to BLANK — the 100 exists only in the created row');
-ok(!/backfill|UPDATE .*SET .*allocation_priority/i.test(mdCode), 'D5  no backfill and no bulk write was introduced');
+  'D4  the variable defaults to BLANK — any future default must live in the created ROW, never here');
+ok(!/backfill|UPDATE .*SET .*allocation_priority/i.test(mdCode), 'D5  no backfill and no bulk write exists');
 // Executed: the exact create-vs-update expression, so the claim is behavioural and not a regex.
 (function () {
   function createValue(supplied) { var ap = (supplied !== undefined && supplied !== '') ? supplied : ''; return (ap !== '') ? ap : 100; }
