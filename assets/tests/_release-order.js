@@ -948,7 +948,12 @@ var ROUND_TOKENS = [
   // banner is still painted after the product decision removed it; a marketplace created in that session is
   // still invisible in the dropdown for up to six hours; and the Avg Sales column still shows a weekly rate
   // inflated by the SKU's own campaign and event days.
-  's8r2-renderintegrity-20261008'];
+  's8r2-renderintegrity-20261008',
+  // S8-R5-B  R46 Avg Sales. inventory-replenishment.js only: the async velocity repaint stops asking
+  // whether the basis is sales_driven and asks whether it arrived. A browser holding the previous token
+  // would keep the old guard and show '--' for every Forecast-Driven SKU against an R46 backend that is
+  // answering correctly, which is exactly the failure this rotation exists to prevent.
+  'r46-avgsales-20261008'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

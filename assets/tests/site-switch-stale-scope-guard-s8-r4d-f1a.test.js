@@ -50,13 +50,13 @@ function buildHarness() {
     sliceFn(SRC, '_irResultMatchesAppliedScope_', ''),
     sliceFn(SRC, '_irCanonicalSalesBasis_', ''),
     sliceFn(SRC, '_irRecoLinesForSku', ''),
-    sliceFn(SRC, '_irRecoHasSalesDrivenBasis_', ''),
+    sliceFn(SRC, '_irRecoHasCanonicalBasis_', ''),
     sliceFn(SRC, '_irSuggestedQtyState_', ''),
     'return { set: function (k, v) { if (k === "search") _irSearch = v; if (k === "reco") _irRecoState = v;',
     '           if (k === "mat") _irMatState = v; if (k === "matMode") _matMode = v; if (k === "ws") _wsEnabled = v; },',
     '  appliedKey: _irAppliedScopeKey_, matches: _irResultMatchesAppliedScope_,',
     '  basis: _irCanonicalSalesBasis_, lines: _irRecoLinesForSku,',
-    '  hasSales: _irRecoHasSalesDrivenBasis_, suggested: _irSuggestedQtyState_ };'
+    '  hasCanonical: _irRecoHasCanonicalBasis_, suggested: _irSuggestedQtyState_ };'
   ].join('\n');
   return (new Function('window', src))({});
 }
@@ -106,7 +106,8 @@ H.set('search', { applied: CA });
 eq(H.basis('SKU-X'), null, 'B3  under CA with US state loaded -> NO canonical rate  [AVG_SALES_STALE_SCOPE]');
 eq(H.suggested({ sku: 'SKU-X' }), { state: 'PENDING', value: null },
   'B4  under CA with US state loaded -> Suggested Qty is PENDING, not 900  [SUGGESTED_QTY_STALE_SCOPE]');
-eq(H.hasSales(), false, 'B5  and the velocity re-render does NOT fire on a foreign result');
+eq(H.hasCanonical(), false, 'B5  and the velocity re-render does NOT fire on a foreign result - the scope guard is '
+  + 'checked BEFORE the basis, so R46 publishing a rate for both Planning Models cannot weaken it');
 eq(H.lines({ sku: 'SKU-X' }), null, 'B6  reco lines read as NOT LOADED (null), never another site\'s lines');
 
 // ============================================================ C — fixture 2: the late response

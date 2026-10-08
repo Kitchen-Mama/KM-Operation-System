@@ -14205,27 +14205,52 @@ function _irRecoUpdateSuggestedCells() {
     cell.innerHTML = _irSuggestedCellHtml(skuData || { sku: sku });
   });
 }
-// F1-4B-FM5-R4J-LIVE9V — the canonical Sales-Driven velocity (horizonBasis.avgSalesPerDay) arrives via the ASYNC
+// F1-4B-FM5-R4J-LIVE9V — the canonical velocity (horizonBasis.avgSalesPerDay) arrives via the ASYNC
 // recommendation.workspace.get, which completes AFTER the synchronous main-table render. renderReplenishment()
-// computes the Avg Sales/day + Days of Supply cells from _irCanonicalSalesBasis_, so those cells stay on the weekly
-// fallback until the table is re-rendered — and neither _irRecoRerenderSummaries (summary cards) nor
+// computes the Avg Sales/day + Days of Supply cells from _irCanonicalSalesBasis_, so those cells hold their
+// pre-canonical state until the table is re-rendered — and neither _irRecoRerenderSummaries (summary cards) nor
 // _irRecoUpdateSuggestedCells (Suggested cell) touches the velocity cells. This performs ONE bounded re-render of
-// the main table once a Sales-Driven canonical basis has actually loaded, so the displayed Avg Sales/day + Days of
-// Supply align to the same authority as the D-horizon. Guarded (only when a sales_driven basis is present) so a
-// Forecast-only scope never re-renders; renderReplenishment does NOT re-fire the workspace read (no loop), and the
-// scope read is deduped so this runs once per scope. NO recompute here — renderReplenishment is the sole owner.
-function _irRecoHasSalesDrivenBasis_() {
+// the main table once a canonical basis has actually loaded, so the displayed Avg Sales/day + Days of Supply
+// align to the same authority as the D-horizon. renderReplenishment does NOT re-fire the workspace read (no
+// loop), and the scope read is deduped so this runs once per scope. NO recompute here — renderReplenishment is
+// the sole owner.
+//
+// S8-R5-B — THE GUARD IS NO LONGER ABOUT THE PLANNING MODEL, AND THE OLD SENTENCE HERE WAS THE DEFECT.
+// It used to read "Guarded (only when a sales_driven basis is present) so a Forecast-only scope never
+// re-renders", which was true and correct while the backend published a rate for one mode only. R46 publishes
+// the canonical §22 rate for BOTH modes, so that guard became the thing standing between a correct number and
+// the screen. A Forecast-only scope now re-renders exactly once, when its basis lands — and a scope where
+// nothing resolved still never re-renders, which is the part of the old behaviour worth keeping.
+// S8-R5-B — RENAMED, BECAUSE THE OLD NAME WAS THE BUG WRITTEN DOWN.
+//
+// This asked `demandMode === 'sales_driven'` before `avgSalesPerDay != null`, which was correct for exactly
+// as long as the backend published a rate for one mode only. R46 publishes the canonical §22 rate for BOTH:
+// Avg Sales is a HISTORICAL metric and never depended on the Planning Model. With the old guard in place a
+// Forecast-Driven scope would receive a perfectly good rate and never repaint — and since S8-R2 made the
+// pre-canonical display '--' rather than the weekly fallback, the cell would stay '--' forever. The API
+// would be right and the screen would be wrong.
+//
+// So the question it asks is now the question it is used to answer: HAS A CANONICAL BASIS ARRIVED. The mode
+// is irrelevant to that and is no longer consulted.
+//
+// WHAT IS DELIBERATELY UNCHANGED:
+//   • `_irResultMatchesAppliedScope_` stays FIRST — a basis loaded for another site is not a slow answer,
+//     it is a wrong one (S8-R4D-F1A). Stale responses and epoch guards are untouched.
+//   • `!= null` (not `> 0`) — a confirmed ZERO rate is a real answer and must repaint. Only an UNRESOLVED
+//     basis is null, and that still does not.
+//   • returning false when nothing resolved — a scope with no sales history anywhere still never re-renders.
+function _irRecoHasCanonicalBasis_() {
   var by = _irRecoState && _irRecoState.linesBySku; if (!by) return false;
   if (!_irResultMatchesAppliedScope_(_irRecoState)) return false;   // S8-R4D-F1A
   for (var sku in by) { if (!by.hasOwnProperty(sku)) continue; var ls = by[sku] || [];
-    for (var i = 0; i < ls.length; i++) { var b = ls[i] && ls[i].horizonBasis; if (b && b.demandMode === 'sales_driven' && b.avgSalesPerDay != null) return true; } }
+    for (var i = 0; i < ls.length; i++) { var b = ls[i] && ls[i].horizonBasis; if (b && b.avgSalesPerDay != null) return true; } }
   return false;
 }
 function _irRecoRefreshVelocityCells_() {
   // F1-7N-FB-2A §B — never repaint before a confirmed Search. renderReplenishment() enforces this itself, but
   // asserting it here keeps the intent explicit at the async call site that used to cause the surprise repaint.
   if (typeof _irSearchApplied_ === 'function' && !_irSearchApplied_() && !(typeof _replenDemoOn === 'function' && _replenDemoOn())) return;
-  if (_irRecoState && _irRecoState.status === 'READY' && _irRecoHasSalesDrivenBasis_() && typeof renderReplenishment === 'function') renderReplenishment();
+  if (_irRecoState && _irRecoState.status === 'READY' && _irRecoHasCanonicalBasis_() && typeof renderReplenishment === 'function') renderReplenishment();
 }
 // __IRRECO_END__ (test extraction marker — do not remove)
 

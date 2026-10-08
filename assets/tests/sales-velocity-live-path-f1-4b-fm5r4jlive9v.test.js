@@ -25,24 +25,49 @@ function fnBody(src, name) {
   return src.slice(start, end);
 }
 // Build _irRecoRefreshVelocityCells_ with its helper + injected free vars (_irRecoState, renderReplenishment).
-function makeRefresh(state, renderFn) {
-  var body = fnBody(IRSRC, '_irRecoHasSalesDrivenBasis_') + '\n' + fnBody(IRSRC, '_irRecoRefreshVelocityCells_') +
+// S8-R5-B — THE HARNESS WAS MISSING A DEPENDENCY AND THIS SUITE HAD BEEN DEAD SINCE F1A.
+//
+// S8-R4D-F1A added `_irResultMatchesAppliedScope_` to the guard. This harness injects free variables by
+// name and was never told about it, so every call threw ReferenceError before reaching an assertion. The
+// suite exited 1 while printing no FAIL line — and the sweep's detector greps for `^FAIL`, so it counted
+// as neither a pass nor a failure. It is injected here, which makes the suite real again rather than
+// merely green.
+function makeRefresh(state, renderFn, scopeMatches) {
+  var body = fnBody(IRSRC, '_irRecoHasCanonicalBasis_') + '\n' + fnBody(IRSRC, '_irRecoRefreshVelocityCells_') +
     '\n return _irRecoRefreshVelocityCells_;';
-  return new Function('_irRecoState', 'renderReplenishment', body)(state, renderFn);
+  return new Function('_irRecoState', 'renderReplenishment', '_irResultMatchesAppliedScope_',
+    body)(state, renderFn, scopeMatches || function () { return true; });
 }
 function salesBasisState() { return { status: 'READY', linesBySku: { 'CO1100-R': [
   { destinationType: 'WAREHOUSE', horizonBasis: { demandMode: 'sales_driven', avgSalesPerDay: 139.08 } },
   { destinationType: 'MARKETPLACE', horizonBasis: { demandMode: 'sales_driven', avgSalesPerDay: 139.08 } }
 ] } }; }
 
-section('refresh re-renders the main table ONLY when a Sales-Driven canonical basis has loaded');
+section('refresh re-renders the main table ONLY when a canonical basis has loaded (R46: either mode)');
 (function () {
   var n = 0; makeRefresh(salesBasisState(), function () { n++; })();
   ok(n === 1, 'READY + sales_driven basis → renderReplenishment called once (velocity cells pick up the canonical rate)');
 })();
+// S8-R5-B — RESTATED, NOT DELETED. This read "Forecast-Driven basis → NO re-render", which was correct while
+// the backend published a rate for sales_driven only: the fixture's avgSalesPerDay is null, so there was
+// nothing to paint. R46 publishes the canonical §22 rate for BOTH modes, so the fixture no longer describes a
+// Forecast-Driven scope — it describes an UNRESOLVED one. Both facts are now asserted separately, because
+// they were only ever the same fact by accident.
 (function () {
   var n = 0; makeRefresh({ status: 'READY', linesBySku: { 'X': [{ destinationType: 'MARKETPLACE', horizonBasis: { demandMode: 'forecast_driven', avgSalesPerDay: null } }] } }, function () { n++; })();
-  ok(n === 0, 'Forecast-Driven basis → NO re-render (Forecast-Driven display untouched)');
+  ok(n === 0, 'UNRESOLVED basis (null rate) → NO re-render, whatever the Planning Model says');
+})();
+(function () {
+  var n = 0; makeRefresh({ status: 'READY', linesBySku: { 'X': [{ destinationType: 'MARKETPLACE', horizonBasis: { demandMode: 'forecast_driven', avgSalesPerDay: 12.4 } }] } }, function () { n++; })();
+  ok(n === 1, 'R46 — Forecast-Driven basis WITH a canonical rate → re-render ONCE (this is the defect: it used to be 0)');
+})();
+(function () {
+  var n = 0; makeRefresh({ status: 'READY', linesBySku: { 'X': [{ destinationType: 'MARKETPLACE', horizonBasis: { demandMode: 'forecast_driven', avgSalesPerDay: 0 } }] } }, function () { n++; })();
+  ok(n === 1, 'a CONFIRMED ZERO rate is a real answer and repaints — `!= null`, never `> 0`');
+})();
+(function () {
+  var n = 0; makeRefresh(salesBasisState(), function () { n++; }, function () { return false; })();
+  ok(n === 0, 'a result for ANOTHER scope never repaints — the F1A stale-scope guard is checked first and R46 does not weaken it');
 })();
 (function () {
   var n = 0; makeRefresh({ status: 'LOADING', linesBySku: {} }, function () { n++; })();
@@ -51,6 +76,10 @@ section('refresh re-renders the main table ONLY when a Sales-Driven canonical ba
 (function () {
   var n = 0; makeRefresh({ status: 'READY', linesBySku: {} }, function () { n++; })();
   ok(n === 0, 'READY but no lines → NO re-render');
+})();
+(function () {
+  var n = 0; makeRefresh(salesBasisState(), function () { n++; })();
+  ok(n === 1, 'and it is ONE re-render, not one per line — the guard returns on the first canonical basis it finds');
 })();
 
 section('both workspace-read completion paths refresh the velocity cells');
