@@ -318,15 +318,34 @@ section('G — THE RELEASE IDENTITY');
 // ---------------------------------------------------------------------------------------------------
 var R45 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
 var G63 = read(G63_REL);
-eq(/var SIR_BUILD_VERSION_ = '([^']*)'/.exec(G60)[1], R45, 'G1  60_ declares R45 — it changed this round');
-eq(/var SYS_DEPLOYMENT_RELEASE_ = '([^']*)'/.exec(G63)[1], R45, 'G2  the deployment release is R45');
-eq(/var SYS_BUILD_VERSION_ = '([^']*)'/.exec(G63)[1], R45, 'G3  63_ declares R45 — it changed too');
-ok(G63.indexOf("symbol: 'SIR_BUILD_VERSION_', expected: '" + R45 + "'") !== -1,
-  'G4  and the manifest row for 60_ EXPECTS R45, so a partial sync is reported rather than guessed');
-ok(G63.indexOf("symbol: 'SYS_BUILD_VERSION_', expected: '" + R45 + "'") !== -1, 'G4a likewise 63_\'s own row');
 var RO = require(path.join(__dirname, '_release-order.js'));
-ok(RO.OWNER_STAMPS.indexOf(R45) === RO.OWNER_STAMPS.length - 1,
-  'G5  R45 is APPENDED at the end of the shared ledger — stampAtOrAfter compares indexes');
+// S8-R5-B — WHICH OF THESE ARE ABOUT R45, AND WHICH WERE ONLY EVER ABOUT "NOTHING HAS SHIPPED SINCE".
+//
+// This section read HEAD and compared everything to R45 by equality. Three of those were claims about
+// THIS round's file — 60_ — and stay exact. Three were claims about the RELEASE, which is a moving
+// target: R46 cut, and they began failing while describing a perfectly correct tree. That is the
+// failure mode the deploy-surface suite already recorded at R44→R45 ("FLOORS AT HEAD, EQUALITIES AT A
+// SHA"), and the same repair applies: a claim that outlives its round becomes a FLOOR.
+//
+// The distinction is not cosmetic. G1 and G4 are what make this suite an ACCEPTANCE for R45 — they say
+// the 60_ bytes a deployment serves are R45's, which stays true for as long as 60_ is carried, and
+// which a floor would stop checking. They must NOT be relaxed.
+eq(/var SIR_BUILD_VERSION_ = '([^']*)'/.exec(G60)[1], R45,
+  'G1  60_ declares R45 — it changed in THIS round, and is carried unchanged by later ones');
+ok(RO.stampAtOrAfter(/var SYS_DEPLOYMENT_RELEASE_ = '([^']*)'/.exec(G63)[1], R45),
+  'G2  the deployment release is R45 OR LATER — a release cut after this one does not invalidate it');
+ok(RO.stampAtOrAfter(/var SYS_BUILD_VERSION_ = '([^']*)'/.exec(G63)[1], R45),
+  'G3  63_ declares R45 or later — it changed in R45, and changes again whenever a release is cut');
+ok(G63.indexOf("symbol: 'SIR_BUILD_VERSION_', expected: '" + R45 + "'") !== -1,
+  'G4  and the manifest row for 60_ EXPECTS R45 exactly, so a partial sync is reported rather than guessed');
+ok(RO.stampAtOrAfter((G63.match(/symbol: 'SYS_BUILD_VERSION_', expected: '([^']+)'/) || [])[1], R45),
+  'G4a likewise 63_\'s own row, as a floor — it moves with every cut');
+ok(!RO.stampAtOrAfter('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44', R45),
+  'G4b and a PRE-R45 stamp is still rejected — the floor is a floor, not an acceptance of anything');
+ok(RO.OWNER_STAMPS.indexOf(R45) !== -1
+  && RO.OWNER_STAMPS.indexOf(R45) > RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44'),
+  'G5  R45 is registered in the shared ledger AFTER R44 — the list is append-only and stampAtOrAfter '
+  + 'compares indexes, so what matters is its position relative to its predecessor, not that it is last');
 ok(RO.stampAtOrAfter(R45, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44'), 'G5a and it orders after R44');
 // 01_ did not change: no action, no route, no request field moved.
 eq(/var RTR_BUILD_VERSION_ = '([^']*)'/.exec(read('assets/specs/active/apps-script/01_router.gs'))[1],

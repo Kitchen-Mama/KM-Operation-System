@@ -557,6 +557,14 @@ ok(/PRODUCT_STRATEGY_ENABLED_/.test(read('assets/specs/active/apps-script/00_con
 // gate. Neither file is reachable from Product Strategy's read path, and a visual round that touched a
 // handler would still be caught.
 var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handlers.gs',
+  // S8-R5-B (R46) — the Avg Sales contract correction. 42_ stops gating the canonical §22 resolver on the
+  // Planning Model so a Forecast-Driven SKU gets the historical rate a Sales-Driven one already got; 63_
+  // carries the R46 release identity, as it does for every cut. Neither is reachable from Product
+  // Strategy's read path: no action was added or removed, no capability field changed, the feature flag is
+  // untouched, and the change is additive diagnostic fields on an existing response object. DECLARED here
+  // rather than filtered out, for the reason this register exists — and because 42_ is the first STAMPLESS
+  // owner to reach it, a file that changes and is pasted while carrying no build symbol of its own.
+  'assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs',
   // S6-R4B — the overseas reservation lifecycle and the source-domain routing that reaches it. None of the
   // three is reachable from Product Strategy's read path: no action was added or removed, no capability
   // field changed, the feature flag is untouched, and 63_ (which carries the R33 release and 05_'s new

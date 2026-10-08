@@ -95,8 +95,26 @@ var UK = { company: 'ResUK', country: 'UK', marketplace: 'Amazon' };
 var L = H.resolveRate(facts(dailyFor('GB', 60, 'amazon.co.uk'), [], UK), UK, 'CO1100-R', CALC);
 ok(L.ok === true && near(L.avgSalesPerDay, 60), 'L UK scope + GB daily → READY avg 60 (UK≡GB alias unchanged)');
 
-section('§5 M — Forecast-Driven never reaches the sales resolver');
-ok(/planModel === 'sales_driven'\) \{ var sr = recoWsResolveSalesRate_/.test(F42) && /whPlanModel === 'sales_driven'\) \{ var wsr = recoWsResolveSalesRate_/.test(F42), 'M recoWsResolveSalesRate_ is gated behind planModel === sales_driven on BOTH the marketplace + warehouse paths (forecast-driven untouched)');
+section('§5 M — Forecast-Driven never reaches the sales resolver  [RESTATED S8-R5-B / R46]');
+// S8-R5-B — THIS ASSERTED THE DEFECT AS IF IT WERE THE CONTRACT, AND R46 IS THE ROUND THAT SAYS SO.
+//
+// The original M asserted that recoWsResolveSalesRate_ sits behind `planModel === 'sales_driven'` on BOTH
+// paths, and called that "forecast-driven untouched". It was a faithful description of the code — but the
+// thing it was protecting is exactly what made Forecast-Driven Avg Sales impossible: the resolver was never
+// CALLED, so there was no historical rate in existence to display. Avg Sales is a HISTORICAL metric and
+// never depended on the Planning Model.
+//
+// What this suite is actually FOR — EU/CA/UK scope isolation and the sales-driven PLANNING basis — is
+// untouched by R46 and is still asserted by §§1-4 above, unchanged. So M is restated to assert the thing
+// that still matters here and is still true: Forecast-Driven planning demand never acquires a sales basis.
+ok(/if \(planModel === 'sales_driven'\) \{ if \(sr\.ok\) salesRate = sr\.avgSalesPerDay;/.test(F42),
+  'M  the sales PLANNING basis (salesRate) is still assigned only under planModel === sales_driven — '
+  + 'Forecast-Driven demand is untouched, which is what this suite protects');
+ok(/^\s*var sr = recoWsResolveSalesRate_\(/m.test(F42),
+  'M1 ...while the RESOLVER itself is no longer gated (R46) — it runs for every SKU so the historical rate '
+  + 'can be DISPLAYED in both modes, which is a different question from which demand drives planning');
+ok(/whPlanModel === 'sales_driven'\) \{ var wsr = recoWsResolveSalesRate_/.test(F42),
+  'M2 and the WAREHOUSE path is still gated — it publishes no horizonBasis, so R46 had no reason to touch it');
 
 section('§5 N — identical recalc → identical READY result (deterministic)');
 var n1 = H.resolveRate(facts(dailyFor('DE', 100).concat(dailyFor('FR', 40)), [], EU), EU, 'CO1100-R', CALC);

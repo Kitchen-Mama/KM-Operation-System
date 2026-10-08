@@ -66,7 +66,19 @@ ok(/normalizedAvgSalesPerDay/.test(F42), 'the canonical horizon rate owner = KMC
 
 section('A2 — the new READ-ONLY reconciliation diagnostic surfaces the canonical inputs (no formula/schema change)');
 ok(/mLine\.horizonBasis = \{/.test(F42), 'recommendation.workspace.get now attaches mLine.horizonBasis (additive diagnostic)');
-ok(/demandMode: planModel/.test(F42) && /avgSalesPerDay: \(planModel === 'sales_driven' \? salesRate : null\)/.test(F42) && /horizonOpeningQty: horizonOpening/.test(F42), 'horizonBasis exposes demandMode + resolved avgSalesPerDay + Site-Stock opening (the inputs to reconcile a stored D-gap)');
+// S8-R5-B / R46 — RESTATED. The field list is unchanged in PURPOSE: horizonBasis still carries the inputs
+// needed to reconcile a stored D-gap without the Sheet. What changed is where avgSalesPerDay comes from.
+// It used to be `planModel === 'sales_driven' ? salesRate : null` — the PLANNING basis, null for forecast.
+// R46 makes it the canonical §22 HISTORICAL rate for both modes, because Avg Sales never depended on the
+// Planning Model. `demandMode` is still on the object and is still the discriminator for what DROVE the
+// horizon, so this diagnostic can still answer the reconciliation question it was built for.
+ok(/demandMode: planModel/.test(F42)
+  && /avgSalesPerDay: \(sr\.ok \? sr\.avgSalesPerDay : null\)/.test(F42)
+  && /horizonOpeningQty: horizonOpening/.test(F42),
+  'horizonBasis exposes demandMode + resolved avgSalesPerDay + Site-Stock opening (the inputs to reconcile a stored D-gap)');
+ok(/source: \(sr\.ok \? sr\.source : null\)/.test(F42) && /normalDayCount: \(sr\.ok \? sr\.normalDayCount : null\)/.test(F42),
+  'A2a and R46 adds the §22 quality fields beside it, so a normalized rate can be told from a weekly fallback '
+  + 'when reconciling — the divergence this suite documents is now self-describing rather than inferred');
 ok(/if \(mHz\) \{[\s\S]*mLine\.horizons = mHz/.test(F42), 'diagnostic is guarded by mHz — additive only, never fabricated when horizons are absent');
 
 section('§9/A5 — stored gap row is READ latest; no page-side recalculation');

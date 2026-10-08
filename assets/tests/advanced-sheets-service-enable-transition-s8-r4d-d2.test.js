@@ -344,9 +344,25 @@ var dRuntimeBatchGet = function (t) {
   return hits.length !== 1 || hits[0] !== B1_OWNER_;
 };
 // R44 is now EXPECTED in the two owners and forbidden everywhere else — the same shape, one release later.
+// S8-R5-B — THE EXPECTED SET IS DERIVED, NOT HARDCODED, BECAUSE THE OWNER SET IS NOT A CONSTANT.
+//
+// This compared the files MENTIONING the current release id against the literal [60_, 63_] — correct while
+// every release owned those two. R46 owns 63_ alone: its runtime change is in 42_, which declares no build
+// symbol and so never carries a release id at all. 60_ is carried at R45 and legitimately does not mention
+// R46, so the detector fired on the UNMUTATED tree and went VACUOUS — it stopped detecting the fault and
+// started detecting the calendar.
+//
+// What the mutant actually injects is a BARE MENTION (a comment carrying the id) into a file that does not
+// DECLARE it. So that is what is compared: every file that mentions the release must also declare it in a
+// build-stamp assignment. That is round-independent — it needs no list of owners — and it is strictly
+// stronger than the literal, because it also catches a mention appearing in a file that IS an owner's
+// neighbour in some future set.
 var dR44 = function (t) {
-  var hits = Object.keys(t.runtime).filter(function (f) { return t.runtime[f].indexOf(RELEASE_ID_NOW) !== -1; }).sort();
-  return JSON.stringify(hits) !== JSON.stringify([B1_OWNER_, '63_api_v1_system_health.gs']);
+  var mentions = Object.keys(t.runtime).filter(function (f) { return t.runtime[f].indexOf(RELEASE_ID_NOW) !== -1; }).sort();
+  var declares = Object.keys(t.runtime).filter(function (f) {
+    return new RegExp("var [A-Z0-9_]+_ = '" + RELEASE_ID_NOW + "'").test(t.runtime[f]);
+  }).sort();
+  return JSON.stringify(mentions) !== JSON.stringify(declares);
 };
 var dProbeWrites = function (t) { var c = stripComments(t.probe); return WRITE_PRIMS.some(function (w) { return c.indexOf(w) !== -1; }); };
 var dProbeLive = function (t) {

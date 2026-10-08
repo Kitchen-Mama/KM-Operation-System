@@ -805,6 +805,18 @@ GS_OWNED_SINCE_R1['appsscript.json'] =
   + 'no handler moved. 60_ still reads through SpreadsheetApp and contains no batchGet, so the service is '
   + 'declared and UNUSED by every routed path this line measures. No OAuth scope, Web App setting or '
   + 'timezone changed — the five added lines are one entry in enabledAdvancedServices and nothing else';
+// S8-R5-B (R46) — 42_ JOINS, and it is declared rather than filtered for the same reason appsscript.json
+// above was. This line measures ACTION/ROUTER completeness, and R46 touches neither: no action was added or
+// removed, no route moved, no request or response field changed, and the action-contract version stays 18.
+// What changed is WHERE one existing call sits — the canonical §22 Avg Sales resolver was invoked only
+// under planModel === 'sales_driven', so a Forecast-Driven SKU had no historical rate in existence to
+// display. The call moved out of that branch; the PLANNING basis stayed inside it, so the demand reaching
+// recoWsBuildHorizons_ is byte-identical in both modes. horizonBasis gains four diagnostic fields that
+// already existed on the resolver's own return — additive, and read by nothing this line routes.
+GS_OWNED_SINCE_R1['42_api_v1_recommendation_workspace.gs'] =
+  'S8-R5-B/R46 the Avg Sales contract correction. NO action added or removed, the router is untouched, no '
+  + 'handler moved and the action-contract version stays 18. The resolver call left a planning-mode branch '
+  + 'so the HISTORICAL rate can be displayed for both models; the planning basis did not move with it';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 
