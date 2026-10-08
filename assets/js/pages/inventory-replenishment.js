@@ -1881,7 +1881,9 @@ function _irRenderIntegrityNotice_(res) {
         host.style.cssText = 'margin:8px 0;padding:8px 10px;border:1px solid #EF4444;background:#FEF2F2;color:#B91C1C;font-size:12px;border-radius:4px;';
         // S8-R4D-F1B §B.1 — INSIDE the table card, for the same reason as #replenSearchState: a notice that
         // appears and disappears with the data must not be a flow sibling in the page's inter-block gap.
-        tbl.insertBefore(host, tbl.firstChild);
+        // S8-R4D-F1B-R3 §D1 — and BELOW the sticky header bar, outside the white curtain, so an integrity
+        // alarm is actually readable instead of being a blank band.
+        tbl.insertBefore(host, (typeof _irNoticeAnchor_ === 'function') ? _irNoticeAnchor_(tbl) : null);
     }
     host.textContent = 'Inventory table render incomplete — ' + res.scrollRows + ' of ' + res.expected +
         ' rows rendered' + (res.rowsWithWrongCellCount ? ', ' + res.rowsWithWrongCellCount + ' row(s) do not match the ' + res.leafSpan + '-column header' : '') +
@@ -9925,6 +9927,39 @@ function _irEsc_(v) {
     return (typeof escapeReplenHtml === 'function') ? escapeReplenHtml(v)
         : String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
 }
+// S8-R4D-F1B-R3 §D1 — WHERE A NOTICE MAY BE PUT WITHOUT BEING PAINTED OVER.
+//
+// `.table-header-bar` carries `box-shadow: 0 2px 4px rgba(0,0,0,.1), 0 -100vh 0 100vh white` at z-index 120
+// (inventory-replenishment.css:490-493). That second shadow is a WHITE CURTAIN: its rect is the header's
+// border box inflated by the 100vh spread and then offset up by 100vh, so it spans
+//
+//     [ headerTop - 200vh , headerBottom ]
+//
+// at full page width. Anything inside that band which paints BELOW z-index 120 is covered by opaque white.
+// The stylesheet states the rule itself at css:1701 — "z-index must beat 120 ... so the tabs are not masked"
+// — and that is why `.replen-category-shell` was given z-index 125.
+//
+// NEITHER NOTICE HOST HAS A STYLESHEET RULE ANYWHERE IN THIS REPOSITORY. Grepped across all six sheets:
+// zero rules for #replenSearchState, zero for #replen-render-integrity, and zero for .replen-search-stale,
+// .replen-unsaved-banner, .replen-dupe-banner and .replen-dbunknown-banner. So every one of them is
+// `position: static; z-index: auto` and paints in the in-flow non-positioned layer, under the curtain.
+//
+// The consequence is the defect the operator reported as a layout bug: a rendered banner occupies its own
+// height plus its 8px margin and PAINTS WHITE. The space is real, the notice is invisible, and nothing on
+// screen explains the space. It is also why the unsaved-write warning, the duplicate-rows banner and the
+// database-unverified disclosure have been unreadable — the same host, the same curtain.
+//
+// THE FIX IS A POSITION, NOT A Z-INDEX. Raising the host above 120 would make it paint OVER the sticky
+// header while scrolling past it, trading an invisible notice for one that occludes the column headings.
+// The curtain ends at the header's BOTTOM edge, so a notice placed AFTER the header bar is outside it: fully
+// visible at rest, and scrolling under the pinned header exactly as table content should. No z-index moves,
+// no margin is added, no height is hard-coded, and sticky behaviour is untouched.
+function _irNoticeAnchor_(table) {
+    if (!table) return null;
+    // The node the notices sit ABOVE: the body region. Returning null is a valid answer — insertBefore(el, null)
+    // appends, which is still below the header bar and therefore still outside the curtain.
+    return (table.querySelector ? table.querySelector('.table-body-bar') : null) || null;
+}
 // The one banner host. Idempotent.
 //
 // S8-R4D-F1B §B.1 — IT LIVES INSIDE THE TABLE CARD, NOT IN THE GAP ABOVE IT.
@@ -9950,7 +9985,10 @@ function _irStateHost_() {
     el.setAttribute('role', 'status');
     el.setAttribute('aria-live', 'polite');
     el.style.display = 'none';
-    table.insertBefore(el, table.firstChild);
+    // S8-R4D-F1B-R3 §D1 — BELOW the sticky header bar, so the curtain cannot reach it. F1B put it at
+    // `table.firstChild`, which is inside the curtain's span and is why moving the host out of the page gap
+    // did not make the notice appear.
+    table.insertBefore(el, _irNoticeAnchor_(table));
     return el;
 }
 // S8-R4D-F1B §B.3 — ONE HOST, FOUR PRODUCERS, AND NO PRODUCER MAY SPEAK FOR ANOTHER.
@@ -10723,6 +10761,21 @@ function _irApplySearch_(pending, mySeq) {
     // real result. Remembering a merely SELECTED scope would persist something that was never proven to work.
     if (typeof _irRememberScope_ === 'function') _irRememberScope_(_irSearch.applied);
     _irSearch.stale = false;
+    // S8-R4D-F1B-R3 §D2 — CLEARING THE FLAG WAS NOT CLEARING THE NOTICE.
+    //
+    // `_irRenderStaleNotice_` is reachable from exactly two places: _irMarkSearchStale_, and the tail of
+    // _irRenderSearchGate_. A Search against an already-loaded model never touches the gate — it goes
+    // searchReplenishment -> _irApplySearch_ directly (the zero-request commit F1B added) — so this line set
+    // `stale` to false and the BANNER NODE stayed in the document. It then said "Filters changed — results
+    // are out of date" over a result that had just been searched, for the rest of the session.
+    //
+    // Masked by the curtain (§D1) that read as a band of blank space which appeared on the first selector
+    // change and never went away again, which is what "the page was already in its expanded visual state"
+    // describes. The two defects are independent: this one would persist a WRONG NOTICE even once it is
+    // visible, and §D1 alone would leave the band behind after Search.
+    //
+    // The notice is rendered from state at the single commit point, so the flag and the node cannot disagree.
+    if (typeof _irRenderStaleNotice_ === 'function') _irRenderStaleNotice_();
     _irSearch.error = null;
     _irSearch.status = 'READY';                           // renderReplenishment downgrades to EMPTY on 0 rows
     renderReplenishment();

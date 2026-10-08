@@ -919,7 +919,21 @@ var ROUND_TOKENS = [
   // an "Unsaved — database update failed" warning about routes that were never persisted. That second one is
   // a data-visibility defect, not a presentation preference, and it is what makes this rotation obligatory
   // rather than tidy.
-  's8r4df1b-presentstate-20261008'];
+  's8r4df1b-presentstate-20261008',
+  // S8-R4D-F1B-R3 — the two notice hosts move BELOW the sticky header bar, out of the white curtain, and the
+  // stale notice is re-rendered at the commit point. F1B is on origin/main (230525a was pushed and smoked),
+  // so by the rule above its token is PUBLISHED and cannot be reused.
+  //
+  // ONLY the application series rotates: inventory-replenishment.js is the sole browser-served file that
+  // changed, and the stylesheet is byte-identical, so the IR-CSS family keeps irrestinglayout-20261008. A
+  // token spent on an unchanged file would publish a cache-bust with nothing behind it.
+  //
+  // A browser left on the F1B copy keeps BOTH defects: the notice host stays inside the curtain's span, so
+  // every warning it carries — including "Unsaved — database update failed" — paints white and reads as a
+  // band of blank space; and the stale notice is never removed on Search, so that band appears on the first
+  // Country change and stays for the session. The second one is why the page was found "already in its
+  // expanded visual state".
+  's8r4df1br3-noticevis-20261008'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

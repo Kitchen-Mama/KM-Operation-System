@@ -505,6 +505,10 @@ function sliceFn(src, name) {
 function layoutHarness(src) {
   var dom = tinyDom();
   var fn = new Function('document', 'window', '_irSearch', 'escapeReplenHtml', [
+    // S8-R4D-F1B-R3 — _irStateHost_ now asks _irNoticeAnchor_ where inside the card the notice belongs, so the
+    // harness has to carry it too. Slicing a function without its dependency makes the suite fail for a reason
+    // that is not about what it tests.
+    sliceFn(src, '_irNoticeAnchor_'),
     sliceFn(src, '_irStateHost_'),
     sliceFn(src, '_irStateHostSync_'),
     sliceFn(src, '_irRenderStaleNotice_'),
@@ -523,8 +527,14 @@ checks.push(Promise.resolve().then(function () {
   ok(!!host, 'K0  the host is created');
   eq(host.parentNode === L.dom.table, true, 'K1  the host is a CHILD of #replen-detail-table, not a sibling in the gap');
   eq(L.dom.page.childNodes.indexOf(host), -1, 'K2  ... so nothing dynamic sits between the category shell and the table');
-  eq(L.dom.table.firstChild === host, true, 'K3  and it is the FIRST child, above the sticky header bar');
-  eq(L.dom.table.childNodes.indexOf(L.dom.header) > 0, true, 'K4  the sticky header bar is still in the card, below it');
+  // S8-R4D-F1B-R3 — RESTATED. F1B put the host at the card's FIRST child, which is inside the span of the
+  // `.table-header-bar` white curtain (0 -100vh 0 100vh white, z-index 120) — so the notice was present,
+  // occupied its height, and painted white. R3 moved it BELOW the header bar, where the curtain ends. The
+  // position belongs to R3's suite; what survives here is that the host is in the card beside the header,
+  // not a flow sibling in the page's inter-block gap (K1/K2 above).
+  eq(L.dom.table.childNodes.indexOf(host) > L.dom.table.childNodes.indexOf(L.dom.header), true,
+    'K3  and it sits AFTER the sticky header bar — outside the white curtain (R3 owns this position)');
+  eq(L.dom.table.childNodes.indexOf(L.dom.header) >= 0, true, 'K4  the sticky header bar is still in the card beside it');
   eq(host.style.display, 'none', 'K5  an empty host is display:none and reserves nothing');
   eq(L.api.host() === host, true, 'K6  the host is idempotent — one node, however many producers ask');
 }));
@@ -563,8 +573,13 @@ checks.push(Promise.resolve().then(function () {
 
 checks.push(Promise.resolve().then(function () {
   section('M — THE INTEGRITY NOTICE MOVED WITH IT, AND THE RESTING GEOMETRY IS UNCHANGED');
-  ok(/tbl\.insertBefore\(host, tbl\.firstChild\);/.test(IR),
-    'M1  the render-integrity notice is inserted INSIDE the table card');
+  // S8-R4D-F1B-R3 — RESTATED. This pinned the exact anchor expression (`tbl.firstChild`), which made it a
+  // claim about WHERE INSIDE the card rather than about being inside it at all. R3 owns the position — the
+  // notice moved below the sticky header so the white curtain cannot paint over it — and asserts it there.
+  // What F1B owns, and all this should ever have said, is that the insert goes through the TABLE and not
+  // through its parentNode, i.e. the notice is not a flow sibling in the page's inter-block gap.
+  ok(/tbl\.insertBefore\(host,/.test(IR),
+    'M1  the render-integrity notice is inserted INSIDE the table card (its position is R3\'s assertion)');
   ok(!/tbl\.parentNode\.insertBefore\(host, tbl\);/.test(IR) && !/table\.parentNode\.insertBefore\(el, table\);/.test(IR),
     'M2  and nothing is inserted beside the table any more');
 
@@ -655,9 +670,9 @@ checks.push(Promise.all(checks.slice()).then(function () {
       return settle().then(function () { return h.run('_irSearch.status') !== 'PRE_SEARCH'; });
     }));
 
-  // X3 — put the banner host back beside the table.
+  // X3 — put the banner host back beside the table. (Anchor updated for R3's insertion line.)
   muts.push(mutIr(
-    'table.insertBefore(el, table.firstChild);',
+    'table.insertBefore(el, _irNoticeAnchor_(table));',
     'table.parentNode.insertBefore(el, table);',
     'X3 moving the banner host back into the gap is caught',
     function (src) {
