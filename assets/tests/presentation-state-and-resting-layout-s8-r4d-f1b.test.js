@@ -546,14 +546,18 @@ checks.push(Promise.resolve().then(function () {
   // A data-loss warning is placed first, exactly as _irRenderUnsavedBanner_ places it.
   host.insertAdjacentHTML('afterbegin', '<div class="replen-unsaved-banner">unsaved</div>');
   host.style.display = '';
-  // Now the operator changes Country. The stale notice renders.
+  // Now the operator changes Country.
+  // S8-RENDER-INTEGRITY-R2 / GATE 1 = A1 — RESTATED. The visible stale notice is removed by product decision,
+  // so L2/L3 can no longer be about it sitting beside the warning. What §B.3 actually protects is that one
+  // producer may not erase another's node, and the removal of the informational notice is the sharpest test
+  // of it: the data-loss warning must still be there afterwards.
   L.search.stale = true;
   L.api.stale();
   ok(!!host.querySelector('.replen-unsaved-banner'), 'L1  the unsaved-write warning SURVIVES a Country change');
-  ok(!!host.querySelector('.replen-search-stale'), 'L2  and the stale notice is shown beside it');
+  eq(!!host.querySelector('.replen-search-stale'), false, 'L2  and NO visible stale notice is rendered (Gate 1 = A1)');
   var names = host.childNodes.map(function (c) { return c.className; });
-  eq(names, ['replen-unsaved-banner', 'replen-search-stale'],
-    'L3  semantic priority: the data-loss warning stays ABOVE the informational stale notice');
+  eq(names, ['replen-unsaved-banner'],
+    'L3  the host holds the data-loss warning and nothing else — the stale pass did not touch it');
   // Pressing Search clears only the stale notice.
   L.search.stale = false;
   L.api.stale();
@@ -564,11 +568,12 @@ checks.push(Promise.resolve().then(function () {
   host.removeChild(host.querySelector('.replen-unsaved-banner'));
   L.api.stale();
   eq(host.style.display, 'none', 'L7  and hides itself only when it is genuinely empty');
-  // No duplicates on repeat renders.
+  // Repeat passes stay inert. (Was: "never stacks duplicates" — with nothing emitted, the invariant that
+  // matters is that repeated passes neither create a node nor un-hide an empty host.)
   L.search.stale = true;
   L.api.stale(); L.api.stale(); L.api.stale();
-  eq(host.childNodes.filter(function (c) { return c.className === 'replen-search-stale'; }).length, 1,
-    'L8  re-rendering the stale notice never stacks duplicates');
+  eq(host.childNodes.length, 0, 'L8  repeated stale passes create nothing');
+  eq(host.style.display, 'none', 'L8a ... and leave the empty host hidden');
 }));
 
 checks.push(Promise.resolve().then(function () {
@@ -682,9 +687,12 @@ checks.push(Promise.all(checks.slice()).then(function () {
     }));
 
   // X4 — the wholesale innerHTML write that erased the other banners.
+  // X4 — the original wholesale-innerHTML defect. Anchor updated for R2: the `if (_irSearch.stale)` branch is
+  // gone with the banner, so the mutant now attacks the removal pass directly — a producer that clears the
+  // whole host instead of only its own node must still be caught.
   muts.push(mutIr(
-    "    if (_irSearch.stale) {",
-    "    host.innerHTML = ''; if (_irSearch.stale) {",
+    "    var existing = host.querySelector ? host.querySelector('.replen-search-stale') : null;",
+    "    host.innerHTML = ''; var existing = host.querySelector ? host.querySelector('.replen-search-stale') : null;",
     'X4 a wholesale host write that erases another producer is caught',
     function (src) {
       var L = layoutHarness(src);

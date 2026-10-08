@@ -419,9 +419,16 @@
                             <div class="scroll-header-viewport">
                                 <div class="scroll-header">
                                     <!-- First Layer: Group Headers -->
-                                    <!-- Group-header row. data-leaf-span = how many level-2 leaf columns each
-                                         group spans (its "colspan"). It MUST equal the group's CSS width / 120px
-                                         and match the leaf sequence below 1:1, and the first-layer body-cell order
+                                    <!-- Group-header row. data-leaf-span = how many BODY CELLS this group
+                                         accounts for in one row. S(data-leaf-span) across this row IS the
+                                         leaf-column contract _irVerifyRenderedRows_ checks against the rendered
+                                         .scroll-cell count, and it is the ONLY meaning the attribute carries.
+                                         S8-RENDER-INTEGRITY-R2: it is STRUCTURAL, never visual. A column hidden
+                                         by CSS (display:none, e.g. .ir-hide-current-stock for self_fulfilled)
+                                         keeps its cell in the DOM, so the span does NOT change with it, and the
+                                         "width / 120px" identity holds only while nothing is hidden -- the
+                                         hidden-state width is set explicitly in CSS instead. It must match the
+                                         leaf sequence below 1:1, and the first-layer body-cell order
                                          in renderReplenishment(). Replenishment spans exactly 2 leaves (Days of
                                          Supply, Suggested Qty); Factory Stock spans exactly 2 leaves (CN, TW).
                                          The "Planned Qty" leaf was removed in a prior round — Replenishment was

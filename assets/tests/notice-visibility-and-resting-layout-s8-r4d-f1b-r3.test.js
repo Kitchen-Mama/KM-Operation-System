@@ -182,17 +182,23 @@ checks.push(Promise.resolve().then(function () {
       eq(!!h.banner(), false, 'A2  and no stale notice exists after a fresh Search');
 
       // 2 — COUNTRY CHANGED, NO SEARCH.  This is the operator's reproduction.
+      //
+      // S8-RENDER-INTEGRITY-R2 / GATE 1 = A1 — RESTATED. The visible banner is removed by product decision.
+      // A4/A5 asserted that it RENDERS; they now assert that it does not, while A3 and A6-A9 — the stale
+      // STATE, which is what protects the data — are unchanged and still have to hold. The banner going away
+      // must not take the guard with it, and that is exactly what this section now proves.
       h.pick(CA); h.run('_irMarkSearchStale_()');
-      eq(h.run('_irSearch.stale'), true, 'A3  changing Country marks the displayed result stale');
-      ok(!!h.banner(), 'A4  ... and the notice is RENDERED (this is the band the operator sees)');
-      eq(h.host().style.display, '', 'A5  ... with the host shown');
+      eq(h.run('_irSearch.stale'), true, 'A3  changing Country still marks the displayed result stale');
+      eq(!!h.banner(), false, 'A4  ... and NO visible notice is rendered (Gate 1 = A1)');
+      eq(h.host().style.display, 'none', 'A5  ... so the host stays empty and reserves no space');
+      eq(h.run('_irSearch.applied'), US, 'A5a ... and the APPLIED scope has not moved — nothing was committed');
 
       // 3 — SEARCH AGAIN.  D2: the flag used to clear while the NODE stayed.
       h.run('searchReplenishment()');
       return settle().then(function () {
         eq(h.run('_irSearch.applied'), CA, 'A6  the second Search commits CA');
         eq(h.run('_irSearch.stale'), false, 'A7  ... and clears the stale FLAG');
-        eq(!!h.banner(), false, 'A8  ... AND REMOVES THE NOTICE — the node no longer outlives the flag');
+        eq(!!h.banner(), false, 'A8  ... with still no notice node anywhere');
         eq(h.host().style.display, 'none', 'A9  ... leaving the host empty and reserving nothing');
 
         // 4 — REPEAT.  No accumulation, no drift.
@@ -281,11 +287,14 @@ checks.push(Promise.resolve().then(function () {
   host.style.display = '';
   h.run('_irSearch.applied = { country: "US", marketplaceId: "MP-US" }; _irSearch.stale = true;');
   h.run('_irRenderStaleNotice_()');
+  // S8-RENDER-INTEGRITY-R2 — RESTATED for Gate 1 = A1. The stale notice no longer renders, so E2/E3 can no
+  // longer be about it standing beside the warning. What this section exists to protect is the OTHER
+  // direction, and it matters more: the data-loss warning must survive a Country change. Removing the
+  // informational notice must not take the "Unsaved — database update failed" banner with it.
   ok(!!host.querySelector('.replen-unsaved-banner'), 'E1  the unsaved-write warning SURVIVES a Country change');
-  ok(!!host.querySelector('.replen-search-stale'), 'E2  and the stale notice renders beside it');
-  eq(host.children.map(function (c) { return c.className; }),
-    ['replen-unsaved-banner', 'replen-search-stale'],
-    'E3  priority holds: the data-loss warning stays ABOVE the informational notice');
+  eq(!!host.querySelector('.replen-search-stale'), false, 'E2  and no stale notice is rendered beside it (Gate 1 = A1)');
+  eq(host.children.map(function (c) { return c.className; }), ['replen-unsaved-banner'],
+    'E3  the host holds the data-loss warning and nothing else');
   // A Search clears ONLY the stale notice.
   h.run('_irSearch.stale = false;');
   h.run('_irRenderStaleNotice_()');
@@ -350,16 +359,18 @@ checks.push(Promise.all(checks.slice()).then(function () {
   // X2 — D2 again: clear the flag, leave the node.
   // Anchored on ONE line. A multi-line anchor would carry \n and this repository is CRLF, so it would never
   // match and the mutant would report itself "not found" instead of being run.
-  muts.push(mut("if (typeof _irRenderStaleNotice_ === 'function') _irRenderStaleNotice_();",
-    '/* mutant: notice not re-rendered on commit */',
-    'X2 clearing the stale FLAG without the NOTICE is caught', function (src) {
+  muts.push(mut("    _irStateHostSync_(host);\r\n}",
+    "    if (_irSearch.stale) host.insertAdjacentHTML('beforeend', '<div class=\"replen-search-stale\">stale</div>');\r\n    _irStateHostSync_(host);\r\n}",
+    'X2 re-introducing the visible stale banner is caught', function (src) {
+      // S8-RENDER-INTEGRITY-R2 — RETARGETED. The old mutant removed the commit-point re-render and proved it
+      // by the banner outliving its flag. With the banner gone (Gate 1 = A1) that probe can never fire, so
+      // the mutant now attacks the DECISION instead: put the emission back and the suite must notice.
       var h = harness(src); if (h.loadError) return true;
       return Promise.resolve(h.run('_irBootstrapScope_()')).then(function () { return settle(); }).then(function () {
         h.pick(US); h.run('searchReplenishment()');
         return settle().then(function () {
           h.pick(CA); h.run('_irMarkSearchStale_()');
-          h.run('searchReplenishment()');
-          return settle().then(function () { return !!h.banner(); });   // the node outlived the flag
+          return !!h.banner();                 // a visible notice reappeared -> A4 would fail
         });
       });
     }));

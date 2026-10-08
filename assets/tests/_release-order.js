@@ -933,7 +933,22 @@ var ROUND_TOKENS = [
   // band of blank space; and the stale notice is never removed on Search, so that band appears on the first
   // Country change and stays for the session. The second one is why the page was found "already in its
   // expanded visual state".
-  's8r4df1br3-noticevis-20261008'];
+  's8r4df1br3-noticevis-20261008',
+  // S8-R2 — render-integrity contract repair, the stale banner removed (Gate 1 = A1), the scope registry
+  // invalidated after a marketplace write, and the Avg Sales column stopped defaulting to the unnormalized
+  // weekly rate. F1B-R3 is on origin/main (6b9735e was pushed), so by the rule above its token is PUBLISHED
+  // and cannot be reused.
+  //
+  // Application series ONLY. The page JS and the page MARKUP changed; the markup is served through
+  // index.html's partial loader on the same release, and no stylesheet byte moved, so the IR-CSS family keeps
+  // irrestinglayout-20261008 rather than spending a token on an unchanged file.
+  //
+  // A browser left on the F1B-R3 copy keeps every one of this round's defects: a self_fulfilled scope still
+  // declares 13 columns while rendering 14, so the integrity alarm fires on every row; the "Filters changed"
+  // banner is still painted after the product decision removed it; a marketplace created in that session is
+  // still invisible in the dropdown for up to six hours; and the Avg Sales column still shows a weekly rate
+  // inflated by the SKU's own campaign and event days.
+  's8r2-renderintegrity-20261008'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

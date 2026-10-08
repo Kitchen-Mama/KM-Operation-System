@@ -1738,8 +1738,26 @@ function _irApplyInventoryColumnModel(fulfillmentModel) {
     var m = _irInventoryColumnModel(fulfillmentModel);
     var tbl = document.getElementById('replen-detail-table');
     if (tbl) tbl.classList.toggle('ir-hide-current-stock', m.hideCurrentStock);
-    var invGroup = document.querySelector('#ops-section .km-table__header-cell--inventory');
-    if (invGroup) invGroup.setAttribute('data-leaf-span', String(m.inventoryLeafSpan));
+    // S8-RENDER-INTEGRITY-R2 §A — `data-leaf-span` IS NOT TOUCHED HERE ANY MORE, AND THAT IS THE REPAIR.
+    //
+    // The attribute carried two incompatible meanings. The markup comment calls it a VISUAL colspan that must
+    // equal the group's CSS width / 120px; the contract comment above _irHeaderLeafSpan_ calls it the
+    // STRUCTURAL count -- "S(data-leaf-span) across the level-1 group header row IS how many body cells one
+    // row must carry". Those agree only while nothing is hidden.
+    //
+    // This feature hides Current Stock with CSS display:none: the header leaf and the body cell both STAY in
+    // the DOM. _irScrollRowHtml_ therefore always emits 14 cells. Writing 2 here made a self_fulfilled scope
+    // declare 13 while rendering 14, so _irVerifyRenderedRows_ -- which counts DOM cells -- failed EVERY row.
+    // That is the Production report exactly: US/Shopify 101/101 rendered and 101 failing, US/Target 19/19.
+    // Amazon, being platform_fulfilled, declared 14 and passed.
+    //
+    // The table was never wrong; the declared count was. The guard is untouched, nothing is whitelisted, and
+    // no marketplace is named -- the attribute simply goes back to meaning the one thing the validator reads
+    // it for. `m.inventoryLeafSpan` is retained because it correctly describes the VISIBLE span, which is what
+    // the CSS width (240px = 2 x 120) encodes and what the fulfillment-column suite asserts.
+    //
+    // The width identity in the markup comment is therefore true only when no column is hidden; the comment
+    // is corrected in assets/html/pages/inventory-replenishment.html rather than left to mislead.
     return m;
 }
 
@@ -8583,8 +8601,30 @@ function saveMarketplace() {
         var st = (result && result.status) ? result.status : 'saved';
         alert('Marketplace ' + st + ': ' + company + ' / ' + country + ' / ' + marketplace);
         closeAddMarketplaceModal();
-        // Refresh registry-backed dropdowns/filters.
-        if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+        // S8-RENDER-INTEGRITY-R2 §C — REPAINTING FROM A CACHE THAT PREDATES THIS WRITE SHOWED NOTHING NEW.
+        //
+        // populateReplenFiltersFromRegistry() rebuilds the Country / Marketplace options from the ALREADY
+        // RESOLVED registry model. It issues no request. The scope registry keeps a six-hour persisted
+        // snapshot (assets/js/core/scope-registry.js, CACHE_TTL_MS = 6h) that is only dropped when its version
+        // moves, so a marketplace created here stayed invisible in the dropdown for up to six hours -- the
+        // backend was returning it correctly the whole time.
+        //
+        // The registry already exposes the remedy for exactly this case: `clearPersisted` is documented "so a
+        // scope change or a WRITE THAT INVALIDATES CONFIGURATION can drop the stored snapshot explicitly
+        // rather than waiting for the TTL". `reload()` is cacheClear() + ensureLoaded({force:true}). This is
+        // the only marketplace writer in the system, so this is the only place that call belongs.
+        //
+        // The repaint is chained AFTER the reload, and also runs if the reload fails -- a failed re-read must
+        // not leave the operator with stale options AND no refresh at all.
+        var _reg = (window.KM && window.KM.scopeRegistry) ? window.KM.scopeRegistry : null;
+        var _repaint = function () {
+            if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+        };
+        if (_reg && typeof _reg.reload === 'function') {
+            try { Promise.resolve(_reg.reload()).then(_repaint, _repaint); } catch (_eR) { _repaint(); }
+        } else {
+            _repaint();
+        }
     }).catch(function(err) {
         alert('Could not save marketplace. ' + (err && err.message ? err.message : err));
     });
@@ -10012,15 +10052,31 @@ function _irStateHostSync_(host) {
 //
 // Now it removes only its own node and appends at the END. The position is the SEMANTIC PRIORITY: the three
 // data-loss warnings prepend and therefore stay above an informational "your filters moved" note.
+// S8-RENDER-INTEGRITY-R2 §A / GATE 1 = A1 — THE BANNER IS GONE. THE STATE IT REPORTED IS NOT.
+//
+// The visible "Filters changed — results are out of date." notice is removed by product decision. Everything
+// that made it TRUE stays exactly where it was, and this function still runs on every path that used to paint
+// it so the host cannot be left holding a banner from an earlier page state:
+//
+//   _irSearch.stale        still set by _irMarkSearchStale_ on every Country / Marketplace change
+//   _irFiltersDiffer_      still the only thing that decides whether the displayed result is out of date
+//   _irSearch.seq          still the monotonic epoch; a superseded response is still discarded by every
+//                          consumer that compares it (bootstrap, SEARCH_CLICK, quiet revalidation)
+//   _irSearch.applied      still assigned in exactly ONE place, so a selector change still commits NOTHING
+//   F1A appliedScopeKey    still refuses any async result stamped for another scope
+//
+// WHAT WAS DELIBERATELY NOT DONE (Gate 1 option A2, declined): the table is NOT blanked on a selector change.
+// F1-7N-FB-2A §B is a frozen UX contract -- "It never loads and never repaints the table ... The last
+// CONFIRMED result stays on screen" -- and blanking it would remove the operator's reference data while they
+// are still choosing a scope. A1 removes the notice and changes nothing else.
+//
+// The consequence is accepted rather than hidden: with the banner gone, the only cue that the displayed
+// result predates the current selectors is the operator's own memory of having moved a dropdown. That was the
+// decision; the data-correctness guards above are what make it safe.
 function _irRenderStaleNotice_() {
     var host = _irStateHost_(); if (!host) return;
     var existing = host.querySelector ? host.querySelector('.replen-search-stale') : null;
     if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
-    if (_irSearch.stale) {
-        host.insertAdjacentHTML('beforeend', '<div class="replen-search-stale" style="background:#FFFBEB;border-left:3px solid #F59E0B;color:#92400E;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
-            '<strong>Filters changed — results are out of date.</strong> The table still shows the last confirmed search. Press <em>Search</em> to apply the new Country / Marketplace.' +
-            '</div>');
-    }
     _irStateHostSync_(host);
 }
 // PRE_SEARCH / LOADING / ERROR render INTO the table bodies, so they are mutually exclusive with rows and with
@@ -12260,18 +12316,39 @@ function _getCloudReplenishmentData() {
         // are untouched. A Sales-Driven SKU whose canonical rate is unavailable shows '--' (never a silent weekly
         // fallback); rate 0 → IR.daysOfSupply returns null → '--' (safe no-demand). When no canonical basis is
         // resolved (e.g. workspace read off), the existing weekly display is preserved (no regression).
-        var _avgDisplay = avg.toFixed(1);
-        var _dosDisplay = (dos === null ? '--' : String(dos));
+        // S8-AVG-SALES-DISPLAY-R2 — THE WEEKLY RATE IS NEVER SHOWN SILENTLY, AND NEVER AS A DEFAULT.
+        //
+        // This block used to open with `_avgDisplay = avg.toFixed(1)` -- sales_units_7d / 7 -- and override it
+        // only when a sales_driven canonical basis had resolved. Two consequences, both now closed:
+        //
+        //   * before the basis resolved, the column showed the UNNORMALIZED weekly rate: the one number §22
+        //     says is "ONLY the < 3-eligible-normal-day fallback rung ... never a 'no-contamination default'".
+        //     An operator reading it during that window was reading a rate still inflated by the SKU's own
+        //     campaign and event days.
+        //   * a forecast_driven SKU never took the override at all, though §22.4 says Avg Sales is auxiliary
+        //     reference for those SKUs AND that "the normalization still applies to the displayed Avg Sales".
+        //
+        // Now: '--' until a canonical rate exists, and the canonical rate for BOTH demand modes.
+        // DEMAND MODE IS NOT TOUCHED. This decides what the Avg Sales CELL prints and what Days of Supply is
+        // computed from. Which basis drives replenishment is owned by §2D / §20.5 and is unchanged -- a
+        // forecast_driven SKU still plans from its forecast; only its displayed rate stops being contaminated.
+        var _avgDisplay = '--';
+        var _dosDisplay = '--';
         var _canonBasis = (typeof _irCanonicalSalesBasis_ === 'function') ? _irCanonicalSalesBasis_(mp.sku) : null;
-        if (_canonBasis && _canonBasis.demandMode === 'sales_driven') {
-          var _cr = _canonBasis.avgSalesPerDay;
-          if (_cr == null) { _avgDisplay = '--'; _dosDisplay = '--'; }
-          else {
+        var _cr = _canonBasis ? _canonBasis.avgSalesPerDay : null;
+        if (_cr != null) {
             _avgDisplay = (Math.round(_cr * 10) / 10).toFixed(1);
             var _cdos = IR.daysOfSupply(currentStock, _cr);
             _dosDisplay = (_cdos === null ? '--' : String(_cdos));
-          }
         }
+        // §22.3 — source and warning stay INDEPENDENT fields. They are attached to the row for the cell's
+        // title/detail so a normalized rate can be told from a weekly fallback, and a low_sample_warning is
+        // visible rather than inferred. `avg` (the weekly rate) is still computed above and is still used by
+        // the existing weekly Sales Trend surfaces; it is simply no longer what this column prints.
+        var _avgSource = _canonBasis ? (_canonBasis.source || null) : null;
+        var _avgWarning = _canonBasis ? (_canonBasis.warning || null) : null;
+        var _avgNormalDays = _canonBasis ? (_canonBasis.normalDayCount == null ? null : _canonBasis.normalDayCount) : null;
+        var _avgExcluded = _canonBasis && Array.isArray(_canonBasis.excludedDates) ? _canonBasis.excludedDates : null;
 
         // Forecast breakdown (next 3 months, Target Rule applied)
         var fcRow = fcRows.find(function (r) {
@@ -12320,7 +12397,13 @@ function _getCloudReplenishmentData() {
             thirdPartyPlan: thirdPartyPlan,              // full allocation detail (tooltip/expand)
             thirdPartyDetailHtml: _irRenderThirdPartyDetail(thirdPartyPlan),
             thirdPartyTitle: _irThirdPartyTitle(thirdPartyPlan),
-            avgDailySales: _avgDisplay,        // LIVE9: canonical horizon rate for Sales-Driven; weekly otherwise (1 decimal)
+            avgDailySales: _avgDisplay,        // S8-R2: the canonical §22 rate for BOTH demand modes, or '--'
+            // §22.3 decoupled diagnostics, carried not computed. Consumers read them to LABEL the rate; none
+            // of them may substitute a value when the rate itself is null.
+            avgSalesSource: _avgSource,              // 'normalized_30d' | 'weekly_7d' | null
+            avgSalesWarning: _avgWarning,            // 'low_sample_warning' | 'insufficient_normal_days' | null
+            avgSalesNormalDayCount: _avgNormalDays,  // the ACTUAL denominator, never a fixed 30
+            avgSalesExcludedDates: _avgExcluded,     // the campaign/event dates removed from the sample
             forecast60d: fc60,
             upcomingEventQty: eventQty > 0 ? eventQty : null,
             daysOfSupply: _dosDisplay,
@@ -13554,6 +13637,21 @@ function _irRecoMapLine(L) {
     horizonBasis: (L.horizonBasis && typeof L.horizonBasis === 'object') ? {
       demandMode: (L.horizonBasis.demandMode == null ? null : String(L.horizonBasis.demandMode)),
       avgSalesPerDay: _irNumOrNull(L.horizonBasis.avgSalesPerDay),
+      // S8-AVG-SALES-DISPLAY-R2 — THE QUALITY FIELDS TRAVEL WITH THE RATE.
+      //
+      // The §22 engine returns `source`, `warning`, `normalDayCount` and `excludedDates` alongside the rate,
+      // and §22.3 makes source and warning "fully decoupled ... independent fields (never combined into one
+      // token)" precisely so both can be shown. All four were dropped here, so a number on screen could not
+      // be told from a weekly fallback, a low_sample_warning never reached the operator, and the excluded
+      // dates -- the evidence that a campaign was removed from the sample -- were invisible.
+      //
+      // CARRIED, NEVER COMPUTED: the page still authors no rate and no classification. These are passthrough
+      // diagnostics, kept independent exactly as the contract defines them.
+      source: (L.horizonBasis.source == null ? null : String(L.horizonBasis.source)),
+      warning: (L.horizonBasis.warning == null ? null : String(L.horizonBasis.warning)),
+      normalDayCount: _irNumOrNull(L.horizonBasis.normalDayCount),
+      excludedDates: Array.isArray(L.horizonBasis.excludedDates)
+        ? L.horizonBasis.excludedDates.map(function (d) { return String(d); }) : null,
       horizonOpeningQty: _irNumOrNull(L.horizonBasis.horizonOpeningQty),
       qualifiedIncomingCount: _irNumOrNull(L.horizonBasis.qualifiedIncomingCount)
     } : null,

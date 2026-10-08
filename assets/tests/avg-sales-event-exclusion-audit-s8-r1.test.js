@@ -184,17 +184,25 @@ ok(/horizonBasis: \(L\.horizonBasis/.test(IR), 'F2  the canonical basis is carri
 // The fields the page KEEPS from horizonBasis.
 var hb = IR.slice(IR.indexOf('horizonBasis: (L.horizonBasis'), IR.indexOf('horizonBasis: (L.horizonBasis') + 420);
 ok(/demandMode/.test(hb) && /avgSalesPerDay/.test(hb), 'F3  demandMode and avgSalesPerDay ARE carried');
-ok(!/\bsource\b/.test(hb), 'F4  DIFF: `source` is DROPPED at the page boundary — the operator cannot tell normalized from weekly_7d');
-ok(!/\bwarning\b/.test(hb), 'F5  DIFF: `warning` is DROPPED — low_sample_warning never reaches the screen');
-ok(!/normalDayCount/.test(hb), 'F6  DIFF: `normalDayCount` is DROPPED — the denominator is not visible');
-ok(!/excludedDates/.test(hb), 'F7  DIFF: `excludedDates` is DROPPED — the exclusion evidence is not visible');
-// The fallback the page takes when no canonical basis is resolved.
-ok(/var _avgDisplay = avg\.toFixed\(1\);/.test(IR),
-  'F8  DIFF: the column DEFAULTS to the weekly rate (avg = sales_units_7d / 7) before the canonical basis resolves');
-ok(/if \(_canonBasis && _canonBasis\.demandMode === 'sales_driven'\)/.test(IR),
-  'F9  the canonical rate overrides it ONLY for sales_driven');
-ok(/if \(_cr == null\) \{ _avgDisplay = '--'; _dosDisplay = '--'; \}/.test(IR),
-  'F10 a sales-driven SKU with no canonical rate shows -- rather than a silent weekly number (good)');
+// S8-AVG-SALES-DISPLAY-R2 — F4-F9 RECORDED FOUR DIFFS AND A DEFAULT. ALL FIVE ARE NOW REPAIRED, so these
+// assertions flip from "this is broken" to "this stays fixed". The audit that found them is kept above it in
+// full: §A-§E still execute the engine, and they are what proves the fix did not change the maths.
+var hbCarry = IR.slice(IR.indexOf('horizonBasis: (L.horizonBasis'), IR.indexOf('horizonBasis: (L.horizonBasis') + 1600);
+ok(/\bsource:/.test(hbCarry), 'F4  FIXED: `source` is carried — normalized_30d can be told from weekly_7d');
+ok(/\bwarning:/.test(hbCarry), 'F5  FIXED: `warning` is carried — low_sample_warning reaches the screen');
+ok(/normalDayCount:/.test(hbCarry), 'F6  FIXED: `normalDayCount` is carried — the ACTUAL denominator is visible');
+ok(/excludedDates:/.test(hbCarry), 'F7  FIXED: `excludedDates` is carried — the exclusion evidence is visible');
+// §22.3 keeps source and warning as INDEPENDENT fields; they must not be fused into one token on the way out.
+ok(!/source.{0,40}warning.{0,10}:/.test(hbCarry.replace(/\s+/g, ' ')) || /source:[\s\S]{0,200}warning:/.test(hbCarry),
+  'F7a ... and they remain separate fields, never combined into one token (§22.3)');
+// The weekly default is gone from the display path.
+ok(!/var _avgDisplay = avg\.toFixed\(1\);/.test(IR),
+  'F8  FIXED: the column no longer DEFAULTS to the weekly rate (sales_units_7d / 7)');
+ok(/var _avgDisplay = '--';/.test(IR), 'F8a ... it opens at -- until a canonical rate exists');
+ok(!/_canonBasis && _canonBasis\.demandMode === 'sales_driven'/.test(IR),
+  'F9  FIXED: the canonical rate is no longer gated on demand mode — §22.4 applies it to Forecast-Driven too');
+ok(/if \(_cr != null\)/.test(IR),
+  'F10 a SKU with no canonical rate shows -- rather than a silent weekly number');
 
 console.log('\nPASS ' + passed + '  FAIL ' + failed);
 if (failed) process.exitCode = 1;

@@ -49,14 +49,23 @@ global.document = { getElementById: function (id) { return id === 'replen-detail
   querySelector: function (sel) { return /--inventory/.test(sel) ? invGroupEl : null; } };
 eval(extractFn(IR_JS, '_irApplyInventoryColumnModel'));
 
+// S8-RENDER-INTEGRITY-R2 — RESTATED. These three asserted that applying the model REWRITES the Inventory
+// group's `data-leaf-span` (3 -> 2). That write was the defect: the attribute is the STRUCTURAL body-cell
+// contract `_irVerifyRenderedRows_` checks, the cells are hidden by CSS and stay in the DOM, so declaring 2
+// while rendering 14 failed every row of every self_fulfilled scope in Production (Shopify 101/101, Target
+// 19/19). The model is unchanged and still reports inventoryLeafSpan = 2 — that is the VISIBLE span, which is
+// what the CSS width encodes (240px = 2 x 120). What must NOT happen is writing it onto the contract.
 var mSelf = _irApplyInventoryColumnModel('self_fulfilled');
 ok(tblEl.classList.contains('ir-hide-current-stock') === true, 'SELF → container gets ir-hide-current-stock (hides header leaf + body cell via CSS)');
-ok(invGroupEl.getAttribute('data-leaf-span') === '2', '13 SELF → Inventory group data-leaf-span=2 (colspan owner in sync)');
+ok(mSelf.inventoryLeafSpan === 2, '13 SELF → the model reports a VISIBLE Inventory span of 2 (CSS width 240px)');
+ok(invGroupEl.getAttribute('data-leaf-span') === undefined,
+  '13b SELF → and the STRUCTURAL data-leaf-span is NOT rewritten — the body still carries the hidden cell');
 var mPlat = _irApplyInventoryColumnModel('platform_fulfilled');
 ok(tblEl.classList.contains('ir-hide-current-stock') === false, '14/15 switch → PLATFORM removes the class (Current Stock returns) — no reload, no stale column');
-ok(invGroupEl.getAttribute('data-leaf-span') === '3', 'PLATFORM → Inventory group colspan=3');
+ok(mPlat.inventoryLeafSpan === 3, 'PLATFORM → the model reports a visible Inventory span of 3');
 _irApplyInventoryColumnModel('self_fulfilled'); _irApplyInventoryColumnModel('platform_fulfilled'); _irApplyInventoryColumnModel('self_fulfilled');
-ok(tblEl.classList.contains('ir-hide-current-stock') === true && invGroupEl.getAttribute('data-leaf-span') === '2', 'Amazon→Shopify→Amazon→Shopify converges to the current selection (no stale/duplicate)');
+ok(tblEl.classList.contains('ir-hide-current-stock') === true && invGroupEl.getAttribute('data-leaf-span') === undefined,
+  'Amazon→Shopify→Amazon→Shopify converges on the CLASS, and never touches the structural contract');
 
 section('16/12 header+body use the SAME model (single container class); alignment by structure not offset');
 // HTML: current-stock header leaf + detail table id present

@@ -645,7 +645,29 @@ function handleUpsertMarketplace_(body) {
   // marketplace_alias defaults to marketplace when blank/not provided (MVP: alias == marketplace).
   if (col('marketplace_alias') !== -1) newRow[col('marketplace_alias')] = marketplaceAlias || marketplace;
   if (col('fulfillment_model') !== -1) newRow[col('fulfillment_model')] = fulfillmentModel;
-  if (col('allocation_priority') !== -1 && allocationPriority !== '') newRow[col('allocation_priority')] = allocationPriority;
+  // S8-RENDER-INTEGRITY-R2 §D — CREATE-ONLY DEFAULT. A new marketplace persists allocation_priority = 100.
+  //
+  // WHY IT IS APPLIED HERE AND NOT WHERE allocationPriority IS READ. Defaulting the variable at its
+  // declaration would also feed the UPDATE branch above, which writes the column whenever the value is
+  // non-blank -- so every later edit that omitted the field would silently overwrite an existing priority
+  // with 100. That is the one thing the decision forbids ("UPDATE must preserve existing allocation_priority",
+  // "do not overwrite existing non-null priorities"). The default therefore exists ONLY in the row that is
+  // being created, where there is nothing to preserve.
+  //
+  // NUMBER, not string: the consumers are arithmetic -- gapNum_() in 43_api_v1_gap_materialization.gs and
+  // MAX(allocationPriority, 1) in the page allocator -- and a "100" would compare and weight as text.
+  //
+  // NO BACKFILL. Rows already carrying a blank are left blank; they continue to read as the engine's existing
+  // missing-value default. Changing them is a separate, operator-authorized action.
+  //
+  // DIRECTION IS UNSETTLED AND THIS LINE DOES NOT SETTLE IT. The frozen specs (INVENTORY §16 R6, CALC §20.4 /
+  // §35 / §40) and every shipped allocator read HIGHER = HIGHER PRIORITY, under which 100 makes a brand-new
+  // marketplace outrank established ones in a shortage. The S8 allocation-policy round states the intended
+  // ranking is SMALLER FIRST, under which 100 is a sensible low default. The stored number is the one that was
+  // authorized; what it MEANS follows whichever direction that round settles. See the Task 3 audit.
+  if (col('allocation_priority') !== -1) {
+    newRow[col('allocation_priority')] = (allocationPriority !== '') ? allocationPriority : 100;
+  }
   if (col('currency') !== -1) newRow[col('currency')] = currency;
   if (col('status') !== -1) newRow[col('status')] = status;
   if (col('created_by') !== -1) newRow[col('created_by')] = updatedBy;
