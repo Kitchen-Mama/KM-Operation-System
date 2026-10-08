@@ -893,7 +893,20 @@ var ROUND_TOKENS = [
   // the old km-api-foundation.js against the new page is worse and is specific to R4B-2D - the page sends a
   // siteScope the DTO whitelist silently discards, so the request becomes the all-site read it was before
   // and nothing on screen says so.
-  's8r4c-lazyexposure-20261004'];
+  's8r4c-lazyexposure-20261004',
+  // S8-R4D-F1A — THE SITE-SWITCH SCOPE GUARD. s8r4c-lazyexposure-20261004 IS PUBLISHED: origin/main serves
+  // it on 55 index.html entries and 8 app.js route assets, so by the rule this list states its bytes have
+  // reached browsers and it cannot be reused.
+  //
+  // ONE FILE MOVES, AND THE WHOLE SET ROTATES WITH IT BECAUSE THAT IS WHAT THE SERIES MEANS.
+  // inventory-replenishment.js gains _irAppliedScopeKey_ / _irResultMatchesAppliedScope_ and four consumer
+  // guards, so a recommendation or materialized-gap result loaded for one site can no longer be rendered
+  // under another. The change is SELF-CONTAINED — no cross-file contract moved — so a half-updated browser
+  // is not the hazard here; the hazard is the opposite one, and it is the whole reason to spend a token:
+  // inventory-replenishment.js is fetched BY THE ROUTER, not by index.html, so a returning browser holding
+  // the cached copy is never told to ask again. Without a rotation the P0 repair reaches exactly the
+  // population that does not have the bug, and every user who has ever searched a site keeps it.
+  's8r4df1a-scopeguard-20261008'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

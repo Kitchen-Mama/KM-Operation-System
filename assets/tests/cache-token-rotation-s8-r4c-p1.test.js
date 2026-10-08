@@ -63,8 +63,15 @@ eq(RO.ROUND_TOKENS.indexOf(APP), RO.ROUND_TOKENS.length - 1,
   'A3  the new application token is APPENDED, not spliced — the order is the ledger');
 eq(RO.IR_CSS_TOKEN_SERIES.indexOf(IR), RO.IR_CSS_TOKEN_SERIES.length - 1,
   'A3a and so is the new IR CSS token');
-eq(RO.ROUND_TOKENS.indexOf(PREV_APP), RO.ROUND_TOKENS.length - 2,
-  'A3b with the spent token kept immediately before it — the ledger is append-only, never rewritten');
+// S8-R4D-F1A — CONVERTED FROM AN EQUALITY TO A FLOOR, by the round that appended the next token.
+// `indexOf(PREV_APP) === length - 2` was true of THIS round and is a claim about EVERY round after it: the
+// moment any later round appends legitimately, the R4C ledger entry is no longer second-from-last and this
+// suite reports a defect in a tree that has none. The durable claim — the one A3b was written to make — is
+// that the ledger is APPEND-ONLY: the spent token is still present, and still strictly before the current
+// one. That stays checkable forever and still fails if anyone rewrites or removes the entry.
+ok(RO.ROUND_TOKENS.indexOf(PREV_APP) !== -1 && RO.ROUND_TOKENS.indexOf(PREV_APP) < RO.ROUND_TOKENS.indexOf(APP),
+  'A3b the spent token is still in the ledger and still before the current one — append-only, never rewritten',
+  PREV_APP + ' @' + RO.ROUND_TOKENS.indexOf(PREV_APP) + ' < ' + APP + ' @' + RO.ROUND_TOKENS.indexOf(APP));
 ok(RO.tokenIndex(IR) === -1, 'A4  the IR CSS token is NOT a member of the application series');
 ok(!RO.isIrCssToken(APP), 'A4a and the application token is not a member of the IR CSS series');
 eq(RO.ROUND_TOKENS.filter(function (t) { return t === APP; }).length, 1,

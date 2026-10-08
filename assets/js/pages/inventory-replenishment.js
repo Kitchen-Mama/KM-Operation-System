@@ -2031,6 +2031,9 @@ function _irSuggestedQtyState_(item) {
   if (_irUseMaterializedGapRead()) {
     var st = _irMatState.status;
     if (st === 'IDLE' || st === 'LOADING' || st === 'CONTEXT_NOT_READY') return { state: 'PENDING', value: null };
+    // S8-R4D-F1A §7 — SUGGESTED_QTY_STALE_CROSS_SCOPE is forbidden. A result for another site is PENDING
+    // (the cell prints the pending marker), never NONE and never that site's number.
+    if (!_irResultMatchesAppliedScope_(_irMatState)) return { state: 'PENDING', value: null };
     var row = (item && _irMatState.bySku[String(item.sku)]) || null;
     if (!row || String(row.calculation_status) !== 'READY') return { state: 'NONE', value: null };
     var v = _irMatNum(row.d90_suggested_qty);   // furthest cumulative checkpoint = the single actionable total
@@ -9814,6 +9817,43 @@ function _irRenderScope_() {
         ltsFilter: (lts && lts.value) ? String(lts.value) : '' };
 }
 function _irSearchApplied_() { return !!_irSearch.applied; }
+// ----------------------------------------------------------------------------
+// S8-R4D-F1A §1 — NO_SCOPE_CROSS_CONTAMINATION. ONE SCOPE IDENTITY FOR EVERY ASYNC RESULT.
+//
+// THE DEFECT THIS CLOSES. Two scope authorities exist on this page and they advance at different times:
+//
+//   the TABLE renders the APPLIED scope        _irRenderScope_ -> _irSearch.applied   (advances on Search)
+//   the reco/gap chain asks the LIVE SELECTORS _replenSelectedScope -> the DOM        (advances on change)
+//
+// _irApplySearch_ assigns `applied` and calls renderReplenishment() ONE STATEMENT BEFORE _irRecoTrigger(), so
+// the first paint of a NEW scope reads an _irRecoState / _irMatState that still holds the PREVIOUS scope's
+// result. Both consumers guarded only on "a scope is loaded", never on WHICH — so the previous site's
+// Avg Sales/day, Days of Supply and Suggested Qty rendered under the new site's header until the new response
+// arrived. A number from another country is not a slow number; it is a wrong one.
+//
+// THE GUARD IS AT THE POINT OF USE, NOT AT THE REQUEST. A result carries the applied scope it was loaded FOR,
+// and a consumer refuses any result whose stamp is not the scope now being rendered. That covers the first
+// paint, a late response, a session-cache hit and any future async field (a new field inherits the guard by
+// calling the same predicate), rather than depending on one call-ordering staying correct forever.
+//
+// NOT CHANGED, DELIBERATELY: the Search UX contract (a selector change still only marks stale), the request
+// timing, _irctxScope's live-selector reading (it feeds more than this page's display), and the write path --
+// _irExpectedDemandFromSnapshot_ reads _irMatState directly and is NOT guarded here, because making it refuse
+// would suppress the server's EXPECTED_DEMAND_CONFLICT check rather than tighten it. See the F1A report.
+function _irAppliedScopeKey_() {
+    var a = _irSearch.applied;
+    if (!a) return '';
+    return String(a.country == null ? '' : a.country).trim().toLowerCase() + '|' +
+        String(a.marketplaceId == null ? '' : a.marketplaceId).trim();
+}
+// Does this async result belong to the scope the page is rendering RIGHT NOW? A missing stamp is a MISMATCH,
+// never a pass: an unstamped result is one whose scope nobody recorded, which is exactly the case to refuse.
+function _irResultMatchesAppliedScope_(st) {
+    if (!st || typeof st.appliedScopeKey !== 'string') return false;
+    return st.appliedScopeKey === _irAppliedScopeKey_();
+}
+window._irAppliedScopeKey_ = _irAppliedScopeKey_;
+window._irResultMatchesAppliedScope_ = _irResultMatchesAppliedScope_;
 function _irFiltersDiffer_(a, b) {
     if (!a || !b) return true;
     return a.country !== b.country || a.marketplaceId !== b.marketplaceId;
@@ -13220,9 +13260,11 @@ window._irSetInternalRecommendationContext = _irSetInternalRecommendationContext
 var _irRecoSeq = 0;              // monotonic request sequence (stale-response guard)
 var _irRecoAbort = null;         // AbortController for the in-flight request (browser response invalidation)
 function _irRecoBlank(status) {
+  // S8-R4D-F1A — appliedScopeKey is NULL here on purpose: a blank state carries no result, so it must never
+  // satisfy _irResultMatchesAppliedScope_. The three places that produce a real state stamp it explicitly.
   return { status: status || 'DISABLED', contextKey: null, requestId: null, lines: [], linesBySku: {},
     pagination: null, dataVersion: null, errors: [], updatedAt: null, seq: _irRecoSeq, scope: null,
-    calculationMonth: null, planningCycle: null, loadedOk: false };
+    appliedScopeKey: null, calculationMonth: null, planningCycle: null, loadedOk: false };
 }
 var _irRecoState = _irRecoBlank('DISABLED');   // page-local read state (separate from Allocation Draft state)
 
@@ -13396,6 +13438,7 @@ function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
     var _isConfig = _irRecoIsConfigCode(_errs[0] && _errs[0].code);
     _irRecoState = _irRecoBlank(_isConfig ? 'CONFIG_NOT_READY' : 'API_ERROR');
     _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope;
+    _irRecoState.appliedScopeKey = _irAppliedScopeKey_();   // S8-R4D-F1A — the scope this result belongs to
     _irRecoState.errors = _errs;
     _irRecoState.requestId = (env && env.meta && env.meta.requestId) || null;
     return;
@@ -13406,6 +13449,7 @@ function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
   lines.forEach(function (L) { var m = _irRecoMapLine(L); mapped.push(m); (bySku[m.sku] = bySku[m.sku] || []).push(m); });
   _irRecoState = _irRecoBlank(lines.length ? 'READY' : 'EMPTY');
   _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope;
+  _irRecoState.appliedScopeKey = _irAppliedScopeKey_();   // S8-R4D-F1A — the scope this result belongs to
   _irRecoState.lines = mapped; _irRecoState.linesBySku = bySku;
   _irRecoState.pagination = data.pagination || null; _irRecoState.dataVersion = data.dataVersion || null;
   _irRecoState.requestId = (env.meta && env.meta.requestId) || null;
@@ -13417,6 +13461,7 @@ function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
 // All destination lines for one page SKU (null when scope not loaded; [] when the SKU has no line).
 function _irRecoLinesForSku(skuData) {
   if (!skuData || !_irRecoState.scope) return null;
+  if (!_irResultMatchesAppliedScope_(_irRecoState)) return null;   // S8-R4D-F1A — null = PENDING, never another scope's lines
   return _irRecoState.linesBySku[skuData.sku] || [];
 }
 // F1-4B-FM5-R4J-LIVE9: the canonical Sales-Driven velocity basis for a SKU, sourced (never recomputed) from the
@@ -13425,6 +13470,10 @@ function _irRecoLinesForSku(skuData) {
 // page-side sales-rate calculator, NO KMCALC call, NO DOM copy). Marketplace-grain (warehouse lines carry none).
 function _irCanonicalSalesBasis_(sku) {
   if (sku == null || !_irRecoState || !_irRecoState.scope || !_irRecoState.linesBySku) return null;
+  // S8-R4D-F1A §1 — a rate loaded for ANOTHER site is not a slow rate, it is a wrong one. Refusing here
+  // falls back to the weekly value, which is computed from THIS render's scope, so the cell is correct
+  // rather than merely blank; the canonical rate replaces it when this scope's own result lands.
+  if (!_irResultMatchesAppliedScope_(_irRecoState)) return null;
   var lines = _irRecoState.linesBySku[String(sku)];
   if (!lines || !lines.length) return null;
   for (var i = 0; i < lines.length; i++) {
@@ -13476,6 +13525,7 @@ function loadRecommendationWorkspace_() {
   var signal = _irRecoAbort ? _irRecoAbort.signal : undefined;
   _irRecoState = _irRecoBlank('LOADING');
   _irRecoState.contextKey = ctxKey; _irRecoState.seq = my; _irRecoState.scope = scopeReq;
+  _irRecoState.appliedScopeKey = _irAppliedScopeKey_();   // S8-R4D-F1A — the scope this request was issued for
   _irRecoRerenderSummaries();
   var _t0 = (typeof Date !== 'undefined' && Date.now) ? Date.now() : null;   // client-latency stamp (diagnostic only)
   // ONE scope-only request (server expands destinations + loops SKUs internally — no per-SKU HTTP, no dest/month/cycle).
@@ -13728,7 +13778,8 @@ function _irUseMaterializedGapRead() {
   if (typeof window !== 'undefined' && window.KM_FLAGS && typeof window.KM_FLAGS.USE_MATERIALIZED_GAP_READ === 'boolean') return window.KM_FLAGS.USE_MATERIALIZED_GAP_READ;
   return true;
 }
-var _irMatState = { status: 'IDLE', scopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null };
+// S8-R4D-F1A — appliedScopeKey null until a real load stamps it; an unstamped state is always refused.
+var _irMatState = { status: 'IDLE', scopeKey: null, appliedScopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null };
 var _irMatSeq = 0;
 // Explicit numeric coercion: '' / null / undefined → null (renders "—", never a fabricated 0); a real number
 // (including 0) is preserved. NO arithmetic — the stored value is displayed verbatim.
@@ -13810,26 +13861,29 @@ function _irMatOutlookBody(skuData) {
 function loadInventoryGap_(force) {
   if (!_irUseMaterializedGapRead()) return null;
   var scopeReq = _irRecoScopeRequest();
-  if (!scopeReq) { _irMatState = { status: 'CONTEXT_NOT_READY', scopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null }; _irRecoRerenderSummaries(); return null; }
+  if (!scopeReq) { _irMatState = { status: 'CONTEXT_NOT_READY', scopeKey: null, appliedScopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null }; _irRecoRerenderSummaries(); return null; }
   var key = JSON.stringify(scopeReq);
-  if (!force && _irMatState.scopeKey === key && _irMatState.loadedOk) { _irRecoRerenderSummaries(); return null; }
+  // S8-R4D-F1A — the APPLIED scope this read is being performed for, captured at issue time so a response
+  // can always be told which rendered scope it belongs to, independently of the sequence guard.
+  var appliedKey = _irAppliedScopeKey_();
+  if (!force && _irMatState.scopeKey === key && _irMatState.appliedScopeKey === appliedKey && _irMatState.loadedOk) { _irRecoRerenderSummaries(); return null; }
   if (!(window.KM && window.KM.DB && typeof window.KM.DB.getInventoryReplenishmentGap === 'function')) {
-    _irMatState = { status: 'READ_ERROR', scopeKey: key, bySku: {}, rows: [], loadedOk: false, error: { code: 'READER_UNAVAILABLE', message: 'materialized gap reader unavailable' } };
+    _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: { code: 'READER_UNAVAILABLE', message: 'materialized gap reader unavailable' } };
     _irRecoRerenderSummaries(); return null;
   }
   var my = ++_irMatSeq;
-  _irMatState = { status: 'LOADING', scopeKey: key, bySku: {}, rows: [], loadedOk: false, error: null };
+  _irMatState = { status: 'LOADING', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: null };
   _irRecoRerenderSummaries();
   return Promise.resolve(window.KM.DB.getInventoryReplenishmentGap(scopeReq)).then(function (res) {
     if (my !== _irMatSeq) return;
-    if (!res || !res.success) { _irMatState = { status: 'READ_ERROR', scopeKey: key, bySku: {}, rows: [], loadedOk: false, error: (res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' } }; _irRecoRerenderSummaries(); return; }
+    if (!res || !res.success) { _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: (res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' } }; _irRecoRerenderSummaries(); return; }
     var rows = (res.data && res.data.rows) || [];
     var bySku = {}; rows.forEach(function (r) { if (r && r.sku != null) bySku[String(r.sku)] = r; });
-    _irMatState = { status: rows.length ? 'READY' : 'EMPTY', scopeKey: key, bySku: bySku, rows: rows, loadedOk: true, error: null };
+    _irMatState = { status: rows.length ? 'READY' : 'EMPTY', scopeKey: key, appliedScopeKey: appliedKey, bySku: bySku, rows: rows, loadedOk: true, error: null };
     _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells();
   }).catch(function (err) {
     if (my !== _irMatSeq) return;
-    _irMatState = { status: 'READ_ERROR', scopeKey: key, bySku: {}, rows: [], loadedOk: false, error: { code: 'READ_FAILED', message: String(err && err.message || err) } };
+    _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: { code: 'READ_FAILED', message: String(err && err.message || err) } };
     _irRecoRerenderSummaries();
   });
 }
@@ -13918,6 +13972,7 @@ function _irRecoUpdateSuggestedCells() {
 // scope read is deduped so this runs once per scope. NO recompute here — renderReplenishment is the sole owner.
 function _irRecoHasSalesDrivenBasis_() {
   var by = _irRecoState && _irRecoState.linesBySku; if (!by) return false;
+  if (!_irResultMatchesAppliedScope_(_irRecoState)) return false;   // S8-R4D-F1A
   for (var sku in by) { if (!by.hasOwnProperty(sku)) continue; var ls = by[sku] || [];
     for (var i = 0; i < ls.length; i++) { var b = ls[i] && ls[i].horizonBasis; if (b && b.demandMode === 'sales_driven' && b.avgSalesPerDay != null) return true; } }
   return false;

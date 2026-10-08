@@ -210,7 +210,11 @@ function makeWorld(opts) {
     _execToOptionsHtml: function () { return ''; },
     _execEsc: function (v) { return String(v == null ? '' : v); },
     _irCanonicalDateOrBlank_: function (v) { return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : ''; },
-    _irMatState: { status: 'READY', bySku: (function () { var m = {}; m[SKU] = { calculation_status: 'READY', d90_suggested_qty: opts.suggested === undefined ? SUGGESTED : opts.suggested }; return m; })() },
+    // S8-R4D-F1A — a materialized state now carries the APPLIED scope it was loaded for, and
+    // _irSuggestedQtyState_ refuses one stamped for a different site. This fixture is a state loaded FOR
+    // the scope under test, so it is stamped to match — the identity it always implicitly had.
+    _irSearch: { applied: { country: 'US', marketplaceId: 'MK-US-AMZ' } },
+    _irMatState: { status: 'READY', appliedScopeKey: 'us|MK-US-AMZ', bySku: (function () { var m = {}; m[SKU] = { calculation_status: 'READY', d90_suggested_qty: opts.suggested === undefined ? SUGGESTED : opts.suggested }; return m; })() },
     _irUseMaterializedGapRead: function () { return true; },
     _irMatNum: function (v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; },
     _irRecommendationWorkspaceEnabled: function () { return true; },
@@ -247,6 +251,8 @@ function makeWorld(opts) {
     extractFn(PAGE, '_execSyncEmptyState_'),
     extractFn(PAGE, '_irLastMileChoices_'), extractFn(PAGE, '_irLastMileCellHtml_'), extractFn(PAGE, '_irPaintLastMileCell_'), extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irReconTooltip_'), extractFn(PAGE, '_irReconCell_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_allocationDraftRowsFor'),
+    extractFn(PAGE, '_irAppliedScopeKey_'),
+    extractFn(PAGE, '_irResultMatchesAppliedScope_'),
     extractFn(PAGE, '_irSuggestedQtyState_'),
     extractFn(PAGE, '_irSuggestedQtyNumber_'),
     'function updateShippingAllocationTotal(sku){var el=document.getElementById("shipping-methods-"+sku);if(!el)return;' +
