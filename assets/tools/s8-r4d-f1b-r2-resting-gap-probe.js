@@ -41,11 +41,39 @@
   out.assets = performance.getEntriesByType('resource')
     .filter(function (e) { return /inventory-replenishment\.(js|css)/.test(e.name); })
     .map(function (e) { return e.name.replace(/^.*\/(?=assets)/, ''); });
+  // A missing element and an empty one are DIFFERENT diagnoses and the first version of this probe conflated
+  // them with `|| null`. Reported separately now.
+  function selState(id) {
+    var el = document.getElementById(id);
+    if (!el) return { present: false, value: null };
+    return { present: true, value: String(el.value == null ? '' : el.value) };
+  }
   out.scope = {
-    country: (document.getElementById('replenCountry') || {}).value || null,
-    marketplace: (document.getElementById('replenMarketplace') || {}).value || null,
-    applied: (window._irRenderScope_ ? window._irRenderScope_() : null)
+    country: selState('replenCountry'),
+    marketplace: selState('replenMarketplace'),
+    applied: (window._irRenderScope_ ? window._irRenderScope_() : '(_irRenderScope_ not exported)')
   };
+
+  // ---- 0b. PAGE STATE — THE PRECONDITION THE FIRST VERSION DID NOT REPORT -------------------------------
+  // The defect under investigation is the stale notice, and the page refuses to render it unless a Search has
+  // SUCCEEDED:
+  //     _irMarkSearchStale_()  ->  if (!_irSearch.applied) { _irRenderSearchGate_(); return; }
+  // So a capture taken with `applied === null` cannot contain the defect, however the selectors are moved.
+  // Without this block a worthless checkpoint is indistinguishable from a valid one, which is exactly how the
+  // first A/B/C attempt produced three identical captures and no finding.
+  out.state = {
+    search: (window._irSearchState_ ? window._irSearchState_() : '(_irSearchState_ not exported)'),
+    bootstrap: (window._irBootstrapDiagnostic_ ? window._irBootstrapDiagnostic_() : '(not exported)'),
+    renderIntegrity: (window._irRenderIntegrity_ ? window._irRenderIntegrity_() : '(not exported)')
+  };
+  var _s = out.state.search;
+  out.VALID_FOR_DEFECT = !!(_s && typeof _s === 'object' && _s.applied &&
+    (_s.status === 'READY' || _s.status === 'EMPTY'));
+  out.VALID_REASON = out.VALID_FOR_DEFECT
+    ? 'a Search has succeeded and a scope is applied — the stale notice CAN render here'
+    : 'NO SEARCH HAS SUCCEEDED (applied=' + JSON.stringify(_s && _s.applied) + ', status=' +
+      JSON.stringify(_s && _s.status) + '). _irMarkSearchStale_ returns before the notice, so this page ' +
+      'CANNOT show the defect. Press Search, confirm the table renders rows, and start again at checkpoint A.';
 
   // ---- 1. the three blocks, as they actually render ------------------------------------------------------
   var panel = document.querySelector('#ops-section .replen-control-panel');
@@ -198,7 +226,14 @@
   var prior = (window.__F1B_R2__ && window.__F1B_R2__.checkpoints) || {};
   out.checkpoints = prior;
   out.capture = function (label) {
-    prior[label] = { gaps: out.gaps, masking: out.masking, banners: out.banners,
+    // REFUSES an invalid checkpoint rather than recording one. A capture that cannot contain the defect is
+    // worse than no capture: it reads as evidence of absence.
+    if (!out.VALID_FOR_DEFECT) {
+      console.error('REFUSED to capture "' + label + '": ' + out.VALID_REASON);
+      return prior;
+    }
+    if (window.scrollY !== 0) { console.error('REFUSED to capture "' + label + '": scrollY is ' + window.scrollY); return prior; }
+    prior[label] = { valid: true, state: out.state, gaps: out.gaps, masking: out.masking, banners: out.banners,
       railScrollbarPx: out.railScrollbarPx, railOverflows: out.railOverflows, railTabCount: out.railTabCount,
       shellH: R.shell.rect && R.shell.rect.height, railH: R.rail.rect && R.rail.rect.height,
       tableTop: R.table.rect && R.table.rect.top, cssVars: out.cssVars, scope: out.scope,
@@ -212,6 +247,8 @@
   console.log('%cS8-R4D-F1B-R2 RESTING GAP PROBE', 'font-weight:bold');
   console.log('scope', out.scope, 'scrollY', out.page.scrollY);
   if (out.REFUSED) console.warn(out.REFUSED);
+  if (out.VALID_FOR_DEFECT) console.log('%cVALID FOR DEFECT — ' + out.VALID_REASON, 'color:#166534');
+  else console.warn('NOT VALID FOR DEFECT — ' + out.VALID_REASON);
   console.table(out.gaps.GEOMETRIC);
   console.table(out.gaps.PERCEIVED);
   console.log('delta', out.gaps.DELTA, 'verdict', out.verdict);

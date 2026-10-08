@@ -330,8 +330,8 @@ On a page where the timeout reproduces, with DevTools **Network** open and **Pre
 2. In the console, immediately after the failure:
    ```js
    window.KM.transport.metrics && window.KM.transport.metrics()
-   window._irReadDispatchLedger_ && window._irReadDispatchLedger_()
-   window._irLastReadMeta_ && window._irLastReadMeta_()
+   window._irReadStageReport_ && window._irReadStageReport_()   // CORRECTED by the R2 closeout
+   window._irSearchState_ && window._irSearchState_()
    ```
    If one of those names does not exist, report that rather than substituting another — the exported surface
    is what it is, and guessing it is how the last three rounds went wrong.
@@ -369,4 +369,218 @@ RECOMMENDED_NEXT_ATOMIC_TASK  S8-R4D-F1B-R3 — NOTICE VISIBILITY AND RESTING GA
                               evidence.
 RUNTIME_MODIFIED              NO
 DEPLOY_REQUIRED               NO
+```
+
+---
+
+# S8-R4D-F1B-R2 — EVIDENCE CLOSEOUT
+
+```
+LAYOUT_STATUS = NOT_REPRODUCED_IN_VALIDATED_CHECKPOINTS      (explicitly NOT "FIXED")
+MASKING_CONCERN = UNVERIFIED  (neither confirmed nor refuted — it was never exercised)
+TRANSPORT_STATUS = OPEN
+RUNTIME_MODIFIED = NO · BROWSER_SERVED_CHANGES = 0 · BACKEND/API/DB = 0 · DEPLOYED = NO
+```
+
+## §C1 — THE PRODUCTION EVIDENCE, AS RECORDED
+
+Operator ran the A/B/C checkpoints on Production (`230525a`). All three returned identical geometry.
+
+```
+geometric gaps        A 24px      B 24px
+perceived gaps        A 32px      B 32.67px
+masked band           0px
+rail height           40.26px
+gap occupants         none
+notice host           display:none
+integrity notice      absent
+scope                 country: null   marketplace: null
+```
+
+Operator clarification, recorded verbatim in substance: *the second test began with the page already in its
+expanded visual state; the original A→B→C visual change was not clearly reproduced.*
+
+## §C2 — CLASSIFICATION, AND WHY IT IS NOT "FIXED"
+
+**`NOT_REPRODUCED_IN_VALIDATED_CHECKPOINTS`.**
+
+Nothing in this round changed any browser-served byte. Production is the same `230525a` that produced the
+original screenshots. A defect cannot have been repaired by a round that shipped nothing, so three clean
+captures are **evidence about the captures**, not about the defect. Recording them as FIXED would convert an
+unobserved state into a closed finding, which is the error this whole sequence has been correcting.
+
+## §C3 — WHY THE SCOPE WAS NULL, AND WHY ALL THREE CAPTURES WERE IDENTICAL
+
+These are the same fact. The page refuses to render the stale notice unless a Search has succeeded:
+
+```
+inventory-replenishment.js
+function _irMarkSearchStale_() {
+    if (!_irSearch.applied) { _irRenderSearchGate_(); return; }   <- returns BEFORE the notice
+    _irSearch.stale = _irFiltersDiffer_(_irPendingFilters_(), _irSearch.applied);
+    _irRenderStaleNotice_();
+}
+```
+
+`scope.country = null` means the Country `<select>` held an empty value (the probe's `|| null` could not tell
+an absent element from an empty one — see §C4). The other readings prove the markup WAS mounted: the rail
+measured 40.26px and all three blocks resolved. So the selectors were present and **blank**, which means
+`_irSearch.applied` was null, which means:
+
+* changing a selector marked nothing;
+* `_irRenderStaleNotice_` was never called;
+* `#replenSearchState` stayed empty and `display:none`;
+* the masked band was 0 because **there was nothing to mask**;
+* and A, B and C were necessarily identical, because none of them was a different state.
+
+**The captures are internally consistent and they describe a page in its pre-search state.** The defect lives
+downstream of a successful Search, so this sequence could not have contained it.
+
+### Why `applied` was null — candidates, and the measurement that separates them
+
+1. **The first Search timed out.** A failed Search never applies: `_irApplySearch_` is reached only on
+   success, so `status` goes ERROR and `applied` stays null. This is directly consistent with the reported
+   US/Amazon REQUEST_TIMEOUT, and it is the leading candidate.
+2. **The page was reloaded and the probe run before any Search.** After F1B this is by design — a reload
+   restores the SELECTORS and commits nothing. But the probe saw the selectors **blank**, not restored, so
+   this requires either no remembered scope or a failed/invalid restore.
+3. **The registry rejected the remembered scope**, which calls `_irForgetScope_()` and leaves the selectors
+   blank. Note the read-failure branch does NOT leave them blank — it calls `_irSetSelectors_(remembered)` —
+   so a blank pair argues against a failed preload read and for 1, 2 or 3.
+
+`window._irBootstrapDiagnostic_()` answers this outright: `mode`, `scope_valid`, `restore_reason`,
+`preloaded`, `committed`. It was not captured, because the probe did not ask for it.
+
+## §C4 — INSTRUMENTATION AUDIT: THE PROBE IS WHY THE ATTEMPT WAS WASTED
+
+This is a defect in my instrument, not in the operator's procedure.
+
+| # | defect | consequence |
+|---|---|---|
+| 1 | **No page-state capture.** The probe reported geometry and never `_irSearch` (status / applied / stale). | An invalid checkpoint A was **indistinguishable** from a valid one. The operator had no way to know the sequence was void before spending all three captures. This is the one that cost the round. |
+| 2 | **No precondition guard.** It refused on `scrollY !== 0` but not on "no Search has succeeded" — the actual precondition for the defect. | It accepted and recorded three captures that could not contain the defect. |
+| 3 | **`\|\| null` conflated absent with empty.** `(document.getElementById('replenCountry') \|\| {}).value \|\| null` | `country: null` could mean the element was missing OR the value was blank. Those are different diagnoses. |
+| 4 | **The Phase-1B record named two console helpers that do not exist** — `_irReadDispatchLedger_` and `_irLastReadMeta_`. | Corrected in §B5 above. The real exports are `window._irReadStageReport_()` (which carries `server_execution_ms`, `server_tables_read`, `read_dispatches`, `request_count`, `retry_count`, `coalesced_count`) and `window._irSearchState_()`. |
+
+Capture TIMING and selector state were therefore the proximate blockers, and the probe is what failed to
+surface them. All four are repaired in the probe in this commit. It remains zero-write: no DOM write, no
+listener, no storage, no network, no page-function call that changes state.
+
+## §C5 — THE MASKING CONCERN IS PRESERVED AS UNVERIFIED
+
+Carried forward **unverified**, neither promoted nor dropped:
+
+* **PROVEN FROM SOURCE** — `.table-header-bar` carries `box-shadow: …, 0 -100vh 0 100vh white` at z-index 120
+  (css:490-493); the stylesheet states the masking rule itself at css:1701 and gave the category rail
+  z-index 125 to escape it; and **no stylesheet rule exists anywhere in the repository** for
+  `#replenSearchState`, `#replen-render-integrity` or any of the four banner classes, so all of them are
+  `position: static; z-index: auto`.
+* **NOT PROVEN IN PRODUCTION** — no capture has yet been taken in a state where any banner was rendered. The
+  measured `masked band = 0` is consistent with the hypothesis and does not test it, because the host was
+  empty.
+
+So the statement *"the unsaved-write warning, the duplicate-rows banner and the database-unverified
+disclosure may never have been visible"* stands as a **source-level concern requiring production
+confirmation**, not as a confirmed production defect. It is not a basis for changing CSS today.
+
+## §C6 — TRANSPORT EVIDENCE, RECORDED SEPARATELY
+
+```
+TRANSPORT_STATUS = OPEN
+first Search REQUEST_TIMEOUT        recorded, unattributed
+redirect-target HTTP 404            recorded; NAMED and already handled (REDIRECT_TARGET_NOT_FOUND,
+                                    auto-retried once, reads only, inside ONE budget)
+HTTP_404_CAUSAL_LINK                NOT_PROVEN
+relation to E5                      SEPARATE DEFECT — 13 tables / 6 197 ms server time cannot exhaust a
+                                    45–60 s bound
+```
+
+**New in this closeout, and it changes the ordering:** candidate 1 in §C3 means the transport failure is not
+merely a parallel issue — **it is a plausible cause of the layout investigation's inability to reach a valid
+checkpoint A.** A Search that times out leaves `applied` null, and a page with `applied` null cannot show the
+stale notice. Until a Search reliably succeeds on the site under test, the layout capture cannot be completed.
+
+Evidence still required is unchanged from §B5, with the corrected console names.
+
+## §C7 — BOUNDED FOLLOW-UP DIAGNOSTIC (the only change in this commit)
+
+`assets/tools/s8-r4d-f1b-r2-resting-gap-probe.js` — **not browser-served**; nothing in `index.html` or
+`app.js` references `assets/tools`, so this file reaches a browser only when an operator pastes it. No cache
+token applies and none was rotated.
+
+Added:
+
+* `state` — `_irSearchState_()`, `_irBootstrapDiagnostic_()`, `_irRenderIntegrity_()`;
+* `VALID_FOR_DEFECT` + `VALID_REASON` — a plain-language verdict printed on every run;
+* `capture()` now **REFUSES** an invalid checkpoint and says why, instead of recording one;
+* selector state reports `present` and `value` separately.
+
+### Re-run procedure
+
+```
+1. Load Site Inventory. Select Country + Marketplace. Press Search.
+2. CONFIRM THE TABLE RENDERED ROWS. Paste the probe.
+   It must print  VALID FOR DEFECT.  If it does not, the sequence is void — stop and send that output.
+3. __F1B_R2__.capture("A")
+4. Change Country. DO NOT press Search. Paste the probe again. __F1B_R2__.capture("B")
+5. Press Search, let it finish. Paste the probe again. __F1B_R2__.capture("C")
+6. copy(JSON.stringify(__F1B_R2__.checkpoints))
+```
+
+Also note at step 4 whether the gap visibly grows, and whether that band looks **white** or **amber**. That
+single observation is worth more than the geometry, because it separates "a notice is masked" from "a gap
+grew for another reason".
+
+## §C8 — EXIT CRITERIA
+
+```
+no browser-served changes          YES — git diff vs origin/main over assets/js, assets/css, assets/html,
+                                   index.html is empty
+no backend / API / DB changes      YES — 0 files
+no deployment                      YES — origin/main remains 230525a
+layout evidence classified         NOT_REPRODUCED_IN_VALIDATED_CHECKPOINTS
+transport issue                    OPEN
+CSS / layout / sticky / z-index /  UNCHANGED — no rule added, removed or edited
+banner positioning / runtime
+S8-GLOBAL-NAV-R1                   MAY PROCEED INDEPENDENTLY — see below
+```
+
+### May S8-GLOBAL-NAV-R1 proceed independently? YES, with three boundaries
+
+It shares no file with the open work and does not depend on it. Conditions, so it stays independent:
+
+1. **It must not modify** `assets/js/pages/inventory-replenishment.js`, `assets/css/pages/inventory-replenishment.css`,
+   `assets/js/core/sticky-header.js`, `assets/css/core/km-sticky-header.css`, or any transport/API file. If it
+   needs to, it stops and the two rounds are sequenced instead.
+2. **It will rotate the application cache token.** That is normal and append-only, but it means F1B-R3 cannot
+   reuse a token Global Nav has published — the two must not be developed on the same token.
+3. `showSection` debt is adjacent to global navigation. If Global Nav repairs it, say so, because this
+   sequence has been carrying it as open.
+
+---
+
+# NEXT TASK — EXACT RECOMMENDATION
+
+```
+S8-R4D-T1 — SITE INVENTORY FIRST-SEARCH TRANSPORT STABILITY (read-only triage)   <- DO THIS FIRST
+```
+
+**Before F1B-R3, and before another layout capture.** Not because the transport matters more, but because of
+§C3 candidate 1: a Search that times out leaves `applied` null, and a page with `applied` null cannot produce
+the layout defect. The transport failure may be what prevented a valid checkpoint A. Collecting its evidence
+(§B5, corrected names) is also the cheapest way to get the page into a state where the layout capture is even
+possible.
+
+```
+S8-R4D-F1B-R3 — NOTICE VISIBILITY AND RESTING GAP     <- BLOCKED
+```
+
+Blocked on a **valid** A/B/C capture, i.e. one the probe marks `VALID FOR DEFECT`. Do not implement on the
+source-level masking proof alone: that proof says a banner WOULD be masked, not that the operator's gap was
+caused by one. Implementing now would be the same mistake F1B made — repairing the geometry a document
+describes instead of the pixels a browser produces.
+
+```
+S8-GLOBAL-NAV-R1                                       <- MAY PROCEED NOW, under §C8's three boundaries
+S8-R4D-F2 — ON-THE-WAY FIRST-LAYER AGGREGATE           <- still queued, unchanged
 ```
