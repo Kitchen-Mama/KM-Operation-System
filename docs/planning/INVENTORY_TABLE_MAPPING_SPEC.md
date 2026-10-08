@@ -418,7 +418,7 @@ The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Process
 | **Inventory Position** *(screen label currently "Current Stock" — see §13.0)* | `Available + FC Transfer + FC Processing` (`amazon_inventory_snapshot`) — display total only | No | — | Current physical label = Legacy; Target label = Inventory Position |
 | **Sellable Current Stock** *(Engine input — owner Calc Rules §8/§28; not a screen column)* | destination sellable/available only; excludes FC Transfer / FC Processing / Draft / unqualified On-the-way | Yes | No | Target canonical (Engine semantics) |
 | **On The Way** | Shipping Shipment Total — **pending implementation** (§9); raw label only | No (unless qualified) | **Yes** | Current label; qualification direction = B-4 (contract resolved; Runtime/read-model pending) |
-| **3rd Party Stock** | total **available stock** across eligible Overseas Warehouses (`overseas_inventory_snapshot.available_stock`, eligible warehouses only — see §16) | Yes (sellable overseas) | No | Current |
+| **3rd Party Stock** | **PRIMARY = `Planning Available`** — this marketplace's allocated share of the shared pool (`sitePlanningAllocation.sitePlanningAvailable`, §20/§24.4/§24.7). **SECONDARY = `Shared 3PL Pool`** — total **available stock** across eligible Overseas Warehouses (`overseas_inventory_snapshot.available_stock`, eligible warehouses only — see §16), labelled as shared and never as site-owned. | Yes (sellable overseas) | No | **Option C (S8, decision APPROVED) — supersedes the pool-only mapping** |
 | **Avg Sales / Day** | **Primary:** `normalized_avg_sales_per_day` (latest 30 eligible normal days within a 90-completed-day source window, this SKU's event/promotion days excluded; divide by actual normal-day count); **Fallback:** `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7`. **Rounded to 1 decimal.** Runtime result (not persisted); adopted source + warning frozen only at Submit Plan. Owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2 / §22.6. | Yes (demand rate) | — | Current |
 | **60 Days FC** | `Forecast Month+1 + Forecast Month+2` (**Target Rule already applied**, §7) | Yes (demand) | — | Current |
 | **Upcoming Event** | Total Event FC (`fc_special_events`, §8) | Yes (demand) | — | Current |
@@ -500,6 +500,19 @@ This chapter is a **UI / data-mapping summary and consumer**. The authoritative 
 **Rule 6 — Allocation Priority.** After all sites reach the 18-day survival stock, remaining inventory is allocated by **`marketplaces.allocation_priority`** — **higher number = higher priority**. Editable by PM.
 
 **Rule 7 — Future Shared Allocation.** `allocation_priority` becomes the **system-wide shared allocation rule**; future **Factory Allocation**, **Shipping Allocation**, and **Carrier Capacity** may reuse this same priority.
+
+**Rule 8 — DISPLAY OF THE SHARED POOL (Option C, S8 decision APPROVED; display only — no formula changes).**
+A marketplace-scoped column shows this site's **allocated share** as the primary value and the **shared pool**
+as clearly-labelled secondary information. One pool may never be rendered N times as if each site owned it —
+the same rule that already governs the Factory CN / TW columns (F1-7N-FB-4E-R4B-R1 §1).
+
+> **Conflict resolved.** §18's column map previously defined 3rd Party Stock as the pool alone, which
+> contradicted `SUPPLY_PLANNING_CALCULATION_RULES.md` §24.9 — the exclusive owner named by this chapter's own
+> opening sentence. §18 is corrected; §24.9 is unchanged and remains authoritative. The runtime's "Round 4
+> Decision A" (physical pool as the primary value) is **superseded** by this decision.
+>
+> This rule changes **what is displayed**, never what is computed. §16 Rules 1–7, §20 and §24.4/§24.7 are
+> untouched, and the allocation they define is already computed per row today.
 
 ---
 

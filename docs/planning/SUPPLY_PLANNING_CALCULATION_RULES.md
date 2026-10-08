@@ -1037,6 +1037,13 @@ Outputs: `coverage_rate = shared_physical_available_qty ÷ SUM(minimum_18d_need_
 - Priority is **not** physical ownership, guaranteed stock, a separate balance, or permission to exceed physical available.
 
 ### 24.9 Inventory Replenishment display contract (CANONICAL v4.1)
+
+> **S8 reconciliation (decision APPROVED, Option C) — this section is UNCHANGED and remains authoritative.**
+> `INVENTORY_TABLE_MAPPING_SPEC.md` §18 had defined the 3rd Party Stock column as the shared pool alone,
+> contradicting both branches of this contract; §18 has been corrected to Option C (primary = this site's
+> allocated share, secondary = the clearly-labelled shared pool) and §16 Rule 8 records the display rule.
+> The runtime's "Round 4 Decision A" is superseded. **No formula moved**: §20, §24.4 and §24.7 are untouched,
+> and the allocation this section names is already computed per row by the shipped engine.
 - **platform_fulfilled/FBA:** show **four separate columns/buckets, distinct lineage** — **FBA Current Stock** · **3PL Replenishment Reserve** (shared-pool allocation for this scope, when warehouse-eligible) · **Qualified On-the-Way** · **Calculated Gap**. FBA Current Stock also shows source mode (Confirmed Snapshot | Estimated) · snapshot/import date · stale/estimate warning. **The 3PL Replenishment Reserve is shown but MUST NOT be added into FBA Current Stock** (separate buckets). *(Supersedes the earlier "Do NOT show Shared Warehouse Allocation for pure FBA" — the reserve IS shown; it is only barred from being merged into FBA Current Stock.)*
 - **self_fulfilled/FBM:** primary value **"Planning Available"**; expanded detail: Physical Shared Pool · Allocated to Current Site · Allocated to Other Sites · Unallocated Pool · Reserved · Damaged · Qualified On-the-Way · Allocation Mode · Estimated Days of Supply · Shortage to 18 Days · Allocation Priority · Last Calculated At. **Never** label site Planning Available as confirmed site-owned physical stock.
 
