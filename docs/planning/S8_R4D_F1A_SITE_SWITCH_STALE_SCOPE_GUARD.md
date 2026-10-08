@@ -241,6 +241,23 @@ EXPOSURE_FIRST_LAYER_REGRESSION       = 0 — no exposure table re-imported, no 
 WRITE_ACTIONS_SENT                    = 0
 ```
 
+> **CORRECTED BY S8-R4D-F1A-R1.** This section first reported *215/216, the one failure pre-existing*. That
+> number was measured on an UNCOMMITTED tree, and it was incomplete: `first-layer-redundant-header-read` E8
+> reads `git diff f6b4164 HEAD`, which compares COMMITS, so the change was invisible to it until it landed.
+> Measured properly, against the pre-F1A commit and the release commit:
+>
+> ```
+> BASELINE_FAILURE_SET (8826f89)  gap-job-done-notice-f1-small-r1 — 3 Order Planning assertions
+> POST_FAILURE_SET     (6e0db0b)  the same 3, and nothing else
+> F1A_NEW_FAILURE_COUNT           1 at first measure -> E8, a one-ended interval, repaired -> 0
+> ```
+>
+> A second apparent baseline failure (`b1-advanced-sheets-benchmark-harness`, 3 VACUOUS mutants) was an
+> artifact of the FRESH baseline worktree: git checked that tool out CRLF while the committed blob is LF,
+> so three mutation anchors found nothing. Converting the file to LF reproduced the release tree's result
+> exactly. It is a property of fresh checkouts, not of the commit — the hazard already recorded as
+> "the working tree is not the commit".
+
 `site-switch-stale-scope-guard-s8-r4d-f1a.test.js` — **35 assertions, 4 mutants, 0 survived.** Every §9 fixture
 is covered: 1 (US->CA), 2 (late response), 3 (CA->EU->JP, only the final scope commits), 4 and 5 (the Search
 sequence guard and the fact that a failed Search never assigns `applied`), 6 and 7 (lazy Suggested Qty
