@@ -249,9 +249,20 @@ ok(/sirWsSiteScopeClosure_/.test(SRC60_POST), 'E6  and the lineage closure is st
 eq(/var SIR_WS_RECENT_WINDOW_ = \{[\s\S]*?keep: 14/.test(SRC60_POST), true,
   'E7  recentWindow still keeps 14 dates — the business projection is untouched');
 // The frontend must not have moved at all this round.
-var fe = cp.execFileSync('git', ['diff', '--name-only', PRE_SHA, 'HEAD', '--',
+//
+// S8-R4D-F1A-R1 — PINNED AT BOTH ENDS, the same repair S8-R4D-E2 already made to the sibling claim in
+// b1-advanced-sheets-benchmark-harness-s8-r4d-d1 (see its D1_END note). Read as PRE_SHA..HEAD this said
+// "no browser-served byte has moved since R42" — a claim about EVERY round that would ever follow, not
+// about the round that made it. S8-R4D-F1A legitimately moves inventory-replenishment.js (the site-switch
+// scope guard) plus the cache-token rotation that makes a returning browser fetch it, and this assertion
+// then reported a defect in a tree that has none.
+//
+// C_END is the last tree the claim is ABOUT. The interval is closed, the sentence still means what it meant,
+// and it still fails if anyone retroactively moves a frontend byte into the C round.
+var C_END = '1876f4a';   // S8-R4D-C's own release commit
+var fe = cp.execFileSync('git', ['diff', '--name-only', PRE_SHA, C_END, '--',
   'assets/js', 'assets/css', 'index.html'], { cwd: ROOT, encoding: 'utf8' }).trim();
-eq(fe, '', 'E8  FRONTEND_RUNTIME_CHANGED = NO — no browser-served byte moved since ' + PRE_SHA);
+eq(fe, '', 'E8  FRONTEND_RUNTIME_CHANGED = NO — no browser-served byte moved between ' + PRE_SHA + ' and ' + C_END);
 
 console.log('\n================ F — ZERO WRITE ================\n');
 
