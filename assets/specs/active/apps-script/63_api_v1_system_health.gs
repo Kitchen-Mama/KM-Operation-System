@@ -299,7 +299,13 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // failed and the Production evidence that passes the same release id - and telling those two apart is the
 // entire reason this round exists. No action moved, no request field moved, no response field moved, so the
 // action contract stays where it is; two diagnostic counters joined timings that were already reported.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
+// S8-R5-B — R46. 42_ stops gating the canonical §22 Avg Sales resolver on the Planning Model. R45 IS NOT
+// JOINED, and the reason is the mirror of R44's: R45 is cut but NEVER SYNCED, so its 60_ bytes are still
+// pending. A pending release cannot absorb a later change either — 60_ did not change in R46, so marching
+// its module stamp here would claim a round it had no part in. The two travel to Production as ONE paste
+// set while keeping separate identities. No action, request field or response field moved; horizonBasis
+// gains four additive diagnostic fields that were already present on the resolver's own return.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -345,7 +351,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
 // S8-R4D-E4-B - and again: the release above, its own expected stamp and 60_'s. 90_'s hash is unchanged,
 // and so is the action contract - a handler that reaches the same Dates by cheaper arithmetic is not a new
 // vocabulary.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -616,7 +622,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write

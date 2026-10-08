@@ -4681,3 +4681,110 @@ method as E3D, reported against the frozen R44 baseline above. The criterion is 
 materially reduced with semantic diff counts at zero â€” **no latency target is asserted**, because none was
 measured. Carried forward separately and NOT repaired here: `DIAGNOSTIC_REQUEST_BODY_LOSS`
 (S8-R4D-E5) and the Production console error `showSection is not defined`.
+
+---
+
+## S8-R5-B  RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46`  AVG SALES STOPS BEING GATED ON THE PLANNING MODEL
+
+```
+BASE    cc79baa   S8-R5-B preflight; R45 is CUT but NEVER SYNCED
+BRANCH  feature/product-strategy-board-p0
+DATE    2026-10-08
+SCOPE   AVG SALES DISPLAY ONLY. The canonical §22 resolver was CALLED only under sales_driven, so a
+        Forecast-Driven SKU had no historical rate to publish. It now runs for every SKU and its result
+        serves DISPLAY. No action added or removed, no route moved, no request field, no business rule,
+        no schema, no stored row, zero DB writes. PLANNING DEMAND IS BYTE-IDENTICAL IN BOTH MODES.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46
+PURPOSE                      Forecast-Driven Avg Sales shows `--` in Production; the rate exists and is
+                             never requested.
+SUPERSEDES                   nothing. R45 is CUT but NEVER SYNCED. A pending release cannot be folded into
+                             a later one either: 60_'s R45 bytes are still in the operator's paste queue, so
+                             folding would re-label R45's work as R46 and leave an acceptance unable to say
+                             which tree it measured. R45 and R46 travel to Production as ONE paste set and
+                             keep SEPARATE identities.
+OWNERS                       63_api_v1_system_health.gs                      (SYS_BUILD_VERSION_)
+STAMPLESS OWNERS             42_api_v1_recommendation_workspace.gs   declares no build symbol, so it is
+                             COPIED and stamped by nobody. Putting it in the stamped owner set would
+                             satisfy the copy ledger and break the stamp ledger.
+CARRIED                      60_api_v1_inventory_replenishment_workspace.gs stays at R45  it did not change
+                             in R46. 01_router.gs stays at R41. SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ stays
+                             18, required-action list 14, transport contract 1.
+BUNDLE                       90_ NOT rebuilt. No assets/js/core module changed; KMCALC, the frozen owner
+                             that computes the rate, is untouched.
+EDITOR-APPLIED               none. appsscript.json is unchanged  no advanced service, no OAuth scope.
+
+STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries R46,
+                             no Web App version exists for it, and Production is NOT R46.
+```
+
+### What changed
+
+`42_api_v1_recommendation_workspace.gs`  the gate was on the line that CALLS the resolver, not on the
+field that publishes it:
+
+```
+BEFORE  if (planModel === 'sales_driven') { var sr = recoWsResolveSalesRate_(...); ... }
+        mLine.horizonBasis = { ..., avgSalesPerDay: (planModel === 'sales_driven' ? salesRate : null), ... }
+
+AFTER   var sr = recoWsResolveSalesRate_(...);                      // every SKU, both modes
+        if (planModel === 'sales_driven') { ...salesRate/salesReason unchanged... }
+        mLine.horizonBasis = { ..., avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
+                               source, warning, normalDayCount, excludedDates, ... }
+```
+
+`salesRate` (the planning basis) and `salesReason` (the fail-closed horizon reason) are still assigned ONLY
+under `sales_driven`, so `recoWsBuildHorizons_` receives byte-identical inputs and a Forecast-Driven horizon
+failure can never be mislabelled `SALES_BASIS_UNAVAILABLE`. The four diagnostic fields were already on the
+resolver's own return  nothing was invented, and no second normalization engine exists.
+
+### What this release does NOT fix on its own
+
+The frontend repaint is gated on the same Planning Model (`_irRecoHasSalesDrivenBasis_`), so R46 alone
+delivers a correct rate that the page never paints. The frontend half is a SEPARATE release surface and is
+prepared as its own commit. **Publish the frontend only after R46 is synced**  in that order nothing is
+ever worse than today; in the other order the page asks for a field the deployed backend still withholds.
+
+### Apps Script sync set
+
+```
+PASTE (in this order, into the EXISTING Production Apps Script project):
+  42_api_v1_recommendation_workspace.gs
+  63_api_v1_system_health.gs
+
+PLUS R45's still-pending file, which has never been synced:
+  60_api_v1_inventory_replenishment_workspace.gs
+
+EDITOR-APPLIED (verify, do not paste):
+  appsscript.json   UNCHANGED
+
+THEN create a NEW VERSION on the EXISTING Production Web App. Do not create a second Web App.
+VERIFY system.health: deployment_release = R46, module_sync.verdict = UNIFORM,
+       and 60_ reporting SIR_BUILD_VERSION_ = R45 is CORRECT, not stale  it is carried.
+```
+
+### Acceptance that must still happen
+
+```
+RELEASE_OWNER_SET                63_api_v1_system_health.gs
+STAMPLESS_OWNER_SET              42_api_v1_recommendation_workspace.gs
+ACTION_CONTRACT_VERSION          18  unchanged. No action added or removed.
+REQUIRED_ACTION_LIST_VERSION     14  unchanged.
+APPS_SCRIPT_SYNC_REQUIRED        YES  42_, 63_, and R45's pending 60_
+APPS_SCRIPT_NEW_VERSION_REQUIRED YES
+APPSSCRIPT_MANIFEST_CHANGE       NO
+BUNDLE_REBUILD_REQUIRED          NO
+DB_SCHEMA_CHANGE                 NONE
+DB_WRITES                        0
+DB_DELETES                       0
+FRONTEND_DEPLOY_REQUIRED         YES  but as a SEPARATE release, published AFTER this one is synced
+CACHE_TOKEN_ROTATION_REQUIRED    NO for this release; YES for the frontend half
+APPS_SCRIPT_DEPLOYMENT_PERFORMED NO
+FRONTEND_PUBLICATION_PERFORMED   NO
+GIT_PUSH_REQUIRED                YES  USER-owned, after review
+```
+
+**STATUS: PREPARED, NOT SYNCED, NOT DEPLOYED.** Acceptance is one Production read of a scope holding at
+least one Forecast-Driven SKU with sales history: `horizonBasis.avgSalesPerDay` must be a number and
+`horizonBasis.source` must name the §22 rung, while `horizons[].demandQty` for both modes is unchanged
+against the pre-R46 values.

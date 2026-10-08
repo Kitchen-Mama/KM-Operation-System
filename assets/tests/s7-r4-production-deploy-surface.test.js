@@ -343,10 +343,45 @@ eq((showAt(R42_POST_SHA, GS + '63_api_v1_system_health.gs').match(/var SYS_DEPLO
   R42_ID, 'H2c2 ...and the manifest, which is where a release is cut');
 // S8-R4D-C - THE HEAD HALF. R43 removes the redundant header read from 60_'s io; 63_ carries its row.
 // The SAME two files, and 01_ is again deliberately not among them - R43 moves no action and no route.
-eq(runtimeGsBetween(R42_POST_SHA, 'HEAD'),
-  ['assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs',
-   'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
-  'H2e SINCE R42 ended, EXACTLY the two runtime files R43 owns have changed');
+// S8-R5-B — THE FLOOR IS NAMED, THE DELTA IS NAMED, AND THE CHECK IS STILL AN EQUALITY.
+//
+// R46 adds a third authorized file, so the old two-element literal can no longer be the whole truth. The
+// wrong repair is to widen this into membership ("60_ and 63_ are among the changed files"), because that
+// accepts any fourth file that rides along — exactly the failure this assertion exists to catch, and the
+// one that caught the allocation_priority default in S8-R2.
+//
+// So the set is still compared by EQUALITY; what changed is that it is now assembled from two NAMED parts:
+//   AUTHORIZED_FLOOR — the R43/R44/R45 owner set. Immutable. Asserted present in its own right below, so
+//                      dropping a floor member fails even if the totals happen to match.
+//   R46_DELTA        — the ONLY approved addition this round. One file, named.
+// An unauthorized Apps Script file appearing in neither list still fails, and H2e_UNAUTHORIZED below proves
+// that by construction rather than by assertion.
+var AUTHORIZED_FLOOR = [
+  'assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs',
+  'assets/specs/active/apps-script/63_api_v1_system_health.gs'];
+var R46_DELTA = ['assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs'];
+var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).sort();
+var CHANGED_SINCE_R42 = runtimeGsBetween(R42_POST_SHA, 'HEAD');
+eq(CHANGED_SINCE_R42, AUTHORIZED_SINCE_R42,
+  'H2e SINCE R42 ended, EXACTLY the authorized runtime files have changed — the R43/R44/R45 floor plus the '
+  + 'one file R46 owns, and nothing else');
+// The floor is a floor: every previously authorized surface must STILL be in the changed set. Without this,
+// a future round could swap a floor member out for a new file and keep the count — and the equality above,
+// which only compares the assembled whole, would not notice which half moved.
+AUTHORIZED_FLOOR.forEach(function (f) {
+  ok(CHANGED_SINCE_R42.indexOf(f) !== -1,
+    'H2e-floor ' + f.split('/').pop() + ' is still in the release surface — a previously authorized file '
+    + 'cannot silently leave the set it was authorized into');
+});
+ok(R46_DELTA.every(function (f) { return CHANGED_SINCE_R42.indexOf(f) !== -1; }),
+  'H2e-delta and the one file R46 owns is present — the delta is declared, not discovered');
+// §5.8 — PROVE THE GATE STILL REJECTS AN UNAUTHORIZED FILE. This is the mutant the floor conversion has to
+// survive: if widening H2e had made it permissive, this would pass a set it must refuse.
+var H2E_UNAUTHORIZED = CHANGED_SINCE_R42.concat(['assets/specs/active/apps-script/01_router.gs']).sort();
+ok(JSON.stringify(H2E_UNAUTHORIZED) !== JSON.stringify(AUTHORIZED_SINCE_R42),
+  'H2e-unauth a FOURTH Apps Script file riding along is still rejected — the floor is bounded, not open');
+ok(JSON.stringify(AUTHORIZED_FLOOR.sort()) !== JSON.stringify(AUTHORIZED_SINCE_R42),
+  'H2e-unauth2 ...and the R46 delta is a real addition, so this round cannot be mistaken for a no-op cut');
 // S8-R4D-E4-B - FLOORS AT HEAD, EQUALITIES AT A SHA. The R42 pair above read a FROZEN tree (showAt a sha),
 // so equality there is permanent and correct. These two read HEAD, where equality says 'and nothing has
 // shipped since' - a claim this round makes false while describing a correct tree. R45 owns the same two

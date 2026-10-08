@@ -134,7 +134,19 @@ var STAMPLESS_OWNERS = {
     + 'Without this file copied, those surfaces receive no carriers key at all — which the browser reads as '
     + 'UNREAD and renders as the bare id, i.e. exactly the behaviour this release set out to fix, failing '
     + 'quietly rather than loudly. It authors no business logic and no action was added, so the router and '
-    + 'the action-contract version are untouched.'
+    + 'the action-contract version are untouched.',
+  // S8-R5-B — 42_ JOINS, as the THIRD stampless owner and for the same reason as the first two: it declares
+  // no build symbol, so it is copied and stamped by nobody. Putting it in RELEASE_OWNERS would satisfy I1
+  // and break C3, which is the trade this list was created to avoid.
+  '42_api_v1_recommendation_workspace.gs':
+    'THE RECOMMENDATION WORKSPACE. R46 stops gating the canonical §22 Avg Sales resolver on the Planning '
+    + 'Model. The resolver was CALLED only under sales_driven, so a Forecast-Driven SKU had no historical '
+    + 'rate to publish and the page showed "--" forever. It now runs for every SKU and its result serves '
+    + 'DISPLAY; the planning basis (salesRate) and the fail-closed horizon reason (salesReason) stay '
+    + 'sales_driven-only, so recoWsBuildHorizons_ receives byte-identical inputs and no Forecast-Driven '
+    + 'horizon can be mislabelled SALES_BASIS_UNAVAILABLE. horizonBasis gains four additive diagnostic '
+    + 'fields that already existed on the resolver\'s own return — no normalization engine was added, no '
+    + 'formula moved, and no action, request field or response field changed.'
 };
 
 var GENERATED_OWNERS = {
@@ -258,30 +270,25 @@ var RELEASE_OWNERS = {
   //
   // 90_ does NOT move: no core module changed, so the bundle is not rebuilt and its content hash is the
   // bytes it was at R36.
-  '60_api_v1_inventory_replenishment_workspace.gs':
-    'THE INVENTORY WORKSPACE READ. R43 makes it read each table ONCE. io.readTable asked prodRequireSheet_ '
-    + 'to validate the header - one range read - then for the four tables carrying requiredCols asked '
-    + 'prodRequireColumns_ to re-read it, and only then read the whole sheet, whose row 0 IS that header. '
-    + 'Thirteen tables cost THIRTY range reads; they now cost thirteen. The validators are unchanged and '
-    + 'receive the same header array - classifySchemaMismatch never touched a Sheet in the first place - '
-    + 'so what is removed is the fetching and not the checking. 29_ is NOT touched: prodRequireSheet_ has '
-    + 'callers in more than twenty files and this handler owns its own io, so the fix cannot be observed '
-    + 'anywhere else. NO REQUEST FIELD AND NO RESPONSE FIELD MOVED, which is why a pre-R43 copy is SLOW '
-    + 'rather than WRONG, and why the action-contract version stays at 18. '
-    + 'WHAT R42 CHANGED HERE IS STILL TRUE AND IS KEPT RATHER THAN OVERWRITTEN: '
-    + 'R42 gives it a SITE SCOPE. R4B-2B deferred six of the nineteen tables to '
-    + 'a lazy per-Site cache; R4B-2C then proved the request filling that cache carried no scope at all, so '
-    + 'every Site was served every Site\'s exposure rows and told to keep them under its own key - the KEY '
-    + 'was per-Site and the DATA never was. An exposure-only request may now carry '
-    + 'siteScope{company,country,marketplace} and is answered with a LINEAGE REACHABILITY CLOSURE, not six '
-    + 'row filters: filtering shipments on their own marketplace would delete exactly the merged MULTI '
-    + 'headers the lineage machinery exists to attribute, and shipping_plan_lines.marketplace is the line\'s '
-    + 'REAL marketplace where the shipped client deliberately uses the PARENT PLAN\'s. An INCOMPLETE scope '
-    + 'is REFUSED rather than widened, in both the orchestrator and the pure builder. NO ACTION WAS ADDED OR '
-    + 'REMOVED, so the action-contract version stays at 18; the identity is the TRIPLE and not marketplace_id, '
-    + 'because none of the six tables stores the id and resolving it would cost a SEVENTH sheet read.',
+  // S8-R5-B  60_ LEAVES OWNERSHIP AT R45 and is carried below, which is the twenty-first swap. R46 does
+  // not touch it: the Avg Sales gate is in 42_. Marching its stamp to R46 would claim a round the file had
+  // no part in, and would erase the one fact its R45 row exists to carry  that R45 repaired what the R44
+  // acceptance caught, so an acceptance can still tell which of the two it measured. The R43 paragraph
+  // above is kept rather than deleted, for the same reason the R40 one was.
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R43 moves the release, its own build, and the row that names 60_ - the same three '
+    'THE MANIFEST. R46 moves the release and its OWN build, and nothing else - which is the first time this '
+    + 'file has moved WITHOUT a second owner\'s row moving beside it. The reason is that R46\'s runtime change '
+    + 'is in 42_, which declares no build symbol at all, so it is a STAMPLESS owner: copied, and stamped by '
+    + 'nobody. 60_ LEAVES ownership and is carried at R45. R45 CANNOT BE FOLDED INTO R46 even though it was '
+    + 'never deployed - the usual precedent runs the other way here, and still forbids it: a pending release '
+    + 'has bytes sitting in the operator\'s paste queue, so folding would silently re-label 60_\'s R45 work as '
+    + 'R46 and leave an acceptance unable to say which tree it measured. The two travel to Production as ONE '
+    + 'paste set and keep SEPARATE identities. The action-contract version stays 18 and '
+    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14 - no action was added or removed, and horizonBasis gains '
+    + 'four additive diagnostic fields that already existed on the resolver\'s own return. 90_ is not rebuilt: '
+    + 'no assets/js/core module changed, so KMCALC - the frozen owner that computes the rate - is untouched. '
+    + 'WHAT R43 CHANGED HERE IS STILL TRUE AND IS KEPT RATHER THAN OVERWRITTEN: '
+    + 'R43 moves the release, its own build, and the row that names 60_ - the same three '
     + 'constants R42 moved, and for the same structural reason: 60_ changed, so its row moves, and this '
     + 'file moves because it is where that row is written down. 01_ STAYS at R41. The action-contract '
     + 'version stays 18 and SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14 - no action was added or removed '
@@ -339,6 +346,14 @@ var RELEASE_CARRIED = {
   // changed its routing table and R42 does not touch it, so the stamp records two different facts and the
   // ledger is able to say so. R42 adds no action and moves no route.
   '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41',
+  // S8-R5-B — THE TWENTY-FIRST SWAP. 60_ LEAVES OWNERSHIP AT R45 after one release as an owner and keeps
+  // R45, the round its date-column conversion actually changed in. R46 is an Avg Sales round whose only
+  // runtime edit is in 42_, so 60_ is carried, not marched. This matters more than the usual swap because
+  // R45 WAS NEVER SYNCED: 60_'s R45 bytes are still pending in the operator's queue, so this row is what
+  // tells an acceptance that the 60_ it finds in Production should be R45 and not the release id the
+  // manifest reports. A carried stamp under an unshipped release is the one case where "stale" and
+  // "correct" look identical from the outside, and this entry is how they are told apart.
+  '60_api_v1_inventory_replenishment_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45',
   // S7-R2A — THE EIGHTEENTH SWAP. 22_ LEAVES OWNERSHIP AT R38 after one release as an owner and keeps R37,
   // the round DECLARED_SOURCE_ONLY actually landed in. R38 changes a read projection and no handler.
   '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37',
@@ -1191,13 +1206,38 @@ mutant('M12', 'a release that adds an action and forgets to bump the action cont
 // owner. At R42 it is not - 60_ is - so the mutation injected nothing and the predicate reported a
 // survivor against a tree it had never changed. The fault it exists to catch is round-independent: a
 // RUNTIME owner is edited and stamped, and the ledger still calls it carried. So it is stated that way.
-var RUNTIME_OWNERS = Object.keys(RELEASE_OWNERS).filter(function (f) { return f !== '63_api_v1_system_health.gs'; });
-mutant('M13', 'a runtime owner changes but is left out of the release owner set', function () {
-  if (!RUNTIME_OWNERS.length) throw new Error('M13 anchor drifted — this release has no runtime owner to drop');
-  var owners = Object.keys(RELEASE_OWNERS).filter(function (f) { return f !== RUNTIME_OWNERS[0]; });
+// S8-R5-B — THE ANCHOR DRIFTED AGAIN, AND THIS TIME IT RAN OUT OF FILES TO DROP.
+//
+// R4B-2D restated this from "drop 01_ by name" to "drop whichever runtime owner this release has", which
+// held while every release had one. R46 does not: its runtime change is in 42_, which declares no build
+// symbol, so it is a STAMPLESS owner and the only STAMPED owner is 63_ itself. RUNTIME_OWNERS came back
+// empty, the injection injected nothing, and the predicate reported a survivor against a tree it had
+// never changed — the exact failure mode R4B-2D wrote this comment about.
+//
+// The fault is stated against the STAMPED OWNER SET, which every release has by construction: drop any
+// member and the manifest comparison must notice. That is round-independent in a way "runtime owner" was
+// not, because it does not assume the release has a stamped owner other than the manifest itself.
+mutant('M13', 'an owner is stamped at the release but left out of the release owner set', function () {
+  var all = Object.keys(RELEASE_OWNERS).sort();
+  if (!all.length) throw new Error('M13 anchor drifted — a release always has at least one stamped owner');
+  var owners = all.slice(1);                       // drop one, whichever this release happens to have
   var atRel = manifestRows(HEALTH).filter(function (r) { return r.expected === RELEASE; })
     .map(function (r) { return r.file; }).sort();
-  return JSON.stringify(atRel) !== JSON.stringify(owners.sort());
+  return JSON.stringify(atRel) !== JSON.stringify(owners);
+});
+// S8-R5-B — AND THE STAMPLESS PARTITION IS NOT A HOLE EITHER. R46 is the first release whose RUNTIME change
+// lives entirely in a stampless file, so "the stamp ledger has no row for it" stops being a footnote and
+// becomes this release's main surface. The COPY ledger is what covers it, and this proves that: drop 42_
+// from the stampless list and I1's equality against git must refuse the result.
+mutant('M13a', 'the stampless runtime owner is dropped from the copy list', function () {
+  if (!I1_COPY_LIST) throw new Error('M13a anchor drifted — I1 did not capture the real git copy list');
+  // Mutate the DECLARED side, exactly as I1 compares it, and keep the git side real.
+  var declaredWithout42 = Object.keys(RELEASE_OWNERS).concat(Object.keys(RELEASE_CARRIED))
+    .concat(Object.keys(GENERATED_OWNERS))
+    .concat(Object.keys(STAMPLESS_OWNERS).filter(function (f) { return f !== '42_api_v1_recommendation_workspace.gs'; }))
+    .sort();
+  var split = partitionCopyList(I1_COPY_LIST, EDITOR_APPLIED_MEMBERS);
+  return JSON.stringify(split.pasted) !== JSON.stringify(declaredWithout42);
 });
 mutant('M14', 'R40 history rewritten so the router looks like it was an owner all along', function () {
   // The fault this round was told NOT to commit: making the past describe the present. R40's owner

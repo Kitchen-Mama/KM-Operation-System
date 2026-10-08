@@ -1696,7 +1696,19 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // keep its identity, because the repair has to be distinguishable from the thing it repairs. Folding
   // R45's bytes into R44 would make the Production evidence that FAILED and the Production evidence that
   // PASSES carry the same release id. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45',
+  // S8-R5-B - R46. 42_ stops gating the canonical §22 Avg Sales resolver on the Planning Model, so a
+  // Forecast-Driven SKU gets the same historical rate a Sales-Driven one already got. Owner set is
+  // 42_ + 63_: 42_ carries the change and 63_ carries the release identity, which is where a release
+  // is cut.
+  //
+  // R45 WAS NOT JOINED, and for the opposite reason to R44's. R45 is cut but NEVER SYNCED - its 60_
+  // bytes are still pending in the operator's queue. A pending release cannot absorb a later change
+  // either: 60_ did not change in R46, so marching its module stamp to R46 would claim a round it had
+  // no part in. The two releases therefore travel together to Production as one paste set while
+  // keeping separate identities - 60_ stays stamped R45, 63_ declares R46, and 42_ is stampless.
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

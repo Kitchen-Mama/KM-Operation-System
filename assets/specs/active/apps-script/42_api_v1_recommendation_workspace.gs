@@ -672,7 +672,17 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   // fail-closes (no horizons → materialized BLOCKED), never silently reverting to the forecast path.
   var planModel = recoWsResolvePlanningModel_(snaps, scope, sku);
   var salesRate = null, salesReason = null;
-  if (planModel === 'sales_driven') { var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); if (sr.ok) salesRate = sr.avgSalesPerDay; else salesReason = (sr.reason || 'SALES_BASIS_UNAVAILABLE') + (sr.detail ? ': ' + sr.detail : ''); }
+  // S8-R5-B (R46) — Avg Sales is a HISTORICAL performance metric, independent of the Planning Model. The
+  // canonical §22 resolver used to be CALLED only under sales_driven, so a Forecast-Driven SKU had no rate
+  // to publish at all — the defect was the gate on this line, not the field at horizonBasis below.
+  //
+  // The resolver now runs for EVERY SKU, and its result (`sr`) serves DISPLAY. PLANNING is untouched:
+  // `salesRate` (the demand basis handed to recoWsBuildHorizons_) and `salesReason` (the fail-closed
+  // horizon reason) are still assigned ONLY under sales_driven, so a Forecast-Driven horizon can never be
+  // labelled SALES_BASIS_UNAVAILABLE and recoWsBuildHorizons_ receives byte-identical inputs in both modes.
+  // No second normalization engine is created — this layer still only marshals the frozen KMCALC owner.
+  var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate);
+  if (planModel === 'sales_driven') { if (sr.ok) salesRate = sr.avgSalesPerDay; else salesReason = (sr.reason || 'SALES_BASIS_UNAVAILABLE') + (sr.detail ? ': ' + sr.detail : ''); }
   // F1-4B-FM5-R4UI-R5 §4 — the INVENTORY horizon opening is Site Stock, which is FORECAST-INDEPENDENT. The unified
   // resolver returns a null line (→ null L.currentStockQty) when the MONTHLY demand (regular forecast) is not
   // resolvable — so a Sales-Driven SKU with no regular forecast was losing its Site Stock and materializing
@@ -696,7 +706,16 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
     // reconcile a stored D-horizon gap (e.g. CO1100-R D90 = 4173) against horizons[].demandQty/coveredQty WITHOUT
     // the Sheet, and makes any divergence between the Inventory DoS column (a SEPARATE weekly IR.avgSalesPerDay ÷ 7)
     // and this canonical horizon rate (KMCALC §22 ladder) directly observable (SALES_DOS_HORIZON_AUTHORITY_DIVERGENCE).
-    mLine.horizonBasis = { demandMode: planModel, avgSalesPerDay: (planModel === 'sales_driven' ? salesRate : null),
+    // S8-R5-B (R46) — `avgSalesPerDay` is the canonical §22 HISTORICAL rate for BOTH Planning Models. It is
+    // NOT a claim about what drove the horizon: `demandMode` remains the discriminator for that. Under
+    // sales_driven this rate IS also the planning basis; under forecast_driven the horizon ran on regular FC
+    // + Target% and this value is historical only. The four §22 quality fields travel as INDEPENDENT
+    // diagnostics (verbatim from the owner, never recomputed, never defaulted) so a normalized rate can be
+    // told from a weekly fallback and a low-sample warning is visible rather than inferred. An unresolved
+    // basis stays null in every field — never a fabricated 0, never an unlabelled weekly substitution.
+    mLine.horizonBasis = { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
+      source: (sr.ok ? sr.source : null), warning: (sr.ok ? sr.warning : null),
+      normalDayCount: (sr.ok ? sr.normalDayCount : null), excludedDates: (sr.ok ? sr.excludedDates : null),
       horizonOpeningQty: horizonOpening, qualifiedIncomingCount: (mIncoming || []).length };
   }
   // F1-4B-FM5-R4UI-R7 §1/§4 — when the day-horizon cannot be built, PRESERVE the specific first reason so
