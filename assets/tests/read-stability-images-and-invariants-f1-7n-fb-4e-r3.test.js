@@ -207,10 +207,20 @@ eq((OVERSEAS.match(/_OS_LOADING_TEXT/g) || []).length, 3, 'G3 declared once and 
 // G4 — Site Inventory does not load every site's inventory, and the search gate still owns application.
 ok(/inventoryScope\.registry\.get/.test(DBAPI), 'G4 the slim scope registry is still the picker authority');
 var bootFn = INV.slice(INV.indexOf('function _irBootstrapScope_'), INV.indexOf('window._irBootstrapDiagnostic_'));
-ok(/_irScopeIsValid_\(/.test(bootFn), 'G4 a remembered scope is validated against the registry before use');
-ok(/_irApplySearch_\(/.test(bootFn), 'G4 and applied only through the single assignment point');
+// S8-R4D-F1B — THIS PROBE WAS READING THE COMMENTS, so it is stripped before it is asked anything.
+// G4's claim is about CODE. The slice above is raw source, and this file's shipped comments name the symbols
+// they discuss — after F1B the bootstrap's own comment explains the removed commit by naming
+// _irApplySearch_, which made the old assertion below pass on prose while the code said the opposite. That is
+// a vacuous pass, and it is worth more than the assertion it was hiding.
+var bootCode = bootFn.split('\n').map(function (l) { var i = l.indexOf('//'); return i === -1 ? l : l.slice(0, i); }).join('\n');
+ok(/_irScopeIsValid_\(/.test(bootCode), 'G4 a remembered scope is validated against the registry before use');
+// RESTATED, STRONGER (operator-frozen OPTION_C: preload in the background, commit only on an explicit
+// Search). The property G4 protects is that nothing except Search can make data appear. The bootstrap used
+// to honour it by routing through the single assignment point; it now honours it by not applying at all.
+ok(!/_irApplySearch_\(/.test(bootCode),
+  'G4 the mount commits NOTHING — a remembered scope is preloaded and shown, never applied');
 eq((INV.match(/_irSearch\.applied = \{/g) || []).length, 1, 'G4 `applied` is still assigned in exactly ONE place');
-ok(/_irForgetScope_\(\);/.test(bootFn), 'G4 an invalid remembered scope is DISCARDED, not applied');
+ok(/_irForgetScope_\(\);/.test(bootCode), 'G4 an invalid remembered scope is DISCARDED, not applied');
 
 // G5 — scope A data cannot render under scope B.
 ok(/if \(mySeq !== _irSearch\.seq\) return/.test(bootFn), 'G5 the bootstrap is superseded by a newer scope generation');

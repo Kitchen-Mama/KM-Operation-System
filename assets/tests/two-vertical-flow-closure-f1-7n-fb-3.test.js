@@ -256,8 +256,21 @@ var regOnlyIdx = bootFn.indexOf('REGISTRY_ONLY'), wsIdx = bootFn.indexOf('_irWor
 ok(regOnlyIdx > 0 && wsIdx > regOnlyIdx,
   'C7. and the registry-only branch RETURNS before any workspace read can be reached');
 ok(/_irScopeIsValid_\(/.test(bootFn), 'C7. a remembered scope is VALIDATED against the registry before it is applied');
-ok(/_irApplySearch_\(/.test(bootFn) && (bootFn.match(/_irSearch\.applied\s*=/g) || []).length === 0,
-  'C7. and it applies through the SAME single assignment point a manual Search uses — never its own');
+// S8-R4D-F1B — RESTATED, STRONGER, because the behaviour this protected moved by an operator decision
+// (OPTION_C: background preload, explicit first visual commit).
+//
+// This used to require _irApplySearch_( INSIDE the bootstrap: "it applies through the SAME single assignment
+// point a manual Search uses — never its own". The invariant underneath it was never "the bootstrap applies
+// correctly"; it was "no second code path can make data appear". F1B removes the bootstrap's commit outright,
+// so the bootstrap now satisfies that invariant by not applying AT ALL — which the old regex would have read
+// as a regression and the new one reads as what it is.
+//
+// Asserted on COMMENT-STRIPPED source deliberately. The shipped comment explains the removal by naming
+// _irApplySearch_, and a probe that read the raw text would pass on the explanation rather than the code.
+ok(!/_irApplySearch_\(/.test(bootFn) && (bootFn.match(/_irSearch\.applied\s*=/g) || []).length === 0,
+  'C7. the bootstrap applies NOTHING — neither its own assignment nor the shared one; only Search commits');
+eq((code(INV).match(/_irSearch\.applied = \{/g) || []).length, 1,
+  'C7. and `applied` is still assigned in exactly ONE place in the whole page');
 // Every reference to the registry loader, enumerated: declaration, explicit Retry, and the bootstrap's three
 // branches (no remembered scope, Demo, and the coalesced start). No other loader path exists.
 eq((code(INV).match(/_irEnsureRegistryLoaded_\(/g) || []).length, 6,

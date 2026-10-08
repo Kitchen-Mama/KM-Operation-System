@@ -906,7 +906,20 @@ var ROUND_TOKENS = [
   // inventory-replenishment.js is fetched BY THE ROUTER, not by index.html, so a returning browser holding
   // the cached copy is never told to ask again. Without a rotation the P0 repair reaches exactly the
   // population that does not have the bug, and every user who has ever searched a site keeps it.
-  's8r4df1a-scopeguard-20261008'];
+  's8r4df1a-scopeguard-20261008',
+  // S8-R4D-F1B — background preload, explicit first visual commit, and the banner host moved out of the
+  // inter-block gap. F1A is on origin/main (f19543e was pushed and live-verified by resource timing), so by
+  // the rule above its token has been PUBLISHED and cannot be reused.
+  //
+  // The rotation reason is the same one F1A had, and it is the reason this file is fetched by the ROUTER
+  // rather than by index.html: a returning browser holding the cached copy is never told to ask again. Here
+  // that browser would keep the auto-commit — it would restore a remembered scope and publish a table the
+  // operator never confirmed in this session, which is precisely the behaviour the round removes. It would
+  // ALSO keep the stale notice's wholesale innerHTML write, so a Country change would go on silently erasing
+  // an "Unsaved — database update failed" warning about routes that were never persisted. That second one is
+  // a data-visibility defect, not a presentation preference, and it is what makes this rotation obligatory
+  // rather than tidy.
+  's8r4df1b-presentstate-20261008'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -1135,7 +1148,14 @@ var IR_CSS_TOKEN_SERIES = [
   // alert framing, and Retry/Refresh render as default browser buttons inside a data card. The STATES
   // would still be correct and would look like a bug - which is the exact shape of the
   // .replen-ai-plan-result defect two entries above, and the reason this family exists at all.
-  'irlazyexposure-20261004'
+  'irlazyexposure-20261004',
+  // S8-R4D-F1B — the category rail reserves its scrollbar gutter, and the two inter-block gap declarations
+  // are made identical. Both are RESTING GEOMETRY, which is the one thing a cached stylesheet gets to decide
+  // on its own: a browser serving the previous copy keeps the unreserved gutter, so the rail still changes
+  // height by the scrollbar whenever a site's category count overflows it — the exact instability this round
+  // was asked to remove, on a page whose JS already stopped putting a banner in the gap. The page would look
+  // half-repaired, which is worse than unrepaired because the remaining movement would have no visible cause.
+  'irrestinglayout-20261008'
 ];
 // F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
 //

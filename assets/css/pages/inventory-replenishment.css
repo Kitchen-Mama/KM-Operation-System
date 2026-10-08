@@ -16,7 +16,13 @@
     top: 0;
     background: var(--km-filter-surface);
     padding: 16px 20px;
-    margin-bottom: var(--space-lg);
+    /* S8-R4D-F1B §B.5 — THE VALUE IS UNCHANGED; THE DECLARATION IS NOW IDENTICAL TO THE ONE BELOW IT.
+       This gap and the category-shell -> table gap are the page's two inter-block gaps and must stay visually
+       equal. They already resolved to the same 24px, but they were WRITTEN differently: `var(--space-lg)` here
+       and `var(--space-lg, 1.5rem)` on .replen-category-shell. That is a latent divergence rather than a
+       current one — the day the token is renamed, this one becomes invalid-at-computed-value-time (margin 0)
+       while the other falls back to 24px, and the two gaps silently stop matching. Same fallback, both. */
+    margin-bottom: var(--space-lg, 1.5rem);
     border-radius: var(--km-filter-radius);
     display: flex;
     justify-content: space-between;
@@ -1735,6 +1741,15 @@
     min-width: 0;
     overflow-x: auto;               /* overflow scrolls INSIDE the rail, never the page */
     overflow-y: hidden;
+    /* S8-R4D-F1B §B.4 — RESERVE THE GUTTER SO THE CATEGORY COUNT CANNOT CHANGE THE RAIL'S HEIGHT.
+       The rail shows a horizontal scrollbar only when a site's categories overflow it. Without a reserved
+       gutter the bar's 6px (see ::-webkit-scrollbar below) is ADDED to the rail's height when it appears and
+       taken back when it does not — so switching from a site with many categories to one with few changed the
+       block's height, which reads as unstable spacing even though neither margin moved. `stable` keeps the
+       gutter whether or not the scrollbar is there. It is declarative and does nothing where an engine does
+       not honour it for the inline axis; no height is hard-coded as a fallback, because a fixed height is the
+       workaround this round exists to avoid. */
+    scrollbar-gutter: stable;
     scrollbar-width: thin;
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;

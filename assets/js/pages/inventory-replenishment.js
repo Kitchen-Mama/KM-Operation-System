@@ -1874,12 +1874,14 @@ function _irRenderIntegrityNotice_(res) {
     if (res && res.ok && !res.failedRows) { if (host && host.remove) host.remove(); return; }
     if (!host) {
         var tbl = document.getElementById('replen-detail-table');
-        if (!tbl || !tbl.parentNode) return;
+        if (!tbl || !tbl.insertBefore) return;
         host = document.createElement('div');
         host.id = 'replen-render-integrity';
         host.setAttribute('role', 'alert');
         host.style.cssText = 'margin:8px 0;padding:8px 10px;border:1px solid #EF4444;background:#FEF2F2;color:#B91C1C;font-size:12px;border-radius:4px;';
-        tbl.parentNode.insertBefore(host, tbl);
+        // S8-R4D-F1B §B.1 — INSIDE the table card, for the same reason as #replenSearchState: a notice that
+        // appears and disappears with the data must not be a flow sibling in the page's inter-block gap.
+        tbl.insertBefore(host, tbl.firstChild);
     }
     host.textContent = 'Inventory table render incomplete — ' + res.scrollRows + ' of ' + res.expected +
         ' rows rendered' + (res.rowsWithWrongCellCount ? ', ' + res.rowsWithWrongCellCount + ' row(s) do not match the ' + res.leafSpan + '-column header' : '') +
@@ -9637,6 +9639,13 @@ function _irBootstrapScope_() {
         _irBootstrap.reason = 'a completed result for this scope was still valid (' + Math.round(restorable.ageMs / 1000) + 's old) -- painted immediately, revalidating quietly';
         _irBootstrap.registryRequests = 0;
         _irBootstrap.workspaceRequests = 0;
+        // S8-R4D-F1B D-R (operator-frozen) — THIS branch may still paint, and the distinction is the operator's
+        // own confirmation. _irRestorableResult_ is reachable only when `applied` ALREADY equals the remembered
+        // scope, which happens only after a real Search in THIS session. Nothing is being published that the
+        // operator did not ask for; a result they confirmed is being returned to view. Requiring a second
+        // Search for a scope they already searched would be ceremony, not safety.
+        _irBootstrap.preloaded = true;
+        _irBootstrap.committed = true;
         _irSetSelectors_(remembered);
         _irSearch.status = 'READY';
         _irSearch.error = null;
@@ -9659,12 +9668,44 @@ function _irBootstrapScope_() {
     }
     _irBootstrap.restoreReason = restorable.reason;
 
+    // ==========================================================================================================
+    // S8-R4D-F1B §A — THE PRELOAD STAYS. THE COMMIT GOES. (OPTION_C, operator-frozen.)
+    //
+    // This branch used to end in _irApplySearch_(remembered, mySeq): a remembered scope made the MOUNT both
+    // read the first layer AND publish it, so a table appeared for a site the operator had not confirmed in
+    // this session. The read was never the complaint — the unasked-for commit was.
+    //
+    // WHAT MAKES THE SEPARATION FREE, and it is a property of this request rather than a convenience: the
+    // first-layer payload carries NO SCOPE (see _wsPayload below — { recentWindow, only }). The server returns
+    // the table set and the CLIENT scopes it at render time from `applied`. So a preloaded model is not "the
+    // remembered site's data" that would have to be thrown away if the operator picks another one; it is the
+    // data for whichever site they confirm. That is why the preload can complete without committing anything,
+    // and why the commit can then cost zero further requests for ANY scope.
+    //
+    //   preload lands first   -> searchReplenishment's `if (_irReadModel)` short-circuit commits from memory
+    //                            and issues no request at all.
+    //   Search arrives first  -> the page asks again with a BYTE-IDENTICAL payload, and the transport's
+    //                            scopedSingleFlight (keyed on canonicalScope of that payload) returns the
+    //                            in-flight promise instead of dispatching a second read.
+    //
+    // Neither mechanism is new; both already shipped. F1B only stops the mount from publishing.
+    //
+    // THE STATUS STAYS PRE_SEARCH (D-S, operator-frozen). A fifth state was considered and rejected: the
+    // existing PRE_SEARCH branch of _irRenderSearchGate_ already renders the exact right sentence ("Select
+    // Country and Marketplace, then press Search."), and a PRELOADING state would need its own render branch
+    // to say nothing new. LOADING would be worse than useless here — it would paint "Searching…" over a search
+    // nobody has asked for.
+    //
+    // NOT CHANGED, DELIBERATELY: the read-failure branch below. It has never applied a scope and still does
+    // not; what a FAILED read says to the operator is a separate decision from when a SUCCESSFUL one is shown,
+    // and folding the two together would have been scope this round was told not to take.
+    // ==========================================================================================================
     _irBootstrap.mode = 'COALESCED';
-    _irBootstrap.reason = 'a remembered scope: registry validation and the scoped workspace read run together';
+    _irBootstrap.reason = 'a remembered scope: the first layer is preloaded in the background; nothing is committed until Search';
     _irBootstrap.registryRequests = 1;
     _irBootstrap.workspaceRequests = 1;
     var mySeq = ++_irSearch.seq;
-    _irSearch.status = 'LOADING';
+    _irSearch.status = 'PRE_SEARCH';
     _irSearch.error = null;
     // S3-R2 §11 — THE REGION NO LONGER PAINTS HERE, AND THAT IS THE WHOLE FIX: this body had TWO render
     // owners. The line below used to call rg.beginLoad(false), which paints "Loading Inventory
@@ -9733,10 +9774,21 @@ function _irBootstrapScope_() {
             if (typeof _irRenderSearchGate_ === 'function') _irRenderSearchGate_();
             return null;
         }
+        // S8-R4D-F1B §A — THE SELECTORS ARE RESTORED; THE TABLE IS NOT COMMITTED.
+        //
+        // This is the whole behavioural change, and the restraint is the point: the scope has been validated
+        // against the registry and the data is in hand, and NEITHER of those is a reason to publish a result
+        // the operator has not asked for. `applied` is untouched here, so §B.5 is now true by construction in
+        // a stronger sense than before — the bootstrap does not merely apply through the single assignment
+        // point, it does not apply AT ALL.
         _irSetSelectors_(remembered);
-        // ONE paint, through the SAME single assignment point a manual Search uses. No second code path can
-        // make data appear, which is what keeps §B.5 true by construction.
-        _irApplySearch_(remembered, mySeq);
+        _irBootstrap.preloaded = !!_irReadModel;
+        _irBootstrap.committed = false;
+        _irBootstrap.reason = _irBootstrap.preloaded
+            ? 'the first layer is preloaded and the remembered scope is shown — Search commits it with no further read'
+            : 'the remembered scope is shown; the preload returned no model, so Search will read';
+        _irSearch.status = 'PRE_SEARCH';
+        if (typeof _irRenderSearchGate_ === 'function') _irRenderSearchGate_();
         return remembered;
     });
 }
@@ -9748,6 +9800,10 @@ window._irBootstrapDiagnostic_ = function () {
         mode: _irBootstrap.mode, reason: _irBootstrap.reason, scope_valid: _irBootstrap.scopeValid,
         // F1-7N-FB-4E-R4B §A
         restore_reason: _irBootstrap.restoreReason || null,
+        // S8-R4D-F1B §A — the two facts the new lifecycle turns on, reported rather than inferred from the
+        // screen: did the background preload put a model in hand, and did the mount publish anything.
+        preloaded: _irBootstrap.preloaded === true,
+        committed: _irBootstrap.committed === true,
         revalidating: _irBootstrap.revalidating === true,
         revalidated: _irBootstrap.revalidated === true,
         revalidate_failed: _irBootstrap.revalidateFailed === true,
@@ -9869,28 +9925,65 @@ function _irEsc_(v) {
     return (typeof escapeReplenHtml === 'function') ? escapeReplenHtml(v)
         : String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
 }
-// The one banner host, created next to the table (never on <body>). Idempotent.
+// The one banner host. Idempotent.
+//
+// S8-R4D-F1B §B.1 — IT LIVES INSIDE THE TABLE CARD, NOT IN THE GAP ABOVE IT.
+//
+// It used to be inserted as a SIBLING immediately before #replen-detail-table, which put it in the
+// category-shell -> table gap and in no other. Both inter-block gaps are declared equal (24px, --space-lg:
+// .replen-control-panel and .replen-category-shell each own one), so the measured inequality the operator
+// reported was never a margin value — it was OCCUPANCY. This host's most frequent writer is the stale notice,
+// which fires on the Country/Marketplace change itself, so the lower gap grew by a banner plus its 8px margin
+// at the exact moment a site was switched and shrank again on Search.
+//
+// Inside the card the banners cost the card height instead of the page's vertical rhythm, and neither gap has
+// a dynamic occupant any more. Nothing about the sticky header moves: .table-header-bar keeps its own
+// position/top and is still a flex child of the same card, merely no longer the first one.
 function _irStateHost_() {
     if (typeof document === 'undefined' || !document.getElementById) return null;
     var el = document.getElementById('replenSearchState');
     if (el) return el;
     var table = document.getElementById('replen-detail-table');
-    if (!table || !table.parentNode) return null;
+    if (!table || !table.insertBefore) return null;
     el = document.createElement('div');
     el.id = 'replenSearchState';
     el.setAttribute('role', 'status');
     el.setAttribute('aria-live', 'polite');
     el.style.display = 'none';
-    table.parentNode.insertBefore(el, table);
+    table.insertBefore(el, table.firstChild);
     return el;
 }
+// S8-R4D-F1B §B.3 — ONE HOST, FOUR PRODUCERS, AND NO PRODUCER MAY SPEAK FOR ANOTHER.
+//
+// Visibility is a property of the host's OCCUPANCY, so it is decided in one place rather than guessed by each
+// writer from `host.innerHTML`. An empty host is display:none and reserves nothing.
+function _irStateHostSync_(host) {
+    if (!host) return;
+    var n = (host.children && typeof host.children.length === 'number')
+        ? host.children.length
+        : (host.innerHTML ? 1 : 0);
+    host.style.display = n ? '' : 'none';
+}
+// S8-R4D-F1B §B.3 — THE STALE NOTICE NO LONGER ERASES THE OTHER THREE BANNERS.
+//
+// Four producers write into this one host. Three of them (_irRenderUnsavedBanner_, the duplicate-rows banner
+// and _irRenderDbUnknownBanner_) remove their OWN node and insertAdjacentHTML('afterbegin') a new one. This
+// one assigned `host.innerHTML` WHOLESALE, and cleared it to '' when not stale — so changing Country could
+// silently delete an "Unsaved — database update failed." warning about routes that were never persisted.
+// That is a data-visibility defect, not a cosmetic one, and it shared the element with the spacing defect.
+//
+// Now it removes only its own node and appends at the END. The position is the SEMANTIC PRIORITY: the three
+// data-loss warnings prepend and therefore stay above an informational "your filters moved" note.
 function _irRenderStaleNotice_() {
     var host = _irStateHost_(); if (!host) return;
-    if (!_irSearch.stale) { host.style.display = 'none'; host.innerHTML = ''; return; }
-    host.innerHTML = '<div class="replen-search-stale" style="background:#FFFBEB;border-left:3px solid #F59E0B;color:#92400E;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
-        '<strong>Filters changed — results are out of date.</strong> The table still shows the last confirmed search. Press <em>Search</em> to apply the new Country / Marketplace.' +
-        '</div>';
-    host.style.display = '';
+    var existing = host.querySelector ? host.querySelector('.replen-search-stale') : null;
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    if (_irSearch.stale) {
+        host.insertAdjacentHTML('beforeend', '<div class="replen-search-stale" style="background:#FFFBEB;border-left:3px solid #F59E0B;color:#92400E;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
+            '<strong>Filters changed — results are out of date.</strong> The table still shows the last confirmed search. Press <em>Search</em> to apply the new Country / Marketplace.' +
+            '</div>');
+    }
+    _irStateHostSync_(host);
 }
 // PRE_SEARCH / LOADING / ERROR render INTO the table bodies, so they are mutually exclusive with rows and with
 // each other. "No data" is NEVER shown before a successful Search.
