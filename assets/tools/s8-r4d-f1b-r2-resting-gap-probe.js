@@ -162,7 +162,52 @@
     tolerance_px: tol
   };
 
-  out.json = JSON.stringify(out);
+  // ---- 8. THE MASKING TEST (R2 Phase 1B) ----------------------------------------------------------------
+  // `.table-header-bar` carries `box-shadow: … , 0 -100vh 0 100vh white` at z-index 120 — a white curtain over
+  // EVERYTHING above it. The stylesheet states the rule at inventory-replenishment.css:1701 and the category
+  // rail was given z-index 125 specifically to escape it. A box-shadow is paint-only and NOT hit-testable, so
+  // elementFromPoint cannot see this; the test is the z-order and the band height, reported together.
+  var headerZ = hdr ? parseInt(getComputedStyle(hdr).zIndex, 10) : null;
+  out.masking = {
+    headerBar: { zIndex: headerZ, boxShadow: hdr ? getComputedStyle(hdr).boxShadow : null,
+      hasWhiteCurtain: hdr ? /100vh/.test(getComputedStyle(hdr).boxShadow || '') : null },
+    hosts: ['replenSearchState', 'replen-render-integrity'].map(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return { id: id, exists: false };
+      var c = getComputedStyle(el), b = el.getBoundingClientRect();
+      var z = c.zIndex === 'auto' ? null : parseInt(c.zIndex, 10);
+      var positioned = c.position !== 'static';
+      // Masked when it paints BELOW the curtain and sits above the curtain's lower edge (the header's bottom).
+      var masked = (c.display !== 'none') && b.height > 0 &&
+        (!positioned || z === null || (headerZ != null && z < headerZ)) &&
+        (!!hdr && b.top < hdr.getBoundingClientRect().bottom);
+      return { id: id, exists: true, display: c.display, position: c.position, zIndex: c.zIndex,
+        background: c.backgroundColor, rect: r(el), childCount: el.children.length,
+        PAINTS_BELOW_CURTAIN: masked,
+        bandPx: masked ? +b.height.toFixed(2) : 0 };
+    })
+  };
+  out.masking.totalMaskedBandPx = out.masking.hosts.reduce(function (s, h) { return s + (h.bandPx || 0); }, 0);
+  out.masking.verdict = out.masking.totalMaskedBandPx > 0
+    ? 'A band of ' + out.masking.totalMaskedBandPx + 'px is occupied by a notice that paints BELOW the white ' +
+      'curtain. It renders as blank space, which reads as extra gap. Confirm visually: that band should look ' +
+      'WHITE, not amber/red.'
+    : 'No notice host is currently occupying a masked band.';
+
+  // ---- 9. checkpoint accumulator (addendum A / B / C) ---------------------------------------------------
+  var prior = (window.__F1B_R2__ && window.__F1B_R2__.checkpoints) || {};
+  out.checkpoints = prior;
+  out.capture = function (label) {
+    prior[label] = { gaps: out.gaps, masking: out.masking, banners: out.banners,
+      railScrollbarPx: out.railScrollbarPx, railOverflows: out.railOverflows, railTabCount: out.railTabCount,
+      shellH: R.shell.rect && R.shell.rect.height, railH: R.rail.rect && R.rail.rect.height,
+      tableTop: R.table.rect && R.table.rect.top, cssVars: out.cssVars, scope: out.scope,
+      occupantsOfGapB: out.occupantsOfGapB };
+    console.log('captured checkpoint "' + label + '"');
+    return prior;
+  };
+
+  out.json = JSON.stringify(out, function (k, v) { return typeof v === 'function' ? undefined : v; });
   window.__F1B_R2__ = out;
   console.log('%cS8-R4D-F1B-R2 RESTING GAP PROBE', 'font-weight:bold');
   console.log('scope', out.scope, 'scrollY', out.page.scrollY);
@@ -173,6 +218,9 @@
   console.log('occupants of GAP A', out.occupantsOfGapA);
   console.log('occupants of GAP B', out.occupantsOfGapB);
   console.log('rail scrollbar px', out.railScrollbarPx, 'overflows', out.railOverflows, 'tabs', out.railTabCount);
+  console.log('MASKING', out.masking.verdict);
+  console.table(out.masking.hosts);
   console.log('full blob in window.__F1B_R2__  —  copy(__F1B_R2__.json)');
+  console.log('checkpoints: run this file, then __F1B_R2__.capture("A"|"B"|"C")');
   return out;
 })();
