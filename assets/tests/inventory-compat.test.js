@@ -4,11 +4,11 @@
 'use strict';
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
+var fail = 0, pass = 0;
 function eq(a, e, l) {
   var A = JSON.stringify(a), E = JSON.stringify(e);
   if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); }
-  else console.log('ok   ' + l);
+  else { pass++; console.log('ok   ' + l); }
 }
 function ids(list) { return list.map(function (w) { return w.logicalDestination ? ('LOGICAL:' + w.marketplace) : w.warehouseId; }); }
 function sids(list) { return ids(list).slice().sort(); }
@@ -135,5 +135,6 @@ eq(/data-wh-type="MARKETPLACE_DESTINATION"/.test(js), true, 'wire: To renders Am
 var compat = fs.readFileSync(path.join(__dirname, '..', 'js', 'utils', 'inventory-compat.js'), 'utf8');
 eq(/SALES_AGG_LEGACY/.test(compat), false, 'wire: no legacy EU sales fallback');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

@@ -3,8 +3,8 @@
 // priority, §J coordinate validity + antimeridian, candidate≠selected, gateway≠exact, 0,0 guard)
 // are regression-checked without a browser. Run: node assets/tests/global-logistics-map.test.js
 
-var fail = 0;
-function eq(a, e, label) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + label); }
+var fail = 0, pass = 0;
+function eq(a, e, label) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + label); } }
 
 var W = 1000, H = 500;
 function validCoord(lat, lng) { return (typeof lat === 'number') && (typeof lng === 'number') && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat === 0 && lng === 0); }
@@ -70,5 +70,6 @@ eq(isGatewayLoc({ locationType: 'factory', coordinateAccuracy: 'EXACT_FACILITY' 
 var candPts = [{ lat: 31, lng: 121, connect: true }, { lat: 34, lng: 118, connect: false /* candidate */ }, { lat: 40, lng: 116, connect: true }];
 eq((routePath(candPts).match(/[ML]/g) || []).length, 2, 'candidate pin excluded from the route polyline');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

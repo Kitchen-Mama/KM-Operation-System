@@ -9,11 +9,11 @@
 'use strict';
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
+var fail = 0, pass = 0;
 function eq(a, e, l) {
   var A = JSON.stringify(a), E = JSON.stringify(e);
   if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); }
-  else console.log('ok   ' + l);
+  else { pass++; console.log('ok   ' + l); }
 }
 
 function readSrc(rel) {
@@ -162,5 +162,6 @@ eq(/destinationSheetName: 'amazon_daily_sales_snapshot'[\s\S]*?naturalKey: \['sn
 eq(/destinationSheetName: 'amazon_weekly_sales_snapshot'[\s\S]*?naturalKey: \['snapshot_week', 'country', 'marketplace', 'channel', 'sku'\]/.test(config),
    true, 'BD-13: amazon_weekly_sales_snapshot keeps snapshot_week in its key (NOT relaxed)');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

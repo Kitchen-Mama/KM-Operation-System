@@ -5,8 +5,8 @@
 
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
 
 var js = fs.readFileSync(path.join(__dirname, '..', 'js', 'pages', 'inventory-replenishment.js'), 'utf8');
 var css = fs.readFileSync(path.join(__dirname, '..', 'css', 'pages', 'inventory-replenishment.css'), 'utf8');
@@ -59,5 +59,6 @@ eq(/ir-decision-area/.test(js) && /replen-card--recommendation-summary/.test(js)
 var decisionRule = (css.match(/#ops-section \.ir-decision-area \{[\s\S]{0,120}?\}/) || [''])[0];
 eq(/flex-direction:\s*column/.test(decisionRule), true, 'G4: decision area stacks its two cards vertically (same width)');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

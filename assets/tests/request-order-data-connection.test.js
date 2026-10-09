@@ -4,8 +4,8 @@
 // application, and PO Factory-Orders qty/date semantics (scheduled = ordered−completed; cancelled/closure
 // excluded; line date → header fallback). Run: node assets/tests/request-order-data-connection.test.js
 
-var fail = 0;
-function eq(a, e, label) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + label); }
+var fail = 0, pass = 0;
+function eq(a, e, label) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + label); } }
 
 var RO_MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 function _roUpper(v){ return String(v==null?'':v).trim().toUpperCase(); }
@@ -90,5 +90,6 @@ eq(monthWindow({year:2026,monthIdx:11}, 0, 3).map(ymKey), ['2026-12','2027-01','
   eq(total, 500, 'Special events total = only prep-month-in-window events (300+200)');
 })();
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

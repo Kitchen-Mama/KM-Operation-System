@@ -8,11 +8,11 @@
 var fs = require('fs');
 var path = require('path');
 
-var fail = 0;
+var fail = 0, pass = 0;
 function eq(a, e, label) {
     var A = JSON.stringify(a), E = JSON.stringify(e);
     if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); }
-    else console.log('ok   ' + label);
+    else { pass++; console.log('ok   ' + label); }
 }
 function ok(cond, label) { eq(!!cond, true, label); }
 
@@ -152,5 +152,6 @@ ok(/crcDateState\.temp\.preset\s*=\s*null;/.test(js), 'F1: manual day click clea
 ok(/textContent\s*=\s*'All dates'/.test(js), 'F1: "All dates" label preserved');
 ok(/\.crc-date-clear/.test(css), 'F1: toolbar Clear affordance styled (scoped crc- CSS)');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);
