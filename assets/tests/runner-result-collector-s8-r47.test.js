@@ -288,6 +288,23 @@ var BYLABEL = C.classify({ name: 'bylabel', exitCode: 0, stdout:
     'PASS  33 passed, 0 failed, 4 mutants, 2 survived\nok   X9 all mutants killed 6/6' });
 has(BYLABEL, 'MUTANTS_SURVIVED', 'F12 ... and an assertion LABEL below the summary cannot do it either');
 
+// (10b) — THE ADJECTIVE IS NOT A VERDICT. The full sweep accused eight suites of being incomplete
+// because they are ABOUT incompleteness and say so in their headings. Real shapes, all eight:
+var ADJ = [
+    '== B. Incomplete scope is not a persistence failure (§4) ==',
+    '== A. route-incomplete new Draft never creates K3 ==',
+    '== §F/§G — INCOMPLETE IS NAMED, NEVER SILENT; AND DIRTY IS DIRTY ==',
+    '== D — ZERO, MISSING, INACTIVE, INCOMPLETE. None of them become a fake share. ==',
+    'caught: M8  the incomplete card stops saying which dimension is missing'
+];
+ADJ.forEach(function (h, i) {
+    var r = C.classify({ name: 'adj' + i, exitCode: 0, stdout: h + '\n' + SUMM });
+    ok(r.reason_codes.indexOf('INCOMPLETE') === -1, 'F14.' + (i + 1) + ' "' + h.slice(0, 44).trim() + '…" is a subject, not a verdict');
+});
+// ... while the one suite that really does declare an unfinished run is still caught.
+has(C.classify({ name: 'real', exitCode: 0, stdout: 'PASS 40  FAIL 0\nFULL 40-SCENARIO MATRIX NOT COMPLETE' }),
+    'INCOMPLETE', 'F15 a suite declaring NOT COMPLETE is still INCOMPLETE');
+
 // The split dialect this precedence must NOT break: the score on its own line (C8e).
 eq([C.classify({ name: 'split', exitCode: 0, stdout: '20 passed, 0 failed\nmutations: 13 caught, 0 missed' }).mutant_count,
     C.classify({ name: 'split', exitCode: 0, stdout: '20 passed, 0 failed\nmutations: 13 caught, 0 missed' }).survived_mutants],
@@ -430,6 +447,15 @@ mutant('summary-line precedence removed — trailing prose hides surviving mutan
         return M.classify({ name: 'x', exitCode: 0,
             stdout: 'ok a\nPASS  33 passed, 0 failed, 4 mutants, 2 survived\nnote: 6 mutants were reviewed, 0 survived the review'
         }).verdict === 'CLEAN';
+    });
+
+// X17 — widen the INCOMPLETE signal back to the bare adjective: eight suites are accused again.
+mutant('INCOMPLETE matched as an adjective — suites ABOUT incompleteness are accused',
+    'return /\\bNOT\\s+COMPLETE\\b/i.test(l);', 'return /\\b(NOT\\s+COMPLETE|INCOMPLETE)\\b/i.test(l);',
+    function (M) {
+        return M.classify({ name: 'x', exitCode: 0,
+            stdout: '== B. Incomplete scope is not a persistence failure (§4) ==\nPASS  33 passed, 0 failed, 5 mutants, 0 survived'
+        }).reason_codes.indexOf('INCOMPLETE') !== -1;
     });
 
 ok(mutants >= 13, 'X' + (mutants + 1) + ' the mutant set is non-empty (' + mutants + ' mutants) — not vacuous');

@@ -249,7 +249,19 @@ function classify(run) {
     // Terminal region only, for the same reason every other parser here is: this suite's own gate
     // prints "an incomplete scenario matrix is NOT_CLEAN" as an assertion label, and a whole-text
     // match flagged the suite that tests the signal.
-    if (terminalRegion(text).some(function (l) { return /\b(NOT\s+COMPLETE|INCOMPLETE)\b/i.test(l); })) {
+    // S8-R48-G — DECLARATIVE ONLY. The first draft also matched the bare adjective INCOMPLETE, and
+    // the full sweep showed what that costs: eight suites were accused because they are ABOUT
+    // incompleteness and say so in their section headings -- "Incomplete scope is not a persistence
+    // failure", "route-incomplete new Draft never creates K3", "INCOMPLETE IS NAMED, NEVER SILENT".
+    // The window made it worse rather than contained it: it keeps the last 15 NON-RESULT lines, so
+    // in an assertion-heavy suite those fifteen lines reach back across the whole transcript and
+    // collect every heading in it.
+    //
+    // A suite declaring its own run unfinished says NOT COMPLETE. The adjective describes the thing
+    // under test, not the run. Checked across all 627 suites' captured output: exactly one uses the
+    // declarative form (`FULL 40-SCENARIO MATRIX NOT COMPLETE`), and none uses INCOMPLETE as a
+    // self-report -- so this narrowing loses no true positive.
+    if (terminalRegion(text).some(function (l) { return /\bNOT\s+COMPLETE\b/i.test(l); })) {
         reasons.push(R.INCOMPLETE);
     }
 
