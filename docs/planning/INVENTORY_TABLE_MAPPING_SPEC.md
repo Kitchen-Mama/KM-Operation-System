@@ -5,13 +5,14 @@
 > - **Canonical Owner For:** Inventory page field → source mapping and display labels.
 > - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md` — all Current Stock / Qualified Incoming / shortage / allocation math), schema (`DATABASE_RELATIONSHIP_MAP.md`), the **Qualified Incoming allowlist** (owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §2E / §10 · Shipment `SHIPMENT_CENTER_SPEC.md` §10; B-4 contract resolved, Runtime pending).
 > - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED; **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (On-the-Way + external-quarantine read model §22; Runtime / read-model pending); B-5 / B-6 / B-7 / B-8 UNRESOLVED.
-> - **Current Version:** v1.6.0 (Round 4D-C, 2026-08-01: added **§22 On-the-Way + External-Quarantine Read Model** — display mapping only, Runtime NOT implemented). v1.5.9 (Batch B Round 1: Factory Stock `fac_*` residual fix in §17.3A / display map + header/footer/changelog version reconciliation).
-> - **Last Reviewed:** 2026-07-30.
+> - **Current Version:** v1.6.1 (S8-R48-J, 2026-10-09: §13 **90 Days FC display reference** separated from the **2-Month Planning FC** engine input (D1); §13.2 added — Inventory column order (D2) + Self-Fulfilled visibility exception (D3); §11.6 header row restated. Documentation only — ratifies shipped runtime; no formula, mapping direction or runtime change). v1.6.0 (Round 4D-C, 2026-08-01: added **§22 On-the-Way + External-Quarantine Read Model** — display mapping only, Runtime NOT implemented). v1.5.9 (Batch B Round 1: Factory Stock `fac_*` residual fix in §17.3A / display map + header/footer/changelog version reconciliation).
+> - **Last Reviewed:** 2026-10-09.
 > - **Depends On:** Calculation Rules, Database Relationship Map, Amazon Snapshot Import, Runtime Architecture.
 > - **Blocked By:** Batch B — **B-4 Qualified Incoming and On-the-Way Runtime / read-model implementation prerequisites**; the business predicate, per-table direction and external-origin admission contract are **resolved** (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4 / `SUPPLY_PLANNING_CALCULATION_RULES.md` §2E / §38). *(B-1 Reserve Trigger is resolved elsewhere — owner Architecture Principles §8A.1; not a blocker of this document.)*
 
-**Status:** 🟢 v1.6.0 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **the active canonical formula SSOT**)
-**Last Updated:** 2026-08-01
+**Status:** 🟢 v1.6.1 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **the active canonical formula SSOT**)
+**Last Updated:** 2026-10-09
+> **Changelog v1.6.0 → v1.6.1 (2026-10-09):** S8-R48-J — operator-ratified product decisions D1/D2/D3, recording behaviour that already shipped. **D1:** §13 split the single "60 Days FC" row into **90 Days FC** (screen column; Base FC Month+1..+3 + scoped events, **no Target%**; display reference only, never a Planning Demand / Suggested Qty input) and **2-Month Planning FC** (Target-adjusted engine input, `_irForecastPlanning2mo`, Forecast-Driven only) — new §13.1 states the separation and why the legacy `forecast60d()` identifier is not the contract. **D2:** canonical Inventory order `Current Stock → 3rd Party Stock → On the Way` (§13.2, §11.6). **D3:** Self-Fulfilled **visual** hiding of Current Stock (§13.2) — eligibility from the canonical `fulfillment_model`, never a platform name; field, stored value, 3rd Party semantics, scope, alignment and logical column structure all preserved. Documentation only; no formula redefined, no runtime change. Prior changelog entries left as written.
 > **Changelog v1.5.8 → v1.5.9 (2026-07-30):** Batch B Round 1 residual cleanup — replaced the remaining unprefixed Factory Stock field names with the canonical `fac_*` namespace (`factory_stock.fac_current_stock` in the Factory CN/TW display map §17.3A; `fac_current_stock=0` / `fac_reserved_stock=0` in the lifecycle baseline + Runtime-status note), per the Inventory Field Namespace Rule (§3.0). Reconciled header/footer/changelog to the same version. Overseas `wh_*` and non-inventory entity fields deliberately left unchanged. No formula, mapping direction, or runtime change.
 > **Changelog v1.5.7 → v1.5.8 (2026-07-28):** Batch A repair — clarified **Engine Current Stock vs UI Inventory Position vs Qualified Incoming** separation (display vs engine-coverage). Documentation only; no formula redefined. *(Changelog entry backfilled 2026-07-30.)*
 > **Changelog v1.5.6 → v1.5.7 (2026-07-24):** documentation-only sync to calculation owner **v4.1** — Avg Sales/Day now sampled as the latest 30 eligible normal days within a 90-completed-day source window (§8/§13); §21 calculation Open Questions closed (resolved → owner sections, runtime mapping pending); §14/§15 restated as owner-pointing summaries. No formula redefined here. *(Round-3 residual cleanup, same v1.5.7: §13 "Suggested Qty" mapping now specifies its canonical meaning = Recommended Shipping Qty from `shipping_allocation_draft_lines.recommended_qty` per owner §2C.1/§31 — NOT raw Engine A shortage and NOT Request Order Suggested Order Qty; §16 restated as a UI/data-mapping summary that does not own the allocation rule — owner §20 is authoritative.)*
@@ -373,7 +374,7 @@ A route list the PM builds. Canonical columns — **From / To / Qty / Method / E
 The main 貨物庫存表 uses the reusable **KM Sticky Header Framework** (`assets/css/core/km-sticky-header.css` + `assets/js/core/sticky-header.js`; authoritative reference: [`UI_COMPONENT_GUIDELINES.md`](./UI_COMPONENT_GUIDELINES.md)). It replaces the previous hard-coded `top: 72px`.
 
 **Rules (must hold):**
-- The main table may use a **two-layer sticky header** (Header Row 1 = `Status / Company / Marketplace / Inventory / Sales / Replenishment / 工廠Stock / AI Action` group headers; Header Row 2 = `Current Stock / On the Way / 3rd Party Stock / Avg. Sales/day / …`).
+- The main table may use a **two-layer sticky header** (Header Row 1 = `Planning Model / Company / Marketplace / Inventory / Sales / Replenishment / 工廠Stock / AI Action` group headers; Header Row 2 = the **10 leaves**, in canonical order `Current Stock / 3rd Party Stock / On the Way / Avg. Sales/day / 90 days FC / Upcoming Event / Days of Supply / Suggested Qty / CN / TW`). Group spans are `1/1/1/3/3/2/2/1` and **sum to the body cell count**; `Replenishment` covers exactly `Days of Supply + Suggested Qty`, so `CN` / `TW` fall under `工廠Stock` and never inside `Replenishment`. **Column order is owned by §13.2 (D2); the Self-Fulfilled visibility exception by §13.2 (D3)** — for qualifying 100% Self-Fulfilled sites `Current Stock` is *visually hidden* while its header leaf and body cell remain in the DOM, so this row's leaf count and the group spans are unchanged.
 - **Header Row 1 pins at `top = var(--km-sticky-top-base)`; Header Row 2 pins at `top = base + var(--km-sticky-row-1-height)`** (accumulated offset). The two rows **must not** share the same `top`. *(Implementation note: the Inventory main table stacks both rows inside ONE sticky bar `.table-header-bar` pinned at the base, so the accumulated-offset overlap is structurally impossible; the framework's independent `.km-sticky-row-1/2/3` classes exist for future tables that pin rows separately.)*
 - **`--km-sticky-top-base` is NOT a magic number.** It equals the **live height of the sticky control panel** (`.replen-control-panel`), measured by `KM.stickyHeader.bindToolbar(#opsSection, .replen-control-panel)` on mount and on resize, and written as a CSS variable on `#opsSection`. This is what fixes the covered-header bug: the control panel is taller than 72px (and **wraps taller on small screens**), so a fixed offset let it cover Header Row 2. The fixed app header (`.top-header`) is **outside** the `.main-content` scroll container and does **not** count toward the base.
 - **Z-index order (centralized variables, high → low):** control panel (`--km-sticky-z-toolbar`) > top-left corner (`--km-sticky-z-corner`) > Header Row 1 (`--km-sticky-z-header-1`) > Row 2 (`--km-sticky-z-header-2`) > left sticky column (`--km-sticky-z-col`) > table body / **expanded row** (unset). The **expanded row never covers the sticky header**; the **left sticky SKU column never conflicts** with the top headers.
@@ -420,7 +421,8 @@ The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Process
 | **On The Way** | Shipping Shipment Total — **pending implementation** (§9); raw label only | No (unless qualified) | **Yes** | Current label; qualification direction = B-4 (contract resolved; Runtime/read-model pending) |
 | **3rd Party Stock** | **PRIMARY = `Planning Available`** — this marketplace's allocated share of the shared pool (`sitePlanningAllocation.sitePlanningAvailable`, §20/§24.4/§24.7). **SECONDARY = `Shared 3PL Pool`** — total **available stock** across eligible Overseas Warehouses (`overseas_inventory_snapshot.available_stock`, eligible warehouses only — see §16), labelled as shared and never as site-owned. | Yes (sellable overseas) | No | **Option C (S8, decision APPROVED) — supersedes the pool-only mapping** |
 | **Avg Sales / Day** | **Primary:** `normalized_avg_sales_per_day` (latest 30 eligible normal days within a 90-completed-day source window, this SKU's event/promotion days excluded; divide by actual normal-day count); **Fallback:** `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7`. **Rounded to 1 decimal.** Runtime result (not persisted); adopted source + warning frozen only at Submit Plan. Owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2 / §22.6. | Yes (demand rate) | — | Current |
-| **60 Days FC** | `Forecast Month+1 + Forecast Month+2` (**Target Rule already applied**, §7) | Yes (demand) | — | Current |
+| **90 Days FC** *(screen column — **display reference only**, §13.1)* | `Base FC Month+1 + Month+2 + Month+3` **+** scoped `fc_special_events` `fc_qty` whose applicable month falls inside those same three months (**each event counted once**). **Target Rule is NOT applied** — this is Base FC. Sales-Driven and Forecast-Driven SKUs display the **same** reference. Runtime `IR.forecast60d()` (legacy identifier; the horizon is **three months**). | **No — display reference** | — | Current (D1 ratified, S8-R48-J) |
+| **2-Month Planning FC** *(engine input — **not** a screen column, §13.1)* | `Forecast Month+1 + Forecast Month+2` with the **Target Rule applied** (§7). Consumed **only** by Forecast-Driven planning demand (`daily = fc ÷ 60`); when the Target-Rule resolver refuses it yields `null` → **zero** planning demand, never a number derived from an unidentified rule. Runtime `_irForecastPlanning2mo()`. | **Yes (demand)** | — | Current (D1 ratified, S8-R48-J) |
 | **Upcoming Event** | Total Event FC (`fc_special_events`, §8) | Yes (demand) | — | Current |
 | **Days of Supply** | `Inventory Position ÷ Avg Sales per Day` (the displayed top-cell total; UI color per §12). Engine coverage uses **Sellable Current Stock** + Qualified Incoming per the owner — the UI Days-of-Supply is not the Engine coverage. | No (display) | — | Current |
 | **Suggested Qty** *(UI label)* | Canonical meaning = **Recommended Shipping Qty**, sourced from `shipping_allocation_draft_lines.recommended_qty`, derived per Formula Owner **§2C.1 / §31** (`Calculated Gap → eligible source availability → shipment carton FLOOR`). **NOT** raw Engine A Shortage (§14/§15), **NOT** Request Order Suggested Order Qty. *(UI column still labelled "Suggested Qty". The §2C.1/§31/§40 Calculation **Pure** Runtime is TEST-VERIFIED (Round 11A, 39/1/0 Golden), but the production recommendation **writer** that would populate `shipping_allocation_draft_lines.recommended_qty` from it — and the live DB / UI integration — remain **NOT IMPLEMENTED / PENDING**; test-verified pure runtime and UI/display mapping do NOT prove production DB integration.)* | No (recommendation) | — | Current label; Target = Recommended Shipping Qty |
@@ -428,6 +430,42 @@ The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Process
 | **Factory TW** | `factory_stock.fac_current_stock` where the warehouse resolves to a **TW** factory (`warehouses.country = TW`, `is_factory_warehouse = TRUE`) | Yes (source pool) | No | Current |
 
 > `factory_stock` has no `company` / `factory_name`; CN/TW factory is resolved via `warehouse_id → warehouses` (per `SHIPMENT_CENTER_SPEC.md` §0). Factory stock is **physical, shared** stock (display only; not deducted here).
+
+#### 13.1 Forecast reference vs forecast engine input (D1 — must never be merged)
+
+Two different forecast numbers exist, and the previous single "60 Days FC" row described both at once. They are now separate rows above and **must stay separate**.
+
+| | **90 Days FC** | **2-Month Planning FC** |
+|---|---|---|
+| Purpose | user decision-support reference | planning engine input |
+| Horizon | Month+1 … Month+3 | Month+1 + Month+2 |
+| Target Rule | **not applied** (Base FC) | **applied** (§7) |
+| Special events | scoped, counted once | per the Target Rule path |
+| On screen | yes — the `90 days FC` leaf | no |
+| Feeds Planning Demand / Suggested Qty | **never** | yes (Forecast-Driven only) |
+
+**The display reference must not become an engine input.** It reaches exactly two places: the screen cell, and `snapshot_fc_context` — a *recorded* context value on the Submit snapshot, alongside the other `snapshot_*` fields. It is never divided, never netted against inventory, and never enters gap or allocation logic. Changing its horizon is a **display** decision; changing the 2-Month Planning FC is a **calculation** decision owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`.
+
+> The runtime identifier for the display reference is still `forecast60d()` — a legacy name kept for call-site compatibility. **The name is not the contract**; the horizon is three months. (A separate local `forecast60d` inside the legacy mock `getReplenishmentData()` is sample data and is unrelated to either row.)
+
+#### 13.2 Inventory group column order and visibility (D2 / D3)
+
+**Canonical order (D2):** `Current Stock → 3rd Party Stock → On the Way` — a stock-flow reading order: what exists now → what sits in external / self warehouses → what is still inbound. Header Row 2 and the body cells follow this order **1:1**; the Inventory group's `data-leaf-span` stays **3**.
+
+**Visibility exception (D3).** Qualifying **100% Self-Fulfilled** sites consume overseas-warehouse inventory rather than platform stock, so the platform `Current Stock` column is **visually hidden** for them, leaving `3rd Party Stock → On the Way`.
+
+This is a **presentation** rule. It is not a data rule, and the distinction is the whole contract:
+
+1. **The field is not deleted.** The header leaf and the body cell both remain in the DOM; CSS `display:none` hides them.
+2. **The stored value is unchanged.** Nothing is recomputed, cleared or suppressed at source.
+3. **3rd Party Stock semantics are unchanged** — no value migrates into it because another column is hidden.
+4. **Inventory scope is unchanged.**
+5. **Header/body alignment is preserved.** One container class hides the header leaf and the body cell *together*, so the two rows cannot drift.
+6. **The logical column structure is preserved.** `data-leaf-span` is **not** rewritten when the column hides: it is the STRUCTURAL body-cell count the render-integrity validator reads, and the body still emits the hidden cell. Only the Inventory group's CSS *width* shrinks (360px → 240px) so the groups downstream stay aligned. The "width ÷ 120px = span" identity therefore holds **only while nothing is hidden**.
+7. **Eligibility comes from the canonical `fulfillment_model`**, resolved through the existing marketplace read model — **never inferred from a platform name**. Shopify and Target qualify *because of their fulfillment model*, not because they are named. No marketplace is hardcoded anywhere in this rule.
+8. **Non-qualifying sites are untouched.** `platform_fulfilled`, `hybrid` and unknown/unresolved scopes keep the full 3-column Inventory group; where no single marketplace is selected the resolver returns `''` and **fails safe to the full structure**.
+
+**Planning Demand and Suggested Qty are not affected by this rule in any mode.**
 
 ---
 
@@ -646,6 +684,6 @@ Cross-refs: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONA
 
 ---
 
-**v1.6.0 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` the active canonical formula SSOT.**
+**v1.6.1 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` the active canonical formula SSOT.**
 
 **End of Document**
