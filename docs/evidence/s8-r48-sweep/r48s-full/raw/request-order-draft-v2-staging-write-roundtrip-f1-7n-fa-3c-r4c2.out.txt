@@ -1,0 +1,13 @@
+
+== OBJ1 root-cause: the mock reproduces Sheets coercion (General→Date; text→string) ==
+
+== OBJ2/3 fixed EXECUTE (public no-arg, frozen authority): text-format + flush + roundtrip → READY ==
+
+== OBJ3 roundtrip HALT: if the text format does not take (Date survives) → fail closed, no auto retry ==
+
+== retry policy: an existing NON-EMPTY staging tab fails closed BEFORE any format/write ==
+
+== DRY RUN remains zero-write / zero-format ==
+
+----------------------------------------
+R4C2 STAGING WRITE TYPE + ROUNDTRIP (F1-7N-FA-3C-R4C2): 34 passed, 0 failed

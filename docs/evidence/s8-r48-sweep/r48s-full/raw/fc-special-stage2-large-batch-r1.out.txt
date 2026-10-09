@@ -1,0 +1,21 @@
+
+== A · §5 — the physical write model is bounded, and the same at every N ==
+
+== A2 · production volume — 100 normal, 150 required, 200 safety margin ==
+
+== B · §9 — the stress matrix ==
+
+== C · §2/§7 — the transport, and why one replay was licensed and still failed ==
+
+== D · §3 — stage 3 may not run on a line nothing resolved ==
+
+== E · §10 — bounded fatigue ==
+
+== F · driven mutants ==
+
+mutants: 9 · survived: 0
+
+----------------------------------------
+FC SPECIAL STAGE-2 LARGE BATCH R1: 121 passed, 0 failed  ·  mutants 9, survived 0
+cost: N=1 6 physical calls · N=100 6 (reads 1, range writes 1)
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0

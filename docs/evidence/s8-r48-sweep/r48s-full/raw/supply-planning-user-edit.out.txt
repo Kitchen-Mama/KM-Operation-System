@@ -1,0 +1,14 @@
+
+== A. procurement order_qty edit under lock ==
+
+== B. stale token / terminal / duplicate / missing line / lock — zero write ==
+
+== C. invalid edit field + INSERT-only-with-allowInsert + reconcile ==
+
+== D. terminal LINE never mutated inside an active draft ==
+
+== E. shipping planned_qty edit ==
+
+== F. determinism + release safety + validation ==
+
+All Round 1H Locked User Decision Edit assertions passed (37 assertions).

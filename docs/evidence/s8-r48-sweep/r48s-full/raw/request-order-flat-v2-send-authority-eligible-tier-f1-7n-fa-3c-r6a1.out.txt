@@ -1,0 +1,21 @@
+
+== A. reproduce HEADER_MISSING from the LEGACY authority against the exact 53-col Flat V2 schema ==
+
+== B. Flat V2 authority selected BEFORE the header guard; exact 53 passes; real drift fails closed ==
+
+== C. header upsert never touches request_order_allocation_draft_lines (flag=true) ==
+
+== C. eligible-tier Send contract (KMRDV2.explodeSendRequestLinesFromDto) ==
+
+== D/F. downstream idempotency + lineage + no PO (13_ createRequestOrderDraft — already sound) ==
+
+== F. Site Confirm false skips ONLY that gate ==
+
+== G. structured Send error surface ==
+
+== H/I. diagnostic + validators present (read-only) ==
+
+== K. flags frozen + unified release token ==
+
+----------------------------------------
+R6A1 REQUEST ORDER FLAT V2 SEND (F1-7N-FA-3C-R6A1): 42 passed, 0 failed

@@ -1,0 +1,14 @@
+
+== A. Production path — two-path result (Current Stock direct; incoming via canonical bridge) ==
+
+== B. Count-once (canonical bridge = the production classifier for plans + shipments) ==
+
+== C. Delivery / receiving require their canonical authority (never raw shipment status) ==
+
+== D. ETA / Required-By — late supply is ledger-VISIBLE but contributes 0 to coverage (§2F) ==
+
+== E. External-origin quarantine — cannot become effective supply via the F1-3b connection ==
+
+== F. Single canonical authority + quantity-neutral connection ==
+
+All F1-3 Qualified-Incoming → Supply-Ledger production connection assertions passed (23 assertions).

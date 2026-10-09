@@ -1,0 +1,45 @@
+
+-- isRouteComplete: §8 scenario matrix --
+ok   P1: only From → incomplete (no Header/Line)
+ok   P2: From+To → incomplete
+ok   P3: From+To+Qty (no Method) → incomplete
+ok   P4: From+To+Qty+Method → COMPLETE (Header+Line)
+ok   P5: Qty 0 → incomplete
+ok   P6: negative Qty → incomplete
+ok   P7: "No available methods" sentinel is NOT a valid Method
+ok   P8: blank/whitespace Method → incomplete
+ok   P9: Amazon logical To → COMPLETE
+ok   P10: missing From → incomplete
+ok   P11: missing To (no real, no logical) → incomplete
+ok   P12: empty route → incomplete
+ok   P13: planned_qty>0 counts as Qty
+
+-- buildDraftLinePayload: stable identity vs manual add --
+ok   P14: a provided line id is preserved → handler UPDATES the SAME line (no duplicate)
+ok   P15: user edit does NOT send recommended_qty (snapshot protected)
+ok   P16: manual add omits id → handler assigns a fresh SADL- id
+ok   P17: manual add is user_created
+
+-- page persistence orchestration (source contract) --
+ok   P18: persistence is gated by the shared _isRouteComplete predicate (not a truthy OR check)
+ok   P19: the old truthy "any intent" gate is GONE (§4)
+ok   P20: the persisted line identity (data-line-id) is read back on save (§6)
+ok   P21: a stable line id is assigned to a newly-complete route (idempotent upsert)
+ok   P22: a route edited to incomplete does NOT queue a soft-cancel of its stored line (§0 update-in-place)
+ok   P22a: and does NOT drop its persisted identity
+ok   P22b: it is marked incomplete and keeps the line it is stored as
+ok   P23: the DB write is debounced (§5.4 — no per-keystroke upsert)
+ok   P24: flush has an in-flight guard (no duplicate concurrent writes, §7)
+ok   P25: when no valid line remains the now-unreferenced Header(s) are soft-cancelled (§5.3 — never an orphan header)
+ok   P25b: a header still referenced by any live complete route is NEVER cancelled
+ok   P26: empty-header removal upserts status=cancelled for the NAMED header (never a hard delete)
+ok   P27: header payload honors an optional cancel status (ctx.status)
+
+-- backend completeness guard (source contract) --
+ok   P28: backend has a sadLineIsComplete_ line guard (C2-D1R: SKU + Qty>0; route completeness is header-level via sadHeaderRouteIsComplete_)
+ok   P28b: backend has a header-route completeness guard (From + To + Method)
+ok   P29: incomplete line rejected BEFORE any write → zero mutation (§8)
+ok   P30: batch is validated up-front, before the create/update loop
+ok   P31: a soft-cancel for a never-stored line does not append a spurious cancelled row
+
+ALL PASS  |  passed 35  failed 0

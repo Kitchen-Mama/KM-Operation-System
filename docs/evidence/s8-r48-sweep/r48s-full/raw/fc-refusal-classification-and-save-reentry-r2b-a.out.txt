@@ -1,0 +1,144 @@
+
+== A — THE CLASSIFIER BRIDGE ASKS THE SHARED AUTHORITY, AND DOES NOT RESTATE IT ==
+ok   A1  a PRODUCTION_SAFETY refusal is a PROVEN zero write
+ok   A2  so is a documented pre-write refusal
+ok   A3  so is an unavailable lock
+ok   A4  a transport timeout is NOT — the write may have landed
+ok   A5  nor is a gateway error
+ok   A6  nor is a missing error object
+ok   A7  the canonical token is recovered, so the operator is told WHICH refusal this is
+ok   A8  and a transport error carries no canonical token
+ok   A9  with the shared authority unavailable the answer is false — no page-local re-approximation
+ok   A10 and no page-local token parsing either
+
+== B — THE FOUR-WAY SPLIT, ACROSS EVERY CONTROL THAT SHARES _fcFailWrite_ ==
+ok   B1 baseEdit: a proven zero write settles as CONFIRMED_REFUSAL
+ok   B2 baseEdit: the operator is told nothing was written
+ok   B3 baseEdit: and is NOT told the result could not be confirmed
+ok   B4 baseEdit: the canonical token is named
+ok   B5 baseEdit: Save is re-enabled exactly once
+ok   B6 baseEdit: no modal was closed — every input is preserved
+ok   B7 baseEdit: the table was not replaced by an error
+ok   B1 event: a proven zero write settles as CONFIRMED_REFUSAL
+ok   B2 event: the operator is told nothing was written
+ok   B3 event: and is NOT told the result could not be confirmed
+ok   B4 event: the canonical token is named
+ok   B5 event: Save is re-enabled exactly once
+ok   B6 event: no modal was closed — every input is preserved
+ok   B7 event: the table was not replaced by an error
+ok   B1 regular: a proven zero write settles as CONFIRMED_REFUSAL
+ok   B2 regular: the operator is told nothing was written
+ok   B3 regular: and is NOT told the result could not be confirmed
+ok   B4 regular: the canonical token is named
+ok   B5 regular: Save is re-enabled exactly once
+ok   B6 regular: no modal was closed — every input is preserved
+ok   B7 regular: the table was not replaced by an error
+ok   B1 targetRule: a proven zero write settles as CONFIRMED_REFUSAL
+ok   B2 targetRule: the operator is told nothing was written
+ok   B3 targetRule: and is NOT told the result could not be confirmed
+ok   B4 targetRule: the canonical token is named
+ok   B5 targetRule: Save is re-enabled exactly once
+ok   B6 targetRule: no modal was closed — every input is preserved
+ok   B7 targetRule: the table was not replaced by an error
+ok   B1 targetRuleDelete: a proven zero write settles as CONFIRMED_REFUSAL
+ok   B2 targetRuleDelete: the operator is told nothing was written
+ok   B3 targetRuleDelete: and is NOT told the result could not be confirmed
+ok   B4 targetRuleDelete: the canonical token is named
+ok   B5 targetRuleDelete: Save is re-enabled exactly once
+ok   B6 targetRuleDelete: no modal was closed — every input is preserved
+ok   B7 targetRuleDelete: the table was not replaced by an error
+ok   B1 import: a proven zero write settles as CONFIRMED_REFUSAL
+ok   B2 import: the operator is told nothing was written
+ok   B3 import: and is NOT told the result could not be confirmed
+ok   B4 import: the canonical token is named
+ok   B5 import: Save is re-enabled exactly once
+ok   B6 import: no modal was closed — every input is preserved
+ok   B7 import: the table was not replaced by an error
+ok   B8 baseEdit: an unreadable failure STAYS unknown
+ok   B9 baseEdit: and says so
+ok   B10 baseEdit: it must never claim nothing was written when it cannot know
+ok   B11 baseEdit: the control is released either way
+ok   B8 event: an unreadable failure STAYS unknown
+ok   B9 event: and says so
+ok   B10 event: it must never claim nothing was written when it cannot know
+ok   B11 event: the control is released either way
+ok   B8 regular: an unreadable failure STAYS unknown
+ok   B9 regular: and says so
+ok   B10 regular: it must never claim nothing was written when it cannot know
+ok   B11 regular: the control is released either way
+ok   B8 targetRule: an unreadable failure STAYS unknown
+ok   B9 targetRule: and says so
+ok   B10 targetRule: it must never claim nothing was written when it cannot know
+ok   B11 targetRule: the control is released either way
+ok   B8 targetRuleDelete: an unreadable failure STAYS unknown
+ok   B9 targetRuleDelete: and says so
+ok   B10 targetRuleDelete: it must never claim nothing was written when it cannot know
+ok   B11 targetRuleDelete: the control is released either way
+ok   B8 import: an unreadable failure STAYS unknown
+ok   B9 import: and says so
+ok   B10 import: it must never claim nothing was written when it cannot know
+ok   B11 import: the control is released either way
+ok   B12 an explicit success:false is still a confirmed refusal
+ok   B13 with its own message, unchanged by this round
+
+== C — NO AUTOMATIC RETRY, AND THE REMEDY OFFERED IS A READ ==
+ok   C6  a refusal that lands after route-away is marked UNMOUNTED
+ok   C7  and shows nothing
+ok   C8  and touches no control
+
+== D — THE SPECIAL EVENT BUILDER NAMES THE STAGE AND THE PARTIAL MANIFEST ==
+ok   D1  a proven refusal at stage 1 is CONFIRMED_REFUSAL
+ok   D2  the stage is named
+ok   D3  and the manifest says nothing exists to reconcile
+ok   D4  a stage-2 refusal names stage 2
+ok   D5  and reports the committed stage — the sequence is NOT atomic and says so
+ok   D6  an unreadable stage-3 failure stays UNKNOWN
+ok   D7  and says so
+ok   D8  while still reporting exactly what the earlier stages committed
+ok   D9  after route-away the builder draws nothing
+ok   D10 and shows nothing
+
+== E — BASE FC: SAVE IS USABLE WHEN EDIT MODE IS RE-ENTERED AFTER A SUCCESS ==
+ok   E1  entering edit mode leaves Save usable
+ok   E2  the in-flight save disabled it, and exit did not re-enable it
+ok   E3  RE-ENTERING edit mode after a successful save leaves Save usable
+ok   E4  and the page really is in edit mode
+ok   E5  an invalid cell still disables Save
+ok   E6  and fixing it re-enables Save
+ok   E7  after a refusal Save is usable again
+ok   E8  and edit mode was never left — the edits survive
+ok   E9  after an unknown outcome Save is usable again
+ok   E10 and the edits still survive
+ok   E11 after route-away no control is touched (the dead page draws nothing)
+
+== F — SPECIAL EVENT: THE SAME GUARANTEE ==
+ok   F1  entering Special Event edit mode leaves Save usable
+ok   F2  a successful save left it disabled
+ok   F3  RE-ENTERING after a successful save leaves Save usable
+ok   F4  and the page really is in event edit mode
+ok   F5  an invalid event cell still disables Save
+ok   F6  after a refusal event Save is usable again
+ok   F7  and event edit mode was never left
+
+== G — MUTANTS ==
+ok   N1  the zero-write bridge always answers false (every refusal becomes UNKNOWN again) (caught)
+ok   N2  the bridge always answers true (a dead socket claimed as a proven zero write) (caught)
+ok   N3  the page re-approximates the rule with its own regex instead of asking the shared authority (caught)
+ok   N4  the refusal path stops re-enabling the control (Save stays dead after a refusal) (caught)
+ok   N5  the proven refusal borrows the unknown-outcome sentence (caught)
+ok   N6  the refusal offers another Save rather than a read (caught)
+ok   N7  Base FC edit-mode entry stops asking the enablement authority (the re-entry defect returns) (caught)
+ok   N8  Special Event edit-mode entry stops asking it (the same defect, the other table) (caught)
+ok   N9  the builder reports a proven refusal as an unknown outcome (caught)
+ok   N10 the builder drops the committed-stage manifest (a partial write becomes invisible) (caught)
+ok   N11 the refusal starts closing the modal, discarding the operator's entries (caught)
+ok   N12 ownership is dropped, so a dead page draws a refusal over whatever replaced it (caught)
+ok   C1  a refusal issues no replay of the write
+ok   C2  a non-blocking banner is shown
+ok   C3  offering a READ, never another Save
+ok   C4  and the read only happens when the operator asks for it
+ok   C5  pressing it issues exactly one read
+
+====================================================================================================
+FC REFUSAL CLASSIFICATION + SAVE RE-ENTRY (R2B-A) — passed 126  failed 0  |  mutants caught 12  survived 0
+====================================================================================================

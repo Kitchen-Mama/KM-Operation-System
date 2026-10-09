@@ -1,0 +1,85 @@
+
+== A. THE BINDING EXISTS, AND IT IS THE EXISTING PICKER PATH ==
+ok   A1  event-target-year declares an onchange
+ok   A2  and it is the EXISTING picker path — no new loader, no new model, no new request
+ok   A3  scope binds inline the same way (country)
+ok   A4  and marketplace — the page owns its listener discipline inline
+ok   A5  and the picker itself
+ok   A6  the JS still calls the picker refresh from exactly its two lifecycle points
+ok   A7  builder open still initialises the picker
+ok   A8  scope change still refreshes it
+
+== B. YEAR CHANGE NOW RE-FILTERS THE PICKER ==
+ok   B1  at 2027 the picker offers only a new event (A)
+ok   B2  changing the YEAR alone now reveals the 2026 event (B) — the live defect
+ok   B3  and the option carries its window, so two windows stay distinguishable
+ok   B4  changing it back hides it again (C)
+ok   B5  same scope + same year, fired repeatedly: no duplicate rows (D)
+
+== C. SELECTION STATE ACROSS A YEAR CHANGE ==
+ok   C1  an existing 2026 event is selected and loaded
+ok   C2  with its persisted fc_qty
+ok   C3  and its canonical ids
+ok   C4  a selection invalidated by the new year does not survive it (E)
+ok   C5  and the editing session is cleared, so the old campaign_id cannot be saved under the new year
+ok   C6  the window it owned is cleared with it
+ok   C7  a selection still valid under the same year is preserved (F)
+ok   C8  and stays loaded
+
+== D. NO SERVER REQUEST, NO WRITE ==
+ok   D1  a year change reads ONLY the already-loaded event rows (H)
+ok   D2  and writes nothing (G)
+ok   D3  the sandbox has no fetch and no XHR, so a network call would have thrown rather than passed
+ok   D4  with the rows unavailable a year change disables the picker rather than offering a create
+
+== E. MULTI-WINDOW / MULTI-YEAR CORRECTNESS IS UNCHANGED ==
+ok   E1  same SKU, same year, two windows: BOTH listed (6)
+ok   E2  and they are distinguishable — same campaign name, different window (7)
+ok   E3  selecting the second window loads the SECOND window (10)
+ok   E4  with its own canonical line id (12)
+ok   E5  a 2028 event is not offered under 2026 (3)
+ok   E6  "+ New event" is offered, and only once (8)
+
+== F. THE A3-R2 TRANSPORT REPAIR IS UNTOUCHED ==
+ok   F1  upsertCampaign still dispatches through the canonical write transport
+ok   F2  upsertCampaignSkuLines still dispatches through the canonical write transport
+ok   F3  upsertFcSpecialEvent still dispatches through the canonical write transport
+ok   F4  no raw fetch was reintroduced into the campaign writer
+ok   F5  the retry is still gated on the two transport codes that prove the request never ran
+ok   F6  and is still bounded to one extra attempt
+ok   F7  HEADER_IDENTITY_KEY unchanged
+ok   F8.0 DUPLICATE_CAMPAIGN_IDENTITY still refused server-side
+ok   F8.1 STALE_CAMPAIGN_VERSION still refused server-side
+ok   F9  the special-event stale guard is still refused
+
+== G. THE CACHE TOKEN FOLLOWS THE BYTES ==
+ok   G1  the current application token matches the series shape
+ok   G2  and it is NOT the A3-R1 token, whose bytes were already published
+ok   G3  the A3-R3 token is in the series
+ok   G3a and the token it superseded sits immediately before it — the series is append-only
+ok   G4  and no token is ever reused
+ok   G5  index.html serves its assets under the current token
+ok   G6  and the canonical gate finds no asset left behind on a superseded token
+ok   G7  the file A3-R2 changed is served under the NEW token — the point of rotating it
+ok   G8  and so is the page whose modal markup A3-R3 changed
+ok   G9  no map-series token has leaked into the application series
+
+== H. MUTANTS ==
+ok   M1 year onchange removed (caught)
+ok   M2 refresh bound to the wrong field (caught)
+ok   M3 target year ignored in filtering (caught)
+ok   M4 stale selected event kept across a year change (caught)
+ok   M5 two windows collapsed into one (caught)
+ok   M6 server request issued on a year change (caught)
+ok   M7 old app token restored (caught)
+ok   M8 one stale token reference left in index.html (caught)
+ok   M9 campaign_name returned to the identity key (caught)
+
+== I. VACUITY — every mutant predicate is checked against a tree where the fault is absent ==
+ok   I1  the unfaulted tree really does start with one option at 2027
+ok   I2  and really does gain one when the year moves — so M1/M2 can fail
+ok   I3  and writes nothing — so M6 can fail
+
+====================================================================================================
+PASS  63 passed, 0 failed, 9 mutants, 0 survived
+====================================================================================================

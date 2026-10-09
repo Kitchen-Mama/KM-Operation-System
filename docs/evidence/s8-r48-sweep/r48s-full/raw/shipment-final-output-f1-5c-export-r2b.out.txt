@@ -1,0 +1,111 @@
+
+== dispatched predicate (finalization is bound to dispatch) ==
+ok   in_transit is dispatched
+ok   arrived/received/completed are dispatched
+ok   draft/pending/blank are NOT dispatched
+
+== A single-line shipment: physical qty from shipment_lines.shipment_qty ==
+ok   A conservation holds (600 == 600)
+ok   A snapshot line physical qty = 600 (from shipment_qty)
+
+== B multi-PO lineage preserved (never collapsed) ==
+ok   B conservation holds (300+300 == 600)
+ok   B two lineage rows (one per executed allocation)
+ok   B both PO numbers preserved (not collapsed to one)
+ok   B both allocated quantities preserved
+
+== C conservation failure -> fail closed, no snapshot ==
+ok   C mismatch detected
+ok   C error token
+ok   C aggregator returns without building when conservation fails
+ok   C finalizer persists NOTHING when aggregate fails
+
+== D shared factory does NOT determine shipper (company-driven) ==
+ok   D KM shipper from company legal entity
+ok   D factory frozen independently
+ok   D same factory, different shipper (no factory→company inference)
+ok   D aggregator resolves shipper (company) and factory (warehouse) independently
+
+== §11 customs frozen from tax_referral_rates (HS + declared_currency; country-specific) ==
+ok   §11 latest effective HS wins (7323.10)
+ok   §11 declared_currency surfaced
+ok   §11 country-specific HS by duty_country (CA != US)
+ok   §11 asOf before all effective_from -> no match (no fabricated fallback)
+ok   §11 no match -> resolved:false (no global fallback)
+ok   §11 declared_unit_value frozen (5) — the exact resolved customs value stays
+ok   LEAN-R1 §5 declared_total_value NOT persisted (pure arithmetic; renderer derives unit × qty)
+
+== §9 GS1 frozen from sku_details (not units_per_carton) ==
+ok   §9 gs1_code frozen
+ok   §9 gs1_type frozen
+ok   §9 units_per_carton is a separate field (not GS1)
+
+== §16 document readiness per family ==
+ok   shipping_detail READY with base facts
+ok   packing_list READY with lines+consignee
+ok   commercial_invoice READY with declared value
+ok   booking READY with carrier+method
+ok   M customs BLOCKED
+ok   M customs blocked by legal-importer gap (not fabricated)
+ok   commercial_invoice BLOCKED without declared value
+ok   M base Shipping Detail still READY though CI/customs blocked
+
+== §17 aggregator loads server-side; site SKU is company/country/marketplace scoped ==
+ok   I site SKU via regional resolver scoped by sku+company+country+marketplace
+ok   I fallback marketplace_skus map is also scoped (not sku-only)
+
+== Q/§13 physical qty source guard (no PO ordered/completed as physical qty) ==
+ok   Q line physical qty = shipment_lines.shipment_qty
+ok   Q line builder never reads PO ordered/completed/recommended/requested qty
+
+== R no FIFO / S no recommendation recompute in the aggregator ==
+ok   R no FIFO ordering/allocation logic (owner = R3A)
+ok   S no Gap/Forecast/recommendation recompute
+ok   R lineage builder does not sort/prioritize (preserves all executed allocations)
+
+== E/F/G/H/U immutability: read owner returns FROZEN rows, never re-resolves masters ==
+ok   U read owner NEVER calls a master resolver (immutable: later master edits cannot change output)
+ok   read owner returns persisted header+lines+lineage
+
+== N/O/P retry/two-tab/lost-response: idempotent deterministic snapshot ==
+ok   N deterministic snapshot identity SFO-<shipment_id> (one per shipment)
+ok   O ScriptLock + existing-snapshot short-circuit (no duplicate)
+ok   P orphan cleanup before append (deterministic replace on retry)
+
+== §26/§28 upstream execution untouched; separate post-dispatch owner ==
+ok   §28 handler writes NO cell mutations (never edits shipments/PO/allocation state)
+ok   §28 the 3 append call-sites target ONLY the final-output sheets
+ok   §28 no append to any shipments/PO/allocation sheet
+ok   §4 refuses to finalize a non-dispatched shipment (bound to dispatch)
+ok   §26 dispatch never rolled back if snapshot write fails
+
+== §21 governance: 3 additive tables; migration-only twins never invoked; validate-only reads ==
+ok   §21 handler NEVER invokes a migration twin (production-safety INIT.4)
+ok   §3 three normalized tables (header / lines / line-PO lineage)
+ok   names do not collide with the frozen document layer
+ok   snapshot header owns snapshot_id
+ok   snapshot header owns shipment_id
+ok   snapshot header owns shipper_legal_name
+ok   snapshot header owns consignee_location_id
+ok   snapshot header owns customs_ready
+ok   snapshot line owns shipment_line_id
+ok   snapshot line owns shipment_qty
+ok   snapshot line owns gs1_code
+ok   snapshot line owns hs_code
+ok   snapshot line owns declared_unit_value
+ok   LEAN-R1 snapshot no longer persists derived shipment_total_qty
+ok   LEAN-R1 snapshot no longer persists derived shipment_total_cartons
+ok   LEAN-R1 snapshot no longer persists derived shipment_total_gross_weight
+ok   LEAN-R1 snapshot no longer persists derived shipment_total_net_weight
+ok   LEAN-R1 snapshot no longer persists derived shipment_total_cbm
+ok   LEAN-R1 snapshot no longer persists derived declared_total_value
+ok   lineage owns purchase_order_line_id
+ok   lineage owns po_no
+ok   lineage owns allocated_qty
+
+== §24 router: one finalize + one read owner ==
+ok   finalize action routed
+ok   get action routed (single read owner — no browser fan-out)
+
+----------------------------------------
+SHIPMENT FINAL OUTPUT (F1-5C-EXPORT-R2B): 76 passed, 0 failed

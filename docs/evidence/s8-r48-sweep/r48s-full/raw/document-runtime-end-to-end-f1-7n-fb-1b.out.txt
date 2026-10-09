@@ -1,0 +1,62 @@
+
+== B1. the architectural boundary — the system computes, Drive only outputs ==
+
+== B2. Drive readiness is a NON-MUTATING pre-check ==
+
+== B3. Drive root normalization + conflict ==
+
+== B4. §H applicability — exact, deterministic, never broadened ==
+
+== B5. §G Purchase Order template selection — exact factory + series ==
+
+== B6. §G PO payload — the system computes every value ==
+
+== B7. §N folder routing — buckets, identity, and retry-date stability ==
+
+== B8. §E `shipped` snapshot eligibility ==
+
+== B9. §D failure classification — what may block, what may never un-ship ==
+
+== B10. §C/§M Send PO — document gate in FRONT of the one canonical writer ==
+
+== B11. §K/§J render models — Shipment Detail, Packing List, Commercial Invoice ==
+
+== B12. §I destination customs documents vs LEGAL IMPORTER authority ==
+
+== B13. §J Commercial Invoice field-support behaviour ==
+
+== B15. §B generated_documents writer projection is complete ==
+
+== B16. §O lifecycle states with NO new enum token ==
+
+== B17. end-to-end render through the in-memory Drive double ==
+
+== B18. §P workspace + API projection ==
+
+== B19. §Q Document Panel renders live data and real error assistance ==
+
+== B20. §S diagnostics are read-only, and the Demo seed is untouched ==
+
+== B21. §V canonical documentation leaves no contradictory active text ==
+
+== G1-A. the PO lock boundary — Drive NEVER runs inside the business lock ==
+
+== G1-B. callable read-only diagnostic entrypoints ==
+
+== G1-C. applicability vs EXECUTABILITY — five states, and only executable-required may block ==
+
+== G1-D. the actual Confirm Shipment blocking manifest ==
+
+== G1-E. the five Commercial Invoice field authorities, per active template ==
+
+== G2-B. checksum is verified on BOTH sides of the Drive work; drift and double-issue are safe ==
+
+== G2-D. TEMP diagnostics retention contract ==
+
+== G2-E. manifest fields never conflate applicability, executability and blocking ==
+
+== G1-F. canonical documentation records the G1 corrections with no contradictory text ==
+
+----------------------------------------
+PASS 622   FAIL 0
+----------------------------------------

@@ -1,0 +1,25 @@
+ok   Overseas Inbound item still present in sidebar
+ok   Overseas Outbound item still present in sidebar
+ok   Overseas Inbound not hidden (stays visible)
+ok   Overseas Outbound not hidden (stays visible)
+ok   Overseas Inbound has no showSection onclick (click cannot route)
+ok   Overseas Outbound has no showSection onclick (click cannot route)
+ok   showSection() early-returns for overseas-inbound / overseas-outbound
+ok   guard return present in app.js
+ok   guard does not block other sidebar sections (factory-stock / overseas-stock untouched)
+ok   overseas-inbound route/section map kept (page not deleted)
+ok   overseas-outbound route/section map kept (page not deleted)
+ok   Overseas Inbound tabindex="-1" (out of tab order)
+ok   Overseas Outbound tabindex="-1" (out of tab order)
+ok   Overseas Inbound aria-disabled="true"
+ok   Overseas Outbound aria-disabled="true"
+ok   Overseas Inbound uses menu-item--disabled style class
+ok   Overseas Outbound uses menu-item--disabled style class
+ok   menu-item--disabled disables pointer-events (cannot click)
+ok   menu-item--disabled uses not-allowed cursor
+ok   Factory Inventory still navigates (unaffected)
+ok   Overseas Inventory still navigates (unaffected)
+ok   Overseas Inbound keeps its Preview badge
+ok   Overseas Outbound keeps its Preview badge
+
+ALL PASS  |  passed 23  failed 0

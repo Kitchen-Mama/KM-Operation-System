@@ -1,0 +1,194 @@
+
+== A. §19.1 — Factory and Overseas remain SEPARATE inventory domains ==
+ok   FROZEN FACTORY_OVERSEAS_STORAGE_MERGED = NO
+ok   FROZEN FACTORY_OVERSEAS_RESERVATION_OWNER_MERGED = NO
+ok   FROZEN OVERSEAS_PRODUCTION_SEMANTICS_ADDED = NO
+ok   A1 the overseas handler never reads factory_stock
+ok   A2 the factory stock authority never reads overseas inventory
+ok   A3 FACTORY availability is DERIVED: current - reserved (executed)
+ok   A4 OVERSEAS availability is a STORED source-reported bucket (INVENTORY_TABLE_MAPPING_SPEC §3.1)
+ok   FROZEN OVERSEAS_AVAILABLE_STOCK_FIELD = wh_available_stock
+ok   A5 overseas carries wh_damaged_stock — a bucket the factory formula has no term for
+ok   A6 the factory domain has no damaged bucket at all — the formulas are not interchangeable
+ok   A7 an overseas row through normalizeBalances is UNREADABLE, never a silent zero (executed)
+ok   A8 and it names the field it could not read
+
+== B. §19.2 — both domains CAN act as a shipping source ==
+ok   FROZEN CAN_ACT_AS_SHIPPING_SOURCE = YES
+ok   FROZEN OVERSEAS_CAN_SHIP = YES
+ok   B1 the source picker offers BOTH domains and nothing else (executed)
+ok   B2 factory is never a destination candidate
+ok   FROZEN SOURCE_DOMAIN_OWNER = warehouses.is_factory_warehouse + warehouses.warehouse_type
+ok   FROZEN SOURCE_DOMAIN_INFERENCE_AMBIGUOUS = NO
+ok   FROZEN SOURCE_DOMAIN_COLUMN_REQUIRED = NO
+ok   B3 the two classifiers partition cleanly on canonical warehouse_type (executed)
+ok   B4 a flagged-factory row classifies as FACTORY even with warehouse_type 3PL — factory-first
+ok   B5 the server applies the SAME precedence — factory excluded from overseas before type is consulted
+ok   B6 no source_domain COLUMN has been introduced — it appears only as a response field, never in a header array and never written to a cell
+
+== C. §19.3 / §19.15 — Overseas cannot produce, and nothing refurbishes ==
+ok   FROZEN OVERSEAS_CAN_PRODUCE = NO
+ok   FROZEN OVERSEAS_REFURBISH_PHASE1 = NO
+ok   FROZEN REFURBISH_IMPLEMENTATION_COUNT = 0
+ok   C1 no shipped handler implements refurbish anything
+ok   C2 the overseas handler carries no production semantics
+
+== D. §19.4 — Overseas availability cannot be double-allocated (and why ORDER matters in R4) ==
+ok   FROZEN OVERSEAS_DOUBLE_ALLOCATION_ALLOWED = NO
+ok   FROZEN DOUBLE_SUBTRACTION_PATH_COUNT = 0
+ok   FROZEN DOUBLE_ALLOCATION_PATH_COUNT = 0
+ok   FROZEN DOUBLE_ALLOCATION_PATH_IF_SOURCE_UNBLOCKED_ALONE = 1
+ok   FROZEN R4_MUST_LAND_AS_ONE_CHANGE = YES
+ok   FROZEN OVERSEAS_RESERVED_IS_SUBTRACTED_FROM_AVAILABLE = NO
+ok   D1 an OVERSEAS-source plan already produces exposure — no factory filter (executed)
+ok   D2 transfer RELEASES the plan exposure (executed) — the units must be re-held by a reservation term
+ok   D3 with the exposure released and no reservation term, the overseas pool holds nothing at all
+ok   D4 the factory handoff is covered because the reservation lands in the BALANCE (fac_reserved_stock)
+
+== E. §19.5 — a reserve does not consume current stock ==
+ok   FROZEN OVERSEAS_RESERVE_CONSUMES_PHYSICAL_STOCK = NO
+ok   E1 the factory acquire passes deltaQty 0 — physical stock untouched
+ok   E2 and moves ONLY the reserved axis
+ok   E3 factoryStockApplyDeltaTx_ enforces available >= 0 as a single invariant, not a per-caller rule
+ok   FROZEN OVERSEAS_CURRENT_STOCK_FIELD = wh_physical_stock
+ok   E4 the frozen overseas reserve is an available -> reserved bucket transfer
+
+== F. §19.6 / §19.7 — cancel releases, dispatch consumes ONCE ==
+ok   F1 Shipment Draft cancellation releases the reservation
+ok   F2 release gives back at most what THIS owner holds
+ok   F3 holding nothing is a no-op, not an error — replay-safe
+ok   F4 dispatch deducts physical and releases reserved in ONE movement
+ok   F5 dispatch writes NO separate release row — that asymmetry is what prevents the double count
+ok   F6 and the dispatch movement type is shipment_out
+
+== G. §19.8 — Factory -> Overseas becomes available ONLY at warehouse receipt ==
+ok   FROZEN DESTINATION_INVENTORY_INCREASE_EVENT = WAREHOUSE_RECEIPT
+ok   FROZEN DELIVERED_INCREASES_OVERSEAS_AVAILABLE = NO
+ok   FROZEN FACTORY_TO_OVERSEAS_SCHEMA_CHANGE_REQUIRED = NO
+ok   G1 the destination increase is posted by the RECEIPT owner, onto the overseas ledger
+ok   G2 and it lands in the AVAILABLE bucket
+ok   G3 posting identity is shipment_line_id + cumulative — exactly-once across retries
+ok   G4 no delivered-date path increases destination availability
+ok   G5 a platform/unmanaged destination posts nothing locally
+
+== H. §19.9 / §19.10 — approved/no-shipment MAY cancel; approved/with-shipment MAY NOT ==
+ok   FROZEN APPROVED_CANCEL_OWNER = 11_ spUpdateShippingPlanStatusCore_
+ok   FROZEN NO_SHIPMENT_PROOF = shipmentStateForPlan_
+ok   FROZEN APPROVED_WITH_SHIPMENT_CAN_CANCEL = NO
+ok   FROZEN GHOST_PLAN_EXPOSURE_AFTER_CANCEL = NO
+ok   FROZEN APPROVED_CANCEL_SCHEMA_CHANGE_REQUIRED = NO
+ok   H1 NO_SHIPMENT_PROOF reads the shipments table — not UI state, not the plan's own transferred column
+ok   H1a and it separates ABSENT from UNKNOWN, so "could not tell" can never be spent as "there is none"
+ok   H1b the transfer marker only ever REFUSES — the ABSENT finding from the shipments table stands between it and the one path that allows a cancellation
+ok   H2 `cancelled` already releases plan exposure — the escape needs no new release mechanism
+ok   H3 cancelling releases the exposure — no ghost (executed)
+ok   H4 cancelled_by / cancelled_at are already written by the cancel branch
+ok   H5 [R5] approved -> cancelled is IMPLEMENTED — the D-S6-C escape exists, gated on no Shipment
+
+== I. §19.11 — shipment_receipt maps to the correct domain vocabulary ==
+ok   FROZEN SHIPMENT_RECEIPT_TARGET_CLASSIFICATION = OVERSEAS_DECLARED_VOCABULARY
+ok   FROZEN MOVEMENT_VOCABULARY_EXPANDED = NO
+ok   FROZEN SEVEN_WAS_A_CROSS_DOMAIN_COUNT = YES
+ok   FROZEN OVERSEAS_MOVEMENT_ENUM_DECLARED_TODAY = NO
+ok   FROZEN NEW_MOVEMENT_SEMANTIC_INVENTED = NO
+ok   I1 [R6] the factory list declares SIX. It declared seven when R3 measured it, and SEVEN_WAS_A_CROSS_DOMAIN_COUNT = YES is why: the seventh was shipment_receipt.
+ok   I2 [R6] and shipment_receipt is NOT one of them — it was, which is what made SEVEN a cross-domain count. I3/I4/I5 below are the evidence that finding rested on, and they are unchanged.
+ok   I3 shipment_receipt sits on neither factory axis — it moves no factory balance
+ok   I4 exactly one writer, and it writes the OVERSEAS ledger
+ok   I5 it never touches factory_stock_movements
+ok   I6 the overseas domain declares no movement vocabulary constant today
+ok   FROZEN OVERSEAS_STOCK_TYPE_ALLOWED_SET_DECLARED_IN_CODE = NO
+ok   I7a exactly two to_stock_type assignments exist (05_ adjust, 31_ receipt)
+ok   I7b and both write `available` — `reserved` has no writer anywhere
+ok   I8 from_stock_type exists in BOTH live overseas movement headers
+ok   I8 to_stock_type exists in BOTH live overseas movement headers
+ok   I8 wh_before_reserved_stock exists in BOTH live overseas movement headers
+ok   I8 wh_after_reserved_stock exists in BOTH live overseas movement headers
+ok   I8 movement_scope exists in BOTH live overseas movement headers
+ok   I9 the available -> reserved transition is owned by INVENTORY_TABLE_MAPPING_SPEC §3.2, not invented here
+ok   I10 and the spec names this ledger as the reservation mechanism — the direction is canonically owned
+
+== J. §19.12 — over-receipt is refused BEFORE any mutation ==
+ok   FROZEN OVER_RECEIPT_VALIDATION_OWNER = poReceiptEvaluateLine_
+ok   FROZEN VALIDATION_BEFORE_MUTATION = YES
+ok   FROZEN SILENT_CLAMP_PATH_COUNT = 0
+ok   FROZEN OVER_RECEIPT_CHANGE_REQUIRED = NO
+ok   J1 900 against a remaining 500 is REFUSED with all three quantities (executed)
+ok   J2 a refusal carries no applied quantity — nothing is clamped through
+ok   J3 an exact receipt still applies — the refusal is not a blanket ceiling (executed)
+ok   J4 a non-factory receipt destination is refused outright (executed)
+ok   J5 the silent clamp does not exist in source
+ok   J6 and the refusal declares itself zero-write
+
+== K. §19.13 — one source-factory authority ==
+ok   FROZEN SOURCE_FACTORY_AUTHORITY = factory_stock_allocation_plans.warehouse_id
+ok   FROZEN DEPRECATED_NON_AUTHORITY_FIELD = factory_stock_allocation_plans.source_factory_warehouse_id
+ok   FROZEN SOURCE_FACTORY_AUTHORITY_COUNT = 1
+ok   FROZEN SOURCE_FACTORY_TABLE_REFERENCE_COUNT = 0
+ok   FROZEN SOURCE_FACTORY_MIGRATION_THIS_ROUND = NO
+ok   K1 factory_stock_allocation_plans still has ZERO references in shipped code
+ok   K2 the only shipped occurrence of the NAME is an S5 census output field, not this table's column
+
+== L. §19.14 — no automatic S5/S6 cross-mainline execution ==
+ok   FROZEN CROSS_MAINLINE_AUTO_EXECUTION_COUNT = 0
+ok   FROZEN PHASE2_ORCHESTRATION_COUNT = 0
+ok   L1 a Shipping Plan creates no PO and no Request Order
+ok   L2 procurement creates no Shipment
+ok   FROZEN S5_RECOMMENDATION_IS_SHIPPING_QTY_AUTHORITY = NO
+ok   FROZEN REQUEST_ORDER_IS_SHIPPING_QTY_AUTHORITY = NO
+ok   FROZEN PO_IS_SHIPPING_QTY_AUTHORITY = NO
+ok   FROZEN SHIPPING_QTY_OWNER = shipping_plan_lines.approved_qty
+ok   FROZEN SHIPMENT_QTY_OWNER = shipment_lines.shipment_qty
+ok   FROZEN RECEIPT_QTY_OWNER = shipment_lines.shipment_received_qty
+ok   FROZEN SHIPMENT_QTY_IMMUTABLE = YES
+ok   L3 shipment_qty is copied from the plan's approved_qty and from nowhere else
+ok   L4 shipment_qty is absent from the editable set — immutable
+ok   L5 the receipt quantity owner is the cumulative column
+
+== M. §19.16 — no second shipping write owner ==
+ok   FROZEN SECOND_SHIPPING_WRITE_PATH_COUNT = 0
+ok   FROZEN DORMANT_WRITE_SHAPED_PATHS = 1
+ok   FROZEN DORMANT_WRITE_SHAPED_PATH_CLASSIFICATION = SAFE_DORMANT
+ok   FROZEN DORMANT_PATH_REMOVED_THIS_ROUND = NO
+ok   M1 exactly one owner of factoryStockAcquireReservationTx_
+ok   M1 exactly one owner of factoryStockReleaseReservationTx_
+ok   M1 exactly one owner of factoryStockApplyDeltaTx_
+ok   M2 exactly one Shipment creator
+ok   M3 61_ DOES build the KMPR/KMPL persistence object (R1's "never used" was imprecise)
+ok   M4 and the generator references `deps` exactly once — its own parameter declaration
+ok   M5 it writes through the ONE allocation-draft endpoint instead
+ok   M6 and the whole path is additionally staged OFF — dormant twice over
+
+== N. schema / idempotency freeze ==
+ok   FROZEN NEW_TABLE_REQUIRED = NO
+ok   FROZEN SCHEMA_EXTENSION_REQUIRED = NO
+ok   FROZEN DB_MIGRATION_REQUIRED = NO
+ok   FROZEN BUSINESS_TRUTH_NOT_REPRESENTABLE_TODAY = NONE
+ok   FROZEN AUTOREPLAY_PRESENT = NO
+ok   FROZEN OVERSEAS_WRITE_USES_CALLER_LOCK_AND_JOURNAL = YES
+ok   FROZEN S6_MAPPING_FREEZE_COMPLETE = YES
+ok   N1 wh_physical_stock is a declared overseas snapshot column
+ok   N1 wh_available_stock is a declared overseas snapshot column
+ok   N1 wh_reserved_stock is a declared overseas snapshot column
+ok   N1 wh_damaged_stock is a declared overseas snapshot column
+ok   N2 the overseas ledger already carries the owner-lineage pair a reservation needs
+ok   N3 the factory ledger carries the same pair — the two domains need no new columns
+ok   N4 no automatic replay on an UNKNOWN outcome exists in any shipping write owner
+
+== O. mutation ==
+ok   O1 the overseas reserved columns are dropped from the ledger header (caught)
+ok   O2 the overseas availability owner starts subtracting wh_reserved_stock (caught)
+ok   O3 the factory formula is applied to an overseas row (caught)
+ok   O4 the generator starts using the dormant persistence writer (caught)
+ok   O5 `transferred_shipment_id` stops releasing plan exposure (caught)
+ok   O6 a second overseas movement writer appears (caught)
+
+=====================================================
+S6-R3 INVENTORY / SHIPPING MAPPING FREEZE — 154 passed / 0 failed
+mutants: 6 caught / 6 planted
+TARGET_KMFSG_INPUT_CONTRACT = OPTION_B   SOURCE_DOMAIN_IDENTITY_PRESERVED = YES
+DB_MIGRATION_REQUIRED = NO   NEW_TABLE_REQUIRED = NO   SCHEMA_EXTENSION_REQUIRED = NO
+DOUBLE_SUBTRACTION_PATH_COUNT = 0   DOUBLE_ALLOCATION_PATH_COUNT = 0
+R4_MUST_LAND_AS_ONE_CHANGE = YES
+PRODUCTION_ROWS_WRITTEN = 0   BEHAVIOR_CHANGED = NO
+=====================================================

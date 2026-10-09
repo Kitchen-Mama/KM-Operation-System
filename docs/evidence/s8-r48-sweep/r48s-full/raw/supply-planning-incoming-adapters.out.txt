@@ -1,0 +1,82 @@
+ok   module exports adaptKmShipmentIncomingCandidate
+ok   1 status ready_to_ship eligible
+ok   2 status shipped eligible
+ok   3 status in_transit eligible
+ok   4 status arrived eligible
+ok   5 status case/whitespace normalized
+ok   6 draft excluded
+ok   7 received excluded
+ok   8 closed excluded
+ok   9 cancelled excluded
+ok   10 planned excluded legacy
+ok   11 completed excluded legacy
+ok   12 partial_received excluded legacy
+ok   13 stuck excluded operational
+ok   14 delivered excluded event token
+ok   15 missing status → review
+ok   16 unknown status fails closed + review
+ok   16b definite-excluded status → STATUS_NOT_ELIGIBLE
+ok   17 exact required scope match → eligible
+ok   18 company mismatch
+ok   19 SKU mismatch
+ok   20 destination mismatch
+ok   21 optional country mismatch
+ok   22 optional marketplace mismatch
+ok   23 omitted optional scope does not block
+ok   24 missing candidate company → review
+ok   25 missing destination → review
+ok   25b SKU scope match is case-insensitive
+ok   26 positive remaining eligible
+ok   27 zero remaining excluded
+ok   28 negative remaining excluded
+ok   29 NaN remaining excluded
+ok   30 Infinity remaining excluded
+ok   31 string remaining excluded (not coerced)
+ok   32 ETA present
+ok   33 ETA missing → review + blocks eligibility
+ok   34 actual ETA value preserved exactly (raw values retained, not parsed)
+ok   34b B4-R3 whitespace-normalized ETA preserved
+ok   34c missing ETA → null in snapshot, etaPresent false
+ok   34d ETA is a string, never a Date object
+ok   35 no Required-By comparison exists
+ok   DS1 company preserved
+ok   DS2 country preserved
+ok   DS3 marketplace preserved
+ok   DS4 siteSku preserved when present
+ok   DS5 sourceUpdatedAt preserved without evaluation
+ok   DS6 destinationIdentitySource preserved (owned by B4-R3)
+ok   DS6b destinationIdentitySource legacy fallback preserved
+ok   DS7 linkedPurchaseOrderLineId preserved
+ok   DS8 linkedShippingPlanLineId preserved
+ok   DS9 returned candidate snapshot is a fresh reference, not the input candidate
+ok   DS10 mutating returned ETA/scope metadata does not mutate input candidate
+ok   DS11 mutating one result snapshot does not affect another
+ok   36 KM canonical Shipment candidate accepted
+ok   37 unsupported authority fails closed
+ok   38 unsupported sourceType fails closed
+ok   39 unsupported domain fails closed
+ok   40 adapterType fixed
+ok   41 sourceEligible false when a gate fails
+ok   42 adapterEligibleQuantity positive only when sourceEligible
+ok   43 adapterEligibleQuantity zero on exclusion
+ok   44-47 no qualifiedIncoming/timelyQualifiedIncoming/lateRiskQty/requiredByDate keys
+ok   48 deterministic exclusion order
+ok   49 deterministic review order
+ok   50 no duplicate reasons
+ok   V1 null input → TypeError
+ok   V2 array candidate → TypeError
+ok   V3 missing scope → TypeError
+ok   V4 blank supplyCandidateId → RangeError
+ok   V5 blank scope company → RangeError
+ok   V6 non-string scope destination → TypeError
+ok   51 candidate not mutated
+ok   52 scope not mutated
+ok   53 output fresh per call
+ok   54 reason arrays fresh per call
+ok   55 B4-R3 deterministic identity retained
+ok   56 B4-R3 quantity/destination consumed, not recomputed
+ok   57 raw candidate status retained unchanged
+ok   INT eligible fixture: sourceEligible, adapterEligibleQuantity == quantityRemaining, no Qualified Incoming
+ok   DRAFT fixture: draft → not eligible, 0, EXCLUDED_DRAFT (Golden #12 foundation, not promoted)
+
+All B4-R4 incoming-adapter assertions passed (80 assertions).

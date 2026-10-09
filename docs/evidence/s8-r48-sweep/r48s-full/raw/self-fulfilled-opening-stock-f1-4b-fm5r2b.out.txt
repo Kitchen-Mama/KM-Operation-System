@@ -1,0 +1,13 @@
+
+== PLATFORM_FULFILLED STOCK OWNER — Amazon Site Stock (available + fc_transfer + fc_processing) ==
+
+== SELF_FULFILLED STOCK OWNER — each warehouse's OWN current stock (NOT the Amazon formula) ==
+
+== SELF_FULFILLED MULTI-WAREHOUSE ALLOCATION SUM — summed ONLY AFTER independent per-warehouse projection ==
+
+== NO CROSS-RECEIVER DOUBLE COUNT — a warehouse's stock belongs to exactly one warehouse_id ==
+
+== NO AMAZON STOCK FORMULA LEAK INTO SELF_FULFILLED ==
+
+----------------------------------------
+SELF-FULFILLED OPENING STOCK (F1-4B-FM5-R2b supplemental): 17 passed, 0 failed

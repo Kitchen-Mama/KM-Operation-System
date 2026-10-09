@@ -1,0 +1,15 @@
+
+== A. feature gate — FM2B canonical default-on; kill switch = the workspace flag (no opt-in block) ==
+
+== B. flags ON + valid scope → ONE scope-only request, correct shape ==
+
+== C. OFF→ON permitted; invalid scope; dedupe; stale-ignore ==
+
+== D. per-destination rendering (MARKETPLACE + multiple WAREHOUSE, identity preserved) ==
+
+== E. truthful states — zero / blocked / partial-provisional / source-short / unavailable / no-line / error / identity-conflict ==
+
+== F. semantic boundary + safety (source scans on the extracted block / page) ==
+
+----------------------------------------
+ORDER PLANNING RECOMMENDATION CUTOVER (F1-4B-FM2): 44 passed, 0 failed

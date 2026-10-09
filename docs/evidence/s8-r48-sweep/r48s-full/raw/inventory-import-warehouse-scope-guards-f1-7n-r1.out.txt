@@ -1,0 +1,19 @@
+
+== OVERSEAS server predicate — FBA / RETURN / FACTORY / inactive rejected; 3PL accepted ==
+
+== OVERSEAS picker — FBA/RETURN/FACTORY/inactive excluded; 3PL + blank-type self visible ==
+
+== OVERSEAS identity unchanged (business key warehouse_id|sku; no schema/formula change) ==
+
+== FACTORY picker — only active canonical factories (is_factory + type FACTORY); non-factory/inactive excluded ==
+
+== FACTORY server scope gate — valid / row-mismatch / code-mismatch / non-factory / inactive / unknown / no-op ==
+
+== FACTORY frontend advisory scope check + enable gating + one-factory-per-file ==
+
+== FACTORY wiring — required selector + file starts disabled + scope sent to validate/commit ==
+
+== U/V/W/X/Y/Z — factory identity + SET semantics + no cross-domain change ==
+
+----------------------------------------
+INVENTORY IMPORT WAREHOUSE SCOPE GUARDS (F1-7N-R1): 32 passed, 0 failed

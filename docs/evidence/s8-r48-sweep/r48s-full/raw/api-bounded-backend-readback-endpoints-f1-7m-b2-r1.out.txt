@@ -1,0 +1,12 @@
+
+== B2-3 PO backend: purchaseOrderId filter — absent parity + exact-present + reference not filtered ==
+
+== B2-1 Shipment backend: shipmentId filter — absent parity + exact-present + routes/events scoping ==
+
+== PO frontend: confirmEdit bounded merge — ONE fresh PO in place, others + masters retained ==
+
+== Shipment frontend (map): bounded merge — ONE shipment 4 arrays, static reference retained ==
+
+== IR HALT + safety invariants ==
+
+✓ 49 passed

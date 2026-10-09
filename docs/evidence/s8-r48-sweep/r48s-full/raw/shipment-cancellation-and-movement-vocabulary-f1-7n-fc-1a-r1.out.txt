@@ -1,0 +1,344 @@
+
+== §B — PRECONDITIONS AND RELEASE IDENTITY ==
+ok   B1  the FC-1A baseline is a registered owner stamp
+ok   B2  and R1 is registered after it
+ok   B3  R1 is at or after the newest stamp
+ok   B4  §0 the cache token is STRICTLY AFTER FC-1A's, because FC-1A's was already published
+ok   B4a and the release order still states the rule R1 broke
+ok   B4b and RECORDS the correction rather than quietly rotating the token
+ok   B5  index.html carries the current token on every versioned asset (55 refs)
+
+== §C — THE CANCELLATION AUTHORITY AUDIT, MEASURED ==
+ok   C1  updateShippingPlanStatus is routed
+ok   C2  §C plan cancel is allowed from draft|pending_approval|approved and nothing else
+ok   C2a and an APPROVED plan — the only kind that can HAVE a Shipment Draft — reaches it only through an eligibility check, which runs before the first cell is written
+ok   C3  cancelShippingAllocationDraft is routed (16_)
+ok   C3a and it cancels an Execution Plan allocation draft — it never touches factory stock
+ok   C4  cancelRequestOrderTier is routed (13_, purchase mainline)
+ok   C5  §C updateShipment now REFUSES a cancel and names the action that does it properly
+ok   C5a and refuses an unknown status too, so a typo cannot hide a shipment from every page that filters
+ok   C6  §D cancelShipmentDraft is routed
+ok   C6a defined exactly ONCE, in the shipment owner
+ok   C7  §C exactly ONE cancellation action was added — no duplicate of an existing authority
+
+== §D — CANCELLATION RELEASES THE RESERVATION, ATOMICALLY ==
+ok   D0  precondition: 1000 on hand, 800 reserved by SHP-1
+ok   D1  §M.2 the cancellation succeeds
+ok   D1a and answers CANCELLED
+ok   D2  §D.4 current_stock is UNCHANGED — a cancellation returns a CLAIM, not units
+ok   D2a and the answer says so explicitly
+ok   D3  §D.4 fac_reserved_stock drops by the exact outstanding quantity
+ok   D3a reported as 800
+ok   D4  §D.4 exactly ONE reservation_release row, per warehouse/SKU owner
+ok   D4a with a NEGATIVE qty — the reserved axis went down
+ok   D4b the current pair is recorded as unchanged, not omitted
+ok   D4c while the reserved pair carries the actual change
+ok   D4d owned by the shipment that held it
+ok   D4e and the reason is on the ledger row
+ok   D5  §D.6 the Shipment Draft transitions to cancelled
+ok   D6  §D.7 with who and why preserved
+ok   D6a and when
+ok   D7  §D nothing was deleted — the row is preserved as audit evidence
+ok   D7a and so are its lines
+ok   D7b the ledger keeps BOTH the acquire and the release
+ok   D8  §D.8 the approved parent plan KEEPS its approval
+ok   D8a and who approved it
+ok   D9  §D.9 but its handoff marker is CLEARED, which is what makes the parent derive pending again
+ok   D9a and the answer states that state
+ok   D9b explicitly
+ok   D10 §D.11 a replayed cancel SUCCEEDS rather than erroring
+ok   D10a and answers REUSED
+ok   D10b saying so
+ok   D11 §D.11 and changes ZERO cells in EVERY table
+ok   D11a the balance is exactly where the first cancel left it
+ok   D11b released exactly ONCE — never twice
+ok   D12 §D.12 the cancellation fails
+ok   D12a and says it was rolled back
+ok   D13 §D.12 BOTH reserved balances came back — the first release was undone with the second
+ok   D14 §D.12 no release row survives
+ok   D15 §D.12 and the shipment is still active
+ok   D15a with its plan handoff intact
+ok   D16 §M.5 cancelling a SHIPPED shipment is refused
+ok   D16a by name
+ok   D17 §M.5 with ZERO writes anywhere
+ok   D17a and the post-dispatch balance is untouched
+ok   D18 §D.2 a shipment_out movement alone refuses the cancel even while the STATUS still reads ready_to_ship
+ok   D18a writing nothing
+ok   D19 §D.2 and so does an existing route snapshot
+ok   D19a the reservation is left exactly as it was
+ok   D20 §D a stated expected_status that no longer matches refuses rather than cancelling something else
+ok   D20a with zero writes
+ok   D21 §D an unrecognised-but-not-dispatched status FAILS CLOSED rather than being assumed cancellable
+ok   D21a leaving the reservation alone
+ok   D22 §D.1 a missing shipment is refused by name
+ok   D23 §D.1 and so is a missing id
+ok   D24 §D an unavailable lock refuses the cancel
+ok   D24a writing nothing
+ok   D25 §D SHP-1 releases exactly its OWN 800
+ok   D26 §D and SHP-2's 200 SURVIVES — release is owner-scoped
+ok   D26a confirmed independently by SHP-2's own ledger
+ok   D27 §D a shipment holding NO reservation still cancels
+ok   D27a releasing nothing, and saying so
+ok   D27b with the balance untouched
+ok   D27c and no movement row invented
+ok   D27d reserved is never negative
+
+== §D.10 / §M.7-9 — CANCEL, THEN RETRY: THE PLAN GETS A NEW DRAFT ==
+ok   E1  approve creates the draft
+ok   E1a and reserves 800
+ok   E2  §M.2 the draft is cancelled
+ok   E3  §M.2 current 1000, reserved 0 — the units are free again
+ok   E4  §M.2 available is back to the full 1000, which is what unblocks another plan
+ok   E5  §M.7 the plan is still approved
+ok   E6  §M.7 and the page's REAL predicate puts it back in the recoverable state
+ok   E6a with Retry available
+ok   E7  §M.8 the retry succeeds
+ok   E7a answering CREATED, not REUSED — the cancelled draft is not an existing one
+ok   E8  §M.8 and it is a DIFFERENT shipment: SH-UUID-0009- != SH-UUID-0005-
+ok   E8a both rows exist — the cancelled one is preserved
+ok   E9  §M.8 the new draft reserves 800 again
+ok   E9a the CANCELLED shipment holds nothing
+ok   E9b and the NEW shipment holds all 800 — the ledger attributes them correctly
+ok   E10 §M.9 a replayed retry answers REUSED
+ok   E10a changing zero cells
+ok   E10b and creating no third shipment
+
+== §E — WHOLE-PLAN CANCELLATION: REPORTED, NOT INVENTED ==
+ok   F0  §E the plan cancel branch is locatable
+ok   F0a and its body is bounded
+ok   F1  §E plan cancel is gated to draft|pending_approval|approved
+ok   F2  §E [R5] an approved plan can now be cancelled, and "cancel an approved plan WITH an active draft" is still unreachable — it is refused, which is the same answer the finding asked for
+ok   F2a the reachable equivalent is per-shipment cancellation, which keeps the approval (D8) and frees the units (D3)
+ok   F3  §E [R5] the approved-plan cancellation added by S6-R5 has an eligibility check between the status test and the status write — measured across the WHOLE span, not a fixed window
+
+== §F — THE SHIPMENT DRAFT UI ==
+ok   G1  §F the page defines the cancel command
+ok   G1a and exports it for the card markup
+ok   G2  §F which calls the routed action
+ok   G3  §F and the card carries the button
+ok   G4  §F explicit confirmation is required
+ok   G5  §F it says current stock is NOT deducted
+ok   G6  §F and that the reserved quantity IS released
+ok   G7  §F naming the exact qty and source warehouse
+ok   G8  §F a reason is required
+ok   G8a and sent to the server
+ok   G9  §F it states the status it saw, so a stale card cannot cancel blind
+ok   G10 §M.20 an in-flight guard returns early on a second click
+ok   G10a and the button is disabled while it runs
+ok   G10b actually disabled, not just relabelled
+ok   G11 §F Cancel is offered on a draft
+ok   G11a and on ready_to_ship
+ok   G12 §F NOT on an already-cancelled shipment
+ok   G13.1 §F and never on shipped
+ok   G13.2 §F and never on in_transit
+ok   G13.3 §F and never on arrived
+ok   G13.4 §F and never on received
+ok   G13.5 §F and never on closed
+ok   G14 §F success triggers an authoritative readback
+ok   G15 §F and a typed failure retains the state on screen
+ok   G15a surfacing the typed code, not just prose
+ok   G16 §F `cancelled` is in the Shipment Draft status set, so the card stays visible
+ok   G16a with its own group heading
+ok   G16b and a status filter option
+
+== §G — ONE MOVEMENT VOCABULARY OWNER, AND WHAT EACH TYPE MOVES ==
+ok   H1  §A the canonical vocabulary is SIX
+ok   H2  §G defined exactly ONCE, in the stock authority
+ok   H2.1 §G factoryStockIsKnownMovementType_ has ONE owner
+ok   H2.2 §G factoryStockIsReservationMovement_ has ONE owner
+ok   H2.3 §G factoryStockIsCurrentMovement_ has ONE owner
+ok   H2.4 §G factoryStockReconcileReservations_ has ONE owner
+ok   H3  §G.6 the two reservation types move the RESERVED axis
+ok   H4  §G.3 and NOT the current axis — this is what stops a reservation being reported as physical stock movement
+ok   H4a neither of them
+ok   H5.1 §G.6 inventory_import moves CURRENT only
+ok   H5.2 §G.6 manual_adjustment moves CURRENT only
+ok   H5.3 §G.6 po_receipt moves CURRENT only
+ok   H5.4 §G.6 shipment_out moves CURRENT only
+ok   H6  §G.5 shipment_out is NOT a reserved-axis row — it carries its release in its own before/after pair, so counting it as one would DOUBLE-COUNT every dispatched reservation
+ok   H7  §G.1 a reservation type is KNOWN to the vocabulary
+ok   H7a and an unknown one is not silently accepted
+ok   H8  §G.1 an unknown movement type is REPORTED, never silently dropped
+ok   H8a and never counted into a balance
+ok   H9  §G.2 the reconciliation diagnostic calls the CANONICAL function, not a private copy
+ok   H9a it contains no arithmetic of its own — a second opinion nobody could adjudicate
+ok   H10 §G.7 the dispatch guard reads movement_type
+ok   H10a and matches shipment_out specifically
+ok   H10b alongside owner identity
+ok   H11 §G.7 and the owner ledger counts ONLY the two reservation types
+ok   H11a scoped to one owner
+ok   H12 §A nothing in the repository still claims the vocabulary is closed at five
+
+== §H — RESERVED-BALANCE RECONCILIATION ==
+ok   I1  §M.13 a healthy world reconciles EXACTLY
+ok   I1a with no mismatches
+ok   I2  §H the three terms: acquired 1100, released 0, dispatched 800
+ok   I2a §H derived = 1100 + 0 - 800 = 300 = stored
+ok   I3  §H.1 the dispatched 800 is counted EXACTLY ONCE — a dispatch releases its own hold on its own row and writes no separate reservation_release, so that drop IS the release record
+ok   I4  §H outstanding is attributed to the owner still holding it, and SHP-A (fully dispatched) nets to zero
+ok   I5  §H available is derived from CURRENT minus DERIVED reserved (200 - 300)
+ok   I6  §H.3 a stored/derived disagreement is TYPED
+ok   I6a and not ok
+ok   I7  §H.3 reporting stored, derived AND the difference — never rounded into agreement
+ok   I8  §H a reservation against a NON-EXISTENT stock row is a mismatch
+ok   I8a and says the row is missing
+ok   I9  §H.2 a cancelled-and-released reservation reconciles at zero
+ok   I9a and its owner is NOT listed as holding anything
+ok   I10 §H.4 the reconciliation cannot write — it is pure
+ok   I10a and contains no repair path
+ok   I11 §H after a real cancellation the ledger and the balance AGREE
+ok   I11a both at zero
+ok   I12 §H and after a real acquisition they agree at 800
+ok   J1   §H.7 the diagnostic never names setValue in code
+ok   J2   §H.7 the diagnostic never names appendRow in code
+ok   J3   §H.7 the diagnostic never names deleteRow in code
+ok   J4   §H.7 the diagnostic never names setValues in code
+ok   J5   §H.7 the diagnostic never names insertSheet in code
+ok   J6   §H.7 the diagnostic never names getScriptLock in code
+ok   J7   §H.7 the diagnostic never names PropertiesService in code
+ok   J8   §H.7 the diagnostic never names UrlFetchApp in code
+ok   J9   §H.7 the diagnostic never names MailApp in code
+ok   J10   §H.7 the diagnostic never names DriveApp in code
+ok   J11   §H.7 the diagnostic never names clearContent in code
+ok   J12 §H.7 every sheet goes through a read-only facade
+ok   J12a which never hands back a write-capable Sheet handle
+ok   J13 §H.7 and it declares its own zero-write result
+ok   J13a with no repair path in its code
+ok   J14 §H.6 there is a numeric cap (40)
+ok   J15 §H.6 a 5000-row list is capped at 40 and still reports its TRUE total
+ok   J16 §H.6 every list (6) goes through the cap
+ok   J17 §H.6 and the WORST-CASE whole report is 19102 bytes — under the Apps Script log limit
+ok   J18 §H.5 ONE main entry point plus ONE explicitly-single-key detail helper
+ok   J19 §H and a deployment missing the canonical function is NAMED rather than silently substituted
+
+== §I — SOURCE WAREHOUSE MOVE, PRESERVED; QTY STILL IMMUTABLE ==
+ok   K1  §I.1 the source change is accepted
+ok   K2  §I.2 WH-F releases 800; current untouched
+ok   K3  §I.3 WH-G acquires 800; current untouched
+ok   K4  §I.4 and the draft records the new source
+ok   K5  §I.5 recorded as a release and an acquire — full lineage at BOTH warehouses
+ok   K5a and the ledger reconciles afterwards
+ok   K6  §I.6 an unaffordable move is REFUSED
+ok   K6a with nothing written — the reservation is not half-moved
+ok   K6b and the original hold is exactly where it was
+ok   K6c with the source unchanged
+ok   K7  §I.7 a destination + method + note change succeeds
+ok   K8  §I.7 and the source reservation is NOT touched
+ok   K8a not one factory_stock cell was written
+ok   K8b and no movement row was appended
+ok   K9  §I shipment_qty is NOT in the editable field set
+ok   K9a while source_warehouse_id IS, which is why K1-K6 exist
+ok   K10 §I a shipment_qty in the body is IGNORED
+ok   K10a and the reservation is unchanged
+
+== §J — DISPATCH INTEGRATION, RE-EXECUTED AFTER THE CANCELLATION WORK ==
+ok   L1  §J.1 a reserved shipment dispatches
+ok   L2  §J current 200, reserved 0
+ok   L3  §J ONE canonical shipment_out movement
+ok   L3a signed negative
+ok   L4  §J carrying its own reserved release in its own before/after pair
+ok   L5  §J and NO additional standalone reservation_release — the ledger requires exactly one row for this
+ok   L6  §J the shipment ends at shipped
+ok   L6a with its route snapshot
+ok   L6b and exactly one initial event
+ok   L7  §J and the ledger reconciles
+ok   L8  §J a replayed dispatch changes ZERO cells
+ok   L9  §M.6 dispatching a CANCELLED shipment does not proceed to a deduction
+ok   L10 §M.6 current stock is UNCHANGED — no deduction happened
+ok   L10a and no shipment_out row was written
+ok   L11 §M.6 with zero writes anywhere
+ok   L11a and the shipment stays cancelled
+
+== §K — PO OVER-RECEIPT: AN EXPLICIT REFUSAL, NOT A SILENT CLAMP ==
+ok   M1  §K.1 a receipt of the full 500 succeeds
+ok   M1a current +500
+ok   M1b with ONE po_receipt movement of 500
+ok   M1c and reserved is untouched
+ok   M2  §K.2 a replay with the same key writes ZERO cells
+ok   M3  §K.3 an over-receipt is now REFUSED, not silently clamped
+ok   M3a with the typed code §A named
+ok   M4  §K.3 showing attempted 900, remaining 500 and excess 400 — the three numbers a clamp never showed
+ok   M4a and declaring itself a zero-write refusal
+ok   M5  §K.3 factory stock is UNCHANGED
+ok   M5a no movement row
+ok   M5b no PO line change
+ok   M5c and nothing anywhere was written
+ok   M6  §K.3 and the message says so in words too
+ok   M7  §K.4 a partial receipt of 300: remaining_qty = MAX(0, 300-0) = 300 (received and NOT yet shipped)
+ok   M7a with current +300
+ok   M8  §K.5 the remaining 200 is received
+ok   M8a completed 500, current 1500
+ok   M9  §K.6 a further receipt on a FULLY received line cannot exceed the canonical remaining
+ok   M9a writing nothing
+ok   M10 §K.6 completed_qty can NEVER exceed ordered_qty
+ok   M11 §K.7 the balance came back
+ok   M11a the movement row is gone
+ok   M11b and completed_qty never rose
+ok   M12 §K remaining_qty is still MAX(0, completed - shipped) — the frozen meaning, unchanged
+ok   M13 §A no over-receipt tolerance or override was invented — it stays an explicit future decision
+
+== §L — CONTRACT VERSIONS AND REACHABILITY ==
+ok   N1  §L SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ is not below 11 (the round that added the release action)
+ok   N2  §L and the frontend pinned minimum equals the deployed contract, in the same commit
+ok   N3  §L SYS_REQUIRED_ACTION_LIST_VERSION_ is at or after 12 (FC-1A took it 11 -> 12)
+ok   N4  §L the TRANSPORT contract does NOT move — the envelope shape is unchanged
+ok   N5  §L cancelShipmentDraft is in the required-action registry
+ok   N5a and in the caller probe
+ok   N6  §L and in the shipment-draft page-specific required set
+ok   N7  §L chain 1/5 the page renders a caller
+ok   N7a §L chain 2/5 the adapter exists, on the command runner so typed codes survive
+ok   N7b §L chain 3/5 the router dispatches it
+ok   N7c §L chain 4/5 the handler exists
+ok   N7d §L chain 5/5 and it reaches the SHARED transaction, never a balance cell of its own
+ok   N7e and the forwarder is exactly that — each domain's own transaction owner, called, never reimplemented
+ok   N8  §L the cancel handler writes NO factory_stock balance cell directly
+ok   N9.1 §L 01_router.gs declares a stamp at or after FC-1A-R1
+ok   N9.1a and the manifest expects EXACTLY what it declares
+ok   N9.2 §L 12_shipment_handlers.gs declares a stamp at or after FC-1A-R1
+ok   N9.2a and the manifest expects EXACTLY what it declares
+ok   N9.3 §L 13_procurement_handlers.gs declares a stamp at or after FC-1A-R1
+ok   N9.3a and the manifest expects EXACTLY what it declares
+ok   N9.4 §L 21_factory_inventory_handlers.gs declares a stamp at or after FC-1A-R1
+ok   N9.4a and the manifest expects EXACTLY what it declares
+ok   N10.1 §L handleCancelShipmentDraft_ is probed as an owner symbol
+ok   N10.2 §L FSTX_MOVEMENT_TYPES_ is probed as an owner symbol
+ok   N10.3 §L PROC_BUILD_VERSION_ is probed as an owner symbol
+ok   N11 §L the page-scoped verdict helper exists
+ok   N11a and both shipment pages have a required-action set
+
+== §M — THE REMAINING SIMULATIONS ==
+ok   O1  §M.1 Shipment Draft creation acquires the reservation
+ok   O2  §M.12 Site A holds 800
+ok   O3  §M.12 Site B is refused at the Shipment Draft, and its approval is still committed
+ok   O3a typed
+ok   O4  §M.12 Site A cancels and the 800 are released
+ok   O4a available back to 1000
+ok   O5  §M.12 and Site B's Retry now SUCCEEDS — the release unblocked it
+ok   O5a with the 800 now held by Site B
+ok   O5b and the ledger reconciles throughout
+
+== §N — MUTATIONS. Each is applied to shipped source and must be caught. ==
+ok   N1  cancellation does NOT release the reservation (caught)
+ok   N2  cancellation DEDUCTS current stock (caught)
+ok   N3  cancellation releases ANOTHER shipment's reservation (caught)
+ok   N4  cancellation AFTER dispatch succeeds (caught)
+ok   N5  a replayed cancellation releases TWICE (all THREE layers removed) (caught)
+ok   N6  the release MOVEMENT is omitted (balance moves alone) (caught)
+ok   N7  the shipment is cancelled BEFORE the stock transaction succeeds (caught)
+ok   N8  a failure SKIPS the rollback (caught)
+ok   N9  the parent PLAN is incorrectly cancelled (caught)
+ok   N10 a cancelled shipment is still considered ACTIVE (handoff not cleared) (caught)
+ok   N11 Retry REUSES the cancelled shipment (caught)
+ok   N12 the movement vocabulary loses the reservation pair (caught)
+ok   N13 a reservation row is treated as a CURRENT-stock delta (caught)
+ok   N14 dispatch DOUBLE-releases the reservation (a second release row) (caught)
+ok   N15 the reconciliation counts shipment_out TWICE (caught)
+ok   N16 the PO over-receipt still CLAMPS (caught)
+ok   N17 the PO over-receipt WRITES stock (caught)
+ok   N18 the typed over-receipt code is FLATTENED into prose (caught)
+ok   N19 the UI cancel has NO confirmation (caught)
+ok   N20 a deployment mismatch still allows the cancel (caught)
+
+---
+312 passed, 0 failed
+mutations: 20 caught, 0 missed

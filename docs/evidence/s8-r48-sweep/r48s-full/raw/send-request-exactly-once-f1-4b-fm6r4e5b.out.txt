@@ -1,0 +1,65 @@
+
+== §1 execution key canonical serialization (N/O) ==
+ok   canonical = company|cycle|series|sorted draft ids
+ok   O same set, different order → SAME canonical (row order irrelevant)
+ok   N different draft set → DIFFERENT canonical
+ok   duplicate draft ids collapse (unique set)
+ok   scalars + ids trimmed (canonical)
+ok   §1 roExecutionKey_ = ROEXEC- + SHA-256 of the canonical string (deterministic hash)
+
+== §6 idempotency lookup (C/D/E/P/Q) ==
+ok   C/D/E one existing execution → reuse (found exactly 1)
+ok   cancelled request never counts as an existing execution
+ok   Q >1 existing → caller fails closed (duplicate conflict)
+ok   P legacy blank source_ref_id is never falsely matched
+
+== §8 compensation delete-by-request_order_id ==
+ok   §8 only THIS execution’s rows (RO1) are removed; others (RO2) preserved
+
+== §3/§10 lineage FK ==
+ok   §3 request_order_line_sources header includes request_allocation_draft_id
+ok   §20 additive-column ensure owner adds the FK to an existing sheet
+ok   §10 lineage FK persisted verbatim from the caller (never derived from sku/status/time)
+ok   §2 source_ref_id = execution key for allocation-batch executions
+ok   §8 write failure compensates (delete-by-id) then surfaces — no orphan header/lines
+
+== §6/§7 locked idempotency wrapper ==
+ok   non-allocation callers keep the existing unguarded behavior
+ok   §6/§7 exactly-once runs under the canonical ScriptLock with a backend-computed key
+ok   §6.C one existing → REUSE (no second Request Order)
+ok   §6.D >1 existing → FAIL CLOSED
+ok   §6.E zero existing → create exactly one (key stored)
+
+== §14/§18/§20 submittedSkus (H) ==
+ok   H submitted allocation → reported in submittedSkus
+ok   H readback surfaces submittedSkus
+ok   H already-executed SKU is NOT mislabeled NO_DRAFT
+ok   H active draft (BB) still returned; submitted (AA) not active
+
+== §5/§13 deterministic manual draft id (I) ==
+ok   I manual id deterministic (retry reuses SAME draft → stable execution key)
+ok   different SKU → different manual id
+ok   manual id is prefixed + grain-encoded
+
+== frontend Send wiring ==
+ok   §2 the orchestration tags the batch execution (source_ref_type + cycle + series) for the backend key
+ok   §3/§10 every request-order line carries its canonical allocation lineage FK
+ok   §5 lineage + creation go through the EXISTING canonical writer — the orchestration writes no row itself
+ok   §11 the lifecycle advance runs over the covered draft ids through the canonical submit writer
+ok   §11/§16 create → PROVE the output → only then advance the lifecycle (stricter than the retired client order)
+ok   §C the Send transition no longer creates a manual draft (retired per FB-3B §C)
+ok   §5 the deterministic manual-id authority is retained (reversible), not deleted
+ok   §14/§18 already-executed (submitted) SKUs are excluded from a new Send — and the exclusion is counted
+ok   §17 execution qty = canonical persisted order_qty (no recompute)
+ok   §17/§18 no gap/KMREC/suggested recompute in Send
+ok   §9 (J) drift / unsaved / missing persisted draft are each named distinctly
+ok   §9 (J) and the whole Send is blocked BEFORE any Request Order is created
+ok   §9 (J) reported as a proven zero-write
+
+== §8/§25 real conflicts still fail closed; §23 PO untouched ==
+ok   §8/§25 >1 active canonical row still → BLOCKED_CONFLICT (not weakened)
+ok   §20/§21 active set unchanged (draft|site_confirmed); submitted terminal
+ok   §23 convert-to-PO still consumes request_orders/lines (allocation lineage does not enter the PO grain)
+
+----------------------------------------
+SEND REQUEST EXACTLY-ONCE (F1-4B-FM6-R4E5B): 44 passed, 0 failed

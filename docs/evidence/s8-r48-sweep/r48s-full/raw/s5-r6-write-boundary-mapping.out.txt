@@ -1,0 +1,142 @@
+
+== A. the write owner, confirmed rather than assumed ==
+ok   A1 the MONTHLY flat locked write boundary is rpoFlatLockedApply_ in 24_
+ok   A2 every flat path (generate / edit / submit / cancel) reaches it through ONE injected dep
+ok   A3 KMPR.applyPersistencePlanWithLock is the LINE engine boundary — the flat path never calls it
+ok   A4 the flat path is declared never to write the child line table
+ok   A5 exactly ONE planner — planOperatorDecision added no second one
+ok   A6 the gate produces its plan BY CALLING planFlat, not by rebuilding one
+ok   A7 WRITE_PLAN_IS_PURE — no sheet, lock, clock, randomness or transport in the gate
+ok   A8 the gate never derives the recommendation or its staleness — both arrive as values
+ok   A9 SECOND_CALCULATION_PATH_COUNT = 0 — no cartonization, no quantity arithmetic
+
+== B. the five actions, each mapped to what it authorizes ==
+ok   B1 only these two authorize an order write
+ok   B2 these three authorize none
+ok   B3 the partition is exactly the KMREC enum — no member unclassified, none invented
+ok   B4 the NEW_ORDER fixture really is one
+ok   B5 the REALLOCATE fixture really is one
+ok   B6 the combined fixture really is one
+ok   B7 the NO_ACTION fixture really is one
+ok   B8 the MANUAL_REVIEW fixture really is one
+ok   B9 NEW_ORDER authorizes a draft write
+ok   B10 REALLOCATE_AND_NEW_ORDER authorizes a draft write — for its ORDER half only
+ok   B11 REALLOCATE writes no order candidate — the transfer is already persisted by the §41 owner
+ok   B12 NO_ACTION must not create an actionable order candidate
+ok   B13 MANUAL_REVIEW must not AUTO-create an actionable order candidate
+ok   B14 REALLOCATE produces no plan at all, not an empty one
+ok   B14 NO_ACTION produces no plan at all, not an empty one
+ok   B14 MANUAL_REVIEW produces no plan at all, not an empty one
+ok   B15 an absent action is UNAVAILABLE, never silently NO_ACTION
+ok   B16 an action outside the closed set refuses — it is not passed through
+
+== C. the recommendation authorizes; it does not price ==
+ok   C1 KMREC cartonizes the RAW T1–T3 sum once → 36
+ok   C2 the per-tier stored suggestion sums to 48 — the two authorities are NOT the same number
+ok   C3 the draft stores the per-tier gap suggestion VERBATIM — the live authority, unchanged
+ok   C4 KMREC_TOTAL_IS_WRITE_SOURCE = NO — the display total reached no column
+ok   C5 the cartonize-once total appears nowhere in the written row
+ok   C6 tN_order_qty defaults to the system suggestion on create
+ok   C7 a system-created tier is not marked user-edited
+
+== D. the action is descriptive, and stays out of the row ==
+ok   D1 the planned row has exactly the frozen 53 columns
+ok   D2 no column exists to hold an action or a reason token
+ok   D3 ACTION_PERSISTED = NO — no enum value appears anywhere in the plan
+ok   D4 REASON_TOKENS_PERSISTED = NO
+ok   D5 the result says so explicitly, for a caller to assert on
+ok   D6 RECOMMENDATION_ACTION_IS_DRAFT_STATE = NO — status comes from deriveHeaderStatus
+ok   D7 the draft lifecycle vocabulary is unchanged and shares no member with the action enum
+ok   D8 an unexpected caller key is dropped — planInput is built by name, never spread
+ok   D9 and the written row is byte-identical either way
+
+== E. two quantities, and only one of them has a home here ==
+ok   E1 the flat draft schema has NO reallocation column — the meanings never share a field
+ok   E2 COMBINED_QTY_WRITTEN = NO — the combined action writes the order half only
+ok   E3 and the result states it, so a caller need not infer it from absence
+ok   E4 the order half is the gap suggestion, untouched by the reallocation
+ok   E5 no merged 30 + 72 quantity exists
+ok   E6 the only reallocation tokens (refusal + authorization) in the gate is the flag declaring none was written — it reads no such input
+ok   E7 REALLOCATION_QTY_SOURCE = order_planning_gap.reallocation_in_qty_snapshot, written by its own §41 owner
+
+== F. operator authority ==
+ok   F1 a visible recommendation does not authorize a write
+ok   F2 absent confirmation is not consent
+ok   F3 only the boolean true confirms — a truthy string does not
+ok   F4 SYSTEM_AUTO_PERSISTS_DECISION = NO
+ok   F5 a stale row is reported stale even when confirmation is also missing
+ok   F6 and an unorderable action is reported as such, not as a consent problem
+
+== G. stale recommendation at write time ==
+ok   G1 STALE_WRITE_BEHAVIOR = REFUSE — never a silent upgrade to the newest values
+ok   G2 a stale decision produces no plan to accidentally apply
+ok   G3 STALE_WRITE_CHECK_OWNER = KMREC.isStale over sourceFingerprint — unchanged, and still the only one
+ok   G4 the gate holds no fingerprint logic of its own to drift from it
+ok   G5 a stale optimistic token is refused by the real applyFlat — zero rows written
+ok   G6 and the table is unchanged
+
+== H. operator edit preservation ==
+ok   H1 an operator edit sets order_qty + user_edited and never touches recommended_qty
+ok   H2 USER_EDIT_SURVIVES_RECALC = YES — refresh leaves the operator value alone
+ok   H3 and the flag survives with it
+ok   H4 SYSTEM_VALUE_STILL_AVAILABLE_FOR_COMPARISON = YES — the system value is still readable beside it
+ok   H5 SYSTEM_RECALC_OVERWRITES_USER_EDIT = NO — even regenerate needs explicit confirmation
+ok   H6 regenerate still advances the version
+ok   H7 and only an explicit confirmation replaces it — then the flag is honestly cleared
+ok   H8 the gate never synthesizes the overwrite confirmation
+ok   H9 nor defaults it true anywhere before the plan input is built
+
+== I. identity, idempotency and duplicate submit ==
+ok   I1 WRITE_IDENTITY = the deterministic RD:: id — no clock, no UUID
+ok   I2 the same operator decision yields the same identity
+ok   I3 the whole plan is deterministic — a stable write plan
+ok   I4 REPLAY_BEHAVIOR = upsert on the same id, never a second row
+ok   I5 no duplicate draft line
+ok   I6 no duplicate recommendation run
+ok   I7 the replay is COUNTED rather than hidden — attempt_count advances
+ok   I8 a new calculation run is carried through
+ok   I9 still ONE draft for the scope
+ok   I10 and a second run row, which is the journal working
+ok   I11 DUPLICATE_WRITE_IDENTITY downstream = the deterministic ROEXEC- execution key, already existing
+
+== J. draft allocation is not a request order ==
+ok   J1 REQUEST_ORDER_CANDIDATE is produced by the SEND explosion, a separate step
+ok   J2 only tiers with a positive order_qty become candidates
+ok   J3 ENTRY_CONDITION_FOR_REQUEST_ORDER_CANDIDATE = operator order_qty > 0 — not recommended_qty
+ok   J4 the system suggestion is not even carried onto the candidate
+ok   J5 Send delegates to the existing canonical Request Order writer — no new one
+ok   J6 AUTO_CREATE_REQUEST_ORDER / PO / SHIPMENT = NO — the gate names none of them
+ok   J7 SHIPPING_WRITE_COUNT = 0 — PHASE2_ORCHESTRATION_IMPLEMENTED = NO
+
+== K. provenance, and the fields S5-R3 proved unavailable ==
+ok   K1 PROVENANCE_FIELDS — run, formula and source-as-of are carried verbatim
+ok   K2 the calculated_at that identifies the recommendation the operator saw
+ok   K3 the planning scope travels on the run journal row
+ok   K4 missing provenance is left blank, never faked
+ok   K5 and the fallback run id is derived from the deterministic draft identity
+ok   K6 no S5-R3 unavailable field was quietly added as a column
+ok   K7 and the gate reads none of them
+
+== L. write truth, unchanged and not weakened ==
+ok   L1 WRITE_TRUTH_OWNER = rpoFlatLockedApply_ — all four outcomes exist
+ok   L2 UNKNOWN_OUTCOME_POSSIBLE = YES, and it is surfaced rather than rounded to success
+ok   L3 AUTOREPLAY_PRESENT = NO — a committed-unverified write is never blindly resent
+ok   L4 and the operator surface says so where the operator can read it
+
+== M. mutation — every claim above must be able to fail ==
+ok   M1 NO_ACTION is allowed to create an order candidate (caught)
+ok   M2 MANUAL_REVIEW alone is let through the non-order guard (caught)
+ok   M3 a stale recommendation is silently written anyway (caught)
+ok   M4 visibility becomes authorization (caught)
+ok   M5 an unknown action is passed through instead of refused (caught)
+ok   M6 the plan input is spread from the caller, so extra keys reach the planner (caught)
+ok   M7 the overwrite confirmation is defaulted true, so an operator edit is lost (caught)
+ok   M8 the gate builds its own plan instead of delegating to planFlat (caught)
+ok   M9 a reallocation column is added to the frozen 53 (caught)
+ok   M10 the refusal precedence is reordered so a stale row is reported as ineligible (caught)
+ok   M11 the display total becomes the written quantity (caught)
+ok   M12 applyFlat stops guarding the optimistic token (caught)
+
+== RESULT ==
+passed 112  failed 0  mutants killed 12/12
+WRITE_PLAN_IS_PURE = YES · ACTION_PERSISTED = NO · COMBINED_QTY_WRITTEN = NO · PRODUCTION_ROWS_WRITTEN = 0

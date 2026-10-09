@@ -1,0 +1,17 @@
+
+== Texture tier (V3G6A supersedes the fixed-resolution guard) ==
+
+== On-demand render model preserved (no continuous loop / no animation-timing change) ==
+
+== Shader interface unchanged (JS uniform/attribute bindings stay valid) ==
+
+== Interaction + public API + GPU cleanup preserved ==
+
+== Data-driven marker/arc colors untouched (no business/semantic color change) ==
+
+== Visual enhancements present (the actual change) ==
+
+== CSS overlay cannot break interaction or cover UI ==
+
+----------------------------------------
+GLOBE VISUAL GUARD (UI-GLOBE-01/02/02B): 61 passed, 0 failed

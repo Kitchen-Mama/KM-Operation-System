@@ -1,0 +1,19 @@
+
+== §1 A/B — the fixed 4-row skeleton exists in EVERY load state (never a message-only card) ==
+
+== §1 C/D/E — data load PATCHES the stable cells in place (no rebuild) ==
+
+== §2 F/G/H — spacing matches Monthly Achievement; no green; no min-height/flex spacer ==
+
+== §3 I — one shared stretch parent owns left/right detail height (no JS pixel sync) ==
+
+== §4 J/K — SKU fixed-column right gutter removed AT SOURCE ==
+
+== §5 L — active-row background stays per-cell / full logical width (no R5A regression) ==
+
+== § M — horizontal scroll remains available ==
+
+== § N — the functions changed this round touch no formula / API / server ==
+
+----------------------------------------
+R5E EXPANDED STRUCTURE (F1-4B-FM5-R4UI-R5E): 29 passed, 0 failed

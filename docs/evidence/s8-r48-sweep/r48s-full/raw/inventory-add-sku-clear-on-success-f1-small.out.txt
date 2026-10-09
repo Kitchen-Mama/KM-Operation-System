@@ -1,0 +1,17 @@
+
+== behavioral — resetReplenAddSkuForm blanks EXACTLY the leaked fields (text → "", selects → default option 0) ==
+
+== behavioral — reset is null-safe when a field is absent (never throws) ==
+
+== B/D source contract — reset runs on the CONFIRMED-success branch (after closeReplenModal, after error guards) ==
+
+== C source contract — failure branches do NOT reset (values preserved for retry) ==
+
+== A/Cancel source contract — closeReplenModal (Cancel) is UNCHANGED: resets only SKU + Site SKU, never full-form ==
+
+== A source contract — open does NOT full-reset (accidental-close → reopen still shows the un-reset fields) ==
+
+== E / negative constraints — reset makes NO cache/storage/filter/DB write (no new draft architecture) ==
+
+----------------------------------------
+INVENTORY ADD SKU CLEAR-ON-SUCCESS (F1-SMALL): 17 passed, 0 failed

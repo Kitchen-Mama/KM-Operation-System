@@ -1,0 +1,18 @@
+
+== A. Apps Script canonical-table reader (fake SpreadsheetApp; read-only, value-preserving) ==
+
+== B. Weekly full Apps Script read path → read-only RecommendationPlan (96) ==
+
+== C. Monthly full Apps Script read path (24) + FACTORY_SHARED ==
+
+== D. Orchestrator source seam (SOURCE_READER_PENDING replaced) via REAL KMORCH + fake locked-apply ==
+
+== E. FACTORY_SHARED production behavior (one shared pool; not duplicated) ==
+
+== F. Factory as-of / destination / status propagation (fail-closed issues not swallowed) ==
+
+== G. Failure paths (fail-closed; no empty-success) ==
+
+== H. Purity / non-write / boundary source scans ==
+
+All Round 1S-P2 Production Source Wiring assertions passed (43 assertions).

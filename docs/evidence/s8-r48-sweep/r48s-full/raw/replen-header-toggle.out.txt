@@ -1,0 +1,91 @@
+ok   A1: level-1 group cells appear in the correct order
+ok   A1/A5: parent header sequence (Status renamed to Planning Model)
+ok   A1: Replenishment colspan = 2
+ok   A1: Factory Stock colspan = 2
+ok   A1: Inventory colspan = 3
+ok   A1: Sales colspan = 3
+ok   A1/D1/D2: canonical 10-leaf header sequence
+ok   A1: exactly 10 leaves
+ok   A1/D3: the Current Stock leaf is class-tagged — and is still counted as a leaf
+ok   A1: group leaf-spans sum to the leaf-column count
+ok   A1/D2: Inventory group = the 3 stock-flow leaves, in order
+ok   A1/D1: Sales group carries the 90-day FC reference
+ok   A1: Replenishment spans exactly Days of Supply + Suggested Qty
+ok   A1: CN/TW are Factory Stock leaves — NOT under Replenishment
+ok   A1: Replenishment group is 240px (2 × 120px)
+ok   A1: Factory Stock group is 240px (2 × 120px)
+ok   A1: first-layer body cells line up 1:1 with the leaves (inventory→sales→replen→factory)
+ok   A2: chevron rendered in the fixed SKU column
+ok   A2: chevron is a native <button>
+ok   A2: chevron has aria-expanded
+ok   A2: chevron aria-controls points at the detail panel id
+ok   A2: chevron has a descriptive aria-label
+ok   A2: chevron wired to _replenChevronClick
+ok   A2: detail panel gets the matching id
+ok   A2: gear button (planned-qty-config-btn) removed from JS + CSS
+ok   A2: gear tooltip removed
+ok   A2: the Suggested Qty cell delegates to _irSuggestedCellHtml
+ok   A2: ... which renders the value/status span
+ok   A2: ... with NO button in the Suggested Qty cell
+ok   A2: ... and no inline handler either
+ok   A2: _replenChevronClick calls stopPropagation (single toggle)
+ok   A2: interactive-target guard exists
+ok   A2: _replenRowClick excludes interactive targets from row toggle
+ok   A2: guard covers BUTTON/INPUT/SELECT/... tags
+ok   A3: initial state collapsed (no expanded key)
+ok   A3: one toggle → row expanded (single key set)
+ok   A3: second toggle on same row → collapsed
+ok   A3: rapid toggling resolves to a single deterministic key (no desync)
+ok   A3: _irNextExpandedKey is the single-state decision
+ok   A3: toggleReplenRow uses the single-state decision
+ok   A3: BOTH left (fixed) and right (scroll) get .expanded in the same pass
+ok   A3: both sides open synchronously before any setTimeout (no per-side stagger)
+ok   A3/A2: chevron aria-expanded synced to open/closed
+ok   A5: sales_driven → Sales
+ok   A5: forecast_driven → Forecast
+ok   A5: shared formatter _replenPlanningModelLabel exists
+ok   A5: table cell uses the shared formatter
+ok   A5: table cell no longer shows "Sales Driven"/"Forecast Driven"
+ok   A5: Add/Edit forms show Sales/Forecast (no "…Driven") while keeping canonical values
+ok   A5: canonical option values preserved (sales_driven / forecast_driven)
+ok   A4: category container uses the OWN .replen-category-rail (not km-tab-rail)
+ok   A4: markup no longer uses the shared km-tab-rail class
+ok   A4: tabs render with the OWN .replen-category-rail__tab / __count classes
+ok   A4: rail still wired to KM.ui.tabRail (behavior-only wheel/keyboard scroll)
+ok   A4: old "More Categories" overflow mode removed
+ok   A4: page-scoped shell + rail CSS present (own styling, not km-category-card)
+ok   A6: trigger uses SKU Details neutral colours (#f1f5f9 / #334155)
+ok   A6: panel matches SKU Details (soft shadow, 240px, border-light)
+ok   A6: menu items match SKU Details tokens
+ok   CD2: option label sourced from marketplace_display_name
+ok   CD2: option value stays marketplace_id (identity)
+ok   CD2: no country suffix appended to the label
+ok   CD2: company hint appended ONLY on same-country display-name collision
+ok   A7/D3: a qualifying Self-Fulfilled site hides Current Stock
+ok   A7/D3: ... leaving 3rd Party Stock → On the Way, in canonical order
+ok   A7/D3: a non-qualifying (platform) site KEEPS Current Stock
+ok   A7/D3: hybrid is non-qualifying — full structure
+ok   A7/D3: an unresolved scope FAILS SAFE to the full structure
+ok   A7/D3: eligibility is the canonical value, case-insensitive — never a platform name
+ok   A7/D3: no marketplace is hardcoded in the eligibility rule
+ok   A7/D3: the body ALWAYS emits the Current Stock cell (hidden ≠ removed)
+ok   A7/D3: one container class drives the hiding
+ok   A7/D3: data-leaf-span is NOT rewritten when the column hides — the structural count stays true
+ok   A7/D3: the declared Inventory span stays 3 in the markup
+ok   A7/D3: header leaf + body cell are hidden by the SAME container class
+ok   A7/D3: the Inventory GROUP shrinks 360→240 (width AND min-width) so downstream groups stay aligned
+ok   X1 killed — the modifier-bearing Current Stock leaf is omitted
+ok   X2 killed — Inventory columns reordered (On the Way before 3rd Party Stock)
+ok   X3 killed — group-span mismatch (Replenishment widened to 3)
+ok   X4 killed — a widened Replenishment span pulls CN out of Factory Stock
+ok   X5 killed — 90 days FC reverted to 60 days FC
+ok   X6 killed — a button is injected into the Suggested Qty cell
+ok   X7 killed — Current Stock stays VISIBLE for a qualifying Self-Fulfilled site
+ok   X8 killed — Current Stock hidden for a NON-qualifying (platform) site
+ok   X9 killed — the logical column structure is removed instead of visually hidden
+ok   X10 killed — header/body alignment broken (Inventory group keeps 360px while a leaf is hidden)
+ok   X11 killed — only min-width shrinks — the group still renders 360px wide
+ok   X12 killed — the body stops emitting the Current Stock cell
+ok   X13 the mutant set is non-empty (12 mutants) — not vacuous
+
+PASS  77 passed, 0 failed, 12 mutants, 0 survived, vacuity clean

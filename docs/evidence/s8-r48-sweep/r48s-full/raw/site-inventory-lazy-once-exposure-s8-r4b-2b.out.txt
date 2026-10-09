@@ -1,0 +1,158 @@
+
+== A — the two layers: thirteen plus six, disjoint, and together the same nineteen ==
+ok   A1  FIRST_LAYER_TABLE_COUNT = 13
+ok   A2  EXPOSURE_TABLE_COUNT = 6
+ok   A3  and they are the approved six, by name
+ok   A4  the layers are DISJOINT
+ok   A5  60_ serves nineteen non-include-gated tables
+ok   A6  13 + 6 is EXACTLY that nineteen — the split dropped nothing and invented nothing
+ok   A7  the getter->table map covers exactly the six, so the accessors and the `only` list cannot drift apart
+ok   A8  adapter maps getShipments with `|| []` — WHICH IS WHY null, not [], is the not-loaded sentinel
+ok   A8  adapter maps getShipmentLines with `|| []` — WHICH IS WHY null, not [], is the not-loaded sentinel
+ok   A8  adapter maps getShippingPlans with `|| []` — WHICH IS WHY null, not [], is the not-loaded sentinel
+ok   A8  adapter maps getShippingPlanLines with `|| []` — WHICH IS WHY null, not [], is the not-loaded sentinel
+ok   A8  adapter maps getShippingAllocationDrafts with `|| []` — WHICH IS WHY null, not [], is the not-loaded sentinel
+ok   A8  adapter maps getShippingAllocationDraftLines with `|| []` — WHICH IS WHY null, not [], is the not-loaded sentinel
+
+== B — the first-layer request asks for thirteen sheets and reaches no exposure table ==
+ok   B1  the primary read names its thirteen explicitly
+ok   B2  the server reads EXACTLY those thirteen
+ok   B3  FIRST_LAYER_EXPOSURE_TABLE_READ_COUNT = 0
+ok   B4  and EXACTLY the six for the exposure read
+
+== C — the lazy state machine, EXECUTED ==
+ok   C1  EXPOSURE_CACHE_KEY = company|country|marketplace_id
+ok   C1a a different site is a different key
+ok   C1b and SKU appears nowhere in the key builder
+ok   C2  before any expand the entry is NOT_LOADED
+ok   C2a and every exposure getter answers NULL, never []
+ok   C3  CONCURRENT_FIRST_EXPAND_REQUEST_COUNT = 1 — three expands, ONE request
+ok   C3a while it is in flight the state is LOADING, not NOT_LOADED
+ok   C3b and a LOADING entry still answers NULL — never a half-built model
+ok   C10 a missing workspace API settles FAILED, not NOT_LOADED
+ok   C10a with the real reason
+ok   C10b and it issued no request, because there was nothing to issue it through
+ok   C10c and the Execution Plan reports an ERROR instead of spinning forever
+ok   C2b FIRST_EXPOSURE_REQUEST_COUNT = 1
+ok   C2c through the EXISTING canonical action — no new action
+ok   C2d with an exposure-only `only` list
+ok   C2e and the same recentWindow opt-in
+ok   C2f and the SITE — company/country/marketplace, the triple the six tables actually store
+ok   C2f1 and still no SKU anywhere in it — the identity is the site, not the row
+ok   C2g the entry is READY
+ok   C2h and the getters now answer with rows
+ok   C2i the joins were built ONCE
+ok   C5  US_FIRST_EXPOSURE_REQUEST_COUNT = 1
+ok   C7  a failed read settles FAILED
+ok   C7a NOT an empty READY model — the getters still answer NULL
+ok   C7b and the REAL code is kept, not flattened
+ok   C9  a late answer whose scope has moved on repaints NOTHING
+ok   C3c and still ONE after all three settle
+ok   C3d all three consumers joined the SAME entry
+ok   C3e with the joins built once for all of them
+ok   C8  ROUTE_RETURN_REQUEST_COUNT = 0 while the module lifecycle holds the map
+ok   C5a CA_FIRST_EXPOSURE_REQUEST_COUNT = 1
+ok   C5b RETURN_US_REQUEST_COUNT = 0 — the US entry was never discarded
+ok   C5c RETURN_CA_REQUEST_COUNT = 0
+ok   C5d two entries held, BOTH valid — a site switch invalidates nothing
+ok   C5e CROSS_SITE_PREFETCH_COUNT = 0 — JP was never visited and was never loaded
+ok   C7c ten further renders issue ZERO requests — no auto-retry loop
+ok   C4  PER_SKU_EXPAND_REQUEST_AFTER_READY = 0 — twenty expands, ZERO requests
+ok   C4a and the joins were NOT rebuilt per expand
+ok   C6  INVALIDATION_ON_EXPLICIT_REFRESH = the affected site re-reads — exactly one request
+ok   C6a and settles READY again
+ok   C6b GLOBAL_CACHE_CLEAR_ON_REFRESH = NO — the OTHER site is still READY
+ok   C6c and costs no request
+ok   C7d ONE explicit retry issues exactly ONE request
+ok   C7e FAILED -> LOADING -> READY
+ok   C7f and once READY, later expands are zero network again
+
+== D — "not loaded" is never rendered as zero (the four false-empty surfaces) ==
+ok   D1  FALSE-EMPTY #1: an unread shipment family prints NO zero in the card
+ok   D1a it prints a pending mark instead
+ok   D1b while a READY site with genuinely nothing incoming still prints a truthful 0
+ok   D1c and real numbers render as themselves
+ok   D1d a FAILED read is a named failure with a Retry, never an empty card
+ok   D1e with no fabricated zero anywhere in it
+ok   D2  FALSE-EMPTY #2: the projection is NULL until READY, never {} — a {} makes every lookup miss and every row zero
+ok   D2a and the DTO carries null, not 0, when it has not been read
+ok   D2b the zeroed default object is reached only THROUGH a non-null projection
+ok   D2c and every row declares the state it was built under, so no consumer has to guess
+ok   D3  FALSE-EMPTY #3: null drafts are branched BEFORE the "not generated" state
+ok   D3a an unread site says it is loading
+ok   D3b a failed read says so, with a Retry
+ok   D3c a READY site with no stored draft keeps its honest "not generated" — the claim it is entitled to make
+ok   D3d which is NEVER said about a table nobody has read
+ok   D3e and no request is issued merely to decide this label
+ok   D4  FALSE-EMPTY #4: an unread draft table holds the Execution Plan in its SKELETON
+ok   D4a as does one in flight
+ok   D4b a failed one is a NAMED error, never an empty plan
+ok   D4c and only a READY site may say the plan is empty
+ok   D4d Legacy mode (broad cache, all nineteen present) is unchanged
+ok   D4e the hydrate REFUSES a null source instead of `|| []`-ing it into an empty one
+ok   D4f the `|| []` that made an unread table look empty is gone
+ok   D4g QTY_ZERO_REGRESSION_REACHABLE = NO — the editor seeds no quantity at all
+
+== E — what did NOT change ==
+ok   E1  Suggested Qty reads NO exposure getter — it resolves through the materialised gap state
+ok   E2  On the Way is still the literal 0 it has always been (pending mapping)
+ok   E3  BACKEND_RELEASE_REQUIRED = YES as of S8-R4B-2D — 60_ carries the siteScope contract, so its stamp is R42 or later (is F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45)
+ok   E3a and the floor is a real floor — the pre-siteScope stamp 60_ held before R42 does not reach it
+ok   E3a the `only` contract R4B-2B used was already shipped and is untouched
+ok   E3b and NO ACTION WAS ADDED — the scope is an optional payload field on the action that already existed, which is why the action-contract version does not move
+ok   E4  PERSISTENT_HARD_RELOAD_CACHE_INTRODUCED = NO
+ok   E4a SERVER_CACHE_INTRODUCED = NO
+ok   E4b and the exposure read starts no job
+ok   E5  the ops-section unmount does not touch the exposure map — which is WHY route-return is free
+ok   E5a exactly as it already does not touch the read model
+ok   E7  the lazy settle hydrates WITHOUT re-rendering the table
+ok   E7a and never calls renderReplenishment itself
+ok   E7b while every OTHER caller of the hydrate keeps the repaint it has always had
+ok   E7c the three SECOND-LAYER surfaces are repainted instead, and only those
+ok   E7d and a panel still in its skeleton is left to its own gate — no second render transaction
+ok   E6  this page's own successful write invalidates the ACTIVE site entry
+ok   E6a and ONLY that one — a write to US does not discard what is known about CA
+
+== F — mutation coverage ==
+ok   M1  the six exposure tables are returned to the FIRST-LAYER read (caught)
+ok   M2  one of the six is dropped from the EXPOSURE read (caught)
+ok   M3  the cache key gains the SKU (one read per expand — the N+1 this round removes) (caught)
+ok   M6  a LOADING entry starts a SECOND request instead of joining the first (caught)
+ok   M9  the sentinel returns [] instead of null, so NOT_LOADED becomes a loaded-empty table (caught)
+ok   M10 NOT_LOADED is rendered as a zero in the Shipping Shipment card (caught)
+ok   M11 NOT_LOADED is rendered as "not generated" in the Recommendation Summary (caught)
+ok   M12 the Execution Plan paints before the draft table is read (the Qty 0 road) (caught)
+ok   M13 the hydrate launders a null draft source back into an empty one (caught)
+ok   M14 route-return clears the cache (the unmount starts dropping the map) (caught)
+ok   M17 a cross-site prefetch is introduced (caught)
+ok   V   mutation target present exactly once in _irEnsureExposureLoaded_: if (e.state === IR_EXPOSURE_STATES_.READY) retur
+ok   V   mutation target present exactly once in _irEnsureExposureLoaded_: if (e.state === IR_EXPOSURE_STATES_.LOADING) ret
+ok   V   mutation target present exactly once in _irEnsureExposureLoaded_: if (e.state === IR_EXPOSURE_STATES_.FAILED && !(
+ok   V   mutation target present exactly once in _irEnsureExposureLoaded_: entry.state = IR_EXPOSURE_STATES_.FAILED;
+ok   V   mutation target present exactly once in _irExposureGet_: if (!e || e.state !== IR_EXPOSURE_STATES_.READY 
+ok   V   mutation target present exactly once in _irOnExposureSettled_: if (key !== _irExposureScopeKey_()) return;
+ok   V   mutation target present exactly once in _irExposureRefresh_: _irInvalidateActiveExposure_();
+ok   V   mutation target present exactly once in _irShipCardInnerHtml_: if (state === IR_EXPOSURE_STATES_.NOT_LOADED || 
+ok   V   mutation target present exactly once in _recSummaryRows: if (draftLines === null &&
+ok   V   mutation target present exactly once in _hydrateAllocationDraftFromDb: if (drafts === null || lines === null) return fa
+ok   V   and the executionReadiness exposure gate is present exactly once
+ok   M19 the lazy settle repaints the whole table (which closes the row that asked for it) (caught)
+ok   M20a the shipped code names the failure; the mutant waits forever
+ok   M8a the mutant calls a failed read READY, which is exactly the lie this state exists to prevent
+ok   M20 an unavailable workspace API leaves the entry NOT_LOADED (a spinner nothing settles) (caught)
+ok   M18a the shipped code repaints nothing; the mutant paints into a scope that is gone
+ok   M8  a FAILED read installs an EMPTY model as READY (caught)
+ok   M18 a late answer for a scope the operator left still repaints the screen (caught)
+ok   M5a a second expand costs the shipped code 0 and the mutant 1
+ok   M5  a READY entry still issues a network request (caught)
+ok   M4a the shipped code costs 2 requests where the mutant costs 3
+ok   M7a one failed read stays one request; the mutant storms
+ok   M4  a site switch CLEARS every other site (US -> CA -> US costs a second US read) (caught)
+ok   M7  a FAILED entry auto-retries on every render (caught)
+ok   M16a the shipped refresh re-reads the affected site; the mutant does nothing
+ok   M16 explicit refresh fails to clear the affected site (Refresh becomes a no-op) (caught)
+ok   M15a the shipped refresh leaves CA READY; the mutant wipes it
+ok   M15 explicit refresh clears EVERY site instead of the affected one (caught)
+
+143 passed, 0 failed
+mutations: 20 caught, 0 missed

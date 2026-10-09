@@ -1,0 +1,19 @@
+
+== A/§2/§5/§9 — PURE mapper: recommended = tN_suggested VERBATIM, gap snapshot, canonical carton, T1/T2/T3 only ==
+
+== F/§6 — FAIL CLOSED: missing / BLOCKED / no-UPC / missing-month never fabricate a draft quantity ==
+
+== B/§7 — END-TO-END persist through the EXISTING locked writer: every target column lands on the draft line ==
+
+== C/Fixture C — Factory-enough (gap suggested 0) persists recommended_qty 0 (never fabricated) ==
+
+== Fixture B — cross-company FM7 conservation preserved: A+B persist verbatim, do NOT re-expand toward 4000 ==
+
+== E/§3/§7 — manual order_qty preserved across regenerate while recommended_qty refreshes from new gap ==
+
+== §8/idempotency — a second identical gap generation makes no duplicate active draft/line ==
+
+== D/§4 — the 47_ gap-backed path recomputes NO quantity + creates NO sheet; router wires the backend contract ==
+
+----------------------------------------
+GAP-BACKED DRAFT SNAPSHOT (F1-4B-FM6-R4E2): 41 passed, 0 failed

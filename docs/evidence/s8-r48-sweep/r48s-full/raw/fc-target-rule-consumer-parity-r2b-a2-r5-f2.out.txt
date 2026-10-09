@@ -1,0 +1,43 @@
+
+-- A. §6.1-6.9 — SITE IDENTITY AND PRECEDENCE, THROUGH EVERY CONSUMER -----------------------------
+
+-- B. §6.11-6.15 — BLANKS AND THE RETIRED SENTINEL ARE NOT WILDCARDS ------------------------------
+
+-- C. §6.16-6.17 — DUPLICATES AND ROW ORDER -------------------------------------------------------
+
+-- D. §6.18-6.22 — MONTHS ARE READ BY NAME --------------------------------------------------------
+
+-- E. §6.23-6.24 — INDEPENDENT SITES AND YEARS COEXIST --------------------------------------------
+
+-- F. §6.25-6.29 — WRITE IDENTITY, against a fake sheet -------------------------------------------
+
+-- G. §6.30 / §3 — ONE IMPLEMENTATION, NOT FIVE COPIES --------------------------------------------
+
+-- H. MUTANTS -------------------------------------------------------------------------------------
+ok   M1  year is ignored (caught)
+ok   M2  company is ignored (caught)
+ok   M3  country is ignored (caught)
+ok   M4  marketplace is ignored (caught)
+ok   M5  scope_id is matched against ANY dimension instead of its own (caught)
+ok   M6  first-row-wins is restored (caught)
+ok   M7  SKU/Series precedence is reversed (caught)
+ok   M8  the write path accepts a blank required identity (caught)
+ok   M9  the write path accepts the retired `All` sentinel (caught)
+ok   M9b  the resolver stops validating the REQUEST identity (caught)
+ok   M10  target_percentage is substituted for the month (caught)
+ok   M11  0 becomes 100 (caught)
+ok   M12  the month is looked up by position (caught)
+ok   M13  a duplicate is silently selected (caught)
+ok   M14  the write lock is removed (caught)
+ok   M15  the business-key lookup is removed from the create path (caught)
+ok   M16  an id with a different identity is accepted (caught)
+ok   M17  the source owner changed and the generated bundle was not regenerated (caught)
+ok   M18  the frontend omits company from the payload (caught)
+ok   M19  scope_id is allowed to disagree with its own column (caught)
+ok   M20  a consumer stops calling the authority and resolves locally (caught)
+
+-- I. VACUITY -------------------------------------------------------------------------------------
+
+====================================================================================================
+PASS  132 passed, 0 failed, 21 mutants, 0 survived, vacuity clean
+====================================================================================================

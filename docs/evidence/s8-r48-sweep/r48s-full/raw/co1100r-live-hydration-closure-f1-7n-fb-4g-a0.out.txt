@@ -1,0 +1,167 @@
+
+== A · §C — THE PRODUCTION BROWSER TOKEN CHECK, AND IT IS NOT VACUOUS ==
+ok   A1  A0 minted its own app token, and the release order has not moved behind it
+ok   A2  inventory-replenishment.js carries this round's token
+ok   A3  inventory-compat.js carries this round's token
+ok   A4  the stylesheet is on its OWN token family — the readback must expect irrestinglayout-20261008, not the app token
+ok   A5  no reference is left on the previous round's token
+ok   A6  the co-deployed references moved together (63 refs on r46-avgsales-20261008)
+ok   A7  the release order places this round AFTER B6-R1
+ok   A8  [mutation] a stale inventory-replenishment.js token is detected (caught)
+
+== B · §D — EVERY HYDRATION BOUNDARY, BY EXECUTION ==
+ok   B1  handleGetTable_ validTabs located in the shipped handler
+ok   B2  §D.1 getTable REFUSES shipping_allocation_drafts — it is not in validTabs
+ok   B3  §D.1 getTable REFUSES shipping_allocation_draft_lines — it is not in validTabs
+ok   B4  §D.1 getOperationDb does not carry them either — the broad cache slice has NO writer at all
+ok   B5  a refused table name comes back as success:false — which the client turns into a THROW, not empty rows
+ok   B6  getOperationDbTableFromSheet raises BACKEND_BUSINESS_REJECTION on success:false
+ok   B7  §D.4 the IR workspace serves shipping_allocation_drafts
+ok   B8  §D.4 the IR workspace serves shipping_allocation_draft_lines
+ok   B9  §D.4 they are in the BASE payload — no include gate, so every Search already fetches them
+ok   B10 §D.4 the shipped workspace builder returns all FOUR headers
+ok   B11 §D.4 and all SIX lines
+ok   B12 §D.4 H4 is present, verbatim
+ok   B13 §D.4 and its line arrives carrying 800
+ok   B14 §D.4 the client adapter already normalises them into the read model under the getter name
+ok   B15 §D.6 BEFORE — reading the broad cache the hydrate returns FALSE (production today)
+ok   B16 §D.6 BEFORE — bySku is empty, so H4 is ABSENT with no typed reason
+ok   B17 §D.6 BEFORE — and it persists nothing, so there is not even a stale trace
+ok   B18 §D.6 AFTER — reading the workspace read model the hydrate succeeds
+ok   B19 §D.5 the station boundary admits the THREE US/Amazon headers and no other
+ok   B20 §D.5 H3 (ResTW/JP) is excluded by scope — typed reason: country/marketplace mismatch
+ok   B21 §D.9 bySku holds exactly one SKU key, and it is the canonical sku
+ok   B22 §D.10 route grouping yields exactly ONE persisted route for CO1100-R
+ok   B23 H4 header ID is carried, not regenerated
+ok   B24 H4 line ID is carried, not regenerated
+ok   B25 sku
+ok   B26 site_sku stays blank — it is not invented
+ok   B27 source warehouse (inherited from the header — the line's is blank)
+ok   B28 method is sea
+ok   B29 planned_qty 800
+ok   B30 and the render quantity is the same 800
+ok   B31 destination state is the typed confirmation requirement
+
+== C · §E — THE TWELVE CANDIDATE CAUSES, EACH TESTED ==
+ok   C1  §E.1 REJECTED — _irApplySearch_ does call the hydrate
+ok   C2  §E.1 and it is called AFTER the applied scope is assigned, so the scope is populated
+ok   C3  §E.2 addressed by the §C token readback — a stale browser is detectable, not assumed
+ok   C4  §E.3 CONFIRMED SHAPE, NOT A CAUSE — the blank line source inherits the header
+ok   C5  §E.4 REJECTED — the hydrator never REQUIRES line.source_warehouse_id
+ok   C6  §E.4 proven by execution, not by reading
+ok   C7  §E.5 REJECTED — the line is keyed by canonical `sku`
+ok   C8  §E.5 a blank site_sku does not prevent the match
+ok   C9  §E.6 REJECTED — the line filter excludes ONLY `cancelled`, so blank is legacy-active
+ok   C10 §E.6 and a genuinely cancelled line IS dropped — the rule is not vacuous
+ok   C11 §E.7 REJECTED — the hydrate does not filter on planning_cycle at all
+ok   C12 §E.8 REJECTED — a blank destination stays blank
+ok   C13 §E.8 and no marketplace is invented for it
+ok   C14 §E.8 and the route SURVIVES with a typed confirmation state instead of being dropped
+ok   C15 §E.9 REJECTED — the key is the canonical sku
+ok   C16 THE CAUSE — the same fixture in the broad cache hydrates NOTHING
+ok   C17 THE CAUSE — the same fixture in the read model hydrates H4
+ok   C18 THE FIX — the hydrate now reads the read-model-first accessor every other read on this page uses
+ok   C19 THE FIX — and the same for the lines
+ok   C20 THE FIX — it no longer reads the slice that has no writer
+ok   C21 and _irWsGet still falls back to the broad getter in Legacy mode — BEFORE == AFTER there
+ok   C22 Legacy mode (no read model) still hydrates from the broad getter, unchanged
+ok   C23 with the same 800
+
+== D · §F — HYDRATION PRECEDENCE AND THE COMPATIBILITY RULES ==
+ok   D1  header-owned: allocation_draft_id
+ok   D2  header-owned: the scope the rows were hydrated for
+ok   D3  header-owned: shipping method
+ok   D4  header-owned: last mile (blank here, and blank is preserved)
+ok   D5  header-owned: generation type
+ok   D6  line-owned: allocation_draft_line_id
+ok   D7  line-owned: expected_arrival — blank stays blank (B6-R1 §D.7)
+ok   D8  line-owned: a blank recommended_qty is null, never a fabricated 0
+ok   D9  §F.1 the inheritance exists
+ok   D10 §F.7 the hydrate performs no DB write of any kind
+ok   D11 §F.7 no writer is reachable from inside the hydrate
+ok   D12 §F.6 the legacy destination snapshot "Amazon" appears NOWHERE in the hydrated route
+ok   D13 §F.6 and no marketplace destination token was minted for it
+ok   D14 §F.5 a missing destination becomes a typed state
+ok   D15 §F.9 H4 planned_qty is conserved exactly
+ok   D16 §F.8 no ID is regenerated
+
+== E · §G — RENDERING, WITH THE SHIPPED initializeShippingAllocation ==
+ok   E1  §G.1 H4 renders exactly ONCE
+ok   E2  §G.1 and it is H4, under its stored header id
+ok   E3  §G.1 with Qty 800
+ok   E4  §G.1 From = the header source warehouse
+ok   E5  §G.7 To is blank until explicit confirmation
+ok   E6  §G.6 and it says so, in a typed field
+ok   E7  §G.5 the default Add Route editor did NOT replace H4
+ok   E8  §G.2 H1 and H2 have no lines and therefore no route rows
+ok   E9  §G.3 H3 renders in ITS OWN scope — it is separated, not discarded
+ok   E10 §G.3 and never in US/Amazon
+ok   E11 §G.9 the page display-label table is byte-identical, including 美森海卡 → Sea Express
+ok   E12 §G.9 空派 and 普船海卡 are operator DATA, spelled in no shipped source — so no source change can rename them
+ok   E13 §G.9 and this round removes or renames no method label
+ok   E14 §G.8 canonical method mapping is unchanged
+ok   E15 §E.11/§J.13 a repeated hydrate yields ONE route, not two
+ok   E16 §J.13 and the trigger is single-flight
+ok   E17 §J.13 a superseded Search cannot paint an older station's routes
+
+== F · §H — STATUS AND CONFLICT ==
+ok   F1  §H.1 status=draft makes an active route ELIGIBLE for hydration
+ok   F2  §H.2 three same-scope draft headers coexist — draft alone is no conflict
+ok   F3  §H.2 the hydrate raises no conflict of its own — readback and identity resolution are different questions
+ok   F4  §H.3 scope separates H3 cleanly in both directions
+ok   F5  §H.4 service separates H1/H2/H4 — the rendered route is the sea one
+ok   F6  §H.5 zero-line H1/H2 do not participate in route rendering
+ok   F7  §H.6 the server's adoption scan is over active HEADERS, so H1/H2 remain eligible
+ok   F8  §H.7 a submitted header is still excluded from hydration
+ok   F9  §H.7 and so is a cancelled one
+ok   F10 §H.7 every terminal status is excluded — cancelled, submitted, and now expired too
+ok   F10a and exactly the three the server itself calls ACTIVE are admitted
+ok   F10b the hydrate asks that owner rather than carrying its own copy
+ok   F11 §H.8 a destination-less route reads back fine
+ok   F12 §H.8 and Save/Submit is what a missing destination blocks
+
+== G · §I — CO1100-T: SUGGESTED QTY 2120 AND EXECUTION PLAN QTY 0 ==
+ok   G1  the top cell's authority is the MATERIALIZED gap row
+ok   G2  and its value for CO1100-T is 2120
+ok   G3  which is what the Suggested Qty cell prints
+ok   G4  THE CAUSE — the legacy per-row field the editor read is 0; the materialized read never fills it
+ok   G5  THE FIX — the editor now seeds from the SAME authority the cell prints
+ok   G6  the materialized authority is still a live owner on the page...
+ok   G6a ...feeding the Suggested Qty CELL...
+ok   G6b ...and feeding NO route-creating branch: a recommendation is not an execution route
+ok   G7  the two-source split is gone
+ok   G8  PENDING seeds 0 — never a guess
+ok   G9  and the cell still prints "…"
+ok   G10 BLOCKED seeds 0 — a blocked recommendation is not a quantity
+ok   G11 and the cell still prints an honest em dash
+ok   G12 a valid canonical 0 is READY, not NONE
+ok   G13 and prints as 0 — the FM3a rule is intact
+ok   G13s STALE SCOPE: a READY row stamped for another scope resolves PENDING, never READY
+ok   G13s2 ... and seeds 0 rather than the other scope's 2120
+ok   G13s3 MISSING STAMP: an unstamped result is a mismatch too — absence is never a pass
+ok   G14 §I the no-draft branch shows an EMPTY STATE instead of seeding an editor...
+ok   G14a ...so the "preview that writes nothing" promise is retired with the row it was about
+ok   G14b and that branch recomputes the total (0) and schedules NO persistence
+ok   G15 §I and the CO1100-T question changed nothing about H4
+
+== H · DEPLOYMENT IDENTITY ==
+ok   H1  action contract is at or after 10 (this round added no router action)
+ok   H2  required-action-list is at or after 9
+ok   H3  transport contract still 1
+ok   H4  A0's own commit range is resolvable (82da01c→60e5ef3)
+ok   H5  ZERO Apps Script files changed BY A0 — measured from A0's own diff, not from the working tree
+ok   H6  the workspace registration that makes the read model the right source is already in place
+
+== I · MUTATIONS — every one verified by actually applying it ==
+ok   M1  hydrate reading the broad cache is detected (caught)
+ok   M2  blank line_status treated as inactive is detected (caught)
+ok   M3  requiring line.source_warehouse_id is detected (caught)
+ok   M4  keying bySku by site_sku is detected (caught)
+ok   M5  dropping a destination-less route is detected (caught)
+ok   M6  promoting the legacy Amazon snapshot is detected (caught)
+ok   M7  summing duplicate physical rows is detected (caught)
+ok   M8  losing the scope filter is detected (caught)
+ok   M9  seeding a quantity from a PENDING state is detected (caught)
+ok   M10 admitting a submitted header is detected (caught)
+
+PASSED — 147 passed, 0 failed, mutations 11 caught / 0 missed

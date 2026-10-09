@@ -1,0 +1,15 @@
+
+== A. shared height OWNER — one container, both sides stretch ==
+
+== B. RIGHT is the natural content-height authority; LEFT stretches to it ==
+
+== C. continuous bottom divider owned once, on BOTH panels ==
+
+== D. NO fixed-pixel height hack on the expanded row/panels ==
+
+== E. NO JS height measurement / sync in the expand path; collapse behaviour intact ==
+
+== F. collapsed data-row geometry unchanged; no forbidden positioning hacks in the new block ==
+
+----------------------------------------
+INVENTORY EXPAND-ROW HEIGHT PARITY (UI-HOTFIX): 23 passed, 0 failed

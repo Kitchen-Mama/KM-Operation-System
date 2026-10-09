@@ -1,0 +1,17 @@
+
+== B/G — shared candidate authority: blank card axis = wildcard (EP parity), non-blank matched exactly ==
+
+== B — KMWRR now resolves a marketplace-destination route via the shared authority (the 171-block fix) ==
+
+== E — reviewed, enumerated method-alias authority (no fuzzy) ==
+
+== D — warehouse resolution priority (exact id → active code in company/country → alias → BLOCK; multi → BLOCK) ==
+
+== F — per-stage accounting: resolved + blocked == incoming at every stage (the 176/5/171 leak fixed) ==
+
+== A — GAP_JOB_INVENTORY authority: reader maps the real serialized shape + MONTHLY_ORDER exclusion ==
+
+== H — buildDraftLinePayload user-edit ownership (override marker / reset / note-only / system snapshot) ==
+
+----------------------------------------
+R6F2B SHARED ROUTE AUTHORITY + PARITY: 45 passed, 0 failed

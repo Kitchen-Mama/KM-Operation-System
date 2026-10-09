@@ -1,0 +1,21 @@
+
+== B. per-SKU allocation UI state (fixes D2 misleading blank) ==
+
+== B. hydration is scope-based, deduped, cached, atomic ==
+
+== A. NOTE autosave through the REAL handler path (input→debounce→one write) ==
+
+== A. confirmation states — Saved only after server confirm; failure never Saved ==
+
+== A12. concurrent same-draft edits are serialized (no self-conflict) ==
+
+== A. Order Qty carton is backend-derived (frontend never authors carton_qty) ==
+
+== observability + no Draft-Line ==
+
+== D3 (source) — remount recovery + state-aware empty message ==
+
+== D — preserved contracts (source) ==
+
+----------------------------------------
+R6B1 AUTOSAVE + HYDRATION + REMOUNT (F1-7N-FA-3C-R6B1): 34 passed, 0 failed

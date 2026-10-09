@@ -1,0 +1,60 @@
+
+== A — THE WINDOW AND THE BASELINE ==
+ok   A1  with 30 clean days the source is normalized_30d, not weekly_7d  (got "normalized_30d", want "normalized_30d")
+ok   A2  and carries no warning  (got "", want "")
+ok   A3  all 30 completed days are eligible  (got 30, want 30)
+ok   A4  avg = sum / ACTUAL normal_day_count  (got 10, want 10)
+ok   A5  no contamination -> ZERO excluded dates (not a weekly fallback)  (got [], want [])
+ok   A6  the calc date itself (2026-10-08) is NEVER sampled  (got 10, want 10)
+ok   A7  the sample is capped at the LATEST 30 eligible days (2026-07-10 is in-window but not selected)  (got 30, want 30)
+ok   A8  ... so an older in-window day cannot dilute the latest-30 sample  (got 10, want 10)
+
+== B — THE DATED SCENARIO: 2026-10-06 and 2026-10-07, with missing days ==
+ok   B0  UNEXCLUDED, the two spike days pull the rate to 19.33  (got 19.333333333333332, want 19.333333333333332)
+ok   B1  BOTH dates are excluded, and named as evidence  (got ["2026-10-06","2026-10-07"], want ["2026-10-06","2026-10-07"])
+ok   B2  the denominator drops to the ACTUAL eligible count (28), not a fixed 30  (got 28, want 28)
+ok   B3  numerator AND denominator both drop -> the spike cannot inflate the rate  (got 10, want 10)
+ok   B4  still normalized_30d  (got "normalized_30d", want "normalized_30d")
+ok   B5  a MISSING source date is simply absent from the sample  (got 27, want 27)
+ok   B6  ... and is never counted as a zero-sales day (the rate is unchanged)  (got 10, want 10)
+ok   B7  a confirmed zero-sales row IS an eligible day  (got 28, want 28)
+ok   B8  ... and lowers the average — missing and zero are NOT the same  (got 9.642857142857142, want 9.642857142857142)
+
+== C — SCOPE ISOLATION: only this SKU and this site ==
+ok   C1  another marketplace SKU's campaign excludes NOTHING here (matched by marketplace_sku_id, never master sku)  (got [], want [])
+ok   C2  another site's event excludes NOTHING (marketplace_id is authoritative)  (got [], want [])
+ok   C3  another SKU's event excludes NOTHING  (got [], want [])
+ok   C4  two companies on ONE source natural key FAIL CLOSED rather than silently merging  (supplyPlanningCalculations: ambiguous daily-sales company resolution for one source natural key (snapshot_date=2026-10-07, US/Amazon/Amazon/SKU-A) resolves to both "KM" and "ResUS" — one persisted source key must resolve to exactly one company)
+
+== D — STATUS, OVERLAP AND BOUNDARIES ==
+ok   D1  a cancelled Campaign and a cancelled Event exclude NOTHING  (got [], want [])
+ok   D2  ... so the contaminated rate is returned, by rule  (got 19.333333333333332, want 19.333333333333332)
+ok   D3  a Campaign and an Event over the SAME dates exclude them exactly once  (got ["2026-10-06","2026-10-07"], want ["2026-10-06","2026-10-07"])
+ok   D4  ... and the denominator drops by 2, never by 4  (got 28, want 28)
+ok   D5  start and end dates are BOTH inclusive  (got ["2026-10-05","2026-10-06","2026-10-07"], want ["2026-10-05","2026-10-06","2026-10-07"])
+ok   D6  a range extending beyond the window is clipped, not rejected  (got ["2026-10-07"], want ["2026-10-07"])
+
+== E — THE FALLBACK LADDER (§22.3) ==
+ok   E1  7 eligible days -> normalized_30d  (got "normalized_30d", want "normalized_30d")
+ok   E2  ... with no warning  (got "", want "")
+ok   E3  5 eligible days -> still normalized_30d  (got "normalized_30d", want "normalized_30d")
+ok   E4  ... with low_sample_warning  (got "low_sample_warning", want "low_sample_warning")
+ok   E5  2 eligible days -> weekly_7d fallback  (got "weekly_7d", want "weekly_7d")
+ok   E6  ... with insufficient_normal_days  (got "insufficient_normal_days", want "insufficient_normal_days")
+ok   E7  ... and the value is weekly7d / 7  (got 100, want 100)
+
+== F — WHAT THE SITE INVENTORY COLUMN ACTUALLY SHOWS (page wiring, source-read) ==
+ok   F1  the page authors NO rate of its own — it carries the server value
+ok   F2  the canonical basis is carried from the workspace read
+ok   F3  demandMode and avgSalesPerDay ARE carried
+ok   F4  FIXED: `source` is carried — normalized_30d can be told from weekly_7d
+ok   F5  FIXED: `warning` is carried — low_sample_warning reaches the screen
+ok   F6  FIXED: `normalDayCount` is carried — the ACTUAL denominator is visible
+ok   F7  FIXED: `excludedDates` is carried — the exclusion evidence is visible
+ok   F7a ... and they remain separate fields, never combined into one token (§22.3)
+ok   F8  FIXED: the column no longer DEFAULTS to the weekly rate (sales_units_7d / 7)
+ok   F8a ... it opens at -- until a canonical rate exists
+ok   F9  FIXED: the canonical rate is no longer gated on demand mode — §22.4 applies it to Forecast-Driven too
+ok   F10 a SKU with no canonical rate shows -- rather than a silent weekly number
+
+PASS 46  FAIL 0

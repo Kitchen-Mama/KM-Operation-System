@@ -1,0 +1,14 @@
+
+== A · unread is not empty, and the builder can now tell ==
+
+== B · the cell states which of the two it means ==
+
+== C · Save refuses a payload it could not preflight ==
+
+== D · driven mutants ==
+
+mutants: 9 · survived: 0
+
+----------------------------------------
+FC BASE EVENT FC READINESS R1: 39 passed, 0 failed  ·  mutants 9, survived 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0

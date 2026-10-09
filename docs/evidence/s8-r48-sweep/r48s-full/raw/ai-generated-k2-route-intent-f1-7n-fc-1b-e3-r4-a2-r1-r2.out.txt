@@ -1,0 +1,163 @@
+
+== A. §1 — the blocker, and why neither existing intent is the answer ==
+ok   A1  with NO declared intent the generation fails
+ok   A1a with ROUTE_INTENT_REQUIRED
+ok   A1b zero headers written
+ok   A1c zero lines written
+ok   A2  UPDATE_EXISTING_ROUTE cannot be used: it needs an id the first run has not created
+ok   A2a zero rows written
+ok   A3  CREATE_NEW_ROUTE does write …
+ok   A3a … and a second generation under a MOVED create key also "succeeds"
+ok   A3b leaving TWO ACTIVE HEADERS for one route — the duplicate plan
+ok   A3c holding 1040 units for a scope whose demand is 520
+
+== B. §2 — the third intent is canonical, and is not an alias ==
+ok   B1  the intent has a canonical name
+ok   B2  the vocabulary has exactly three intents
+ok   B2a and the third is server-owned
+ok   B2b while the two manual ones remain user-owned
+ok   B3  only the two manual intents are client-grantable
+ok   B3a the AI intent is not, by construction
+ok   B4  and it is not documented as an alias of either
+
+== C. §3 — server ownership, at the router and again at the writer ==
+ok   C1  01_router refuses a server-owned intent arriving on a request
+ok   C1a checked against the grantable set, not a literal
+ok   C1b and it refuses BEFORE the handler is reached
+ok   C2  a complete generation passes the evidence gate
+ok   C2a with nothing missing
+ok   C2b and the deterministic identity inputs resolve
+ok   C3  enforce_k2_grouping alone is required …
+ok   C3a and named when absent
+ok   C4  a missing execution key is refused
+ok   C5  a missing AI generation run id is refused
+ok   C5a and one that is not an AIRUN id
+ok   C6  a MANUAL provenance marker is refused — an AI row must not carry one
+ok   C7  a missing gap-run lineage is refused
+ok   C8  an incomplete route is refused (no Method)
+ok   C8a and with no From
+ok   C8b and with no To
+ok   C9  a scope outside the allowlist is refused
+ok   C9a a different company too
+ok   C9b and ALL_SITES is never inside it
+ok   C10 enforce_k2_grouping:true by itself grants nothing
+ok   C10a and every missing fact is listed (8)
+
+== D. §4/§8 — first generation, and the deterministic replay ==
+ok   D1  the shipped call site now generates successfully
+ok   D1a job COMPLETED
+ok   D1b outcome CREATED
+ok   D2  exactly one header written
+ok   D2a one line, matching the one generated route
+ok   D2b stored total = 520
+ok   D2c route_count = 1
+ok   D2d conserved
+ok   D2d1 and the quantity that was authorized is the quantity that reached a route
+ok   D2d2 and every authorized line found a complete route
+ok   D3  the row carries the AI provenance marker …
+ok   D3a its generation run id …
+ok   D3b and the gap run that admitted the demand
+ok   D3c with the execution key persisted (AIPLAN-E84ED3AA)
+ok   D4  the identity is the resolver's deterministic one (SADH-K4-569394E2)
+ok   D4a and never a minted random id
+ok   D5  the stored route is complete: From, To and Method
+ok   D6  an identical replay succeeds
+ok   D6a and says so explicitly: REUSED
+ok   D6b resolving the SAME logical draft
+ok   D6c one active header — no second draft
+ok   D6d one line — no duplicate
+ok   D6e total still 520
+ok   D6f and it is NOT read back as a binding manual decision
+ok   D7  a second generation under a MOVED execution key succeeds
+ok   D7a still REUSED — the K2 identity is the replay authority
+ok   D7b one active header (CREATE_NEW_ROUTE left two here — see A3b)
+ok   D7c and the total is still 520, not 1040
+
+== E. §8 — readback and hydration parity ==
+ok   E1  the workspace readback succeeds
+ok   E1a finding the active draft
+ok   E1b the same identity that was stored
+ok   E1c hydrated total = stored total = 520
+ok   E1d with no duplicate line identity
+ok   E1e and exactly one draft
+
+== F. §5 — the manual decision boundary is untouched ==
+ok   F1  a genuine user_created route at the same identity still outranks the AI plan
+ok   F1a and the suppression is reported, not implied
+ok   F1b nothing was written beside it
+ok   F1c the operator's row is untouched
+ok   F2  while the AI's own row is system_generated, so a replay reconciles instead of suppressing
+ok   F3  the classifier that reads it is unchanged and still the authority
+
+== G. §6 — cancelled history is neither revived nor duplicated ==
+ok   G1  regenerating over a CANCELLED identity refuses
+ok   G1a with a typed code
+ok   G2  no second row was written
+ok   G2a the cancelled row is STILL cancelled
+ok   G2b and still holds its identity
+ok   G2c nothing active was invented in its place
+ok   G3  and the writer has no capability to delete the cancelled row at all
+
+== H. §7/§9 — writer invariants and unrelated tables ==
+ok   H1  one header for one logical draft
+ok   H2  no orphan line (every line names its header)
+ok   H2a and every line belongs to THIS header
+ok   H3  no duplicate line identity
+ok   H4  scope consistency
+ok   H4a planning-cycle consistency
+ok   H5  shipping_plans — present and still empty
+ok   H5  shipping_plan_lines — present and still empty
+ok   H5  shipments — present and still empty
+ok   H5  shipment_lines — present and still empty
+ok   H5  factory_stock_movements — present and still empty
+ok   H5  reservations — present and still empty
+ok   H5  purchase_orders — present and still empty
+ok   H5  purchase_order_lines — present and still empty
+ok   H5a factory_stock untouched (its single fixture row)
+ok   H5b overseas snapshot untouched
+ok   H6  evidence that does not hold refuses …
+ok   H6a with a typed code
+ok   H6b and zero rows — no partially mutated table
+ok   H6c neither header nor line
+
+== I. §10 — the A2-R1-R1 fixes still hold ==
+ok   I1  schedule-aware freshness unchanged
+ok   I1a accepted snapshot date 2026-09-03
+ok   I1b the typed Date canonicalized, no UTC shift
+ok   I1c and it arrived as a Date object
+ok   I2  the absent 2027 forecast month is one accounted default-zero …
+ok   I2a … and blocks nothing
+ok   I3  the snapshot quantity 520 is the demand
+ok   I4  the 36-column schema is accepted by the shared authority
+ok   I4a and the lifecycle agrees — parity holds
+
+== J. §11/§13 — nothing was armed ==
+ok   J1  the repository flag is still false — activation is simulated in a VM only
+ok   J2  the allowlist still holds exactly one scope
+ok   J3  the 2027 rollover is still unrun
+ok   J4  the census still declares zero writes and no writer
+ok   J5  the census contains EXACTLY ONE call to the atomic writer
+ok   J5a and it is inside RUN_R6R6R3_ROUTE_B_REPAIR_EXECUTE_ONCE, which is the only function allowed to have it
+ok   J5b and no entry point writes a cell directly — every mutation goes through 16_ under its own lock
+ok   J6  the census reports the intent production generation would declare (§11)
+ok   J6a and a deterministic identity preview
+
+== N. MUTATIONS ==
+ok   N1  the AI intent is aliased to CREATE_NEW_ROUTE (caught)
+ok   N2  the AI path is cut off from the resolver (a random identity is minted per run) (caught)
+ok   N3  the route intent is accepted from a browser payload (caught)
+ok   N4  the allowlist check is dropped from the evidence gate (caught)
+ok   N5  the execution key requirement is dropped (caught)
+ok   N6  a replay creates a SECOND header (caught)
+ok   N7  the AI row is stored with a MANUAL provenance marker (caught)
+ok   N8  a cancelled row is written over (identity duplicated) (caught)
+ok   N9  header/line atomicity is removed (a refusal leaves rows behind) (caught)
+ok   N10 the 36-column schema is rejected again (caught)
+ok   N11 the feature flag is enabled in the repository (caught)
+ok   N12 the census constructs a writer (caught)
+ok   N13 the allowlist is widened (caught)
+ok   N14 the manual precedence policy is rewritten to ignore user_created (caught)
+
+----------------------------------------
+AI-GENERATED K2 ROUTE INTENT (F1-7N-FC-1B-E3-R4-A2-R1-R2): 137 passed, 0 failed
+mutations: 14 caught, 0 missed

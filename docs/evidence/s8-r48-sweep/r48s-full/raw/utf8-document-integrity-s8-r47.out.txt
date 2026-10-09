@@ -1,0 +1,33 @@
+
+§A — TRACKED DOCUMENT CENSUS
+ok   A1 the FULL enumeration completed
+ok   A2 the enumeration returned files (322)
+ok   A3 every enumerated document was readable  (got [], want [])
+  --- findings ---
+  C3  docs/planning/LEGACY_ALLOCATION_DRAFT_RECONCILIATION_F1-7N-FB-4F.md:170  control byte 0x01 at byte 10765
+ok   A4 the 322 tracked documents carry exactly the one frozen exception and nothing else  (got [{"check":"C3","path":"docs/planning/LEGACY_ALLOCATION_DRAFT_RECONCILIATION_F1-7N-FB-4F.md","byte":10765}], want [{"check":"C3","path":"docs/planning/LEGACY_ALLOCATION_DRAFT_RECONCILIATION_F1-7N-FB-4F.md","byte":10765}])
+ok   A4b ... and ZERO of them are C1/C2 — no invalid UTF-8 and no latin1 § anywhere in the tree  (got 0, want 0)
+ok   A5 NUL-safe enumeration preserved 1 path(s) containing spaces
+ok   A6 ... and each one resolves to a real file
+
+§B — LEGITIMATE CONTENT IS NOT FLAGGED
+ok   B1 clean ASCII with CRLF  (got [], want [])
+ok   B2 legitimate § (C2 A7) is NOT reported — the blanket-replace trap  (got [], want [])
+ok   B3 real em dashes and multi-byte CJK are clean  (got [], want [])
+ok   B3a the CJK fixture really does contain a 0xA7 continuation byte
+ok   B3b ... and C2 does NOT flag it — continuation bytes are not latin1 damage  (got [], want [])
+ok   B4 tab, CR and LF are allowed C0  (got [], want [])
+ok   B5 the repaired release ledger is clean on C1+C2+C3  (got [], want [])
+ok   B6 ... while still containing 77 legitimate § pairs the gate left alone
+
+§X — MUTATION FIXTURES
+ok   X-1 killed by C2 — standalone 0xA7 (latin1 §)
+ok   X1b ... and C1 independently rejects it as invalid UTF-8
+ok   X-2 killed by C1 — truncated UTF-8 sequence (E2 80, no continuation)
+ok   X-3 killed by C3 — 0x14 mojibake em dash (VALID UTF-8)
+ok   X3b ... and C1 does NOT fire on it — which is precisely why C3 exists  (got 0, want 0)
+ok   X-4 killed by inversion — a valid § is not mistaken for damage
+ok   X-5 killed — a second defect in the exception file is not absorbed by the exception
+ok   X6 the mutant set is non-empty (5 mutants) — not vacuous
+
+PASS  23 passed, 0 failed, 5 mutants, 0 survived, vacuity clean

@@ -1,0 +1,14 @@
+
+== loadScopedTables core: normalizeOperationDb on a PARTIAL table set == broad (BEFORE==AFTER) ==
+
+== SKU Handbook knowledge merge: scoped tables == broad (BEFORE==AFTER) ==
+
+== loadScopedTables enabler: reuses getTable, defensive normalize, never mutates global cache ==
+
+== per-page cutover source: mount scoped-load, reads via accessors, fail-closed, kill switch ==
+
+== §11 Batch-F blocker reconciliation (source-grounded) ==
+
+----------------------------------------
+F1-7J-A3 non-workspace primary scoped cutover: 55 passed, 0 failed
+ALL GREEN

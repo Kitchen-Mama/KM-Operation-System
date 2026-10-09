@@ -1,0 +1,13 @@
+
+== refresh re-renders the main table ONLY when a canonical basis has loaded (R46: either mode) ==
+
+== both workspace-read completion paths refresh the velocity cells ==
+
+== no loop + no new calculator ==
+
+== root-cause invariant: summary/suggested re-renders do NOT touch the velocity cells ==
+
+== flag is NOT the cause — recommendation workspace is canonical + default-enabled ==
+
+----------------------------------------
+SALES VELOCITY LIVE-PATH (F1-4B-FM5-R4J-LIVE9V): 15 passed, 0 failed

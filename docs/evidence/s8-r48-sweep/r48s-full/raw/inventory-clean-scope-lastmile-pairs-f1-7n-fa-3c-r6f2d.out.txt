@@ -1,0 +1,25 @@
+
+== B — Truck alias (runtime-proven), never Courier ==
+
+== C — last-mile route pairs: expand, rank (cost→transit), tie → AUTHORITY_REQUIRED ==
+
+== A — three parity layers are internally consistent (selected ∈ ai ∈ manual) ==
+
+== D — clean-scope selection: partial rejected; smallest clean preferred; lexical tie (replicates the dry-assembly rule) ==
+
+== D/source — the dry assembly computes mk.clean and selects the smallest clean scope ==
+
+== E — freeze refuses aggregated/non-clean scope; freezes marketplace-exact line-level detail (source contract) ==
+
+== F — controlled generation is marketplace-exact; applied == requested; ALL_SITES forbidden (source contract) ==
+
+== D2 — method-failure classification (typed, never a generic bucket) ==
+
+== G — scoped validator accepts the frozen scope/checksum (source contract) ==
+
+== E2 — freeze carries planning_cycle + calculation_run_id on the selected scope (source contract) ==
+
+== regression — deterministic K2 ids + conservation + flag-false zero writes (source contracts) ==
+
+----------------------------------------
+R6F2D CLEAN SCOPE + LAST-MILE PAIRS: 48 passed, 0 failed

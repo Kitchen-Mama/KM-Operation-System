@@ -1,0 +1,13 @@
+
+== §A Recommendation Summary — content-height only, density == Monthly Achievement ==
+
+== §B first-layer selected row — continuous blue across the FULL logical/scroll width, no right white strip ==
+
+== §C expanded left/right — one shared-parent stretch owner (CSS-native, no JS height loop) ==
+
+== §C collapse restores flow — both expand panels are torn down on every toggle pass ==
+
+== §D regression — UI-only, nothing else touched ==
+
+----------------------------------------
+R5D DETAIL GEOMETRY + SUMMARY DENSITY (F1-4B-FM5-R4UI-R5D): 28 passed, 0 failed

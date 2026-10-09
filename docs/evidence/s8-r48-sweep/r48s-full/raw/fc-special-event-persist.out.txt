@@ -1,0 +1,16 @@
+
+== §8/§16 — Special Event canonical identity (pure) ==
+
+== §16 — value rules for fc_qty (reuses fcValidateMonthRaw) ==
+
+== §16 — batch write payload (pure fcBuildEventWriteRows) ==
+
+== §16 — edit-mode wiring (source-level over the REAL functions) ==
+
+== §7/§12 — backend batch handler reuses the canonical upsert (14_ / 01_) ==
+
+== §15 — legacy disposition ==
+
+== §5 — sidebar Level-2 readability (source-level over layout.css) ==
+
+All FC Special-Event persistence + sidebar refinement assertions passed (39 assertions).

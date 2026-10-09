@@ -1,0 +1,179 @@
+
+=== A — §4 APP SHELL: THE ONE DEFECT, DRIVEN RATHER THAN DESCRIBED ===
+  ok   A1  the "nothing calls this yet" header is gone — five pages mount through this loader
+  ok   A1a and the four audited pages really do call it
+  ok   A2  two calls during one open fetch issue ONE request
+  ok   A2a and the loader can say a fetch is OPEN, which `isLoaded` never could
+  ok   A2b the joiner receives the originator resolution
+  ok   A2c innerHTML is written ONCE — the second write is what destroyed the live DOM
+  ok   A2d settled: loaded true, in-flight released
+  ok   A2e and the injection is guarded by the loaded flag as a second wall
+  ok   A3  a failed partial resolves null, as it always did
+  ok   A3a and the key is released, not latched
+  ok   A3b so the next attempt issues a REAL request instead of joining a dead promise
+  ok   A4  a loaded partial is never re-fetched
+  ok   A4a and never re-injected
+  ok   A5  two different pageKeys are two different fetches
+  ok   A6  PRE: one navigation burst issued TWO partial fetches
+  ok   A6a POST: the same burst issues ONE
+  ok   A6b and exactly one copy of the section is in the DOM
+
+=== B — THE INSTRUMENT, AND WHAT IT IS ALLOWED TO CLAIM ===
+  ok   B1  the fixture world carries 120 master SKUs
+  ok   B1a and 120 rows really rendered
+  ok   B1b and the regional master list is populated
+  ok   B2  the 0 ms and 400 ms runs are identical on every count — a count is control flow, not latency
+  ok   B3  the run completed
+  ok   B3a with no uncaught error or rejection on any page
+  ok   B4  the runner uses Chrome virtual time
+  ok   B4a so the timing field is named pollMs, never `ms` — it is poll ticks, not elapsed work
+  ok   B4b and the evidence says so in its own header rather than leaving it to be inferred
+  ok   B4c the harness faults that would have read as page defects are recorded, not quietly fixed
+  ok   B4d including the one that reported FC's two DIFFERENT slices as a duplicate read
+  ok   B5  the generated harness page is always deleted
+
+=== C — §5/§6/§10: THE SURFACES THAT WERE ALREADY CORRECT, ASSERTED AS SUCH ===
+  ok   C  SKU_DETAILS_SEARCH issues ZERO requests
+  ok   C  SKU_DETAILS_SEARCH_CLEAR issues ZERO requests
+  ok   C  SKU_DETAILS_FILTER issues ZERO requests
+  ok   C  SKU_DETAILS_EDIT_MODAL_OPEN issues ZERO requests
+  ok   C  SKU_SWITCH issues ZERO requests
+  ok   C  COUNTRY_SWITCH issues ZERO requests
+  ok   C  MARKETPLACE_SWITCH issues ZERO requests
+  ok   C  TAB_SWITCH issues ZERO requests
+  ok   C  UPDATE_MODAL_OPEN issues ZERO requests
+  ok   C  MENU_RECLICK_SAME_PAGE issues ZERO requests
+  ok   C1  and mounts exactly one section, not two
+  ok   C  SKU_DETAILS_WARM_REENTRY issues ZERO requests
+  ok   C  SKU_REGIONAL_WARM_REENTRY issues ZERO requests
+  ok   C2  TAB_SWITCH is state + renderDetail, with no read in it
+  ok   C2a COUNTRY_SWITCH likewise
+  ok   C2b SKU_SWITCH likewise
+  ok   C2c and SKU Details filtering touches no read path at all — it toggles row display
+  ok   C3  A -> B mid-flight leaves exactly ONE visible section
+  ok   C3a and it is B, the page that was navigated to
+  ok   C3b with no request left open — the transport registry is empty
+  ok   C4  five navigations in one tick still leave ONE visible section
+  ok   C4a no page is left holding a loading skeleton
+  ok   C4b and the page that won the race is populated, not blank
+  ok   C4c five navigations cost ONE canonical read, not five
+  ok   C4d and nothing is still open when it settles
+
+=== D — §11: XLSX IS PRIMARY, AND THERE IS STILL EXACTLY ONE IMPORT CONTRACT ===
+  ok   D1  ExcelJS was ALREADY loaded by index.html before this round
+  ok   D1a and the shared XLSX template builder already existed
+  ok   D1b so no new library is introduced — §11's decision gate does not trigger
+  ok   D2  the pricing module loads
+  ok   D2a and produces a real single-currency scope to validate against
+  ok   D3  three action columns — one per price field
+  ok   D3a regular_price_mode carries exactly the three words §11 names
+  ok   D3a minimum_price_mode carries exactly the three words §11 names
+  ok   D3a msrp_mode carries exactly the three words §11 names
+  ok   D4  one template row per pricing row
+  ok   D4a action ships as No Change
+  ok   D4b price ships blank
+  ok   D4c and every field, not just the first
+  ok   D4d
+  ok   D5  no blank input rows — they would be 50 identity errors
+  ok   D5a and no example row, for the same reason
+  ok   D6  the currency is stated on the sheet
+  ok   D6a together with the target this file is scoped to
+  ok   D6b the builder freezes the header row
+  ok   D6c widths are reasonable
+  ok   D6d EVERY header is a human label, not the column key
+  ok   D6e identity and context are locked; only the six action/price cells are editable
+  ok   D6f which is exactly six
+  ok   D7  validateBulkFile IS validateBulkGrid over a parsed CSV — same object, not a copy
+  ok   D7a and a valid file still validates
+  ok   D7b the display label still parses to the internal mode
+  ok   D8  a grid with the HUMAN headers the XLSX ships validates
+  ok   D8a and produces exactly the lines the machine headers produce
+  ok   D9  a wrong file is refused by name
+  ok   D9a and the missing column is named in the words the operator sees on the sheet
+  ok   D10  the banner is skipped and the trailing blank rows are dropped
+  ok   D10a the header row is the one carrying the identity column
+  ok   D10b and the single typed row survives
+  ok   D10c a sheet with no identity column yields NOTHING rather than a misread grid
+  ok   D11  a formula cell is read as its RESULT, as text
+  ok   D12  the page builds the XLSX spec
+  ok   D12a and falls back to CSV when ExcelJS is unavailable rather than refusing to give a template
+  ok   D12b with the CSV also reachable as a deliberate advanced action
+  ok   D12c the upload control accepts .xlsx as well as .csv
+  ok   D12d and the primary button says Excel
+  ok   D13  upload meets the SAME rules a CSV meets
+  ok   D13a and the same server dry run decides
+  ok   D13b the write contract is unchanged
+  ok   D13c blank is still No Change and nothing else
+  ok   D13d and both spellings still parse
+  ok   D13e
+  ok   D13f an unrecognised word is still NULL, never a silent No Change
+
+=== E — §12: THE PREVIEW KEEPS ITS PLACE, AND THE MODAL STOPS WEARING THE FORM'S GRID ===
+  ok   E1  the paint still redraws by assigning innerHTML — that is what destroys the scroller
+  ok   E1a and no scrollIntoView CALL exists — it would move a block that is already visible
+  ok   E2  the position is restored only when the STAGE did not change
+  ok   E2a the modal body position is carried across
+  ok   E2b and so is the nested cards list — Show More appends into that one
+  ok   E3  the restored offset is clamped to what the new content can actually scroll
+  ok   E4  a preview already in view is not scrolled at all
+  ok   E4a above the viewport: bring its top to the top edge
+  ok   E4b below it: move by the SMALLER of the two distances that reveal it
+  ok   E5  all five Preview settlements reveal — parse failure, no-op, success, server refusal, unreadable file
+  ok   E5a and none of them redraws without revealing
+  ok   E6  Show More redraws in place — same stage, so the position is kept and nothing is scrolled
+  ok   E7  opening resets the remembered stage
+  ok   E7a and closing does too
+  ok   E8  the edit form keeps its two-column grid
+  ok   E8a and the bulk modal gets a modifier that opts out of it
+  ok   E8b applied to all four bulk stages — category, scope/preview, confirm, result
+  ok   E8c and to NEITHER of the two form dialogs, which are what the grid was written for
+  ok   E9  errors are rendered FIRST
+  ok   E9a a large batch is paged rather than rendered whole
+  ok   E9b only CHANGED rows are drawn — unchanged rows are a count, not a list
+
+=== F — §7: WHY FC NEXT COSTS WHAT IT COSTS, AND WHY NOTHING WAS "REUSED" ===
+  ok   F1  a cold Regular Next issues TWO canonical reads
+  ok   F1a sku_details and marketplace_skus
+  ok   F1b neither is asked for twice
+  ok   F2  FC Summary's own entry reads only fcSummary workspace slices
+  ok   F2a and the builder's two tables are NOT among them — the sets are disjoint
+  ok   F2b which the declared prerequisite list confirms
+  ok   F3  a second Next in the same session issues NOTHING
+  ok   F4  FC entry has no duplicate read
+  ok   F4a its two reads are two different slices
+  ok   F5  reaching the FC shell costs no read of its own
+  ok   F5a and no FC path threw while being driven
+  ok   F6  FC entry-to-first-rows is recorded as NOT measured rather than reported as a zero
+  ok   F6a and explicitly not treated as a defect
+
+=== G — §9: PRODUCT STRATEGY REACHES A USEFUL VIEW, AND STILL ASKS FOR A SCOPE ===
+  ok   G1  entering Product Strategy costs ONE read — the site universe
+  ok   G1a and only that
+  ok   G2  the universe resolves to the six fixture sites
+  ok   G2a with no refusal
+  ok   G3  and it asks for a scope instead of reading a workspace it has no scope for
+  ok   G3a no workspace read is issued on entry
+  ok   G4  the operator smoke covers Executive Overview
+  ok   G4  the operator smoke covers Category Analysis
+  ok   G4  the operator smoke covers Deal Risk
+  ok   G4  the operator smoke covers Data Quality
+  ok   G4  the operator smoke covers Strategy Workspace
+  ok   G4  the operator smoke covers Advanced Details
+  ok   G4a and states that the smoke is still REQUIRED — nothing here marks PSB production-stable
+
+=== J — MUTANTS: every repaired condition is attacked ===
+  ok   J1 the in-flight join is removed KILLED
+  ok   J2 the in-flight key is never released KILLED
+  ok   J3 trailing blank rows are no longer trimmed KILLED
+  ok   J4 the stage guard is removed KILLED
+  ok   J5 the already-visible check is removed KILLED
+  ok   J6 the template ships 50 blank rows KILLED
+  ok   J7 the third dropdown word is renamed KILLED
+  ok   J8 human headers stop mapping to keys KILLED
+  ok   J9 the header row is assumed to be the first row KILLED
+  ok   J10 the bulk modal keeps the two-column grid KILLED
+  mutants: 10 killed, 0 survived, 0 harness errors
+  ok   J   every planted defect was caught
+
+PASS  149 passed, 0 failed
+PARTIAL_DUPLICATE_FETCH = FIXED (2 -> 1) · SKU/SRD/RAPID_NAV = 0 REQUESTS · PRIMARY_OPERATOR_TEMPLATE = XLSX · ONE_IMPORT_CONTRACT = YES

@@ -1,0 +1,321 @@
+
+== 1. dataset provenance and licence are recorded ==
+ok   1. the source is named in the asset itself
+ok   1. with the exact dataset
+ok   1. pinned to an immutable tagged version, not a moving branch
+ok   1. and the resolution
+ok   1. the source URL is the canonical upstream at that tag
+ok   1. and never a moving branch
+ok   1. the input SHA-256 is recorded, so the build is verifiable
+ok   1. the licence is recorded
+ok   1. with the terms-of-use URL
+ok   1. and the licence wording quoted
+ok   1. the asset declares no runtime network dependency
+ok   1. and states it is a geographic reference only
+ok   1. PROVENANCE.md records https://raw.githubusercontent.com/nvkels…
+ok   1. PROVENANCE.md records 6866c877d39cba9c357620878839b336d569f8c6…
+ok   1. PROVENANCE.md records v5.1.2
+ok   1. PROVENANCE.md records Public domain
+ok   1. PROVENANCE.md records build-country-boundaries.js
+ok   1. and records that the repository was audited before a dataset was chosen
+ok   1. with the audit result
+ok   1. the generator uses no Math.random
+ok   1. the generator uses no Date.now
+ok   1. the generator uses no new Date(
+ok   1. the generator uses no require('http
+ok   1. the generator uses no fetch(
+ok   1. the generator emits a deterministic order
+ok   1. and documents that guarantee
+
+== 2. every country record has a valid ISO alpha-2 code ==
+ok   2. 175 country records
+ok   2. EVERY record has a well-formed ISO alpha-2 code
+ok   2. and no ISO code appears twice
+ok   2. the requirement’s named example US is present
+ok   2. the requirement’s named example CN is present
+ok   2. the requirement’s named example CA is present
+ok   2. the requirement’s named example JP is present
+ok   2. the requirement’s named example AU is present
+ok   2. records are emitted in ISO ascending order (deterministic)
+ok   2. exactly two source features were excluded
+ok   2. and they are named
+ok   2. because they carry no assigned ISO 3166-1 alpha-2 code
+ok   2. the generator states it never invents a code
+ok   2. (placeholder codes are not emitted as ISO values)
+ok   2. no placeholder survived as an ISO code
+ok   2. and a country display name
+
+== 3. Polygon and MultiPolygon are both supported ==
+ok   3. 29 source MultiPolygon countries were processed
+ok   3. and multi-ring records survive into the asset (29)
+ok   3. Canada keeps its archipelago rings (30)
+ok   3. and simple Polygon countries are kept as one ring (146)
+ok   3. every ring is a flat lng/lat array with at least 4 points
+ok   3. 285 rings in total
+
+== 4. antimeridian segments do not draw a false long line ==
+ok   4. the dataset really does contain a 360-degree longitude jump (the naive-renderer trap)
+ok   4. but as a 3D great-circle arc that same pair is 0 degrees — no line is drawn at all
+ok   4. NO emitted segment exceeds the 2-degree subdivision limit (max 1.995)
+ok   4. and certainly nothing spanning the Pacific
+ok   4. the country entry point performs no longitude "+ 360" arithmetic
+ok   4. the shared rasteriser performs no longitude "+ 360" arithmetic
+ok   4. the country entry point performs no longitude "- 360" arithmetic
+ok   4. the shared rasteriser performs no longitude "- 360" arithmetic
+ok   4. the country entry point performs no longitude "% 360" arithmetic
+ok   4. the shared rasteriser performs no longitude "% 360" arithmetic
+ok   4. the country entry point performs no longitude "180 -" arithmetic
+ok   4. the shared rasteriser performs no longitude "180 -" arithmetic
+ok   4. the country entry point performs no longitude "unwrap" arithmetic
+ok   4. the shared rasteriser performs no longitude "unwrap" arithmetic
+ok   4. the country entry point performs no longitude "wrapLng" arithmetic
+ok   4. the shared rasteriser performs no longitude "wrapLng" arithmetic
+ok   4. interpolation is slerp on 3D unit vectors, so the failure mode is structurally impossible
+ok   4. the country builder DELEGATES to that shared rasteriser
+ok   4. neither boundary builder interpolates on its own — both go through the one shared rasteriser
+ok   4. worst chord sag 0.000152 stays under the 0.00025 depth bias that separates the boundary from the surface
+ok   4. and the boundary layer is ON the surface (r=1), so there is no radial offset to sink through
+ok   4. (the source really does contain long edges — 18.1 deg — so subdivision is not theoretical)
+
+== 5. island label points exist where centroid logic is unsuitable ==
+ok   5. every record uses the cartographer-placed Natural Earth label point, not a computed centroid
+ok   5. every label point is a valid lng/lat
+ok   5. 20 records sit >3 deg from their own bbox centre — a centroid would be wrong for them
+ok   5. Russia: a centroid lands ~45 deg away (it spans the antimeridian)
+ok   5. United States: Alaska + Hawaii drag a centroid into the Pacific
+ok   5. France: overseas territories drag a centroid into the Atlantic
+ok   5. Indonesia: an archipelago centroid is not on land
+ok   5. island country JP has geometry and a label point
+ok   5. island country PH has geometry and a label point
+ok   5. island country ID has geometry and a label point
+ok   5. island country NZ has geometry and a label point
+ok   5. island country FJ has geometry and a label point
+ok   5. island country IS has geometry and a label point
+ok   5. island country LK has geometry and a label point
+ok   5. island country CU has geometry and a label point
+ok   5. island country MG has geometry and a label point
+ok   5. island country TW has geometry and a label point
+ok   5. island country GB has geometry and a label point
+ok   5. island country AU has geometry and a label point
+ok   5. Fiji’s label point is in the Pacific near the antimeridian, not off Africa
+ok   5. the generator documents why label points are not centroids
+
+== 6. the boundary layer mutates no shipment coordinate ==
+ok   6. the pure country block never references markers
+ok   6. the pure country block never references arcs
+ok   6. the pure country block never references rebuildPoints
+ok   6. the pure country block never references rebuildLines
+ok   6. the pure country block never references setMarkers
+ok   6. the pure country block never references setArcs
+ok   6. the pure country block never references shipment
+ok   6. the pure country block never references warehouse
+ok   6. the pure country block never references route
+ok   6. the label pass never calls setMarkers
+ok   6. the label pass never calls setArcs
+ok   6. the label pass never calls rebuildPoints
+ok   6. the label pass never calls rebuildLines
+ok   6. and never assigns a marker coordinate
+ok   6. the page wiring never touches setMarkers
+ok   6. the page wiring never touches setArcs
+ok   6. the page wiring never touches latitude =
+ok   6. the page wiring never touches longitude =
+ok   6. the page wiring never touches resolveNodeCoord
+ok   6. the page wiring never touches resolveCurrentPosition
+ok   6. it only sets layer visibility and label priority
+ok   6. and says so at the call site
+
+== 7. labels are hidden on the rear hemisphere ==
+ok   7. facingOf IS the projection's own facing value, bit for bit
+ok   7. and it agrees with `front` on the rear hemisphere
+ok   7. a label below the country facing threshold is skipped before it is projected
+ok   7. and that threshold is STRICTER than the old rear-hemisphere test
+ok   7. while still far looser than the division one — a country at the edge of the disc is useful context
+ok   7. there is ONE whole-box viewport test
+ok   7. and it requires the ENTIRE box inside the viewport, not just the anchor
+ok   7. and a country label whose box would be clipped is skipped
+ok   7. a point facing the camera projects as front
+ok   7. the antipode projects as NOT front — it is culled
+ok   7. after rotating the globe the far label becomes visible
+ok   7. and the near one is culled — labels rotate WITH the projection
+
+== 8. active shipment countries receive priority ==
+ok   8. an active shipment country is priority 0
+ok   8. a selected shipment country is 1
+ok   8. a country containing a visible node is 2
+ok   8. a configured high-priority country is 3
+ok   8. everything else is 4
+ok   8. the strongest claim wins
+ok   8. only NON-priority countries are filtered by the zoom tier
+ok   8. an ACTIVE shipment label beats a colliding unrelated label of better rank
+
+== 9. collision ordering is deterministic ==
+ok   9. order is priority, then LABELRANK, then ISO ascending
+ok   9. and it does not depend on the input array order
+ok   9. four labels stacked on one point resolve to exactly one winner
+ok   9. and the same winner regardless of input order
+ok   9. a pure tie is broken by ISO ascending
+ok   9. reversing the input does not change it
+ok   9. labels that do not overlap are all kept
+ok   9. even a priority-0 label is dropped rather than cover a shipment marker
+ok   9. the previous accepted set only changes PADDING
+ok   9. and a label anchor is NEVER moved to dodge a collision — only hidden
+
+== 10. no random or time-dependent logic anywhere in the layer ==
+ok   10. buildCountrySegments contains no Math.random
+ok   10. buildCountrySegments contains no Date.now
+ok   10. buildCountrySegments contains no new Date(
+ok   10. buildCountrySegments contains no performance.now
+ok   10. countryLabelTier contains no Math.random
+ok   10. countryLabelTier contains no Date.now
+ok   10. countryLabelTier contains no new Date(
+ok   10. countryLabelTier contains no performance.now
+ok   10. countryPriorityOf contains no Math.random
+ok   10. countryPriorityOf contains no Date.now
+ok   10. countryPriorityOf contains no new Date(
+ok   10. countryPriorityOf contains no performance.now
+ok   10. orderLabelCandidates contains no Math.random
+ok   10. orderLabelCandidates contains no Date.now
+ok   10. orderLabelCandidates contains no new Date(
+ok   10. orderLabelCandidates contains no performance.now
+ok   10. rectsOverlap contains no Math.random
+ok   10. rectsOverlap contains no Date.now
+ok   10. rectsOverlap contains no new Date(
+ok   10. rectsOverlap contains no performance.now
+ok   10. selectVisibleLabels contains no Math.random
+ok   10. selectVisibleLabels contains no Date.now
+ok   10. selectVisibleLabels contains no new Date(
+ok   10. selectVisibleLabels contains no performance.now
+ok   10. countryIsoIndex contains no Math.random
+ok   10. countryIsoIndex contains no Date.now
+ok   10. countryIsoIndex contains no new Date(
+ok   10. countryIsoIndex contains no performance.now
+ok   10. drawCountryLabels contains no Math.random
+ok   10. drawCountryLabels contains no Date.now
+ok   10. drawCountryLabels contains no new Date(
+ok   10. drawCountryLabels contains no performance.now
+ok   10. rebuildCountryBuffer contains no Math.random
+ok   10. rebuildCountryBuffer contains no Date.now
+ok   10. rebuildCountryBuffer contains no new Date(
+ok   10. rebuildCountryBuffer contains no performance.now
+ok   10. and neither does the asset generator
+ok   10. two builds produce the same vertex count
+ok   10. and byte-identical geometry
+
+== 11. borders and labels are independently controlled ==
+ok   11. a Country borders checkbox exists
+ok   11. a Country labels checkbox exists
+ok   11. both default ON
+ok   11. under the existing Layers panel
+ok   11. each toggle drives its OWN flag
+ok   11. the globe applies them independently — neither implies the other
+ok   11. borders off => no boundary draw call at all
+ok   11. country labels off suppresses the COUNTRY candidate set
+ok   11. with them off no country label is even considered
+ok   11. the overlay is still cleared each pass, so nothing stale survives
+ok   11. and the pass bails ONLY when neither label layer wants to draw
+ok   11. where the ADM1 half of that condition is the ADM1 layer's own visibility, not the country one's
+ok   11. the toggles live in page state
+ok   11. and create no upsert persistence
+ok   11. and create no PropertiesService persistence
+ok   11. and create no setProperty persistence
+ok   11. the control is a native checkbox inside its <label> (keyboard + accessible name + checked state)
+ok   11. and a legend note explains the layer is not shipment data
+ok   11. with a style so the note is legible
+
+== 12. DPR, fullscreen and resize keep the two layers aligned ==
+ok   12. the existing dpr rule is unchanged
+ok   12. the label overlay takes the SAME backing-store size as the GL canvas — alignment by construction
+ok   12. and the 2D context is scaled by dpr, so text is crisp at high DPR
+ok   12. the transform is reset each pass, so dpr changes cannot compound
+ok   12. the overlay tracks the host box in CSS
+ok   12. and is absolutely positioned over the host
+ok   12. above the host vignette so limb labels stay readable
+ok   12. and pointer-transparent
+ok   12. enforced inline too, so a missing stylesheet cannot break interaction
+
+== 13. no runtime network dependency ==
+ok   13. km-globe.js contains no fetch(
+ok   13. km-globe.js contains no XMLHttpRequest
+ok   13. km-globe.js contains no import(
+ok   13. km-globe.js contains no https://
+ok   13. km-globe.js contains no http://
+ok   13. km-globe.js contains no cdn.
+ok   13. km-globe.js contains no unpkg
+ok   13. km-globe.js contains no jsdelivr
+ok   13. the asset is loaded as a same-origin <script>
+ok   13. with no crossorigin/CDN attribute
+ok   13. the asset sets a global, exactly like the existing land outline
+ok   13. and the asset itself contains no fetch(
+ok   13. and the asset itself contains no XMLHttpRequest
+ok   13. and the asset itself contains no eval(
+ok   13. the processed asset is bounded (138068 bytes < 200 KB)
+ok   13. simplification happened at BUILD time, not at runtime
+ok   13. and no simplifier ships in the runtime
+
+== 14. the asset and its GPU buffer are not rebuilt per frame ==
+ok   14. draw() issues exactly one draw call per boundary class (lines + ribbon)
+ok   14. over the three canonical classes
+ok   14. and never rebuilds the geometry
+ok   14. and never rebuilds the buffer
+ok   14. the boundary path performs NO bufferData upload per frame
+ok   14. each class buffer is uploaded once as STATIC_DRAW
+ok   14. the GL buffer object is created once per class and reused
+ok   14. and the topology is never built from the upload path or the render loop
+ok   14. and built once at creation
+ok   14. a context restore rebuilds it safely
+ok   14. 18,140 line vertices
+ok   14. 9,070 segments
+ok   14. 285 rings
+ok   14. one GPU buffer of 507920 bytes
+ok   14. the label pass never calls createElement — one canvas, no DOM churn
+ok   14. the label pass never calls appendChild — one canvas, no DOM churn
+ok   14. the label pass never calls removeChild — one canvas, no DOM churn
+ok   14. the label pass never calls innerHTML — one canvas, no DOM churn
+ok   14. the overlay canvas is created once, outside the render loop
+ok   14. the dataset is taken from the parsed global once
+ok   14. and never re-parsed
+ok   14. selecting a shipment re-parses nothing
+
+== 15/16. route arcs, markers, current position and ETA are untouched ==
+ok   15. route arcs still build at r=1.006
+ok   15. with the same 40-step great-circle subdivision
+ok   15. markers still build at their own elevation
+ok   15. the boundary layer is ON the surface, not on a shell above it
+ok   15. and is below the arcs (1.006) and markers (1.012), so a border never draws over a route
+ok   15. separation from the surface is a small depth bias (0.00025), not altitude
+ok   15. draw order is sphere -> boundaries -> arcs -> markers
+ok   16. the ETA control path contains no country
+ok   16. the ETA control path contains no Country
+ok   16. the ETA control path contains no KM_WORLD_COUNTRIES
+ok   16. (and the ETA path is still there, unchanged)
+ok   16. current-position resolution is untouched
+ok   16. the position writer is still wired
+ok   17. the V3G6A texture-tier work is still present
+ok   17. mipmaps unchanged
+ok   17. anisotropy unchanged
+ok   17. the base raster size is still 2048x1024 (now the procedural bootstrap and offline fallback)
+ok   17. and the country layer never touches the new material path either
+ok   17. and the country layer never touches the earth texture
+
+== 18. scale-aware visibility and the ISO resolver ==
+ok   18. fully zoomed out: majors only (LABELRANK <= 2)
+ok   18. default distance: majors
+ok   18. medium zoom: more countries
+ok   18. rank<=2 is 36 countries — a readable reference at full-globe zoom
+ok   18. rank<=4 is 125 — the medium tier
+ok   18. the zoomed-out tier can never admit more than ~45 candidate labels
+ok   18. and zooming in strictly widens the set
+ok   18. close zoom: every label that survives collision
+ok   18. the tier is monotonic in zoom — zooming in never removes a label
+ok   18. an ISO code resolves to itself
+ok   18. case-insensitively
+ok   18. a full country name resolves
+ok   18. including the dataset’s own long name
+ok   18. an unknown two-letter code resolves to NOTHING — never guessed
+ok   18. blank resolves to nothing
+ok   18. and so does null
+ok   18. at close zoom the dataset supports ALL 175 countries
+
+----------------------------------------
+ALL PASS  (285 assertions)
+----------------------------------------

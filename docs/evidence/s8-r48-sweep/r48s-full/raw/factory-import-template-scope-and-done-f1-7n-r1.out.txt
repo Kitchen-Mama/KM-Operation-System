@@ -1,0 +1,21 @@
+
+== A/B CN selected → template scoped to CN factory ==
+
+== C/D TW selected (no reload) → template scoped to TW factory ==
+
+== E/F no cross-factory leakage in either template ==
+
+== G/H switching CN→TW→CN without reload returns the selected each time ==
+
+== I no factory selected → download blocked (notice, no template) ==
+
+== J/K/L no hard-coded default + columns + SET semantics unchanged ==
+
+== M-R Done closes + does NOT re-import / broad-reload ==
+
+== T/U/V reopen safety — a fresh confirm after reset performs a real import (not a no-op Done) ==
+
+== S post-import refresh reused exactly once (no broad DB reload added) ==
+
+----------------------------------------
+FACTORY IMPORT TEMPLATE SCOPE + DONE (F1-7N-R1): 22 passed, 0 failed

@@ -1,0 +1,32 @@
+ok   E1: US Amazon and CA Amazon have distinct marketplace_id keys
+ok   E2: Country=CA scopes marketplace options to CA only
+ok   E3: selected CA Amazon resolves to CA marketplace_id in the payload key
+ok   E4: CA + CA-Amazon returns only the CA site, never US Amazon
+ok   E4: no US row leaks into the CA result
+ok   E5: Country US→CA clears the incompatible US marketplace selection
+ok   E6: two US Amazon sites both present
+ok   E6: selecting one US Amazon site does not pull the other
+ok   C: DB rows carry marketplace_id
+ok   C: canonical marketplace key helper present
+ok   C: dedicated marketplace dropdown builder present
+ok   C: marketplace master (getMarketplaces) is consulted
+ok   E16: Country change rebuilds + prunes the marketplace selection
+ok   G: no marketplaces.find(...Amazon) first-match
+ok   E: siteStock uses strict site scoping (no wildcard leak)
+ok   B3: marketplace display-group state present
+ok   B3: display-group → marketplace_id-set resolver present
+ok   B3: filter resolves selected display groups to the underlying marketplace_id set
+ok   B3: marketplace option value = display-group name
+ok   B3: country suffix "(US)"/"(CA)" removed from the marketplace label
+ok   B3.1: Country US → Amazon group = only US Amazon ids
+ok   B3.2: Country CA → Amazon group = only CA Amazon id
+ok   B3.3: Country All shows Amazon exactly once
+ok   B3.4: Country All Amazon keeps every underlying id
+ok   B3.5: after switch to CA, US Amazon id is no longer resolved
+ok   B3.6: CA payload uses the CA marketplace_id only
+ok   B3.6: no US marketplace id in the CA result
+ok   B3.7: KM & ResUS US Amazon both retained under one display group
+ok   B3.8: display group resolves to its own id, not a name match
+ok   B3.9: blank-country snapshot excluded (no wildcard) in siteStock
+
+ALL PASS  |  passed 30  failed 0

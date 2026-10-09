@@ -1,0 +1,16 @@
+
+== A. lock acquisition ==
+
+== B. revalidation under lock ==
+
+== C. apply path ==
+
+== D. release safety ==
+
+== E. race scenarios (real KMPR repository under a fake lock) ==
+
+== F. idempotent replay under lock (real repository) ==
+
+== G. determinism + input validation + non-goals ==
+
+All Round 1E Recommendation Persistence Locking assertions passed (96 assertions).

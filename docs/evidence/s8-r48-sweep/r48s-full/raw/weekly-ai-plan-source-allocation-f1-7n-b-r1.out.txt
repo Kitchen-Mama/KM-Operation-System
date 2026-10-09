@@ -1,0 +1,31 @@
+
+== A — Overseas fully satisfies demand → Factory untouched ==
+
+== B — Overseas partial → CN fills residual ==
+
+== C — Overseas + CN partial → TW fills residual ==
+
+== D — all sources insufficient → unresolved residual preserved ==
+
+== E — CN chosen before TW when both available ==
+
+== F — TW used when CN has zero eligible supply ==
+
+== G — source priority does NOT reorder Required-By demand priority ==
+
+== H — physical supply cannot be allocated >100% ==
+
+== I — same source unit cannot satisfy multiple demands (count-once) ==
+
+== J — 18-day overseas survival protection remains intact ==
+
+== K — carton FLOOR leaves partial-carton residual unmet (Gap 100, source 95, UPC 24 → 72, residual 28) ==
+
+== L — missing/invalid units_per_carton follows the canonical block rule ==
+
+== M — deterministic: identical input → identical ordered output ==
+
+== MONTHLY allocateFactoryDeterministic semantics UNCHANGED (regression) ==
+
+----------------------------------------
+WEEKLY AI PLAN SOURCE ALLOCATION (F1-7N-B): 40 passed, 0 failed

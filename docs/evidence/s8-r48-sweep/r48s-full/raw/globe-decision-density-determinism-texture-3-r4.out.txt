@@ -1,0 +1,20 @@
+MAP-VISUAL-REAL-EARTH-TEXTURE-3-R4 — DECISION, DENSITY, DETERMINISM
+
+== §A — the TW/CN decision is a SEPARATION, and all three levels are reachable at once
+
+== §B — the division authority, starting with the one that does not exist
+  division coverage: 3581/3835  ·  English fallback 254  ·  was 3479 before this round
+
+== §C — a rejected label must not cost layout work
+
+== §D — collision determinism, all four classes, through the shipped planner
+
+== §E — the former §J10: not applicable as worded, proven at the real LOD boundary instead
+  COARSE 6656 unique edges (2073 dups removed) · FINE 67976 (8041) · 7 shared between them
+  §J10 STATUS: not applicable as originally worded (no runtime simplifier exists);
+  equivalent invariant proven at the actual LOD boundary — see §E above.
+
+== §G — the guards that must not have moved
+
+----------------------------------------
+TEXTURE-3-R4 DECISION / DENSITY / DETERMINISM: 793 passed, 0 failed

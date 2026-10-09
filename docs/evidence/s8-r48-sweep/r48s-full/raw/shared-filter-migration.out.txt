@@ -1,0 +1,40 @@
+
+-- shared component contract (multi-select-filter.js) --
+ok   D1: exposes a single KM.ui.multiFilter.create component
+ok   D2: Select All + Clear controls
+ok   D3: searchable (search input)
+ok   D4: scrollable checkbox option list
+ok   D5: Esc + outside-click close (one global handler)
+ok   D6: idempotent create() reuses the instance (no duplicate panels/listeners on rerender)
+ok   D7: aria-expanded / aria-controls / listbox semantics
+
+-- sku-regional-details migration (Category / Series) --
+ok   D8: the native <select> Category/Series filters are GONE from the toolbar
+ok   D9: shared-filter mount points present
+ok   D10: filters created via the shared component
+ok   D11: filter state is a multi-value array ([] = All)
+ok   D12: query is an OR-set membership test (preserves boundary; empty = All, §15)
+ok   D13: selection reported through onChange into the existing page state
+
+-- prior migrations intact --
+ok   D14: forecast.js still uses the shared component
+ok   D15: sku-handbook.js still uses the shared component
+
+-- common-filter adoption: Forecast + Inventory Replenishment + shared owner --
+ok   D16: base.css owns the filter-label design tokens (--filter-label-font-size / --filter-label-color)
+ok   D17: components.css .km-filter-bar .filter-group label = single owner of the filter-label spec (via tokens)
+ok   D18: FC Summary bar carries the shared km-filter-bar class
+ok   D19: Forecast bar carries km-filter-bar
+ok   D20: Inventory Replenishment bar carries km-filter-bar
+ok   D21: Forecast dropdown groups use shared .filter-group / --dropdown
+ok   D22: page-scoped .forecast-filter control/label duplicate rules removed from fc-overview.css
+ok   D23: Forecast options derived from the active dataset (getForecastRows), not a static list
+ok   D24: static FORECAST_FILTER_OPTS hardcoded option arrays removed (no static/demo options)
+ok   D25: dead legacy forecast-dropdown JS (second filter implementation) removed
+ok   D26: IR filter groups use shared .filter-group (page-scoped .replen-filter-group gone from markup)
+ok   D27: IR keeps native single-select Country/Marketplace (single-select preserved)
+ok   D28: IR Search button retained (loads only after Country + Marketplace + Search)
+ok   D29: page-scoped .replen-filter-group control/label duplicate rules removed from inventory-replenishment.css
+ok   D30: redundant #fc-summary-section .filter-group label override removed (shared owner canonical)
+
+ALL PASS  |  passed 30  failed 0

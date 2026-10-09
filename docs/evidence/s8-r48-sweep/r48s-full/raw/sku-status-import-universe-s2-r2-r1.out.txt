@@ -1,0 +1,70 @@
+
+== A — THE TOTALS COME FROM THE INJECTED UNIVERSE, AND ONLY FROM IT ==
+ok   A1  an existing SKU is an UPDATE — the case the defect got wrong
+ok   A2  a SKU absent from the universe is NEW
+ok   A3  a mixed file splits exactly
+ok   A4  and each preview row names its own action
+ok   A5  the documented in-file duplicate behaviour is unchanged
+ok   A6  with its existing message
+
+== B — THE BROAD CACHE CANNOT REACH THE TOTALS ==
+ok   B1  the import never so much as READS window.KM.DB.getSkuDetails (a trap getter counts touches)
+ok   B2  ZZ9990 and NEW-1 are NEW despite sitting in the broad cache — only the universe decides
+ok   B3  two different broad caches give identical totals for the same injected universe
+
+== C — LOADED-EMPTY IS A FACT; UNAVAILABLE IS A REFUSAL ==
+ok   C1  an EMPTY universe is a real answer — every valid row is genuinely new
+ok   C2  and it is not a refusal
+ok   C3  an ABSENT universe refuses
+ok   C4  and shows no totals at all — never "everything is new"
+ok   C5  with a sentence that says what actually happened
+ok   C6  null refuses
+ok   C7  a non-array refuses
+ok   C8  a string refuses
+
+== D — THE PAGE DECIDES READINESS WITH THE RENDERER'S OWN PREDICATE ==
+ok   D1  workspace active + no read model → unavailable (null), NOT an empty array
+ok   D2  workspace active + a model holding zero rows → a real, empty universe
+ok   D3  workspace active + a model → the model, never the broad cache
+ok   D4  kill-switch mode agrees with what the page itself renders
+ok   D5  the page hands over a COPY, so a later write cannot rewrite a run in flight
+ok   D6  a refused import becomes possible once the read lands — no reload needed
+
+== E — NOTHING ELSE MOVED ==
+ok   E1  the resolved shape is unchanged on the success path
+ok   E2  and so is a preview row
+ok   E3  the injected array is not mutated by the run
+ok   E4  nor its length
+ok   E5  the missing-sku-column refusal is untouched
+ok   E6  required-field validation is untouched
+ok   E7  no hidden data source entered the import
+ok   E8  and no direct transport
+ok   E9  the import is still preview-only — it makes no write call
+ok   E10 and it is still a Promise, as its one caller expects
+ok   E11 the page still has exactly one import call site
+ok   E12 and it passes the universe
+ok   E13 the import triggers NO second workspace read
+
+== F — THE IMAGE SURFACE IS FROZEN BY DIGEST ==
+ok   F1  every frozen image slice is present
+ok   F1a the image-override WRITER is absent from the source, not just from this list
+ok   F1b and neither image function reads a browser override — sku_details.image_url is the owner
+ok   F2  the image surface matches the sealed digest
+ok   F3  and its byte count
+
+== G — DRIVEN MUTANTS (each must change an OBSERVED result) ==
+ok   M1  the broad-cache read is restored (caught)
+ok   M2  an unavailable universe becomes an empty one (caught)
+ok   M3  the injected argument is ignored (caught)
+ok   M4  broad-cache rows are merged into the injected universe (caught)
+ok   M5  new and update membership is reversed (caught)
+ok   M6  the readiness validation is removed entirely (caught)
+ok   M7  the utility mutates the array it was handed (caught)
+ok   M8  the import triggers a second workspace read (caught)
+ok   M9  one image-resolver byte is altered (caught)
+ok   M10 the page reports an unavailable universe as empty (caught)
+ok   M11 the page hands over the live model array, not a snapshot (caught)
+
+====================================================================================================
+SKU STATUS IMPORT UNIVERSE (S2-R2-R1) — passed 52  failed 0  |  mutants caught 11  survived 0
+====================================================================================================

@@ -1,0 +1,59 @@
+
+§A — PERSISTENCE
+ok   A1 evidence is persisted with a manifest
+ok   A2 the manifest declares its schema version  (got "km-sweep-evidence/1", want "km-sweep-evidence/1")
+ok   A3 ... the commit it describes and the collector that produced it  (got ["deadbeef","c0ffee"], want ["deadbeef","c0ffee"])
+ok   A4 ... and a registry hash naming WHICH suite set
+ok   A5 every record is accounted for  (got 4, want 4)
+ok   A6 ... with a classification timestamp
+ok   A7 every record links to BOTH raw stream files
+ok   A8 the dead suite stored an EMPTY stdout...  (got "", want "")
+ok   A9 ... and its stderr separately — the distinction that revealed the ten dead harnesses
+ok   A10 every stored hash matches the stored bytes  (got [true,0], want [true,0])
+
+§B — OFFLINE REPLAY
+ok   B1 replayed verdicts match the stored verdicts exactly  (got [], want [])
+ok   B2 every suite is reclassified from stored bytes  (got 4, want 4)
+ok   B3 ... and only the clean one is CLEAN  (got 1, want 1)
+ok   B4 the stored bytes alone are sufficient to reach the original reasons
+
+§C — FAIL CLOSED
+ok   C1 an existing evidence run is never overwritten  (evidence run already exists, refusing to overwrite: C:\Users)
+ok   C2 duplicate suite records are refused  (duplicate suite record: f-clean)
+ok   C3 an unknown schema version fails closed  (UNKNOWN_SCHEMA_VERSION: km-sweep-evidence/999 (expected km-s)
+ok   C4 a missing raw file fails closed  (got [false,"MISSING_RAW"], want [false,"MISSING_RAW"])
+ok   C5 ... and replay refuses to proceed  (EVIDENCE_INTEGRITY_FAILED)
+ok   C6 MUTANT rewriting a failure into a pass is detected by hash  (got [false,"HASH_MISMATCH"], want [false,"HASH_MISMATCH"])
+ok   C6b ... and replay refuses tampered evidence  (EVIDENCE_INTEGRITY_FAILED)
+ok   C7 a traversing suite name is rejected  (unsafe suite name for evidence path: ../../etc/passwd)
+ok   C8 an unsafe suite name is rejected  (unsafe suite name for evidence path: a b)
+
+§D — SECURITY SCAN
+ok   D1 ordinary output is clean  (got [], want [])
+ok   D2 the Apps Script /exec URL is detected
+ok   D3 a bearer token is detected
+ok   D4 a cookie header is detected
+ok   D5 an email address is detected
+ok   D6 a private key block is detected
+ok   D7 a secret anywhere in the batch refuses the entire write  (SECRET_SCAN_FAILED: 1 suite(s) carry sensitive patterns; not)
+ok   D8 ... and leaves NOTHING on disk — the scan runs before any write
+
+§E — COMMITTED EVIDENCE MUST NOT BE REWRITTEN BY GIT
+ok   E1 .gitattributes pins the raw evidence bytes against EOL conversion
+ok   E2 ... and the manifest alongside them
+ok   E3 the COMMITTED fixture still verifies against its own hashes  (got [true,0], want [true,0])
+ok   E4 ... and replays to the same verdicts it was stored with  (got [], want [])
+
+§G — QUARANTINE (S8-R48-G)
+ok   G1 a clean batch is written normally  (got [true,false], want [true,false])
+ok   G1a ... to the repository path, not the quarantine
+ok   G2 a secret-bearing batch is diverted, not written  (got [false,true], want [false,true])
+ok   G2a ... and NOTHING reaches the repository path
+ok   G2b ... the bytes land under the quarantine root
+ok   G2c ... and the offending suite is named
+ok   G2d ... with the manifest recording the scan did fire  (got "FINDINGS_PRESENT", want "FINDINGS_PRESENT")
+ok   G3 quarantined evidence is intact — preserved, not scrubbed  (got [true,0], want [true,0])
+ok   G4 with no quarantine root the refusal is unchanged  (SECRET_SCAN_FAILED: 1 suite(s) carry sensitive patterns; not)
+ok   G4a ... and still leaves nothing on disk
+
+PASS  45 passed, 0 failed  (2 tamper/traversal mutants detected, 6 secret patterns verified)

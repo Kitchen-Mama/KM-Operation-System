@@ -1,0 +1,16 @@
+
+== CASE A / I / L — small partition write → read exact round-trip; deterministic ==
+
+== CASE B / C / D — 228-receiver (>safe) partition: multi-chunk, each <= safe, exact round-trip ==
+
+== CASE E — read is independent of stored key order ==
+
+== CASE F — missing chunk → FAIL CLOSED (never partial) ==
+
+== CASE G — corrupt chunk (checksum/byte mismatch) → FAIL CLOSED ==
+
+== CASE H — v1 inline state.factoryContention still reads (backward compatible) ==
+
+== CASE J / K — new generation replaces old atomically; cleanup bounded to prefix ==
+
+OK — all 22 assertions passed

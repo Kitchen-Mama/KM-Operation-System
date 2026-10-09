@@ -1,0 +1,21 @@
+
+== A · HTML response is DETECTED (not passed through as data) ==
+
+== B · <!DOCTYPE never surfaces as an opaque JSON SyntaxError ==
+
+== C · canonical TRANSPORT_NON_JSON_RESPONSE ==
+
+== D · HTTP status preserved ==
+
+== E · Content-Type preserved ==
+
+== F · response prefix SANITIZED (bounded, whitespace-collapsed) ==
+
+== G · valid JSON response UNCHANGED ==
+
+== H · no secrets / no full HTML surfaced ==
+
+== Unit · transport.safeReadJsonResponse handles the shapes directly ==
+
+----------------------------------------
+TRANSPORT SAFE-PARSE (F1-4B-FM4b-R): 14 passed, 0 failed

@@ -1,0 +1,94 @@
+
+== A/B/C template resolution (deterministic single; fail closed) ==
+ok   A exactly one SHIPDETAIL template resolves
+ok   B no template -> DOCUMENT_TEMPLATE_NOT_CONFIGURED
+ok   C two active matches -> DOCUMENT_TEMPLATE_AMBIGUOUS (no latest/first pick)
+ok   draft template not resolved
+ok   scope mismatch (CA vs US) not resolved
+ok   scoped template matches its scope
+
+== D/E/F placeholder mapping + required/optional ==
+ok   D scalar maps via data_source_path
+ok   D number format applied
+ok   D no required missing on a complete model
+ok   F optional missing -> blank (allowed)
+ok   E required + unresolved -> DOCUMENT_REQUIRED_FIELD_MISSING signal
+
+== G/H physical qty + multi-PO through mapping ==
+ok   G mapped QTY = snapshot shipment_qty (800)
+ok   H multi-PO lineage preserved through allocation collection
+ok   H line grain preserved (1 line row; PO split lives in allocation collection)
+
+== I/J GS1 barcode vs units_per_carton ==
+ok   I GS1 barcode maps from frozen model
+ok   J units_per_carton (20) mapped as UPC field is NOT the GS1 barcode
+
+== K/L shipper & consignee from frozen model ==
+ok   K shipper from frozen render model
+ok   L consignee from frozen render model
+
+== M/N immutability: mapper is a pure fn of the model; no live master ==
+ok   M same model+fields -> identical mapping (deterministic)
+ok   N mapper does NOT touch sheets (pure over the model)
+
+== O no live master/PO/shipment lookup in the document runtime ==
+ok   O reads no live master/operational tables (only doc tables + snapshot via 35_)
+ok   O calls no factual resolver (facts come frozen from the render model)
+
+== P/Q no FIFO / no recommendation-gap-forecast ==
+ok   P no FIFO in document runtime
+ok   Q no gap/forecast/recommendation recompute
+
+== R/S/T idempotent generated-document lifecycle ==
+ok   R idempotency key deterministic (retry/two-tab/lost-response converge)
+ok   template version participates in the key
+ok   S ScriptLock + reuse-existing short-circuit (no duplicate active record)
+ok   T retry converges to the existing generation record unless regenerate:true
+
+== U template-version + snapshot lineage on the generated record ==
+ok   U generated record copies template_version (historical lineage)
+ok   U regeneration links to its predecessor (append-only history)
+ok   U lineage -> shipment (related_entity_id) + snapshot (SFO-<shipment_id>)
+
+== V/W/X SD + PL through the runtime; customs gap does not block ==
+ok   V/W SHIPDETAIL + PL map to frozen document_type enums
+ok   V/W generate reuses the R3A renderers (no second renderer)
+ok   X document runtime never consults customs/legal-importer for SD/PL
+
+== Y no second engine; §18 governance ==
+ok   Y no re-declared aggregator/renderer/snapshot schema (reuses R2B+R3A)
+ok   Y no migration twin invoked (tables are USER migration)
+ok   validate-only read of document_templates via prodRequireSheet_ (fail closed if missing)
+
+== frozen schemas: exact column counts ==
+ok   document_templates = 30 frozen columns
+ok   document_template_fields = 23 frozen columns
+ok   generated_documents = 30 frozen columns
+ok   document_templates owns template_id
+ok   document_templates owns template_key
+ok   document_templates owns document_type
+ok   document_templates owns template_file_id
+ok   document_templates owns template_version
+ok   document_templates owns status
+ok   document_templates owns is_active
+ok   document_template_fields owns field_id
+ok   document_template_fields owns placeholder
+ok   document_template_fields owns data_source_path
+ok   document_template_fields owns collection_key
+ok   document_template_fields owns data_scope
+ok   document_template_fields owns required
+ok   generated_documents owns document_id
+ok   generated_documents owns related_entity_id
+ok   generated_documents owns template_version
+ok   generated_documents owns regenerated_from_document_id
+ok   generated_documents owns status
+
+== §22 router: 5 bounded document APIs ==
+ok   router: documentTemplate.list
+ok   router: documentTemplate.getFields
+ok   router: shipmentDocument.generate
+ok   router: shipmentDocument.get
+ok   router: shipmentDocument.list
+
+----------------------------------------
+DOCUMENT TEMPLATE RUNTIME (F1-5C-EXPORT-R3B): 63 passed, 0 failed

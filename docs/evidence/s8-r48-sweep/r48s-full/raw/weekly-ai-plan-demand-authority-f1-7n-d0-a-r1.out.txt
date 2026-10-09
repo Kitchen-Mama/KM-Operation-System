@@ -1,0 +1,23 @@
+
+== A–D incremental demand projection (count the cumulative curve exactly once) ==
+
+== L SUM(incremental) does not double-count the cumulative curve ==
+
+== E–G survival protection applied exactly once (earliest non-zero incremental window) ==
+
+== H–K demandWeight conservation: SUM(window weights) == canonical lane weight ==
+
+== M–O demandKey = sku|destinationWarehouseId|windowCode ==
+
+== P–T factory identity resolves ONLY from exact warehouse_id; fail-closed; country inference forbidden ==
+
+== U–AA count-once / <=100% / carton-FLOOR via F1-7N-B builder (confirmed CN/TW ids) ==
+
+== AB–AC formulaVersion + sourceDataAsOf provenance ==
+
+== AD–AG frozen module versions / keys unchanged ==
+
+== SSOT freeze present in canonical docs ==
+
+----------------------------------------
+WEEKLY AI PLAN DEMAND AUTHORITY (F1-7N-D0-A): 53 passed, 0 failed

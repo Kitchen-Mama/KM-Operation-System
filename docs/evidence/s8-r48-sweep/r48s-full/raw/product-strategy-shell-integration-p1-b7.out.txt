@@ -1,0 +1,229 @@
+
+=== §A  THE SHELL INSTALLS THE PAGE ===
+  ok   A1.1 the release loads assets/js/api/km-product-pricing-workspace.js
+  ok   A1.2 the release loads assets/js/api/km-product-pricing-adapter.js
+  ok   A1.3 the release loads assets/js/product-strategy/psb-data-contract.js
+  ok   A1.4 the release loads assets/js/product-strategy/km-product-strategy-site-universe.js
+  ok   A1.5 the release loads assets/js/product-strategy/km-product-strategy-live-adapter.js
+  ok   A1.6 the release loads assets/js/product-strategy/psb-selectors.js
+  ok   A1.7 the release loads assets/js/product-strategy/psb-chart-layout.js
+  ok   A1.8 the release loads assets/js/product-strategy/psb-board-ui.js
+  ok   A1.9 the release loads assets/js/pages/product-strategy-board.js
+  ok   A2 and the one stylesheet
+  ok   A3 and there is exactly one mount point for the partial
+  ok   A3a and it is named exactly once — there is no second mount point to fill
+  ok   A4 the partial declares the section id the lifecycle registers
+  ok   A5 and the controller registers exactly that id
+  ok   A6 from exactly one partial
+  ok   A7 the controller registers a lifecycle
+  ok   A8 and fetches its markup through the shared loader
+  ok   A9 and it states that it is installed
+
+=== §B  THE SCRIPT ORDER IS THE DEPENDENCY ORDER, MEASURED ===
+  ok   B1 every module loads after everything it references
+  ok   B2 and the shared transport is created before the accessor that uses it
+  ok   B2a which the accessor does in fact use
+  ok   B3 the page controller loads last
+  ok   B4 the ten tags are contiguous — nothing unrelated is loaded between them
+  ok   B5 and psb-board-ui.js throws by name if its dependency is missing
+
+=== §C  PRODUCTION NEVER REACHES INTO docs/prototypes ===
+  ok   C1 index.html loads nothing from docs/prototypes
+  ok   C2 and no preview fixture
+  ok   C3.1 and neither does the page module
+  ok   C3.2 and neither does the live module
+  ok   C3.3 and neither does the board module
+  ok   C3.4 and neither does the accessor module
+  ok   C4 nor the production partial
+  ok   C5 the prototype consumes the production modules
+  ok   C6 and keeps its fixture to itself
+  ok   C7 the board names the fixture global it would use
+  ok   C7a and the shell never defines it
+  ok   C8 and it only auto-boots where a fixture is actually present
+
+=== §D  NAVIGATION IS INVISIBLE AND THE SECTION UNREACHABLE ===
+  ok   D1 no rendered text in the shell names the feature — there is no menu item
+  ok   D2 and nothing in the shell calls showSection for it
+  ok   D2a the mount point IS rendered — installed is not the same as hidden
+  ok   D3 no menu item, hidden or otherwise, refers to the section
+  ok   D4 app.js declares the staged-section registry
+  ok   D5 and this section is in it with a literal boolean switch
+  ok   D5a with the reason written down, not implied
+  ok   D6 and it is in BOTH section maps — the lifecycle one and the display one
+  ok   D7 the guard is above every shell mutation in showSection
+  ok   D7a and it returns rather than falling through
+  ok   D8 and the server flag is one literal boolean in the config of record
+  ok   D8a which the workspace read consults BEFORE it opens the spreadsheet
+
+=== §E  A DIRECT CALL FAILS CLOSED, AT ZERO REQUESTS ===
+  ok   E1 the capability mirror is false on load
+  ok   E1a and that is its declared default
+  ok   E2 the shell never raises it
+  ok   E2a and the page controller never DECLARES it either
+  ok   E2b SUPERSEDED (R10D): the PRODUCER exists, and it is the shared capability bootstrap
+  ok   E2b1 which production runs at boot — a producer nothing calls is the defect R4 found
+  ok   E2b2 and the page does NOT ask for it — the request this round removed stays removed
+  ok   E2b3 Product Strategy-owned system.health dispatch = 0, measured on executable text
+  ok   E2c and the server-owned key is named in exactly one client file
+  ok   E3a a module the bootstrap has not reached is PENDING, not disabled
+
+=== §F  NO BYPASS ===
+  ok   F1.1 the controller never touches location.search
+  ok   F2.1 nor does the live adapter
+  ok   F1.2 the controller never touches URLSearchParams
+  ok   F2.2 nor does the live adapter
+  ok   F1.3 the controller never touches location.href
+  ok   F2.3 nor does the live adapter
+  ok   F1.4 the controller never touches window.location
+  ok   F2.4 nor does the live adapter
+  ok   F1.5 the controller never touches localStorage
+  ok   F2.5 nor does the live adapter
+  ok   F1.6 the controller never touches sessionStorage
+  ok   F2.6 nor does the live adapter
+  ok   F1.7 the controller never touches document.cookie
+  ok   F2.7 nor does the live adapter
+  ok   F3 nor the accessor
+  ok   F4 there is no developer-mode hook
+  ok   F5 and the shell exposes no console flag for it
+  ok   F6 a truthy non-true capability value does not raise the mirror
+  ok   F7 and an unreadable payload puts it back to false
+
+=== §G  ONE COPY OF EVERY DEPENDENCY ===
+  ok   G1.1 km-product-pricing-workspace.js is loaded exactly once
+  ok   G1.2 km-product-pricing-adapter.js is loaded exactly once
+  ok   G1.3 psb-data-contract.js is loaded exactly once
+  ok   G1.4 km-product-strategy-site-universe.js is loaded exactly once
+  ok   G1.5 km-product-strategy-live-adapter.js is loaded exactly once
+  ok   G1.6 psb-selectors.js is loaded exactly once
+  ok   G1.7 psb-chart-layout.js is loaded exactly once
+  ok   G1.8 psb-board-ui.js is loaded exactly once
+  ok   G1.9 product-strategy-board.js is loaded exactly once
+  ok   G2 and the stylesheet exactly once
+  ok   G3 exactly one copy of each module exists under assets/
+  ok   G4 and the prototype keeps no copy of any of them
+
+=== §H  THE STYLESHEET IS A COMPONENT, NOT A PAGE ===
+  ok   H1 the sheet declares no global reset — base.css owns that
+  ok   H1a and base.css does declare it, more strongly (margin and padding too)
+  ok   H2 and no `body` rule — it would restyle every page
+  ok   H2a the page ground is the board's own root instead
+  ok   H3 headings are not restyled application-wide
+  ok   H4 nor is every button element
+  ok   H5.1 `.btn {` is not declared unscoped
+  ok   H5.1a and it IS declared under .psb-page
+  ok   H5.2 `.filter-group {` is not declared unscoped
+  ok   H5.2a and it IS declared under .psb-page
+  ok   H5.3 `.filter-group--check {` is not declared unscoped
+  ok   H5.3a and it IS declared under .psb-page
+  ok   H5.4 `.filter-checkbox-item {` is not declared unscoped
+  ok   H5.4a and it IS declared under .psb-page
+  ok   H5.5 `.kmf {` is not declared unscoped
+  ok   H5.5a and it IS declared under .psb-page
+  ok   H5.6 `.kmf-trigger {` is not declared unscoped
+  ok   H5.6a and it IS declared under .psb-page
+  ok   H5.7 `.kmf-panel {` is not declared unscoped
+  ok   H5.7a and it IS declared under .psb-page
+  ok   H5.8 `.kmf-tools {` is not declared unscoped
+  ok   H5.8a and it IS declared under .psb-page
+  ok   H5.9 `.kmf-link {` is not declared unscoped
+  ok   H5.9a and it IS declared under .psb-page
+  ok   H6 the Operation System token copies are GONE from the production sheet — base.css defines them
+  ok   H6a and it declares no :root block, so it writes nothing to the document root
+  ok   H7 the production section carries it
+  ok   H8 and so does the prototype's body
+  ok   H8a which is the same sheet, not a copy
+  ok   H9 print does not restyle the document body
+
+=== §I  THE BOARD RENDERS IN THE PRODUCTION PARTIAL, OVER THE LIVE ADAPTER ===
+  ok   I1 the live adapter accepts a well-formed live response
+  ok   I2 and carries that site's 101 rows
+  ok   I3 the adapter implements loadCanonical — the method the RENDERER calls
+  ok   I3a which the board does in fact call
+  ok   I4 and it is the same snapshot as load()
+  ok   I4a stated as contract, not inferred
+  ok   I5 the board loads into the shell without auto-booting
+  ok   I6 PSB_BOARD.mount OVER THE LIVE ADAPTER, IN THE PRODUCTION PARTIAL, DOES NOT THROW
+  ok   I7 the chart host was filled
+  ok   I8 and the command bar
+  ok   I9 all six views are reachable — the in-page rail, not a second sidebar
+  ok   I10 and the crumb says which view is showing
+  ok   I11 there is no second page shell in the partial
+  ok   I12 and no second sidebar
+  ok   I13 and no second rail toggle
+  ok   I13a the six views live in an in-page rail instead
+  ok   I14 no presentation class is set at rest
+  ok   I15 and a redraw preserves a class another module put on body
+  ok   I16 no preview fixture is defined in the production context
+  ok   I17 and nothing on the page says it is preview data
+  ok   I18 and no non-OK source state yields a row through loadCanonical either
+
+=== §J  THE LIVE EVIDENCE, FROZEN ===
+  ok   J1 ten sites
+  ok   J2 and 495 membership rows across them
+  ok   J3 three companies, canonical spelling
+  ok   J3a KM is NOT rewritten to Kitchen Mama
+  ok   J3b and EU is not split into countries
+  ok   J4 KM sells on no Amazon marketplace at all
+  ok   J5 and two different companies both sell in US
+  ok   J6 six currencies, as P1-B5 measured
+  ok   J7 and no site carries two currencies — the axis depends on it
+  ok   J8 the readback wrote nothing, on all four counters
+  ok   J9 the gate refused, live
+  ok   J10 and refused BEFORE opening the database
+  ok   J11 the read was the whole universe, not a capped sample
+  ok   J12 measured on the R9 build this release pins
+  ok   J13 source_modified_at is UNMEASURED and is not rewritten as proven
+  ok   J14 the design freeze records the report fingerprint
+  ok   J15 and carries the evidence gap forward rather than closing it
+  ok   J16 and the release ledger records the table fingerprint
+
+=== §K  THE ACTION CONTRACT MATRIX, EXECUTED ===
+  ok   E4.0 nobody has spoken -> NOT reported as a switched-off feature
+  ok   E5.0 and ZERO site-universe requests
+  ok   E6.0 and ZERO workspace requests
+  ok   E9.0 and no board was drawn from nothing
+  ok   E3.1 loadUniverse answers a promise
+  ok   K1 browser 17 · server 17 — today, unchanged
+  ok   K2 browser 17 · server 18 — BACKEND-FIRST IS SAFE: the deployed frontend accepts the new server
+  ok   K3 browser 18 · server 17 — FRONTEND-FIRST BREAKS EVERY PAGE
+  ok   K4 browser 18 · server 18 — after both steps
+  ok   K5 the gate is minimum-compatible, not exact equality
+  ok   K6 and this build pins 18, at or after the version P1-B6 required
+  ok   K7 which equals what the deployment declares
+  ok   K8 so the deployment order is Apps Script FIRST, frontend SECOND — with no interruption
+  ok   K9 the new action is not in the required-action probe list
+  ok   K10 and the required-action list version has not gone backwards
+
+=== §L  MUTANTS ===
+  ok   L1 the section is dropped from the display section map — D6 (caught)
+  ok   L2 the guard lets a staged section through (caught)
+  ok   L3 the guard moves below the shell mutation (caught)
+  ok   L4 the page ground goes back to being a document rule (caught)
+  ok   L5 the shared button token set escapes the board again (caught)
+  ok   L6 the filter group escapes, and every filter on every page changes width (caught)
+  ok   L7 the board dereferences a shell element production does not have (caught)
+  ok   L8 the renderer loses the method it actually calls (caught)
+  ok   L9 the board goes back to booting itself in a shell that has no data for it (caught)
+  ok   L10 a redraw takes ownership of the whole body class list (caught)
+  ok   L11 the capability mirror defaults to open (caught)
+  ok   E4.1 a server answered with no readable value -> CAPABILITY_NOT_REPORTED
+  ok   E5.1 and sent ZERO site-universe requests
+  ok   E6.1 and ZERO workspace requests
+  ok   E7.1 and nothing may be analysed
+  ok   E8.1 and it wrote a state into the partial's state host
+  ok   E9.1 while the chart host stays empty — no fixture was drawn in its place
+  ok   E3.2 loadUniverse answers a promise
+  ok   E4.2 a server answered false -> FEATURE_DISABLED
+  ok   E5.2 and sent ZERO site-universe requests
+  ok   E6.2 and ZERO workspace requests
+  ok   E7.2 and nothing may be analysed
+  ok   E8.2 and it wrote a state into the partial's state host
+  ok   E9.2 while the chart host stays empty — no fixture was drawn in its place
+  ok   L12 the deployment gate becomes an equality, so backend-first breaks every page (caught)
+
+====================================================================================================
+passed 186  failed 0  |  mutants caught 12  survived 0
+====================================================================================================
+  ok   E10 explicit false: the universe read refuses with FEATURE_DISABLED
+  ok   E11 and so does the workspace read
+  ok   E12 and no write-shaped dispatch exists to have been sent

@@ -1,0 +1,17 @@
+
+== A — Inventory toolbar: AI Plan + Recalculate All Sites removed from the toolbar, moved into AI Support ==
+
+== B — Order Planning toolbar: AI Plan + Recalculate All Sites removed, moved into AI Support ==
+
+== C — More Options + AI Support are NEUTRAL (no orange), parity with SKU Details ==
+
+== D — handler REUSE (no second gap/recommendation engine) ==
+
+== E — menu behavior: toggle + outside-click + Escape + one-at-a-time ==
+
+== F — Cancel is contextual, not a permanent idle toolbar control ==
+
+== G — §7 deployment closure: index.html assets are cache-versioned (defeats stale browser-cached CSS) ==
+
+----------------------------------------
+AI SUPPORT MENU RUNTIME CLOSURE (F1-UI-R1): 36 passed, 0 failed

@@ -1,0 +1,13 @@
+
+== KMRDV2.migrateLegacyToCanonical — frozen field maps ==
+
+== KMRDV2P.planMigration — explicit per-ID authority (no prefix logic) ==
+
+== planMigration — id-set + value halts (fail closed before any staging) ==
+
+== KMRDV2P.validateStaging — 14 gates on a canonical staging set ==
+
+== validateStaging — negative cases (each forces READY_FOR_SWAP=NO) ==
+
+----------------------------------------
+R4C CANONICAL MIGRATION + VALIDATOR (F1-7N-FA-3C-R4C): 53 passed, 0 failed

@@ -1,0 +1,19 @@
+
+== recoWsResolvePlanningModel_ — canonical column, DB default, unknown passthrough ==
+
+== recoWsResolveSalesRate_ — reuses the canonical normalizedAvgSalesPerDay owner EXACTLY (empty contamination = no exclusion) ==
+
+== R3a A/B — contaminated campaign days EXCLUDED; NORMAL days retained; present-empty vs missing differentiated ==
+
+== R4 §5 — contamination source ABSENT does NOT block (optional filter); PRESENT+0 differentiated from ABSENT ==
+
+== R4 §5 — ambiguous campaign identity DEGRADES to no-exclusion (never blocks the SKU) ==
+
+== R3a — historical event selling days excluded (event contamination via the events param, composite scope) ==
+
+== recoWsResolveSalesRate_ — fail CLOSED (differentiated truthful reasons) ==
+
+== valid-zero — a genuine 0-sales scoped history is a real 0 rate, not a block ==
+
+----------------------------------------
+PLANNING MODEL WIRING (F1-4B-FM5-R4UI-R3): 24 passed, 0 failed

@@ -1,0 +1,214 @@
+
+== A. REGULAR — WRITE SEMANTICS ARE PRESERVED (§4) ==
+ok   A1  one existing row updates
+ok   A1a with the summary it always had
+ok   A2  the month is written
+ok   A3  total_fc is derived, not taken from the caller
+ok   A4  and the identity is preserved
+ok   A5  multi-row update
+ok   A6  one insert
+ok   A6a and exactly one row exists
+ok   A6b with a server-minted forecast_id
+ok   A7  multi-row insert
+ok   A7a all ten rows land
+ok   A8  mixed update/insert
+ok   A9  an explicit ZERO is written, never treated as absent
+ok   A9a and the total follows it
+ok   A10 total_fc = the sum of the twelve months
+ok   A11 a duplicate identity WITHIN the batch writes once and skips the rest — unchanged
+ok   A11a so exactly one row exists
+ok   A12 an existing forecast_status is kept
+ok   A12a unless overwriteStatus says otherwise
+
+== B. REGULAR — ATOMICITY: ONE BAD ROW WRITES NOTHING (§4) ==
+ok   B1  an unknown SKU refuses the WHOLE batch
+ok   B1a with a typed code
+ok   B1b that says it wrote nothing
+ok   B2  ZERO physical writes
+ok   B2a and zero appends
+ok   B3  the row the valid half addressed is untouched
+ok   B4  and the refusal names the offending row
+ok   B5  the valid row reports that it was NOT written
+ok   B6  a missing required field does the same
+ok   B6a with zero writes
+ok   B7  the invalid-batch refusal precedes every setValues in the source
+ok   B8  and so does the lock
+ok   B9  the first mutation is where the plan says it is
+
+== C. REGULAR — COLUMN OWNERSHIP (§6) ==
+ok   C1  fc_share is UNTOUCHED — a runtime-calculated column this writer does not own
+ok   C2  created_at is untouched on an update
+ok   C3  while updated_at does move
+ok   C4  and the identity columns are untouched
+ok   C4a every one of them
+ok   C5  an unrelated ROW is byte-identical afterwards
+ok   C5a because only the addressed row is written at all
+ok   C6  no write block spans an unowned column
+ok   C6a and there were blocks to check
+ok   C7  a gap ENDS a run rather than being swallowed by it
+ok   C7a and order of arrival does not matter
+
+== D. REGULAR — RANGE WRITE, COUNTED (§7/§15) ==
+ok   D1  N=1 update: 3 setValues, 0 setValue, 0 appendRow
+ok   D2  N=10 updates: 30 setValues (3 per row), 0, 0
+ok   D3  N=10 inserts: ONE append block, 0, 0
+ok   D4  mixed 5+5: 5*3 + 1 = 16, 0, 0
+ok   D5  exactly two full reads: the reference table and the authority
+ok   D6  and the receipt reports the plan it executed
+ok   D7  the handler contains no per-cell setValue at all
+ok   D8  and no appendRow
+ok   D9  inserts go out as ONE block past the locked snapshot's last row
+
+== E. REGULAR — THE LOCK (§5) ==
+ok   E1  acquired ONCE and released on success
+ok   E2  an unavailable lock refuses
+ok   E2a with a typed code
+ok   E2b that proves zero writes
+ok   E2c and there really were none
+ok   E3  and it is still released
+ok   E4  a thrown body is reported, not swallowed
+ok   E4a and the lock is released in the finally
+ok   E5  the sku_details REFERENCE read happens OUTSIDE the lock
+ok   E6  while the authoritative fc read happens inside it
+ok   E7  and every pure rule is settled before the lock is even asked for
+ok   E8  no network call appears in the handler at all
+ok   E9  release is in a finally, matching the house pattern
+ok   E10 the lock is acquired in exactly one place
+
+== F. REGULAR — CANONICAL WRITE TRANSPORT (§3) ==
+ok   F0  the Regular batch accessor is locatable
+ok   F1  it goes through the canonical write transport
+ok   F2  and issues no raw fetch of its own
+ok   F3  the owned post-write seam is preserved verbatim
+ok   F4  and the option defaults are unchanged
+ok   F5  the action is replay-safe on a LOST DELIVERY, because its handler is idempotent by business key
+ok   F5a while a delete still is not
+
+== G. SPECIAL — STAGE 3 IS ONE REQUEST (§9/§15) ==
+ok   G1  the per-SKU loop is gone
+ok   G1a and the per-SKU writer is not called
+ok   G2  stage 3 is one batch call
+ok   G3  stage 1 is still exactly one call
+ok   G4  stage 2 likewise
+ok   G5  and stage 3 is one, for any N
+ok   G6  no new API action was invented — the existing one is used
+ok   G7  no stage call appears inside a loop, so N=1, 4, 8 and 20 all cost 3
+ok   G7.1 N=1 → 3 logical writes (1 campaign + 1 lines + 1 batch)
+ok   G7.4 N=4 → 3 logical writes (1 campaign + 1 lines + 1 batch)
+ok   G7.8 N=8 → 3 logical writes (1 campaign + 1 lines + 1 batch)
+ok   G7.20 N=20 → 3 logical writes (1 campaign + 1 lines + 1 batch)
+
+== H. SPECIAL — THE RESULT CLASSIFIER (§10) ==
+ok   H1  created / updated / unchanged are three different answers
+ok   H1a and only two of them are writes
+ok   H1b a clean batch is clean
+ok   H2  row_version is carried per row
+ok   H2a and so is event_fc_id
+ok   H2b and the fc_qty each row carried
+ok   H3  a mixed result is PARTIAL, not success
+ok   H3a and never ok
+ok   H4  every refused SKU is named
+ok   H5  typed by kind
+ok   H6  and a stale row carries the version it really has
+ok   H7  not-found, validation and an unrecognised reason are all distinguished
+ok   H7a an all-refused batch is not "partial" — nothing landed
+ok   H8  every row unchanged is a proven ZERO-WRITE
+ok   H8a with nothing written
+ok   H9  a refused envelope is not read as results
+ok   H9a and neither is nothing at all
+ok   H10 results are matched by INDEX, not by arrival order
+ok   H11 a row with NO result is refused, never assumed saved
+ok   H11a and says so
+ok   H12 the operator is told what DID land
+ok   H12a and which SKU did not
+ok   H12b and is told not to replay the batch
+
+== I. SPECIAL — PARTIAL COMMIT IS NEVER REPORTED AS SUCCESS (§11) ==
+ok   I1  a partial result takes its own branch before any success message
+ok   I2  a partial result returns immediately, so the refused rows survive
+ok   I2a and it is reached before the graph verification, so a partial result never reaches a success message by way of a readback
+ok   I3  committed rows get their new identity written back
+ok   I3a before anything re-renders, so a second save quotes current versions
+ok   I4  a REFUSED row is never given an id it did not earn
+ok   I5  and only server-supplied values are written back
+ok   I6  nothing is fabricated client-side
+
+== J. POST-WRITE WARM CACHE (§13/§14) ==
+ok   J1  after a SPECIAL write the Builder re-reads exactly the tables that write can change and this path holds
+ok   J1a  and it is empty for a STATED reason — no FC write scope changes any builder prerequisite
+ok   J2  and the Regular path stays completely warm
+ok   J3  ZERO duplicate reads — no reference table is re-read
+ok   J4  after a REGULAR write no builder prerequisite is cooled at all
+ok   J5  and the Special path is not cooled at all
+ok   J6  a TARGET RULE write cools neither builder path
+ok   J7  because neither holds fc_target_rules
+ok   J8  an UNKNOWN scope still invalidates everything — "I do not know" may never keep data warm
+ok   J8a  the whole Regular path
+ok   J8b  and the whole Special path
+ok   J8c  and there really is something to discard on BOTH paths
+ok   J9  a warm path re-reads nothing at all
+ok   J10 while a cold one reads every table the Special path declares
+ok   J10a and two
+ok   J11 every post-write call site names a scope (the +1 is the definition itself)
+
+== K. THE PERIOD CONTROL IS ONE INLINE ROW (§2) ==
+ok   K1  the control uses the shared inline class
+ok   K1a and the tick and its words are inside ONE label
+ok   K2  with an explicit 16px width that overrides .fc-form-group input{width:100%}
+ok   K3  laid out as a row, not a column
+ok   K4  the helper text follows the control
+ok   K5  and the inline styles it replaced are gone
+ok   K6  the period authority still exists
+ok   K7  and decides visibility exactly as before
+ok   K8  wired to the same handler
+
+== L. NON-REGRESSION — EVERY A3 CONTRACT STILL STANDS (§1) ==
+ok   L1  the server uniqueness guard is untouched
+ok   L2  and the client preflight
+ok   L3  the stale-version gate is untouched
+ok   L4  the confirmed window edit is untouched
+ok   L5  and so is the campaign-reassignment seam
+ok   L6  MAX 8 is still authoring-only
+ok   L6a and still 8 for a new event
+ok   L7  A3-R10 read recovery is untouched
+ok   L8  and marketplaces is still workspace-owned
+ok   L8a while marketplace_skus is still a physical prerequisite
+ok   L9  the boot arbiter enrolment is untouched
+ok   L10 and no client timeout was enlarged
+ok   L11 §15 is frozen in the spec
+ok   L11a with the atomicity rule
+ok   L11b and the cache map
+ok   L12 04_ has a manifest row for the first time
+ok   L12a and declares the stamp that row expects
+ok   L12b which is no longer R19 — PRICING-R4E changed the creation contract in this same file
+ok   L13 the release is a registered stamp at or after R19 — it moved once and never backwards
+
+== M. MUTANTS — each injects a real fault and must be caught (§18) ==
+ok   M1 the lock is not honoured — a contended write proceeds anyway (caught)
+ok   M2 an invalid batch writes its valid rows anyway (caught)
+ok   M3 the per-cell setValue loop comes back (caught)
+ok   M4 the per-row appendRow loop comes back (caught)
+ok   M5 fc_share is included in the write block (caught)
+ok   M6 created_at is overwritten on an update (caught)
+ok   M7pre a replay converges on the same row (the premise M7 needs)
+ok   M7 a replay creates a SECOND row for one business key (caught)
+ok   M8 the Regular writer bypasses the canonical transport (caught)
+ok   M9 the owned post-write seam is dropped (caught)
+ok   M10 every secondary cache is cleared by one write (caught)
+ok   M11 stage 3 goes back to one request per SKU (caught)
+ok   M12 a refused row is hidden behind the top-level success flag (caught)
+ok   M13 a result is attributed to the wrong SKU (caught)
+ok   M14 row_version is discarded from the receipt (caught)
+ok   M15 a REFUSED row is given an identity it did not earn (caught)
+ok   M16 a partial save closes the modal and reports success (caught)
+ok   M17 the A3-R9 uniqueness refusal is bypassed (caught)
+ok   M18 a confirmed window change quotes the OLD campaign, moving every sibling SKU (caught)
+
+== V. VACUITY — the instruments can fail ==
+ok   V1  a world that ran nothing really has zero writes
+ok   V2  and a world that ran something really has some
+ok   V3  a clean classification really is clean, so H3 is not a tautology
+
+====================================================================================================
+PASS  182 passed, 0 failed, 18 mutants, 0 survived
+====================================================================================================

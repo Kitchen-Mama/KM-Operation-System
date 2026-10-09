@@ -1,0 +1,17 @@
+
+== 42_ injectable read seam — default branch preserved, pre-read branch added ==
+
+== 43_ pre-read is lazy, guarded, and scoped to one io (no global cache) ==
+
+== READ-COUNT — BEFORE = one read per scope, AFTER = one read per batch ==
+
+== BEFORE == AFTER — identical snapshot content delivered to every scope (all 15 scenarios) ==
+
+== NO cross-scope mutation — fresh wrapper per scope, shared immutable snapshots ==
+
+== GUARD — KMPS bundle absent → seam is a NO-OP (handler falls back to its own per-request read) ==
+
+== DETERMINISM — a second batch on a fresh io reads exactly once again (per-io lifetime) ==
+
+----------------------------------------
+GAP PREREAD SNAPSHOTS (F1-7M-E-43): 32 passed, 0 failed

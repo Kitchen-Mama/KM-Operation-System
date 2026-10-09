@@ -1,0 +1,12 @@
+
+== B2 structural: Target%/FC edits declare their single changed table; shared path forwards it ==
+
+== B2 behavioral: bounded refresh + composer fire in ONE wave; render gated on BOTH ==
+
+== B4 Factory / B5 Overseas: post-write re-reads ONLY mutable tables; static tables MERGED, not clobbered ==
+
+== B1 Shipment / B3 IR deferrals (NEW_BOUNDED_ENDPOINT_REQUIRED): readbacks UNCHANGED ==
+
+== Frozen invariants (must not regress) ==
+
+✓ 46 passed

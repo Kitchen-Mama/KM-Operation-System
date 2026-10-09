@@ -1,0 +1,35 @@
+
+== A/B — B output → canonical WEEKLY_SHIPPING header + per-source lines (CREATE) ==
+
+== E — Overseas + CN + TW → three per-source execution lines (planned_qty per source; recommended_qty aggregate) ==
+
+== C — Overseas-only fully covers → single overseas line, factory untouched ==
+
+== D — Overseas + CN (TW untouched) ==
+
+== G — carton FLOOR persisted verbatim (Gap 100, CN 95, UPC 24 → recommended 72; residual 28 NOT persisted as an order) ==
+
+== F/W/X — unresolved production need does NOT create a procurement record / reservation / PO ==
+
+== U — NO carrier / rate / lead-time / ETA / cost fields anywhere in the persisted plan ==
+
+== H — zero recommendation (gap 0) → line with recommended_qty 0 (valid zero, not blocked) ==
+
+== I — blocked recommendation (missing UPC) → blocked line, recommended_qty blank (never fabricated) ==
+
+== J — multi-SKU → one aggregate/per-source set per SKU ==
+
+== K/L — scope isolation: the K3 draft id reflects company/country/marketplace scope ==
+
+== N — K3 Active REUSE (matching canonical draft) proceeds (not a foreign/conflict) ==
+
+== O — K3 duplicate Active → BLOCKED_CONFLICT ==
+
+== T — terminal (submitted) draft is not mutated as an active working draft ==
+
+== Q — idempotency: identical input → identical plan line natural keys (deterministic) ==
+
+== adapter is WEEKLY-only + reuses the existing engine (no second persistence engine) ==
+
+----------------------------------------
+WEEKLY AI PLAN DRAFT PERSISTENCE (F1-7N-C1): 47 passed, 0 failed

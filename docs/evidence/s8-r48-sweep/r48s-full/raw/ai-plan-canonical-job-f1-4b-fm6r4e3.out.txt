@@ -1,0 +1,54 @@
+
+== PURE dispositions (START / CONTINUE / fail-msg / scope) ==
+ok   A START fresh → RUN with runId+total
+ok   §16 same-scope alreadyRunning → RUN (resume, not duplicate)
+ok   §3 another scope owns the single slot → BUSY (never a duplicate start)
+ok   START error surfaces the truthful code
+ok   CONTINUE DONE (carries counts + reason distribution; null when the terminal state omits them)
+ok   CONTINUE hasMore → MORE (keep driving)
+ok   H CONTINUE FAILED carries lastError + reason distribution (fail closed)
+ok   I CONTINUE CANCELLED is its own terminal (not FAILED)
+ok   §3 a live lease → BUSY (wait, do not fan out)
+ok   vanished job → NONE
+ok   transport failure → FAIL (never silent success)
+ok   H fail-msg: gap changed → recalc + no-partial-applied
+ok   fail-msg: empty scope truthful
+ok   fail-msg: state-limit truthful
+ok   scope match is case-insensitive
+ok   scope mismatch → false (do not adopt another scope job)
+
+== FUNCTIONAL driver (no browser per-SKU fan-out) ==
+ok   B 93 SKUs @25 → 1 start + 4 continues + 1 getActive (NO 93-request fan-out)
+ok   §17 exactly-once success notification on DONE
+ok   driver resets busy on terminal
+ok   A 3-SKU → 1 start + 1 continue + 1 getActive
+ok   §3 a second AI Plan while busy does NOT start a duplicate job
+ok   H FAILED → getActive NOT called (no stale draft treated as successful)
+ok   H FAILED → truthful notice, never a success toast
+ok   I CANCELLED → one getActive reload (already-created drafts preserved + rendered)
+ok   I CANCELLED announced as non-failure (drafts kept)
+ok   scopeless / partial scope → job never starts (backend requires company+country+marketplace)
+
+== SOURCE guards (wiring, immutability, boundaries) ==
+ok   §14 handleRequestOrderAiPlan drives the job for a concrete scope; KMREC labelled DISPLAY-ONLY
+ok   §6/§7 DONE handler performs ONE scope getActive read-back (render from DB draft)
+ok   §3/§25 continue loop is self-chained (one at a time) — no Promise.all / per-SKU fan-out
+ok   §21/§22 driver performs NO gap/factory recompute (KMALLOC/KMAR/calculateGap absent)
+ok   §16 resume-on-mount adopts a RUNNING job ONLY when the scope matches
+ok   §15/§16 lifecycle mount restores drafts (getActive) AND resumes a running job
+ok   §7/§13/§14 Order Qty display reads the persisted canonical draft order_qty (execution authority)
+ok   §9/§10 locked edit sends ONLY order_qty (recommended/gap/UPC immutable)
+ok   §10 order_qty persists through the EXISTING locked decision writer (no second edit writer)
+ok   §11 stale token → reload latest draft, never overwrite (R6B: inline Conflict state + re-read)
+ok   §13 conflict draft → no canonical row (editing blocked; fail closed)
+ok   §12 NO_DRAFT SKUs are clearly marked (no silent second quantity authority)
+ok   §12 the NO_DRAFT set comes from the scope read-back only (replaced each read; R6B: reset in the loader, populated in the per-scope reader)
+ok   §8/J T4 is never rendered as an editable allocation line (renderer = T1/T2/T3 only)
+ok   §18 contextual AI Plan Cancel button (hidden until active)
+ok   §18 cancel calls the canonical backend cancel once then reloads preserved drafts
+ok   R4E4 Send Request sources canonical persisted order_qty (_roSendOrderQty_), not a live recompute
+ok   §19 Send Request does NOT drive the AI Plan job
+ok   adapters: start/continue/getActive already exist (reused, not re-created)
+
+----------------------------------------
+AI PLAN CANONICAL JOB (F1-4B-FM6-R4E3): 45 passed, 0 failed

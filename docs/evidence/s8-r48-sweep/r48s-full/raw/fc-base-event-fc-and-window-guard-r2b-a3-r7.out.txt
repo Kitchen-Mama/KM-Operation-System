@@ -1,0 +1,131 @@
+
+== A. THE PERSISTED EVENT IS RESOLVED, WITH ITS IDS AND ITS VERSION ==
+ok   A1  the group builder now resolves the persisted event for a SKU
+ok   A1a carrying its canonical event_fc_id
+ok   A1b and its campaign_sku_line_id
+ok   A1c and a row_version token
+ok   A1d and the persisted fc_qty as Base Event FC
+ok   A2  the version is _seFingerprint_ of the persisted row — one authority, not a copy
+ok   A2a and the window columns are still OUT of the token, as A3-R1 settled
+ok   A3  the GROUP-card save now carries the ids it resolved
+ok   A3a and the row_version
+ok   A3b the single-row path carries one too — A3-R8 §3 re-resolves it against the stated window
+ok   A4  and both reach the stage-3 payload through the one existing line
+ok   A5  Build resolves it per row
+ok   A5a and the row carries it
+ok   A5b §11 — server truth is RE-RESOLVED on every rebuild, never inherited from the previous row
+ok   A6  a versionless mutation is still refused by the server
+ok   A7  and so is a genuinely stale one — a concurrent editor is still protected
+ok   A8  unchanged still writes nothing, not even updated_at
+ok   A9  and a successful update returns the NEW authoritative version
+
+== B. BASE EVENT FC IS ITS OWN QUANTITY ==
+ok   B1  §14.11 a persisted ZERO is 0 — the same campaign, a different SKU, its own value
+ok   B1a with its own event id
+ok   B1b and 0 is not null
+ok   B2  while CO1100 keeps its own 4200
+ok   B3  the BFCM window resolves 4200
+ok   B3a the Prime Day window resolves 999
+ok   B3b and they are different rows, not one row read twice
+ok   B3c CO1150 has no Prime Day event, so it resolves nothing there
+ok   B4  a SKU with no persisted event is null
+ok   B4a an empty model is null
+ok   B4b and an UNREAD model is null, not a fabricated 0
+ok   B5  with no window typed there is no event to be current for
+ok   B5a and a window that matches nothing resolves nothing — never the nearest row
+ok   B6  another company does not read ResUS's event
+ok   B6a nor does another target year
+ok   B7  and the group is not matched by campaign name
+ok   B7a it reuses the picker's own resolver — one owner for "which persisted events are these"
+ok   B8  while editing, the loaded campaign decides — not whatever the date boxes now say
+ok   B9  the card has its own Base Event FC column
+ok   B9a beside the per-method computational baseline, still present
+ok   B9b rendering a stored 0 as 0 and an absent event as an em dash
+ok   B10 and the grid carries nine columns, so the new one is not laid over the old
+ok   B11 Base Event FC is never computed from the Regular forecast
+
+== C. THE WINDOW IS THE IDENTITY ==
+ok   C1  an unchanged window does not block the save
+ok   C1a composing a NEW event is never gated — there is no identity to change
+ok   C2  a changed window BLOCKS the first save
+ok   C2a with the typed code
+ok   C2b carrying BOTH windows
+ok   C2c an end-date change blocks too
+ok   C3  the save consults the gate
+ok   C3a and returns on a block
+ok   C4  BEFORE stage 1 — no campaign, no line and no event write can precede the confirmation
+ok   C4a and before stage 2
+ok   C4b0 stage 3 is the batch writer
+ok   C4b and before stage 3
+ok   C5  Restore puts the SAVED window back
+ok   C5a and the save is ordinary again
+ok   C6  a CONFIRMED period change proceeds
+ok   C6a and the loaded event is KEPT — the same event moves, a second one is never created
+ok   C6b which is what tells stage 1 to resolve the header for the NEW window instead of repointing
+ok   C6c while an unchanged window is an ordinary edit, confirmation or not
+ok   C7  the confirmed change proceeds
+ok   C7a and blocks again the moment the confirmation is withdrawn — it is not standing permission
+ok   C7b and loading or clearing an event drops it
+ok   C7c as does restoring the saved period — no tick is left armed behind an abandoned change
+ok   C8  campaign_sku_lines carries NO window of its own
+ok   C8a so the window lives only on the SHARED campaign header and on the event row
+ok   C8b the event row does carry its own window, which is why a per-SKU move LOOKS possible
+ok   C9  and the server already refuses to repoint a campaign's window — CAMPAIGN_IDENTITY_MISMATCH
+ok   C10 a confirmed period change does NOT quote the loaded campaign_id — the shared header is never repointed
+ok   C10a while an ordinary edit still names it, so the reuse contract is untouched
+ok   C11 the notice has a host in the markup
+
+== D. THE EXPIRED DELIVERY HOP ==
+ok   D1  the write dispatcher recognises the typed delivery fault
+ok   D2  and the transport still refuses to store a googleusercontent URL as an endpoint
+ok   D2a so a fresh attempt necessarily restarts from the stable /exec — the expired URL cannot be reused
+ok   D3  at most two attempts
+ok   D3a and the limiter, not the loop bound, is what stops it
+ok   D4  the proven-never-ran gate is unchanged and still requires zero_write
+ok   D5  the new gate is a SEPARATE condition — a dead hop is indeterminate, not a proven zero write
+ok   D6  and it is allowed only for actions idempotent by a key the client already supplies
+ok   D6a the three Special save stages, the batch form of stage 3, and the Regular batch
+ok   D6b a DELETE is deliberately not replayed
+ok   D7  §14.24 no business refusal token appears in the retry gate
+ok   D8  §14.25 the save records what stage 1 committed before stage 2 runs
+ok   D9  §14.10/§14.26 stage 3 never runs before stage 2 has returned
+ok   D9a and the per-SKU writer it replaced is not called from the save at all
+ok   D10 and a stage-1 answer without an id stops the sequence rather than inventing one
+ok   D11 §14.25 a re-run of stage 1 REUSES the campaign — a retry cannot duplicate the header
+ok   D12 and stage 2 resolves an existing line by its business key — a retry cannot duplicate a line
+ok   D12a and only mints a new id when that lookup found nothing
+ok   D13 as does stage 3 — which is what makes ONE replay of a lost delivery safe at all
+
+== E. NON-REGRESSION ==
+ok   E1  §14.27 the R17 lock repair is intact — classify still runs unlocked
+ok   E2  §14.28 campaign reuse preserved
+ok   E3  §14.29 the Target Rule valid/busy split is preserved
+ok   E4  §14.30 warm Regular still issues 0 requests
+ok   E5  §14.31 warm Special still issues 0 requests
+ok   E6  §14.32 the canonical write transport is preserved
+ok   E7  §14.33 the A3-R6 timeout line still names the table
+ok   E7a and no timeout was increased this round
+
+== F. MUTANTS ==
+ok   M1 the group save drops the row_version again (the A3-R7 defect) (caught)
+ok   M2 Build stops resolving the persisted event (caught)
+ok   M3 a persisted zero read as missing (caught)
+ok   M4 the window is dropped from the base-event match (caught)
+ok   M5 Base Event FC computed from the Regular forecast (caught)
+ok   M6 server truth inherited from the previous card instead of re-resolved (caught)
+ok   M7 a changed window no longer blocks (caught)
+ok   M8 the gate runs after stage 1 (caught)
+ok   M9 the confirmation becomes a standing permission (caught)
+ok   M10 any write action replays on a lost delivery hop (caught)
+ok   M11 the lost-delivery retry folded into the proven-zero-write gate (caught)
+ok   M12 a business refusal added to the replay list (caught)
+
+== G. VACUITY — the unfaulted tree really does behave as the mutants assume ==
+ok   G1  the real reader really does resolve a value and a zero, so M3/M5 can fail
+ok   G2  and really does key on the window, so M4 can fail
+ok   G3  the real gate really does block, so M7/M9 can fail
+ok   G4  the real dispatcher really does consult the allowlist, so M10 can fail
+
+====================================================================================================
+PASS  113 passed, 0 failed, 12 mutants, 0 survived
+====================================================================================================

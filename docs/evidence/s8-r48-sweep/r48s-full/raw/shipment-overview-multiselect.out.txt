@@ -1,0 +1,32 @@
+
+-- B1: HTML — native sh-dropdown panels replaced by shared-component mounts --
+ok   B1: Country + Method mounts present
+ok   B2: old sh-dropdown trigger/panel DOM removed from HTML
+ok   B3: SKU free-text group still present
+ok   B4: SKU stays a free-text search (not converted)
+ok   B5: Method precedes SKU (Round 1 order preserved)
+
+-- B6: single owner — KM.ui.multiFilter, arrays, no old single-value reader --
+ok   B6: filters created via KM.ui.multiFilter.create
+ok   B7: multi-value array state ([] = All)
+ok   B8: old single-value reader _getShDropdownValue removed
+ok   B9: old dropdown init/bind owners removed
+ok   B10: onChange writes selection into the single page state
+ok   B11: state re-synced after setOptions prunes invalid selections
+ok   B12: options derived from runtime data (not hardcoded)
+
+-- B13..: EXECUTABLE predicate — filterHistoryData OR-within / AND-across / empty=All --
+ok   B13: empty country+method = All rows
+ok   B14: Country OR-set [US,CA]
+ok   B15: Method OR-set [Air Freight]
+ok   B16: Country AND Method (cross-filter AND)
+ok   B17: SKU contains still ANDs with Country
+ok   B18: non-matching country → no rows
+
+-- B19: shared kmf option-row checkbox matches the SKU Details baseline (vertical centre) --
+ok   B19: .kmf-item uses align-items:center (checkbox + label share one centre line)
+ok   B20: .kmf-item no longer top-aligns (flex-start) the checkbox
+ok   B21: .kmf-item checkbox margin:0 (no top-margin hack)
+ok   B22: .kmf-item checkbox is a fixed 16px non-shrinking square (self-defence vs page input CSS)
+
+ALL PASS (22 assertions)

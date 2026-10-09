@@ -1,0 +1,15 @@
+
+== E · Target % (frozen matching + fallback) ==
+
+== F · Special-event prep-month (start − 30d; 100%; once) ==
+
+== canonical demand by month = adjusted regular + special (100% on special) ==
+
+== D · current-month remaining demand (calc-date; daily; real month length) ==
+
+== CO1100-R corrected planning inputs (source-proven fixture) ==
+
+== clockless / non-mutating ==
+
+----------------------------------------
+CANONICAL PLANNING-DEMAND (F1-4B-FM3f-1): 30 passed, 0 failed

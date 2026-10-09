@@ -1,0 +1,11 @@
+
+== canonical source relevant to the defect contains NO byte 0x00 ==
+
+== generated bundle contains NO byte 0x00 ==
+
+== eligibility separator: producer + consumer use the SAME printable \u0000 literal (parity) ==
+
+== NUL BYTE COUNT = 0 across the ENTIRE Apps Script deployment set ==
+
+----------------------------------------
+NO-NUL APPS SCRIPT GUARD (F1-BUNDLE-NUL-R1): 7 passed, 0 failed

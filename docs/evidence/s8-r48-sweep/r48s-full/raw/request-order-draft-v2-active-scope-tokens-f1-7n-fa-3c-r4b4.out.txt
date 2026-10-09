@@ -1,0 +1,25 @@
+
+== strictly read-only surface + reads only gap + marketplace_skus ==
+
+== coverage: six frozen keys; RD id byte-verbatim; all cycles canonical 2026-08 ==
+
+== R4B4 false NO_LIVE_CANDIDATE eliminated + marketplace is part of the key ==
+
+== Date Aug-1 Taipei canonicalizes to 2026-08, NEVER July; production transport defect surfaced ==
+
+== key2 canonical string → clean EXACT_SCOPE_MATCH ==
+
+== key3 mapped Walmart selects Walmart despite a Shopify row ==
+
+== key4 BLOCKED is separated from token mismatch ==
+
+== key5 ambiguity requires MULTIPLE complete exact-scope matches ==
+
+== key6 RD row transport defect + reusable ==
+
+== summary tallies + token map is exactly the two frozen entries ==
+
+== required-tab HALT is fail-closed and creates nothing ==
+
+----------------------------------------
+R4B4/R4B5 ACTIVE-SCOPE TOKEN DIAGNOSTIC (F1-7N-FA-3C-R4B5): 36 passed, 0 failed

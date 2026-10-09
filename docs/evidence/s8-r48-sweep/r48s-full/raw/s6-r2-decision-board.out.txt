@@ -1,0 +1,75 @@
+
+== A. OPEN FINDING 1 — an overseas-origin Shipment Draft is refused against factory stock ==
+ok   A1 an Active overseas 3PL warehouse is a canonical Ship From candidate
+ok   A2a the creator body was isolated, not truncated
+ok   A2 sufficiency is checked at the plan's source_warehouse_id, against THAT warehouse's domain
+ok   A3 the creator has NO factory-warehouse branch — an overseas source takes the same path
+ok   A4 a missing factory_stock row reads available = 0
+ok   A5 a shortfall still refuses, and now names the DOMAIN that was short rather than telling a 3PL operator about factory stock
+ok   A6 approving an overseas-source plan raises a FACTORY stock overage
+ok   A7 exactly one overage pool
+ok   A8 the pool it asks the operator to confirm against has no factory_stock row at all
+ok   A9 the overage is the whole shipment
+ok   A10 and it is overridable — so confirming it lets the approval through to a refusal further down
+ok   A11 balances are filtered to factory warehouses; plan exposure is not
+
+== B. OPEN FINDING 2 — an approved plan with no shipment has no exit ==
+ok   B1 the plan transition set is exactly four, and none of them starts from `approved`
+ok   B2 [R5] cancel is now ACCEPTED from `approved` — but only when no Shipment exists, which is the condition that makes it safe rather than merely possible
+ok   B3 the cancel precondition is exactly draft | pending_approval | approved
+ok   B4 Done requires `approved`
+ok   B5 Done ALSO requires a transferred shipment — so a plan with no shipment cannot be completed either
+ok   B6 an approved plan holds factory-pool exposure
+ok   B7 an approved-but-never-transferred plan keeps subtracting its full quantity, with no way to release it
+
+== C. ALREADY FROZEN — reservation timing and effects ==
+ok   C1 RESERVATION_TIMING = Shipment Draft creation (Execution Commit), for either domain
+ok   C2 no plan transition reserves or releases — reservation is not a Decision-Layer effect
+ok   C3 05_ adjust moves stock into `available` and never into `reserved`
+ok   C3 31_ receipt post moves stock into `available` and never into `reserved`
+ok   C4 OVERSEAS_RESERVATION_TIMING = NONE — no overseas movement addresses the reserved bucket
+
+== D. ALREADY FROZEN — partial shipment / split / source selection ==
+ok   D1 approved_qty is editable ONLY while the plan is Draft
+ok   D2 shipment_qty is approved_qty verbatim — a Shipment Draft cannot partially consume the approved qty
+ok   D3 shipment_qty is not editable after creation — the Execution Snapshot is immutable
+ok   D4 one Shipment Draft per approved plan — Plan→Shipment is 0..1, no execution split
+ok   D5 RECEIPT may be partial, and is reconciled through the ledger exactly-once
+ok   D6 source_warehouse_id is a plan grouping dimension — two sources are two plans, never one split plan
+
+== E. ALREADY FROZEN — source priority is the operator, not an algorithm ==
+ok   E1 allocation_priority is a marketplaces (receiver) column
+ok   E2 AUTOMATIC_SOURCE_PRIORITY_EXISTS = NO — no rule ranks factory against overseas stock
+
+== F. ALREADY FROZEN — carrier authority is three layers, and none of them is automatic ==
+ok   F1 the three-layer carrier boundary is declared by its owner
+ok   F2 the shipment resolves an EXACT rate card and never silently switches carrier
+ok   F3 no exact rate card = RATE REVIEW with blank estimates, not a substituted carrier
+
+== G. ALREADY FROZEN — delivered is not received ==
+ok   G1 a factory destination is never credited with overseas stock
+ok   G2 only an eligible managed-Overseas destination POSTs; everything else skips and the receipt still succeeds
+ok   G3 DESTINATION_AVAILABILITY_EVENT is the warehouse receipt — `delivered` posts nothing
+ok   G4 the receipt posts the DELTA against the ledger, so a crash mid-write repairs exactly-once
+
+== H. ALREADY FROZEN — route freeze and forward-only advance ==
+ok   H1 ROUTE_FREEZE_EVENT = Confirm Shipment & Dispatch snapshots the legs
+ok   H2 an existing route snapshot makes a second dispatch idempotent — the route is never re-snapshotted
+ok   H3 POST_DISPATCH_ROUTE_EDIT_ALLOWED = forward advance only; backward is refused
+ok   H4 advancing adds and removes no leg — the snapshot shape is frozen at dispatch
+
+== I. BOUNDARY — unchanged from S6-R1 ==
+ok   I1 WEEKLY_PLAN_AUTO_CREATES_PO = NO and WEEKLY_PLAN_AUTO_CREATES_REQUEST_ORDER = NO
+ok   I2 S5_RECOMMENDATION_AUTO_SHIPMENT = NO
+ok   I3 REQUEST_ORDER_AUTO_SHIPMENT = NO and PO_AUTO_SHIPMENT = NO
+
+=====================================================
+S6-R2 DECISION BOARD — 46 passed / 0 failed
+OPEN_FINDINGS = 2 (overseas-origin refusal · approved-plan dead end)
+FACTORY_RESERVATION_TIMING = SHIPMENT_DRAFT_CREATION
+OVERSEAS_RESERVATION_TIMING = NONE
+AUTOMATIC_SOURCE_PRIORITY_EXISTS = NO   SOURCE_SELECTION_AUTHORITY = OPERATOR
+DESTINATION_AVAILABILITY_EVENT = WAREHOUSE_RECEIPT
+ROUTE_FREEZE_EVENT = CONFIRM_SHIPMENT_AND_DISPATCH   POST_DISPATCH_ROUTE_EDIT = FORWARD_ONLY
+PHASE2_DECISION_COUNT_IMPLEMENTED_NOW = 0   PRODUCTION_ROWS_WRITTEN = 0
+=====================================================

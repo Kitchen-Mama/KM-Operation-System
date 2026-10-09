@@ -1,0 +1,68 @@
+
+=== A — THE CENSUS COVERS THE APPLICATION, derived rather than trusted ===
+  ok   A1  every menu-reachable route is in the census table
+  ok   A2  and the two that are missing are the ones showSection refuses by name — not an oversight
+  ok   A3  the non-menu route shipment-draft is censused too
+  ok   A3  the non-menu route shipment-overview is censused too
+  ok   A3  the non-menu route product-strategy is censused too
+  ok   A4  every route in the table was actually entered by the run
+  ok   A5  and the 400 ms run completed rather than being read part-way
+  ok   A5a as did the 0 ms run
+  ok   A6  the census flags Product Strategy as menu-less exactly when index.html has no item for it
+
+=== B — THE ARCHITECTURE THE CENSUS DESCRIBES IS THE ONE THAT SHIPPED ===
+  ok   B1  showSection is the route owner named in the census
+  ok   B2  lifecycle.js is loaded by the shell
+  ok   B3  and partial-loader.js
+  ok   B4  showSection still carries TWO section maps, as the census describes
+  ok   B4a the mount map carries global-logistics-map, which the visibility map does not — the disagreement the file itself records
+  ok   B5  the read pool is 2, which is what turns a table count into a round count
+  ok   B5a and the census says so rather than leaving the arithmetic unexplained
+
+=== C — THE INSTRUMENT CAVEATS ARE RECORDED WITH THE NUMBERS THEY QUALIFY ===
+  ok   C1  the evidence records its own caveats rather than only its results
+  ok   C2  campaign-risk issues the same number of requests at 0 ms and 400 ms
+  ok   C2a but MORE rounds at 0 ms — instant settles make a pooled read look sequential
+  ok   C2b and the 400 ms figure is exactly ceil(requests / read pool), which is the pool working
+  ok   C2c the caveat is written down, so the convenient figure cannot be quoted later
+  ok   C3  exactly one route changes request count between 0 ms and 400 ms
+  ok   C3a and it is explained — overlapping reads become eligible for the in-flight share
+  ok   C4  routes this world cannot populate are recorded as such, not scored as never-useful
+
+=== D — EVERY REFUSED NUMBER IS STILL REFUSED BY ITS OWN EVIDENCE ===
+  ok   D1  the timing run publishes its noise floor
+  ok   D2  no stop point exceeds the baseline spread — the ms refusal is earned, not asserted
+  ok   D2a and the runner says so in its own verdict
+  ok   D3  loopLight did not complete its cycles and publishes NOT_OBSERVABLE, not a per-entry number
+  ok   D3  loopMedium did not complete its cycles and publishes NOT_OBSERVABLE, not a per-entry number
+  ok   D3  loopHeavy did not complete its cycles and publishes NOT_OBSERVABLE, not a per-entry number
+  ok   D4  the census marks the ms fields NOT_OBSERVABLE
+  ok   D4a and none of them was filled in with a number anyway
+  ok   D5  the frozen-clock finding is recorded as something that was run, not something assumed
+
+=== E — THE FINDINGS THE NEXT ROUND WILL ACT ON ARE BACKED BY THE RUN ===
+  ok   E1  most routes issue at least one read before their shell appears
+  ok   E1a and NONE of them waited for a response before showing its shell
+  ok   E2  nine routes re-read on warm re-entry
+  ok   E2a including the pair that share one action and disagree — the census’s sharpest example
+  ok   E3  at least four pages re-bind listeners on re-entry in BOTH runs
+  ok   E3a FC Summary among them, which is the largest
+  ok   E3b and the run ends holding over a thousand listeners
+  ok   E4  no route left a request open on leave
+  ok   E4a and no route left a second section mounted
+  ok   E4b and no route re-fetched its HTML partial on re-entry
+  ok   E5  the recorded local script count matches index.html AT THE CENSUS COMMIT
+  ok   E5a and the boot bundle is still measured in megabytes
+
+=== F — THE ROUND STAYED INSIDE ITS MANDATE ===
+  ok   F1  the decision board states how many decisions it holds
+  ok   F1a and carries that many
+  ok   F1b each one ending in an operator decision rather than a plan
+  ok   F2  no service worker
+  ok   F2a no TTL introduced into the shell or loader
+  ok   F2b no speculative prefetch
+  ok   F3  the undefined-global defect is carried forward, not fixed in a census round
+  ok   F3a and it was still there at the census commit — the census describes the tree it was taken from
+
+PASS  53 passed, 0 failed
+ROUTES_CENSUSED = 21 · SHELL_WAITS_FOR_DATA = 0 · WARM_REFETCH_ROUTES = 9 · MS_FIELDS = NOT_OBSERVABLE (earned) · DECISIONS_OPEN = 7

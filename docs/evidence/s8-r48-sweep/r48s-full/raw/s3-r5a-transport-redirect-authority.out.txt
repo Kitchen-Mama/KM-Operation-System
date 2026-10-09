@@ -1,0 +1,72 @@
+
+=== A — EXECUTED: the expired redirect target is never the next request ===
+  ok   A1  an expired redirect costs exactly TWO physical attempts — one recovery, not a loop
+  ok   A2  and BOTH go to the canonical Web App host — the expired target is never re-requested
+  ok   A2a every attempt is rebuilt from the canonical /exec, not from anything the response said
+  ok   A3  the recovery succeeds and the caller gets its data
+  ok   A4  ONE logical request, ONE retry, ONE recovery — counted and nameable
+  ok   A5  a recovery that ALSO expires stops at two attempts — RECOVERY_STORM = 0
+  ok   A6  and the caller is told the truth, not a laundered empty result
+  ok   A7  with the SOURCE named, which is what separates this 404 from a business 404
+  ok   A8  and stated to have written nothing
+  ok   A9  classifyEndpoint REFUSES the echo host as an endpoint — it can never become authority
+  ok   A9a and says which class it refused it as
+  ok   A10 there is NO endpoint cache, no last-good endpoint and no setter — the URL is derived every request
+
+=== B — the retry policy is bounded, and a timeout is not part of it ===
+  ok   B1  a redirect-target 404 is auto-retryable for a READ
+  ok   B2  a REQUEST_TIMEOUT is NOT — the bound already elapsed, so asking again only doubles the wait
+  ok   B3  and a WRITE is never auto-retried, whatever the code
+  ok   B4  an unanswered read is ONE physical attempt — the recovery never consumes a second budget
+  ok   B5  and settles as a timeout rather than hanging
+
+=== C — the recovery replaces the failed request, it does not run beside it ===
+  ok   C1  a recovered request never has two attempts open at once — DUPLICATE_RECOVERY_REQUESTS = 0
+  ok   C2  and nothing is left open when it settles — no orphaned slot
+
+=== D — WRITE SAFETY FREEZE (§12): nothing here gained an automatic replay ===
+  ok   D1  a WRITE that meets an expired redirect is dispatched exactly ONCE
+  ok   D2  and fails rather than being retried into a possible double commit
+  ok   D3  the no-write-replay rule is still the first thing isAutoRetryable checks
+  ok   D4  and a lost write answer is still reported as INDETERMINATE, never as zero-write
+  ok   D5  km-transport names no pricing action — PRICING_WRITE_TRUTHFULNESS_TOUCHED = NO
+
+=== E — EXECUTED: the concurrency counter now counts the other dispatcher ===
+  ok   E1  the transport exposes openExternal for a dispatcher it does not own
+  ok   E2  nothing is open to begin with
+  ok   E3  three external requests in flight are three open requests
+  ok   E4  and the peak sees them — the number production reports was a FLOOR
+  ok   E5  closing returns the count to zero
+  ok   E6  close() is idempotent — a double close cannot drive the count negative
+  ok   E7  and the peak is a high-water mark, not a live count
+  ok   E8  openExternal counts concurrency and NOT requests — no double counting
+  ok   E9  beginExternal opens the counter
+  ok   E10 and its done() closes it
+  ok   E11 recording exactly one sample, as it always did
+  ok   E12 _kmFetchBounded_ asks the shared transport to open the counter
+  ok   E13 and closes it in a finally, so an aborted or throwing request cannot leak a slot
+  ok   E14 guarded on the function existing, so an older transport simply leaves the counter alone
+
+=== F — the health probe has ONE owner, and this round did not change it ===
+  ok   F1  Weekly Shipping Plan is a caller of the page deployment gate
+  ok   F2  and the ONLY one — HEALTH_PROBE_OWNER_COUNT = 1, so 14 probes is 14 page reads, not a fan-out
+  ok   F3  the transport metadata latch already names system.health, for the round that proves it needs it
+
+=== J — MUTANTS ===
+  ok   J1 the recovery re-requests the expired redirect target (caught)
+  ok   J2 the read retry cap is lifted, so a repeating 404 becomes a storm (caught)
+  ok   J3 a write is automatically replayed after a redirect 404 (caught)
+  ok   J4 the timeout refusal is turned into an acceptance (caught)
+  ok   J5 openExternal stops holding the counter, so the other dispatcher is invisible again (caught)
+  ok   J6 a double close drives the open count negative (caught)
+  ok   J7 the googleusercontent redirect target is classified as a usable endpoint (caught)
+
+  mutants caught 7
+
+====================================================================================================
+S3-R5A TRANSPORT REDIRECT AUTHORITY — passed 48  failed 0
+USERCONTENT_REDIRECT_PERSISTED = NO · USERCONTENT_REDIRECT_REUSED = NO
+EXPIRED_REDIRECT_REUSE_REACHABLE = NO · REDIRECT_RECOVERY_MAX_ATTEMPTS = 1
+RECOVERY_STORM = 0 · DUPLICATE_RECOVERY_REQUESTS = 0 · WRITE_AUTOREPLAY_ADDED = NO
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · DEPLOYMENTS=0
+====================================================================================================

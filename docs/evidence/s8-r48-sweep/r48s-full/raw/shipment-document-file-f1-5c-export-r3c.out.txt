@@ -1,0 +1,66 @@
+
+== C/E actual file generated + download reference ==
+ok   C file generated (template copied)
+ok   E editable + PDF download references returned
+ok   file copied from the configured template asset into its output folder
+
+== F/G physical qty from snapshot + multi-SKU rows ==
+ok   F/G line 1 filled with snapshot qty (800) at the LINE_ITEMS anchor
+ok   G second SKU expanded (multi-SKU preserved, one row per line)
+
+== H multi-PO lineage preserved (never collapsed) ==
+ok   H PO allocation row 1
+ok   H PO allocation row 2 (both preserved, not merged into one PO)
+ok   H matrix grew by the extra SKU + extra PO row (6 template rows -> 8: 2 line rows + 2 allocation rows)
+
+== I GS1 barcode distinct from units_per_carton in the rendered file ==
+ok   I GS1_CODE and UPC(units_per_carton) rendered as distinct cells
+
+== scalar fill + no token leakage ==
+ok   scalar header filled
+ok   no unresolved {{TOKEN}} leaks into the output
+
+== filename authority ==
+ok   filename from file_name_rule placeholders
+ok   default filename when no rule
+
+== AE/AF fail closed: missing / unsupported template asset ==
+ok   AE blank template_file_id -> DOCUMENT_TEMPLATE_ASSET_MISSING
+ok   AE no file copied on missing asset
+ok   AF unsupported template type -> fail closed (no fake file)
+
+== AC file failure leaves no false completed record (fail closed + partial reported) ==
+ok   AC fill failure -> not ok
+ok   AC error token
+ok   AC partial file id reported for scoped recovery
+ok   AC 36_ returns fail-closed (no generated_documents row) when file generation fails
+ok   AC file is generated BEFORE the record is appended
+
+== Y/Z/M no live-master reads, no FIFO/gap/forecast, immutable inputs ==
+ok   Y renderer reads no live master / snapshot / operational table (input is the mapped model only)
+ok   Z renderer runs no template resolve / mapping / FIFO / gap / forecast / recommendation
+
+== raw Drive access isolated in dfoDefaultIo_ only ==
+ok   the real Drive/Sheets calls live in dfoDefaultIo_
+ok   orchestrator + pure fill touch NO raw Drive API (io-injected)
+
+== 36_ extension: opt-in, download_url, update file-columns-only, no second engine ==
+ok   file generation is OPT-IN (generate_file) — R3B default behavior preserved
+ok   36_ delegates file generation to the 37_ renderer (no second file engine)
+ok   download_url returned (PDF preferred, else editable file)
+ok   AB file-metadata update writes ONLY file columns (never factual/lineage)
+ok   N/T R3B template-version + regeneration lineage preserved (unchanged)
+
+== W/X customs gap does not touch SD/PL file path ==
+ok   W/X file renderer never consults customs / legal importer for SHIPDETAIL / PL
+
+== AA frontend adapter is thin (no placeholder mapping / totals / master / template choice) ==
+ok   adapter posts the canonical shipmentDocument.generate action
+ok   AA adapter performs NO placeholder mapping / totals / master resolution / template version logic
+ok   download/open contract: open the returned download_url (presentation only)
+
+== router: reuses the R3B shipmentDocument.generate action (no new lifecycle) ==
+ok   shipmentDocument.generate routed (R3B lifecycle owner, extended in place)
+
+----------------------------------------
+SHIPMENT DOCUMENT FILE (F1-5C-EXPORT-R3C): 35 passed, 0 failed

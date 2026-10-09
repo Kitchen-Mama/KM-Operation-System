@@ -1,0 +1,221 @@
+
+=== §A  THE PRODUCTION CENSUS, FROZEN AS EVIDENCE ===
+ok   A1  the census completed
+ok   A1a with zero writes
+ok   A1b and zero rows modified
+ok   A1c and no redaction refusal
+ok   A2  blank + present = total
+ok   A2a and every shape bucket sums to present_rows
+ok   A3  PRODUCTION HOLDS NO ABSOLUTE IMAGE URL — the only shape an empty allowlist could break
+ok   A3a so there is no external host to declare
+ok   A3b and no allowlist decision is required
+ok   A4  NOT ONE ROW THAT DISPLAYED BEFORE IS REJECTED NOW
+ok   A4a and nothing is newly displayed — the gate is one-directional
+ok   A4b every present row still displays
+ok   A4c and the blanks fall back on both sides, as they always did
+ok   A5.1 the repo-relative shape the 178 rows carry is accepted
+ok   A5.2 the repo-relative shape the 178 rows carry is accepted
+ok   A5.3 the repo-relative shape the 178 rows carry is accepted
+ok   A5.4 the repo-relative shape the 178 rows carry is accepted
+ok   A5.5 the repo-relative shape the 178 rows carry is accepted
+ok   A5.6 the repo-relative shape the 178 rows carry is accepted
+ok   A5.7 the repo-relative shape the 178 rows carry is accepted
+ok   A5  and the shape the 14 blanks carry is ABSENT
+ok   A5a 178 of 178 present rows are that one shape
+
+=== §B  CAMPAIGN RISK JOINS THE SHARED RESOLVER ===
+ok   B1  campaign-risk.js has one image-resolution helper
+ok   B1a and it calls the SHARED resolver
+ok   B1b which is what the row renderer uses
+ok   B1c and the raw cell no longer reaches src
+ok   B2  the helper is small
+ok   B2.1 it contains no /https?/ rule of its own
+ok   B2.2 it contains no /javascript/ rule of its own
+ok   B2.3 it contains no /file:/ rule of its own
+ok   B2.4 it contains no /\.\./ rule of its own
+ok   B2.5 it contains no /APPROVED/ rule of its own
+ok   B2.6 it contains no /IMAGE_EXT/ rule of its own
+ok   B2.7 it contains no /jpg/ rule of its own
+ok   B2a and campaign-risk composes no path from a sku
+ok   B3  with no policy loaded it returns "" rather than the raw value
+ok   B4  campaign-risk keeps its original onerror fallback, unchanged
+ok   B4a and its original placeholder branch
+ok   B5  index.html loads the policy before sku-overrides.js
+ok   B5a and sku-overrides.js before campaign-risk.js
+ok   B5b and before sku-handbook.js
+ok   B5c campaign-risk.js is not left behind on the token it had before R3-R2 changed it
+ok   B5c1 and it carries the current co-deployed token
+ok   B5d sku-handbook.js is not left behind on the token it had before R3-R2 changed it
+ok   B5d1 and it carries the current co-deployed token
+ok   B6  no stylesheet changed in this round
+ok   B6a and no page partial changed
+ok   B6b and no Campaign Risk layout class was touched
+
+=== §C  SKU HANDBOOK — A REFUSED REFERENCE IS A PLACEHOLDER, NOT AN EMPTY src ===
+ok   C1  the handbook has a REFUSED branch of its own
+ok   C1a which catches every state that is not PRESENT, and an empty url
+ok   C1b with its own counter
+ok   C1c reported apart from skus_without_image_url — different gaps, different fixes
+ok   C2  BEFORE: a refused reference produced <img src=""> — a broken image where a placeholder belongs
+ok   C2a AFTER: it produces no <img> at all
+ok   C2b and says WHY, so the row is fixable
+ok   C2c while a blank is still ABSENT — the two are not merged
+ok   C2d and a production value still renders, byte-identical
+
+=== §D  FOUR-PAGE PARITY — THE SAME CORPUS THROUGH EACH PAGE'S OWN EXPRESSION ===
+ok   D1.1 all four pages display the repo-relative path, byte-identical
+ok   D1.2 all four pages display the repo-relative path, byte-identical
+ok   D1.3 all four pages display the repo-relative path, byte-identical
+ok   D1.4 all four pages display the repo-relative path, byte-identical
+ok   D1.5 all four pages display the repo-relative path, byte-identical
+ok   D1.6 all four pages display the repo-relative path, byte-identical
+ok   D1.7 all four pages display the repo-relative path, byte-identical
+ok   D2  and all four fall back on a blank, with no valid img src
+ok   D3.1 ALL FOUR pages refuse a script url
+ok   D3.2 ALL FOUR pages refuse a file: url
+ok   D3.3 ALL FOUR pages refuse a Windows path
+ok   D3.4 ALL FOUR pages refuse a Windows path with forward slashes
+ok   D3.5 ALL FOUR pages refuse a UNC path
+ok   D3.6 ALL FOUR pages refuse a traversal
+ok   D3.7 ALL FOUR pages refuse a bare Drive id
+ok   D3.8 ALL FOUR pages refuse a bare Spreadsheet id
+ok   D3.9 ALL FOUR pages refuse a value with no extension
+ok   D3.10 ALL FOUR pages refuse an unapproved external host
+ok   D3.11 ALL FOUR pages refuse a suffix-spoofed host
+ok   D3.12 ALL FOUR pages refuse a data url
+ok   D3.13 ALL FOUR pages refuse an attribute break-out attempt
+ok   D3  thirteen refusal shapes, kept although production currently holds none
+ok   D4  NOT ONE CORPUS VALUE IS RESOLVED DIFFERENTLY BY ANY OF THE FOUR PAGES
+
+=== §E  A REAL BROWSER, AND naturalWidth ===
+ok   E1  the four-consumer acceptance run produced measurements
+ok   E1a with zero page errors
+ok   E1b it rendered every production-shape value
+ok   E2.1 sku-details was measured
+ok   E2.1a sku-details created exactly 7 <img> elements — one per legal value and not one more
+ok   E2.1b sku-details EVERY ONE reported naturalWidth > 0 — the bytes arrived
+ok   E2.1c sku-details and NOT ONE was broken
+ok   E2.1d sku-details the blank and every refusal rendered a placeholder
+ok   E2.1e sku-details and the only srcs in the DOM are the production values, verbatim
+ok   E2.2 sku-handbook was measured
+ok   E2.2a sku-handbook created exactly 7 <img> elements — one per legal value and not one more
+ok   E2.2b sku-handbook EVERY ONE reported naturalWidth > 0 — the bytes arrived
+ok   E2.2c sku-handbook and NOT ONE was broken
+ok   E2.2d sku-handbook the blank and every refusal rendered a placeholder
+ok   E2.2e sku-handbook and the only srcs in the DOM are the production values, verbatim
+ok   E2.3 campaign-risk was measured
+ok   E2.3a campaign-risk created exactly 7 <img> elements — one per legal value and not one more
+ok   E2.3b campaign-risk EVERY ONE reported naturalWidth > 0 — the bytes arrived
+ok   E2.3c campaign-risk and NOT ONE was broken
+ok   E2.3d campaign-risk the blank and every refusal rendered a placeholder
+ok   E2.3e campaign-risk and the only srcs in the DOM are the production values, verbatim
+ok   E2.4 product-strategy was measured
+ok   E2.4a product-strategy created exactly 7 <img> elements — one per legal value and not one more
+ok   E2.4b product-strategy EVERY ONE reported naturalWidth > 0 — the bytes arrived
+ok   E2.4c product-strategy and NOT ONE was broken
+ok   E2.4d product-strategy the blank and every refusal rendered a placeholder
+ok   E2.4e product-strategy and the only srcs in the DOM are the production values, verbatim
+ok   E3  and the four pages produced IDENTICAL src lists in a real browser
+ok   E4  both Product Strategy acceptance runs are present
+ok   E4.1a 1920x1080 page overflow 0
+ok   E4.1b 1920x1080 Y axis fully visible
+ok   E4.1c 1920x1080 X lane fully visible
+ok   E4.1d 1920x1080 six sub-tabs visible
+ok   E4.1e 1920x1080 no console errors
+ok   E4.1f 1920x1080 flag still false
+ok   E4.2a 1440x900 page overflow 0
+ok   E4.2b 1440x900 Y axis fully visible
+ok   E4.2c 1440x900 X lane fully visible
+ok   E4.2d 1440x900 six sub-tabs visible
+ok   E4.2e 1440x900 no console errors
+ok   E4.2f 1440x900 flag still false
+ok   E4.3a 1366x768 page overflow 0
+ok   E4.3b 1366x768 Y axis fully visible
+ok   E4.3c 1366x768 X lane fully visible
+ok   E4.3d 1366x768 six sub-tabs visible
+ok   E4.3e 1366x768 no console errors
+ok   E4.3f 1366x768 flag still false
+ok   E4.4a 1280x720 page overflow 0
+ok   E4.4b 1280x720 Y axis fully visible
+ok   E4.4c 1280x720 X lane fully visible
+ok   E4.4d 1280x720 six sub-tabs visible
+ok   E4.4e 1280x720 no console errors
+ok   E4.4f 1280x720 flag still false
+ok   E4.5a 1024x768 page overflow 0
+ok   E4.5b 1024x768 Y axis fully visible
+ok   E4.5c 1024x768 X lane fully visible
+ok   E4.5d 1024x768 six sub-tabs visible
+ok   E4.5e 1024x768 no console errors
+ok   E4.5f 1024x768 flag still false
+ok   E4.6a 768x1024 page overflow 0
+ok   E4.6b 768x1024 Y axis fully visible
+ok   E4.6c 768x1024 X lane fully visible
+ok   E4.6d 768x1024 six sub-tabs visible
+ok   E4.6e 768x1024 no console errors
+ok   E4.6f 768x1024 flag still false
+ok   E4.7a 390x844 page overflow 0
+ok   E4.7b 390x844 Y axis fully visible
+ok   E4.7c 390x844 X lane fully visible
+ok   E4.7d 390x844 six sub-tabs visible
+ok   E4.7e 390x844 no console errors
+ok   E4.7f 390x844 flag still false
+ok   E5.1 1920x1080 asset run: page overflow 0
+ok   E5.1a 1920x1080 asset run: no broken <img>
+ok   E5.2 1440x900 asset run: page overflow 0
+ok   E5.2a 1440x900 asset run: no broken <img>
+ok   E5.3 1366x768 asset run: page overflow 0
+ok   E5.3a 1366x768 asset run: no broken <img>
+ok   E5.4 1280x720 asset run: page overflow 0
+ok   E5.4a 1280x720 asset run: no broken <img>
+ok   E5.5 1024x768 asset run: page overflow 0
+ok   E5.5a 1024x768 asset run: no broken <img>
+ok   E5.6 768x1024 asset run: page overflow 0
+ok   E5.6a 768x1024 asset run: no broken <img>
+ok   E5.7 390x844 asset run: page overflow 0
+ok   E5.7a 390x844 asset run: no broken <img>
+ok   E6  the asset capture's 390x844 lane is wider than the chart — pre-existing, capture-dependent
+ok   E6a and the chart is the scroll container that absorbs it
+ok   E6b with real scroll width
+ok   E6c while the PAGE still does not scroll sideways
+ok   E6d AND THE COMMITTED R3-R1 EVIDENCE ALREADY SAID SO — measured, not inherited by assumption
+
+=== §F  THE ALLOWLIST, AND EVERYTHING THIS ROUND MAY NOT DO ===
+ok   F1  the allowlist is STILL EMPTY — and now because 192 production rows say so
+ok   F1a as shipped source, not as state
+ok   F1b with no wildcard
+ok   F1c and host matching is not a substring or suffix test
+ok   F2  no Apps Script runtime file changed
+ok   F2a and the diagnostic was not touched — no new diagnostic function
+ok   F2b it still has exactly three entry points
+ok   F3  the feature flag is still false
+ok   F3a and is never set true
+ok   F3b index.html still renders no Product Strategy menu item
+ok   F3c and no Login/RBAC source file changed
+ok   F4  no CSP was added
+ok   F4a and no CDN host reached the policy
+ok   F5.1 assets/js/pages/campaign-risk.js changed, as intended
+ok   F5.2 assets/js/pages/sku-handbook.js changed, as intended
+ok   F5.3 index.html changed, as intended
+ok   F5  and NO OTHER client runtime file changed
+
+=== §G  MUTANTS ===
+ok   G1  Campaign Risk bypasses the resolver and renders the raw cell again — B1c — caught
+ok   G2  Campaign Risk falls OPEN when the policy is missing — B3 — caught
+ok   G3  Campaign Risk rejects a legal repo-relative path — D1 — caught
+ok   G4  Campaign Risk's onerror fallback is removed — B4 — caught
+ok   G5  the handbook goes back to <img src=""> for a refused reference — C2a — caught
+ok   G6  the handbook merges REFUSED into ABSENT, so the two gaps stop being different — C2c — caught
+ok   G7  the allowlist gains an entry nobody measured — F1 — caught
+ok   G8  host matching becomes a suffix test, so a spoofed host passes — D3.11 — caught
+ok   G9  any HTTPS is waved through — F1 — caught
+ok   G10 one page drifts from the other three — D4 — caught
+ok   G11 the resolver is COPIED into campaign-risk instead of shared — B2 — caught
+ok   G12 script load order breaks — the page loads before the resolver — B5a — caught
+ok   G13 Campaign Risk's layout classes are edited — B6b — caught
+ok   G14 the Product Strategy flag is enabled — F3 — caught
+ok   G15 the Apps Script runtime is modified — F2 — caught
+ok   G16 the security corpus is trimmed because production is clean — D3 — caught
+
+===================================================================================
+PASS — passed 187  failed 0  |  mutants caught 16  survived 0
+===================================================================================

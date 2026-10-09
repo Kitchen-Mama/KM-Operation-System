@@ -1,0 +1,152 @@
+PRODUCT STRATEGY — RESPONSE ACTION INTEGRITY (P1-B8D-R10E-F4)
+
+== §A — which field names the action, and which fields are not it ==
+  ok   A1  the expected action is the module constant, not a literal at the call site
+  ok   A2  meta.action is read
+  ok   A3  and the router error envelope's attempted_action is read when there is no meta
+  ok   A4  meta wins, which is the order KM.transport reads them in
+  ok   A5  a field called `action` INSIDE data is NOT the deployment speaking  [M2]
+  ok   A6  nor is a top-level `action`, which is the REQUEST's own echo, not the answer's
+  ok   A7  an envelope naming nothing reads as nothing
+  ok   A8  and a non-envelope cannot throw
+  ok   A9  whitespace is not a claim
+  ok   A10 nor is an explicit null
+  ok   A11 nor a meta that is not an object
+
+== §B — the rule: compare when there is something to compare ==
+  ok   B1  THE SHAPE PRODUCTION ACTUALLY SENDS — no action anywhere — passes through UNCHANGED  [M6]
+  ok   B2  and so does an envelope that names the action it answered
+  ok   B3  the comparison is case-insensitive, as KM.transport's is
+  ok   B4  a FOREIGN action is refused  [M1, M3]
+  ok   B5  named as a routing fault
+  ok   B6  and the TYPED code carries it, which is the field the apply chain reads first
+  ok   B7  the answer that arrived is reported, not just that one did
+  ok   B8  a read that was refused wrote nothing, and says so
+  ok   B9  and is NOT retryable — an identical request returns an identical answer
+  ok   B10 the refusal carries NO data and NO envelope: nothing downstream can reach the payload  [M3]
+  ok   B11 attempted_action agreeing is accepted
+  ok   B12 and disagreeing is refused
+  ok   B13 a FAILED read keeps its own code and is not re-labelled
+  ok   B14 and a null result cannot throw
+  ok   B15 even a failure carrying a foreign action keeps the code it earned
+
+== §C — the shipped getter, driven ==
+  ok   C1  a foreign answer through the REAL getter is refused  [M10]
+  ok   C2  as a routing fault
+  ok   C3  at exactly ONE read — refusing is not retrying  [M: no second request]
+  ok   C4  and the read asked for the capability action
+  ok   C5  and the canonical production shape still succeeds through the real getter
+  ok   C6  with its payload intact
+  ok   C7  at one read
+
+== §D — consumer atomicity on a foreign answer ==
+  ok   D1  KM.api.applyClientCapabilities was called exactly once
+  ok   D2  and was handed NULL — the fail-safe path, never the foreign payload  [M3, M4]
+  ok   D3  the Product Strategy mirror is FAILED, not SERVER_FALSE and not SERVER_TRUE  [M4]
+  ok   D4  classified by the shipped classifier as a routing fault  [M: not RESPONSE_NOT_READABLE]
+  ok   D5  and the feature is not raised on a foreign answer
+  ok   D6  NOTHING WAS HEARD — the mirror is closed but not latched, so a later real answer still counts
+  ok   D7  the bootstrap records that no backend answer was applied  [M3]
+  ok   D8  the published snapshot is the FAIL-SAFE one and carries no part of the foreign payload  [M3]
+  ok   D9  the snapshot meta agrees
+  ok   D10 and names WHY, so the gap is not silent
+  ok   D11 the whole bootstrap cost exactly one read
+  ok   D12 the canonical answer still raises the mirror
+  ok   D13 and the feature is enabled
+  ok   D14 with no failure remembered
+  ok   D15 recorded as applied FROM the backend
+  ok   D16 the foundation got the payload
+  ok   D16b and the snapshot is the APPLIED one, not the fail-safe - the control for D8
+  ok   D17 a matched answer of `false` is SERVER_FALSE
+  ok   D18 with no failure code — it is a decision, not a fault
+  ok   D19 and it WAS heard
+  ok   D20 the F3-R4 settlement signal still fires on the canonical answer
+  ok   D21 and the mirror settled
+  ok   D22 at one read
+  ok   D23 an ACTION_MISMATCH settles the F3-R4 signal — the page is woken, not stranded
+  ok   D24 and it does not reject
+  ok   D25 with the routing fault on the mirror
+
+== §E — ACTION_MISMATCH on the page: zero requests, and not a product statement ==
+  ok   E1  a settled ACTION_MISMATCH sends ZERO universe reads  [M5]
+  ok   E2  and zero workspace reads
+  ok   E3  zero requests of ANY action
+  ok   E4  it is reported as ACTION_MISMATCH
+  ok   E5  and NEVER as FEATURE_DISABLED — a routing fault is not a product decision
+  ok   E6  with no retry control: an identical request returns an identical answer
+  ok   E7  the controller state agrees with the box
+  ok   E8  writes and non-GET = 0
+  ok   E9  the F3-R4 allowlist is still exactly two codes  [M5]
+  ok   E10 and ACTION_MISMATCH is not eligible for server-authoritative delegation  [M5]
+  ok   E11 while the two transients still are
+  ok   E12 both of them
+  ok   E13 asking WITH the opt-in under ACTION_MISMATCH still sends nothing  [M5]
+  ok   E14 and refuses with the routing fault
+  ok   E15 recording zero requests made
+
+== §F — the FEATURE_DISABLED sentence follows the request, not the code ==
+  ok   F1  a local SERVER_FALSE sends ZERO requests
+  ok   F2  reported as FEATURE_DISABLED
+  ok   F3  and the sentence still says no request was sent, because none was  [M7]
+  ok   F4  it does NOT claim a server was asked  [M7]
+  ok   F5  no retry control
+  ok   F6  and the code is unchanged by this round
+  ok   F7  the delegated read was made EXACTLY once
+  ok   F8  and no workspace read followed a refusal
+  ok   F9  the code is FEATURE_DISABLED — unchanged, and no new code was minted  [M8]
+  ok   F10 the sentence says the SERVER was asked and answered  [M8]
+  ok   F11 and no longer claims no request was sent, which is now false  [M8]
+  ok   F12 the headline is untouched — the product fact did not change, only its provenance
+  ok   F13 and still NO retry on either road  [M9]
+  ok   F14 writes and non-GET = 0
+  ok   F15 the accessor's local refusal stamps transport: none
+  ok   F16 and requestsMade: 0 — both predate this round
+  ok   F17 adapting it gives FEATURE_DISABLED
+  ok   F18 and the SERVER refusal gives the identical state — the state cannot tell them apart, which is why the envelope must
+  ok   F19 the substitution tests for an explicit FALSE, not for falsiness  [M7]
+  ok   F20 and reads the two markers the accessor already stamps
+  ok   F21 an envelope with no meta reads as "a request was made" only through the renderer's own guard
+  ok   F22 the page module still loads
+
+== §G — the census facts, and the bounds that did not move ==
+  ok   G1  handleGetClientCapabilities_ answers { success, data } and stamps NO action — the legacy exception, from the source
+  ok   G2  there is no meta in that envelope at all
+  ok   G3  KM.transport compares ONLY when an action is present — the rule this round mirrors
+  ok   G4  and reads the same two fields in the same order
+  ok   G5  the productPricing envelope DOES stamp an action — the shape a routing fault would deliver
+  ok   G6  and the business accessor already enforces it on both of its reads — untouched by this round
+  ok   G7  the read timeout is still 45000ms
+  ok   G8  the read runner still makes at most two physical attempts
+  ok   G9  (the db api is the file that owns fetch; this round added none — see G10)
+  ok   G10 the PAGE opens no direct fetch, XHR or POST of its own
+  ok   G10b and the adapter method it DOES read through is still the one it calls
+  ok   G11 and neither does the accessor
+  ok   G12 system.health is not reached from the page
+  ok   G13 the verifier is DEFINED once and CALLED once — one rule, one call site
+  ok   G14 and it is attached to the capability getter  [M10]
+  ok   G15 whose published name is unchanged
+  ok   G16 and whose single-flighted read is byte-identical to what it was
+  ok   G17 the SHARED classifier has exactly ONE definition
+  ok   G17a and every dispatch that classifies an answer goes through it — call sites may only be ADDED
+  ok   G18 the transient allowlist source is unchanged  [M5]
+  ok   G19 and FEATURE_DISABLED is still absent from the retryable set  [M9]
+  ok   G20 a settlement that lands after unmount issues NOTHING
+  ok   G21 including the universe read
+  ok   G22 three direct getter calls with NO shared latch are three reads — the fallback branch, unchanged
+  ok   G23 and each is verified independently
+  ok   G24 a foreign answer is refused for every consumer, not just the first
+  ok   G25 and refusing never adds a read of its own
+
+== §M — ten mutants, each driven ==
+  ok   M1  the action comparison is removed  [B4, D3] (caught)
+  ok   M2  it compares the WRONG FIELD — `data.action` instead of the envelope's  [A5, D3] (caught)
+  ok   M3  a mismatch is detected and the payload is APPLIED anyway  [B10, D2, D7] (caught)
+  ok   M4  a mismatch is turned into a SERVER answer instead of a fault  [D3, D5] (caught)
+  ok   M5  ACTION_MISMATCH is admitted to the F3-R4 transient allowlist  [E1, E9, E10] (caught)
+  ok   M6  every action reads as MISSING, so the rule can never fire  [B1 vs B4, D3] (caught)
+  ok   M7  the LOCAL refusal is handed the SERVER sentence  [F3, F19] (caught)
+  ok   M8  the DELEGATED refusal keeps the "no request was sent" sentence  [F10, F11] (caught)
+  ok   M9  a FEATURE_DISABLED refusal is offered a retry  [F13, G19] (caught)
+  ok   M10 the verification runs but its verdict is discarded  [C1, D2, D7] (caught)
+
+passed 123  failed 0  |  mutants caught 10  survived 0

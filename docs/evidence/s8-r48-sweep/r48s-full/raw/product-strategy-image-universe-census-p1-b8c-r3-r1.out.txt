@@ -1,0 +1,193 @@
+
+=== §A  SCOPE — THIS ROUND CHANGES NO RUNTIME BEHAVIOUR ===
+ok   A1  no client runtime file changed — this round measures, it does not repair
+ok   A1a and no stylesheet or partial changed
+ok   A1b and index.html is untouched
+ok   A1c and no SHIPPED Apps Script file changed — the diagnostic is not one
+ok   A1d the editor-only diagnostic IS what changed
+ok   A2  the feature flag is still false
+ok   A2a and index.html still renders no Product Strategy menu item
+
+=== §B  THE REPOSITORY-SIDE CENSUS — EVERY CONSUMER, EVERY SHAPE, EVERY HOST ===
+ok   B1  operation-system-db-api.js is the single place image_url becomes `image`
+ok   B2.1 sku-details.js shared-resolver = true
+ok   B2.2 sku-handbook.js shared-resolver = true
+ok   B2.3 psb-board-ui.js (via the adapter) shared-resolver = true
+ok   B2.4 campaign-risk.js shared-resolver = true
+ok   B3  campaign-risk.js reads the same sku_details image column
+ok   B3a and the raw cell no longer reaches src — CLOSED by P1-B8C-R3-R2
+ok   B3b it now resolves through the shared helper
+ok   B3b1 which calls the same entry point the other three pages use
+ok   B3c it does have its own broken-image fallback, so only VALIDATION is missing
+ok   B4  no asset base and no CDN base exists in the shipped tree
+ok   B4a the `baseUrl` that exists is the API transport's
+ok   B4b and no image code consults it — an API endpoint is not an image root
+ok   B5  the tree scan reached the whole repository
+ok   B5a and found a substantial candidate set
+ok   B6  exactly ONE absolute image host exists outside the test fixtures
+ok   B6z  and NO SHIPPED FILE references an external image host
+ok   B6a it appears ONLY in the build tool and its provenance note
+ok   B6b and the renderer that uses those textures declares repo-relative paths only
+ok   B6c the shipped globe names no host at all
+ok   B7  the archived pre-database SKU data carries image values
+ok   B7a and EVERY ONE of them is accepted by the new policy
+ok   B7b they are FILENAME-ONLY — this application's image convention before sku_details existed
+ok   B7c that file is archived and production does not load it
+ok   B7d the seven operator-asserted live values are REPO-RELATIVE — a second shape, also accepted
+ok   B8  P1-B8C-R2 carried sixty rows
+ok   B8a out of a 495-row PRICING universe
+ok   B8b and it says of itself that it is not the universe
+ok   B8c AND ITS IMAGE ADDRESSES WERE REMOVED — so it cannot report a host even if one existed
+ok   B8d VERDICT: the repository proves zero external image hosts in every path it can see, and CANNOT prove the sku_details universe. Sixty rows of the pricing table is not a census of the master table. Hence §C.
+
+=== §C  THE CENSUS FUNCTION — CONTRACT, AND WHAT IT MAY NOT EMIT ===
+ok   C1  the entry point exists and takes NO parameters
+ok   C1a and it is the third entry point in the file, not a replacement for either
+ok   C2  the census body is extractable
+ok   C2.1 the census never uses setValue
+ok   C2.2 the census never uses setValues
+ok   C2.3 the census never uses appendRow
+ok   C2.4 the census never uses insertSheet
+ok   C2.5 the census never uses deleteSheet
+ok   C2.6 the census never uses clear(
+ok   C2.7 the census never uses DriveApp
+ok   C2.8 the census never uses UrlFetchApp
+ok   C2.9 the census never uses LockService
+ok   C2.10 the census never uses PropertiesService
+ok   C2.11 the census never uses CacheService
+ok   C2.12 the census never uses ScriptApp
+ok   C2.13 the census never uses MailApp
+ok   C2.14 the census never uses GmailApp
+ok   C2.15 the census never uses createTrigger
+ok   C2.16 the census never uses setFormula
+ok   C2a and it publishes rows_modified 0 and writes 0
+ok   C3  it reads exactly one table, and that table is sku_details
+ok   C3a and touches exactly one column on the row
+ok   C4  no path, filename, sku or row id is assigned into the report
+ok   C4a and the contract block declares each of those false
+ok   C4b while declaring the one identifying fragment it DOES keep
+ok   C5  `user:pass@host` is refused rather than reduced to a host
+ok   C5a and so is a bare userinfo, which is what an email in a URL looks like
+ok   C5b a port is not part of an allowlist identity and is dropped
+ok   C5c and the host is lowercased
+ok   C5d a relative reference has no authority at all
+ok   C5e and a refusal stops the WHOLE report
+ok   C5f with the counts withheld — a partial census is not a census
+ok   C6  the report stops if the buckets do not sum to the whole
+ok   C6a the failure path uses `safety_token`, not the forbidden key `token` — P1-B8C-R1's lesson
+ok   C7.1 the census adds no doGet
+ok   C7.2 the census adds no doPost
+ok   C7.3 the census adds no an ACTION_ constant
+ok   C7.4 the census adds no a router reference
+ok   C7.5 the census adds no addAction
+ok   C7.6 the census adds no registerAction
+ok   C7z  (and the verdict that tripped the unanchored version is still there)
+ok   C7a and no shipped Apps Script file changed
+
+=== §D  THE CENSUS AND THE CLIENT POLICY DECIDE THE SAME VALUES THE SAME WAY ===
+ok   D1  NOT ONE VALUE IS CLASSIFIED DIFFERENTLY BY THE TWO
+ok   D1a and every declared shape except the defensive one is reached
+ok   D1b `classification_unknown_rows` is unreachable by construction and must stay 0 in production
+ok   D2  the dangerous shapes are decided before anything may look like a path
+ok   D2a so a Windows path ending in .jpg is a Windows path, not an asset
+ok   D2b and a traversal ending in .jpg is a traversal
+
+=== §E  THE COMPATIBILITY PROPERTY — THE ADDRESS IS UNCHANGED, NOT MERELY "STILL SHOWS" ===
+ok   E1  the pre-R3 resolver is recoverable and did exactly one rewrite
+ok   E1a and returned everything else unchanged
+ok   E2  the corpus contains accepted values to compare
+ok   E2a FOR EVERY VALUE THE NEW POLICY ACCEPTS, THE ADDRESS IS BYTE-IDENTICAL TO THE OLD ONE
+ok   E3  old rejected / new displayed = 0
+ok   E4  every class R3 removes is a dangerous or unfetchable shape, plus UNAPPROVED_HOST
+ok   E4a AND `UNAPPROVED_HOST` IS THE ONLY ONE THAT COULD HAVE BEEN A WORKING PICTURE
+ok   E4b VERDICT: the gate reduces to ONE question — does production hold an absolute image URL? Every other removal is a value no browser could have fetched.
+ok   E5  the census scores the absolute rows SEPARATELY rather than guessing the allowlist
+ok   E5a and says outright whether a decision is required
+ok   E5b and asserts the one-directional property in its own output
+
+=== §F  THE ALLOWLIST IS STILL EMPTY, STILL FAIL-CLOSED, AND HAS NO WILDCARD ===
+ok   F1  the shipped allowlist is empty — the census has not run yet, so nothing has been proven
+ok   F1a and carries no wildcard
+ok   F2.1 a suffix-extended host is refused
+ok   F2.2 a prefix-extended host is refused
+ok   F2.3 a trailing-dot host is refused
+ok   F2.4 the same, upper case is refused
+ok   F2a while the exact host is approved
+ok   F3  an approved host appearing in the PATH is not approval
+ok   F3a nor is it in the QUERY
+ok   F4  SKU Details and Product Strategy still agree on every corpus value
+ok   F5  the acceptance capture carries the legacy filename-only convention
+ok   F5a and the policy hands it to the browser unchanged
+ok   F5b and the root-relative shape likewise
+ok   F5c AND A REAL BROWSER RECEIVED IT VERBATIM as a chart href
+ok   F6.1 1920x1080 measured
+ok   F6.1a 1920x1080 no broken <img>
+ok   F6.1b 1920x1080 every <img> loaded
+ok   F6.1c 1920x1080 photographs AND plates are both drawn
+ok   F6.1d 1920x1080 no overflow
+ok   F6.1e 1920x1080 no console errors
+ok   F6.1f 1920x1080 flag still false
+ok   F6.2 1440x900 measured
+ok   F6.2a 1440x900 no broken <img>
+ok   F6.2b 1440x900 every <img> loaded
+ok   F6.2c 1440x900 photographs AND plates are both drawn
+ok   F6.2d 1440x900 no overflow
+ok   F6.2e 1440x900 no console errors
+ok   F6.2f 1440x900 flag still false
+ok   F6.3 1366x768 measured
+ok   F6.3a 1366x768 no broken <img>
+ok   F6.3b 1366x768 every <img> loaded
+ok   F6.3c 1366x768 photographs AND plates are both drawn
+ok   F6.3d 1366x768 no overflow
+ok   F6.3e 1366x768 no console errors
+ok   F6.3f 1366x768 flag still false
+ok   F6.4 1280x720 measured
+ok   F6.4a 1280x720 no broken <img>
+ok   F6.4b 1280x720 every <img> loaded
+ok   F6.4c 1280x720 photographs AND plates are both drawn
+ok   F6.4d 1280x720 no overflow
+ok   F6.4e 1280x720 no console errors
+ok   F6.4f 1280x720 flag still false
+ok   F6.5 1024x768 measured
+ok   F6.5a 1024x768 no broken <img>
+ok   F6.5b 1024x768 every <img> loaded
+ok   F6.5c 1024x768 photographs AND plates are both drawn
+ok   F6.5d 1024x768 no overflow
+ok   F6.5e 1024x768 no console errors
+ok   F6.5f 1024x768 flag still false
+ok   F6.6 768x1024 measured
+ok   F6.6a 768x1024 no broken <img>
+ok   F6.6b 768x1024 every <img> loaded
+ok   F6.6c 768x1024 photographs AND plates are both drawn
+ok   F6.6d 768x1024 no overflow
+ok   F6.6e 768x1024 no console errors
+ok   F6.6f 768x1024 flag still false
+ok   F6.7 390x844 measured
+ok   F6.7a 390x844 no broken <img>
+ok   F6.7b 390x844 every <img> loaded
+ok   F6.7c 390x844 photographs AND plates are both drawn
+ok   F6.7d 390x844 no overflow
+ok   F6.7e 390x844 no console errors
+ok   F6.7f 390x844 flag still false
+ok   F7  both Product Strategy <img> hosts still have an independent fallback
+
+=== §G  MUTANTS ===
+ok   G1  the allowlist ships non-empty, so a host nobody measured is already trusted — F1 — caught
+ok   G2  host matching becomes a SUFFIX test, so approved.test.attacker.test passes — F2 — caught
+ok   G3  any HTTPS is waved through, so the allowlist stops existing — F1/E4a — caught
+ok   G4  the census stops refusing an authority that carries user information — C5 — caught
+ok   G5  the census counts a Windows path as an asset because it ends in .jpg — D2a — caught
+ok   G6  the census counts a traversal as an asset — D2b — caught
+ok   G7  the census counts a bare Drive id as a displayable reference — D1 — caught
+ok   G8  the census scores absolute rows as compatible instead of reporting them — E5 — caught
+ok   G9  the census caps or samples the universe — B8/C3 — caught
+ok   G10 the census emits the value it classified — C4 — caught
+ok   G11 the census writes something — C2 — caught
+ok   G12 a partial redaction failure publishes the counts anyway — C5f — caught
+ok   G13 campaign-risk goes back to putting the raw cell in src — B3a — caught
+ok   G14 the equivalence corpus stops reaching a branch, so the claim becomes a sample — D1a — caught
+ok   G15 the address is rewritten for an accepted value, so every picture moves — E2a — caught
+
+===================================================================================
+PASS — passed 160  failed 0  |  mutants caught 15  survived 0
+===================================================================================

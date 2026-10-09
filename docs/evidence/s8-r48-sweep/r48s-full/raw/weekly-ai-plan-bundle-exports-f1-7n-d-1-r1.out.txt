@@ -1,0 +1,7 @@
+
+== Source: weekly globals declared exactly once (no duplicates) ==
+
+== Runtime: bundle evaluates headless and resolves the weekly globals ==
+
+----------------------------------------
+WEEKLY AI PLAN BUNDLE EXPORTS (F1-7N-D-1): 35 passed, 0 failed

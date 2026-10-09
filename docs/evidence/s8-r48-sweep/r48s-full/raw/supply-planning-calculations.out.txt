@@ -1,0 +1,362 @@
+
+== §10 Event Preparation Date (Event Start − 30 calendar days) ==
+ok   2026-10-01 → 2026-09-01
+ok   2026-03-01 → 2026-01-30 (Feb=28d, 2026 non-leap)
+ok   2026-01-15 → 2025-12-16 (crosses year boundary)
+ok   2028-03-30 → 2028-02-29 (leap year)
+ok   prep MONTH of 2026-10-01 → 2026-09
+ok   prep MONTH of 2026-01-15 → 2025-12
+ok   invalid month rejected
+ok   invalid day (02-30) rejected
+ok   non-leap 2027-02-29 rejected
+ok   non-strict format (single-digit) rejected — no locale parsing
+ok   non-string date rejected
+ok   deterministic: repeated call identical (no drift)
+ok   no timezone drift: 2026-06-30 → 2026-05-31 exact
+
+== §31 Calculated Gap = MAX(Demand − Stock − Timely Incoming − Timely Committed, 0) ==
+ok   gap = 1000 − 300 − 200 − 100 = 400
+ok   oversupply → gap floored at 0
+ok   all zero → 0
+ok   calculateGap does not mutate input
+ok   negative demand rejected
+ok   NaN rejected
+ok   Infinity rejected
+ok   numeric string rejected (no coercion)
+
+== §11 Shortage / Surplus from Projected Balance ==
+ok   −300 → shortage 300 / surplus 0
+ok   0 → 0 / 0
+ok   +1000 → shortage 0 / surplus 1000
+ok   NaN projected balance rejected
+ok   string projected balance rejected
+ok   −Infinity projected balance rejected
+
+== §31 Worked Example (Gap 300, Source 279, UPC 40) ==
+ok   Raw Shippable = MIN(300, 279) = 279
+ok   Recommended Shipping = FLOOR(279/40)×40 = 240
+ok   Residual Production = 300 − 240 = 60
+ok   FORBIDDEN Gap−RawSource (=21) never produced
+ok   Suggested Order = CEILING(60/40)×40 = 80
+
+== §31 Shipping FLOOR / Residual — other cases ==
+ok   source > gap → raw=gap 100, ship 80, residual 20
+ok   source = 0 → ship 0, residual = full gap
+ok   gap = 0 → all 0
+ok   source below one carton → ship 0 (partial carton never ships)
+ok   other legally allocated timely supply reduces residual (300−240−30=30)
+ok   residual never negative (100−80−50 → 0)
+ok   recommended shipping never exceeds gap or source
+ok   UPC 0 rejected (no default)
+ok   missing UPC rejected (blocks calculation)
+
+== §14 Suggested Order Qty = CEILING(need ÷ UPC) × UPC ==
+ok   need 300 / UPC 40 → 320
+ok   need 80 / UPC 40 → 80 (exact multiple)
+ok   need 60 / UPC 40 → 80
+ok   need 0 → 0
+ok   missing UPC → blocked/error (no fabricated qty)
+ok   UPC 0 rejected
+ok   UPC negative rejected
+ok   UPC decimal rejected
+ok   UPC string rejected (no coercion)
+
+== §12/§32 Feasible Reallocation primitive ==
+ok   MIN(1000, 1200, 700) = 700 (timely-transferable binds)
+ok   receiver shortage is the MIN
+ok   donor surplus is the MIN
+ok   timely transferable is the MIN
+ok   zero receiver shortage → 0
+ok   zero donor surplus → 0
+ok   negative input rejected
+
+== §32 applyFeasibleReallocation (consume-once bookkeeping, no mutation) ==
+ok   apply → qty 700, receiver 300, donor 500
+ok   applyFeasibleReallocation does not mutate input
+ok   surplus consumed once: remaining donor surplus (500) caps the next reallocation
+ok   apply outputs never negative
+
+== §12 Net Order Need = Σ remaining shortage ==
+ok   Σ[300,500,0] = 800
+ok   Σ[] = 0
+ok   sumRemainingShortages does not mutate input array
+ok   non-array rejected
+ok   negative element rejected
+
+== Determinism: same input → identical output ==
+ok   calculateShippingAndResidual repeatable
+ok   calculateGap repeatable
+
+== §22/§29E normalized-sales sampling engine ==
+ok   window start = calc − 90d
+ok   window end = calc − 1d
+ok   only the 7 in-window rows are eligible (calc−91 and calc date excluded)
+ok   both window boundary dates are eligible
+ok   calc − 91 (before window) is never sampled
+ok   calc date itself is never sampled
+ok   ≥7 → normalized_30d
+ok   3–6 → normalized_30d + low_sample_warning
+ok   <3 → weekly_7d = 70/7 = 10
+ok   cancelled campaign excludes NO dates
+ok   all 8 days remain normal (cancelled campaign ignored)
+ok   only the event SELLING date is excluded
+ok   the Preparation Date (start − 30d) stays a NORMAL day (not contamination)
+ok   avg keeps full precision (4/3, not rounded)
+ok   bad calcDate month rejected
+ok   missing calcDate rejected
+ok   missing scope rejected
+ok   empty scope.sku rejected
+ok   missing scope.country rejected
+ok   non-number weekly7d rejected (no coercion)
+ok   non-array dailySales rejected
+ok   negative units rejected
+ok   normalizedAvgSalesPerDay does not mutate dailySales / campaigns
+
+== Round 3.1 marketplace-scope isolation ==
+ok   Scope A1 (matching marketplace_sku_id) excludes the campaign dates
+ok   Scope A2 (different marketplace_sku_id, same Master SKU) excludes ZERO dates
+ok   ResUS Amazon campaign/event does NOT contaminate KM Amazon (same Master SKU)
+ok   all 10 KM rows remain normal days
+ok   event with matching marketplace_id excludes its selling dates
+ok   event on a different marketplace_id / company+country+marketplace excludes nothing
+ok   Scope A1 uses only its own units (=5), never A2 rows
+ok   Scope A2 uses only its own units (=9); no overwrite by A1 same-date rows
+ok   duplicate snapshot_date+country+marketplace+channel+sku natural key rejected (no last-write-wins)
+ok   a campaign for another Master SKU (different marketplace_sku_id) excludes none
+ok   avg reflects only SKU A's rows (=5)
+ok   campaign line with the same Master SKU but no marketplace_sku_id is rejected (no sku-based guessing)
+ok   campaigns present but scope.marketplaceSkuId missing is rejected
+
+== Round 3.1.1 event precedence + company isolation ==
+ok   E1: mismatched marketplaceId does NOT contaminate even though company+country+marketplace match (ID authoritative)
+ok   E2: matching marketplaceId excludes the selling dates despite a differing composite
+ok   E3: no marketplaceId + exact composite match → excluded
+ok   E4a: no marketplaceId + incomplete composite (missing marketplace) is not guessed → no pollution
+ok   E4b: no marketplaceId + mismatched company → out-of-scope, no pollution
+ok   E5: present-but-non-string event.marketplaceId is rejected as a TYPE defect (not downgraded to the composite fallback)
+ok   E6: active same-SKU ID-bearing event + unresolved scope.marketplaceId → deterministic fail-fast (composite does NOT rescue it)
+ok   E6-guard: missing scope.marketplaceId is NOT a blanket failure — cancelled + other-SKU ID-bearing events do not force a throw and exclude nothing
+ok   D1: ResUS rows are NOT counted for a KM scope (normalDayCount = 0)
+ok   D1: no ResUS date is selected for KM
+ok   D1: KM has <3 own rows → canonical weekly fallback (NOT the ResUS avg of 9)
+ok   D1: value = weekly7d(70)/7 = 10 — a fallback, never the ResUS units
+ok   D2: matching KM rows are sampled (10)
+ok   D2: avg = 5 from KM rows
+ok   D3: KM scope takes only the 8 KM rows (avg 5)
+ok   D3: ResUS scope takes only the 8 ResUS rows (avg 9)
+ok   D4: source-dim-matching row with no resolved company is rejected (unresolved company scope)
+ok   D5: scope.company missing is rejected (non-empty string required)
+ok   D6: same persisted source key resolving to KM and ResUS is an ambiguous-company failure
+ok   D7: exact duplicate persisted natural key (same company) is still rejected
+
+== §2D/§29F/§29G Forecast-Driven demand engine ==
+ok   FD#1 targetRuleSource = sku (highest priority present)
+ok   FD#2 targetRulePercent = 50 (50%, not 0.5)
+ok   FD#3 adjustedForecastMonth1 = 620 × 50% = 310
+ok   FD#4 adjustedForecastMonth2 = 560 × 50% = 280
+ok   FD#5 adjustedRegularForecast = 310 + 280 = 590
+ok   FD#6 actual calendar days = [31, 28] (Jan 31 / Feb 2027 non-leap 28)
+ok   FD#7 forecastDailyDemand = 590 ÷ 59 = 10
+ok   FD#8 safetyDemand = 10 × 30 = 300 (additional 30-day coverage)
+ok   FD#9 specialEventDemand = 200 (added once at 100%, never target-adjusted)
+ok   FD#10 total = 590 + 300 + 200 = 1090
+ok   FD#11 remaining = MAX(1090 − 300 − 200 − 100, 0) = 490
+ok   FD#12 committed 0 → remaining 590 (proves committed 100 deducted exactly once: 590 → 490)
+ok   FD#13 SKU absent → Series rule selected
+ok   FD#14 SKU + Series absent → Category rule selected
+ok   FD#15 all three absent → default 100%
+ok   FD#16 explicit SKU 0% stays 0% — never falls through to Series (adjusted FC = 0)
+ok   FD#17 2028-02 / 2028-03 → [29, 31] (leap-year February)
+ok   FD#18 2027-12 / 2028-01 → [31, 31] (Dec → next-year Jan)
+ok   FD#19 non-consecutive Month 1 / Month 2 throws
+ok   FD#20 invalid highest-priority Target Rule throws (no fallback to Series)
+ok   FD#21 numeric-string Base Forecast throws (no coercion)
+ok   FD#22 negative Timely Incoming throws
+ok   FD#23 canonical input object is not mutated
+ok   FD#24 repeated identical input → identical result (deterministic)
+ok   FD#25 excess supply floors Remaining Need at 0
+ok   FD#26 all-zero demand/supply → Remaining Need 0
+ok   FD#27 invalid YYYY-MM throws (no locale parsing)
+ok   FD#28 NaN Special Event Demand throws
+ok   FD#29 Infinity Base Forecast throws
+ok   FD#30 missing Month 2 Base Forecast throws
+ok   FD#31 full precision: (2 ÷ 61) daily, × 30 safety — no intermediate rounding
+ok   FD#32 negative selected Target Rule throws
+
+== §26/§27/§27A Required-By Window classifier (classifyRequiredByWindow) ==
+ok   CW#1 Independence Example A complete object (A=46–90d alloc, B=T4 display-only)
+ok   CW#2 Independence Example B complete object (A=>90d no-alloc, B=T3 payload)
+ok   CW#3 top-level keys are exactly daysOut/monthDelta/engineA/engineB
+ok   CW#4 no flat engineABucket (superseded flat contract NOT implemented)
+ok   CW#5 no top-level tier/visible/allocationEligible/payloadEligible/bucket
+ok   CW#6 engineA keys exactly bucket/visible/allocationEligible (NO payloadEligible)
+ok   CW#7 engineB keys exactly tier/visible/allocationEligible/payloadEligible
+ok   CW#A daysOut 2025-12-31 → -1
+ok   CW#A bucket 2025-12-31 → 0–18d
+ok   CW#A daysOut 2026-01-01 → 0
+ok   CW#A bucket 2026-01-01 → 0–18d
+ok   CW#A daysOut 2026-01-19 → 18
+ok   CW#A bucket 2026-01-19 → 0–18d
+ok   CW#A daysOut 2026-01-20 → 19
+ok   CW#A bucket 2026-01-20 → 19–30d
+ok   CW#A daysOut 2026-01-31 → 30
+ok   CW#A bucket 2026-01-31 → 19–30d
+ok   CW#A daysOut 2026-02-01 → 31
+ok   CW#A bucket 2026-02-01 → 31–45d
+ok   CW#A daysOut 2026-02-15 → 45
+ok   CW#A bucket 2026-02-15 → 31–45d
+ok   CW#A daysOut 2026-02-16 → 46
+ok   CW#A bucket 2026-02-16 → 46–90d
+ok   CW#A daysOut 2026-04-01 → 90
+ok   CW#A bucket 2026-04-01 → 46–90d
+ok   CW#A daysOut 2026-04-02 → 91
+ok   CW#A bucket 2026-04-02 → >90d
+ok   CW#A8 >90d visible = true
+ok   CW#A9 >90d allocationEligible = false
+ok   CW#A10 in-range 46–90d allocationEligible = true
+ok   CW#A11 overdue keeps negative integer daysOut, bucket folds to 0–18d
+ok   CW#B1 overdue prior-month → engineB T1 (all eligible)
+ok   CW#B2 monthDelta 0 → T1
+ok   CW#B3 monthDelta 1 → T1
+ok   CW#B4 monthDelta 2 → T2
+ok   CW#B5 monthDelta 3 → T3
+ok   CW#B6 monthDelta 4 → T4 display-only
+ok   CW#B7 monthDelta 5 → tier null, all false
+ok   CW#B8 year-crossing 2026-12 → 2027-01 → monthDelta 1 → T1
+ok   CW#D1 same date → daysOut 0
+ok   CW#D2 Jan 31 → Feb 1 → daysOut 1, monthDelta 1
+ok   CW#D3 leap-year boundary: 2028-02-29 exists → daysOut 2
+ok   CW#D4 non-leap boundary: 2026 Feb has 28 days → daysOut 1
+ok   CW#D5 year boundary 2026-12-31 → 2027-01-01 → daysOut 1, monthDelta 1
+ok   CW#D6 deterministic: repeated identical input → identical result
+ok   CW#D7 input object is not mutated
+ok   CW#D8 each call returns fresh top-level/engineA/engineB objects
+ok   CW#D9 mutating one output does not pollute later calls
+ok   CW#E1 undefined input → TypeError
+ok   CW#E2 null input → TypeError
+ok   CW#E3 primitive input → TypeError
+ok   CW#E4 Array input → TypeError
+ok   CW#E5 missing calculationDate → TypeError
+ok   CW#E6 missing requiredByDate → TypeError
+ok   CW#E7 numeric calculationDate → TypeError (no coercion)
+ok   CW#E8 Date-object calculationDate → TypeError (no coercion)
+ok   CW#E9 null calculationDate → TypeError
+ok   CW#E10 numeric requiredByDate → TypeError
+ok   CW#E11 Date-object requiredByDate → TypeError
+ok   CW#E12 null requiredByDate → TypeError
+ok   CW#E13 "2026-2-01" (non-padded month) → RangeError
+ok   CW#E14 "2026-02-1" (non-padded day) → RangeError
+ok   CW#E15 slash date → RangeError
+ok   CW#E16 compact "20260201" → RangeError
+ok   CW#E17 datetime form → RangeError
+ok   CW#E18 timezone suffix → RangeError
+ok   CW#E19 month 00 → RangeError
+ok   CW#E20 month 13 → RangeError
+ok   CW#E21 day 00 → RangeError
+ok   CW#E22 February 30 → RangeError
+ok   CW#E23 non-leap February 29 → RangeError
+
+== §32A Reallocation Eligibility predicate (evaluateReallocationEligibility) ==
+ok   RE#A1 exact canonical T1 → T2 output
+ok   RE#A2 exact top-level key set
+ok   RE#A3 exact donor key set
+ok   RE#A4 exact receiver key set
+ok   RE#B1 GA0450 vs GA3120 → sameMasterSku false (tierOrdering true, eligible false)
+ok   RE#B2 GA0450 vs ga0450 → false (case-sensitive; never case-folded)
+ok   RE#B3 GA0450 vs " GA0450" → false (never trimmed for equality)
+ok   RE#C T1 → T1 → eligible true
+ok   RE#C T1 → T2 → eligible true
+ok   RE#C T1 → T3 → eligible true
+ok   RE#C T2 → T1 → eligible false
+ok   RE#C T2 → T2 → eligible true
+ok   RE#C T2 → T3 → eligible true
+ok   RE#C T3 → T1 → eligible false
+ok   RE#C T3 → T2 → eligible false
+ok   RE#C T3 → T3 → eligible true
+ok   RE#D T4 → T3 → ineligible (T4/null not an allocation rank)
+ok   RE#D T3 → T4 → ineligible (T4/null not an allocation rank)
+ok   RE#D T4 → T4 → ineligible (T4/null not an allocation rank)
+ok   RE#D NULL → T3 → ineligible (T4/null not an allocation rank)
+ok   RE#D T3 → NULL → ineligible (T4/null not an allocation rank)
+ok   RE#D NULL → NULL → ineligible (T4/null not an allocation rank)
+ok   RE#E1 Engine A false + Engine B T3 true → eligible via Engine B only (Engine A not read)
+ok   RE#F1 input object is not mutated
+ok   RE#F2 repeated identical input → identical value
+ok   RE#F3 each call returns a fresh top-level object
+ok   RE#F4 each call returns a fresh donor object
+ok   RE#F5 each call returns a fresh receiver object
+ok   RE#F6 mutating one output does not pollute later calls
+ok   RE#G1 undefined input → TypeError
+ok   RE#G2 null input → TypeError
+ok   RE#G3 primitive input → TypeError
+ok   RE#G4 Array input → TypeError
+ok   RE#G5 missing donor → TypeError
+ok   RE#G6 null donor → TypeError
+ok   RE#G7 primitive donor → TypeError
+ok   RE#G8 Array donor → TypeError
+ok   RE#G9 missing receiver → TypeError
+ok   RE#G10 null receiver → TypeError
+ok   RE#G11 primitive receiver → TypeError
+ok   RE#G12 Array receiver → TypeError
+ok   RE#G13 missing donor.masterSku → TypeError
+ok   RE#G14 non-string donor.masterSku → TypeError (no coercion)
+ok   RE#G15 empty donor.masterSku → TypeError
+ok   RE#G16 whitespace-only donor.masterSku → TypeError
+ok   RE#G17 missing receiver.masterSku → TypeError
+ok   RE#G18 non-string receiver.masterSku → TypeError (no coercion)
+ok   RE#G19 empty receiver.masterSku → TypeError
+ok   RE#G20 whitespace-only receiver.masterSku → TypeError
+ok   RE#G21 numeric calculationDate → TypeError (classifier delegation)
+ok   RE#G22 invalid calculationDate → RangeError (classifier delegation)
+ok   RE#G23 non-string donor.requiredByDate → TypeError
+ok   RE#G24 invalid donor.requiredByDate → RangeError
+ok   RE#G25 non-string receiver.requiredByDate → TypeError
+ok   RE#G26 invalid receiver.requiredByDate → RangeError
+
+== §34A Missing / Stale Data classifier (classifyPlanningDataState) ==
+ok   PD#A1 missing snapshot → MISSING_SNAPSHOT/false
+ok   PD#A2 stale snapshot (10>7) → STALE_SNAPSHOT/true (warn-and-proceed)
+ok   PD#A3 fresh snapshot (1<7) → OK/true
+ok   PD#A4 age === threshold (7===7) → fresh (STRICT >) → OK/true
+ok   PD#A5 forecast-driven + forecast present → OK/true
+ok   PD#A6 forecast-driven + forecast missing → MISSING_FORECAST/false
+ok   PD#A7 sales-driven + sales basis present → OK/true
+ok   PD#A8 sales-driven + sales basis missing → MISSING_SALES_BASIS/false
+ok   PD#A9 sales-driven ignores forecastPresent (false ignored) → OK/true
+ok   PD#A10 forecast-driven ignores salesBasisPresent (false ignored) → OK/true
+ok   PD#A11 missing snapshot OUTRANKS missing forecast → MISSING_SNAPSHOT
+ok   PD#A12 missing forecast OUTRANKS stale → MISSING_FORECAST
+ok   PD#A13 missing sales basis OUTRANKS stale → MISSING_SALES_BASIS
+ok   PD#A14 each call returns a fresh output object
+ok   PD#A15 input object is not mutated
+ok   PD#A16 unexpected extra properties are ignored (no error, no effect)
+ok   PD#B1 undefined input → TypeError
+ok   PD#B2 null input → TypeError
+ok   PD#B3 array input → TypeError
+ok   PD#B4 primitive input → TypeError
+ok   PD#B5 missing snapshotPresent → TypeError
+ok   PD#B6 non-boolean snapshotPresent → TypeError (no coercion)
+ok   PD#B7 missing replenishmentModel → TypeError
+ok   PD#B8 non-string replenishmentModel → TypeError
+ok   PD#B9 snapshotPresent=true + missing snapshotAgeDays → TypeError
+ok   PD#B10 snapshotPresent=true + non-number snapshotAgeDays → TypeError (no coercion)
+ok   PD#B11 snapshotPresent=true + missing stalenessThresholdDays → TypeError
+ok   PD#B12 snapshotPresent=true + non-number stalenessThresholdDays → TypeError (no coercion)
+ok   PD#B13 forecast-driven + missing forecastPresent → TypeError
+ok   PD#B14 forecast-driven + non-boolean forecastPresent → TypeError (no coercion)
+ok   PD#B15 sales-driven + missing salesBasisPresent → TypeError
+ok   PD#B16 sales-driven + non-boolean salesBasisPresent → TypeError (no coercion)
+ok   PD#C1 unsupported replenishmentModel string → RangeError
+ok   PD#C2 NaN age → RangeError
+ok   PD#C3 Infinity age → RangeError
+ok   PD#C4 negative age → RangeError
+ok   PD#C5 NaN threshold → RangeError
+ok   PD#C6 Infinity threshold → RangeError
+ok   PD#C7 negative threshold → RangeError
+ok   PD#D1 age/threshold IGNORED when snapshotPresent=false (bad values do not throw)
+ok   PD#D2 forecastPresent IGNORED when sales_driven (garbage value does not throw)
+ok   PD#D3 salesBasisPresent IGNORED when forecast_driven (garbage value does not throw)
+ok   PD#D4 snapshotPresent=false returns MISSING_SNAPSHOT before the demand-basis check
+
+All supply-planning-calculation assertions passed (325 assertions).
+

@@ -1,0 +1,13 @@
+
+== recoWsRows_ is deep-equal to fresh recoWsToRowObjects_ (output-identical) ==
+
+== memoized: same reference across calls within one request (no re-materialization) ==
+
+== per-request isolation + absent-snapshot safety ==
+
+== source wiring: both expanders route loop-invariant snapshots through recoWsRows_ ==
+
+== guardrail: no output/authority/formula surface touched; getOperationDb still never called ==
+
+---------------------------------------------
+PASS 28  FAIL 0

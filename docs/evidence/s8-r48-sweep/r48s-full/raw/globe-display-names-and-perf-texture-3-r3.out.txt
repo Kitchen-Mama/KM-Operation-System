@@ -1,0 +1,21 @@
+
+== §F — the alias asset: names only, deterministic, and fully attributed
+
+== §F — the authority ORDER, executed
+  >=8 char labels before: 4 (AE,BA,KP,TF)
+  >=8 char labels after : 2 (AE=阿拉伯聯合大公國(8), BA=波士尼亞與赫塞哥維納(10))
+
+== §F — the geopolitical cases are REFUSED, not decided
+
+== §J13 — business ISO values are NEVER localised
+
+== §G — the label ladder, the continent layer and the clipping rule
+  label sizes: continent 17 · country 12 · adm1 9
+  Oceania anchor: lat -22.1 lng 146.1
+  (both ramps are monotonic across 1.35..3.2)
+
+== §I — the phases are measured separately, and a software number says so
+
+----------------------------------------
+DISPLAY NAMES + PERF (TEXTURE-3-R3 §F/§G/§I): 264 passed, 0 failed
+----------------------------------------

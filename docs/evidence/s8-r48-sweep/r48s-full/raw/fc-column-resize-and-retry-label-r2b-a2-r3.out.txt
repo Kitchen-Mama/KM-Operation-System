@@ -1,0 +1,35 @@
+
+-- A. THE SHIPPED MARKUP — the column sets these controllers must match ---------------------------
+
+-- B. HANDLES — every approved column, and nothing that must not move -----------------------------
+
+-- C. DRAGGING — header and body move TOGETHER, for every column ----------------------------------
+
+-- D. NO CROSS-TAB LEAKAGE — §7.9, §5 -------------------------------------------------------------
+
+-- E. RESET — §6, §7.12 ---------------------------------------------------------------------------
+
+-- F. CSS — the specificity defect is gone BY CONSTRUCTION, not by !important ---------------------
+
+-- G. RETRY LABEL — §1 ----------------------------------------------------------------------------
+
+-- I. REDIRECT / RETRY REGRESSION — §8, with controlled responses ---------------------------------
+
+-- H. MUTANTS -------------------------------------------------------------------------------------
+ok   M1  the Target controller is omitted, so Target Rules silently keeps no handles (caught)
+ok   M2  Regular's rule leaks into Event — one selector stops naming its own table (caught)
+ok   M3  a blocking max-width is restored, so the engine can no longer widen past the default (caught)
+ok   M4  the injected rule stops naming the body, so the header moves and the body does not (caught)
+ok   M5  the injected rule stops naming the header, so the body moves and the header does not (caught)
+ok   M6  all three tabs share one persistence group, so resizing one moves the others (caught)
+ok   M7  the Series-only survivor is restored — every other column loses its handle (caught)
+ok   M8  the handle is bound to the wrong column index, so dragging moves a neighbour (caught)
+ok   M9  reset clears every tab instead of the active one (caught)
+ok   M10  resizing triggers a workspace read (caught)
+ok   M11  the shape gate is removed, so a markup change wires handles to the wrong positions (caught)
+ok   M13  all three controllers share the section as root, so a re-mount strips the other tables (caught)
+ok   M12  the minimum is raised above a month column default, silently rewidening the table (caught)
+
+====================================================================================================
+FC COLUMN RESIZE + RETRY LABEL (R2B-A2-R3) — passed 208  failed 0  |  mutants caught 13  survived 0
+====================================================================================================

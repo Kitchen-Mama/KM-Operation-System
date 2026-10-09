@@ -1,0 +1,9 @@
+
+== A — WeeklyAiPlanControlledAuthority_ mint/verify: unforgeable, scope-bound, one-shot ==
+
+== B — weeklyAiPlanGenerateK2_ immediate backend gate (flag true OR internal capability; else UNAUTHORIZED) ==
+
+== C — public-path security proof (source contracts) ==
+
+----------------------------------------
+R6F2F1 INTERNAL CONTROLLED AUTHORITY: 21 passed, 0 failed

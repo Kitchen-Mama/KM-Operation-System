@@ -1,0 +1,107 @@
+
+== §21 A-D — RESERVE, RELEASE, DISPATCH, ALLOCATABLE ==
+ok   A  100/0 reserve 30 -> 70/30, physical untouched
+ok   B  70/30 release 30 -> 100/0
+ok   C  70/30 dispatch 30 -> 70/0 — available NOT decremented again
+ok   C0 (the hold is seeded through the real acquire, so the ledger is real)
+ok   D  70/30 allocatable is 70, NOT 40
+ok   D1 and the rule contains no subtraction at all
+
+== §21 E-J — THE IMPORTER ==
+ok   E  70/30 + source 100 -> 70/30 (GROSS: S - R)
+ok   F  source 20 against reserved 30 -> refused
+ok   F1 and not one field of the canonical row moved
+ok   G  reserved OMITTED -> preserved
+ok   H  reserved BLANK -> preserved
+ok   I  reserved EXPLICIT 0 -> preserved
+ok   I1 reserved NON-ZERO -> still ignored; the source is not the authority
+ok   J  new row source 100 -> 100/0 (the same S - R rule with R = 0)
+ok   J1 damaged OMITTED -> preserved, not zeroed
+ok   J2 damaged EXPLICIT 0 -> written; zero is a statement
+ok   J3 the batch CONTINUES past a refused row
+ok   J4 and the good row landed
+
+== §21 K-O — CONCURRENCY, CONSERVATION, REPLAY ==
+ok   K  70 then 50 against 100 — the second is refused and the balance is intact
+ok   K1 over-reservation is unreachable: neither bucket went negative and reserved never exceeded the pool
+ok   L  reserve -> release -> reserve conserves the pool
+ok   L1 available + reserved is still the pool
+ok   M  reserve -> dispatch: available is decremented ONCE, at the reserve
+ok   N  a repeated release is a NO-OP, not a second give-back
+ok   O  a repeated dispatch consume is a NO-OP
+ok   O1 and a replayed ACQUIRE applies nothing — idempotency from the ledger, no new column
+
+== §21 P/Q — AUTOMATION DOES NOT RESERVE ==
+ok   P  the recommendation generator calls NO reservation acquire
+ok   Q  the ONLY files that call the overseas acquire are its owner and the shipment execution path
+ok   Q1 no scheduler or trigger owner is among them
+
+== §21 R-T + §11 — SOURCE ROUTING ==
+ok   R  a factory warehouse still routes to FACTORY
+ok   S  a 3PL warehouse routes to OVERSEAS
+ok   R1 an unclassifiable warehouse keeps today's behaviour rather than becoming overseas
+ok   R2 FACTORY availability is DERIVED — 500 current - 100 reserved
+ok   S1 OVERSEAS availability is STORED — 70, not 70 - 30
+ok   T  an overseas request larger than available is short by the STORED figure
+ok   T1 and the refusal names overseas rather than reporting "insufficient factory stock" for a 3PL
+ok   T2 the sufficiency precheck consults the ROUTED balance, not factory_stock directly
+ok   T3 and the unconditional factory read that made overseas impossible is gone
+ok   S2 the routing shim performs no availability arithmetic — it forwards
+ok   S3 it delegates to BOTH domains rather than reimplementing either
+ok   S4 a cross-domain source change is refused
+ok   S5 by comparing the two domains before any write
+
+== §14 — NO DOUBLE-ALLOCATABLE WINDOW ==
+ok   X1 the reservation is acquired BEFORE the plan exposure is released
+ok   X2 every lock release between them is a rollback-and-return, so no CONTINUING path frees the units
+ok   X3 a failed acquire rolls the whole draft back, so the plan stays exposed rather than silently freed
+ok   X4 the overseas writer journals in 21_'s entry shape
+ok   X5 and adds no second rollback that could disagree with the first about what undo means
+
+== §17 — MOVEMENT VOCABULARY ==
+ok   V1 reserve / release / dispatch use exactly the three declared types
+ok   V2 NEW_MOVEMENT_TYPES_REQUIRED = 0
+ok   V3.1 physical is carried unchanged on the reservation_acquire row
+ok   V3.2 physical is carried unchanged on the reservation_release row
+ok   V3.3 physical is carried unchanged on the shipment_out row
+ok   V4 the dispatch row records available as UNCHANGED, which is the claim §4 makes
+ok   V5 and to_stock_type = none
+
+== §8 — THE CLIENT, AND §10 THE TOKEN ==
+ok   Y1 reserved_stock is no longer built onto the payload
+ok   Y2 a blank or absent quantity is omitted rather than sent as 0
+ok   Y3 and only the keys actually present are attached
+ok   Y4 the shipped template no longer offers reserved_stock
+ok   Y5 and "Blank = 0." is gone from every column comment
+ok   Y6 replaced by what the server now actually does
+ok   Y7 while the ACCEPTED header list still tolerates an existing file that carries the column
+ok   Z1 the refusal token is registered in the canonical registry
+ok   Z2 in KM_CANONICAL_CODES — the one canonical registry, not a parallel vocabulary and not a second copy
+
+== §22 — MUTANTS ==
+ok   MUTANT CAUGHT — M1 allocatable subtracts reserved (the double subtraction)
+ok   MUTANT CAUGHT — M2 reserve does not decrement available
+ok   MUTANT CAUGHT — M3 release does not increment available
+ok   MUTANT CAUGHT — M4 dispatch decrements available AGAIN
+ok   MUTANT CAUGHT — M5 the import overwrites reserved
+ok   MUTANT CAUGHT — M6 a missing quantity becomes 0 again
+ok   MUTANT CAUGHT — M7 the S < R contradiction is CLAMPED instead of refused
+ok   MUTANT CAUGHT — M8 the row is MUTATED before the refusal returns
+ok   MUTANT CAUGHT — M9 the import copies S directly instead of S - R
+ok   MUTANT CAUGHT — M10 one refused row ABORTS the batch
+ok   MUTANT CAUGHT — M11 the negative-balance invariant is removed (over-reservation becomes reachable)
+ok   MUTANT CAUGHT — M12 the acquire is not idempotent (a replay reserves twice)
+ok   MUTANT CAUGHT — M13 a release gives back more than this owner holds
+ok   MUTANT CAUGHT — M14 the source domain resolver calls everything FACTORY
+ok   M15 anchor present
+ok   MUTANT CAUGHT — M15 the dispatch consume routes overseas lines to the factory writer
+ok   MUTANT CAUGHT — M16 the movement type vocabulary is opened up
+
+== SUMMARY ==
+
+ALLOCATABLE_OVERSEAS_RULE = wh_available_stock   DOUBLE_SUBTRACTION_REACHABLE = NO
+IMPORT_WRITES_RESERVED = NO   IMPORT_CONFLICT_SCOPE = ROW   NEW_MOVEMENT_TYPES_REQUIRED = 0
+OVER_RESERVATION_REACHABLE = NO   DOUBLE_ALLOCATABLE_WINDOW_COUNT = 0
+TEST_DATA_CLASSIFICATION = SYNTHETIC_FIXTURE   PRODUCTION_ROWS_WRITTEN = 0
+
+80 passed, 0 failed, 16 mutants (0 survived)

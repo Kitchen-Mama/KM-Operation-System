@@ -1,0 +1,6 @@
+
+§F — THE IMAGE: absent and failed are now DIFFERENT states, and both are reported
+
+§G — THE INVARIANTS THIS ROUND IS ACCOUNTABLE TO
+
+109 passed, 0 failed

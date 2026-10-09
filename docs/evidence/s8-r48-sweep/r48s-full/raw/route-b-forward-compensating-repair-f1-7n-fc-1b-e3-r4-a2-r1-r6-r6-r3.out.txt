@@ -1,0 +1,256 @@
+
+== §0 — THE HARNESS IS THE REAL THING ==
+ok   H1  the preflight runs against the real census
+ok   H2  and the fixture plus a preflight touched no cell
+ok   H3  69_ derives Route B's CURRENT key as the parcel key
+ok   H3a and blanking the last mile ALONE produces the repaired key — K4 is derived, so the repair writes no key
+ok   H3b there is no k4_group_key column in 16_ at all, which is why that is true
+
+== §1 — PREFLIGHT: THE EXACT SUCCESS, AND ITS SCHEMA ==
+ok   P1  the production state returns the ONLY success verdict
+ok   P1a with zero failed predicates
+ok   P1b and 32 passed — a count, not an empty list
+ok   P1c the counts and the list agree
+ok   P1d read_only, and three zeroes
+ok   P1e there is no ambiguous `preflight: []` field — every check is a named predicate
+ok   P2  every predicate carries { predicate, expected, observed, pass }
+ok   P2a in that order, and with no other keys
+ok   P3  predicate present: active_spreadsheet_is_production_db
+ok   P3  predicate present: target_header_exists_exactly_once
+ok   P3  predicate present: target_line_exists_exactly_once
+ok   P3  predicate present: header_and_line_ids_match_one_row
+ok   P3  predicate present: route_b_draft_version_is_2
+ok   P3  predicate present: route_b_last_mile_is_parcel
+ok   P3  predicate present: route_b_k4_is_the_parcel_key
+ok   P3  predicate present: route_b_updated_at_matches_incident_after
+ok   P3  predicate present: route_b_line_updated_at_matches_incident_after
+ok   P3  predicate present: route_b_quantity_unchanged
+ok   P3  predicate present: route_b_shipping_method_unchanged
+ok   P3  predicate present: route_b_source_warehouse_id_unchanged
+ok   P3  predicate present: route_b_destination_kind_unchanged
+ok   P3  predicate present: route_b_destination_id_unchanged
+ok   P3  predicate present: route_b_destination_marketplace_unchanged
+ok   P3  predicate present: route_b_status_unchanged
+ok   P3  predicate present: route_b_generation_type_unchanged
+ok   P3  predicate present: route_b_ownership_unchanged
+ok   P3  predicate present: route_b_expected_arrival_blank
+ok   P3  predicate present: route_a_present_exactly_once
+ok   P3  predicate present: route_a_last_mile_delivery_matches_authorized_after
+ok   P3  predicate present: route_a_draft_version_matches_authorized_after
+ok   P3  predicate present: route_a_k4_group_key_matches_authorized_after
+ok   P3  predicate present: route_a_expected_arrival_matches_authorized_after
+ok   P3  predicate present: route_a_updated_at_matches_authorized_after
+ok   P3  predicate present: route_a_line_updated_at_matches_authorized_after
+ok   P3  predicate present: header_count_is_2
+ok   P3  predicate present: line_count_is_2
+ok   P3  predicate present: no_conflicting_target_for_the_repaired_identity
+ok   P3  predicate present: writer_not_constructed
+ok   P3  predicate present: db_writes_is_zero
+ok   P3  predicate present: writer_calls_is_zero
+ok   P4  and the row is NOT already compensated
+
+== §2 — EVERY PREDICATE FAILS INDEPENDENTLY ==
+ok   F1  the active book is not production — STOP on [active_spreadsheet_is_production_db]
+ok   F1  the active book is not production :: and zero cells were touched
+ok   F2  Route B version already moved — STOP on [route_b_draft_version_is_2]
+ok   F2  Route B version already moved :: and zero cells were touched
+ok   F3  Route B last mile is not parcel — STOP on [route_b_last_mile_is_parcel, route_b_k4_is_the_parcel_key]
+ok   F3  Route B last mile is not parcel :: and zero cells were touched
+ok   F4  Route B K4 is not the parcel key — STOP on [route_b_k4_is_the_parcel_key, route_b_shipping_method_unchanged]
+ok   F4  Route B K4 is not the parcel key :: and zero cells were touched
+ok   F5  Route B updated_at moved since the incident — STOP on [route_b_updated_at_matches_incident_after]
+ok   F5  Route B updated_at moved since the incident :: and zero cells were touched
+ok   F6  Route B line_updated_at moved since the incident — STOP on [route_b_line_updated_at_matches_incident_after]
+ok   F6  Route B line_updated_at moved since the incident :: and zero cells were touched
+ok   F7  Route B quantity drifted — STOP on [route_b_quantity_unchanged]
+ok   F7  Route B quantity drifted :: and zero cells were touched
+ok   F8  Route B method drifted — STOP on [route_b_k4_is_the_parcel_key, route_b_shipping_method_unchanged]
+ok   F8  Route B method drifted :: and zero cells were touched
+ok   F9  Route B source drifted — STOP on [route_b_k4_is_the_parcel_key, route_b_source_warehouse_id_unchanged]
+ok   F9  Route B source drifted :: and zero cells were touched
+ok   F10 Route B destination drifted — STOP on [route_b_k4_is_the_parcel_key, route_b_destination_id_unchanged]
+ok   F10 Route B destination drifted :: and zero cells were touched
+ok   F11 Route B became a marketplace route — STOP on [route_b_k4_is_the_parcel_key, route_b_destination_kind_unchanged, route_b_destination_marketplace_unchanged]
+ok   F11 Route B became a marketplace route :: and zero cells were touched
+ok   F12 Route B status drifted — STOP on [route_b_status_unchanged]
+ok   F12 Route B status drifted :: and zero cells were touched
+ok   F13 Route B generation_type drifted — STOP on [route_b_generation_type_unchanged]
+ok   F13 Route B generation_type drifted :: and zero cells were touched
+ok   F14 Route B became AI-owned — STOP on [route_b_ownership_unchanged]
+ok   F14 Route B became AI-owned :: and zero cells were touched
+ok   F15 Route B gained an ETA — STOP on [route_b_expected_arrival_blank]
+ok   F15 Route B gained an ETA :: and zero cells were touched
+ok   F16 Route A last mile drifted — STOP on [route_a_last_mile_delivery_matches_authorized_after, route_a_k4_group_key_matches_authorized_after]
+ok   F16 Route A last mile drifted :: and zero cells were touched
+ok   F17 Route A version drifted — STOP on [route_a_draft_version_matches_authorized_after]
+ok   F17 Route A version drifted :: and zero cells were touched
+ok   F18 Route A timestamp drifted — STOP on [route_a_updated_at_matches_authorized_after]
+ok   F18 Route A timestamp drifted :: and zero cells were touched
+ok   F19 Route A line timestamp drifted — STOP on [route_a_line_updated_at_matches_authorized_after]
+ok   F19 Route A line timestamp drifted :: and zero cells were touched
+ok   F20 the target is missing — STOP on [target_header_exists_exactly_once, target_line_exists_exactly_once, header_and_line_ids_match_one_row, route_b_draft_version_is_2, route_b_last_mile_is_parcel, route_b_k4_is_the_parcel_key, route_b_updated_at_matches_incident_after, route_b_line_updated_at_matches_incident_after, route_b_quantity_unchanged, route_b_shipping_method_unchanged, route_b_source_warehouse_id_unchanged, route_b_destination_kind_unchanged, route_b_destination_id_unchanged, route_b_destination_marketplace_unchanged, route_b_status_unchanged, route_b_generation_type_unchanged, route_b_ownership_unchanged, route_b_expected_arrival_blank, header_count_is_2, line_count_is_2]
+ok   F20 the target is missing :: and zero cells were touched
+ok   F21 a duplicate target header — STOP on [target_header_exists_exactly_once, target_line_exists_exactly_once, header_and_line_ids_match_one_row, route_b_draft_version_is_2, route_b_last_mile_is_parcel, route_b_k4_is_the_parcel_key, route_b_updated_at_matches_incident_after, route_b_line_updated_at_matches_incident_after, route_b_quantity_unchanged, route_b_shipping_method_unchanged, route_b_source_warehouse_id_unchanged, route_b_destination_kind_unchanged, route_b_destination_id_unchanged, route_b_destination_marketplace_unchanged, route_b_status_unchanged, route_b_generation_type_unchanged, route_b_ownership_unchanged, route_b_expected_arrival_blank, line_count_is_2]
+ok   F21 a duplicate target header :: and zero cells were touched
+ok   F22 the plan gained a row — STOP on [header_count_is_2, line_count_is_2]
+ok   F22 the plan gained a row :: and zero cells were touched
+ok   F23 another header already holds the repaired identity — STOP on [header_count_is_2, line_count_is_2, no_conflicting_target_for_the_repaired_identity]
+ok   F23 another header already holds the repaired identity :: and zero cells were touched
+
+== §3 — THE COMPENSATION: ONE WRITE, ONE ROW, ONE COLUMN ==
+ok   X1  the writer entry point runs
+ok   X1a and reports the compensation written
+ok   X1b having re-run the preflight itself first
+ok   X2  EXACTLY ONE writer call
+ok   X2a counted from outside the census, not from its own report
+ok   X2b and it says it executed
+ok   X3  intent UPDATE_EXISTING_ROUTE
+ok   X3a addressed at Route B's header
+ok   X3b exactly ONE line
+ok   X3c which is Route B's line
+ok   X3d guarded by expected_draft_version 2
+ok   X3e carried at the body level too, as the client does
+ok   X3f the last mile is sent BLANK
+ok   X3g NO create_idempotency_key — an UPDATE mints nothing
+ok   X3h nor on the header
+ok   X4  draft_version is NOT set by hand
+ok   X4a nor is any K4 key — it is derived
+ok   X4b nor a timestamp — the writer owns those
+ok   X4c and expected_arrival is ABSENT, which is what keeps "do not change the ETA" true rather than intended
+ok   X4d the line carries the three fields a manual line must have, and nothing else
+ok   X5  echoed unchanged: company
+ok   X5  echoed unchanged: country
+ok   X5  echoed unchanged: marketplace
+ok   X5  echoed unchanged: status
+ok   X5  echoed unchanged: recommended_source_warehouse_id
+ok   X5  echoed unchanged: recommended_destination_warehouse_id
+ok   X5  echoed unchanged: recommended_shipping_method
+ok   X5  echoed unchanged: destination_marketplace
+ok   X6  Route B's last mile is BLANK in the sheet
+ok   X6a the version advanced 2 -> 3, by the writer's own +1
+ok   X6b and the derived K4 is the blank-last-mile key
+ok   X6c expected_arrival is still blank
+ok   X6d the quantity is untouched
+ok   X7  the header moved on exactly four columns: the one restored, the version, and the two audit fields
+ok   X7a and the LINE moved only its updated_at — no business field was rewritten
+ok   X7b updated_by names the REPAIR, so the row says who did this rather than blaming the page
+ok   X8  Route A's header is byte-identical, timestamps included
+ok   X8a and so is Route A's line
+ok   X9  still two headers
+ok   X9a still two lines
+ok   X9b with the same two header ids
+ok   X9c and the same two line ids — nothing was recreated
+ok   X9d no duplicate header row
+ok   X9e no duplicate line row
+ok   X10 the readback confirms the compensation
+ok   X10a with zero failed predicates
+ok   X10b and 30 passed
+ok   X10c and the readback itself is read-only
+ok   X10d and it warns that the SCREEN may still show parcel, because the lane still has one eligible last mile
+ok   X10e running it again changes no cell
+
+== §4 — IDEMPOTENCY: A SECOND EXECUTION WRITES NOTHING ==
+ok   I1  a second execution returns ALREADY_COMPENSATED
+ok   I1a with ZERO writer calls
+ok   I1b and it did not execute
+ok   I1c the writer has still been called exactly once in this world's whole life
+ok   I2  and not one further cell was touched
+ok   I2a the rows are byte-identical to after the first repair
+ok   I3  and it sends the operator to the readback, never back to the writer
+ok   I4  ALREADY_COMPENSATED is SEPARATELY RECOGNISABLE — not a success and not a refusal
+ok   I5  the preflight flags it too
+ok   I5a while still refusing, because the row is not the one the repair was designed for
+ok   I5b and its reason says so in words, so a STOP here is not mistaken for damage
+ok   I6  a blank last mile at version 2 is NEITHER state, and it STOPS
+ok   I6a with zero writer calls
+ok   I6b and zero cells touched
+
+== §5 — THE WRITER FAILS, AND THE TOOL DOES NOT RETRY ==
+ok   E1  an exception from the writer is ACK_UNKNOWN, never "failed"
+ok   E1a the call happened once
+ok   E1b and was NOT retried
+ok   E1c this particular exception committed nothing, which the tool cannot know
+ok   E1d so it does not claim to have executed
+ok   E1e and the operator is sent to the readback
+ok   E2  a lost acknowledgement is ACK_UNKNOWN
+ok   E2a one call, not retried
+ok   E2b and the commit DID land — which is exactly why a retry would have been a second write
+ok   E2c at version 3
+ok   E3  the readback proves the lost write committed
+ok   E3a and a second attempt after a lost ack writes nothing
+ok   E3b still one call in total
+ok   E4  a world that is ready reports ready
+ok   E4a and once the version moves underneath it, the INTERNAL re-run stops it
+ok   E4b before any writer call
+ok   E4c with zero cells touched
+ok   E4e naming the version predicate that failed
+ok   E5  a lock failure still counts as one call
+ok   E5a and wrote nothing
+ok   E5b classified as ACK_UNKNOWN — never as success
+
+== §6 — THE READBACK REFUSES WHAT IT SHOULD ==
+ok   B1  the repair has not happened yet — STOP on [route_b_last_mile_is_blank, route_b_draft_version_is_exactly_3, route_b_k4_is_the_blank_last_mile_key]
+ok   B1  the repair has not happened yet :: and the readback wrote nothing
+ok   B2  blank but still at version 2 — STOP on [route_b_draft_version_is_exactly_3, route_b_updated_at_advanced_past_the_incident, route_b_line_updated_at_advanced_past_the_incident]
+ok   B2  blank but still at version 2 :: and the readback wrote nothing
+ok   B3  version 3 but the timestamp never moved — STOP on [route_b_updated_at_advanced_past_the_incident]
+ok   B3  version 3 but the timestamp never moved :: and the readback wrote nothing
+ok   B4  Route A moved during the repair — STOP on [route_a_updated_at_unchanged]
+ok   B4  Route A moved during the repair :: and the readback wrote nothing
+ok   B5  Route B lost a business field — STOP on [route_b_quantity_unchanged]
+ok   B5  Route B lost a business field :: and the readback wrote nothing
+ok   B6  an ETA appeared — STOP on [route_b_expected_arrival_still_blank]
+ok   B6  an ETA appeared :: and the readback wrote nothing
+ok   B7  a third row joined the plan — STOP on [header_count_still_2, line_count_still_2]
+ok   B7  a third row joined the plan :: and the readback wrote nothing
+
+== §7 — NOTHING ELSE IN THE BOOK IS TOUCHED ==
+ok   O1  the repair runs
+ok   O2  and carrier_rate_cards and shipping_plans are byte-identical
+ok   O2a not one write primitive reached another table
+
+== §8 — THE SOURCE CONTRACT ==
+ok   S1  the PREFLIGHT cannot setValue
+ok   S1a the READBACK cannot setValue
+ok   S1  the PREFLIGHT cannot appendRow
+ok   S1a the READBACK cannot appendRow
+ok   S1  the PREFLIGHT cannot deleteRow
+ok   S1a the READBACK cannot deleteRow
+ok   S1  the PREFLIGHT cannot clearContent
+ok   S1a the READBACK cannot clearContent
+ok   S1  the PREFLIGHT cannot handleUpsert
+ok   S1a the READBACK cannot handleUpsert
+ok   S1  the PREFLIGHT cannot sadAtomicUpsertCore_
+ok   S1a the READBACK cannot sadAtomicUpsertCore_
+ok   S2  the whole file contains exactly ONE call to the atomic writer
+ok   S2a and it is inside EXECUTE_ONCE
+ok   S3  even the writer entry point cannot deleteRow directly
+ok   S3  even the writer entry point cannot clearContent directly
+ok   S3  even the writer entry point cannot setValue( directly
+ok   S4  there is no loop after the writer call — a retry cannot be reached by construction
+ok   S5  and it re-runs the PREFLIGHT ITSELF, not a copy of its rules
+ok   S6  the call counter is set BEFORE the call, so a throw cannot leave it reading zero
+
+== §9 — MUTANTS ==
+ok   N1  the internal preflight re-run removed, so a stale verdict authorises the write (caught)
+ok   N2  the readiness gate inverted, so a STOP still writes (caught)
+ok   N3  the ALREADY_COMPENSATED check removed, so a repaired row is written a second time (caught)
+ok   N4  the version guard dropped from the payload, so a raced row is overwritten (caught)
+ok   N5  a create_idempotency_key added, turning an UPDATE into something that could mint (caught)
+ok   N6  the ETA sent along, so a repair rewrites a field it was told not to touch (caught)
+ok   N7  the active-book predicate removed, so the preflight validates one database and the write lands in another (caught)
+ok   N8  the readback accepting a timestamp that never moved (caught)
+ok   N9  the readback no longer checking Route A (caught)
+ok   N10 a predicate that reports pass without being counted (caught)
+
+== DEPLOYMENT ==
+ok   D1  the diagnostic declares R6-R6-R3 or a later round (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   D1a and the ledger still records the round this suite belongs to
+ok   D1b and whatever it declares is a well-formed stamp
+ok   D2  R6-R6-R3 introduced NO cache token — it changed no frontend file, and reused the one R6-R6-R2 published
+ok   D2a and the token it reused is still in the ledger
+ok   D3  16_ is untouched: the repair uses the shipped writer exactly as it is
+ok   D3a and so is the router — nothing new is reachable over HTTP
+ok   D4  the frozen capture still names the build it was captured for
+
+passed 232  failed 0  |  mutants caught 10  survived 0

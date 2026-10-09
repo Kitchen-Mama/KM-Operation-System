@@ -1,0 +1,13 @@
+
+== A. root-cause anchor — the GLOBAL .btn-secondary override is untouched (no global refactor) ==
+
+== B. Factory Inventory — scoped green parity to the blue .btn token geometry ==
+
+== C. Overseas Inventory — scoped green parity to the blue .btn token geometry ==
+
+== D. no forbidden positioning hacks in the new scoped blocks ==
+
+== E. actions consolidated into the neutral More Options dropdown (no standalone colored buttons) ==
+
+----------------------------------------
+INVENTORY GREEN/BLUE BUTTON PARITY (UI-HOTFIX): 26 passed, 0 failed

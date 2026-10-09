@@ -1,0 +1,25 @@
+
+== 1. coercion model: a General-format cell coerces "2026-08" into a Date (the incident mechanism) ==
+
+== 2-7. rpoKeyedDeltaWrite_ (flag=true): id/cycle text-formatted, roundtrip-verified, other cols + tables untouched ==
+
+== 4. existing-row UPDATE also retains a string cycle (text-format applies to updates, not just appends) ==
+
+== 13. flag=false (rollback) — byte-identical bare setValues; NO text-format; legacy path unchanged ==
+
+== 8-9. rpoFlatLockedApply_ — a committed row whose readback fails → WRITE_COMMITTED_READBACK_FAILED ==
+
+== 9. a committed-but-unverified write is NOT blindly retried as CREATE (summarizer surfaces reconciliation) ==
+
+== 10-11. deterministic-id retry REUSES the active row → UPDATE not append → no duplicate natural key ==
+
+== 12. a malformed/blank cycle written to a V2 row fails the roundtrip closed (never silently accepted) ==
+
+== D2 REPRODUCE + FIX — recGenSummarizeDraftResult_ flat-shape classification ==
+
+== SOURCE wiring — the fix lives in the standalone .gs seams (no core/bundle change) ==
+
+== B. READ-ONLY diagnostic TEMP_R5C_AUDIT_DRAFT_WRITE_INCIDENT — offenders, checksum, zero writes ==
+
+----------------------------------------
+R5C V2 WRITE TEXT-FORMAT + TRUTHFUL RESULT (F1-7N-FA-3C-R5C): 52 passed, 0 failed

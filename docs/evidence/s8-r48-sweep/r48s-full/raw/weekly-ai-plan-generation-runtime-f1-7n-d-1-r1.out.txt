@@ -1,0 +1,19 @@
+
+== A valid generation -> success COMPLETED + bounded DTO ==
+
+== B write path is C1 only -> plan targets shipping-allocation draft tables, no procurement ==
+
+== C multi-source summary (Overseas 30 -> CN 30 -> TW 40) ==
+
+== D carton FLOOR + unresolved residual surfaced in DTO ==
+
+== E–G fail-closed: NO persistence on bad input ==
+
+== H active-draft conflict surfaced (BLOCKED_CONFLICT), success false ==
+
+== I deterministic + single-owner surface ==
+
+== J no Weekly->procurement / reservation leakage in the result DTO ==
+
+----------------------------------------
+WEEKLY AI PLAN GENERATION RUNTIME (F1-7N-D-1): 29 passed, 0 failed

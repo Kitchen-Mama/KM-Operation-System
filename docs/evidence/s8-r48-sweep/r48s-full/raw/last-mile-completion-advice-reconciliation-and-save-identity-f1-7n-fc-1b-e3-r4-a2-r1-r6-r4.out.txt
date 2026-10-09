@@ -1,0 +1,177 @@
+
+== §0 — invariants this round must not move ==
+ok   A1  the AI Plan DB generation flag is still declared false
+ok   A2  the activation allowlist still holds exactly one entry
+ok   A3  and that entry is a complete four-axis scope with no wildcard
+ok   A4  R6-R4 is a registered owner stamp
+ok   A5  no index.html asset is left behind on an older app token
+ok   A6  R6-R4 did not touch 60_ — it proved no server defect, so it moved that stamp not at all
+ok   A7  index.html serves the CURRENT method-registry token
+ok   A7a and it moved, because resolve() changed this round
+ok   A7b — verified against the previous revision, not asserted
+
+== §2 — the option identity, measured before the design is chosen ==
+ok   B1  a priced lane still takes its METHOD SET from the price list
+ok   B1a and an unpriced lane still falls back to the transit authority
+ok   B2  but the LAST MILE comes from the transit authority on BOTH branches — it is a property of the lane
+ok   B3  the priced option now knows both last miles
+ok   B3a and the two branches answer identically
+ok   B4  a method running exactly one carries it, ambiguity false
+ok   B4a — so no question is put to the operator
+ok   B5  an option VALUE is the shipping_method token — never a compound of method and last mile
+ok   B5a and 69_ proves why: the two are separate axes of the K4 route identity
+ok   B6  BEFORE: on a priced lane the option carried NO last-mile knowledge at all
+ok   B6a BEFORE: while the unpriced branch did — one question, two answers, decided by which table replied
+ok   B7  a last mile only the PRICE LIST names is not offered — it could not produce an arrival
+
+== §3 — one service identity, and the label is never parsed ==
+ok   C1  air+parcel, sea+parcel, sea+truck, sea_express+parcel and sea_express+truck stay five
+ok   C1a each with its own stable profile key
+ok   C2  sea selects its own two profiles
+ok   C2a and never absorbs sea_express
+ok   C2b exact token first — a canonical neighbour is not collected while the token itself has rows
+ok   C3  the last-mile resolver consults no display-label translation table
+ok   C3a and no destination is inferred from a marketplace word
+ok   C3b identity is decided by the ONE shared service test
+ok   C4  and the arrival selects its profiles through the REGISTRY — the same owner that built the option
+
+== §2/§3 — the control, run against the shipped page ==
+ok   D1  PRICED lane: the arrival asks for a last mile
+ok   D2  PRICED lane: and the cell renders an ACTIONABLE control naming both candidates
+ok   D2a PRICED lane: labelled, and collected under its own field name
+ok   D3  PRICED lane: a method with one last mile carries it without asking anyone
+ok   D3a PRICED lane: and SHOWS it — a K4 identity axis is no longer invisible
+ok   D1  UNPRICED lane: the arrival asks for a last mile
+ok   D2  UNPRICED lane: and the cell renders an ACTIONABLE control naming both candidates
+ok   D2a UNPRICED lane: labelled, and collected under its own field name
+ok   D3  UNPRICED lane: a method with one last mile carries it without asking anyone
+ok   D3a UNPRICED lane: and SHOWS it — a K4 identity axis is no longer invisible
+ok   D4  a refusal whose option list is EMPTY still produces a control from the refusal's own candidates
+ok   D4a because the function that WRITES the sentence repaints the cell on the same pass
+ok   D4b — after the sentence is written, from the same eta object
+ok   D5  changing the Method drops a last mile the new method does not run
+ok   D5a and says so, rather than silently
+ok   D5b while a still-eligible choice survives a repaint untouched
+ok   D6  a lane that knows NO profile keeps the persisted value verbatim — a thin table is not a data change
+ok   D6a offering nothing it cannot stand behind
+ok   D7  a US->US lane offers only what runs US->US — a From change invalidates the CN service entirely
+ok   D7a and the CN service produces no arrival on that lane
+
+== §3 — arrivals: conservative, fail-closed, and independent of price ==
+ok   E1  marketplace destination resolves, on the SLOWEST max across carriers that run it (26 vs 31 -> 31)
+ok   E1a and declares its basis
+ok   E2  warehouse destination resolves on its own conservative max
+ok   E2a and the two get DIFFERENT dates — one is not answering for the other
+ok   E3  the SAME method on a different last mile is a different transit time
+ok   E3a which is exactly why the choice cannot be made for the operator
+ok   E4  a blank max_days FAILS CLOSED — an absent number is not a zero-day transit
+ok   E5  with zero rate cards the price list names nothing
+ok   E5a and the arrival is unaffected — a rate card prices a lane, it does not time one
+ok   E5b stated on the answer rather than left to be inferred
+ok   E6  the 7-day buffer is excluded — the displayed days ARE the rounded max, with nothing added
+
+== §5 — 920 / 520 / 400, and where each number comes from ==
+ok   F1  920 recommended, 520 currently planned, 400 not yet in a route
+ok   F1a over the two saved routes
+ok   F2  and the number is named for what it is — the standing gap read, not an AI plan
+ok   F3  all three numbers are RENDERED — this is what the live screen was missing
+ok   F3a labelled "Recommended", because no AI Plan produced it
+ok   F3b with its basis recorded on the element rather than printed as prose
+ok   F3b1 and the state of that owner alongside it, so PENDING can never be read as zero
+ok   F4  BEFORE: the recommendation read a map only the AI Plan button fills, so it was null
+ok   F4a BEFORE: and the whole strip rendered as an empty string
+ok   F5  an AI Plan recommendation still takes precedence
+ok   F5a and the answer is still identifiable as the AI's, on the element rather than in prose
+ok   F5b while the standing-gap answer is not — the two never collapse into one claim
+ok   F6  a PENDING read is not a recommendation of 0 — no number is invented
+ok   F6a and the strip shows an em dash with the reason on hover, never a fabricated figure
+ok   F6a1 and 0 appears nowhere — PENDING is not a recommendation of nothing
+ok   F7  the existing plan's origin is read from the ROWS themselves
+ok   F7a the advice's origin from the advice
+ok   F7b and they are NOT the same supply
+ok   F8  so the strip still warns that the two numbers describe different stock
+ok   F8b and the detail names each side's own supply, where an operator who wants it can reach it
+ok   F8a and it makes no claim about application at all — there is nothing left to deny
+ok   F8b the 400 is never presented as another shipment from the CN factory
+
+== §4/§7 — the save-target freeze, replaying the write path's own resolver ==
+ok   G0  the R6-R4 entry point runs
+ok   G0a and reports which runner produced the answer
+ok   G0b as a WRAPPER — the authority is not duplicated
+ok   G1  four headers count toward this STATION's current plan
+ok   G1a of which two carry a line for this SKU
+ok   G1b and two carry none — other SKUs in the same station
+ok   G1c so the screen shows exactly two rows, which is the reduction §4 asks for
+ok   G1d stated as arithmetic, not as prose
+ok   G2  and names the exact lines behind them
+ok   G2a whose quantities are the 520 on screen
+ok   G2b UI and census agree
+ok   G3  each visible row resolves to exactly ONE existing active header
+ok   G3a and it is that row's OWN header — a save UPDATES, it does not reassign
+ok   G4  no visible row would MINT a new header — the existing active identity is reused
+ok   G4a nothing is ambiguous
+ok   G4b and no two visible rows share a K4 route identity
+ok   G5  so the save-target freeze is clean
+ok   G5a decided by the WRITE PATH's own resolver, replayed read-only
+ok   G6  three terminal headers carry Route A's exact route identity
+ok   G6a and the target is still the ACTIVE one — cancelled/expired/submitted cannot become an update target
+ok   G7  both rows remain MANUAL — no generation_run_id was invented for them
+ok   G7a with their quantities intact
+ok   G7b and the stored last mile reported as it is — blank is reported blank, never filled in
+ok   G8  two active headers sharing one identity is a REFUSAL — the write path does not choose between them
+ok   G8a reported as an ambiguous save target
+ok   G8b and READY_FOR_MANUAL_ROUTE_SAVE_TEST goes to NO, exactly as §7 requires
+ok   G9  zero DB writes, no writer, no Submit, no reservation, no carrier master data
+ok   G9a and the SHEET saw no mutation — measured on the stub, not asserted
+ok   G9b neither runner constructs a mutation of any kind
+ok   G10 the result stays bounded (16697 bytes)
+ok   G10a with a timing for every stage
+ok   G10b including the freeze itself
+
+== §6 — seven tracks, one definition, every row the same ==
+ok   H1  seven tracks: From · To · Qty · Method · Last Mile · Expected Arrival · Action
+ok   H2  not one of them is content-sized — R6-R3's defect does not come back with the new column
+ok   H2a Qty and Action fixed; every other track a fraction of the CONTAINER
+ok   H3  the seven minima fit the narrowest panel §6 names (538px <= 560px)
+ok   H4  at 720px every row and the header resolve ONE column layout
+ok   H4  at 620px every row and the header resolve ONE column layout
+ok   H4  at 560px every row and the header resolve ONE column layout
+ok   H5  at 720px no COLUMN HEADING is clipped
+ok   H5  at 620px no COLUMN HEADING is clipped
+ok   H5  at 560px no COLUMN HEADING is clipped
+ok   H6  a 43-character warehouse name moves no column in any other row
+ok   H7  the header does NOT re-declare the template it shares
+ok   H7a and emits exactly seven heading cells
+ok   H7b including Last Mile, between Method and Expected Arrival
+ok   H7c in that order
+ok   H8  and the ROW emits a Last Mile cell of its own
+ok   H8a in the same position the heading occupies
+ok   H9  the cell may shrink below its content, so a long value clips inside its own track
+ok   H9a and a long static value ellipsises rather than widening a column
+ok   H9b with the full value kept in its title
+ok   H10 the layout authority is still scoped to #ops-section
+
+== MUTATION PROBES — each breaks a semantic guard, none a spelling ==
+ok   M1  the priced branch going back to options that know no last mile (caught)
+ok   M2  the refusal losing its own candidate list, leaving nothing to build a control from (caught)
+ok   M3  a stale last mile surviving a method change (caught)
+ok   M4  a BLANK last mile counted as a competing claim, inventing an ambiguity (caught)
+ok   M5  the arrival adding the operational buffer to a displayed date (caught)
+ok   M6  a blank max_days becoming a zero-day transit (caught)
+ok   M7  the fastest carrier deciding a service's transit time (caught)
+ok   M8  the reconciliation going back to the map only the AI Plan button fills (caught)
+ok   M9  a PENDING read printed as a recommendation of zero (caught)
+ok   M10 the difference presented as comparable when the supply differs (caught)
+ok   M11 station-level inclusion reported as the visible-row set (caught)
+ok   M12 a terminal header becoming a legal update target (caught)
+ok   M13 the seventh column sized by its own text (caught)
+ok   M14 the header re-declaring its own template (caught)
+ok   M15 the last-mile control losing its own grid track and hiding in the Method cell again (caught)
+ok   M16 the ETA refresher forgetting to carry the row's chosen last mile (caught)
+ok   M17 the save-target freeze answering from its own copy of the rule (caught)
+ok   M18 a size bound dropping the very rows the freeze exists to report (caught)
+
+---------------------------------------------------------------
+passed 154  failed 0
+mutants caught 18 of 18
+---------------------------------------------------------------

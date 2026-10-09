@@ -1,0 +1,15 @@
+
+== A — canonical preflight quiet vs verbose: byte-identical result, differ only by the R6F2_PREFLIGHT log ==
+
+== B — gate summary emits exactly ONE primary log, no nested verbose preflight/diagnostic ==
+
+== C — compact parity evidence: one entry, exclusions surfaced, no carrier tables ==
+
+== D — quiet freeze: envelope-first ordering (source) + drift refusal (runtime) + no nested verbose ==
+
+== E — persist/validate/clear: own compact primary; read-only freeze never writes a property ==
+
+== regression — no generation call, no flag flip, quiet cores are pure log-gating ==
+
+----------------------------------------
+R6F2E1 QUIET GATE / NON-TRUNCATED: 43 passed, 0 failed

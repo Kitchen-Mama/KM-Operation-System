@@ -1,0 +1,34 @@
+
+-- A. ONE COMPONENT — the two bars are gone from markup, styling and code -----------------------------
+
+-- B. EXISTING — loaded, not warned about -------------------------------------------------------------
+
+-- C. DIRTY — a state of the same rule, not a different rule ------------------------------------------
+
+-- D. NEW — informational, and never a technical id ---------------------------------------------------
+
+-- E. DUPLICATE — destructive, with the ids as secondary detail ---------------------------------------
+
+-- F. UNAVAILABLE — a warning that cannot be mistaken for NEW -----------------------------------------
+
+-- G. INCOMPLETE — no card rather than an empty box ---------------------------------------------------
+
+-- H. BEHAVIOUR DID NOT MOVE — the seam, the key, the months, the token -------------------------------
+
+-- I. STYLING — the card is styled, bounded, and calm where it should be ------------------------------
+
+-- J. MUTANTS -----------------------------------------------------------------------------------------
+  caught: M1  the existing state is painted as a refusal
+  caught: M2  the rule id is promoted into the title
+  caught: M3  DATA_UNAVAILABLE is dressed as a new rule
+  caught: M4  the duplicate ids stop being shown
+  caught: M5  the dirty state renames the rule
+  caught: M6  the card starts deciding whether Save is enabled
+  caught: M7  the unavailable state stops blanking the months
+  caught: M8  the incomplete card stops saying which dimension is missing
+
+-- K. VACUITY -----------------------------------------------------------------------------------------
+
+====================================================================================================
+PASS  84 passed, 0 failed, 8 mutants, 0 survived, vacuity clean
+====================================================================================================

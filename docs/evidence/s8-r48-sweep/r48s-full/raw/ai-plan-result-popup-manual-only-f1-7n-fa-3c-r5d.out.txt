@@ -1,0 +1,25 @@
+
+== manual-only result authority (pure) — only a current-session manual token owns the popup ==
+
+== 8-11 + wording — render a successful manual result ==
+
+== 9. No order needed ONLY → neutral INFO styling (never error) ==
+
+== 8. technical tokens stay under a collapsed <details>, never the primary message ==
+
+== 10. Failed / committedUnverified → ERROR styling + reconciliation, assertive ==
+
+== severity — warn for needs-confirmation / blocked ==
+
+== 6-7. dismissible — close button handler + Escape close ==
+
+== 5 + 12. stale-after-reload = no popup; single keydown listener across repeated mounts ==
+
+== SOURCE — driver wiring for manual-only authority + automation suppression ==
+
+== CSS — fixed, non-disruptive, dismissible toast + info tone + responsive ==
+
+== 14-15. existing Order Planning UI + backend/API payload unchanged ==
+
+----------------------------------------
+R5D AI PLAN RESULT POPUP (F1-7N-FA-3C-R5D): 56 passed, 0 failed

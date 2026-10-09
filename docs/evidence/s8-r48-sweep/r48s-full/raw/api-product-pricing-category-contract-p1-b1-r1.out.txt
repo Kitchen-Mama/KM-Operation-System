@@ -1,0 +1,90 @@
+=== PRODUCT-STRATEGY-P1-B1-R1 — the dynamic Category contract ===
+
+ok   C1  six categories, discovered from the site — not three, and not a declared list
+ok   C1a and the count is the fixture's, so a cap of three would fail here
+ok   C1b with inactive included the site has eight
+ok   C2  the response NAMES the authority it read
+ok   C2a and the module declares it as a constant rather than spelling it inline
+ok   C2b nothing was inferred to produce it
+ok   C2c there is no category allowlist
+ok   C2d and no bound on how many categories a site may have
+ok   C3  a category sold only on another site does not appear
+ok   C3a and include_inactive does not smuggle it in either
+ok   C3b the GHOST master SKU's category — a complete sku_details row, sold nowhere — never appears
+ok   C3c and it is nowhere in the options object at all
+ok   C3d the response states that category narrows AFTER membership
+ok   C4  an active category appears
+ok   C4a a category whose only SKU is phasing_out appears BY DEFAULT — it is still on sale
+ok   C4b a category whose only SKU is inactive does NOT appear by default
+ok   C4c nor does one whose only SKU is discontinued
+ok   C4d and include_inactive=true brings both back
+ok   C5  a blank category is REPORTED as CATEGORY_SOURCE_MISSING
+ok   C5a with the number of site SKUs it affects
+ok   C5b and it says so: nothing was renamed
+ok   C5c there is no Other bucket and no empty-string option
+ok   C5d and the module never mints the word at all
+ok   C5e the SKU is still returned, carrying category null
+ok   C6  a value with surrounding whitespace is TRIMMED
+ok   C6a and the untrimmed form is not also an option
+ok   C6b two spellings that differ only by case stay TWO options — this read does not merge them
+ok   C6c and the disagreement is REPORTED for an operator to settle
+ok   C6d stating that nothing was merged
+ok   C6e naming both variants
+ok   C6f and the provenance says the same thing
+ok   C6g the normalization performed is stated exactly
+ok   C7.1 `LD8000` is not a category
+ok   C7.2 `Ladle Deluxe` is not a category
+ok   C7.3 `Ladle` is not a category
+ok   C7.4 `LADLE` is not a category
+ok   C7a series has its own named source, kept separate from category
+ok   C7b no series value leaked into the category list
+ok   C8  identical values appear exactly once
+ok   C8a and the order is a deterministic ascending sort
+ok   C8b the same request twice gives the same order
+ok   C9  a category counts every site SKU in it
+ok   C9a and counts separately how many of those can actually be plotted — CAN-2 has no price
+ok   C9b a page size of one returns one row …
+ok   C9c … and the SAME six categories — options are not built from the page
+ok   C9d with the full-universe count, not the one row on this page
+ok   C9e which is a different number from the page count, as it must be
+ok   C9f and the response states the independence
+ok   C9g in words as well
+ok   C10  a category filter narrows the rows
+ok   C10a and the applied filter is echoed back
+ok   C10b while the category menu still lists all six — a menu that collapses to your own choice is unusable
+ok   C10c which the provenance states
+ok   C10d the OTHER dimension does narrow it, so every option shown still leads to a row
+ok   C10e filtering by a category no site SKU has returns nothing — it cannot reach into sku_details
+ok   C10f and says zero, having measured it
+ok   C11  changing the site changes the category universe
+ok   C11a and nothing from the previous site survives the change
+ok   C11b with its own counts
+ok   C12  a capped source is a CAPPED_RESULT refusal
+ok   C12a analysis_permitted is false
+ok   C12b and filterOptions is NULL — a menu that looks complete over a truncated universe is a lie
+ok   C12c a refused request carries null options, not an empty list
+ok   C12d beside null counts, for the same reason
+ok   C13.1 the accessor does not spell `Electric Can Opener`
+ok   C13.2 the accessor does not spell `Manual Can Opener`
+ok   C13.3 the accessor does not spell `Silicone Spatula`
+ok   C13.4 the accessor does not spell `Food Scale`
+ok   C13.5 the accessor does not spell `Cutting Board`
+ok   C13.6 the accessor does not spell `Cooking Tongs`
+ok   C13.7 the accessor does not spell `Air Fryer`
+ok   C13a it knows the FIELD exists — it validates the response shape — without knowing any value
+ok   C13b and it never names the master table: the universe is resolved on the server
+
+ok   M1 categories are built from the whole of sku_details instead of the site universe (caught)
+ok   M2 the membership gate moves AFTER the category derivation (caught)
+ok   M3 phasing_out is dropped from the default statuses (caught)
+ok   M4 inactive is included by default (caught)
+ok   M5 a blank category falls back to series (caught)
+ok   M6 the option list is capped at the first three (caught)
+ok   M7 the options are built from the current page instead of the whole universe (caught)
+ok   M8 the category values are lower-cased, silently merging two spellings (caught)
+ok   M9 a blank category is bucketed as Other (caught)
+ok   M10 a capped source still publishes a category menu (caught)
+ok   M11 the category filter is applied case-insensitively, merging what the menu keeps apart (caught)
+ok   M12 the category menu is narrowed by the category filter itself, so it collapses (caught)
+
+passed 73  failed 0  |  mutants caught 12  survived 0

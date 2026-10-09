@@ -1,0 +1,88 @@
+
+== A. the read model — additive, and derived nowhere but KMREC ==
+ok   A1 the page reads recommendationAction from the DTO
+ok   A2 and reasonTokens
+ok   A3 FRONTEND_REDERIVES_ACTION = NO — no action is computed from evidence in the page
+ok   A4 and it does not call the derivation helpers either
+ok   A5 SECOND_RECOMMENDATION_CALCULATION_PATH = 0 — no arithmetic combines the two quantities
+ok   A6 every one of the five canonical actions has a label, and no sixth exists
+ok   A7 the display map covers exactly the canonical closed token set
+
+== B. the five actions, rendered through the real page function ==
+ok   B1 NEW_ORDER renders its label
+ok   B2 NO_ACTION renders its label
+ok   B3 MANUAL_REVIEW renders its label
+ok   B4 REALLOCATE renders its label
+ok   B5 REALLOCATE_AND_NEW_ORDER renders its label
+ok   B6 the new_order label class has a CSS rule
+ok   B6 the no_action label class has a CSS rule
+ok   B6 the manual_review label class has a CSS rule
+ok   B6 the reallocate label class has a CSS rule
+ok   B6 the reallocate_and_new_order label class has a CSS rule
+
+== C. the defect: a covered reallocation must never read as "nothing to do" ==
+ok   C1 a fully covered row still has READINESS status NO_ACTION — that is what misled the old render
+ok   C2 while its ACTION is REALLOCATE
+ok   C3 so the rendered row does NOT claim that no action is required
+ok   C4 it names the transfer instead
+ok   C5 MISSING_RECOMMENDATION_AS_NO_ACTION_COUNT = 0 for MANUAL_REVIEW
+ok   C5a and it does not borrow the idle styling
+
+== D. two quantities, never their sum ==
+ok   D1 the live allocator gives 30 in and 70 still short
+ok   D2 the reallocation quantity is shown
+ok   D3 the order quantity is shown separately
+ok   D4 COMBINED_QUANTITY_DISPLAY_COUNT = 0 — 30 + 70 appears nowhere
+ok   D5 MISSING_AS_ZERO_COUNT = 0 — no reallocation line without evidence
+ok   D5a nor on an idle row
+
+== E. reason presentation — evidence, collapsed, never a raw array ==
+ok   E1 the evidence sits behind the page's own collapsed-details idiom
+ok   E2 RAW_TOKEN_AS_PRIMARY_UI = NO
+ok   E3 each emitted token renders its human line
+ok   E4 and the canonical token stays in the markup for diagnostics
+ok   E5 CROSS_COMPANY_REALLOCATION is not resurrected in the page
+ok   E5 OWN_SUPPLY_APPLIED is not resurrected in the page
+ok   E5 OVERSEAS_SUPPLY_APPLIED is not resurrected in the page
+ok   E5 COMMITTED_SUPPLY_APPLIED is not resurrected in the page
+ok   E6 the reallocation text claims a SITE transfer, not a company one
+ok   E7 TOKEN_WITHOUT_EVIDENCE_COUNT = 0 — no display text for a token that cannot be emitted
+
+== F. unavailable fields stay unavailable ==
+ok   F1 UNSUPPORTED_DISPLAY_FIELD_COUNT = 0 — none is rendered
+ok   F2 nor under a friendly label
+
+== G. no new network request, and no per-SKU fetch ==
+ok   G1 AI Plan derives from the already-loaded materialized rows
+ok   G2 NEW_NETWORK_REQUESTS_FOR_ACTION_REASON = 0 — the render makes no request
+ok   G3 and it is synchronous, so it cannot start one indirectly
+ok   G4 TIMER_DRIFT = 0 — no timer is created per render
+ok   G5 LISTENER_DRIFT = 0 — no listener is attached per render
+
+== H. boundaries — no shipping, no write, no state change ==
+ok   H1 SHIPPING_ACTION_COUNT = 0 in the render
+ok   H2 STATE_MACHINE_CHANGED = NO / SYSTEM_RECALC_OVERWRITES_USER_EDIT = NO — the render writes no state
+ok   H3 ACTION_PERSISTED = NO — recommendation_action is in no draft column
+ok   H3 ACTION_PERSISTED = NO — recommendationAction is in no draft column
+ok   H3 ACTION_PERSISTED = NO — reason_tokens is in no draft column
+ok   H3 ACTION_PERSISTED = NO — reasonTokens is in no draft column
+
+== I. manual / scheduled parity ==
+ok   I1 MANUAL_SCHEDULED_UI_DRIFT = 0 — same evidence, same action from either path
+ok   I2 and the rendered markup is byte-identical for both
+
+== J. mutation ==
+ok   J1 the adapter drops recommendationAction (caught)
+ok   J2 reasonTokens are dropped (caught)
+ok   J3 the page re-derives the action itself (caught)
+ok   J4 the combined action displays the sum (caught)
+ok   J5 a missing recommendation renders as NO_ACTION (caught)
+ok   J6 MANUAL_REVIEW is labelled No Action (caught)
+ok   J7 a withdrawn token is given display text again (caught)
+ok   J8 the reallocation line starts claiming a cross-company transfer (caught)
+ok   J9 the render starts fetching per SKU (caught)
+ok   J10 MISSING reallocation is rendered as 0 (caught)
+
+== RESULT ==
+passed 64  failed 0  mutants killed 10/10
+S5_READ_MODEL_UI_SLICE = the five actions render from KMREC, and no quantity was combined

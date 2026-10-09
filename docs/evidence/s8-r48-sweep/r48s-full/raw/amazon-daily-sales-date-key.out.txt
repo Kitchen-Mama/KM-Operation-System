@@ -1,0 +1,42 @@
+ok   source: amazonUpsertRollingSnapshot_ extracted from 09_
+ok   source: amazonReadDestDateCoverage_ extracted from 08_
+ok   source: amazonNormalizeDate_ extracted from 10_
+
+-- A. Date normalization (shared canonical rule) --
+ok   A1 Date object → yyyy-MM-dd
+ok   A2 date string → same yyyy-MM-dd
+ok   A3 datetime string → canonical date
+ok   A4 slashed/short → padded yyyy-MM-dd
+ok   A5 invalid string → ok:false
+ok   A6 blank → empty:true
+ok   A7 deterministic repeat
+ok   A8 Date value and string value are byte-identical
+
+-- C. Rolling upsert: Date-typed existing vs string incoming --
+ok   C1 Date existing + string incoming → UPDATE not APPEND (no duplicate)
+ok   C2 sheet still has exactly 1 data row (header + 1)
+ok   C3 the existing row was updated in place (sales_units 5 → 9)
+ok   C4 string existing + string incoming → UPDATE
+ok   C5 mixed Date/string duplicates recognized as one key → collapsed (last wins)
+ok   C6 last-wins winner preserved (later row, sales_units 6)
+ok   C7 different SKU (same day) is a distinct key → appended, not merged
+ok   C8 changed source_row_hash written on update
+
+-- F. Retry / idempotency (repeated identical run) --
+ok   F1 running the SAME rolling import twice does NOT append a duplicate (idempotent)
+
+-- E. Retention / prune (canonical date compare) --
+ok   E1 Date+string inside kept, both outside pruned, boundary+blank kept (no mass deletion)
+
+-- D. Destination coverage reader (Date-typed rows counted) --
+ok   D1 Date-typed row bucketed under canonical 2026-07-30 (not a locale string)
+ok   D2 Date row + string row on same day both counted (present, not missing)
+ok   D3 two distinct SKUs → keycnt 2
+ok   D4 prior-day string row present
+ok   D5 invalid date excluded safely — no spurious coverage bucket
+ok   D6 Date + string for one key on one day → counted once (dup detected)
+
+-- B. Natural-key preservation (dimensions still distinguish) --
+ok   B1 non-date key dimension (country) still separates rows after date normalization
+
+All Amazon daily-sales date-key assertions passed (28 assertions)

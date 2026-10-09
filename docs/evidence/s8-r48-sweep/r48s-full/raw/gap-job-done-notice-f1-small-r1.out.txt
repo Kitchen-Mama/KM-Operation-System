@@ -1,0 +1,32 @@
+
+== API present ==
+
+== §7 exactly one notice per manual runId (dedupe); different runId notifies; injectable notify ==
+
+== formatDoneMessage — page supplies label; scope counts only when present on the DONE payload ==
+
+== §4/§5 transport calls done() only on terminal DONE, AFTER refresh (refresh-before-notify); non-DONE → failed/cancelled ==
+
+== Inventory wiring — MANUAL done announces once; resume/cancelled/failed stay silent ==
+
+== Order Planning wiring — the completion-notification invariant ==
+
+== cache-version bump — changed assets refetch ==
+
+== §X negative mutants — every claim above must be able to fail ==
+ok   X1 killed — a duplicate announcement is added to the completion path
+ok   X2 killed — the completion announcement is removed
+ok   X3 killed — resume-on-mount announces a completion
+ok   X4 killed — non-null runId de-duplication is broken
+ok   X5 killed — the AI Plan toast owner starts announcing with a real runId
+ok   X6 killed — a third announce call site appears outside both known paths
+ok   X7 killed — (inverted) the done handler grows 200 chars with no behaviour change — must STILL pass
+ok   X8 killed — INV: a duplicate completion announcement is added
+ok   X9 killed — INV: the completion announcement is removed
+ok   X10 killed — INV: resume-on-mount announces a completion
+ok   X11 killed — INV: the structural anchor is missing — extraction must fail closed
+ok   X12 killed — INV: the structural anchor is duplicated — extraction must refuse to guess
+ok   X13 killed — (inverted) INV: the done handler grows 200 chars with no behaviour change — must STILL pass
+
+----------------------------------------
+GAP JOB DONE NOTICE (F1-SMALL-GAP-JOB-DONE-NOTICE-R1): 38 passed, 0 failed, 13 mutants, 0 survived, vacuity clean

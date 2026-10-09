@@ -1,0 +1,17 @@
+
+== fcsWorkspaceBuild_ View-Model: raw passthrough of the FULL primary-render tables ==
+
+== non-silent cap backstop (FCS_WS_ROW_MAX_) ==
+
+== db-api adapter == legacy getters (BEFORE == AFTER via SAME normalizers + SAME filters) ==
+
+== BEFORE == AFTER: ACTUAL browser render getters — Workspace read-model vs Legacy broad-cache ==
+
+== source guards: 58_ read-only, no getOperationDb, no Target%/blend/Gap/Recommendation authority ==
+
+== activation + registration ==
+
+== page: workspace primary read, no broad DB in the read path, fail-closed, deferred Event Assist ==
+
+----------------------------------------
+API FC SUMMARY WORKSPACE (F1-7G-R1): 57 passed, 0 failed

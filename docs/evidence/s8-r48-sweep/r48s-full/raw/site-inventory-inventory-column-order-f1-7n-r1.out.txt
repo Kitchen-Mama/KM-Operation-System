@@ -1,0 +1,13 @@
+
+== 1-9 canonical presentation order (Current Stock → 3rd Party Stock → On the Way) ==
+
+== 12 THEAD leaf order == TBODY cell order (single model; no independent reorder) ==
+
+== 10/11/12 data bindings unchanged — no accidental value swap ==
+
+== 13-17 structural alignment + dynamic switch preserved (no CSS offsets, no reload) ==
+
+== deploy — inventory-replenishment.js cache token bumped ==
+
+----------------------------------------
+SITE INVENTORY INVENTORY-COLUMN-ORDER (F1-7N-R1): 21 passed, 0 failed

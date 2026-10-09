@@ -1,0 +1,26 @@
+ok   A ordinary 600/0 → remaining 600
+ok   A receiver = frozen lineage US
+ok   B partial 600/300 → remaining 300 (not 600)
+ok   C full 600/600 → remaining 0
+ok   D merged US line → 300 @ US
+ok   D merged CA line → 400 @ CA
+ok   D no MULTI leakage (per-line specific receivers)
+ok   E US fully received → 0
+ok   E CA still 400
+ok   F MULTI header + valid lineage → resolved by frozen lineage
+ok   G MULTI header + blank lineage → fail closed (no invented split)
+ok   G unresolved → null receiver (candidate MISSING_COMPANY → downstream excludes)
+ok   H present-but-dangling lineage → fail closed (no header fallback)
+ok   I lineage present but SKU mismatch → fail closed (never silently remapped)
+ok   J self-fulfilled → line-grain remaining 150; header fallback receiver; destination warehouse carried but not the receiver identity
+ok   K terminal status preserved (KMQI/INC excludes → incoming 0; not a KMSLS re-derivation)
+ok   L candidate carries the shipment ETA verbatim
+ok   M attribution deterministic — no live FC Share input exists in the resolver
+ok   N Σ attributed == Σ physical remaining (300 + 400); never exceeds physical
+ok   marketplace adapter: destType=MARKETPLACE, receiver + R4 remaining carried (KMDR must not re-derive)
+ok   marketplace adapter for UNRESOLVED → blank marketplace → KMDR identity fails closed
+ok   CARD == PLANNING: US receiver total 300 (matches core candidate)
+ok   CARD == PLANNING: CA receiver total 400 (matches core candidate)
+ok   CARD parity: present-but-unresolvable lineage fails closed (no MULTI/header fallback)
+
+24 passed, 0 failed

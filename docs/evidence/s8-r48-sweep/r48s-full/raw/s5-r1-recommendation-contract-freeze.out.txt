@@ -1,0 +1,119 @@
+
+== A. The contract document exists and is anchored to owners that exist ==
+ok   A1  the S5 contract document is in the tree
+ok   A2  owner present for KMTPP.projectTimePhasedSupply  (supply-planning-time-phased-projection.js)
+ok   A2  owner present for KMMSA.allocateMarketplaceReceiverSupply  (supply-planning-marketplace-supply-allocation.js)
+ok   A2  owner present for KMFSR.reallocatePreallocatedFactorySupply  (supply-planning-surplus-reallocation.js)
+ok   A2  owner present for KMCALC.calculateSuggestedOrderQty  (supply-planning-calculations.js)
+ok   A2  owner present for KMOOR.projectOngoingIncomingForSku  (supply-planning-ongoing-order-runtime.js)
+ok   A2  owner present for flatV2  (supply-planning-request-draft-v2.js)
+ok   A3  live source present: 43_api_v1_gap_materialization.gs
+ok   A3  live source present: 42_api_v1_recommendation_workspace.gs
+ok   A3  live source present: 13_procurement_handlers.gs
+ok   A3  live source present: 66_api_v1_request_order_send.gs
+ok   A3  live source present: 11_shipping_plan_handlers.gs
+ok   A3  live source present: 12_shipment_handlers.gs
+ok   A3  live source present: 16_shipping_allocation_handlers.gs
+ok   A3  live source present: 22_shipment_dispatch_handlers.gs
+
+== B. §2A — the two mainlines are separate decision authorities (measured) ==
+ok   B1  createShipmentFromApprovedPlan_ is defined in the shipment owner
+ok   B2  only the shipping mainline calls the shipment creator
+ok   B3  ordering file 13_procurement_handlers.gs calls no shipment creator
+ok   B3  ordering file 66_api_v1_request_order_send.gs calls no shipment creator
+ok   B4  11_shipping_plan_handlers.gs does not name table request_orders
+ok   B4  11_shipping_plan_handlers.gs does not name table purchase_orders
+ok   B4  12_shipment_handlers.gs does not name table request_orders
+ok   B4  12_shipment_handlers.gs does not name table purchase_orders
+ok   B4  16_shipping_allocation_handlers.gs does not name table request_orders
+ok   B4  16_shipping_allocation_handlers.gs does not name table purchase_orders
+ok   B4  22_shipment_dispatch_handlers.gs does not name table request_orders
+ok   B4  22_shipment_dispatch_handlers.gs does not name table purchase_orders
+ok   B5  the PO creation function body was located (not a fixed slice)
+ok   B5a PO creation writes no shipment
+
+== C. §3 — the R9A ledger contract is carried unchanged ==
+ok   C1  found the demand/pool key expressions (2)
+ok   C2  key expression 1 excludes marketplace
+ok   C2  key expression 2 excludes marketplace
+ok   C3  regular demand key = company+destinationWarehouseId+masterSku+planningCycle+demandType+sourceRef
+ok   C4  SPECIAL_EVENT demand key swaps demandType+sourceRef for eventId
+ok   C5  pool key = company+warehouseId+masterSku+poolType, no marketplace
+ok   C6  lifecycle bucket present and distinct: DELIVERED_NOT_RECEIVED
+ok   C6  lifecycle bucket present and distinct: RECEIVED_NOT_REFLECTED
+ok   C6  lifecycle bucket present and distinct: CURRENT_STOCK
+
+== D. §4 — gap input authority ==
+ok   D1  GAP_KEY = company+country+marketplace+sku
+ok   D2  order_planning_gap carries at least 24 columns (24)
+ok   D3  header present: company
+ok   D3  header present: country
+ok   D3  header present: marketplace
+ok   D3  header present: sku
+ok   D3  header present: calculation_status
+ok   D3  header present: calculation_month
+ok   D4  tier header present: t1_month
+ok   D4  tier header present: t1_gap_qty
+ok   D4  tier header present: t1_suggested_qty
+ok   D4  tier header present: t2_month
+ok   D4  tier header present: t2_gap_qty
+ok   D4  tier header present: t2_suggested_qty
+ok   D4  tier header present: t3_month
+ok   D4  tier header present: t3_gap_qty
+ok   D4  tier header present: t3_suggested_qty
+ok   D4  tier header present: t4_month
+ok   D4  tier header present: t4_gap_qty
+ok   D4  tier header present: t4_suggested_qty
+ok   D5  §41 transport column present: factory_available_qty_snapshot
+ok   D5  §41 transport column present: reallocation_in_qty_snapshot
+ok   D5  §41 transport column present: reallocation_out_qty_snapshot
+ok   D6  calculation_status vocabulary = {BLOCKED, READY}
+ok   D7  the gap materializer does not itself call the residual owner
+
+== E. §5 DC-1 — coverage is counted exactly once (the live one-line risk) ==
+ok   E1  the opening-supply composer body was located
+ok   E2  overseas and factory coverage ARE folded into opening supply
+ok   E3  missing site stock yields null opening (missing is not zero)
+ok   E4  the monthly projection builder body was located
+ok   E5  both coverage terms are pinned to literal 0 in the residual scope
+ok   E6  the residual starts from destinationGapQty
+ok   E7  the residual is floored at zero
+ok   E8  DC-1: the residual does NOT re-subtract the allocation map (coverage counted once)
+ok   E9  composition.openingSupplyQty is the opening supply passed to the projection
+ok   E10 the live monthly path does not call sumRemainingShortages (one residual owner)
+
+== F. §9 — the decision state vocabulary is the frozen flat-V2 one ==
+ok   F1  tier status = {draft, submitted, cancelled}
+ok   F2  header status = {draft, partially_submitted, submitted, cancelled}
+ok   F3  proposed state "PROPOSED" is absent from the frozen schema
+ok   F3  proposed state "OVERRIDDEN" is absent from the frozen schema
+ok   F3  proposed state "SUPERSEDED" is absent from the frozen schema
+ok   F4  decision tiers = T1..T3 (T4 is visibility-only)
+ok   F5  tier column present: tN_month
+ok   F5  tier column present: tN_recommended_qty
+ok   F5  tier column present: tN_order_qty
+ok   F5  tier column present: tN_carton_qty
+ok   F5  tier column present: tN_status
+ok   F5  tier column present: tN_user_edited
+ok   F5  tier column present: tN_note
+ok   F6  order_qty defaults to the recommendation at generation
+ok   F7  recommended_qty is never assigned from an order quantity
+
+== G. §7 — there is no recommendation ACTION enum today (the gap S5 records) ==
+ok   G1  the run-type vocabulary is present (MONTHLY_ORDER,WEEKLY_SHIPPING)
+ok   G2  no recommendation ACTION token exists in the live recommendation path
+
+== H. Mutation — nine planted defects, applied in memory (no file is written) ==
+ok   H1 the residual re-subtracts the allocation map (DC-1, the one-line risk) (caught)
+ok   H2 opening supply stops folding factory coverage (caught)
+ok   H3 marketplace enters the demand key (caught)
+ok   H4 marketplace enters the supply pool key (caught)
+ok   H5 a gap key column is dropped (caught)
+ok   H6 a tier decision status is added to the frozen vocabulary (caught)
+ok   H7 the purchase mainline gains a shipment creator call (caught)
+ok   H8 a recommendation ACTION enum appears in the live path (caught)
+ok   H9 the gap materializer stops reporting BLOCKED (caught)
+
+== RESULT ==
+passed 99  failed 0  mutants killed 9/9
+S5_CONTRACT_FACTS_STILL_TRUE = YES

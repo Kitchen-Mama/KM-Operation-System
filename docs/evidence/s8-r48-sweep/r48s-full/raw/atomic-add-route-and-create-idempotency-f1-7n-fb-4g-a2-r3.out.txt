@@ -1,0 +1,182 @@
+
+== §C — THE THREE BLOCKERS, AND THAT EACH IS NOW CLOSED ==
+ok   B1  the two-call writer still serves UPDATE
+ok   B1a the two-call writer can still create a header on its own
+ok   B1b and THAT is the orphan shape: 1 header, 0 lines — the reason the page never uses it
+ok   B1c a refused line write cannot undo the header the previous call committed
+ok   B1d §D.3 leaving the orphan zero-line header this round measured on the live table
+ok   B2  §B.2 no K2/K4 collision refusal survives in the header writer
+ok   B2a nor in the atomic writer — an explicit Add Route is always a new ticket
+ok   B3  §F.7 a CREATE on a pre-migration sheet is REFUSED, never degraded to an unprotected create
+ok   B3a zero write
+ok   B3b §F.3 and a CREATE with no create key at all is refused too
+ok   B3c zero write
+
+== §K.1/§K.3/§K.4 — ATOMIC CREATE AND UPDATE ==
+ok   K3  §K.3 Add Route succeeds through the atomic writer
+ok   K3a declared a CREATE
+ok   K3b exactly +1 header and +1 line
+ok   K3c under canonical persisted identities (SADH-K4-84774DDB)
+ok   K3d §F.3 and the create key is STORED on the header
+ok   K1  §K.1 editing destination saves
+ok   K1a destination — declared an UPDATE
+ok   K1b destination — row counts UNCHANGED
+ok   K1c destination — the SAME entity ids
+ok   K1  §K.1 editing method saves
+ok   K1a method — declared an UPDATE
+ok   K1b method — row counts UNCHANGED
+ok   K1c method — the SAME entity ids
+ok   K1  §K.1 editing qty saves
+ok   K1a qty — declared an UPDATE
+ok   K1b qty — row counts UNCHANGED
+ok   K1c qty — the SAME entity ids
+ok   K1d the quantity edit landed on that one line
+ok   K1e §F.6 and the UPDATE did not change the create key
+ok   K1f §K.1 draft_version advanced (4)
+ok   K4  §K.4 Add Route with an invalid line is refused
+ok   K4a with the line reason
+ok   K4b declaring a zero write
+ok   K4c §D.3 +0 header and +0 line — no orphan header is left behind
+ok   K2  §K.2 an UPDATE whose line fails validation is refused
+ok   K2a and BOTH tables are byte-identical — nothing was written
+
+== §F / §K.5 / §K.8 — PERSISTED CREATE IDEMPOTENCY ==
+ok   F1  the click commits
+ok   F1a one ticket
+ok   F2  §K.5 the retry SUCCEEDS (it is not an error — the work was already done)
+ok   F2a and is classified CREATE_REPLAYED
+ok   F2b reported as a reuse
+ok   F2c with zero further writes
+ok   F2d §F.4 NO second ticket
+ok   F2e the SAME allocation_draft_id is returned
+ok   F2f and the SAME line id
+ok   F2g on the create-key basis, not a fingerprint
+ok   F3  §K.8 a blank stored key is readable and blocks nothing
+ok   F3a a NEW click is classified CREATED
+ok   F3a1 and never as a replay of the keyless row beside it
+ok   F3b it creates its own ticket
+ok   F3c the lookup is one named authority
+ok   F3d and it SKIPS blanks explicitly — a blank is never a match
+
+== §H / §K.6 / §K.7 — TWO IDENTICAL ADD ROUTE CLICKS ARE TWO TICKETS ==
+ok   H1  §H.1 the first Add Route creates H_NEW_1 + L_NEW_1
+ok   H2  §H.2 the second Add Route with IDENTICAL From/To/Method also succeeds
+ok   H2a §H.8 and returns neither LEGACY_ROUTE_RECONCILIATION_REQUIRED nor a natural-key collision
+ok   H3  §H.3 H_NEW_1 !== H_NEW_2 (SADH-K4-84774DDB vs SAD-UUID1ABCDE)
+ok   H4  §H.4 L_NEW_1 !== L_NEW_2
+ok   H5  §H.5 two tickets, each with exactly one line
+ok   H5a one line under each header
+ok   H5b exactly one, never two
+ok   H5c §B.2 they share the same K4 route signature, and that is not a conflict
+ok   H6  §H.6 each retry returns its OWN original ids
+ok   H6a and no third ticket is created
+ok   H7  §H.7 editing ticket 1 is an UPDATE of ticket 1
+ok   H7a row counts unchanged
+ok   H7b ticket 2 header is byte-identical
+ok   H7c ticket 2 line is byte-identical
+ok   H7d and ticket 1 took the new quantity
+
+== §K.9 — THE ATOMIC ACTION MISSING IS A TYPED REFUSAL, NEVER A FALLBACK ==
+ok   N1  §D.2 the writer issues ONE atomic request
+ok   N1a §D.4 and there is no second line request to fall out of step with it
+ok   N2  §E.6 a deployment without the atomic action is a TYPED refusal at the call site
+ok   N2a §E.6 and there is NO two-call CREATE to fall back to
+ok   N3  the availability guard requires the atomic action before any route write is attempted
+
+== §E — THE DEPLOYMENT CONTRACT ==
+ok   E1  §E.1 the router routes the atomic action
+ok   E1a to its handler
+ok   E1b which 16_ defines
+ok   E1c §E.1 and the frontend adapter can now CALL it — it could not before
+ok   E2  §E.2 it is in the required-action manifest
+ok   E3  §E.3 SYS_REQUIRED_ACTION_LIST_VERSION_ is at or after 10 (A2-R3's registry bump is intact)
+ok   E3a §E.3/§E.4 the ACTION contract version does NOT move — no router action was added
+ok   E3b nor the transport contract version — the envelope is unchanged
+ok   E3c so the frontend minimum stays 10
+ok   E4  §E.5 the frontend probes it explicitly, so its absence is a named deployment fact
+ok   E5  §E.5 and the deployment-contract probe can PROVE it reachable before deployment
+
+== §F.9 — THE MIGRATION HELPER ==
+ok   M1  §F the column is a named tail
+ok   M1a §F.1 APPENDED at the very end — never inserted
+ok   M1b 30 required + 6 optional = 36
+ok   M1c and every pre-existing column keeps its exact index
+ok   M2  §F.9 the helper has a dry run AND a commit
+ok   M3  §F.1 it cannot deleteColumn — the symbol is absent
+ok   M3  §F.1 it cannot insertColumn — the symbol is absent
+ok   M3  §F.1 it cannot deleteRow — the symbol is absent
+ok   M3  §F.1 it cannot clearContent — the symbol is absent
+ok   M3  §F.1 it cannot setValues — the symbol is absent
+ok   M3a and writes EXACTLY ONE cell
+ok   M4  §F.2 declaring zero row inserts and zero back-fills
+ok   M5  §F.9 with exact before/after header and checksum
+ok   M6  §F.1 and it refuses a sheet whose shape would put the column anywhere else
+ok   M6a and refuses to carry its own idea of the schema
+ok   M7  the dry run states plainly that it wrote nothing
+
+== §I — THE SUBMIT TICKET BOUNDARY AUDIT (executable, and a STOP) ==
+ok   I1  §I.1 two SEPARATE tickets with the same route produce the SAME plan group key
+ok   I2  §I.1 because the key carries NO ticket identity dimension at all
+ok   I3  §I.1 and the writer emits one plan line per group line
+ok   I3a with no per-SKU consolidation — so the two tickets become 2 plan lines under 1 plan
+ok   I4  §I.4 the ticket lineage survives ONLY in source_reason, which is an EXISTING field
+ok   I4a and §I.4 is honoured: no lineage column was invented on shipping_plan_lines
+ok   I5  §I.5 the conflict is reported as a STOP with the exact grouping function named
+ok   I5a with minimal options, and no implementation guessed at
+ok   I6  §I.6 11_ declares exactly the build its deployment manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34)
+ok   I6a §I.6 and allocation_draft_id is still absent from shippingPlanRouteGroupKey_ (frozen Option A)
+ok   I6a no A2-R3 edit exists in 11_ — the boundary decision is the user's
+
+== §G — UI INTENT AND CORRELATION ==
+ok   G1  §G.1 every row carries an explicit intent state derived from its OWN persisted identity
+ok   G1a stamped into the DOM so it survives a re-render
+ok   G4  §G.4 and a stable route instance id it is correlated by
+ok   G2  §G.2 intent is NOT derived from whether a destination or method was edited
+ok   G4a the outcome names the instance, never an array index (§G.3)
+ok   G6  §G.6 the create key IS the row instance id, so a retry reuses the same key by construction
+ok   G7  §G.7 deleting an UNSAVED row issues no request — the cancel is guarded by a persisted line id
+
+== §J — THE READ-ONLY CENSUS CLASSIFIES BY EVIDENCE ==
+ok   J1  §J.3 the census has a ZERO_LINE_HEADER bucket
+ok   J1  §J.3 the census has a EXPLICIT_ADD_ROUTE bucket
+ok   J1  §J.3 the census has a EDIT_ARTEFACT_CANDIDATE bucket
+ok   J1  §J.3 the census has a UNKNOWN bucket
+ok   J2  §J.3 and uses the create key as the evidence for an explicit click
+ok   J3  §J.3 while a shared K4 shape is explicitly NOT used to classify
+ok   J4  §J.5 a candidate is not a verdict
+ok   J4a and no repair is authorised
+ok   J5  §J.2 the census cannot setValue
+ok   J5  §J.2 the census cannot appendRow
+ok   J5  §J.2 the census cannot deleteRow
+ok   J5  §J.2 the census cannot clearContent
+ok   J5a §K.11 and declares DB_WRITES=0
+
+== DEPLOYMENT ==
+ok   D1  the 16_ owner stamp is at or after this round
+ok   D2  and the health manifest expects exactly what the source declares
+ok   D3  at or after A2-R2
+ok   D4  the application cache token is at or after this round
+ok   D4a and the co-deployed set rotated TOGETHER (55 refs on r46-avgsales-20261008)
+ok   D4b and the previous token is fully retired
+ok   D4c ordered after it in the append-only series
+ok   D5  no bundled module changed, so BUNDLE_REBUILD_REQUIRED stays NO
+
+== MUTATIONS — each applied for real, each caught ==
+ok   X1  §L.1 CREATE reverts to the two-call writer (caught)
+ok   X2  §L.2 a header is kept after its line write fails (caught)
+ok   X3  §L.3 a retry mints a NEW create key instead of reusing the row's (caught)
+ok   X4  §L.4 two different Add Route clicks share one create key (caught)
+ok   X5  §L.5 an UPDATE is issued as a CREATE (caught)
+ok   X6  §L.6 an UPDATE re-mints the header id (caught)
+ok   X7  §L.7 a K4 collision blocks a legitimate second ticket (caught)
+ok   X8  §L.8 a K4 collision makes an UPDATE create a new ticket (caught)
+ok   X9  §L.9 the client falls back to the two-call writer when the atomic action is missing (caught)
+ok   X10 §L.10 the create key is accepted but never persisted (caught)
+ok   X11 §L.11 a response is bound to the wrong DOM row (caught)
+ok   X12 §L.12 Submit merges two tickets and that goes unreported (caught)
+ok   X13 §L.13 a pre-migration sheet silently accepts an unsafe CREATE (caught)
+ok   X14 §L.14 cancelling an unsaved row still issues a request (caught)
+ok   N4  §K.9 executed: no atomic adapter -> typed refusal
+ok   N4a saying nothing was written
+
+PASSED: 156 passed, 0 failed, mutations 14 caught / 0 missed

@@ -1,0 +1,57 @@
+
+================ P — ZERO WRITE, AND IT IS THE CANONICAL LIST ================
+
+ok   P1  WRITE_PRIMITIVE_COUNT = 0 — no sheet write, property, cache, drive, mail or trigger primitive
+ok   P2  the header declares PASTE / RUN / REPORT / REMOVE — it says what it is, in the file itself
+ok   P3  no formatting, sheet-sorting or sheet-state mutation either — reading is the whole behaviour
+ok   P3a the only sort is an in-memory Array sort of the sampled date list
+ok   P4  exactly ONE range read, and it is a read
+
+================ Q — IT MEASURES WITH THE SHIPPED PREDICATES, NOT WITH COPIES ================
+
+ok   Q1  the probe does not DEFINE the importer predicates — a local copy would measure this file
+ok   Q2  it calls them
+ok   Q3  and it reads the SHIPPED IMPORT_CONFIGS rather than hard-coding a source id
+ok   Q3a no spreadsheet id is literal in the probe — if the config moves, the probe follows it
+
+================ R — EXECUTED: THE REFUSAL ================
+
+ok   R1  with the importer absent the probe REFUSES — it does not quietly measure with a fallback
+ok   R1a and it reports no numbers at all, rather than numbers it cannot stand behind
+
+================ S — EXECUTED: THE COUNTING, AGAINST A FAKE SOURCE ================
+
+ok   S0  both shipped configs resolve from the deployed file
+ok   S1  with the importer present the probe runs
+ok   S2  the grouping is country + sku — marketplace is config-fixed and is NOT a grouping dimension
+ok   S2a and the probe SAYS marketplace came from fixedValues rather than leaving it implied
+ok   S2b every natural-key field resolved to a source or a fixed value
+ok   S3  the entirely blank padded row is not counted as a source row
+ok   S3a five distinct country+sku identities
+ok   S4  no identity carries two dates in the clean fixture
+ok   S4a max distinct dates = 1
+ok   S4b the two blank-date identities have ZERO date values
+ok   S5  two blank-date rows
+ok   S5a exactly one of them is otherwise importable — the blank-country row is NOT
+ok   S5b and the country count agrees
+ok   S5c both blank-date rows do carry a SKU
+ok   S6  a two-date identity is COUNTED — the gate can fire
+ok   S6a and the max is 2, not 3 — a repeated date is not distinct
+ok   S6b the other identity is clean
+ok   S6c one sample is returned
+ok   S6d naming the dates that collide
+
+================ T — IT DOES NOT DUMP THE SOURCE ================
+
+ok   T1  quantity VALUES are absent while the header NAME is reported — names are schema, values are data
+ok   T1a and no quantity reaches the collision sample
+ok   T2  header names are returned so the mapping can be checked, and nothing else from row 1
+ok   T3  the collision sample is BOUNDED in code, not by hoping the data is small
+
+================ U — THE CONTRACT THIS ROUND MAY NOT CHANGE ================
+
+ok   U1  amazon_inventory_snapshot STILL carries snapshot_date in its natural key — G1 measures, it does not change
+ok   U1a and so does amazon_inventory_health_snapshot
+ok   U2  the blank-natural-key row is still SKIPPED — the importer runtime is untouched
+
+37 passed, 0 failed

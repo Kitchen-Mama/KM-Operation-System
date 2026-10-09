@@ -1,0 +1,123 @@
+
+== A. TARGET RULE SAVE — TWO QUESTIONS, TWO ANSWERS ==
+ok   A1  modal opens invalid: Save is closed, the label still reads Save, nothing claims to be busy
+ok   A2  valid idle: Save, open, not busy
+ok   A3  validation closes it again and STILL says Save
+ok   A4  in flight: Saving… + disabled + aria-busy
+ok   A5  repeated in-flight calls still restore the ORIGINAL label
+ok   A5a and the captured idle label is the markup's, never the busy one
+ok   A6  a refusal returns the control to IDLE — the label, but not a validity it never checked
+ok   A7  the SAVE path is what sets busy
+ok   A7a and the shared settle hands the control back to idle, not to "enabled"
+ok   A7b success clears busy too — it does not assert a validity the next open will decide
+ok   A8  the VALIDATION gate drives validity only — it can no longer reach the busy label
+ok   A8a and the validity setter does not contain the word at all (the A3-R4 defect, closed at source)
+ok   A9  the single-flight latch is untouched — one logical write
+
+== B. WHERE THE ROWS ACTUALLY LIVE — the store census that explains the live "—" ==
+ok   B0  the Regular path no longer loads the forecast table — nothing read what it fetched
+ok   B0a  because the Regular Builder asks the page accessor, exactly as the Special one does
+ok   B1  the SPECIAL path does not, and still must not — the Builder's broad-cache list is unchanged
+ok   B1a  marketplaces is NOT a prerequisite — an authoritative read already owns it
+ok   B1b  but marketplace_skus IS, because no workspace read carries it
+ok   B1c  and fc_special_events is NOT one either — the events slice owns it
+ok   B1c1 and the tables the builder reads to draw itself are still on it
+ok   B2  so the Builder asks the page's read-model-first accessor, which is where the rows are
+ok   B2a and no longer the broad cache alone, which on the Special path is empty
+ok   B3  that accessor is workspace-first with the Legacy broad cache behind it — one answer, both modes
+ok   B4  and both stores run the SAME canonical normalizer, so the shape was never the difference
+ok   B5  BOTH builders declare this dependency now — the guard describes the dependency, not one path
+ok   B5a missing means "workspace mode and the read model does not hold it" — absent is unread, not empty
+ok   B6  and it is satisfied through the EXISTING slice owner — no second fetcher, no new table list
+ok   B7  a builder only opens "warm" when BOTH of its sources are present
+ok   B7a and the cold path awaits both before opening
+ok   B8  a Regular open with no forecast rows triggers this too, now that it reads the slice
+ok   B8a a Special open with no forecast rows does
+ok   B8b and stops once the read model holds them
+ok   B8c ... and so does the Regular path
+ok   B8d LEGACY mode is inert — there is no workspace there to be authoritative about
+ok   B8c Legacy mode is inert here — it has no workspace to be authoritative about
+ok   B9  and the fetch it issues is exactly one regular slice
+ok   B9a and it issues NOTHING when the read model already holds the rows
+
+== C. BASE FC OVER THE PRODUCTION READ-MODEL SHAPE (fails at 5cbdd26) ==
+ok   C0  production shape: year is a STRING on the read model
+ok   C0a and the month column is the lower-case three-letter key
+ok   C1  the operator's case resolves its real Base FC from the production read model
+ok   C2  the event month comes from the start date — November is index 10
+ok   C3  a stored ZERO stays 0 — it is not "no base forecast"
+ok   C3a and is distinct from null at the type level
+ok   C4  a SKU with no scoped row is null, never a fabricated 0
+ok   C5  the 2027 row is reachable when 2027 is asked for
+ok   C5a and a year with no row is null
+ok   C6  October reads October, not November
+ok   C6a December reads December
+ok   C7  a CA event reads the CA row
+ok   C7a and another company reads its own
+ok   C7b a marketplace with no row is null, not the Amazon figure
+ok   C8  Build resolves through the one wrapper, and `!= null` keeps a previewed 0 from being re-resolved
+ok   C8a the Regular-forecast lookup formula has exactly ONE implementation
+ok   C8b and a small, named set of callers — no fourth copy of the filter
+ok   C9  and the wrapper derives month and year the way the SAVE does — start date, then Target Year
+ok   C10  with no start date there is no event month, so null
+ok   C10a with one, the year comes from the date itself
+ok   C11  an UNREAD forecast slice answers null — which is what _fcBaseFcSourceMissing_ exists to prevent
+
+== D. POST-WRITE OWNERSHIP — what a Special save can and cannot have changed ==
+ok   D1  the census: a Special Event save reaches exactly these three tables
+ok   D1a and the Special path holds no table outside the ceiling — members may leave, none may join
+ok   D1b and it is not vacuously empty — the builder still declares what it reads on open
+ok   D2  after a Special save the three reference tables it cannot change are STILL warm
+ok   D3  and the three it can change are not — nothing stale is presented as fresh
+ok   D4  a warm Special path asks for nothing
+ok   D5  after a Special save it asks only for the tables it can change that this map still tracks
+ok   D5a fc_special_events is among the tables this map no longer tracks
+ok   D5b and the Special save reads the events SLICE back, which is what makes it current
+ok   D6  and the Regular builder, which holds none of them, still asks for nothing
+ok   D7  a TARGET RULE save still keeps the Special builder warm
+ok   D7a and the Regular builder warm — neither holds fc_target_rules
+ok   D8  a REGULAR save leaves both builders warm — it invalidates no prerequisite of either
+ok   D8a and the Special builder likewise
+ok   D8b  and the forecast the Regular Builder actually reads is refreshed by the SLICE readback
+ok   D9  the object form of the scope is read the same way as the bare string
+ok   D10  an ABSENT scope invalidates everything
+ok   D10a including every path flag
+ok   D11  and so does an UNRECOGNISED one
+ok   D12  the reconciliation is a DROP of the changed tables
+ok   D12a it fabricates no id and no version — the server's answers are read back, never guessed
+ok   D13  and the reload asks for exactly the dropped tables
+ok   D14  which are marked warm only on SUCCESS — a failed read leaves them missing
+ok   D15  and the write path reconciles from onSuccess, so a failed write patches nothing
+
+== E. R16 / A3-R2 NON-REGRESSION ==
+ok   E1  the R16 campaign-reuse branch is still there
+ok   E2  and is still classified BEFORE the version gate — a new SKU on an existing window still saves
+ok   E3  while a real header mutation is still refused
+ok   E4  the A3-R2 canonical write transport is untouched
+ok   E5  and the A3-R4 typed refusal codes are still registered
+ok   E6  the selector is still single-flight
+ok   E7  Retry still asks which slices failed
+ok   E8  and still re-requests only those — SELECTOR_RETRY_BEHAVIOR = HEALTHY_RECOVERY
+
+== F. MUTANTS ==
+ok   M1 Saving… shown whenever the control is disabled (the A3-R4 live defect) (caught)
+ok   M2 the busy label removed entirely (caught)
+ok   M3 the Builder reads the broad cache again (production-shape conversion removed) (caught)
+ok   M4 a stored zero converted to null (caught)
+ok   M5 the scope dropped during the lookup (caught)
+ok   M6 all seven prerequisites cleared after a Special write (caught)
+ok   M7 the CHANGED tables kept warm after a Special write (caught)
+ok   M8 the scope ignored during reconciliation (caught)
+ok   M9 a failed prerequisite read marked warm anyway (caught)
+ok   M10 the Special open no longer waits for its Base FC source (caught)
+ok   M11 an unknown write scope keeps the builders warm (caught)
+
+== G. VACUITY — the unfaulted tree really does behave as the mutants assume ==
+ok   G1  the real reader really does resolve both a value and a zero, so M3/M4 can fail
+ok   G2  a warm path really is warm, so M6/M7/M11 can fail
+ok   G2a and a Special save really does drop exactly the tracked tables it can change
+ok   G3  the real renderer really does stay idle when merely invalid, so M1 can fail
+
+====================================================================================================
+PASS  105 passed, 0 failed, 11 mutants, 0 survived
+====================================================================================================

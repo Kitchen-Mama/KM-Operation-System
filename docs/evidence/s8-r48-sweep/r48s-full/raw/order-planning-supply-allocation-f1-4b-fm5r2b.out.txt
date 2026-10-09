@@ -1,0 +1,15 @@
+
+== PURE opening-supply composition owner (§7) — N/O/P/A ==
+
+== PURE allocation builder over KMMSA (§3/§4/§5/§6) — B/C/D/E/F/G/H/I ==
+
+== lineage-net pool reader (§4/§5/§16) — J/K ==
+
+== END-TO-END batch → order_planning_gap (§1/§7/§10/§11/§12/§13/§14/§15) — L/M/Q/R/T/U/V/W/X/Y/Z/AD ==
+
+== UPSERT idempotency + manual-column preservation (§13/§19) — V/Z ==
+
+== Inventory strict non-impact (§18) + no page-side formula + no scheduler — AA/AB/AC ==
+
+----------------------------------------
+ORDER PLANNING SUPPLY ALLOCATION (F1-4B-FM5-R2b): 41 passed, 0 failed

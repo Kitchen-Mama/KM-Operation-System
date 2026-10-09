@@ -1,0 +1,16 @@
+
+== §A — the corrected fail-closed gate. Missing schema => the whole command refuses, zero writes. ==
+
+== §B — manual precedence, executed ==
+
+== §D — schema authority, append-only, and the order-independent write gate ==
+
+== §E — lineage classification and source-proven backfill, executed ==
+
+== §F/§G — dry run, checksum and commit safety, executed against a fake DB with a write spy ==
+
+== §I/§J — scope isolation and the untouched neighbours ==
+
+----------------------------------------
+AI PLAN LIFECYCLE MIGRATION (FB-4C ADDENDUM): 244 passed, 0 failed
+----------------------------------------

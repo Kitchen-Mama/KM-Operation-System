@@ -1,0 +1,24 @@
+ok   validCoord: 0,0 is NOT a coordinate (blank guard)
+ok   validCoord: 90,180 valid
+ok   validCoord: lat out of range
+ok   validCoord: null lat
+ok   validCoord: string lat rejected
+ok   resolver: event coord wins
+ok   resolver: event selected location
+ok   resolver: node-bound canonical location
+ok   resolver: gateway location → GATEWAY_REFERENCE
+ok   resolver: node template display is a fallback
+ok   resolver: no coord → UNRESOLVED
+ok   resolver: Location canonical outranks node display coord
+ok   classify: candidate_set
+ok   classify: dynamic_by_shipment
+ok   classify: virtual
+ok   classify: fixed_location
+ok   classify: destination placeholder → dynamic
+ok   antimeridian: CN→US path breaks (two subpaths, no cross-map line)
+ok   antimeridian: nearby leg is one continuous subpath
+ok   gateway: port type
+ok   gateway: factory exact is not a gateway
+ok   candidate pin excluded from the route polyline
+
+ALL PASS  |  passed 22  failed 0

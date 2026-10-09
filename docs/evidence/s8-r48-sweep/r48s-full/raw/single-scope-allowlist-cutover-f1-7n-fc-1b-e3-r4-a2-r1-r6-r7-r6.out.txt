@@ -1,0 +1,182 @@
+
+== A — config exactness: exactly one scope, all four axes, and the retired one is GONE ==
+ok   A0  the activation allowlist is declared in 00_config.gs
+ok   A1  it holds EXACTLY ONE entry — two would be a wider blast radius, not a narrower one
+ok   A2  and that entry is exactly ResUS / US / Amazon / SP0750-M
+ok   A2a with all four axes and no fifth key
+ok   A3  CO1100-R is no longer in the allowlist at all
+ok   A3a and it is not left commented-in inside the declaration either
+ok   A4.1 no axis is ALL
+ok   A4.2 no axis is ALL_SITES
+ok   A4.3 no axis is *
+ok   A4.4 no axis is blank
+ok   A4a company is a non-empty, untrimmed-clean string
+ok   A4a country is a non-empty, untrimmed-clean string
+ok   A4a marketplace is a non-empty, untrimmed-clean string
+ok   A4a sku is a non-empty, untrimmed-clean string
+ok   A5  INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ is declared FALSE in the repository
+ok   A5a and it is assigned exactly once — a second assignment could arm it out of view
+ok   A5b the accessor demands an exact true, so no truthy value can arm it
+
+== B — the production scope gate, EXECUTED, on the real 00_ function ==
+ok   B1  the armed scope is enabled
+ok   B2  the RETIRED scope is refused — the cutover actually closed it
+ok   B3.1 refused: another company
+ok   B3.2 refused: another country
+ok   B3.3 refused: another marketplace
+ok   B3.4 refused: another sku
+ok   B3.5 refused: a sku PREFIXED by the armed one
+ok   B3.6 refused: a sku that is a PREFIX OF the armed one
+ok   B3.7 refused: a case-folded near-match
+ok   B3.8 refused: a sku with its separator turned into a space
+ok   B3.9 refused: a company with INTERNAL whitespace
+ok   B3a padded axes are TRIMMED and still match — measured, not assumed
+ok   B3b and the trim is in the gate itself
+ok   B4.1 refused: a blank sku
+ok   B4.2 refused: a blank marketplace
+ok   B4.3 refused: a blank country
+ok   B4.4 refused: a blank company
+ok   B4.5 refused: a missing sku argument
+ok   B4.6 refused: two missing arguments
+ok   B4.7 refused: no arguments at all
+ok   B4.8 refused: ALL_SITES as the marketplace
+ok   B4.9 refused: ALL as the sku
+
+== C — the server-owned target scope set, EXECUTED on the real 61_ authority ==
+ok   C1  the armed pair resolves a target set
+ok   C1a and it is EXACTLY the one armed scope — nothing else in the pair came with it
+ok   C2  CO1100-R is NOT in the target set for the pair it used to be armed in
+ok   C3  another company resolves nothing, by name
+ok   C3a and so does another country
+ok   C3b a named marketplace INTERSECTS — it narrows and never widens
+ok   C4  ALL_SITES is refused with its own code — it is not a scope and must not become one
+ok   C5  weeklyAiPlanTargetScopes_ still RE-ASKS the gate per entry rather than trusting the list
+ok   C5a and 61_ does not redeclare the allowlist
+ok   C5b nor the flag
+ok   C5c while it does READ the flag through 00_s accessor, which is the only way it may
+
+== D — the feature flag: false in the repo, false in an executed backend, and never rewritten here ==
+ok   D1  the executed backend value is false
+ok   D1a and the accessor answers false
+ok   D2  this suite never sets the flag true, in any context
+ok   D2a and never replaces the accessor
+ok   D3  the production Generate entry point is readable
+ok   D3a it reads the flag
+ok   D3b before it returns
+ok   D3c.1 weeklyAiPlanGenerateK2_ is not reachable before the flag is read
+ok   D3c.2 weeklyAiPlanPersistenceDeps_ is not reachable before the flag is read
+ok   D3c.3 appendRow is not reachable before the flag is read
+ok   D3c.4 setValues is not reachable before the flag is read
+ok   D3d and the scope set is resolved after the flag, so a disarmed project never even asks
+
+== E — the S1 diagnostics: the armed scope is now the candidate, the retired one is not ==
+ok   E1  the activation-readiness census runs clean against the armed scope
+ok   E1a and now FINDS a candidate — which is the entire point of the cutover
+ok   E1b in the one eligible pair
+ok   E2  the armed identity was examined
+ok   E2a it is allowlisted, a candidate, and ACTIVATION READY
+ok   E2b measured 25 recommended / 0 planned / 25 residual / 25 proposed — the positive-residual shape
+ok   E2c and its class is RESIDUAL_REMAINS: a no-action would be the wrong answer here
+ok   E2d exactly one identity is activation ready
+ok   E3  the retired identity is still measured, not silently dropped
+ok   E3a it is no longer allowlisted, no longer a candidate, and NOT activation ready
+ok   E3b and the allowlist refusal is named explicitly among its reasons
+ok   E3b1 as a named condition that FAILED, rather than an inference from a missing number
+ok   E3b2 and the same condition PASSES for the armed scope
+ok   E3c while its own measurement is unchanged — retiring a scope does not rewrite what it was
+ok   E4  the proposal census runs clean
+ok   E4a and finds the pair's proposals
+ok   E4b including the armed scope
+ok   E4c it is allowlisted and would be activation-ready — while the census still authorizes nothing
+ok   E4d and no listed proposal needs an allowlist move, because the one that qualifies is already armed
+ok   E4e and the boundary condition that forbids the opposite is present and passing
+ok   E5  selected is null
+ok   E5a and the whole census is proposal_only
+ok   E6  writes 0 and writer_calls 0
+ok   E6a and the same for the readiness census
+ok   E6b measured on every sheet in the world, not reported from the absence of a call
+ok   E6c Generate, Submit, migration and the Gap Job were none of them called
+ok   E6d and nothing was modified to get the answer
+
+== F — deployment identity: one new release, and only the files that changed declare it ==
+ok   F0  this roundS OWN COMMIT is derived from 63_, so the range has both ends
+ok   F0a and 63_ at that commit declares THIS release, which is what makes it this roundS end
+ok   F1  SYS_DEPLOYMENT_RELEASE_ is this round
+ok   F1a and 63_ declares it as its own module stamp too, because 63_ changed
+ok   F1b and 00_config.gs declares it, because 00_config.gs changed
+ok   F2  the stamp is legally shaped
+ok   F2a and registered in the shared release order
+ok   F2b ordered AFTER the release it supersedes
+ok   F2c and the previous release is still registered, ahead of it — the list is append-only
+ok   F3  the deployment manifest carries a row per owner file
+ok   F3a and every one of those files exists
+ok   F3b and EVERY row expects exactly what its file declares — no stale module either way
+ok   F4  the 00_config.gs and 63_ rows both expect this round
+ok   F5.1 61_api_v1_weekly_ai_plan.gs did NOT march its stamp to this release
+ok   F5.1a while the release is at or after it
+ok   F5.2 71_api_v1_factory_stock_guard.gs did NOT march its stamp to this release
+ok   F5.2a while the release is at or after it
+ok   F5.3 11_shipping_plan_handlers.gs did NOT march its stamp to this release
+ok   F5.3a while the release is at or after it
+ok   F5.4 01_router.gs did NOT march its stamp to this release
+ok   F5.4a while the release is at or after it
+ok   F6  the executed contract reports this release
+ok   F6a stale_modules is EMPTY on a project synced from this tree
+ok   F6b absent_modules is empty
+ok   F6c mixed_deployment is false
+ok   F6d and the verdict is UNIFORM
+ok   F7  a project still on the OLD 00_config.gs is a mixed deployment
+ok   F7a and 00_config.gs is named as the stale one — which is the file carrying the allowlist
+ok   F8  the S1 census build pin is this release
+ok   F8a the activation census stamp is this release
+ok   F8b and its deployment pin is too — equal to SYS_DEPLOYMENT_RELEASE_, as the manifest suite requires
+ok   F9  the health verdict is router + DB + schema …
+ok   F9a … and a partial sync forces it false AFTER that, which is the one term a config/identity round can move
+ok   F9b and on a project synced from this tree that term is false, so ok is not forced down by this round
+ok   F9c and the frontend maps a healthy contract to DEPLOYMENT_CONTRACT_OK
+ok   F9d the four values the cutover is required to produce: stale_modules [], absent [], mixed false, UNIFORM
+
+== G — safety: nothing that holds business state changed, and no gate was weakened ==
+ok   G0  the change set is MEASURED from git, not remembered
+ok   G1  EXACTLY two production runtime files changed: the config that holds the allowlist, and the deployment identity that must move with it
+ok   G1a NO browser file changed — no cache token rotates, no frontend republish
+ok   G1b and 90_ did not change, so no bundle rebuild is required
+ok   G1c and no migration tool was added or altered — this round runs none
+ok   G2.1 16_shipping_allocation_handlers.gs is unchanged — allocation drafts / manual and AI identities
+ok   G2.2 69_api_v1_ai_plan_lifecycle.gs is unchanged — AI provenance and the supersede/expire lifecycle
+ok   G2.3 71_api_v1_factory_stock_guard.gs is unchanged — factory stock, the shared pool and the overage gate
+ok   G2.4 11_shipping_plan_handlers.gs is unchanged — shipping_plans / shipping_plan_lines and Submit
+ok   G2.5 61_api_v1_weekly_ai_plan.gs is unchanged — the recommendation, the residual and the K2 generation
+ok   G2.6 43_api_v1_gap_materialization.gs is unchanged — the inventory gap table and its run lineage
+ok   G2.7 01_router.gs is unchanged — the action registry
+ok   G3  a missing axis is still an immediate refusal — never "any"
+ok   G3a and the match still walks the list rather than short-circuiting on a single field
+ok   G3b with no case-folding and no prefix matching introduced
+ok   G3c and the gate is declared exactly once
+ok   G4  the frozen candidate evidence names the scope this round arms
+ok   G4a with residual 25, proposed 25, unclamped
+ok   G4b and it says re-measurement on the deployed project is MANDATORY, not advisory
+ok   G4c the recorded proposal is min(residual, available) — internally consistent
+ok   G5.1 this suite never calls weeklyAiPlanGenerateK2_(
+ok   G5.2 this suite never calls handleGenerateWeeklyAiPlanDraft_(
+ok   G5.3 this suite never calls sadSubmitToShippingPlansCore_(
+ok   G5.4 this suite never calls RUN_S1_MANIFEST_P(
+ok   G5.5 this suite never calls RUN_S1_MANIFEST_S(
+ok   G5.6 this suite never calls appendRow(
+ok   G5.7 this suite never calls setValues(
+
+== N — mutants ==
+ok   N1 the retired scope is kept BESIDE its replacement — two entries, not one (caught)
+ok   N2 the armed entry is written with a wildcard sku (caught)
+ok   N3 a blank axis starts meaning "any" (caught)
+ok   N4 the flag is armed in the repository (caught)
+ok   N5 the accessor accepts any truthy flag value instead of an exact true (caught)
+ok   N6 00_config.gs changes without its module stamp moving (caught)
+ok   N7 the manifest row for 00_config.gs is left behind while the file moves (caught)
+ok   N8 an unchanged module marches its stamp to the release (caught)
+ok   N9 the S1 census pin lags the release, so it refuses a correctly synced project (caught)
+ok   N10 the retired scope stays activation_ready in the readiness census (caught)
+ok   N11 the new release is not registered in the shared order, so every floor check reads -1 (caught)
+ok   N12 the activation census pin is left at the previous release (caught)
+
+passed 152  failed 0  |  mutants caught 12  survived 0

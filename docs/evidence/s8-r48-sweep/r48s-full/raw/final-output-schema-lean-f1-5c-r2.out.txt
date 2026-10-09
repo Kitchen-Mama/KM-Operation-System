@@ -1,0 +1,29 @@
+
+== §5 REMOVED: status_at_finalization (redundant; snapshot.status lifecycle retained) ==
+
+== §2 REMOVED: material / product_use (no Phase-1 document renders them) ==
+
+== FIELD-SPECIFIC HALT: renderer-consumed display facts RETAINED frozen (removal = snapshot-only reversal) ==
+
+== HALT: customs / legal frozen facts RETAINED ==
+
+== §3 HALT: shipper/seller party values RETAINED (company_legal_entities not guaranteed reconstructable) ==
+
+== §4 HALT: consignee values RETAINED (logistics_locations changes more often) ==
+
+== §8 factory / carrier: FK + frozen name retained; factory != company ==
+
+== builders no longer emit the removed fields ==
+
+== physical qty authority + multi-PO lineage unchanged ==
+
+== §6 versioning GAP is real (deterministic id + hardcoded v1 + no supersede writer) ==
+
+== §7 generated-file immutability: copy-new, never overwrite; regenerate = new lineage ==
+
+== no second engine; renderer stays snapshot-only (no live master read introduced) ==
+
+== final counts ==
+
+----------------------------------------
+FINAL OUTPUT SCHEMA LEAN R2 (F1-5C): 78 passed, 0 failed

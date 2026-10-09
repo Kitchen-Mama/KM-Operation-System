@@ -1,0 +1,17 @@
+
+== C — destination identity: concrete active warehouse / logical marketplace / WH-looking-invalid BLOCKS ==
+
+== E — manual-valid vs AI-rankable separated ==
+
+== F — multi-pool null-source is a distinct fail-closed block (never guessed) ==
+
+== D — method alias: Truck now RUNTIME-PROVEN (R6F2D) → mapped to Truck, never Courier ==
+
+== B/A — production candidate set == diagnostic KMRA candidate set for the same normalized query (parity) ==
+
+== G/H — ONE shared lineOutcomes contract + stage identities over a mixed plan ==
+
+== B — carrier TRANSPORT + adapter classifier source contracts (61_ handler cannot run in Node) ==
+
+----------------------------------------
+R6F2C ROUTE-QUERY PARITY + DESTINATION IDENTITY: 43 passed, 0 failed

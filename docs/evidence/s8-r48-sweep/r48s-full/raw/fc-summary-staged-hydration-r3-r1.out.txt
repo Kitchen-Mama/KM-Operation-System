@@ -1,0 +1,26 @@
+
+-- A  Cold mount: bootstrap plus the ACTIVE tab, and nothing else ---------------------------------
+
+-- B  Route re-entry draws from memory, before any request could settle ---------------------------
+
+-- C  Lazy tabs, and one logical request per slice however many clicks ----------------------------
+
+-- D  One slice failing does not erase another ----------------------------------------------------
+
+-- E  Late answers, and answers about the wrong question ------------------------------------------
+
+-- F  A one-row write never re-reads the workspace ------------------------------------------------
+
+-- G  The Target Rule modal: NEW only after an authoritative read ---------------------------------
+
+-- H  Retry asks for what failed, and only that ---------------------------------------------------
+
+-- I  What the source may not contain -------------------------------------------------------------
+
+-- J  Cache token ---------------------------------------------------------------------------------
+
+-- K  Mutants -------------------------------------------------------------------------------------
+    12 mutants, 0 survived
+
+================================================================
+FC-SUMMARY-R3-R1 §C STAGED HYDRATION:  98 passed, 0 failed, 12 mutants, 0 survived

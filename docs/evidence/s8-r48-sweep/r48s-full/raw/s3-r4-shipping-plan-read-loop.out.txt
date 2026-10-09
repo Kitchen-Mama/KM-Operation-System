@@ -1,0 +1,64 @@
+
+=== A — EXECUTED: one entry dispatches exactly one read ===
+  ok   A1  ONE entry dispatches ONE canonical read — the loop is closed
+  ok   A2  and ONE deployment-verdict probe, not one per cycle
+  ok   A3  the runaway cap was never reached, so this is a settled read and not a slow loop
+  ok   A4  the plans it fetched are RENDERED — the read is no longer discarded by its own successor
+  ok   A5  the read sequence advanced exactly once
+  ok   A6  a REFUSING verdict still costs exactly one read
+  ok   A7  verdict-before-read needs no repaint — the one render already carries the refusal
+  ok   A7a a LATE refusal still costs exactly one read
+  ok   A7b and repaints, so the gated buttons actually appear
+  ok   A8  the repaint uses the model already in hand — the same data, not a second fetch
+  ok   A9  an unanswered verdict changes nothing — still one read
+  ok   A10 and no speculative repaint
+
+=== B — the re-entry is gone from the source, and the page entry point still is one ===
+  ok   B1  the verdict callback is findable — the harness is reading the real thing
+  ok   B2  the verdict callback does NOT call renderShippingPlan — that call WAS the loop
+  ok   B3  it repaints the model in hand instead
+  ok   B4  and only when the verdict is a refusal, which is the only verdict that changes the view
+  ok   B5  renderShippingPlan IS still the entry point that dispatches the read — the fix did not work by quietly making the name mean something else
+  ok   B6  a failed read is still reported as a failure, with a code
+  ok   B7  and nothing inside the read function re-enters it — no self-retry anywhere on this path
+
+=== C — the renderer records what it painted ===
+  ok   C1  _spRenderReadModel_ assigns _spLastModel — the assignment section A stubbed, asserted here on the shipped source so the two halves meet
+  ok   C2  and _spLastModel is declared once, at page scope
+  ok   C3  exactly one writer — a second would mean two answers to "what is on screen"
+
+=== D — the measurement is recorded, including what it could not measure ===
+  ok   D1  the before-state is recorded as an unbounded request storm, with the count
+  ok   D2  and as a macrotask queue that never advanced past the navigation
+  ok   D3  with the observer counter at zero, which is what rules OUT observer recursion rather than assuming it
+  ok   D4  the after-state is recorded for BOTH a resolving and a rejecting transport
+  ok   D5  and the rejecting case stays bounded — one transport retry, not a storm
+  ok   D6  S3-R3's "the mount log never appears" is corrected rather than quietly dropped
+  ok   D7  §10: fourteen of fifteen SKU controls issue nothing; the one that reads is the explicit Refresh
+  ok   D8  §4: the board costs zero requests here BECAUSE the feature is gated off, and the reason is recorded rather than the zero being left to look like a measurement
+  ok   D9  every latency figure this environment cannot produce is listed as UNFILLED, not as zero
+  ok   D10 and the "this loop may be starving the other pages" explanation is labelled NOT PROVEN
+
+=== E — the diagnostic harnesses do not litter the repository ===
+  ok   E1  _s3r4-stall-bisect.js deletes its generated page in a finally — a stray file in the repo root is what the canonical sweep reports as a suite that left the tree dirty
+  ok   E2  _s3r4-stall-bisect.js launches a browser only when run directly, never on require
+  ok   E3  _s3r4-stall-bisect.js resolves the repo from __dirname — no machine-specific path
+  ok   E1  _s3r4-read-shape.js deletes its generated page in a finally — a stray file in the repo root is what the canonical sweep reports as a suite that left the tree dirty
+  ok   E2  _s3r4-read-shape.js launches a browser only when run directly, never on require
+  ok   E3  _s3r4-read-shape.js resolves the repo from __dirname — no machine-specific path
+
+=== J — MUTANTS ===
+  ok   J1 the verdict callback re-enters the page entry point — the measured 12.7-million-request loop (caught)
+  ok   J2 the callback fires on a passing verdict as well, so a healthy deployment loops (caught)
+  ok   J3 the stale-response guard on the verdict callback is removed (caught)
+  ok   J4 the renderer no longer records the model, so a refusal never reaches the screen (caught)
+  ok   J5 a failed read no longer reports a failure code (caught)
+
+  mutants caught 5
+
+====================================================================================================
+S3-R4 SHIPPING PLAN READ LOOP — passed 43  failed 0
+READS_PER_ENTRY = 1 · VERDICT_PROBES_PER_ENTRY = 1 · SELF_RE_ENTRY = 0
+TIMEOUT_AS_EMPTY = 0 · UNBOUNDED_RETRY = 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · DEPLOYMENTS=0
+====================================================================================================

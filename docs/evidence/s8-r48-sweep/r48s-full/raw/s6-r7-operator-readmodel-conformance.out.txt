@@ -1,0 +1,86 @@
+
+== A. §3 — THE THREE LABELS, EXECUTED (the defects this round fixes) ==
+ok   A1  §3 an OVERSEAS reservation is reported as Overseas stock. Until R7 every approval said "Factory stock reserved", including one that took units out of a 3PL's available bucket
+ok   A1a and a FACTORY reservation still reads exactly as it always did
+ok   A2  §3 and a receipt with NO source_domain — an older server — gets the neutral word, which is true of both domains, rather than a guess that is wrong half the time
+ok   A2a as does an empty receipt
+ok   A3  §1 and it reads source_domain off the authoritative receipt — it classifies nothing itself, so no second source-domain authority was created to fix a label
+ok   A4  §3 the dispatch modal resolves the source domain from the warehouses row
+ok   A4a through IRWarehouse — the SAME shared classifier the server's ovsWarehouseSourceDomain_ agrees with, so the modal cannot disagree with the handler about what the source is
+ok   A5  §3 and an unresolvable source answers "" rather than defaulting to a domain
+ok   A6  §3 a FACTORY dispatch still says Factory Stock is deducted — unchanged, because it is true
+ok   A7  §3 an OVERSEAS dispatch says the overseas RESERVATION is consumed, and does not mention factory stock at all. This is the sentence the operator reads on the screen where they commit
+ok   A7a and states the thing a reader would otherwise assume wrong: available is NOT deducted a second time, because those units left available when they were reserved
+ok   A8  §3 and an UNRESOLVED domain gets wording true of both — a confirmation screen is the last place to state a specific effect on a guess
+
+== B. §2 — AVAILABLE / RESERVED DISPLAY TRUTH ==
+ok   B1  §2 OVERSEAS_DOUBLE_SUBTRACTION_UI_COUNT = 0 — no surface subtracts reserved from an available figure anywhere
+ok   B2  §2 the Overseas page carries available and reserved as two INDEPENDENT server fields
+ok   B2a and the adapter maps availableStock from wh_available_stock — the stored operational bucket, which IS the allocatable quantity (R3A/R4B). 70 is shown as 70
+ok   B3  §2 and both are rendered, as their own columns — "Available 70 / Reserved 30", which is the shape §2 names as valid. Nothing labels 100 as allocatable
+
+== C. §1 — THE TWO CLIENT-SIDE DERIVATIONS, MEASURED RATHER THAN ASSERTED AWAY ==
+ok   C1  §1 the Factory page derives available = max(current - reserved, 0) at TWO sites (demo and cloud adapters)
+ok   C1a and it has to: the factory adapter publishes currentStock and reservedStock and NO available, because factory_stock stores none — availability is derived, never a column
+ok   C1b the client clamps the derived available at zero
+ok   C1b1 while 21_ returns it unclamped — the clamp is defensive, and unreachable while the reserved balance cannot exceed current, which is 21_'s own invariant
+ok   C2  §7 the receiving panel derives remaining = max(shipment_qty - shipment_received_qty, 0)
+ok   C2a which is the SAME expression the canonical owner 31_ publishes on its own answer — same rule, same two fields, so the number cannot disagree
+ok   C3  §7 RECEIPT_UI_QUANTITY_AUTHORITY_DRIFT_COUNT = 0 — the receiving surface reaches for no PO quantity, no Shipping Plan approved_qty and no S5 recommendation
+
+== D. §6/§15 — DELIVERED IS A STATUS, NOT A RECEIPT ==
+ok   D1  §6 DELIVERED_DISPLAY_IMPLIES_RECEIVED_COUNT = 0 — no delivered branch reaches an available quantity or an inventory increase
+ok   D1a the received figure comes from shipment_received_qty — the field the warehouse receipt writes, never from the lifecycle status
+ok   D2  §6 and the buckets are backend status values, so "Received" there groups a SHIPMENT lifecycle stage. The quantity question is answered separately, by the receiving panel
+
+== E. §18 — END-TO-END CONFORMANCE, DRIVEN ON THE REAL HANDLERS ==
+ok   E1  PATH B overseas available 100 / reserved 0
+ok   E2  PATH B Shipment Draft reserves 30 -> 70 / 30
+ok   E2a and the ALLOCATABLE figure an operator surface would show is 70 — not 40, and not 100
+ok   E3  PATH B dispatch consumes -> 70 / 0. available is NOT deducted twice
+ok   E3a with the R6 vocabulary on the ledger
+ok   E4  PATH E an approved plan with no Shipment holds no reservation, so cancelling it moves nothing and writes no movement row — the exposure release is the status write
+ok   E5  PATH F and when a Shipment DOES hold the units, the plan cancel is refused upstream and the pool is untouched — the Shipment owns the lifecycle
+ok   E6  PATH D receive 60 of 100 is accepted
+ok   E6a destination increases by 60
+ok   E6b remaining 40 — what the panel shows
+ok   E7  PATH D the second receipt posts the DELTA 40 and remaining becomes 0
+ok   E8  §16 a REPLAY of the same cumulative posts zero — a double-click cannot credit twice
+ok   E9  §8 and over-receipt is refused, so the UI has a typed refusal to show rather than a false success
+
+== F. §5 — PLAN CANCEL: THE UI OFFERS WHAT THE BACKEND ALLOWS ==
+ok   F0  the approved-without-shipment render branch was located
+ok   F1  §5 approved + no Shipment offers Cancel
+ok   F2  §5 FALSE_CANCEL_ACTION_COUNT = 0 — approved WITH a Shipment does not offer it
+ok   F3  §5 and the UNKNOWN refusal is a canonical code, so a Cancel the page offered in error comes back as a typed refusal rather than as prose — the page never decides eligibility itself
+
+== G. §19/§20 — THE PHASE-1 BOUNDARY, AND READ MODELS DO NOT WRITE ==
+ok   G1  §19 CROSS_MAINLINE_WRITE_COUNT = 0 — no S6 surface creates a Request Order or a PO
+ok   G2  §19 and none uses an S5 recommendation quantity as a shipping quantity
+ok   G3  §20 READ_MODEL_WRITE_COUNT = 0 — the Preview-Mode overseas pages read real data and post no inventory movement, which is what makes them safe to ship disabled
+ok   G4  §20 and no surface performs a write inside its mount path
+
+== H. §11/§12/§16 — LOADING, RETRY, AND DOUBLE-CLICK ==
+ok   H1  §11 four of the five surfaces use the shared KM.loadState vocabulary
+ok   H1a in which ERROR and EMPTY are different states — a failed read never renders as "there is no data"
+ok   H2  §11 PERMANENT_LOADING_SURFACE_COUNT/FALSE_EMPTY: the map renders a spinner while loading and returns — the empty state is unreachable before the read settles
+ok   H2a and a failed boot sets an error, PRESERVING the specific one the loader set — fail-closed, not a silent fallback to an empty universe
+ok   H3  §12 the Shipment surface exposes a Retry that calls its single read entry
+ok   H4  §16 DUPLICATE_OPERATOR_DISPATCH_COUNT = 0 — every surface guards its actions against a second click, by an in-flight flag or by disabling the control
+
+== I. §25 — MUTATIONS ==
+ok   MUTANT CAUGHT — M1 the Overseas page subtracts reserved from available (shows 40 on a 70/30 pool)
+ok   MUTANT CAUGHT — M2 the approval message calls an overseas reservation Factory stock
+ok   MUTANT CAUGHT — M3 the dispatch modal states the factory sentence for every source
+ok   MUTANT CAUGHT — M4 an unresolved source domain silently defaults to FACTORY
+ok   MUTANT CAUGHT — M5 delivered is shown as received inventory
+ok   MUTANT CAUGHT — M6 the receipt remaining is derived from the wrong authority
+ok   MUTANT CAUGHT — M7 the over-receipt refusal is replaced by a clamp
+ok   MUTANT CAUGHT — M8 a duplicate receipt credits inventory twice
+ok   MUTANT CAUGHT — M9 approved + shipment still exposes plan Cancel
+ok   MUTANT CAUGHT — M10 a read model performs a write on mount
+ok   MUTANT CAUGHT — M11 an S5 recommendation is used as the shipping quantity
+ok   MUTANT CAUGHT — M12 a cross-mainline write is introduced on a shipping surface
+ok   MUTANT CAUGHT — M13 the shared classifier is replaced by a local factory/overseas guess
+
+PASS  66 passed, 0 failed, 13 mutants, 0 survived

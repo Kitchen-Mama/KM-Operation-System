@@ -1,0 +1,21 @@
+
+== 1-3 headers — combined gone, Category + Series present ==
+
+== 4-6 body cells — independent category / series (no concatenation), reusing structured fields ==
+
+== 7 header/body column counts match (10 total: SKU + 9 scroll) ==
+
+== 8 empty/loading rows — div-grid (no fixed colspan to drift) ==
+
+== 9-10 filters unchanged (separate Category + Series filters still work) ==
+
+== 11-12 regression guards — stock + warehouse cells unchanged ==
+
+== 13 no API/schema/formula surface — presentation only ==
+
+== layout — Category wider, Series narrower; header+body share widths (alignment) ==
+
+== 15 deploy — factory-stock.js/.css tokens bumped ==
+
+----------------------------------------
+FACTORY INVENTORY SPLIT CATEGORY/SERIES (F1-7N-R1): 21 passed, 0 failed

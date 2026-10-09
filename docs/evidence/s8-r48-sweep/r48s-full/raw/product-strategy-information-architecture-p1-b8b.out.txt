@@ -1,0 +1,288 @@
+
+===================================================================================
+PRODUCT STRATEGY — P1-B8B  INFORMATION ARCHITECTURE, SUB-TABS, STATES, RESPONSIVE
+===================================================================================
+
+=== §A  THE MENU GOES ABOVE PRICING CENTER, AND THE ANCHOR IS AN ID ===
+  ok   A1 app.js loads in the shell
+  ok   A2 the staged section declares where its menu goes
+  ok   A3 under the name the brief uses
+  ok   A4 anchored to a menu id, not to an ordinal
+  ok   A5 and that id really exists in index.html
+  ok   A6 the anchor is the menu the brief calls "Price Center" — it is labelled Pricing Center
+  ok   A7 six children — a parent with a submenu, not a single item
+  ok   A8 the parent uses the shell class
+  ok   A9 and so does the child list
+  ok   A10 wired by the same data-menu-id/data-parent pair every other group uses
+  ok   A11 and every child is a plain .menu-item
+  ok   A12 one sidebar in the shell
+  ok   A13 and the production partial contributes no second one
+  ok   A14 nor a navigation rail
+
+=== §B  THE PRODUCTION DEFAULT OFFERS NO ENTRY, AND THE MENU IS NOT THE GATE ===
+  ok   B1 index.html has no Product Strategy menu parent
+  ok   B2 and no markup calls the view entry point
+  ok   B3 nor the section entry point
+  ok   B4 and the label appears in no menu item
+  ok   B5 app.js names buildStagedMenu twice — the definition and its one caller
+  ok   B5a and the caller is mountStagedMenus
+  ok   B5b which refuses a section whose enabled is not exactly true BEFORE it builds anything
+  ok   B6 and index.html never calls it
+  ok   B7 and no page controller calls it either
+  ok   B8 the two production documents are the two that were checked
+  ok   B9.1 the shell never reads location.search
+  ok   B9.2 the shell never reads URLSearchParams
+  ok   B9.3 the shell never reads location.href
+  ok   B9.4 the shell never reads window.location
+  ok   B9.5 the shell never reads location.hash
+  ok   B10 nor does the page controller
+  ok   B11 nor the view registry
+  ok   B12 WITH THE REGISTRY OFF, clicking a child of the built menu does not activate the section
+  ok   B13 and WITH IT ON the same click does — so the refusal was the registry, not an accident
+  ok   B13a (left in the shipped position, which P1-B8D set to true)
+  ok   B14 the parent expands on click
+  ok   B15 and the child list opens with it
+  ok   B16 and closes again — one toggle, both halves
+  ok   B17 PRODUCT_STRATEGY_ENABLED_ is one literal boolean in the config of record
+  ok   B17a and the shell holds no copy of it — the navigation switch is a different gate
+
+=== §C  SIX SUB-TABS, IN ORDER, WITH ROUTES AND A RECORDED MATURITY ===
+  ok   C1 the six view ids, in the brief's order
+  ok   C2 under the six names the brief names
+  ok   C3 and each has a canonical route
+  ok   C4 all six are recorded as built — none is a placeholder
+  ok   C5 and every named renderer really exists in psb-board-ui.js
+  ok   C6 the shell does have a maturity badge for immature items
+  ok   C6a and not one of the six sub-tabs is marked Soon
+  ok   C6b nor is anything in the page itself
+  ok   C7.1 paintView dispatches overview by name
+  ok   C7.2 paintView dispatches category by name
+  ok   C7.3 paintView dispatches risk by name
+  ok   C7.4 paintView dispatches quality by name
+  ok   C7.5 paintView dispatches workspace by name
+  ok   C7.6 paintView dispatches advanced by name
+  ok   C8 and an unknown view resolves to the default rather than to the last branch
+  ok   C8a which is the overview
+  ok   C9 a route parses to its view
+  ok   C10 a misspelling parses to NOTHING
+  ok   C11 and so does another namespace
+  ok   C12 and so does nothing at all
+  ok   C13 resolve() is the one that substitutes
+  ok   C14 and it accepts a bare id too
+  ok   C15 an unknown id has no route
+
+=== §D  ONE REGISTRY, TWO SURFACES — AND THE ROUTE IS ON BOTH ===
+  ok   D1.1 app.js has no copy of the label "Executive Overview"
+  ok   D1.2 app.js has no copy of the label "Category Analysis"
+  ok   D1.3 app.js has no copy of the label "Deal Risk"
+  ok   D1.4 app.js has no copy of the label "Data Quality"
+  ok   D1.5 app.js has no copy of the label "Strategy Workspace"
+  ok   D1.6 app.js has no copy of the label "Advanced Details"
+  ok   D2 and the board declares none of them either — both surfaces read PSB_VIEWS
+  ok   D3 the board's NAV is a delegation
+  ok   D4 and a missing registry is a named error, not six empty tabs
+  ok   D5 the board renders into the production partial
+  ok   D6 six tabs on the production rail
+  ok   D7 in the registry's order
+  ok   D8 each carrying its canonical route — not an index into an array
+  ok   D9 THE SIDEBAR CHILD AND THE TAB CARRY THE SAME ROUTE
+  ok   D10 and the same label
+  ok   D11 a route selects a view
+  ok   D12 and reads back as that route
+  ok   D13 an unknown route lands on the canonical default, not on the last branch
+  ok   D14 the identity is stated as contract
+  ok   D15 and so is the absence of a URL binding
+  ok   D16 under the registry's own namespace
+  ok   D17 NO FILE IN assets/js/ ROUTES — the premise of D15, measured
+
+=== §E  THE TABS ARE THE OPERATION SYSTEM'S TAB COMPONENT, NOT A SECOND ONE ===
+  ok   E1 the production rail IS a .km-tab-rail
+  ok   E2 which components.css owns
+  ok   E3 and the board stylesheet does not redefine it
+  ok   E4 every production tab carries the shared tab class
+  ok   E5 the prototype's list is not a rail
+  ok   E6 the prototype still boots
+  ok   E7 with its six sidebar buttons
+  ok   E8 and NONE of them is a tab — the same renderer, told apart by its host
+  ok   E9 the dark navbtn rules are scoped to the prototype sidebar
+  ok   E10 and there is no unscoped .psb-page .navbtn block left
+  ok   E11 the rail restates no hover — components.css owns it
+  ok   E12 nor its own flex direction or overflow
+  ok   E13 the board sheet declares no :root
+  ok   E14 and redefines no base.css token
+  ok   E15 counts use the shared count pill
+  ok   E16 and `.nav-count` — four rules for an element nothing ever created — is gone
+
+=== §F  THE BOARD STYLESHEET STAYS INSIDE ITS PAGE, AT EVERY WIDTH ===
+  ok   F1 every selector is scoped to .psb-page, or is one of the two body modes
+  ok   F2.1 no bare .card rule
+  ok   F2.2 no bare .panel rule
+  ok   F2.3 no bare .col rule
+  ok   F2.4 no bare .grid rule
+  ok   F2.5 no bare .nav rule
+  ok   F2.6 no bare .main rule
+  ok   F2.7 no bare .kpi rule
+  ok   F2.8 no bare .shell rule
+  ok   F2.9 no bare .banner rule
+  ok   F3 the narrow breakpoint block is found
+  ok   F4 AT <=1000px THE LABEL COLLAPSE IS SCOPED TO THE PROTOTYPE SIDEBAR
+  ok   F5 and no longer strips the label off the production tab rail
+  ok   F6 nor re-centres the tab as though it were an icon button
+  ok   F7 presentation mode collapses the prototype sidebar, by name
+  ok   F8 and not the production tabs
+  ok   F9 which are hidden outright instead — a projector audience is not choosing a view
+  ok   F10 an overflowing chart scrolls INSIDE the chart
+  ok   F11 and the page itself cannot scroll sideways — layout.css owns that
+
+=== §G  KEYBOARD, ARIA, AND ONE TAB STOP ===
+  ok   G1 the production rail is a tablist
+  ok   G2 and each button a tab
+  ok   G3 pointing at the panel it actually swaps
+  ok   G4 exactly one is selected
+  ok   G5 and only the selected one is in the tab order
+  ok   G6 no tab claims to be the current page
+  ok   G7 while the prototype, where the rail IS the navigation, still does
+  ok   G8 ArrowRight moves to the next view
+  ok   G9 and focus is on the REBUILT button, not the detached one
+  ok   G10 ArrowLeft moves back
+  ok   G11 End goes to the last
+  ok   G12 Home to the first
+  ok   G13 and the ends wrap
+  ok   G14 a click selects too
+  ok   G15 every tab has an accessible name
+  ok   G16 and the glyph inside it is aria-hidden
+  ok   G17 disclosure state is announced
+  ok   G18 and Escape closes a popover
+
+=== §H  FIFTEEN STATES, AND FOUR THAT USED TO BE ONE SENTENCE ===
+  ok   H1 a sign-in page is NOT AUTHORIZED — a server DID answer
+  ok   H2 and so is a 401
+  ok   H3 and a 403
+  ok   H4 no network is OFFLINE
+  ok   H5 an elapsed bound is a TIMEOUT
+  ok   H5a however the transport flags it
+  ok   H6 an HTML page that is not a login is a READABILITY problem, not a connection one
+  ok   H7 and anything else is still the default
+  ok   H8 a timeout with no network is reported as OFFLINE, not as a slow server
+  ok   H9 but a sign-in page outranks the offline flag — it is proof something answered
+  ok   H10 an online flag never turns a failure into something it cannot prove
+  ok   H11 and a host with no navigator at all decides nothing
+  ok   H12.1 the workspace read reports NOT_AUTHORIZED
+  ok   H13.1 and the site-universe adapter carries NOT_AUTHORIZED through
+  ok   H12.2 the workspace read reports SOURCE_TIMED_OUT
+  ok   H13.2 and the site-universe adapter carries SOURCE_TIMED_OUT through
+  ok   H12.3 the workspace read reports RESPONSE_NOT_READABLE
+  ok   H13.3 and the site-universe adapter carries RESPONSE_NOT_READABLE through
+  ok   H12.4 the workspace read reports SOURCE_NOT_CONNECTED
+  ok   H13.4 and the site-universe adapter carries SOURCE_NOT_CONNECTED through
+  ok   H14 a SERVER-SENT client-only code is not believed
+  ok   H15 the adapter declares twelve load states
+  ok   H16 and every one of them has a UI row
+  ok   H17 every state that is not OK says what it means
+  ok   H18 and not one of them shows demonstration data
+  ok   H19 only OK may draw a chart
+  ok   H20 FIVE FAILURE STATES, FIVE DIFFERENT SENTENCES
+  ok   H21 and the one where a server DID answer does not mention connecting
+  ok   H22.1 no script.google.com in any state message
+  ok   H22.2 no /exec in any state message
+  ok   H22.3 no http in any state message
+  ok   H22.4 no at Object. in any state message
+  ok   H22.5 no apiCode in any state message
+  ok   H22.6 no stack in any state message
+  ok   H22.7 no .gs in any state message
+  ok   H22.8 no SELECT  in any state message
+  ok   H23 and no raw code is printed as a sentence
+  ok   H24.1 the page state AWAITING_SITE_SELECTION has a row
+  ok   H24.2 the page state SITE_UNIVERSE_NOT_AVAILABLE has a row
+  ok   H24.3 the page state LOADING_SITE_UNIVERSE has a row
+  ok   H24.4 the page state LOADING_WORKSPACE has a row
+  ok   H25 a scenario marks itself on the page
+  ok   H26 and can be reset
+  ok   H27 an unverified image is a recorded state, not a blank
+  ok   H27a with a named verdict rather than a truthiness
+  ok   H28 and print is a state the stylesheet answers
+
+=== §I  SEVEN VIEWPORTS, MEASURED — AND THE ONE THE SHELL CANNOT DELIVER ===
+  ok   I1 the shell sidebar is 240px, read from layout.css
+  ok   I2 and the board's own measurement constants
+  ok   I3 THE Y AXIS FITS AT EVERY VIEWPORT AND EVERY COUNT — 21 of 21
+  ok   I4.1a 1920x1080, 7 products: the whole X axis, no scrolling
+  ok   I4.1b 1920x1080, 12 products: the whole X axis, no scrolling
+  ok   I4.2a 1440x900, 7 products: the whole X axis, no scrolling
+  ok   I4.2b 1440x900, 12 products: the whole X axis, no scrolling
+  ok   I4.3a 1366x768, 7 products: the whole X axis, no scrolling
+  ok   I4.3b 1366x768, 12 products: the whole X axis, no scrolling
+  ok   I4.4a 1280x720, 7 products: the whole X axis, no scrolling
+  ok   I4.4b 1280x720, 12 products: the whole X axis, no scrolling
+  ok   I4.5a 1024x768, 7 products: the whole X axis, no scrolling
+  ok   I4.5b 1024x768, 12 products: the whole X axis, no scrolling
+  ok   I4.6a 768x1024, 7 products: the whole X axis, no scrolling
+  ok   I4.6b 768x1024, 12 products: the whole X axis, no scrolling
+  ok   I5.1 1440x900, 44 products: the CHART scrolls, not the page
+  ok   I5.2 1366x768, 44 products: the CHART scrolls, not the page
+  ok   I5.3 1280x720, 44 products: the CHART scrolls, not the page
+  ok   I5.4 1024x768, 44 products: the CHART scrolls, not the page
+  ok   I5.5 768x1024, 44 products: the CHART scrolls, not the page
+  ok   I6 and on a 1920 screen even 44 products fit without scrolling
+  ok   I7 no layout shrinks a label below 3 characters or an image below 24px
+  ok   I8 THE SHELL HAS NO RESPONSIVE SIDEBAR AT ALL — no breakpoint in any stylesheet touches it
+  ok   I9 so at 390x844 the chart is handed 40px, and that is the shell's arithmetic
+  ok   I10 the board still fits the height it is given
+  ok   I11 and still scrolls inside itself rather than pushing the page
+  ok   I12 and SAYS why it could not fit, rather than failing silently
+  ok   I13 the collapsed sidebar is 64px
+  ok   I14 which gives a 390px phone 216px — still not a chart, and still not this page's to fix
+
+=== §J  PRINT, AND THE UI FIXES THAT MUST NOT COME BACK ===
+  ok   J1 the stylesheet has a print block
+  ok   J2 the controls are not printed
+  ok   J3 and the chart is not clipped to a scroller in print
+  ok   J4 print rules are scoped to the page, not to every printed document in the app
+  ok   J5 a marker still carries its price fraction (resize cannot move a price)
+  ok   J6 the viewport contract still anchors rather than saving an offset
+  ok   J7 More filters is still the shared popover chrome
+  ok   J8 and still closed by default
+  ok   J9 Price Scenario is closed by default
+  ok   J10 while its badge stays visible
+  ok   J11 the open-price-step explanation is present in both places
+  ok   J12 and both say it is an unoccupied PRICE TIER — not a shortage and not an order status
+  ok   J13 help is a real popover, not hover-only
+
+=== §K  NOTHING WAS ACTIVATED, AND NOTHING CAN WRITE ===
+  ok   K1 exactly two productPricing actions in the whole API layer
+  ok   K2 and both are reads
+  ok   K3 no write-shaped action name exists
+  ok   K4 the staged registry declares exactly one enabled switch, as a literal boolean
+  ok   K5 and the word appears nowhere else in the entry — no second switch beside it
+  ok   K6 the page still states it is not in navigation
+  ok   K7 and loads no prototype asset
+  ok   K8 and has no fixture fallback
+  ok   K9.1 neither production document LOADS preview-fixture
+  ok   K9.2 neither production document LOADS prototype-tokens
+  ok   K9.3 neither production document LOADS docs/prototypes
+  ok   K10 and nothing is loaded from above the application root
+  ok   K11 and no production module loads anything from there
+
+=== §L  MUTANTS ===
+  mutant caught — L1 the anchor really is what places the menu
+  mutant caught — L2 the six children really come from the registry
+  mutant caught — L3 a child click really goes through the staged gate
+  mutant caught — L4 the route parser really rejects a foreign namespace
+  mutant caught — L5 a misspelled route really parses to nothing
+  mutant caught — L6 resolve() really falls back to the canonical default
+  mutant caught — L7 the tab really carries its route
+  mutant caught — L8 the host really decides which component the rail is
+  mutant caught — L9 only the selected tab is really in the tab order
+  mutant caught — L10 aria-selected really tracks the view
+  mutant caught — L11 the arrow key really focuses the REBUILT node
+  mutant caught — L12 the dispatch really has no fallthrough
+  mutant caught — L13 a sign-in page really outranks the offline flag
+  mutant caught — L14 offline is really checked before the timeout
+  mutant caught — L15 a server really cannot claim a client-only state
+  mutant caught — L16 the narrow breakpoint really is scoped to the prototype sidebar
+  mutant caught — L17 presentation mode really hides the production rail
+  mutant caught — L18 the partial really asks for the shared rail
+
+===================================================================================
+PASS — passed 238  failed 0  |  mutants caught 18  survived 0
+===================================================================================

@@ -1,0 +1,37 @@
+
+== §A/§F — sea is not sea_express, at every boundary that decides money or a date ==
+
+== §C — destination identity: WAREHOUSE or MARKETPLACE, exclusively ==
+
+== §E — the versioned identity, and the existing K2 ids it must not disturb ==
+
+== §D/§G — typed refusals: nothing is silently dropped, and no request grows the schema ==
+
+== §L — the quantities B1 must not touch ==
+
+== §H — the TEMP diagnostic left the deploy directory, and the guard came back ==
+
+== §K — the contract versions B1 must not raise, and the stamp it must not move ==
+
+== §J negative tests — each guard is made to BITE ==
+  caught: N1 sea_express collapsed to sea
+  caught: N1b the two services collapsed into one identity
+  caught: N2 a prefix family fallback in the service resolver
+  caught: N3 a prefix family lead-time fallback
+  caught: N4 the destination marketplace omitted from identity
+  caught: N5 a marketplace encoded as a warehouse id
+  caught: N6 the expected arrival included in identity
+  caught: N7 the quantity included in identity
+  caught: N8 an existing K2 header re-keyed
+  caught: N9 a supplied value silently dropped when its column is absent
+  caught: N10 both destination identities allowed on one route
+  caught: N11 a schema-ensure helper reachable from the request path
+  caught: N12 LEGACY_ROUTE_RECONCILIATION_REQUIRED weakened
+  caught: N13 the owner guard broadly ignoring TEMP files
+  caught: N14 the diagnostic moved back into the deploy directory
+  caught: N15 the route-identity contract reimplemented inside the allocation writer
+
+  negative tests: 16 caught, 0 missed
+
+----------------------------------------
+ROUTE IDENTITY + SCHEMA CONTRACT (FB-4F-B1): 162 passed, 0 failed

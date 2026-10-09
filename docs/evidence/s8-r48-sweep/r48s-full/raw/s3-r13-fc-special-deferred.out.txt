@@ -1,0 +1,193 @@
+
+=== A — §1/§2 THE CRITICAL LIST IS NOW WHAT THE FIRST USABLE UI READS ===
+  ok   A1  the Special path declares the tables opening the builder genuinely reads
+  ok   A1a and neither deferred table is on it
+  ok   A2  §6 — the REGULAR path is untouched, which is the regression this round most had to avoid
+  ok   A3  campaigns is DEFERRED — its selector runs on the growth method, never on open
+  ok   A3a and that is provable from its ONE outer call site
+  ok   A3b with the selector itself gating on the deferred table — the consumer buys it
+  ok   A4  the deferred tables are declared in one place
+  ok   A4.1 and campaign_sku_lines is one of them
+  ok   A4.2 and pricing_list is one of them
+  ok   A4.3 and campaigns is one of them
+  ok   A4a and every consumer names them through that declaration, never by raw string
+
+=== B — §3/§4 THE LOADER, EXECUTED: one request, joined, latched, released ===
+  ok   B1  a current table issues no request
+  ok   B2  a missing table buys one read, naming only itself
+  ok   B2a and is latched in the page’s one freshness record
+  ok   B3  three overlapping consumers issue ONE request
+  ok   B3a and still one after they all settle
+  ok   B3b and the index entry is released once the flight settles — nothing is retained
+  ok   B4  a failed deferred read REJECTS — nothing is swallowed
+  ok   B4a and the retry issues a NEW request, not a re-await of the rejected one
+  ok   B4b a failed read latches nothing
+  ok   B4c and releases the in-flight index — a table left marked in flight is a permanent Loading, not a duplicate read
+  ok   B5  a table already in flight elsewhere is joined, not re-requested
+  ok   B5a and when that flight lands, nothing further is asked
+  ok   B6  a joined flight that fails leads to exactly one fresh request
+  ok   B7  deferral is inert in Legacy mode — no request, no pending state
+  ok   B7a and nothing is ever reported as PENDING there, so the cells behave exactly as before
+  ok   B8  an unconfigured page resolves rather than hanging
+
+=== C — §2/§6 THE INITIAL PATH, MEASURED IN A REAL BROWSER ===
+  ok   C1  R12 measured the shipped Special open at FOUR requests
+  ok   C1a and R13 measures it at TWO
+  ok   C2  R12 measured TWO sequential read rounds
+  ok   C2a and R13 measures ONE
+  ok   C3  and the two requests are exactly campaigns + the scoped events slice
+  ok   C4  §2 SPECIAL_INITIAL_CAMPAIGN_LINES_REQUESTS = 0 — the getter is not even reached
+  ok   C4a §2 SPECIAL_INITIAL_PRICING_LIST_REQUESTS = 0
+  ok   C4b and neither table is fetched during the open
+  ok   C5  §2 the three broad-cache critical readers are still reached on open
+  ok   C5a and the broad events getter is NOT — the scoped model answers that one now
+  ok   C5b which the picker proves by being populated and readable
+  ok   C6  §6 a warm Special reopen issues ZERO requests
+  ok   C7  §6 the Regular cold path is unchanged at two requests
+  ok   C7a and one round
+  ok   C7b and warm Regular is still zero
+  ok   C8  the same at serverMs 400 — a control-flow property
+  ok   C8a rounds too
+  ok   C8b and the Regular path likewise
+
+=== D — §3/§4/§5 THE BOUNDARIES AND THEIR FAILURES, MEASURED ===
+  ok   D1  §4 PRICING_REQUEST_COUNT_AT_BOUNDARY = 1 — a SKU typed into a row buys exactly one read
+  ok   D1a and it is that table and no other
+  ok   D2  §5 the cell reads PENDING before the read settles
+  ok   D2a and says so, rather than showing a blank of unknown meaning
+  ok   D2b FALSE_EMPTY_COUNT = 0 — "not loaded yet" is never rendered as "has no price"
+  ok   D3  §5 a failed pricing read raises a refusal in its own subsection
+  ok   D3a with a Retry on it
+  ok   D3b and the OTHER deferred subsection is untouched
+  ok   D4  §5 SPECIAL_BASE_UI_REMAINS_RENDERED — the modal is still open
+  ok   D4a the scoped SKU list is still populated
+  ok   D4b the existing-event picker still has its events
+  ok   D4c and scope, event flag and window are all still there
+  ok   D5  §5 PERMANENT_LOADING_COUNT = 0
+  ok   D5a and no request is left open
+  ok   D6  §5 Retry issues exactly one request
+  ok   D6a and clears its own surface
+  ok   D6b and the price resolves
+  ok   D6c with a real price and a real currency, from pricing_list
+  ok   D7  §4 a second SKU row issues no further request
+  ok   D7a and every row is priced
+  ok   D8  §3 an existing event was actually selected
+  ok   D9  §3 CAMPAIGN_LINES_REQUEST_COUNT_AT_BOUNDARY = 1
+  ok   D9a and it is that table
+  ok   D10 §5 a failed lines read refuses in the picker’s own subsection
+  ok   D10a with a Retry
+  ok   D10b and the pricing subsection is untouched
+  ok   D11 §5 FALSE_EMPTY_COUNT = 0 — the event is NOT hydrated from an empty table, which would drop its discounts silently
+  ok   D11a and the form does not claim to be editing a saved event
+  ok   D12 §5 the builder is still open and usable
+  ok   D12a PERMANENT_LOADING_COUNT = 0
+  ok   D12b and no request is left open
+  ok   D13 §3 Retry issues exactly one request
+  ok   D13a and the saved event opens
+  ok   D13b and the form says it is editing one
+  ok   D13c every hydrated row carries BOTH its deal price and its discount — the deferred table really arrived
+  ok   D14 §3 picking a second saved event issues no further request
+  ok   D14a and still hydrates
+  ok   D15 the boundary costs are identical at serverMs 400
+  ok   D15a both of them
+  ok   D15b and the no-duplicate rule holds there too
+
+=== E — THE CONSUMERS, AND THE GUARD AT EACH ONE ===
+  ok   E1  _evtHydrateExisting_ refuses to run before it reads campaign_sku_lines, not after
+  ok   E1a and its continuation re-reads the picker, so a mind changed mid-flight lands on the right event
+  ok   E2  an out-of-scope SKU is refused before the price is deferred
+  ok   E2a and PENDING is decided BEFORE missing_price, which is what keeps the false empty out
+  ok   E3  _evtBuildGroups waits for pricing before composing a single card
+  ok   E3a and says so in the same scoped surface
+  ok   E4  the save gate checks PENDING before MISSING_PRICING_LIST_ROW
+  ok   E4a and says the list has not loaded — never that the database has no price for this SKU
+  ok   E4b the group-card branch has its own gate, for a write that invalidated pricing after the build
+  ok   E5  _evtPopulateBaseCampaigns reads events through the same owner the rest of the builder uses
+  ok   E5a and no longer reaches into the broad cache behind it
+  ok   E5b UNREAD IS NOT EMPTY — an unreadable model disables the control and says so
+  ok   E5c and the Base Campaign dropdown is measured with real candidates in it
+  ok   E6  the campaign-lines surface exists in the markup
+  ok   E6a and the pricing surface
+  ok   E6b both start hidden — a surface that is visible when nothing is wrong is noise
+  ok   E6c and the pricing surface sits above BOTH builder modes, because both read that table
+  ok   E7  a deferred table THIS SESSION has used is still re-warmed inside the save flow
+  ok   E7a and that record is not cleared by an invalidation — a write cannot make it untrue that the operator uses it
+  ok   E7b it is set when the CONSUMER is reached, so a session that never opens one buys nothing
+
+=== F — §9 THE SKU REGIONAL COLD-ENTRY MATRIX ===
+  ok   F1  A — a cold entry issues ONE read
+  ok   F1a in one round
+  ok   F1b with no duplicate
+  ok   F2  B — a read stalled past its budget raises a NAMED refusal
+  ok   F2a §9 FIRST_TIMEOUT_UI_TRUTHFUL = YES — it names the classification
+  ok   F2b and names the ACTION that failed, not merely that something did
+  ok   F2c §9 PERMANENT_LOADING_COUNT = 0
+  ok   F2d and NOTHING is rendered — a failed read never paints rows it does not have
+  ok   F2e §9 STALE_RESPONSE_COMMIT_COUNT = 0 — no request is left open
+  ok   F3  C/E — §9 RETRY_REQUEST_COUNT = 1, on a page holding no stale model
+  ok   F3a §9 RETRY_RECOVERY_PASS = YES
+  ok   F3b and the skeleton is gone
+  ok   F4  D — leaving mid-read and returning issues no SECOND read
+  ok   F4a and the page is whole
+  ok   F4b with exactly one visible section
+  ok   F5  E-prime — the OTHER way out of a failure: navigate away and back, one read, recovered
+  ok   F5a and the page is whole
+  ok   F5b with no skeleton left behind
+  ok   F6  the window.srdInvalidate seam leaves a mount that issues no read
+  ok   F6a and offers no Retry
+  ok   F6b an explicit srdRetry() recovers it in one read
+  ok   F6c THE SEAM HAS NO CALLER in shipped code — which is why F6 is recorded as debt and not repaired here
+
+=== G — §7/§8 A PREVIEW THAT CALLED A LOST CONNECTION A DATABASE REJECTION ===
+  ok   G1  the dry-run path has its own outcome constructor
+  ok   G1a which is CONFIRMED_NOT_STARTED
+  ok   G1b carrying NO write id — a dry run mints none, and inventing one would make it look replayable
+  ok   G2  every dry-run transport failure is CONFIRMED_NOT_STARTED
+  ok   G2a all three of them — network, classified answer, unreadable answer
+  ok   G2b and a server that ANSWERED and said no is still CONFIRMED_REJECTED — that one is authoritative
+  ok   G3  a real write whose answer is lost is still OUTCOME_UNKNOWN and still verified
+  ok   G3a and still refuses to claim zero-write
+  ok   G4  the preview has its own failure renderer
+  ok   G4a which branches on CONFIRMED_NOT_STARTED
+  ok   G4b and says the file has not been judged — a connection problem, not a bad file
+  ok   G4c with NO unreachable OUTCOME_UNKNOWN branch — a dry run cannot produce one
+  ok   G5  the CSV import preview no longer prints it straight from the error
+  ok   G5a nor does the bulk modal template
+  ok   G5b both call sites go through the one renderer
+  ok   G5c and the outcome travels with the message — dropping it is what let one template answer for both
+  ok   G6  the WRITE renderer keeps R10’s OUTCOME_UNKNOWN box
+  ok   G6a including the instruction that matters there
+  ok   G6b and the PREVIEW never prints it — there is no write to warn about
+  ok   G7  §8 WRITE_AUTOREPLAY_ADDED = NO — nothing here resends a write
+  ok   G7a and the verification path is still read-only by its own statement
+
+=== H — THE HARNESS, AND THE TWO FAULTS IT WAS HIDING ===
+  ok   H1  the getTable fixture answers `rows`, which is the only field _kmGetTableOnce_ reads
+  ok   H1a and that IS what it reads — the two are checked against each other, not assumed
+  ok   H2  campaigns and campaign_sku_lines carry rows — an empty deferred table and an unread one must differ
+  ok   H3  the event rows use the canonical field names the normalizer actually reads
+  ok   H4  and cover every scope the builder can open on
+  ok   H4a in BOTH years it can default to — fcTargetYear is next year, which is what hid them
+  ok   H5  a stall can name a TABLE, not only an action — every deferred read here is a getTable
+  ok   H6  all three harness faults are recorded, not quietly fixed
+  ok   H6a including the one that had been hiding since R11
+  ok   H6b and what it did NOT invalidate is stated, rather than left for the reader to wonder about
+  ok   H7  the existing-event picker is readable AND non-empty
+  ok   H7a and the broad cache genuinely carries rows now
+
+=== J — MUTANTS ===
+  ok   J1 the deferred read is not published in the shared in-flight index KILLED
+  ok   J2 the already-current check is removed KILLED
+  ok   J3 a failed read leaves its table marked in flight KILLED
+  ok   J4 the workspace gate on deferral is removed KILLED
+  ok   J5 a not-yet-loaded price is labelled missing KILLED
+  ok   J6 the save gate stops refusing a pending price KILLED
+  ok   J7 the hydrate runs without its table KILLED
+  ok   J8 a redirect-404 preview is called a rejection again KILLED
+  ok   J9 the preview renderer ignores the outcome KILLED
+  ok   J10 the Base Campaign baseline reads the broad cache again KILLED
+  mutants: 10 killed, 0 survived, 0 harness errors
+  ok   J   every planted defect was caught
+
+PASS  161 passed, 0 failed
+SPECIAL_INITIAL = 2 REQUESTS / 1 ROUND (was 4 / 2) · DEFERRED = campaign_sku_lines + pricing_list · FALSE_EMPTY = 0 · PERMANENT_LOADING = 0 · REDIRECT_404_PREVIEW = CONFIRMED_NOT_STARTED · WRITE_AUTOREPLAY_ADDED = NO

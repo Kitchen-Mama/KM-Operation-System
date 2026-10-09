@@ -1,0 +1,187 @@
+
+== §C — THE CANCEL + REPLACEMENT, AND THAT IT IS GONE ==
+ok   C1  hydrated: identity and intent
+ok   C2  a temporarily incomplete route KEEPS its header id
+ok   C2a and its line id
+ok   C2b and its UPDATE intent — it never becomes a CREATE
+ok   C2c it is marked incomplete instead
+ok   C3  and NOTHING was queued for cancellation
+ok   C3a the DOM still carries the line identity
+ok   C3b and the header identity
+ok   C4  the route is not persistable while incomplete, so nothing will be written
+ok   C5  finishing the route saves to the SAME ticket — no replacement id was minted
+ok   C5a still an UPDATE
+ok   C5b and it is persistable again
+ok   C6  zero line cancels across the whole sequence
+ok   C6a zero header cancels
+ok   C7  the header sweep does NOT cancel a header whose only route is briefly incomplete
+ok   C8  a header no row references at all is still released
+
+== §D — THE MODEL OWNS THE IDENTITY, NOT THE DOM ==
+ok   D1  a re-render that dropped the DOM attributes recovers identity from the model
+ok   D1a and the intent is still UPDATE
+ok   D1b and the DOM is re-stamped, so the two can never disagree
+ok   D2  a changed group key never erases the entity identity
+
+== §M.1-§M.9 — SAME IDS ACROSS EVERY IDENTITY-SHAKING EDIT (executed against the shipped server) ==
+ok   M0  seeded one ticket
+ok   M0a at version 1
+ok   M1  Qty edit: same ids, version++
+ok   M1a and the value landed
+ok   M2  a SECOND Qty edit with no reload: same ids, version++ again
+ok   M3  Method edit: same ids
+ok   M3a and the Method landed
+ok   M6  From edit (K2 AND K4 both move): same ids
+ok   M7  marketplace destination -> warehouse: same ids
+ok   M7a and the destination landed
+ok   M8  warehouse -> marketplace destination: same ids
+ok   M8a and the destination landed
+ok   M-ALL  ONE ticket survived every edit
+ok   M-ALL a and NOT ONE cancelled header was produced
+ok   M9  an edit that makes two drafts share a K4 is ACCEPTED
+ok   M9a and it updates the row it named
+ok   M9b both tickets survive — no merge and no adoption
+ok   M9c and nothing was cancelled
+
+== §M.10-§M.13 — ADD ROUTE, AND FAILURES THAT MUST NOT REPLACE ANYTHING ==
+ok   M10  one ticket before
+ok   M10a an explicit Add Route CREATEs
+ok   M10b exactly +1 header and +1 line
+ok   M11  editing the NEW route is an UPDATE of itself
+ok   M11a same ids
+ok   M11b still two tickets
+ok   M10c two explicit Add Routes of an identical shape are TWO tickets
+ok   M10d with distinct ids
+ok   M10e a retry with the SAME create key writes no second ticket
+ok   M10f and returns the ids the first attempt committed
+ok   M12  a stale-version UPDATE is refused
+ok   M12a with no new ticket
+ok   M12b and nothing cancelled
+ok   M12c the row keeps its identity
+ok   M12d and the stored value is untouched
+
+== §F/§G — INCOMPLETE IS NAMED, NEVER SILENT; AND DIRTY IS DIRTY ==
+ok   G1  the flush separates the dirty-but-incomplete routes
+ok   G2  and reports them by name (§G.8), from the set of ALL unfinished rows rather than the write scope
+ok   G2a the dirty-but-incomplete routes are still what that set is built on
+ok   G3  under its own typed code
+ok   G4  stating that nothing was written
+ok   G5  and naming the exact route instances
+ok   G6  a cleared Method is named
+ok   G6a a missing From is named
+ok   G6b a BOTH-destinations route fails the XOR
+ok   G6c a zero Qty is named
+ok   G7  a Qty edit marks the route dirty
+ok   G8  a Method edit marks the route dirty
+ok   G9  a From edit marks the route dirty
+ok   G10 a re-render with NO change marks nothing (§G.1 — a programmatic rebuild is not an edit)
+ok   G11 an edit dirties; re-collecting the same values does not
+
+== §I — EVERY CANCEL CALL SITE, AND ITS AUTHORITY ==
+ok   I1  exactly THREE places can reach a cancel, and an edit path is not one of them
+ok   I2  the explicit delete asks for confirmation (§I.1)
+ok   I2a and a refusal writes nothing
+ok   I2b the confirmation is asked BEFORE the cancel is issued
+ok   I3  the DOM collector queues NO cancel — an edit can no longer cancel anything (§I)
+ok   I4  the sweep no longer treats an incomplete route as "not using" its own header
+ok   I5  a save failure or timeout never cancels anything
+
+== §J — THE REQUIRED DIAGNOSTIC ACTION HAS A PERMANENT OWNER ==
+ok   J1  the handler lives in 66_
+ok   J1a and no longer in the TEMP file
+ok   J2.1  rosendStatusReport_ moved with it
+ok   J2.1a and is not duplicated in the TEMP file
+ok   J2.2  rosendResolve_ moved with it
+ok   J2.2a and is not duplicated in the TEMP file
+ok   J3.1  the configuration constant ROSEND_TIER_SCOPE_ is in the permanent owner
+ok   J3.1a and defined exactly once
+ok   J3.2  the configuration constant ROSEND_PLANNING_CYCLE_OVERRIDE_ is in the permanent owner
+ok   J3.2a and defined exactly once
+ok   J3.3  the configuration constant ROSEND_DIAG_OWNER_FILE_ is in the permanent owner
+ok   J3.3a and defined exactly once
+ok   J3.4  the configuration constant ROSEND_DIAG_BUILD_VERSION_ is in the permanent owner
+ok   J3.4a and defined exactly once
+ok   J4  the router entry is unchanged
+ok   J4a it is still a required action
+ok   J5  no TEMP file is a REQUIRED deployment owner
+ok   J5a the manifest tracks the permanent diagnostic owner
+ok   J6  exactly one definition of handleRequestOrderSendDiagnosticStatus_ across the project
+ok   J6  exactly one definition of rosendStatusReport_ across the project
+ok   J6  exactly one definition of rosendResolve_ across the project
+ok   J7  the frontend pins the permanent owner symbol
+ok   J7a and no longer the TEMP one
+ok   J8  the TEMP dependency census is recorded in the planning doc
+
+== §K — A DEPLOYMENT THAT CANNOT SAVE IS NOT AN EDITABLE ONE ==
+ok   K1  + Add Route renders nothing when the atomic writer is absent
+ok   K1a and says why
+ok   K1b naming the deployment fact
+ok   K2  and a healthy deployment adds the route
+ok   K3  the save path also fails closed
+ok   K3a with no two-call fallback
+ok   K4  the read-path finding is recorded as not reproduced
+ok   K4a and no timeout was raised to mask it
+ok   K4b read bound unchanged
+
+== §N — THE SUBMIT GROUPING DECISION IS RECORDED, AND 11_ IS UNTOUCHED ==
+ok   N1  11_ declares exactly the build its deployment manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34)
+ok   N2  allocation_draft_id was NOT added to the plan group key (§N)
+ok   N3  and the decision is recorded
+
+== DEPLOYMENT ==
+ok   P1  the 16_ owner stamp is at or after the previous round
+ok   P2  and the manifest expects what the source declares
+ok   P3  the cache token is at or after the previous round
+ok   P4  applied to the whole co-deployed set (55 refs on r46-avgsales-20261008)
+ok   P5  and the previous token is retired
+ok   P6  the diagnostic owner manifest matches 66_'s declaration
+
+== §L — THE READ-ONLY EDIT-REPLACEMENT CENSUS ==
+ok   L1  the census never names setValue in code
+ok   L2  the census never names appendRow in code
+ok   L3  the census never names deleteRow in code
+ok   L4  the census never names clearContent in code
+ok   L5  the census never names setValues in code
+ok   L6  the census never names insertColumn in code
+ok   L7  the census never names deleteColumn in code
+ok   L8  the census never names getScriptLock in code
+ok   L9  the census never names PropertiesService in code
+ok   L10  the census never names UrlFetchApp in code
+ok   L11  the census never names MailApp in code
+ok   L12  the census never names DriveApp in code
+ok   L13 every sheet goes through the read-only facade
+ok   L14 exactly ONE entry point
+ok   L15 it states its own zero-write, zero-repair result
+ok   L16.1  it reports the class LEGITIMATE_EXISTING_ROUTE
+ok   L16.2  it reports the class LEGITIMATE_EXPLICIT_ADD_ROUTE
+ok   L16.3  it reports the class EDIT_REPLACEMENT_CANDIDATE
+ok   L16.4  it reports the class CANCELLED_BY_EDIT_CANDIDATE
+ok   L16.5  it reports the class ORPHAN_HEADER
+ok   L16.6  it reports the class UNKNOWN
+ok   L17 and refuses to attribute a row by a shared K2/K4 shape
+ok   L18 the only stored provenance evidence is named
+ok   L19 the two candidate classes are labelled as candidates
+ok   L20 and nothing in its code repairs or restores
+
+== §O — MUTATIONS. Each is applied to shipped source and must be caught. ==
+ok   O1  a persisted route saved as a CREATE (caught)
+ok   O2  a field change that cancels the stored line (caught)
+ok   O3  a field change that erases the persisted identity (caught)
+ok   O4  identity read from the DOM only, so a re-render loses it (caught)
+ok   O5  the sweep treating an incomplete route as not using its header (caught)
+ok   O6  a Qty change that does not mark the route dirty (caught)
+ok   O7  a Method change that does not mark the route dirty (caught)
+ok   O8  a programmatic re-render that marks the route dirty (caught)
+ok   O9  writing a route that is not complete (caught)
+ok   O10 skipping a dirty-but-incomplete route without saying so (caught)
+ok   O11 not adopting the version the UPDATE returned (caught)
+ok   O12 + Add Route that no longer creates (caught)
+ok   O13 an Add Route retry that mints a second ticket (caught)
+ok   O14 the required diagnostic action owned by a TEMP file again (caught)
+ok   O15 adding a route on a deployment that cannot save it (caught)
+ok   O16 an explicit delete that cancels a stored ticket without asking (caught)
+ok   O17 a new cancel call site reachable from an edit path (caught)
+
+== RESULT ==
+
+159 passed, 0 failed.  mutations: 17 caught, 0 missed.

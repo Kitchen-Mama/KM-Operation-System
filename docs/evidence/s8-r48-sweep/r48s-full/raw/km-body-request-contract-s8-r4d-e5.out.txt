@@ -1,0 +1,81 @@
+
+-- A: the shipped page request, built by the shipped builders --
+ok   A1  IR_FIRST_LAYER_TABLES_ has thirteen entries
+ok   A2  IR_EXPOSURE_TABLES_ has six entries
+ok   A3  the page dispatches { recentWindow: true, only: <13> }
+ok   A4  DTO action
+ok   A5  the DTO nests a `payload` object
+ok   A6  payload.recentWindow survives the builder whitelist
+ok   A7  payload.only carries all thirteen
+ok   A8  recentWindow is NOT at the DTO top level
+ok   A9  only is NOT at the DTO top level
+ok   A10 _workspaceInvokeRaw passes the whole DTO as the transport `payload`
+ok   A11 client.getWorkspace clones the caller params through to the resolver
+
+-- B: km_body on the wire --
+ok   B1  transport.request merges opts.payload with the action
+ok   B2  urlFor serialises that merged object as km_body
+ok   B3  the shipped read carries km_body
+ok   B4  the one-shot read ALSO carried km_body — it did leave the browser
+ok   B5  action + km_via + km_tc + km_rid all present
+ok   B6  km_body is encoded exactly once
+ok   B7  the SHIPPED km_body contains a `payload` envelope
+ok   B8  the ONE-SHOT km_body contains NO `payload` envelope
+ok   B9  the shipped envelope carries the thirteen
+ok   B10 RTR_GET_BODY_MAX_ is 4000 (DECODED bytes — e.parameter is already decoded)
+ok   B11 READ_URL_MAX is 6000 (URL chars)
+ok   B12 decoded shipped km_body is 495 B, under the 4000 router cap
+ok   B13 shipped read URL is ~891 chars, under READ_URL_MAX
+
+-- C: rtrParseGetBody_ --
+ok   C1  the shipped body parses without refusal
+ok   C2  the one-shot body ALSO parses without refusal
+ok   C3  recentWindow survives the router — shipped
+ok   C4  only survives the router — shipped
+ok   C5  the one-shot body reaches the router with NO payload envelope
+ok   C6  an ABSENT km_body also yields no payload envelope
+ok   C7  km_rid lands on the body
+ok   C8  doGet dispatches _parsed.body to the read handler
+
+-- D: 60_ payload extraction and table selection --
+ok   D1  handleInventoryReplenishmentWorkspaceGet_ reads body.payload
+ok   D2  SIR_WORKSPACE_TABLES_ holds twenty-one entries
+ok   D3  exactly two are include-gated on carrierPlanning
+ok   D4  gate 1: the `only` subset
+ok   D5  gate 2: the include gate
+ok   D6  the SHIPPED request reads exactly thirteen tables
+ok   D7  and they are exactly the first-layer thirteen
+ok   D8  ZERO exposure tables are read when the thirteen arrive   [E5 section 5, second half]
+ok   D9  the ONE-SHOT request reads nineteen — the observed number
+ok   D10 and the six extras are exactly the lazy exposure tables   [19 = 13 + 6]
+ok   D11 an ABSENT km_body also reads nineteen
+
+-- E: what the handler echoes back --
+ok   E1  requestEcho.recentWindow is read off payload.recentWindow
+ok   E2  meta.recentWindowRequested mirrors the echo
+ok   E3  one-shot -> recentWindowRequested false   (as observed live)
+ok   E4  one-shot -> onlyRequested null              (as observed live)
+ok   E5  shipped  -> recentWindowRequested true
+ok   E6  shipped  -> onlyRequested 13
+
+-- F: the limit of the one-shot sample --
+ok   F1  flat-body and absent-body select the SAME nineteen tables
+ok   F2  and produce the SAME echo — the one-shot sample cannot tell them apart
+ok   F3  an envelope-shaped read DOES separate them (13 vs 19)
+
+-- G: readUrl builds the URL, not the body --
+ok   G1  readUrl is exported for callers
+ok   G2  readQuery serialises the body it is handed, VERBATIM — it builds no envelope
+ok   G3  readUrl/readQuery do NOT inject the action into the body — transport.request() does that
+
+-- H: unrelated lazy-table growth cannot touch the first layer --
+ok   H1  three new lazy tables change the scoped first-layer selection by NOTHING
+ok   H2  but an UNSCOPED request absorbs every one of them — which is why the scoping must be real
+
+-- I: the bounded recovery cannot drop km_body --
+ok   I1  every attempt builds its URL from urlFor — first attempt and recovery alike
+ok   I2  the recovery re-enters attempt(), so it rebuilds the whole query
+ok   I3  a recovery attempt still carries the full thirteen-table envelope
+ok   I4  and carries its OWN correlation id
+
+ALL PASS  |  passed 61  failed 0

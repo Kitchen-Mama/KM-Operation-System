@@ -1,0 +1,15 @@
+
+== A. KMPC activeKeyOf serializes planning_cycle EXACTLY once even if present in scope ==
+
+== B. sadResolveActiveDraftK2OrK3_ — route-complete → K2 (CREATE/REUSE/CONFLICT); no-route → K3 ==
+
+== C. both the atomic core and the manual header core resolve via the unified K2-or-K3 resolver ==
+
+== D. 61_ generation: flag-gated OFF, routed to K2 route-group path via the atomic endpoint ==
+
+== E. K2-aware empty-header classifier — DUPLICATE_ACTIVE_REVIEW / EMPTY_ORPHAN / FAILED_MANUAL / NOT_SAFE ==
+
+== F. R6F2 read-only diagnostics present + zero-write; freeze does not disclose raw values ==
+
+----------------------------------------
+R6F2 WIRING + RESOLVER + DEDUP + DIAGNOSTICS: 36 passed, 0 failed

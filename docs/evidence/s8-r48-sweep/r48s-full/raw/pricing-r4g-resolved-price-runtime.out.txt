@@ -1,0 +1,143 @@
+
+==============================================================================================================
+PRICING-R4G — RESOLVED-PRICE RUNTIME
+==============================================================================================================
+
+== A · §17 THE MATRIX — A to N, EXECUTED ==
+ok   A   §17 A — manual blank, auto present -> resolved = auto
+ok   B   §17 B — manual present, auto present -> resolved = manual
+ok   C   §17 C — manual blank, auto blank -> resolved = null
+ok   C1  and it is null rather than 0, which is the rule the whole round turns on
+ok   D   §17 D — Regular manual, Minimum auto, MSRP auto: each band resolves independently
+ok   D1  MIXED_FIELD_AUTHORITY_PASS — and each says which layer answered
+ok   D2  across three DIFFERENT flag states, none of which changed the price
+ok   E   §17 E — USE_AUTO_CLEARS_OVERRIDE = YES
+ok   F   §17 F — USE_AUTO_ALLOWED_WITH_BLANK_AUTO = YES
+ok   G   §17 G — FX changes auto while the manual override survives, untouched
+ok   G1  and the resolved price stays at the operator's number
+ok   H   §17 H — FX changes auto on a blank-override row, still writing no override
+ok   H1  and the RESOLVED price moves with it automatically — the point of the whole model
+ok   H2  which the plan reports as resolved_follows, so an operator can see it before running the write
+ok   H3  FX_WRITES_MANUAL_OVERRIDE_COUNT = 0 — over TRUE, FALSE and blank in one row
+ok   I   §17 I — a new same-currency row: auto populated, manual override blank
+ok   I1  and it resolves to the auto value, so the site has a price on day one
+ok   J   §17 J — a new cross-currency pending_fx row: auto blank, manual override blank
+ok   J1  which resolves to null — Not Set, and emphatically not 0
+ok   K   §17 K — the first FX run populates auto
+ok   K1  and the override stays blank, because nothing writes it
+ok   K2  after which the row resolves to the converted price — created, reconciled, priced, no override
+ok   L   §17 L — every empty shape resolves to null on the server
+ok   L1  and to null in the browser — never 0, on either side of the wire
+ok   L2  while a REAL zero is still a real price — "absent" and "zero" stay two different answers
+ok   M   §17 M — every legacy shape resolves to the number it already held. Byte-equivalent.
+ok   M1  not one of them resolves THROUGH auto — a populated override never reaches the fallback
+ok   N   §17 N — and no shipped pricing file contains a migration at all
+
+== B · §8 THE WIRE — 72_ RESOLVES THROUGH 73_, EXECUTED ==
+ok   B1  72_ declares no resolver of its own
+ok   B1a it calls 73_'s — the same reuse 04_ makes of the frozen precision table
+ok   B2  an overridden band publishes resolved / auto / override and names the source
+ok   B2a an auto-priced band publishes a resolved price and a NULL override — which is not a gap
+ok   B2b and a band with nothing behind it says NOT_SET rather than publishing a number
+ok   B3  three bands keep three answers all the way onto the wire
+ok   B4  a SKU with no pricing_list row says so, and is not confused with a row that has no price
+ok   B5  with 73_ absent it publishes NO price and says why — it does not fall back to the override cell
+ok   B5a and the row carries a finding, so the refusal is visible rather than silent
+ok   B5b there is no hand-written fallback anywhere in the file to reach for instead
+ok   B6  the legacy name and the explicit name are built from ONE expression — an alias, not a second opinion
+ok   B6a minimum_price likewise
+ok   B6a msrp likewise
+ok   B7  59_ resolves nothing — it passes pricing_list rows through whole, as it always did
+ok   B7a and the client resolves on that transport, because every layer already arrives on it
+
+== C · §9 THE CLIENT MIRROR — AND THAT IT AGREES WITH THE SERVER ==
+ok   C1  RESOLVER_CLIENT — one client resolver, declared once
+ok   C1a and the normalizer publishes the resolved price and its source
+ok   C2  RESOLVER_SERVER_PASS = RESOLVER_CLIENT_PASS — thirteen shapes, two runtimes, no disagreement
+ok   C2a over thirteen shapes, which is every combination the columns can hold
+ok   C3  pointed at a column that does not exist the client returns NOT_SET — so C2 could have failed
+ok   C4  a row carrying the server's answer is not second-guessed by the mirror
+ok   C4a and a raw cache row is resolved locally, which is the transport the mirror exists for
+ok   C5  override, auto and resolved all reach the browser separately
+ok   C5a and a blank override normalizes to null, not to the auto value — the raw cell stays raw
+ok   C6  NA resolves to null in the browser too — "does not apply" is never answered with a number
+ok   C7  SKU_REGIONAL_RESOLVED_PRICE_PASS — the editor holds override, auto and resolved apart
+ok   C7a and an overridden field shows the override as the resolved price, with auto still beside it
+ok   C7b and NA stays NA on screen rather than borrowing the auto number
+ok   C8  the Override line is rendered and styled
+ok   C8a labelled, so a reader does not have to infer which number is which
+ok   C8b and styled like the Auto line rather than like an alert — a blank override is a healthy state
+
+== D · §13 THE CONSUMER CENSUS, POST ==
+ok   D1  PSB_RESOLVED_PRICE_PASS — 72_ gates analysable on the resolved price
+ok   D2  PRICING_CENTER_RESOLVED_PRICE_PASS — the adapter carries it through verbatim
+ok   D3  the board reads it for PRICING_SOURCE_MISSING and the chart gate
+ok   D4  FC_SUMMARY_RESOLVED_PRICE_PASS — the FC price lookup reads the resolved price
+ok   D5  and the campaign snapshot is fed from that same lookup, so it snapshots a resolved price
+ok   D6  UNSAFE_BLANK_CONSUMERS_POST = 0 — no production-reachable business path reads the raw override
+ok   D6a while the pricing EDITOR still reads it — RAW_MANUAL_OVERRIDE_REQUIRED, and it is the only one
+ok   D7  campaign-risk still reads marketplace_skus prices — a different table, deliberately out of scope
+
+== E · §14 BLANK NEVER BECOMES ZERO, POST ==
+ok   E1  client: nothing -> null
+ok   E1a server: nothing -> null
+ok   E2  the fc-summary DOM coercion is gone
+ok   E2a replaced by a finite check that yields null — a typed non-number is no price, not a price of 0
+ok   E3  BLANK_TO_ZERO_DEFECTS_POST = 5 — fc-summary's is fixed; the five that remain are marketplace_skus
+ok   E3a and the db-api three are in the marketplace_skus normalizer, not the pricing_list one
+ok   E3b while the pricing_list normalizer carries no zero default at all
+ok   E4  and no .gs file has a zero default on any price
+
+== F · §16 THE RELEASE — FIVE FILES, ONE ID ==
+ok   F1  TARGET_RELEASE is R24 or later
+ok   F2  the rule is stated in 63_ — an id naming two trees cannot answer what it exists for
+ok   F2a and it has been applied to unshipped candidates before, which is why R23 may not absorb this
+ok   F3  APPS_SCRIPT_SYNC_SET — all five files are at R24 or later, no file left behind
+ok   F3a and 59_ is NOT among them — it did not change, and marching it would destroy the signal
+ok   F4  every file in the set declares the stamp its manifest row expects
+ok   F5  CACHE_TOKEN_CURRENT_FOR_ALL_CHANGED_ASSETS = YES — no repeat of the supplychain.js delivery failure
+ok   F6  §4G exists in the canonical mapping spec
+ok   F6a and states that no production row was written
+
+== P · §0/§2 THE BOARD IS A CONSUMER, NOT A SECOND PRICING ENGINE ==
+ok   P1  PSB_REDUCED_ROW_CARRIES_RESOLVED_PRICE = YES — all three are on the contract
+ok   P1a and the version was moved WITH them, so the change is a contract evolution and not a patch
+ok   P2  the three survive the reduction — measured by running the reducer, not by reading its source
+ok   P2a a wire row that carries no resolved price does not acquire one in the reducer
+ok   P3  alias and explicit name resolve to the same cents
+ok   P3a and when they disagree the EXPLICIT one wins — the server is the authority, not the alias
+ok   P4  PSB_REDERIVES_PRICING = NO — no auto_*, override_*, *_source or flag is on the board contract
+ok   P4a and the selector file does not so much as name one — it cannot compose a price it cannot see
+ok   P4b nor is there an override-else-auto expression anywhere in it
+ok   P5  the live producer was located — km-product-pricing-adapter.adaptRow
+ok   P5a the LIVE adapter emits every contract field as an own property — a blank one would refuse the read
+ok   P5b and the three resolved prices arrive with their values, not merely with their names
+ok   P5c a field the adapter does not emit IS reported absent — so P5a could have failed
+
+== Q · §6 THE CLIENT RESOLVER DOES EACH BAND ONCE ==
+ok   Q1  CLIENT_RESOLVER_CALLS_PER_ROW = 3 — one per band, for the six fields the row publishes
+ok   Q1a and all three bands are still resolved — the count is low because work was removed, not skipped
+ok   Q1b with each source taken from the SAME result as its value, so the two cannot disagree
+ok   Q2  CLIENT_RESOLVE_DUPLICATE_WORK = 0 — three distinct bands, no band resolved twice
+ok   Q3  the counter observes a call it is shown — so Q1 could have read 6
+
+== M · MUTANTS ==
+ok   M1  caught — 72_ publishes the raw override as the resolved price
+ok   M2  caught — 72_ falls back to the override cell when the resolver is absent
+ok   M3  caught — analysable is gated on the raw override again
+ok   M4  caught — the legacy wire name stops being an alias of the resolved price
+ok   M5  caught — the resolver reports the resolved value as the override
+ok   M6  caught — a field with an override is reported as following the auto value
+ok   M7  caught — USE_AUTO clears the override but leaves the ownership flag claiming MANUAL
+ok   M8  caught — USE_AUTO writes on a field that already has no override
+ok   M9  caught — the RETURN_TO_AUTO log forgets the override it removed
+ok   M10  caught — the pre-write audit accepts an override column in the write set
+
+==============================================================================================================
+PRICING-R4G RESOLVED-PRICE RUNTIME — passed 112  failed 0  mutants caught 10
+RESOLVER_SERVER_PASS = YES · RESOLVER_WIRE_PASS = YES · RESOLVER_CLIENT_PASS = YES
+USE_AUTO_CLEARS_OVERRIDE = YES · USE_AUTO_ALLOWED_WITH_BLANK_AUTO = YES
+FX_WRITES_MANUAL_OVERRIDE_COUNT = 0 · NEW_ROW_MANUAL_OVERRIDE_INITIALIZATION = BLANK
+UNSAFE_BLANK_CONSUMERS_POST = 0 · EXISTING_PRODUCTION_ROWS_WRITTEN = 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+==============================================================================================================

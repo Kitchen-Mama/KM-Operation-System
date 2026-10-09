@@ -1,0 +1,10 @@
+
+§1 boundary census — sheet → filter → handler → envelope → client → row model → input
+
+§1b the double-wrap, and its exact blast radius
+
+§2 the request the page really sends, for each scope shape
+
+§6 AI Plan / Recalculate — one dispatch, visible outcome, authoritative refresh
+
+PASS  93 passed, 0 failed

@@ -1,0 +1,13 @@
+
+== valid JSON ==
+
+== required scopes present (the exact minimum set from code usage) ==
+
+== minimality — no unused / overly-broad scopes (auto-detection is now OFF) ==
+
+== preserved project config (Phase 2 must-preserve) ==
+
+== no cross-domain impact — manifest is config only ==
+
+----------------------------------------
+APPS SCRIPT MANIFEST OAUTH SCOPES (F1-4B-FM5-R4J-AUTH2): 18 passed, 0 failed

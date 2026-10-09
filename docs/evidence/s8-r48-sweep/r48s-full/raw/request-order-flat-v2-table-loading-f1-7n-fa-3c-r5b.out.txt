@@ -1,0 +1,15 @@
+
+== REPRODUCE: flag=false (or pre-fix legacy authority) validates the V2 tab against LEGACY → HEADER_MISSING ==
+
+== FIX: flag=true → rprReadTable_ selects KMRDV2.V2_HEADERS → the V2 tab loads ==
+
+== fail-closed: missing tab; one missing V2 header ==
+
+== rprBuildSheetSet_ converges on the V2 authority under flag=true ==
+
+== all V2 consumers converge on the ONE shared loader (source-level) ==
+
+== READ-ONLY diagnostic TEMP_R5B_DIAGNOSE_CANONICAL_DRAFT_TABLE — reports V2_TABLE_READY, zero writes ==
+
+----------------------------------------
+R5B FLAT V2 TABLE LOADING (F1-7N-FA-3C-R5B): 26 passed, 0 failed

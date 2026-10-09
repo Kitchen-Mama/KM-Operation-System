@@ -1,0 +1,433 @@
+
+== §0 — preflight: nothing in this round loosens a gate ==
+ok   A1  the AI Plan DB generation flag is still false
+ok   A2  the activation allowlist still holds exactly ONE scope
+ok   A2a and it is one complete four-axis scope — not widened
+ok   A3  the read-only preflight entry point exists
+ok   A3a and the read-only readback
+ok   A3b and NO helper performs the production write — the only future write is the ordinary UI path
+ok   A4  neither entry point contains a write primitive
+ok   A4a nor does either INVOKE a Submit, an AI Plan run, or a reservation
+
+== §2/§3 — the reconciliation is three numbers, and every claim survived ==
+ok   B1  Recommended 920
+ok   B1a Planned 520
+ok   B1b Remaining 400
+ok   B1c and exactly three labelled cells — not four, and not a fourth line of prose
+ok   B2  the whole strip renders as 41 characters of visible text (was five lines)
+ok   B2a — "Recommended 920 Planned 520 Remaining 400"
+ok   B2b and contains no sentence: there is no full stop anywhere in it
+ok   B2c none of the four removed sentences survives anywhere in the output
+ok   B3  source authority is published on the element and is not visible text
+ok   B3a and so is each side's state, so a diagnostic loses nothing
+ok   B3b including whether THIS run changed the plan — the fact the sentence used to assert
+ok   B4  a plan larger than the recommendation reads Excess 120
+ok   B4a and the word Remaining is not used for it
+ok   B4b no negative number is ever printed
+ok   B4c the model still reports remaining 0, not -120
+ok   B4d and the third column declares WHICH of the two it is
+ok   B5  520 planned against 520 recommended is Remaining 0, styled as matched
+ok   B6  a PENDING recommendation renders an em dash with the reason on hover
+ok   B6a and 0 appears nowhere
+ok   B6b and the difference is a dash too — it cannot be computed from a number nobody has
+ok   B7  an absent Execution Plan host makes the planned total UNAVAILABLE, not 0
+ok   B7a and the strip says so on the element and on hover
+ok   B7b with no difference computed — subtracting from an uncountable plan is arithmetic without meaning
+ok   B7c while an EMPTY plan is READY with 0 — the two are different facts and are told apart
+ok   B7d so nothing planned against 920 recommended leaves 920 remaining
+ok   B8  the two sides draw on different supply
+ok   B8a and the strip says exactly that — four words
+ok   B8b with which stock each side means in the title
+ok   B8c and an accessible description, so the detail is not mouse-only
+ok   B8d while the main line stays clean: neither warehouse is spelled in visible text
+ok   B9  when the sources AGREE the warning is absent entirely
+ok   B9a because they are comparable
+ok   B10 1 route row(s): still three cells and 41 characters
+ok   B10 2 route row(s): still three cells and 41 characters
+ok   B10 4 route row(s): still three cells and 41 characters
+
+== §3 — the strip is quieter than the controls, and the seven-track grid is untouched ==
+ok   C1  the strip does not wrap — a second line is the paragraph returning
+ok   C2  no fill: a reconciliation is a reading, not an alarm
+ok   C3  a hairline rule instead of a box, so it does not out-compete the Route rows above it
+ok   C4  the full-width note rule is gone from BOTH the stylesheet and the page — no orphan either way
+ok   C5  the flag truncates rather than wrapping
+ok   C6  the number is the legible half and the label is secondary
+ok   C7  the Route grid still declares exactly SEVEN tracks
+ok   C7a and the header still names seven columns in one row
+ok   C7b including Last Mile, which R6-R4 added
+ok   C8  the stylesheet is on its OWN token family, not the application series
+ok   C8a and at or after ircompactrecon-20260905 — the token THIS round minted, which is the durable half of the claim the literal was making
+ok   C8b and index.html serves the stylesheet on exactly that token
+ok   C8a and index.html serves the current member
+ok   C9  no application asset is left behind on an older token
+ok   C9a and the page itself is on the current one
+
+== §4 — one constant was answering two questions ==
+ok   D1  there is now a DEPLOYMENT RELEASE constant, distinct from the module stamp
+ok   D1a set to this release or a later one (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   D1b and 63_'s own module stamp moved too, because 63_ changed (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   D1b1 and both are well-formed stamps
+ok   D1c the release never moves backwards, checked against the shared ledger
+ok   D2  build_id is the RELEASE
+ok   D2a named explicitly as well
+ok   D2b 63_'s module build is its own field
+ok   D2c the workspace module build is its own field
+ok   D2d and the router build, as before
+ok   D3  the legacy build_version alias no longer carries the module stamp
+ok   D3a every build_version site carries the release, which is what the frontend falls back to
+ok   D3b and the frontend does fall back to it — so the two had to agree
+ok   D3c the browser surfaces the split too, so a console reading shows the same four facts
+ok   D4  63_'s own manifest row says it is self-referential — both sides are declared in this file
+ok   D4a and mixed_deployment is UNCHANGED: it is a per-file claim and it was never the misleading field
+ok   D5  the manifest still registers 31 owner files
+ok   D5a and at least ten still declare an OLDER round — stamps were not marched to the release
+ok   D5b a file that did not change keeps the round it last changed in
+ok   D6  a manifest owner edited in the working tree is CHECKED, not skipped
+ok   D6a the blanket skip that made this guard silent during R6-R5 is gone
+ok   D6b what it checks instead is whether THIS tree moved the stamp along with the file
+
+== §5/§8 — Route A, resolved by identity rather than by list order ==
+ok   E0  the preflight runs
+ok   E1  and returns the verdict §5 requires
+ok   E1a with zero DB writes
+ok   E1b and zero write PRIMITIVES were even reached
+ok   E1c no writer was constructed
+ok   E2  two visible rows, as the R6-R4 freeze established
+ok   E2a and exactly ONE of them is Route A
+ok   E3  Route A's header
+ok   E3a and its line
+ok   E3b the four-part scope
+ok   E3c the source warehouse
+ok   E3d a MARKETPLACE destination — which is what separates it from Route B
+ok   E3e quantity 320
+ok   E3f no last mile — the field the controlled action completes
+ok   E3g and no ETA, because the ETA waits for it
+ok   E3h with the version an UPDATE must expect
+ok   E3i and it is a MANUAL route — no AI generation run owns it
+ok   E3j status draft
+ok   E3k with a resolved K4 route identity
+ok   E4  exactly one other visible row is frozen alongside it
+ok   E4a and it is Route B
+ok   E4b which already has a last mile, so it is not a candidate
+ok   E4c the first-listed row was NOT chosen — the selector reads identity, not position
+ok   E5  the selector never reads the shipping method — a display token is not an identity
+ok   E5a and no operator-facing carrier label is spelled in it
+ok   E6  the last mile may change
+ok   E6a company may not
+ok   E6a country may not
+ok   E6a sku may not
+ok   E6a source_warehouse_id may not
+ok   E6a destination_kind may not
+ok   E6a quantity may not
+ok   E6a shipping_method may not
+ok   E6a allocation_draft_id may not
+ok   E6a allocation_draft_line_id may not
+ok   E7  the intent is an UPDATE of an existing row, declared rather than inferred
+ok   E7a guarded by the version it expects
+ok   E7b and carries NO create key — inventing one would make a retry look like a create
+ok   E8  zero matching rows STOPS
+ok   E8a and says the plan is not what it was written against
+ok   E8b with no target offered
+ok   E9  two rows matching the identity STOPS
+ok   E9a and says so: picking one would be the guess this contract exists to remove
+ok   E9b with no target offered
+ok   E10 the readback runs
+ok   E10a and confirms a narrow mutation
+ok   E10b with zero DB writes
+ok   E11 no forbidden field changed
+ok   E11a exactly the last mile, the ETA it unblocks, the version the writer moves — and the DERIVED route key
+ok   E11b the K4 key moved, because it is computed FROM the last mile — not an independent change
+ok   E11c and it moved for the stated reason; a derived key moving on its own would STOP
+ok   E12 the header count is unchanged
+ok   E12a and the line count
+ok   E13 Route B is unchanged, field by field
+ok   E13a and it was actually compared, not assumed
+ok   E14 a changed quantity STOPS
+ok   E14a and names the field
+ok   E15 a changed Route B STOPS
+ok   E15a and says which row drifted
+ok   E16 a NEW header STOPS — a completion must not create anything
+ok   E16a and says the count moved
+ok   E17 and a last mile still blank STOPS — the change did not land
+ok   E18 a readback with no BEFORE refuses rather than inventing one
+
+== R6-R6-R1 — the frozen BEFORE, and a readback the editor can press ==
+ok   R1  the no-argument entry point exists and takes NO parameters
+ok   R2  the snapshot READS no CacheService, PropertiesService or other persisted state
+ok   R2a and it contains no write primitive
+ok   R3  the snapshot names captured_from
+ok   R3  the snapshot names verdict
+ok   R3  the snapshot names allocation_draft_id
+ok   R3  the snapshot names allocation_draft_line_id
+ok   R3  the snapshot names expected_draft_version
+ok   R3  the snapshot names company
+ok   R3  the snapshot names country
+ok   R3  the snapshot names station_marketplace
+ok   R3  the snapshot names sku
+ok   R3  the snapshot names source_warehouse_id
+ok   R3  the snapshot names destination_kind
+ok   R3  the snapshot names destination_id
+ok   R3  the snapshot names destination_marketplace
+ok   R3  the snapshot names quantity
+ok   R3  the snapshot names shipping_method
+ok   R3  the snapshot names last_mile_delivery
+ok   R3  the snapshot names expected_arrival
+ok   R3  the snapshot names status
+ok   R3  the snapshot names generation_type
+ok   R3  the snapshot names ownership
+ok   R3  the snapshot names k4_group_key
+ok   R3  the snapshot names updated_at
+ok   R3  the snapshot names line_updated_at
+ok   R3  the snapshot names header_count
+ok   R3  the snapshot names line_count
+ok   R3  the snapshot names other_rows
+ok   R3  the snapshot names allowed_mutation_fields
+ok   R3  the snapshot names forbidden_mutation_fields
+ok   R3a with the production header id
+ok   R3b the production line id
+ok   R3c and the version the preflight reported
+ok   R3d with the last mile BLANK, which is what makes it completable
+ok   R4  the expected AFTER key is the frozen key with ONE segment substituted
+ok   R4a and it still has the contract's eleven segments
+ok   R4b a key that is not the contract's shape yields NO expectation, so a comparison fails closed
+ok   R5  an absent snapshot is an issue, not a pass
+ok   R6  the frozen readback runs with no arguments
+ok   R6a and the authorized change is the ONLY success verdict
+ok   R6b read_only true, and four zeroes
+ok   R6c the version advanced by exactly one
+ok   R6d the K4 key is the frozen key with only the last mile moved
+ok   R6e and the identity absorbed the value, which is what makes it valid
+ok   R6f no Route A field falls back to an invariant — every one is frozen exactly
+ok   R6g the weaker gates are kept as a second line, and they agree
+ok   R6f1 the frozen values are the production ones
+ok   R6f2 including the ownership string the census itself emits
+ok   R6h with the plan shape unchanged
+ok   R6i and the guarantee on the other route is STATED rather than implied: other routes compared field by field
+ok   R7  the target row is gone — the frozen target row is NOT PRESENT after the action. A row that disappeared is not a nar
+ok   R7a the header id changed — the frozen target row is NOT PRESENT after the action. A row that disappeared is not a nar
+ok   R7b the quantity changed — fields outside the allowed set changed: quantity
+ok   R7c the source warehouse changed — fields outside the allowed set changed: source_warehouse_id
+ok   R7d the shipping method changed — fields outside the allowed set changed: shipping_method
+ok   R7e the row left the ACTIVE statuses — the frozen target row is NOT PRESENT after the action. A row that disappeared is not a nar
+ok   R7f the row became AI-owned — fields outside the allowed set changed: ownership
+ok   R7f1 naming ownership, whose exact BEFORE value is frozen
+ok   R7f2 and the weaker invariant agrees, so the two lines do not contradict each other
+ok   R7g Route B drifted — another visible route drifted; see other_row_drift.
+ok   R7h a header was created — the header or line COUNT moved: a completion must not create anything.
+ok   R7i the last mile never changed — the last mile is STILL blank, so the intended change did not land.
+ok   R7j the version did not advance — draft_version went 1 -> 1, and the contract advances it by exactly one on an UPDATE. No st
+ok   R7k the version advanced by two — something wrote twice — draft_version went 1 -> 3, and the contract advances it by exactly one on an UPDATE. No st
+ok   R7l  a route re-keyed by a K4 dimension nothing else compares STOPS
+ok   R7l1 and NO forbidden field changed — every other gate passed it
+ok   R7l2 so the exact K4 derivation is the only thing that caught it
+ok   R7l3 stated as its own fact, not folded into another
+ok   R7m a last mile the route identity did not absorb STOPS
+ok   R7m1 and says which gate refused it
+ok   R7m2 while the authorized change absorbs it
+ok   R8  a snapshot missing a required field STOPS and names the field
+ok   R8a and still reports zero writes
+ok   R8b a snapshot whose last mile is not blank STOPS — it does not describe a completable route
+ok   R-M1 the draft_version contract dropped → a no-op write reports success (caught)
+ok   R-M2 the exact K4 derivation weakened back to "explained by" → a silent re-key confirms (caught)
+ok   R-M3 the snapshot-completeness gate dropped → an incomplete BEFORE is used anyway (caught)
+ok   R-M4 an equality field with no frozen value falling through to the weaker invariant (caught)
+ok   S1  the untouched plan is READY
+ok   S1a from the no-argument readiness entry point
+ok   S1b read_only true, and four zeroes
+ok   S1c with no snapshot gap
+ok   S1d the frozen target is present
+ok   S1e the version is still 1 and the last mile is still blank — nothing has been written
+ok   S1f no route has drifted from the freeze
+ok   S1g and the plan shape matches
+ok   S2  a snapshot gap on status — the frozen BEFORE snapshot is not usable: missing required field: status; missing requir
+ok   S2a and status is named in snapshot_gaps
+ok   S2  a snapshot gap on generation_type — the frozen BEFORE snapshot is not usable: missing required field: generation_type; missi
+ok   S2a and generation_type is named in snapshot_gaps
+ok   S2  a snapshot gap on ownership — the frozen BEFORE snapshot is not usable: missing required field: ownership; missing req
+ok   S2a and ownership is named in snapshot_gaps
+ok   S2  a snapshot gap on updated_at — the frozen BEFORE snapshot is not usable: missing required field: updated_at; missing re
+ok   S2a and updated_at is named in snapshot_gaps
+ok   S2  a snapshot gap on line_updated_at — the frozen BEFORE snapshot is not usable: missing required field: line_updated_at; missi
+ok   S2a and line_updated_at is named in snapshot_gaps
+ok   S3  Route A status drifted — Route A has drifted from the freeze on: status
+ok   S3a Route A method drifted — Route A has drifted from the freeze on: shipping_method, k4_group_key
+ok   S3b Route A quantity drifted — Route A has drifted from the freeze on: quantity
+ok   S3c Route A became AI-owned — Route A has drifted from the freeze on: ownership
+ok   S4  Route B quantity drifted — a companion route has drifted from the freeze on: SADH-K4-A3872518.quantity, SADH-K4-A38
+ok   S4a Route B destination kind drifted — a companion route has drifted from the freeze on: SADH-K4-A3872518.destination_kind, SAD
+ok   S4b Route B is gone altogether — a frozen companion route is gone: SADH-K4-A3872518
+ok   S5  the target line id changed — the frozen target row is not present in production. The freeze describes a plan that has
+ok   S5a the version already moved — draft_version in production is 2, and the freeze expects 1. Something has written to thi
+ok   S5b the last mile is already set — the last mile is already set to "TRUCK". This row is not awaiting completion any more, s
+ok   S5c a header was added since the freeze — the plan shape has changed: headers 2 -> 3, lines 2 -> 3.
+ok   S6  a plan where the change HAS landed is not READY — readiness runs before the click
+ok   S6a which is exactly the state the readback confirms
+ok   S6b and the untouched plan the readiness accepts is not a confirmed write
+ok   S-M1 readiness ignoring a snapshot gap (caught)
+ok   S-M2 readiness not comparing the companion routes at all (caught)
+ok   S-M3 readiness accepting a version that already moved (caught)
+ok   S7  Route A's two timestamps are frozen by value, not as null
+ok   S7a and neither is null any more
+ok   S7b Route A updated_at moved before the Save — Route A has drifted from the freeze on: updated_at. A moved timestamp means SOMETHING HA
+ok   S7c and the reason says what a moved timestamp MEANS, not merely which field differs
+ok   S7d Route A line_updated_at moved before the Save — Route A has drifted from the freeze on: line_updated_at. A moved timestamp means SOMETHI
+ok   S7e a silent write that left every OTHER field alone is still caught, and only here
+ok   S8  Route B updated_at drifted — a companion route has drifted from the freeze on: SADH-K4-A3872518.updated_at
+ok   S8a Route B line_updated_at drifted — a companion route has drifted from the freeze on: SADH-K4-A3872518.line_updated_at
+ok   S8b and AFTER the Save too: an otherwise perfect change that also touched Route B
+ok   S8c naming the companion route and the field, so the operator knows what the save reached
+ok   S8d readiness compares Route B on every field it carries
+ok   S8e and so does the readback
+ok   S8f which is what lets the guarantee be stated without an exception list
+ok   S8g[0] the Route B freeze carries SADH-K4-A3872518
+ok   S8g[1] the Route B freeze carries SADL-K2-344FB2B2
+ok   S8g[2] the Route B freeze carries wh-resus-us-3pl-amzlgs|air||
+ok   S8g[3] the Route B freeze carries WH-RESUS-US-3PL-AMZLGS
+ok   S8g[4] the Route B freeze carries shipping_method: 'air'
+ok   S8g[5] the Route B freeze carries draft_version: '1'
+ok   S8g[6] the Route B freeze carries Thu Sep 03 2026 22:04:49
+ok   S9  a Save that moved Route A's timestamps still confirms
+ok   S9a with the movement classified as ALLOWED, not as a violation
+ok   S9b both are REPORTED as changed rather than hidden
+ok   S9c and the report shows the timestamp a person can read, not its epoch
+ok   S9d while the very same movement, before the click, is a STOP
+ok   S9e and the version reads 1 -> 2, not '' -> 2
+ok   S10[0] a different zone NAME is the same instant, so it is not drift
+ok   S10[1] the same instant written in UTC is the same instant, so it is not drift
+ok   S10a but one second later IS drift — a companion route has drifted from the freeze on: SADH-K4-A3872518.updated_at
+ok   S10b a blank timestamp keys to blank, never to the epoch
+ok   S10c and an unreadable one falls back to its own text — a timestamp nobody can read is not 1970
+ok   S-M4 a null timestamp masquerading as a complete snapshot (caught)
+ok   S-M5 the timestamps dropped from the equality set, leaving the freeze 'complete' with a hole (caught)
+ok   S-M6 timestamps compared as display text instead of as instants (caught)
+ok   S-M7 one comparison core per entry point instead of one shared (caught)
+ok   R9  the preflight emits the frozen constant as paste-ready source
+ok   R9a carrying every field, so a RE-freeze after a plan change needs no hand-transcription
+ok   R9c and the shipped freeze needs no upgrade before the authorized run
+ok   R9b and it is THIS run's target, not a template
+ok   R10 with the recommendation side unknown, comparability is NULL — not false
+ok   R10a so the strip claims no difference: unknown is not different
+ok   R10b and with the ROUTE side unresolved it is NULL too
+ok   R10c so no claim is made from one side alone
+ok   R11  the element publishes exactly these seven dataset keys
+ok   R11a the same seven when the sources agree
+ok   R11b and the same seven when one side is unknown — the key never disappears with the warning
+ok   R11c different sources publish "false"
+ok   R11d the same source publishes "true"
+ok   R11e and an unknown side publishes "null" — its own value, never collapsed into false
+ok   R11f from either side, so neither can imply a difference alone
+ok   R11g the whole dataset, pinned by value
+ok   R11h the title names each side's own stock, and nothing else
+ok   R11i and the accessible description is the warning plus that same detail
+ok   R11j[0] no aria-label and no title when there is no difference to describe
+ok   R11j[1] no aria-label and no title when there is no difference to describe
+ok   R11j[2] no aria-label and no title when there is no difference to describe
+ok   R12  different-and-known is the ONLY state that adds visible words
+ok   R12a the same source adds none
+ok   R12b and an unknown side adds none — unknown is not different
+ok   R12c the widest state is 69 characters and still contains no sentence
+
+== §6 — what the browser actually does when the Last Mile changes ==
+ok   F1  the Last Mile control fires an edit handler — there is no separate Save button
+ok   F2  an explicit edit collects the model from the DOM
+ok   F3  and schedules a DEBOUNCED backend write — the change is not local-only
+ok   F3a 400 ms after the last edit
+ok   F4  the row declares UPDATE or CREATE from its OWN persisted identity, never from which field was edited
+ok   F5  so a route the database already holds is sent as UPDATE_EXISTING_ROUTE
+ok   F6  carrying the existing allocation_draft_id
+ok   F6a and the version it expects — an UPDATE is version-guarded
+ok   F6b and NO create key, so it can never fall back to minting a second ticket
+ok   F7  written by the ATOMIC handler — one request writes header and line, or nothing is written
+ok   F7a and the line payload carries its own persisted line id
+ok   F8  Submit does not itself write a route ticket
+ok   F9  the server reads back what it wrote and names a mismatch
+ok   F9a and the client treats that as INDETERMINATE, not as a success
+ok   F9b a bare success flag is still not proof of persistence
+
+== §7 — an unclassifiable outcome holds the line ==
+ok   G1  the write scope excludes routes under an ACK_UNKNOWN hold
+ok   G1a and it is applied AFTER the empty-touched-set fallback, which widens the scope to every row
+ok   G2  the hold goes on for an outcome the read-back could not settle
+ok   G2a and comes off for one it could — in EITHER direction
+ok   G3  a read-back that proves the write landed says so by name
+ok   G3a and one that proves it did not
+ok   G3b and every unsettled ending — unavailable, failed, inconclusive — is named the same thing
+ok   G4  the reconciler is read-only
+ok   G5  an explicit release clears the hold and re-queues the route
+ok   G5a and NO ordinary edit path calls it — the release is a deliberate gesture, never a side effect
+ok   G6  the hold stores allocation_draft_id — the identity a retry must REUSE
+ok   G6  the hold stores create_idempotency_key — the identity a retry must REUSE
+ok   G6  the hold stores expected_draft_version — the identity a retry must REUSE
+
+== §9 — the controlled save, executed against a mutable double ==
+
+== §9 — one Last Mile completion, and nothing else moves ==
+ok   H1  BEFORE: two headers, two lines — the live shape
+ok   H2  AFTER: the header and line counts are unchanged
+ok   H2a the last mile is what the operator chose
+ok   H2b the method is untouched
+ok   H2c the destination is untouched
+ok   H2d the source is untouched
+ok   H2e and the quantity is still 320
+ok   H3  Route B is byte-identical — not merely "still there"
+ok   H3a and the save reported no failure
+ok   H3b the writer moved the version, which is what a later read-back settles a lost response by
+ok   H4  replaying the same edit creates no header and no line
+ok   H4a and no cancelled leftover either
+
+== §7/§9 — a timeout BEFORE execution ==
+ok   I1  the database is untouched — the server never ran
+ok   I2  and the client reconciled by READING, not by writing again
+ok   I3  the read-back proved the version had NOT moved, so the route is classified NOT_COMMITTED and not held
+ok   I3a it stays queued, because a proven zero-write is safe to retry
+ok   I4  the authorized retry writes ONE header and ONE line — no duplicate
+ok   I4a and the change landed
+
+== §7/§9 — a timeout AFTER the server committed ==
+ok   J1  the server committed after the browser stopped listening
+ok   J1a so the database DOES hold the change
+ok   J1b still one header and one line
+ok   J2  the read-back found the version had MOVED, so the route is COMMITTED_CONFIRMED_BY_READBACK, not held
+ok   J2a and it leaves the queue — a confirmed write is never sent twice
+ok   J3  and a later flush adds nothing
+
+== §7 — an AMBIGUOUS outcome stops the line ==
+ok   K1  the route is HELD at ACK_UNKNOWN
+ok   K1a by its own instance identity
+ok   K2  the hold survives a re-render — it is the ROUTE that is held, not the screen
+ok   K3  a flush that would otherwise re-send every row on screen issues ZERO requests
+ok   K3a and the database is exactly as the held write left it
+ok   K4  an EXPLICIT release lifts the hold
+ok   K4a and the route is no longer held
+ok   K4b it is queued again
+ok   K5  and the authorized retry still writes no duplicate — the identity was preserved across the hold
+
+== MUTANTS — each defect this round removes, reintroduced ==
+ok   M1  the paragraph returns under the compact numbers (caught)
+ok   M2  an over-plan printed as Remaining 0 → "nothing left to do" for the state that needs attention (caught)
+ok   M3  a PENDING recommendation printed as 0 (caught)
+ok   M4  an unrendered plan counted as a plan of zero (caught)
+ok   M5  the different-source warning suppressed (caught)
+ok   M6  build_id returns to the module stamp → a deployed release reads as an old one (caught)
+ok   M7  the release stamp left behind while a server file changes (caught)
+ok   M8  the destination discriminator dropped → Route B becomes a candidate too (caught)
+ok   M9  a duplicate save target accepted instead of stopping (caught)
+ok   M10 the readback rebuilds its own BEFORE, so it can never detect a change (caught)
+ok   M11 a held route re-sent by the next unrelated edit (caught)
+ok   M12 an ordinary edit silently releases the hold (caught)
+ok   M13 an UPDATE degraded to a CREATE → a second ticket for one route (caught)
+
+== REGRESSION — R6-R5 cold boot and R6-R4 last mile are untouched ==
+ok   N1  the boot-read arbiter is present and intact
+ok   N1a and the page still routes its primary read through it
+ok   N1b with the gap-job poll still on the deferred lane
+ok   N1c and Preparing/Searching are still distinct states
+ok   N1d and a timeout is still not rendered as an empty result
+ok   N2  the R6-R5 diagnostics survive the UI cleanup
+ok   N2a as does KM.transport.timeline()
+ok   N3  the R6-R4 Last Mile control is intact
+ok   N3a and the registry still attaches transit last-mile facts to every method option
+ok   N3b the registry did NOT change this round, so its token correctly did not move
+
+passed 401  failed 0  |  mutants caught 24  survived 0

@@ -1,0 +1,21 @@
+
+== §2 Script load-order (index.html) ==
+
+== §3 Namespace + delayed/replaced KM.DB (API-1.5 stale-capture fix) ==
+
+== §4 Feature Flag — false parity, true fail-closed, no dual execution ==
+
+== §5/§6 Legacy parity + error visibility — NO false success ==
+
+== §9/§19 Forbidden-op guard vs all Router actions (from live 01_router.gs) ==
+
+== §10 Active-page source non-impact (all page modules) ==
+
+== §14 Cache TTL=0 + §15 JSON-safe serialization ==
+
+== §16 Transport readiness (no live fetch) ==
+
+== §18 Zero-I/O initialization ==
+
+----------------------------------------
+API FOUNDATION F2 COMPAT: 50 passed, 0 failed

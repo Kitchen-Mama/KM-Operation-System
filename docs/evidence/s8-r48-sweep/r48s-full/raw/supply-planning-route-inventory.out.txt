@@ -1,0 +1,24 @@
+
+== A. router parsed + recommendation actions present ==
+
+== B. classify every recommendation action; FAIL on FORBIDDEN_PUBLIC_WRITE ==
+   route inventory: {"upsertRequestOrderAllocationDraft":"LOCKED_USER_EDIT","upsertRequestOrderAllocationDraftLines":"LOCKED_USER_EDIT","submitRequestOrderAllocationDrafts":"EXPLICIT_SUBMIT_OR_HANDOFF","upsertShippingAllocationDraft":"LOCKED_USER_EDIT","upsertShippingAllocationDraftLines":"LOCKED_USER_EDIT","submitShippingAllocationDrafts":"EXPLICIT_SUBMIT_OR_HANDOFF","upsertRequestOrderSiteConfirmations":"INTERNAL_ONLY","generateRecommendationDraftLocked":"LOCKED_GENERATION","updateRecommendationDecisionLocked":"LOCKED_USER_EDIT","getRecommendationDraftToken":"READ_ONLY"}
+
+== C. legacy line writers are now locked adapters (no raw unlocked Sheet write remains) ==
+
+== D. locked handlers terminal-guard + edit path token-checks ==
+
+== E. full-table writer not reachable from a locked production route ==
+
+== F. Submit routes remain visibly distinct (not folded into generation/edit) ==
+
+== G. negative mutants — the wrapper→delegate path must be able to fail ==
+ok   G1 killed — delegation removed — the wrapper stops calling the core
+ok   G2 killed — wrong delegate — it calls an envelope-returning handler instead of the plain-result core
+ok   G3 killed — wrong scope propagation — the request body is not passed through
+ok   G4 killed — bypassed guard — the delegate stops acquiring the ScriptLock
+ok   G5 killed — wrong result handling — the raw core result is returned without the envelope
+ok   G6 killed — the delegate loses KMORCH — the generation authority is gone
+ok   G7 killed — the delegate loses the keyed-delta write — a full-table write could return
+
+All Round 1H Route Inventory assertions passed (44 assertions, 7 mutants, 0 survived, vacuity clean).

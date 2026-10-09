@@ -1,0 +1,19 @@
+
+== §14 A — exactly three real group containers ==
+
+== §14 B/C/D — group membership ==
+
+== §14 E/F/G — every card once; Gap → Recommendation order; group order ==
+
+== §11 — no empty group; leftover card never dropped ==
+
+== §14 H/I — flat-list-only removed; old misleading top flow removed ==
+
+== §14 J/K/L/M — existing card behavior preserved ==
+
+== §14 N — responsive: narrow layout drops the group indent/rule (no horizontal overflow) ==
+
+== §14 O/P — backend scheduler + registry unchanged; grouping ties to real registry keys ==
+
+----------------------------------------
+AUTOMATION SCHEDULE UI GROUPING (F1-6B-R2): 33 passed, 0 failed

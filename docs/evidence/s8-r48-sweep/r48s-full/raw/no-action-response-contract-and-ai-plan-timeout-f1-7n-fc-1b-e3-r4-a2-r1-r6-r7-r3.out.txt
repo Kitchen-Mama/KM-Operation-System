@@ -1,0 +1,158 @@
+
+== A — the backend NO_ACTION contract, taken from the real production decision path ==
+ok   A1  the production path answers AI_PLAN_NO_ACTION / NO_REPLENISHMENT_REQUIRED for this scope
+ok   A1a and it is a typed SUCCESS envelope, not a refusal
+ok   A2  the envelope names the outcome, the code and the reason, twice-stated as the task requires
+ok   A3  every mutation counter is of type number — not absent, not null, not a string
+ok   A3a and every one of them is 0
+ok   A4  writer_reached is the boolean false
+ok   A4a and it is a boolean, not a falsy stand-in
+ok   A5  routes and groups are empty arrays
+ok   A5a with 0 routes and 0 allocated
+ok   A6  recommended 0, already-planned 520, residual 0
+ok   A6a all three are numbers
+ok   A7  and each one survives JSON.stringify as a bare 0 — no omission, no null, no quoted "0"
+ok   A7a including `reservations`, the one counter the contract genuinely did not carry before this round
+ok   A7b and none of them serialize as null or as a quoted string
+ok   A8  the decision would not write and never reached a writer
+ok   A8a and zero cells were touched, measured on the sheets
+
+== B — WHERE the counters live, which is the fact both readers depend on ==
+ok   B1  the envelope has NO summary/counters/written sub-object — the place the capture snippet used to look
+ok   B1a every counter is an own property of `data` itself
+ok   B2  and the builder states them as literal zeros rather than computing them from a writer that never ran
+ok   B2a with `reservations` among them
+ok   B2b and it declares no summary sub-object for a reader to be misled by
+ok   B3  the capture snippet still has one `pick` sanitizer
+ok   B3a which resolves each counter through a single named accessor
+ok   B3b that reads the canonical flat `data` location FIRST
+ok   B3c and no counter is read straight off the nested object any more
+ok   B3d the reading records WHERE it came from — a number and its provenance are one fact
+ok   B4  the zero-counter gate now includes `reservations` — a field measured but never checked is not evidence
+ok   B4a and a supplied provenance must say `data`
+ok   B4b checked only when present, so an audit captured before this round is not refused for not predicting it
+
+== C — the timeout contract: a client bound must not sit below the transport bound ==
+ok   C1  the page declares a named AI Plan client bound
+ok   C1a and the transport declares its write bound
+ok   C2  the per-action write bound is at least the shared one - a per-action entry may only WIDEN
+ok   C2-r  and the page bound exceeds the bound the transport will actually apply to this action
+ok   C2a at least the 120 000 ms the task asks for
+ok   C3  THE RULE, not the number: the page bound EXCEEDS the transport bound, so the transport's own reconciliation-aware answer is what surfaces and this wrapper is only a backstop
+ok   C4  and it exceeds the 60 990 ms answer this round was measured against
+ok   C5  the generation call site passes the named constant
+ok   C5a and the literal 60000 is gone from it
+ok   C5b there is exactly one call site, so one bound governs the whole action
+ok   C6  the generation helper dispatches the request exactly once — a longer bound changes how long we WAIT, not how many we send
+ok   C6b and it schedules nothing of its own, so there is no delayed re-dispatch
+ok   C6a and the transport still states that a timed-out write is never auto-retried
+
+== D — delayed success: the 60 990 ms answer must be ACCEPTED ==
+ok   D1  one click sent exactly one generation request
+ok   D2  at 60 000 ms — the old bound — the UI has declared NOTHING
+ok   D2a and no TIMEOUT message exists at 60 000 ms
+ok   D2b the run is still in flight, which is the truth at that moment
+ok   D3  at 60 990 ms the answer arrives and is accepted
+ok   D3a with no TIMEOUT anywhere in the operator message
+ok   D3b and the operator is told, in words, that no replenishment is required
+ok   D4  still exactly ONE generation request — the longer bound introduced no retry
+ok   D5  and the new bound firing later cannot turn a delivered answer into a timeout
+ok   D5a with no extra request
+
+== E — a REAL timeout still happens, past the new bound, and still refuses to retry ==
+ok   E1  one millisecond before the bound, nothing has been declared
+ok   E2  at the bound it declares TIMEOUT
+ok   E2a naming the bound it actually waited
+ok   E3  and it does NOT retry
+ok   E4  the message forbids a second press in as many words
+ok   E4a and says to read the database back first
+ok   E4b it is reported as UNKNOWN, not as a failure — the request had left the browser
+ok   E4c and Submit stays blocked until a run reconciles
+ok   E5  and the TIMEOUT technical details contain no `undefined`
+
+== F — a LATE answer after a declared TIMEOUT must not transition anything ==
+ok   F1  the bound fires first and TIMEOUT is declared
+ok   F2  the late answer arrives and the UI is STILL TIMEOUT
+ok   F2a the result panel was not rewritten by the late response
+ok   F2b and nothing re-hydrated from a run the UI had already given up on
+ok   F2c with no second request
+
+== G — UI rendering: no `undefined`, and a zero is shown as 0 ==
+ok   G1  the classifier reads the real envelope as a successful no-action
+ok   G1a header counters are 0
+ok   G1b line counters are 0
+ok   G1c cancelled, reservations and db_writes are 0
+ok   G1d and the writer was not reached
+ok   G1e with the three quantities carried through to the page
+ok   G1f and the reason by name
+ok   G2  the NO_ACTION technical details contain no `undefined`
+ok   G2a specifically none of `undefined created`, `undefined updated`, `undefined expired`
+ok   G3  headers read 0 / 0 / 0
+ok   G3a lines read 0 / 0 / 0
+ok   G3b cancelled reads 0 / 0
+ok   G3c reservations reads 0
+ok   G3d db writes 0, writer not reached
+ok   G4  recommended shows 0
+ok   G4a existing qualifying plan shows 520
+ok   G4b residual shows 0
+ok   G5  and the headline names the outcome instead of calling it a missing recommendation
+ok   G5a it does NOT claim rows were generated
+ok   G5b and there is no TIMEOUT anywhere in a successful no-action
+ok   G6  a response that states no quantity yields null, not 0
+ok   G6a the panel still contains no `undefined`
+ok   G6b and the quantity rows are OMITTED rather than printed as a measured 0
+ok   G6c while the mutation counters — which mean "no mutation" — still read 0
+
+== H — regression: the write path, the flag and the allowlist are where they were ==
+ok   H1  a positive recommendation is still an ordinary success, not a no-action
+ok   H1a and its counters are reported verbatim, not zeroed
+ok   H1b reconciliation is unchanged: 3 expected, 3 acknowledged
+ok   H1c and an unacknowledged line count still refuses
+ok   H1d the positive headline is untouched
+ok   H1e and it has no `undefined` either
+ok   H2  00_config.gs still holds the production flag at FALSE
+ok   H2a and 61_ does not redeclare the allowlist
+ok   H2b the allowlist is still exactly one complete four-axis scope
+ok   H3  the preflight still answers READY_NO_ACTION
+ok   H3a in PRE_ACTIVATION, the flag still false
+ok   H3b with no predicate failed
+ok   H3c and zero cells touched
+ok   H3d production would not write and would not reach a writer
+
+== I — build stamps and the deployment contract ==
+ok   I1  61_ moved, because 61_ changed, and is not behind this round
+ok   I2  the RELEASE moved: a backend file changed, so a new Web App version is required
+ok   I3  63_ moved too, because its manifest row moved
+ok   I4  and the census moved, because its capture snippet changed
+ok   I5  63_'s manifest expects precisely the build 61_ carries
+ok   I5a including its own self-referential row
+ok   I6  this round is registered in the release order
+ok   I6a with nothing older registered after it
+ok   I7  00_config.gs keeps its own stamp and its manifest row still expects it — an unchanged file is not bumped
+ok   I7a and it is NOT this round: nothing in 00_config.gs changed
+ok   I8  the deployed action contract is not below the version this round required
+ok   I8a and the envelope shape is unchanged, so the transport contract does not move
+
+== J — nothing was generated, flipped, deployed or written by this round ==
+ok   J1  the NO_ACTION builder deploys nothing and schedules nothing
+ok   J2  and it touches no range — a success envelope is not a write
+ok   J2a nor sets a value
+ok   J3  and constructs no writer
+ok   J4  the production decision path measured 0 cells written
+ok   J4a and so did the preflight
+
+== N — mutants ==
+ok   N1 the 60 000 ms literal restored at the call site (caught)
+ok   N2 a client bound below the transport bound for this action (caught)
+ok   N3 reservations dropped from the NO_ACTION envelope (caught)
+ok   N4 the capture snippet reading counters off a nested object again (caught)
+ok   N5 the renderer trusting its caller instead of coercing (caught)
+ok   N6 the synthetic TIMEOUT cls stripped of its counters, with the coercion also gone (caught)
+ok   N7 a retry added to the generation helper (caught)
+ok   N8 the no-action message asserting zero demand and dropping the quantities (caught)
+ok   N9 reservations removed from the readback zero-counter gate (caught)
+ok   N10 reservations emitted as null rather than 0 (caught)
+
+------------------------------------------------------------------------
+NO_ACTION RESPONSE CONTRACT + AI PLAN TIMEOUT (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3):
+passed 132  failed 0  |  mutants caught 10  survived 0

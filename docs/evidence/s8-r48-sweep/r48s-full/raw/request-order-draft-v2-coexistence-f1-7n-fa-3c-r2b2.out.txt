@@ -1,0 +1,25 @@
+
+== 1-2 dispatch: MONTHLY→flat adapter, WEEKLY→existing line adapter (shared TABLES map unchanged) ==
+
+== 3-6 planning_cycle coexistence (MONTHLY YYYY-MM vs WEEKLY RECO-YYYY-MM) ==
+
+== 7-10 schema set: MONTHLY V2 = flat drafts + journal only; excludes lines + shipping; WEEKLY unchanged; 53 cols ==
+
+== schema gate integration: flat V2 ready even when the child-line + shipping schemas are stale/missing ==
+
+== 11-12 deterministic RD identity; never a RAD-uuid ==
+
+== 13-16 AI all-zero gate / manual all-zero / one scope→one row / zero child-line writes ==
+
+== 17 flat readback reads the header table ONLY (no child-line join) ==
+
+== 18-23 lifecycle: REFRESH preserves created_at / advances updated_at / protects edited+terminal; REGENERATE bumps version ==
+
+== 24-27 run journal reuse + provenance preservation (SHARED recommendation_calculation_runs) ==
+
+== 28 optimistic concurrency retained (flat fingerprint over per-tier (order_qty,user_edited) via shared token) ==
+
+== 29-30 WEEKLY line engine untouched by the flat module ==
+
+----------------------------------------
+MONTHLY/WEEKLY COEXISTENCE (F1-7N-FA-3C-R2b-2): 50 passed, 0 failed

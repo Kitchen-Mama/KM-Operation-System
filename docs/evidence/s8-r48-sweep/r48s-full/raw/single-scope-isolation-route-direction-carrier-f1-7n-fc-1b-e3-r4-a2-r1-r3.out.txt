@@ -1,0 +1,276 @@
+
+== A. §1 — the stable DONE failure, reproduced by re-introducing each defect into shipped source ==
+ok   A0  the pre-R3 chain still runs (this is a behaviour reproduction, not a crash)
+ok   A1  the whole (company,country) universe becomes receiver facts: 47
+ok   A1a and every one of them becomes source lines: 92
+ok   A1b and allocated lines: 92
+ok   A2  duplicate_sku_window_in_group is NON-EMPTY (45)
+ok   A2a and every duplicate key ends in an EMPTY window — the blank-window collapse
+ok   A3  conserved = false
+ok   A4  source_data_as_of is NULL (the workspace line does not carry it)
+ok   A4a so the ship date is blank and the lane is never date-gated
+ok   A5  the target SKU refuses with ROUTE_SOURCE_MULTI_POOL_UNRESOLVED
+ok   A5a because no single source could be named for a line the allocator had already split
+ok   A6  every target line carries a BLANK window_code
+ok   A6a and a BLANK required_by_date, so no route is checked against the date it is needed by
+ok   A7  without the collapse, ONE canonical demand enters as TWO sites (two ASINs)
+ok   A7a and the only thing preventing a doubled plan is a downstream DUPLICATE_WEEKLY_LINE_KEY drop
+
+== B. §2 — exact scope isolation, BEFORE canonical grouping and the allocator ==
+ok   B0  the fixed chain runs
+ok   B1  the isolation happens before grouping, not at the writer
+ok   B1a the universe is still ENUMERATED whole (47 sites)
+ok   B2  target demand SKU count = 1
+ok   B2a foreign demand SKUs are dropped and COUNTED (45)
+ok   B3  exactly one SKU reaches the batch request
+ok   B3a exactly two source lines (D30 + D90 of one SKU)
+ok   B3b no line refuses for want of a source
+ok   B4  three allocated lines (one per source per window)
+ok   B4a and every one of them is the target SKU
+ok   B5  ZERO allocator refusals from foreign SKUs — there are none left to refuse
+ok   B6  a marketplace OUTSIDE the allowlist intersects to nothing
+ok   B6a with a typed refusal, not a silent widening
+ok   B7  a BLANK marketplace is not "all": it is no extra constraint, and the allowlist still constrains to 1
+ok   B8  ALL_SITES is refused by name, never treated as an unrecognised marketplace
+ok   B8a in any casing
+ok   B9  and another company intersects to nothing
+ok   B10 the warehouse master is still read whole (isolation narrows DEMAND, not authorities)
+ok   B10a and so is the carrier authority
+
+== C. §3 — one canonical demand, counted once, with its lineage kept ==
+ok   C1  one canonical demand for the target scope
+ok   C1a and the second site SKU was AGGREGATED into it, not dropped
+ok   C2  so exactly one receiver fact reaches KMAF
+ok   C2a and one horizon row
+ok   C3  the representative site sku is the deterministic MINIMUM, not whichever was enumerated first
+ok   C4  authorized demand total = 760, counted ONCE
+ok   C5  duplicate_sku_window_in_group = []
+ok   C5a conserved = true
+ok   C6  the legitimate per-window split is PRESERVED (D30 + two D90 sources)
+ok   C6a D30 keeps its own quantity
+ok   C7  two sites of one canonical demand that DISAGREE are a conflict
+ok   C7a typed, and never averaged or preferred
+ok   C8  the collapse is not a Set and not a first-row-wins drop
+
+== D. §4/§5 — which side of the shipment each warehouse is on, and the factory-stock evidence ==
+ok   D1  the CN factory is a FACTORY, by the frozen identity config and the master
+ok   D1a and the 3PL is NOT a factory — it is never mistaken for one
+ok   D1b an id absent from the master resolves to no role at all
+ok   D2  the role is decided from the master + identity config, never from a name pattern
+ok   D3  the sources are the CN factory AND the in-country 3PL — the allocator's PASS 1 / PASS 2 design
+ok   D4  the destination is the LOGICAL marketplace on every line (the receiver side)
+ok   D4a with a blank destination warehouse — correct for FBA, never a fabricated FC
+ok   D5  a factory id in the destination field classifies as a warehouse …
+ok   D5a … and is then REFUSED as a destination, because the direction has been inverted
+ok   D6  the eligible factory warehouse is named from the allocator's OWN input, not from surviving lines
+ok   D6a with one factory pool reported
+ok   D7  current/reserved/available come from the canonical table (5000)
+ok   D7a reserved reported explicitly
+ok   D8  requested quantity = 760
+ok   D8a allocated from the factory = 460
+ok   D8b remaining = 4540
+ok   D9  and the in-country pool is reported BESIDE it, never folded in
+ok   D9a holding the 300 it supplied
+ok   D10 the two together account for exactly 760
+ok   D11 and the authority is named in the output
+
+== E. §6 — one canonical source_data_as_of, from the GAP run lineage ==
+ok   E1  harvest.source_data_as_of = 2026-09-04
+ok   E1a and it names the run it came from
+ok   E1b the authority is the GAP-INV run, not a line
+ok   E2  the workspace line value is still reported, and is blank …
+ok   E2a … while the ship date comes from the authority
+ok   E3  a non-DONE run refuses the harvest outright
+ok   E3a with a typed cutoff refusal
+ok   E4  a blank cutoff refuses, never "today"
+ok   E5  the authority reads no clock
+ok   E5a and normalizes through the A2-R1-R1 canonical Taipei date authority
+ok   E6  every route line now carries the required-by date the lead time is checked against
+ok   E7  a GAP run that MOVES between harvest and write refuses …
+ok   E7a with a typed refusal
+ok   E7b and zero rows written
+
+== F. §7 — the carrier funnel, in the route authority's own predicates ==
+ok   F1  the funnel is computed by the SHARED authority, never a private re-match
+ok   F1a total cards considered (2 live CN-US + 1 expired CN-US + 1 domestic)
+ok   F2  and it reports the EXACT canonical lane key it asked for
+ok   F3  three CN→US cards match the lane axes
+ok   F3a two survive the status + effective-date test …
+ok   F3b … and both carry a canonical method
+ok   F4  the eligible methods are reported, never chosen from
+ok   F5  the EXPIRED card on this very lane is named as a near miss, with the axis that failed
+ok   F5a and there is no missing key, because the lane resolves
+ok   F6  the domestic lane has NO eligible card …
+ok   F6a and the cause is typed
+ok   F6b naming the exact origin …
+ok   F6c … destination …
+ok   F6d … and marketplace that is missing
+ok   F7  so those lines refuse with ROUTE_METHOD_UNRESOLVED …
+ok   F7a … the refusal is present …
+ok   F7b … SUB-TYPED, never the bare token …
+ok   F7c … and the LANE it asked for travels with the refusal
+ok   F7d while the lane that DOES exist still produces its route (no all-or-nothing)
+ok   F8  the lane HAS a card …
+ok   F8a … whose method token is not canonical …
+ok   F8b … which is reported as its own cause
+ok   F9  the census no longer re-implements the match with is_active and a raw country compare
+ok   F10 and the funnel never selects a card — it only counts and names them
+
+== G. §8 — a complete, conserved route set ==
+ok   G1  suggested_qty_total = 760
+ok   G1a authorized demand total = 760
+ok   G2  total_allocated_quantity = 760
+ok   G2a conserved = true
+ok   G2b duplicate_sku_window_in_group = []
+ok   G3  would_create_route_count >= 1 (2)
+ok   G3a and when the quantity splits across routes, sum(route qty) = 760
+ok   G4.0 route 0 has a From
+ok   G4.0a and a To
+ok   G4.0b and Qty > 0
+ok   G4.0c and a Method
+ok   G4.0d and a canonical last mile
+ok   G4.0e and a required-by date on every line
+ok   G4.1 route 1 has a From
+ok   G4.1a and a To
+ok   G4.1b and Qty > 0
+ok   G4.1c and a Method
+ok   G4.1d and a canonical last mile
+ok   G4.1e and a required-by date on every line
+ok   G5  a three-entry breakdown splits
+ok   G5a into TWO parts — the two entries for warehouse A are AGGREGATED first
+ok   G5b and the parts sum to exactly 760
+ok   G5c in the allocator's own breakdown order, not sorted or reversed
+ok   G6  a breakdown with no concrete source still fails closed
+ok   G6a and so does a quantity below one whole carton — each with its own reason
+
+== H. §9 — the diagnostic stops contradicting production ==
+ok   H1  the census reports a build stamp the shared ledger recognises
+ok   H1b and no older than the round that introduced this suite
+ok   H2  on a DONE job the freshness STATE is present, not null
+ok   H2a and accepted
+ok   H2b with the accepted date
+ok   H2c and the distinct dates
+ok   H2d and the resolved schedule
+ok   H3  the forecast verdict comes from KMFCN, not a restated gate
+ok   H3a a missing 2027 row does NOT block
+ok   H3b and the site survives — as production says
+ok   H3c while the raw observation is still reported (the months really have no row)
+ok   H3d normalized to zero, and counted as such
+ok   H4  a BLANK cell normalizes to zero too
+ok   H4a and does not block
+ok   H5  the old FORECAST_SHARE_INCOMPLETE verdict is gone from the census output
+ok   H6  writer and lifecycle name the SAME schema version on a healthy header
+ok   H6a and parity REQUIRES both to be non-null and equal
+ok   H6c the shipped runner reports parity on a healthy header
+ok   H6d with no disagreement to name
+ok   H6e and a real lifecycle version, not a null it agreed with
+ok   H6f the runner reports a census build no older than this suite's round
+ok   H6g and the intent a live Generate would declare
+ok   H6h which no client can grant
+ok   H6b the old self-comparison (which was true whenever the writer was self-consistent) is gone
+ok   H7  destination_resolution reads `kind` (the field the classifier returns), not `type`
+ok   H7a and a route's source is read from recommended_source_warehouse_id, so it is no longer blank
+ok   H8  matched_carrier_cards is a number from the shared funnel
+ok   H8a and it is no longer 0 for a lane that resolves
+ok   H9  and the census still constructs no writer
+ok   H9a and never calls the GENERATION entry point (naming one in a comment is not reaching for it)
+ok   H9b  the census contains EXACTLY ONE call to the atomic writer
+ok   H9ba and it is inside RUN_R6R6R3_ROUTE_B_REPAIR_EXECUTE_ONCE, which is the only function allowed to have it
+ok   H9bb and no entry point writes a cell directly — every mutation goes through 16_ under its own lock
+
+== I. §10 — production / census parity, field by field ==
+ok   I0  the census emits a parity block
+ok   I1  target SKU set
+ok   I2  demand identity: target sku count
+ok   I2a canonical demand count
+ok   I2b foreign site count
+ok   I3  source line count
+ok   I4  allocated line count
+ok   I5  eligible factory stock
+ok   I6  sourceDataAsOf
+ok   I6a ship date
+ok   I7  chosen methods
+ok   I8  total quantity
+ok   I9  conservation
+ok   I9a duplicate list
+ok   I10 route count
+ok   I11 route intent
+ok   I12 refusals
+ok   I13 and with no `expect` supplied the census reports rather than judges
+ok   I14 the parity block is computed with no writer
+ok   I15 a census that drops the marketplace computes a DIFFERENT demand identity …
+ok   I15a (here the allowlist happens to narrow it to the same one site — reported, not assumed)
+
+== J. §11 — the offline closed loop: write, read back, hydrate, replay ==
+ok   J0  PASS 1 computes the plan
+ok   J1  the generation succeeds
+ok   J1a COMPLETED
+ok   J2  exactly two active logical drafts — one per route
+ok   J2a holding exactly 760 units
+ok   J2b across three lines (D30 + two D90 sources)
+ok   J3  each header carries a DETERMINISTIC K4 identity
+ok   J4  and AI provenance — a generated route is never stored as manual
+ok   J5  stamped with the GAP-INV run cutoff
+ok   J5a and the run that produced it
+ok   J6  EVERY stored line carries its window code (it was blank on every line before this round)
+ok   J6a and its required-by date
+ok   J7  every stored header carries a Method
+ok   J8  an identical replay succeeds
+ok   J8a with still exactly two active headers
+ok   J8b and still 760 units
+ok   J9  a replay under a MOVED execution key also succeeds …
+ok   J9a … and STILL leaves two active headers, not four
+ok   J9b and still 760 units
+ok   J9c no duplicate header rows at all
+ok   J10 hydration finds exactly the two active drafts
+ok   J10a and the hydrated total is 760
+ok   J11 shipping_plans — header row only, zero mutation
+ok   J11 shipping_plan_lines — header row only, zero mutation
+ok   J11 shipments — header row only, zero mutation
+ok   J11 shipment_lines — header row only, zero mutation
+ok   J11 factory_stock_movements — header row only, zero mutation
+ok   J11 reservations — header row only, zero mutation
+ok   J11 purchase_orders — header row only, zero mutation
+ok   J11 purchase_order_lines — header row only, zero mutation
+ok   J11a factory_stock untouched
+ok   J11b overseas snapshot untouched
+ok   J12 regenerating over a CANCELLED draft refuses …
+ok   J12a with no group committing
+ok   J12b the cancelled rows are untouched and NOT revived
+ok   J12c and nothing became active
+
+== K. §13 — the repository is untouched where it must be ==
+ok   K1  the repository flag is still false
+ok   K2  the allowlist still has exactly one entry
+ok   K2a and it is the one scope under census
+ok   K3  nothing in this round reaches for a remote
+ok   K4  61_ carries a stamp no older than this suite's round
+ok   K4a and its deployment manifest expects exactly that
+ok   K4b which the shared stamp validator accepts
+ok   K4c and every stamp the ledger records still validates
+ok   K5  no stale frontend token
+
+== L. §12 — mutations. Each restores one defect this round removed. ==
+ok   L1  filter moved AFTER the allocator (isolation removed) (caught)
+ok   L2  a foreign SKU admitted to the allocator (caught)
+ok   L3  an empty SKU becomes ALL_SKUS (caught)
+ok   L4  a demand row DROPPED instead of aggregated (caught)
+ok   L5  demand DOUBLE-COUNTED (collapse removed) (caught)
+ok   L6  the horizon join restored to the key that never matched (caught)
+ok   L7  the window blanked (two windows collapse to one conservation key) (caught)
+ok   L8  the receiver treated as the SOURCE side (a factory accepted as destination) (caught)
+ok   L9  the per-source split removed (the R6F2C refusal restored) (caught)
+ok   L10 the split stops conserving (first source takes everything) (caught)
+ok   L11 a source picked FIRST-ROW-WINS instead of split (caught)
+ok   L12 sourceDataAsOf restored to the first surviving line (caught)
+ok   L13 the cutoff falls back to a clock instead of failing closed (caught)
+ok   L14 a missing Forecast row BLOCKS the census again (caught)
+ok   L15 schema parity AGREES with a null lifecycle version (caught)
+ok   L16 freshness dropped from the census summary again (caught)
+ok   L17 the census CONSTRUCTS the production writer (caught)
+ok   L18 the repository flag enabled (caught)
+ok   L19 the census asks a DIFFERENT question from production (marketplace dropped) (caught)
+
+----------------------------------------
+R3 SINGLE-SCOPE ISOLATION / DIRECTION / CARRIER: 248 passed, 0 failed
+mutations: 19 caught, 0 missed

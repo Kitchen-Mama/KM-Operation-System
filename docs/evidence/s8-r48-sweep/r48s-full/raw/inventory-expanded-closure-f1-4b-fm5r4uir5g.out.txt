@@ -1,0 +1,25 @@
+
+== A — ONE shared final-height owner (the stretch flex row), not per-side measurement ==
+
+== §1/B — the horizontal SCROLLBAR is accounted for explicitly at the correct owner ==
+
+== C — collapse restores normal flow (no lingering panels / classes / inline height) ==
+
+== §2/D — Recommendation Summary: natural compact height (no min-height floor, no flex-grow) ==
+
+== §2/E — title/table spacing matches the compact Monthly Achievement reference ==
+
+== §5/F — fixed 4-row Recommendation Summary schema preserved (table exists before data) ==
+
+== G — only cell text is patched on data (structure never rebuilt) ==
+
+== §3/H — no fixed/scroll gutter regression (no phantom strip, no independent fixed scrollbar) ==
+
+== §I — horizontal scroll remains owned by the right scroll container ==
+
+== §4/J — active logical row background covers the FULL logical width (incl. off-screen cells) ==
+
+== §K — UI-only: NO Apps Script / API / formula owner touched by this round ==
+
+----------------------------------------
+INVENTORY EXPANDED CLOSURE (F1-4B-FM5-R4UI-R5G): 34 passed, 0 failed

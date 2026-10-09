@@ -1,0 +1,67 @@
+
+=== A — EXECUTED: the tool is inert on load and honest when it has nothing ===
+  ok   A1  loading it issues nothing and logs exactly one ready line
+  ok   A2  and defines four entry points, all of which are reads or prints
+  ok   A3  its stated contract is zero writes
+  ok   A4  zero locks, zero sheet mutations, zero business-logic changes
+  ok   A5  and it declares that it is neither a second transport nor new timing infrastructure
+  ok   A6  the reads are sequential, so a number is the cost of one read rather than of eight competing
+  ok   A7  with no KM present every target reports WHY it could not be measured
+  ok   A8  and the scope-dependent target says it was skipped rather than reporting a zero
+  ok   A9  all nine mandatory targets appear as rows even when none could run
+  ok   A10 and no cell is undefined — an absent field is the string NOT_AVAILABLE
+  ok   A11 which is the string §2 requires instead of an invented number
+  ok   A12 a read that FAILS is still a measurement and is recorded as one
+  ok   A13 the tool contains no "executeCommand"
+  ok   A13 the tool contains no "updateShippingPlan"
+  ok   A13 the tool contains no "pricing.update"
+  ok   A13 the tool contains no "appendRow"
+  ok   A13 the tool contains no "setValue"
+  ok   A13 the tool contains no "POST"
+  ok   A13 the tool contains no "saveRow"
+  ok   A13 the tool contains no "writeRow"
+  ok   A13 the tool contains no ".write("
+  ok   A14 and reaches the backend only through the three read APIs it declares
+  ok   A15 it opens no socket of its own — no fetch, no XHR, so it cannot be a second transport
+
+=== B — the metadata this round depends on is really emitted ===
+  ok   B1  skuDetails.workspace.get emits serverDurationMs
+  ok   B1a skuDetails.workspace.get emits tablesRead
+  ok   B1  productPricing.* emits serverDurationMs
+  ok   B1a productPricing.* emits tablesRead
+  ok   B1  fcSummary.workspace.get emits serverDurationMs
+  ok   B1a fcSummary.workspace.get emits tablesRead
+  ok   B2  and the client copies server meta through, which is what makes them readable in a browser
+  ok   B3  the transport also lifts serverDurationMs into its own sample, so timeline() carries it
+  ok   B4  and no production code had to change to expose any of it
+
+=== C — the census matches the handlers it describes ===
+  ok   C1  SKU Regional census sequence IS 59_'s table list, in 59_'s order
+  ok   C2  and SKU Details is the ungated prefix of it — the first three, which take no include
+  ok   C3  the counts are the lengths, not a separately typed number that could disagree
+  ok   C4  the PSB workspace census IS 72_'s PPW_TABLES_, in order
+  ok   C5  the FC bootstrap census IS 58_'s bootstrap slice read list
+  ok   C6  and its emit list, which is SHORTER than what it reads
+  ok   C7  the bootstrap slice reads more tables than it sends — the asymmetry the census records
+  ok   C8  and fc_regular_forecast is read by BOTH slices a cold load issues — read twice, sent once
+  ok   C9  59_ reads each table as ONE range — not row by row
+  ok   C9  72_ reads each table as ONE range — not row by row
+  ok   C9  58_ reads each table as ONE range — not row by row
+  ok   C10 the census records every target as a whole-table read
+  ok   C11 and refuses to call any read avoidable without a safe implementation, as §8 requires
+
+=== D — nothing shipped changed, and the round says what it could not measure ===
+  ok   D1  the capture tool is NOT loaded by index.html — it is pasted into a console, never shipped
+  ok   D2  and it lives under docs/, outside every runtime asset path
+  ok   D3  the census states plainly that it is incomplete
+  ok   D4  and lists every cost field it does not have, rather than defaulting them
+  ok   D5  pre-server queue wait is NOT_MEASURABLE, per §9 — it is not derived from a subtraction
+  ok   D6  and the saturation hypothesis stays NOT_PROVEN
+  ok   D7  including the four phases the tool honestly cannot split
+
+====================================================================================================
+S3-R6 READ COST CENSUS — passed 52  failed 0
+CAPTURE_TOOL_WRITES = 0 · NEW_TRANSPORT = 0 · SHIPPED_BYTES_CHANGED = 0
+WHOLE_TABLE_READ_COUNT = 8/8 · SERIAL_READ_COUNT = 8/8 · PRODUCTION_NUMBERS = PENDING
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · DEPLOYMENTS=0
+====================================================================================================

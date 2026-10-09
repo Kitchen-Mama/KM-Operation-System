@@ -1,0 +1,25 @@
+
+== §A — the asset's content identity, derived from the asset ==
+
+== §B — the loader, executed ==
+
+== §C/§D.9–12 — the manifest, laziness, and what did NOT move ==
+
+== §D negative tests — each guard is made to BITE ==
+  caught: N1 query token removed from the URL
+  caught: N2 unversioned loader URL restored
+  caught: N3 incorrect digest substituted
+  caught: N4 asset bytes mutated while the declared token stands still
+  caught: N5 stale element allowed to satisfy the versioned request
+  caught: N6 loader script tag duplicated
+  caught: N7 global application token rotated
+  caught: N8 in-memory reuse reverted to trusting any global
+  caught: N9 failed element left behind, poisoning the retry
+  caught: N10 DOM single-flight removed, refetching a load already in flight
+  caught: N11 retry inherits the previous attempt's error reason
+  caught: N12 a second copy of the digest introduced
+
+  negative tests: 12 caught, 0 missed
+
+----------------------------------------
+ADM1 CONTENT-PINNED CACHE (TEXTURE-3-R8): 133 passed, 0 failed

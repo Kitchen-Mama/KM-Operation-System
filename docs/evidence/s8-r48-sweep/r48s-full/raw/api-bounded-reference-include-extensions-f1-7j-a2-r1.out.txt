@@ -1,0 +1,12 @@
+
+== A · Weekly SKU logistics projection (40_) — bounded to page-line SKUs + BEFORE==AFTER ==
+
+== C · Request Order marketplace reference — reuse getTable (no new API) + BEFORE==AFTER universe ==
+
+== S6 · IR carrier-planning include (60_) — gated + carrier BEFORE==AFTER ==
+
+== GENERAL · no new authority / allocation-draft untouched (writer reloads later retired by F1-7K Batch F) ==
+
+----------------------------------------
+F1-7J-A2 bounded reference/include: 35 passed, 0 failed
+ALL GREEN

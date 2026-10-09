@@ -1,0 +1,31 @@
+
+== date math (pure, no clock) ==
+
+== C1 source warehouse validation ==
+
+== C2 destination validation (physical + logical) ==
+
+== C3 method selection — on-time + lowest comparable cost ==
+
+== C3 no on-time option → MANUAL_ONLY / ROUTE_AUTO_RANKING_INSUFFICIENT (R6F2C: a valid manual method still exists) ==
+
+== C3 incomparable currency → MANUAL_ONLY / ROUTE_AUTO_RANKING_INSUFFICIENT (COST_NOT_COMPARABLE) ==
+
+== C3 no lane / no method → ROUTE_METHOD_UNRESOLVED ==
+
+== C3 manual override — valid + invalid ==
+
+== C4 last-mile ROUTE PAIRS (R6F2D): indistinguishable → AUTHORITY_REQUIRED; distinguishable → AI_RANKED ==
+
+== C2 logical marketplace destination ==
+
+== D deterministic group numbering + partition (incompatible routes never merged) ==
+
+== D quantity conservation + source ceiling + duplicate detection ==
+
+== D zero-qty / zero recommendation creates no line-group side effects ==
+
+== E buildK2GenerationPlan — end-to-end (route → partition → conservation) ==
+
+----------------------------------------
+KMWRR ROUTE DERIVATION + K2 PARTITION (R6F2): 49 passed, 0 failed

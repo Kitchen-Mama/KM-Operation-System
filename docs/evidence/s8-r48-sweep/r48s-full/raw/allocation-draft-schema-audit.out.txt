@@ -1,0 +1,23 @@
+
+== Approved 30/28 exact canonical → NO_MIGRATION_REQUIRED (T1, T4) ==
+
+== Stale-expectation drift detection: old 23-col header / 52-col line (T2, T3) ==
+
+== Structural fault detection (T5, T6, T7, T8) ==
+
+== Extra-column policy (T9, T10) — populated needs decision, empty is a safe candidate, never auto-delete ==
+
+== Migration plan never emits DELETE (T17) ==
+
+== Deterministic hashes (T15, T16) ==
+
+== Editor-run wrapper — zero mutation, fail-closed, missing-sheet, no raw values (T11, T12, T13, T14) ==
+
+== Non-routing / non-reachability (T18, T19) ==
+
+== Decision landing encoded in canonical docs (T20, T21, T22, T23) ==
+
+== Existing safety + reliability suites remain green (T24, T25) ==
+
+----------------------------------------
+ALLOCATION DRAFT SCHEMA AUDIT (C2-D1): 52 passed, 0 failed

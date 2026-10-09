@@ -1,0 +1,134 @@
+
+== allocateOverseasSharedPool — general ==
+ok   OV empty → empty result
+ok   OV zero demand+supply → 0 alloc
+ok   OV zero conservation demand
+ok   OV zero supply → all demand unallocated
+ok   OV zero demand → all supply unused
+ok   OV one receiver one pool = demand cap
+ok   OV leftover unused
+
+== conservation + ordering + immutability ==
+ok   OV permutation invariance
+ok   OV allocations sorted by sourcePoolKey
+ok   OV demand conservation
+ok   OV supply conservation
+ok   OV input not mutated
+ok   OV fresh output per call
+ok   OV fresh allocations array
+
+== NORMAL_ALLOCATION ==
+ok   NORMAL mode token
+ok   NORMAL A weighted+survival=600 (capped)
+ok   NORMAL B absorbs overflow=400
+ok   NORMAL unused 0
+ok   NORMAL no zero-qty records
+ok   NORMAL survival reason present
+ok   NORMAL weighted reason present
+
+== PROTECTED_REALLOCATION ==
+ok   PROTECTED mode token
+ok   PROTECTED B reaches survival floor 200
+ok   PROTECTED donor A never below survival 100
+ok   PROTECTED conserves pool
+ok   PROTECTED protection reason present
+ok   PROTECTED both keep survival floor under skew
+
+== SHORTAGE_ALLOCATION ==
+ok   SHORTAGE mode token
+ok   SHORTAGE A weighted 100
+ok   SHORTAGE B weighted 50
+ok   SHORTAGE conserves supply (no loss/dup)
+ok   SHORTAGE reason
+ok   SHORTAGE equal remainders deterministic (permutation invariant)
+ok   SHORTAGE leftover distributed, total 100
+ok   weight-zero → only survival allocated (40)
+ok   weight-zero → remaining pool unused (60)
+ok   weight-zero supply conservation
+
+== FBA / THREE_PL lane behavior ==
+ok   FBA-only receiver draws only FBA
+ok   THREE_PL untouched when receiver FBA-only
+ok   THREE_PL-only preserves sourcePoolType/Key
+ok   FBA untouched, never merged
+ok   both-eligible: FBA lane allocated independently
+ok   both-eligible: THREE_PL lane allocated independently
+ok   neither-eligible receiver gets nothing
+ok   neither-eligible leaves supply unused
+ok   platform → THREE_PL reserve reason
+ok   platform reserve source stays THREE_PL (not reclassified FBA)
+ok   THREE_PL pool consumed at most once (<=100)
+ok   no double consumption (supply conservation)
+
+== blocked inputs ==
+ok   blocked supply reported verbatim
+ok   blocked supply excluded from totalSupplyQty
+ok   eligible set still allocated despite blocked pool
+ok   blocked demand reported verbatim
+ok   blocked demand excluded from totalDemandQty
+
+== OV validation ==
+ok   OV TypeError input null
+ok   OV TypeError input array
+ok   OV TypeError supplyPools non-array
+ok   OV TypeError receivers non-array
+ok   OV TypeError empty poolKey
+ok   OV TypeError non-string marketplace
+ok   OV TypeError non-number demandQty
+ok   OV TypeError eligiblePoolTypes non-array
+ok   OV RangeError bad poolType
+ok   OV RangeError bad fulfillmentModel
+ok   OV RangeError negative supply
+ok   OV RangeError NaN supply
+ok   OV RangeError Infinity supply
+ok   OV RangeError negative weight
+ok   OV RangeError bad eligiblePoolTypes token
+ok   OV RangeError duplicate poolKey
+ok   OV RangeError duplicate receiverKey
+ok   OV RangeError duplicate demandKey
+ok   OV RangeError bad Ledger state
+ok   OV extra properties ignored
+
+== allocateFactoryDeterministic ==
+ok   FAC empty → empty result
+ok   FAC one pool one demand
+ok   FAC leftover unused
+ok   FAC earliest req-by consumes first (80)
+ok   FAC later req-by gets remainder (20)
+ok   FAC each factory unit allocated at most once
+ok   FAC demand conservation
+ok   FAC higher priority first on equal req-by
+ok   FAC lower priority gets remainder 0
+ok   FAC company asc tie-break (ACo before ZCo)
+ok   FAC pools consumed ascending poolKey
+ok   FAC spans multiple pools
+ok   FAC no eligible factory → 0 alloc
+ok   FAC ineligible demand unallocated
+ok   FAC ineligible → supply unused
+ok   FAC supply > demand → unused
+ok   FAC demand > supply → unallocated
+ok   FAC unmet reason
+ok   FAC zero supply/demand valid
+ok   FAC input not mutated
+ok   FAC permutation invariance
+ok   FAC fresh output per call
+ok   FAC blocked pool reported
+ok   FAC blocked excluded from totalSupplyQty
+
+== FAC validation ==
+ok   FAC TypeError input null
+ok   FAC TypeError factoryPools non-array
+ok   FAC TypeError non-string requiredByDate
+ok   FAC TypeError empty company
+ok   FAC TypeError eligibleFactoryWarehouseIds non-array
+ok   FAC RangeError non-FACTORY poolType
+ok   FAC RangeError invalid date
+ok   FAC RangeError non-strict date
+ok   FAC RangeError negative supply
+ok   FAC RangeError Infinity supply
+ok   FAC RangeError duplicate poolKey
+ok   FAC RangeError duplicate demandKey
+ok   FAC determinism repeated identical
+ok   OV determinism repeated identical
+
+All Round 10B Allocation assertions passed (112 assertions).

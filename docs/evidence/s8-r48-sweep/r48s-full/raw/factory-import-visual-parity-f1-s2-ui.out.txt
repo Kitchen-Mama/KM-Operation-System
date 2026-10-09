@@ -1,0 +1,17 @@
+
+== A. action parity — Import Inventory + Inventory Adjustment are More Options menu items (Overseas is the reference) ==
+
+== B. modal shell parity (ovs-* canonical shell) ==
+
+== C. header / body / footer parity ==
+
+== D. CSS shell mirrors the Overseas values (source of truth), Overseas untouched ==
+
+== E. Factory-specific content + safety wording retained ==
+
+== F. accessibility retained ==
+
+== G. behavior wiring unchanged (presentation-only round) ==
+
+----------------------------------------
+FACTORY IMPORT VISUAL PARITY (F1-S2-UI): 36 passed, 0 failed

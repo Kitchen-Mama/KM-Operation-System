@@ -1,0 +1,17 @@
+
+== Single URL authority — no duplicate literal, canonical getter ==
+
+== Call-time resolution + delayed KM.DB availability ==
+
+== Valid URL → one canonical POST, no TRANSPORT_NOT_CONFIGURED ==
+
+== Apps Script failure stays an outer failure; no silent Legacy fallback ==
+
+== URL validation classes ==
+
+== getTransportStatus diagnostic (masked, no Script ID) ==
+
+== Production defaults + Legacy non-impact + safety ==
+
+----------------------------------------
+API TRANSPORT WIRING: 38 passed, 0 failed

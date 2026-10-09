@@ -1,0 +1,154 @@
+
+== A. THE LOCK NO LONGER COVERS THE READING ==
+ok   A0  resolve/classify is its own function — one copy, called by both passes
+ok   A0a the handler calls it exactly twice: once unlocked, once under the lock
+ok   A0b and the FIRST call happens before the lock is even requested
+ok   A0c the classifier itself never touches a lock — it reads, decides, and writes nothing
+ok   A0d and the only writer stayed in the handler, inside the lock
+ok   A0e the release is still in a finally, so no branch can leak the lock
+ok   A1  a normal reuse still succeeds
+ok   A1a with zero writes
+ok   A1b and ZERO lock acquisitions — the operator's CAMPAIGN_LOCK_TIMEOUT path
+ok   A1c no sheet read happened while a lock was held
+ok   A1d the resolved id is unchanged
+ok   A1e and the stored version travels back for stage 2
+ok   A2  a header mutation with no version is still refused
+ok   A2a zero writes, and no lock was taken to say so
+ok   A3  a STALE version is still refused
+ok   A3a also without the lock
+ok   A4  CAMPAIGN_NOT_FOUND preserved
+ok   A4a lock-free
+ok   A5  IDENTITY_MISMATCH preserved
+ok   A5a lock-free
+ok   A6  DUPLICATE preserved
+ok   A6a lock-free
+ok   A7  a header mutation with a FRESH version still applies
+ok   A7a exactly one write
+ok   A7b and it DID take the lock — the write path is still guarded
+ok   A7c and released it
+ok   A7d the write path re-reads UNDER the lock, which is what closes the race
+ok   A8  both savers resolve "no match" — the race is set up
+ok   A8a neither has an id to reuse
+ok   A9  the first save creates the campaign
+ok   A9a the second does NOT create a second one — the locked pass re-resolved and found it
+ok   A9b one canonical campaign row for one canonical identity
+ok   A9c and both savers hold the same campaign_id
+ok   A9d (the fixture holds no second grid — one sheet, one truth)
+ok   A10  two concurrent reuses resolve the SAME campaign_id
+ok   A10a and add no row
+ok   A10b no write, no lock, either time
+ok   A11  a genuine lock timeout is still reported, on the path that genuinely needs the lock
+ok   A11a and nothing was written
+ok   A11b the finally still ran — a failed tryLock does not leak the lock
+ok   A13  with the unlocked pass skipped, the locked pass still classifies the reuse — zero writes
+ok   A13a it does take the lock on that route, which is the cost of not knowing yet
+ok   A13b and still refuses a versionless header mutation
+ok   A12  a complete sheet is ready to classify against
+ok   A12a a sheet missing a canonical column is NOT — that repair belongs under the lock
+
+== B. THE TIMED-OUT TABLE HAS A NAME ==
+ok   B0  getOperationDbTableFromSheet attaches the table to the typed error it throws
+ok   B1  and the page has a reader for it
+ok   B2  which the refusal line renders
+ok   B2a next to the action it qualifies
+ok   B3  a timed-out table read names its table
+ok   B3a either envelope is read
+ok   B3b an error that is not about a table adds nothing
+ok   B3c and a missing error is not an exception
+ok   B4  the prerequisite refusal composes through that same line
+ok   B5  and its Retry is still exactly one new load — no auto-loop
+
+== C. PREREQUISITES: WARM MEANS WARM, AND SHARED MEANS SHARED ==
+ok   C0  the Regular path's tables
+ok   C0a the Special path holds no table outside the ceiling, and is not empty
+ok   C0b and the two they share
+ok   C1  cold Regular fetches its two tables
+ok   C2  warm Regular fetches NOTHING — 0 physical requests
+ok   C3  cold Special fetches exactly the tables its path declares
+ok   C4  warm Special fetches NOTHING — 0 physical requests
+ok   C5  Regular → Special fetches only what the Special path does not already hold
+ok   C5a not one shared table is re-requested
+ok   C6  Special → Regular fetches NOTHING — every table it needs is already warm
+ok   C7  _fcResetSecondaryCache has exactly one definition
+ok   C7z and exactly one place invokes it
+ok   C7a and that call site is the scoped post-write path
+ok   C7b so nothing but a write can clear a valid prerequisite
+ok   C7c no modal opener or closer clears it
+ok   C8  slice reads are single-flight
+ok   C8a and so are prerequisite loads, per path
+ok   C8b with the latch released on failure, so Retry issues a NEW request rather than re-awaiting a dead one
+
+== D. FOUR BASELINES, FOUR NAMES ==
+ok   D1  growth is its own baseline kind
+ok   D1a labelled Base Campaign FC
+ok   D1b and resolves from the Base Campaign
+ok   D1c through the campaign reader, with the selected campaign
+ok   D1d and NEVER touches fc_regular_forecast — that is a different quantity, not a fallback
+ok   D2  adjust is its own kind
+ok   D2a labelled Base Forecast
+ok   D2b and resolves from the Regular forecast
+ok   D2c at the OPERATOR's Base Year and Base Month, not the event's own month
+ok   D2d and never from a campaign
+ok   D3  with no Base Year it uses the event month
+ok   D3a through the event-month owner A3-R5 added
+ok   D4  manual is its own kind
+ok   D4a and the column says the baseline does not apply
+ok   D4b it resolves nothing
+ok   D4c and reads no baseline source at all
+ok   D5  growth with no Base Campaign selected reports the INPUT it needs
+ok   D5a and resolves nothing meanwhile
+ok   D5b without asking the reader a question it cannot answer
+ok   D6  adjust with neither an event window nor a base period asks for the Event Period
+ok   D6a and resolves nothing
+ok   D7  but an explicit Base Year + Base Month needs NO event window — the filter does not use one
+ok   D7a and answers
+ok   D8  manual never demands an input for a baseline it does not have
+ok   D9  and a selected Base Campaign is all growth needs
+ok   D10  a Base Campaign FC of 0 stays 0
+ok   D10a a Base Forecast of 0 stays 0
+ok   D11  and a genuinely absent baseline stays null
+ok   D12  the column header is the method's own label
+ok   D12a the card knows both the kind and whether an input is missing
+ok   D12b so "you have not told me yet", "not applicable" and "no such row" are three different cells
+ok   D13  and Build resolves through the one dispatcher
+ok   D14  the Qty control is renamed Current Event FC while a saved event is loaded
+ok   D14a applied when the editing chrome goes on
+ok   D14b and inherited by a row added while editing
+ok   D15  an existing event rehydrates into Single SKU mode
+ok   D15a whose rows carry NO baseline column — the current value can never be read as a baseline
+
+== E. R16 / A3-R5 / A3-R2 NON-REGRESSION ==
+ok   E1  existing Campaign + a new SKU still resolves the header with zero writes
+ok   E2  the R16 reuse branch survives the restructure
+ok   E3  §12.25 — still classified BEFORE the version gate
+ok   E4  §12.29 canonical write transport preserved
+ok   E5  §12.26 the typed codes, CAMPAIGN_LOCK_TIMEOUT included, are still registered on the client
+ok   E6  §12.27 the A3-R5 Target Rule valid/busy split is untouched
+ok   E7  a Special save invalidates exactly the tables it can change that this path holds
+ok   E7b and it drops nothing — the Special cold set and the Special write surface are disjoint
+ok   E7c with both inputs non-empty, so the disjointness is measured rather than assumed
+ok   E7a and leaves the Regular builder warm
+
+== F. MUTANTS ==
+ok   M1 the lock is taken before the classification again (the A3-R6 defect) (caught)
+ok   M2 the locked pass trusts the unlocked classification instead of re-resolving (caught)
+ok   M3 the unlocked pass answers a NON-terminal classification (caught)
+ok   M4 the lock is not released (caught)
+ok   M5 the readiness probe passes an incomplete sheet (caught)
+ok   M6 a real stale mutation is allowed through the unlocked pass (caught)
+ok   M7 the table name is dropped from the refusal line (caught)
+ok   M8 the Build baseline ignores the assist method (caught)
+ok   M9 growth falls back to the regular forecast (caught)
+ok   M10 manual pretends a baseline exists (caught)
+ok   M11 a missing input is reported as no data (caught)
+ok   M12 the baseline column keeps one generic name (caught)
+
+== G. VACUITY — the unfaulted tree really does behave as the mutants assume ==
+ok   G1  a real reuse really does take no lock and add no row, so M1/M2 can fail
+ok   G2  growth really does read the campaign and not the forecast, so M8/M9 can fail
+ok   G3  manual really does resolve nothing, so M10 can fail
+ok   G4  the real detail line really does carry the table, so M7 can fail
+
+====================================================================================================
+PASS  136 passed, 0 failed, 12 mutants, 0 survived
+====================================================================================================

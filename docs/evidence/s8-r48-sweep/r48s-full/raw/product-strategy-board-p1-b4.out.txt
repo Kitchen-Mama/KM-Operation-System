@@ -1,0 +1,297 @@
+=== PRODUCT-STRATEGY-P1-B4 — compact command bar · more filters · scenario drawer ===
+ok   A0 the page boots with no exception
+     (the page reported self-test 242/242)
+ok   A1 and every one of its own DOM assertions still passes
+
+=== SECTION A  §1 ONE BAR, AND THE ORDER A PERSON WALKS IT ===
+ok   A2 there is one command bar
+ok   A2a and the scope area holds exactly the bar and the (closed) drawer — no tier stack
+ok   A2b.1 scopeAnalysis is gone
+ok   A2b.2 scopeAdvanced is gone
+ok   A2b.3 advFiltersToggle is gone
+ok   A2b.4 advFiltersBody is gone
+ok   A2c two rows: the ladder, then the context line
+ok   A3 company → country → marketplace → category → series
+ok   A3a.1 field 0 carries the shared `.filter-group` class
+ok   A3a.2 field 1 carries the shared `.filter-group` class
+ok   A3a.3 field 2 carries the shared `.filter-group` class
+ok   A3a.4 field 3 carries the shared `.filter-group` class
+ok   A3a.5 field 4 carries the shared `.filter-group` class
+ok   A3b More filters and Meeting scenario sit in the tools group
+ok   A3c and not among the fields
+ok   A4 `.scope` is a plain container — the bar inside it is the only card
+ok   A4a and the bar IS the card
+ok   A4b.1 the dead rule .scope-tier is deleted, not left to be reused
+ok   A4b.2 the dead rule .tier-h is deleted, not left to be reused
+ok   A4b.3 the dead rule .tier-label is deleted, not left to be reused
+ok   A4b.4 the dead rule .adv-body-row is deleted, not left to be reused
+ok   A5 the command bar has its own stylesheet block
+ok   A5a no uppercase is used as emphasis in the bar
+ok   A5b and no error or alarm colour
+ok   A5c the labels read from the shared filter-label tokens rather than the prototype's own
+
+=== SECTION B  §1.3/§1.5 DEPENDENT FILTERS — A MENU IS THE TIER ABOVE IT ===
+ok   B1 every Marketplace menu is exactly that country's marketplaces
+ok   B1b a country with one marketplace shows context, a country with several shows a select
+ok   B1a and the countries do NOT all offer the same marketplaces, so B1 means something
+ok   B2 the fixture has a marketplace that exists in only one country
+ok   B2a it can be selected
+ok   B2b and after switching country it is NOT still selected — the stale option is cleared
+ok   B3 the trigger names the chosen category
+ok   B3a after the switch it is kept only if the new site sells it
+
+=== SECTION C  §1.4 ONE OPTION IS A FACT, NOT A DROPDOWN ===
+     (this fixture has 1 company, 3 countries, 2 marketplaces)
+ok   C1 the fixture has exactly one company
+ok   C1a so there is NO Company dropdown at all
+ok   C1b it is read-only context instead
+ok   C1c naming the one value
+ok   C1d as a span — nothing to focus, nothing to open
+ok   C1e and it says which dimension it stands for
+ok   C1f inside a normal filter group
+ok   C1g with its label still there
+ok   C2 one company does not leave the scope reading "aggregate"
+ok   C3 the fixture has several countries
+ok   C3a so Country is a select
+ok   C3b and not read-only context
+ok   C4 a category with one series shows no Series dropdown
+ok   C4a but names the series as context
+
+=== SECTION D  §2 THE SUMMARY — VALUES, NOT AN EXPLANATION OF ITSELF ===
+ok   D1 there is a scope summary
+ok   D1a announced to a screen reader
+ok   D1b politely, so it is not shouted on every change
+     (US·Amazon·Silicone Spatula·All series·USD)
+ok   D2 country · marketplace · category · series · currency
+ok   D2a company is omitted while there is only one — §2.4
+ok   D3 the site KEY is not on the summary line
+ok   D3.1 nor "COMPLETE_SITE"
+ok   D3.2 nor "AGGREGATE"
+ok   D3.3 nor "marketplace_skus"
+ok   D3.4 nor "sku_details"
+ok   D3.5 nor "siteSkuCount"
+ok   D4 changing the scope changes the summary at once
+ok   D4a and it names the new value
+ok   D5 the context row has exactly one help icon
+ok   D5a which opens a panel
+ok   D5b.1 the panel names marketplace_skus — the mapping a person asked for
+ok   D5b.2 the panel names sku_details.category — the mapping a person asked for
+ok   D5b.3 the panel names pricing_list.currency — the mapping a person asked for
+ok   D5c and the eligibility rule that decides what may be plotted
+ok   D5d the site key lives HERE, not on the summary line
+
+=== SECTION E  §3 MORE FILTERS — A POPOVER, A COUNT, AND ONE CLOSING RULE ===
+ok   E1 there is a More filters control
+ok   E1a and it is called "More filters", not "Advanced"
+ok   E1b the words "advanced filters" appear nowhere in the render code
+ok   E2 it starts closed — the panel is not in the DOM
+ok   E2a and says so
+ok   E2b announced as a popover
+ok   E2c pointing at what it owns
+ok   E3 clicking opens the panel
+ok   E3a as a dialog
+ok   E3b built from the Operation System `.kmf-panel` primitive
+ok   E3c which is absolutely positioned, so opening it moves nothing
+ok   E3d the bar still has its two rows
+ok   E3e and the same five fields
+ok   E4 the price gap threshold is inside
+ok   E4a and the inactive listings checkbox
+ok   E4b named "Price gap threshold" — the P1-B2B vocabulary, not "open"
+ok   E4c and the checkbox says what it includes
+ok   E5 no non-default filter, no count
+ok   E5a and no pill
+ok   E5b one non-default condition, count 1
+ok   E5c and the pill appears
+ok   E5d showing 1
+ok   E5e reusing the Operation System count pill
+ok   E5f and a second condition makes it 2
+ok   E6 the panel is STILL open after two value changes — one rule, stated and kept
+ok   E7 there is a Reset filters control
+ok   E7a resetting clears every non-default condition
+ok   E7b the threshold is back to its default
+ok   E7c and the checkbox is off
+ok   E7d and the panel stays open, by the same rule as E6
+ok   E7e with Reset disabled once there is nothing to reset
+ok   E8 the trigger again closes it
+ok   E8a Escape closes it
+ok   E8b and a click outside closes it
+ok   E9 a help popover is open
+ok   E9a opening More filters closed it
+ok   E9b and More filters is the one that is open
+
+=== SECTION F  §4 THE STRESS FIXTURE IS NOT IN THE PRODUCT ===
+ok   F1 there is no stress-fixture control on the page
+ok   F1a and the words do not appear on screen
+ok   F1b nor "density test"
+ok   F2 it is not hidden inside More filters
+ok   F2a not even by name
+ok   F3 the developer hook does not exist on a normal load
+ok   F3a so a caller cannot switch the adapter
+ok   F3b and there is no developer strip
+ok   F4.1 the page never reads location.search
+ok   F4.2 the page never reads URLSearchParams
+ok   F4.3 the page never reads location.href
+ok   F4.4 the page never reads window.location
+ok   F5 developer mode defines the hook
+ok   F5a and shows a labelled strip, so nobody is in it by accident
+ok   F5b saying what it is
+ok   F5c and the fixture can be loaded
+ok   F5d with the loaded fixture described as invented, not as data
+ok   F6 forty-four products are on the chart
+ok   F7 the preview notice is unchanged and unconditional
+ok   F7a in a banner that is never re-rendered
+
+=== SECTION G  §5 THE MEETING SCENARIO IS A DRAWER, AND IT OWNS NO GEOMETRY ===
+ok   G1 there is a Meeting scenario button
+ok   G1a named exactly that
+ok   G1b as a QUIET secondary — not the shared `.btn-secondary`, which is a filled green primary
+ok   G1c so it is not a green pill
+ok   G1d pointing at the drawer
+ok   G2 there is a scenario status chip
+ok   G2a it is a span — nothing to press
+ok   G2b announced as status
+ok   G2c inactive to begin with
+ok   G2d saying so in words
+ok   G2e and it lives on the CONTEXT row, beside the summary
+ok   G3 the drawer exists in the DOM
+ok   G3a hidden
+ok   G3b and says so
+ok   G3c as does the button
+ok   G4 the drawer is position:fixed — out of flow, so it cannot resize the chart
+ok   G4a anchored to the right — §5
+ok   G5 clicking opens it
+ok   G5a and says so
+ok   G5b as does the button
+ok   G6 site context → series/price/adjustment → amount → Apply → Undo → the unsaved explanation
+ok   G6a the row holds the series, the price to simulate and the adjustment
+ok   G6b and the explanation says the scenario is not saved
+ok   G7.1 mode-auto is still on the page with the drawer open
+ok   G7.2 mode-comfortable is still on the page with the drawer open
+ok   G7.3 layersToggle is still on the page with the drawer open
+ok   G7.4 drawerToggle is still on the page with the drawer open
+ok   G8 the close button closes it
+ok   G8a and the chart geometry is untouched by opening and closing
+ok   G9 applying a scenario marks the chip active
+ok   G9a and the chip carries the affected listing count
+ok   G9b which is greater than zero
+ok   G9c closing the drawer
+ok   G9d does NOT clear the scenario — the chip is still active
+ok   G9e and the banner still declares that a simulated number is on screen
+ok   G10.1 the page never touches localStorage
+ok   G10.2 the page never touches sessionStorage
+ok   G10.3 the page never touches indexedDB
+ok   G10.4 the page never touches document.cookie
+ok   G10.5 the page never touches google.script.run
+ok   G10.6 the page never touches fetch(
+ok   G10.7 the page never touches XMLHttpRequest
+ok   G10a so a fresh load starts with no scenario
+ok   G10b and the pipeline declares that a scenario does not survive a reload
+
+=== SECTION H  §7 THE STRUCTURAL FACTS BEHIND THE HEIGHT ===
+ok   H1 the bar has exactly two rows
+ok   H1a and five fields in the first
+ok   H1b with no heading of its own — the labels are the headings
+ok   H2 the category control is the single-trigger menu
+ok   H2a one button in the bar
+ok   H2b twelve categories …
+ok   H2c … and still one button
+ok   H3 there is a rule for the 1400px width
+ok   H3a and one for 820px
+ok   H3b the 1400 rule narrows the fields, so the ladder stays at two rows
+ok   H3e and the row flex-basis is cleared, so it cannot become a height in a column
+ok   H4 read-only context is the same height as a control
+ok   H4a so is the popover trigger
+ok   H4b and so is the category trigger — the height target is met by deleting furniture
+ok   H5 the popover is absolute
+ok   H5a the drawer is fixed
+ok   H6 a print block makes the drawer static rather than covering the first page
+ok   H6a and drops the two entrances, which do nothing on paper
+
+=== SECTION I  §8 WHAT IS REUSED, AND WHAT THE SHARED LAYER DOES NOT HAVE ===
+ok   I1 every copied token equals the value in assets/css/base.css
+ok   I1a while the production stylesheet declares no :root block, so it redefines nothing
+ok   I2.1 the prototype carries .kmf {
+ok   I2.1a and components.css is where it comes from
+ok   I2.2 the prototype carries .kmf-trigger {
+ok   I2.2a and components.css is where it comes from
+ok   I2.3 the prototype carries .kmf-panel {
+ok   I2.3a and components.css is where it comes from
+ok   I2.4 the prototype carries .kmf-panel--right
+ok   I2.4a and components.css is where it comes from
+ok   I2.5 the prototype carries .kmf-tools
+ok   I2.5a and components.css is where it comes from
+ok   I2.6 the prototype carries .kmf-link
+ok   I2.6a and components.css is where it comes from
+ok   I2a the shared sheet agrees that the panel is absolute
+ok   I3 `.km-tab-rail__count` is an Operation System class
+ok   I3a and the active-filter count uses it
+ok   I4 components.css styles the bare `button` element
+ok   I4a with a solid green background — every button on a page that loads it turns green
+ok   I4b and base.css sets `body { overflow: hidden }`, which would kill page scrolling
+ok   I4c the prototype loads two stylesheets — its token shim and the board's own
+ok   I4c1 the first is the prototype-only shim, which lives beside it and not in assets/css
+ok   I4d and it is the PROMOTED board stylesheet, the same one the production page loads
+ok   I4e and it still does not load either shared sheet, which cannot be loaded a la carte
+ok   I4f nor does the shim @import them, which would reintroduce both hazards through the side door
+ok   I5 components.css has no shared drawer and there is no --drawer-* token
+ok   I5a while at least three PAGES define their own — which is the gap
+ok   I5b and there is no --badge-* token set either, so the status chip is local too
+ok   I6 components.css defines `.btn-secondary`
+ok   I6a and it is a SOLID GREEN FILL, not a quiet secondary
+ok   I6b with literal padding and radius that override `.btn`'s own --btn-* tokens
+ok   I6c so this round uses `.btn-quiet` instead, and the gap is recorded
+
+=== SECTION J  §6 INFORMATION HIERARCHY, AND WHAT IS NOT IN THE OPERATING FLOW ===
+ok   J1.1 "MSKU:" is not in the command bar
+ok   J1.2 "marketplace_sku_id" is not in the command bar
+ok   J1.3 "PSB_" is not in the command bar
+ok   J1.4 "adapter" is not in the command bar
+ok   J1.5 "schema" is not in the command bar
+ok   J1.6 "data-contract" is not in the command bar
+ok   J1.7 "self-test" is not in the command bar
+ok   J2 the self-test section exists
+ok   J2a and starts hidden
+ok   J2b behind an explicit "details" control
+ok   J3 five primary fields
+ok   J3a two secondary entrances
+ok   J3b and the context row carries the summary, the counts and the scenario status
+ok   J4 the active-filter count is on the More filters button itself
+
+=== SECTION K  §9 KEYBOARD, TOUCH AND ARIA ===
+ok   K1.1 #moreFiltersToggle is a <button>
+ok   K1.1a and is reachable by keyboard
+ok   K1.2 #meetingToggle is a <button>
+ok   K1.2a and is reachable by keyboard
+ok   K1.3 #scenarioDrawerClose is a <button>
+ok   K1.3a and is reachable by keyboard
+ok   K1.4 #catMore is a <button>
+ok   K1.4a and is reachable by keyboard
+ok   K2 aria-expanded false
+ok   K2a and true when open
+ok   K2b the panel is a dialog
+ok   K2c with a name
+ok   K2d and the drawer has one too
+ok   K3 Escape on the trigger closes the popover
+ok   K4 Escape leaves the drawer open — it closes popovers, not workspaces
+ok   K4a and the code says that is deliberate
+ok   K5 the popover trigger is a full 38px tall
+ok   K5a and the drawer close button is a 30px square, not an 12px glyph
+ok   K6 the status chip is a span
+ok   K6a with no tab stop
+ok   K6b and no click handler attribute
+
+=== MUTANTS ===
+ok   M1 the two entrances rejoin the field row, so the ladder and the tools fight for the width (caught)
+ok   M2 the ladder stops narrowing by the tier above it, so a country offers every marketplace (caught)
+ok   M3 a single-option dimension goes back to being a one-item dropdown (caught)
+ok   M4 More filters closes itself whenever a value changes, so setting two is two round trips (caught)
+ok   M5 the active-filter count stops counting, so a filter you cannot see stays set (caught)
+ok   M6 Reset filters resets the threshold but forgets the checkbox (caught)
+ok   M7 the stress fixture comes back within reach on a normal load (caught)
+ok   M8 the drawer joins the layout, so opening a scenario moves every price (caught)
+ok   M9 closing the drawer clears the scenario, so putting a panel away undoes the work (caught)
+ok   M10 the chip stops reporting how many listings are simulated (caught)
+ok   M11 the summary prints the internal site key instead of the values (caught)
+ok   M12 Escape closes the drawer, so a half-typed price is thrown away by a stray key (caught)
+
+passed 255  failed 0  |  mutants caught 12  survived 0

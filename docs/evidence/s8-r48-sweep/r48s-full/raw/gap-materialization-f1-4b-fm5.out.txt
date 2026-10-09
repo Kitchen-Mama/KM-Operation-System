@@ -1,0 +1,19 @@
+
+== Inventory mapping — D18/D30/D45/D90 verbatim + valid zero ==
+
+== Inventory — missing != zero ==
+
+== Inventory — multi-warehouse INDEPENDENT then SUM (aggregation, NOT pooling) ==
+
+== Order Planning mapping — T1–T4 month/gap/suggested verbatim + Inventory formula NOT used ==
+
+== UPSERT — insert then update, NO duplicate; valid 0 written, null → blank ==
+
+== Batch — ONE canonical read per scope (never per-SKU), writes only the allowed table ==
+
+== Router + KM.DB wiring ==
+
+== Negative constraints — no forbidden writes, no browser formula ==
+
+----------------------------------------
+GAP MATERIALIZATION (F1-4B-FM5): 32 passed, 0 failed

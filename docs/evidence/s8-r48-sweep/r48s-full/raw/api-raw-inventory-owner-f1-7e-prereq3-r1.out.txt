@@ -1,0 +1,15 @@
+
+== SITE STOCK: strict scope, latest snapshot, 3-field sum ==
+
+== OVERSEAS: pooled across warehouses, factory excluded, country strict ==
+
+== FACTORY: shared per-SKU pool (company/factory-INDEPENDENT) ==
+
+== 20/21 shared-factory KM/ResTW/ResUS -> SAME raw factory pool (company context does NOT filter) ==
+
+== COMBINED + ZERO/EMPTY/ERROR ==
+
+== source guards + no allocation + no cutover ==
+
+----------------------------------------
+API RAW INVENTORY OWNER (F1-7E-PREREQ-3-R1): 46 passed, 0 failed
