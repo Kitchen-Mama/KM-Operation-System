@@ -1,0 +1,24 @@
+
+== A. the audit is recorded, and the pre-existing capabilities are not re-claimed as new ==
+
+== D. a genuinely higher-information source, and no upscaling anywhere ==
+
+== E. capability-gated tiers — executed against real capability sets ==
+
+== F. zoom versus texel density — the guard is measured and BOUNDED ==
+
+== G. sampling and colour space — the actual decision, stated ==
+
+== H. borders, labels and markers keep priority over the surface ==
+
+== I. performance, caching, failure and diagnostics ==
+
+== J. visual acceptance — measured against the real asset pixels ==
+
+== K. regression protection — nothing about shipments, geometry or interaction moved ==
+
+== L. provenance, licence and deployment wiring ==
+
+----------------------------------------
+REAL-EARTH MATERIAL (MAP-VISUAL-REAL-EARTH-TEXTURE-2): 348 passed, 0 failed
+----------------------------------------

@@ -1,0 +1,17 @@
+
+== remaining_qty = max(0, completed - shipped) (persisted preferred) ==
+
+== poWorkspaceBuild_ View-Model ==
+
+== filter / sort / pagination ==
+
+== §13 PO→Shipment/FIFO/factory-stock contracts untouched (source guards) ==
+
+== activation + router ==
+
+== db-api adapter reuses canonical normalizers + backend remaining ==
+
+== pages: workspace primary read, no broad DB, fail-closed, remaining backend-owned ==
+
+----------------------------------------
+API PURCHASE ORDER WORKSPACE (F1-7C-R1): 56 passed, 0 failed

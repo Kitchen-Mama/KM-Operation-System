@@ -1,0 +1,12 @@
+
+== A1 structural: first-open fires both reads in ONE wave (no ref→composer serial .then) ==
+
+== A1 behavioral: parallel start, render waits for BOTH, single composer request, bounded error ==
+
+== A2 (HALT RO_SEND_TOKEN_EQUIVALENCE_NOT_PROVEN): manual Send holds no token; source UNCHANGED ==
+
+== FC Special Event (BATCH_ENDPOINT_REQUIRED): unlocked appendRow writer; serial loop UNCHANGED ==
+
+== Frozen invariants re-checked (must not regress) ==
+
+✓ 31 passed

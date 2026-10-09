@@ -1,0 +1,15 @@
+
+== State machine (§14 1-8) ==
+
+== Targeted load (§14 9-13) ==
+
+== Save orchestration (§14 14-22) ==
+
+== Local recovery decision (§14 23-27) ==
+
+== Cancel (§14 28-34) ==
+
+== Submit safety (§14 35-37) + page wiring (source contract) ==
+
+----------------------------------------
+ALLOCATION DRAFT UI (C2-D2A-UI): 38 passed, 0 failed

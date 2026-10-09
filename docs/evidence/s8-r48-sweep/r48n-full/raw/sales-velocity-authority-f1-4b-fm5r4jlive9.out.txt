@@ -1,0 +1,22 @@
+
+== _irCanonicalSalesBasis_ — CARRIES the MARKETPLACE line horizonBasis (never recomputes) ==
+
+== §X0 — MUTANT: the scope guard itself ==
+ok   X0 killed — bypassing the guard leaks another scope's rate, which E/F catch
+
+== display-override arithmetic — canonical rate wins for Sales-Driven; 139.08 → 139.1 (≠ weekly 178.4) ==
+
+== §2/§3 — the canonical render block, EXECUTED (both planning models) ==
+
+== §X — MUTANTS against the executed render block ==
+ok   X1 killed — a restored demandMode gate blanks Forecast-Driven
+ok   X2 killed — the raw weekly 178.4 is not the canonical 139.1
+ok   X3 killed — a missing rate silently becoming 0.0 is caught
+ok   X4 killed — DoS computed from a non-canonical rate is caught
+
+== source contract — carry-not-recompute wiring (§1) + no new calculator (§8) ==
+
+== §4/§5/§8 — no formula change: weekly owner + Sales Trend chart untouched ==
+
+----------------------------------------
+SALES VELOCITY AUTHORITY (F1-4B-FM5-R4J-LIVE9): 40 passed, 0 failed, 5 mutants, 0 survived, vacuity clean

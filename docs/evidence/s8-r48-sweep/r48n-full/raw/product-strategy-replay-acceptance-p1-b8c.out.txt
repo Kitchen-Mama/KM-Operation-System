@@ -1,0 +1,441 @@
+
+===================================================================================
+PRODUCT STRATEGY — P1-B8C  REPLAY · ACCEPTANCE · ACTIVATION MANIFEST
+===================================================================================
+
+=== §A  THE LIVE STATE, AND WHY THE LIVE CAPTURE COULD NOT BE TAKEN ===
+  ok   A1 the deployed health endpoint reports the flag FALSE
+  ok   A2 and zero database writes
+  ok   A3 and zero Drive writes
+  ok   A4 and read_only
+  ok   A5 the live siteUniverse read is REFUSED
+  ok   A6 with no database opened
+  ok   A7 and no table read
+  ok   A8 and it carries no site
+  ok   A9 and the deployment that answered this capture refused the read
+  ok   A10 the readback tool exists and has one entry point
+  ok   A11 and it DOES run the shipped builder for each site
+  ok   A12 its per-site pass is found
+  ok   A13 which iterates normalizedRows
+  ok   A14 AND NEVER RETURNS THEM — the rows are tallied and discarded
+  ok   A15.1 and no regular_price is published by the site pass
+  ok   A15.2 and no minimum_price is published by the site pass
+  ok   A15.3 and no msrp is published by the site pass
+  ok   A15.4 and no product_image is published by the site pass
+  ok   A16 which is the CENSUS's own stated contract, not an oversight
+  ok   A16a and the file now carries the second entry point the USER authorised at P1-B8C-R1
+  ok   A16b declared as a different contract rather than folded into the census's
+  ok   A17 the capture records STOP_EXISTING_READBACK_INSUFFICIENT
+  ok   A18 and so does the manifest document
+
+=== §B  THE CAPTURE: WIRE-SHAPED, DE-IDENTIFIED, AND HONEST ABOUT WHAT IT IS ===
+  ok   B1 THE CAPTURE SAYS IT IS NOT LIVE
+  ok   B2 as a boolean a test can branch on
+  ok   B3 it is marked READ_ONLY_CAPTURE
+  ok   B4 and NOT_LOADED_BY_PRODUCTION
+  ok   B5 no forbidden key carries a value anywhere in the capture
+  ok   B6 and nothing in it has the SHAPE of a URL, a script id, an email or a sheet id
+  ok   B7.1 a captured row carries identity
+  ok   B7.2 a captured row carries marketplace_sku_id
+  ok   B7.3 a captured row carries category
+  ok   B7.4 a captured row carries series
+  ok   B7.5 a captured row carries currency
+  ok   B7.6 a captured row carries regular_price
+  ok   B7.7 a captured row carries minimum_price
+  ok   B7.8 a captured row carries msrp
+  ok   B7.9 a captured row carries product_image
+  ok   B7.10 a captured row carries marketplace_sku_status
+  ok   B7.11 a captured row carries missing_reasons
+  ok   B7.12 a captured row carries findings
+  ok   B7.13 a captured row carries analysable
+  ok   B8.1 and the envelope carries sourceState
+  ok   B8.2 and the envelope carries counts
+  ok   B8.3 and the envelope carries filterOptions
+  ok   B8.4 and the envelope carries schema
+  ok   B8.5 and the envelope carries membership
+  ok   B8.6 and the envelope carries pagination
+  ok   B9 with the contract version
+  ok   B10 and a read timestamp
+  ok   B11 some rows carry an image reference
+  ok   B11a and some carry none — both states are covered
+  ok   B12 and it is a STRING, the shape the server actually sends
+  ok   B12a and never an absolute URL — §4 removes every address
+  ok   B12b so a captured image reference is UNVERIFIED — it cannot be drawn
+  ok   B12c and an absent one is MISSING — a different state, and both are exercised
+  ok   B13 the capture fingerprint is stable across calls
+  ok   B14 and is a 16-hex digest
+  ok   B15 which changes when content does
+  ok   B16 two or more companies
+  ok   B17 two or more countries
+  ok   B18 two or more marketplaces
+  ok   B19 and more than one currency
+  ok   B20 three or more categories
+  ok   B21.1 the capture contains 13 rows with no image
+  ok   B21.2 the capture contains 91 rows with an image
+  ok   B21.3 the capture contains 9 rows with no price
+  ok   B21.4 the capture contains 95 rows with a price
+  ok   B21.5 the capture contains 12 rows with no msrp
+  ok   B21.6 the capture contains 83 rows with an msrp
+  ok   B21.7 the capture contains 11 rows with no floor
+  ok   B21.8 the capture contains 84 rows with a floor
+  ok   B21.9 the capture contains 17 rows with a promotion
+  ok   B21.10 the capture contains 87 rows with no promotion
+  ok   B21.11 the capture contains 6 rows with a data-quality finding
+  ok   B21.12 the capture contains 6 rows with a non-active status
+  ok   B22 and exactly one deliberately EMPTY site
+
+=== §C  PRODUCTION LOADS THE CAPTURE ZERO TIMES ===
+  ok   C1 neither production document loads anything named p1b8c
+  ok   C2 and neither loads anything from assets/tests at all
+  ok   C3 and no production module names the capture or the replay harness
+  ok   C4 the page still declares no fixture fallback
+  ok   C5 and loads no prototype asset
+
+=== §D  THE PRODUCTION RENDER CHAIN, DRIVEN FROM THE SOCKET ===
+  ok   D1 the capture renders as OK through the production chain
+  ok   D2 and the board is mounted
+  ok   D3 carrying the site's 26 rows
+  ok   D4pre SUPERSEDED (R10D): the page makes NO capability request
+  ok   D4pre1 and does not reach for the shared bootstrap action either
+  ok   D4 exactly two pricing requests, universe first — the read order is the shipped one
+  ok   D5 and the controller counted both
+  ok   D6 the renderer filled the chart host
+  ok   D7 and the command bar
+  ok   D8 with the six production tabs
+  ok   D9 and the crumb
+  ok   D10 and the state host is EMPTY — no refusal was written over a board that rendered
+  ok   D11 AN ENVELOPE WITH THE WRONG meta.action IS STILL REFUSED — the validator is in the path
+  ok   D12 and it is named as the routing fault it is, not as a missing network (R10 §5)
+  ok   D13.1 view overview renders content from the capture
+  ok   D14.1 and reports its canonical route
+  ok   D13.2 view category renders content from the capture
+  ok   D14.2 and reports its canonical route
+  ok   D13.3 view risk renders content from the capture
+  ok   D14.3 and reports its canonical route
+  ok   D13.4 view quality renders content from the capture
+  ok   D14.4 and reports its canonical route
+  ok   D13.5 view workspace renders content from the capture
+  ok   D14.5 and reports its canonical route
+  ok   D13.6 view advanced renders content from the capture
+  ok   D14.6 and reports its canonical route
+
+=== §E  THE SCOPE LADDER RE-CONVERGES, AND CANNOT CARRY A STALE OPTION ===
+  ok   E1 the universe loaded
+  ok   E2 two companies, sorted
+  ok   E3 Kitchen Mama sells in three
+  ok   E4 Cookware Co in two
+  ok   E5 and US has two marketplaces
+  ok   E6 Kitchen Mama / US / Shopify resolves
+  ok   E7 with the marketplace chosen
+  ok   E8 CHANGING THE COMPANY DROPS A MARKETPLACE THE NEW ONE DOES NOT SELL ON
+  ok   E9 and it is reported as CLEARED rather than silently replaced
+  ok   E10 Cookware Co / US has exactly one marketplace, so it resolves to it
+  ok   E11 and the new site loads
+  ok   E12 the empty site reports SOURCE_EMPTY
+  ok   E13 and refuses to draw
+  ok   E14 saying the source was READ and holds nothing
+  ok   E15 and NOT that it could not connect
+
+=== §F  NAVIGATION AND THE SIX TABS, OVER REPLAYED DATA ===
+  ok   F1 the six tabs, in the registry order
+  ok   F2 each carrying its canonical route
+  ok   F3 the rail is a tablist
+  ok   F4 one tab stop
+  ok   F5.1 clicking tab 0 selects overview
+  ok   F6.1 and the crumb names Executive Overview
+  ok   F5.2 clicking tab 1 selects category
+  ok   F6.2 and the crumb names Category Analysis
+  ok   F5.3 clicking tab 2 selects risk
+  ok   F6.3 and the crumb names Deal Risk
+  ok   F5.4 clicking tab 3 selects quality
+  ok   F6.4 and the crumb names Data Quality
+  ok   F5.5 clicking tab 4 selects workspace
+  ok   F6.5 and the crumb names Strategy Workspace
+  ok   F5.6 clicking tab 5 selects advanced
+  ok   F6.6 and the crumb names Advanced Details
+  ok   F7 ArrowRight moves one view
+  ok   F8 End goes to the last
+  ok   F9 Home to the first
+  ok   F10 SWITCHING A TAB DOES NOT MOVE THE SCROLL POSITION
+  ok   F11 index.html still has no Product Strategy menu item
+  ok   F12 while the placement is still declared
+
+=== §G  PRICE SCENARIO — IT CHANGES THE PICTURE AND WRITES NOTHING ===
+  ok   G1 the Meeting scenario control exists
+  ok   G2 and is CLOSED by default
+  ok   G3 it opens on click
+  ok   G4 the Series selector is present
+  ok   G5 with NO default series — a reach you cannot see is not a scenario
+  ok   G6 Apply exists
+  ok   G7 APPLY WITH NO SERIES CHANGES NOTHING — no half-applied state
+  ok   G8 the Series options come from the replayed site
+  ok   G9 a scenario is active and marked UNSAVED
+  ok   G10.1 the board never touches localStorage
+  ok   G11.1 nor does the controller
+  ok   G10.2 the board never touches sessionStorage
+  ok   G11.2 nor does the controller
+  ok   G10.3 the board never touches document.cookie
+  ok   G11.3 nor does the controller
+  ok   G10.4 the board never touches indexedDB
+  ok   G11.4 nor does the controller
+  ok   G10.5 the board never touches location.hash
+  ok   G11.5 nor does the controller
+  ok   G10.6 the board never touches history.pushState
+  ok   G11.6 nor does the controller
+  ok   G12 and no non-read action was ever dispatched
+  ok   G13 the scenario cost ZERO additional pricing requests
+  ok   G14.1 scUndo exists
+  ok   G14.2 scResetSeries exists
+  ok   G14.3 scResetSite exists
+  ok   G14.4 scResetAll exists
+  ok   G15 Reset all scenarios clears the unsaved mark
+  ok   G16 A FRESH CONTROLLER OVER THE SAME CAPTURE HAS NO SCENARIO — a reload is the reset
+
+=== §H  THE STATE MATRIX, THROUGH THE PRODUCTION CONTROLLER ===
+  ok   H1.1 feature disabled reports FEATURE_DISABLED
+  ok   H1.2 offline reports BROWSER_OFFLINE
+  ok   H1.3 timeout reports SOURCE_TIMED_OUT
+  ok   H1.4 not authorized reports NOT_AUTHORIZED
+  ok   H1.5 non-JSON response reports RESPONSE_NOT_READABLE
+  ok   H1.6 source unavailable reports SOURCE_NOT_CONNECTED
+  ok   H2 A DISABLED FEATURE COSTS ZERO PRICING REQUESTS — refused before the business wire
+  ok   H3 OFFLINE DOES NOT SAY TIMEOUT
+  ok   H4 TIMEOUT DOES NOT SAY PERMISSION
+  ok   H5 AN AUTH PAGE DOES NOT SAY DATABASE DISCONNECTED — a server DID answer
+  ok   H6 A NON-JSON ANSWER IS NOT REPORTED AS A NETWORK ERROR
+  ok   H7.1 feature disabled explains itself
+  ok   H8.1 and its HEADLINE is a sentence, not the code FEATURE_DISABLED
+  ok   H8b.1 ending as a sentence ends
+  ok   H7.2 offline explains itself
+  ok   H8.2 and its HEADLINE is a sentence, not the code BROWSER_OFFLINE
+  ok   H8b.2 ending as a sentence ends
+  ok   H7.3 timeout explains itself
+  ok   H8.3 and its HEADLINE is a sentence, not the code SOURCE_TIMED_OUT
+  ok   H8b.3 ending as a sentence ends
+  ok   H7.4 not authorized explains itself
+  ok   H8.4 and its HEADLINE is a sentence, not the code NOT_AUTHORIZED
+  ok   H8b.4 ending as a sentence ends
+  ok   H7.5 non-JSON response explains itself
+  ok   H8.5 and its HEADLINE is a sentence, not the code RESPONSE_NOT_READABLE
+  ok   H8b.5 ending as a sentence ends
+  ok   H7.6 source unavailable explains itself
+  ok   H8.6 and its HEADLINE is a sentence, not the code SOURCE_NOT_CONNECTED
+  ok   H8b.6 ending as a sentence ends
+  ok   H9.1 feature disabled shows no demonstration data
+  ok   H9.2 offline shows no demonstration data
+  ok   H9.3 timeout shows no demonstration data
+  ok   H9.4 not authorized shows no demonstration data
+  ok   H9.5 non-JSON response shows no demonstration data
+  ok   H9.6 source unavailable shows no demonstration data
+
+=== §I  AN INVALID CONTRACT STOPS, IT DOES NOT FALL BACK ===
+  ok   I1 an unknown contract version STOPS
+  ok   I2 and no board is mounted
+  ok   I3 AND NOTHING IS SUBSTITUTED — no silent fixture fallback
+  ok   I4 the chart host stays empty
+
+=== §J  ZERO WRITER REACHABILITY, AND THE CSS IS STILL CONTAINED ===
+  ok   J1 exactly two productPricing actions, and both are reads
+  ok   J2 THE REPLAY TRANSPORT THROWS on a non-read action
+  ok   J3 naming what it refused
+  ok   J4 every board selector is still scoped to .psb-page
+  ok   J5 this round did not touch app.js
+  ok   J6 this round did not touch 00_config.gs
+
+=== §K  THE ACTIVATION MANIFEST ANSWERS EVERY QUESTION §12 ASKS ===
+  ok   K1.1 the manifest answers: commits to push
+  ok   K1.2 the manifest answers: frontend files to deploy
+  ok   K1.3 the manifest answers: Apps Script sync
+  ok   K1.4 the manifest answers: new Apps Script version
+  ok   K1.5 the manifest answers: the one flag location
+  ok   K1.6 the manifest answers: the one navigation location
+  ok   K1.7 the manifest answers: the order of operations
+  ok   K1.8 the manifest answers: how each step is verified
+  ok   K1.9 the manifest answers: the rollback order
+  ok   K1.10 the manifest answers: the fastest way back off
+  ok   K1.11 the manifest answers: proving DB writes are zero
+  ok   K1.12 the manifest answers: proving only two reads are open
+  ok   K1.13 the manifest answers: keeping the fixture out
+  ok   K1.14 the manifest answers: the cache-buster
+  ok   K1.15 the manifest answers: no other page restyled
+  ok   K2 PRODUCT_STRATEGY_ENABLED_ is declared in exactly one place
+  ok   K3 and the staged section has exactly one enabled flag
+  ok   K4 the order-of-operations section is bounded
+  ok   K4a the order of operations has numbered steps
+  ok   K4.1 NO STEP requires Google Cloud
+  ok   K4.2 NO STEP requires OAuth
+  ok   K4.3 NO STEP requires gateway
+  ok   K4.4 NO STEP requires Secret Manager
+  ok   K4.5 NO STEP requires Cloud Run
+  ok   K4b and the section says so in as many words
+  ok   K5 and the manifest says where the security track went
+  ok   K6 the manifest states it was not executed
+
+=== §M  WHAT A REAL BROWSER MEASURED — SCREENSHOTS THAT WERE CHECKED ===
+  ok   M0 the browser acceptance artifact exists
+  ok   M1 produced by a real browser
+  ok   M2.1 1920x1080 was rendered
+  ok   M2.2 1440x900 was rendered
+  ok   M2.3 1366x768 was rendered
+  ok   M2.4 1280x720 was rendered
+  ok   M2.5 1024x768 was rendered
+  ok   M2.6 768x1024 was rendered
+  ok   M2.7 390x844 was rendered
+  ok   M3 and a full-page desktop capture
+  ok   M4.1 1920x1080 really rendered at that size
+  ok   M4.2 1440x900 really rendered at that size
+  ok   M4.3 1366x768 really rendered at that size
+  ok   M4.4 1280x720 really rendered at that size
+  ok   M4.5 1024x768 really rendered at that size
+  ok   M4.6 768x1024 really rendered at that size
+  ok   M4.7 390x844 really rendered at that size
+  ok   M5.1 1920x1080 produced a screenshot
+  ok   M5.2 1440x900 produced a screenshot
+  ok   M5.3 1366x768 produced a screenshot
+  ok   M5.4 1280x720 produced a screenshot
+  ok   M5.5 1024x768 produced a screenshot
+  ok   M5.6 768x1024 produced a screenshot
+  ok   M5.7 390x844 produced a screenshot
+  ok   M6.1 1920x1080 rendered a board with real size, not a display:none subtree
+  ok   M6e.1 with no error
+  ok   M6.2 1440x900 rendered a board with real size, not a display:none subtree
+  ok   M6e.2 with no error
+  ok   M6.3 1366x768 rendered a board with real size, not a display:none subtree
+  ok   M6e.3 with no error
+  ok   M6.4 1280x720 rendered a board with real size, not a display:none subtree
+  ok   M6e.4 with no error
+  ok   M6.5 1024x768 rendered a board with real size, not a display:none subtree
+  ok   M6e.5 with no error
+  ok   M6.6 768x1024 rendered a board with real size, not a display:none subtree
+  ok   M6e.6 with no error
+  ok   M6.7 390x844 rendered a board with real size, not a display:none subtree
+  ok   M6e.7 with no error
+  ok   M7.1 1920x1080 NO PAGE HORIZONTAL OVERFLOW
+  ok   M7.2 1440x900 NO PAGE HORIZONTAL OVERFLOW
+  ok   M7.3 1366x768 NO PAGE HORIZONTAL OVERFLOW
+  ok   M7.4 1280x720 NO PAGE HORIZONTAL OVERFLOW
+  ok   M7.5 1024x768 NO PAGE HORIZONTAL OVERFLOW
+  ok   M7.6 768x1024 NO PAGE HORIZONTAL OVERFLOW
+  ok   M7.7 390x844 NO PAGE HORIZONTAL OVERFLOW
+  ok   M7.8 fullpage-1920x2400 NO PAGE HORIZONTAL OVERFLOW
+  ok   M8.1 1920x1080 the Y axis is fully inside the chart
+  ok   M8t.1 with 10 tick labels drawn
+  ok   M8.2 1440x900 the Y axis is fully inside the chart
+  ok   M8t.2 with 10 tick labels drawn
+  ok   M8.3 1366x768 the Y axis is fully inside the chart
+  ok   M8t.3 with 10 tick labels drawn
+  ok   M8.4 1280x720 the Y axis is fully inside the chart
+  ok   M8t.4 with 10 tick labels drawn
+  ok   M8.5 1024x768 the Y axis is fully inside the chart
+  ok   M8t.5 with 10 tick labels drawn
+  ok   M8.6 768x1024 the Y axis is fully inside the chart
+  ok   M8t.6 with 10 tick labels drawn
+  ok   M8.7 390x844 the Y axis is fully inside the chart
+  ok   M8t.7 with 10 tick labels drawn
+  ok   M9.1 1920x1080 the X lane is fully visible
+  ok   M9o.1 1920x1080 and the chart does not need to scroll
+  ok   M9.2 1440x900 the X lane is fully visible
+  ok   M9o.2 1440x900 and the chart does not need to scroll
+  ok   M9.3 1366x768 the X lane is fully visible
+  ok   M9o.3 1366x768 and the chart does not need to scroll
+  ok   M9.4 1280x720 the X lane is fully visible
+  ok   M9o.4 1280x720 and the chart does not need to scroll
+  ok   M9.5 1024x768 the X lane is fully visible
+  ok   M9o.5 1024x768 and the chart does not need to scroll
+  ok   M9.6 768x1024 the X lane is fully visible
+  ok   M9o.6 768x1024 and the chart does not need to scroll
+  ok   M10 at 390x844 the X lane does NOT fit
+  ok   M10a so the CHART scrolls inside itself
+  ok   M10b WHILE THE PAGE STILL DOES NOT — which is the part that is this page’s to get right
+  ok   M11 at 390x844 the shell sidebar is STILL 240px — no breakpoint touches it
+  ok   M12 so the whole content area is 150px, for every page in the application
+  ok   M12a where a desktop gets over a thousand
+  ok   M13.1 1920x1080 shows six tabs
+  ok   M14.1 1920x1080 AND ALL SIX LABELS ARE VISIBLE — not six anonymous icons
+  ok   M13.2 1440x900 shows six tabs
+  ok   M14.2 1440x900 AND ALL SIX LABELS ARE VISIBLE — not six anonymous icons
+  ok   M13.3 1366x768 shows six tabs
+  ok   M14.3 1366x768 AND ALL SIX LABELS ARE VISIBLE — not six anonymous icons
+  ok   M13.4 1280x720 shows six tabs
+  ok   M14.4 1280x720 AND ALL SIX LABELS ARE VISIBLE — not six anonymous icons
+  ok   M13.5 1024x768 shows six tabs
+  ok   M14.5 1024x768 AND ALL SIX LABELS ARE VISIBLE — not six anonymous icons
+  ok   M13.6 768x1024 shows six tabs
+  ok   M14.6 768x1024 AND ALL SIX LABELS ARE VISIBLE — not six anonymous icons
+  ok   M13.7 390x844 shows six tabs
+  ok   M14.7 390x844 AND ALL SIX LABELS ARE VISIBLE — not six anonymous icons
+  ok   M15 Product Strategy is in the sidebar
+  ok   M16 and so is Pricing Center
+  ok   M17 under its own name
+  ok   M18 beside the menu the brief calls "Price Center"
+  ok   M19 AND PRODUCT STRATEGY IS ABOVE IT — measured in pixels, not in source order
+  ok   M20 with six children
+  ok   M21 in the canonical route order
+  ok   M22 and all six rendered
+  ok   M23.1 view overview rendered content
+  ok   M23p.1 and was photographed
+  ok   M23.2 view category rendered content
+  ok   M23p.2 and was photographed
+  ok   M23.3 view risk rendered content
+  ok   M23p.3 and was photographed
+  ok   M23.4 view quality rendered content
+  ok   M23p.4 and was photographed
+  ok   M23.5 view workspace rendered content
+  ok   M23p.5 and was photographed
+  ok   M23.6 view advanced rendered content
+  ok   M23p.6 and was photographed
+  ok   M24 and they are not the same page six times
+  ok   M25 Category Analysis draws a chart
+  ok   M26 Executive Overview does not — it is a KPI view
+  ok   M27 NO PHOTOGRAPH IS DRAWN — a de-identified capture has no absolute URL to verify
+  ok   M28 and every product shows its fallback marker instead
+  ok   M29 one marker per labelled product — none is missing and none is orphaned
+  ok   M30.1 state feature-disabled was photographed
+  ok   M31.1 and says its own sentence
+  ok   M30.2 state not-authorized was photographed
+  ok   M31.2 and says its own sentence
+  ok   M30.3 state timeout was photographed
+  ok   M31.3 and says its own sentence
+  ok   M30.4 state non-json was photographed
+  ok   M31.4 and says its own sentence
+  ok   M30.5 state source-unavailable was photographed
+  ok   M31.5 and says its own sentence
+  ok   M30.6 state awaiting-site was photographed
+  ok   M31.6 and says its own sentence
+  ok   M30.7 state empty-site was photographed
+  ok   M31.7 and says its own sentence
+  ok   M32 the auth page does not say timeout
+  ok   M33 nor database disconnected
+  ok   M34 and the timeout does not say permission
+  ok   M35 and the non-JSON answer is not a network error
+  ok   M36.1 feature-disabled shows no demonstration data
+  ok   M36.2 not-authorized shows no demonstration data
+  ok   M36.3 timeout shows no demonstration data
+  ok   M36.4 non-json shows no demonstration data
+  ok   M36.5 source-unavailable shows no demonstration data
+  ok   M36.6 awaiting-site shows no demonstration data
+  ok   M36.7 empty-site shows no demonstration data
+  ok   M37 an active scenario was photographed
+  ok   M38 and the page carries the scenario mark
+  ok   M39 saying the numbers are simulated, in words that survive being printed
+  ok   M40 and applying a scenario did not push the page sideways
+  ok   M41 a print/PDF was produced from the scenario page
+  ok   M42.1 a wide table scrolls in its own container, not the page
+  ok   M43 EVERY SCREENSHOT IN THIS SET IS DETERMINISTIC — none of it is live evidence
+  ok   M44 taken from a fingerprinted capture
+  ok   M45 and the staged flag was still false while the browser rendered it
+
+=== §L  MUTANTS ===
+  mutant caught — L1 the capture really declares itself non-live
+  mutant caught — L2 the de-identification walk really reads KEYS, not the serialised text
+  mutant caught — L3 the replay really refuses a non-read action
+  mutant caught — L7 an image ADDRESS in the capture is caught as a leak
+  mutant caught — L9 the manifest really has to answer the rollback question
+  mutant caught — L8 the state host really carries the refusal text the matrix reads
+  mutant caught — L5 the workspace read really waits for a complete scope
+  mutant caught — L4 the accessor validator really is in the replay path
+  mutant caught — L6 the empty site really reports SOURCE_EMPTY rather than nothing
+
+===================================================================================
+PASS — passed 398  failed 0  |  mutants caught 9  survived 0
+===================================================================================

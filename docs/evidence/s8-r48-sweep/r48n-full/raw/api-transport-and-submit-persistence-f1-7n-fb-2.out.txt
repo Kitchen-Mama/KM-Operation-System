@@ -1,0 +1,28 @@
+
+== FB2-1. the Demo/local Submit root cause is closed — production writes FAIL CLOSED ==
+
+== FB2-2. local mode is unreachable from the production build ==
+
+== FB2-3. an API failure can never read as success ==
+
+== FB2-4. ONE authoritative production endpoint, resolved at call time ==
+
+== FB2-5. non-JSON / 404 HTML is classified, never silently swallowed ==
+
+== FB2-6. the router cannot be the source of a 404 HTML body ==
+
+== FB2-7. system.health is read-only and non-sensitive ==
+
+== FB2-8. Weekly Shipping Plan distinguishes ERROR from EMPTY, offers Retry, keeps confirmed data ==
+
+== FB2-9. Submit persists through exactly ONE canonical backend owner ==
+
+== FB2-10. Demo rows never select local mode, and Demo isolation holds ==
+
+== FB2-11. bounded reads — no unconditional registry scan on the hot PO path ==
+
+== FB2-12. the FB-1B/G1/G2 document contracts are untouched ==
+
+----------------------------------------
+PASS 208   FAIL 0
+----------------------------------------

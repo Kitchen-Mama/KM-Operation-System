@@ -1,0 +1,11 @@
+
+== UPSERT identity = company + country + marketplace + sku (latest-state; no history) ==
+
+== metadata exposed to identify stale rows LATER (no deletion now) ==
+
+== SAFETY INVARIANT — an active/plannable row is NEVER deleted (failed/blocked calc UPDATES, never removes) ==
+
+== NO purge / NO age-only deletion owner exists (MATERIALIZED_GAP_CLEANUP_OWNER = SOURCE_MISSING) ==
+
+----------------------------------------
+MATERIALIZED GAP LIFECYCLE (F1-4B-FM5-R3 supplemental): 19 passed, 0 failed

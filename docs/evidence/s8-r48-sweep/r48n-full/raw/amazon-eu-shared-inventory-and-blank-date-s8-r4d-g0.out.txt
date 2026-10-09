@@ -1,0 +1,34 @@
+
+-- PART B: Amazon EU shared inventory identity --
+ok   EUI-1: EU Current Stock = 100 (the EU pool), NOT 400 and NOT 500
+ok   EUI-2: EU does NOT sum EU+FR+DE+ES+IT
+ok   EUI-3: EU does NOT sum FR+DE+ES+IT
+ok   EUI-4: FR site reads FR only
+ok   EUI-5: EU scope with no EU row -> null (never a member substitute)
+ok   EUI-6: FR scope never reads the EU pool row
+ok   EUI-7: inventory match FR->EU = false
+ok   EUI-8: UK=GB same-market alias still holds for inventory
+ok   EUI-9: Amazon EU SALES still aggregates
+ok   EUI-10: EU sales members = IT+DE+ES+FR (deliberately different from inventory)
+ok   EUI-11: latestSnapshot returns a single best row (no accumulator)
+ok   EUI-12: the single-market intent is stated at the call site
+
+-- PART A: amazon_inventory_snapshot blank source Date --
+ok   BD-0a: the gate transcribed above is the shipped gate
+ok   BD-0b: a key-missing row is counted as an error and SKIPPED (never written)
+ok   BD-0c: the date-field loop defers blankness to the natural-key check (blank is not invalid_date)
+ok   BD-1: shipped amazon_inventory_snapshot naturalKey includes snapshot_date
+ok   BD-2: a dated inventory row imports
+ok   BD-3: TODAY a blank source Date DROPS an otherwise valid inventory row
+ok   BD-4: the dropped field is snapshot_date
+ok   BD-5: DESIRED — country+marketplace+sku admits a blank-date inventory row
+ok   BD-6: DESIRED — blank country still fails closed
+ok   BD-7: DESIRED — blank sku still fails closed
+ok   BD-8: today two dates are two distinct rows
+ok   BD-9: RISK — under the relaxed key two dates collide; only the FIRST survives
+ok   BD-10: amazon_inventory_snapshot has NO rolling_upsert -> full snapshot rewrite each run
+ok   BD-11: the full-rewrite writer clears every data row before writing
+ok   BD-12: amazon_daily_sales_snapshot keeps snapshot_date in its key (NOT relaxed)
+ok   BD-13: amazon_weekly_sales_snapshot keeps snapshot_week in its key (NOT relaxed)
+
+ALL PASS

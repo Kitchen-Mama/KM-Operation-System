@@ -1,0 +1,22 @@
+
+== A. Weekly CREATE → shipping_allocation_drafts/_lines (96) ==
+
+== B. Monthly CREATE → request_order_allocation_drafts/_lines (24) ==
+
+== C. REUSE / scheduled refresh (no duplicate header/line; same draft id) ==
+
+== D. MANUAL_REGENERATE (no user edits → version increments; new run; no second draft) ==
+
+== E. LOCKING (fail-closed: no write when the lock is unavailable; released on success) ==
+
+== F. IDEMPOTENCY / retry (re-running the completed generation creates no duplicate rows) ==
+
+== G. SCHEMA — seedSheetSet matches the frozen §2 headers exactly ==
+
+== H. NO DOWNSTREAM EFFECTS (only Draft + run-journal tables exist/mutated) ==
+
+== I. END-TO-END reread (persisted rows reconstruct the same Active Draft) ==
+
+== J. PURITY / separation (pure writer; no SpreadsheetApp/LockService/clock; input immutable; deterministic) ==
+
+All Round 1S-P3 Production Draft Writer assertions passed (49 assertions).

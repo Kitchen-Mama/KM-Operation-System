@@ -1,0 +1,234 @@
+
+== A · THE HARNESS REALLY DOES COERCE — everything below depends on it ==
+ok   A1  a numeric cell with a numeric format reads back as 35
+ok   A2  the SAME cell with a date format reads back as a Date
+ok   A3  serial 35 is 1900-02-03 — what the operator saw
+ok   A3a serial 40 is 1900-02-08
+ok   A4  writing a Date into a cell makes that cell date-formatted
+ok   A5  the starting world reads base_msrp back as a Date
+
+== B · §3 THE JOIN — on the id, never on the local sku copy ==
+ok   B1  the base source table is named
+ok   B2  and the join is the two-hop one, through marketplace_skus
+ok   B3  all six rows resolve
+ok   B3a none unmatched
+ok   B3b none ambiguous
+ok   B4  a disagreeing local sku is reported, not used
+ok   B4a naming both sides
+ok   B5  and the price written is SKU-9's — the id won, not the text
+ok   B5a for every base field
+ok   B6  a duplicate marketplace_sku_id is ambiguous
+ok   B6a and typed
+ok   B6b NO-GO
+ok   B6c with nothing written
+ok   B7  two sku_details rows sharing a sku are ambiguous too
+ok   B7a NO-GO
+ok   B8  a row with no marketplace_sku_id is NO_IDENTITY
+ok   B8a and blocks
+ok   B9  a pricing row with no SKU Details row is UNMATCHED
+ok   B9a typed, not lumped in with ambiguity
+ok   B10 the policy is stated
+ok   B10a the row is counted as preserved
+ok   B10b and nothing of its own is changed
+ok   B11 which is GO — an unmatched row does not gate
+ok   B11a and there is no flag anywhere that would turn preservation into blanking
+
+== C · §1 A BLANK BASE PRICE IS DATA — it is never 0, never the effective price, never auto ==
+ok   C0  the commit passes on a healthy world
+ok   C1  blank source -> blank target
+ok   C1a for minimum
+ok   C1b for msrp
+ok   C2  blank is not 0
+ok   C2a and not "0" either
+ok   C3  the effective msrp is untouched...
+ok   C3a ...and so is auto...
+ok   C4  ...and neither was used as a fallback for the blank base
+ok   C5  the dry run states the policy
+ok   C6  and counts the blank it will write
+ok   C7  a non-numeric source price is reported
+ok   C7a with the raw value, its type and why
+ok   C7b and it blocks
+ok   C7c nothing written
+ok   C8pre the source really does read back as a Date
+ok   C8  a Date in the SOURCE is refused, never copied on as a price
+ok   C8a NO-GO
+
+== D · §4/§5 THE SYNC — base comes from SKU Details and from nowhere else ==
+ok   D1  base_regular_price == sku_details.selling_price
+ok   D2  base_minimum_price == sku_details.minimum_price
+ok   D3  base_msrp == sku_details.msrp
+ok   D3a and 40 where the source says 40
+ok   D4  NOT the effective regular_price (34.99)
+ok   D4a NOT the effective minimum_price (22.5)
+ok   D4b NOT the effective msrp (44.99)
+ok   D5  NOT the auto_regular_price (29.99)
+ok   D5a NOT the auto_msrp (39.99)
+ok   D6  and the dry run says where base_msrp came from
+ok   D7  the §4 counts are reported
+ok   D7a five updated, one blanked
+ok   D8  the incident is measured, not assumed
+ok   D8a and the projection has none on any matched row
+ok   D8a1 nor on any other row, when every row is matched
+ok   D8b stated plainly
+ok   D9  base_msrp reads back as a NUMBER after the write
+ok   D9a not a Date
+ok   D10 row 1 base_msrp is not a Date
+ok   D10 row 2 base_msrp is not a Date
+ok   D10 row 3 base_msrp is not a Date
+ok   D10 row 4 base_msrp is not a Date
+ok   D10 row 5 base_msrp is not a Date
+ok   D10 row 6 base_msrp is not a Date
+
+== E · §4 base_currency — the source wins, but blank is never filled in ==
+ok   E1  a present source base_currency becomes the authority
+ok   E2  a blank source leaves the existing value ALONE — not blanked
+ok   E3  the change is counted
+ok   E4  and the silences are reported separately
+ok   E4a beside the ones that spoke
+ok   E4b and what that preserved
+ok   E5  the legacy *_unit fallback is COUNTED, so adopting it stays a decision
+ok   E5a and is NOT silently applied
+ok   E6  a changed base_currency is flagged as making auto_* stale, rather than quietly recomputed
+ok   E6a because this round does not touch auto
+
+== F · §6/§7 THE SCHEMA — 29 -> 32, flags blank, formats by field name ==
+ok   F1  COLUMN_COUNT_POST = 32
+ok   F2  ROW_COUNT unchanged
+ok   F3  canonical positions 1..30 EXACT, from 73_ not from a local copy
+ok   F4  extensions preserved, in order, at the end
+ok   F5  and the dry run said so first
+ok   F6  regular_price_is_manual is BLANK on every row
+ok   F6  minimum_price_is_manual is BLANK on every row
+ok   F6  msrp_is_manual is BLANK on every row
+ok   F7  UNKNOWN, never FALSE
+ok   F7a and the flag column is plain text, so nothing coerces it
+ok   F8  numeric MSRP 35 remains the number 35
+ok   F8a numeric MSRP 40 remains the number 40
+ok   F8b and cannot be 1900/02/03
+ok   F8c or 1900/02/08
+ok   F9  the base_msrp CELL is not date-formatted afterwards — the mechanism itself is gone
+ok   F10 fx_rate_date is still a Date
+ok   F10a and still date-formatted
+ok   F11 exactly one setNumberFormats call
+ok   F11a and exactly one setValues call
+ok   F12 the lock is released
+ok   F13 prodRequireSheet_ accepts the result
+ok   F13a for both tables
+
+== G · WHAT MUST NOT MOVE — FX, auto, effective, extensions, identity, and the change log ==
+ok   G1  FX_VALUES_CHANGED = NO
+ok   G1a FX is stated in the post validator
+ok   G1  AUTO_VALUES_CHANGED = NO
+ok   G1a AUTO is stated in the post validator
+ok   G1  EFFECTIVE_VALUES_CHANGED = NO
+ok   G1a EFFECTIVE is stated in the post validator
+ok   G1  EXTENSION_VALUES_CHANGED = NO
+ok   G1a EXTENSION is stated in the post validator
+ok   G1  IDENTITY_VALUES_CHANGED = NO
+ok   G1a IDENTITY is stated in the post validator
+ok   G1  METADATA_VALUES_CHANGED = NO
+ok   G1a METADATA is stated in the post validator
+ok   G2  495-row shape analogue: the row count is preserved exactly
+ok   G3  identity row 1
+ok   G3  identity row 2
+ok   G3  identity row 3
+ok   G3  identity row 4
+ok   G3  identity row 5
+ok   G3  identity row 6
+ok   G4  pricing_change_log is byte-identical
+ok   G4a with zero writes
+ok   G4b and never cleared
+ok   G5  and the post validator says so
+ok   G6  the PRE pricing_list snapshot still exists
+ok   G6a and the change_log one
+ok   G6b checked, not assumed
+ok   G7  and a fresh pre-write snapshot is taken as well, so this round has its own way back
+ok   G8  an unrelated field drifting from PRE stops the run
+ok   G8a naming the group
+ok   G8b NO-GO
+ok   G8c nothing written
+
+== H · THE GATES — schema drift, duplicate identity, the change log, the lock, the armed constants ==
+ok   H1  an unmigrated change log blocks
+ok   H1a NO-GO
+ok   H1b nothing written
+ok   H2  a row count that has moved blocks
+ok   H3  an unexpected extension blocks
+ok   H4  the PRE row-for-row check CANNOT see a duplicate — the snapshot has it too
+ok   H4a so a separate check catches it
+ok   H4b naming the duplicated identity
+ok   H4c NO-GO
+ok   H4d nothing written
+ok   H5  a missing sku_details blocks; no sheet is created
+ok   H6  a missing source COLUMN blocks and is named; no column is provisioned and none is substituted
+ok   H7  a denied lock stops the commit
+ok   H7a with nothing written
+ok   H8  before arming, the dry run says so
+ok   H9  after arming, it re-checks them
+ok   H9a and authorises COMMIT
+ok   H10 a stale plan is refused at COMMIT
+ok   H10a nothing written
+ok   H11 no corruption present is stated as N/A
+ok   H11a and the sync still runs
+ok   H11b writing the source value regardless
+
+== I · THE SOURCE MAP IS MEASURED AGAINST 04_, not against this file ==
+ok   I1  the live 04_ agrees with the frozen map
+ok   I1a and it is a proof item, not a remark
+ok   I2  (the mutation applied)
+ok   I3  a renamed source column in 04_ is detected
+ok   I3a and named
+ok   I3b NO-GO
+ok   I4  an absent 04_ is reported honestly, not as agreement
+
+== J · MUTATION — each mutant is a way this tool could be wrong and still look right ==
+ok   J1  blank source silently becomes 0  (mutant caught)
+ok   J2  the join falls back to the local pricing_list.sku  (mutant caught)
+ok   J3  a duplicate source identity is resolved by picking the first  (mutant caught)
+ok   J5  a numeric field may inherit a date format when PRE carries one  (mutant caught)
+ok   J6  the authority flags are initialised FALSE instead of blank  (mutant caught)
+ok   J7  base_msrp is taken from the effective msrp column  (mutant caught)
+ok   J8  auto_msrp is overwritten from the new base value  (mutant caught)
+ok   J9  an unmatched row is blanked instead of preserved  (mutant caught)
+ok   J10 an unmatched row blocks the whole run  (mutant caught)
+
+== K · THIS FILE IS NOT ITS OWN EVIDENCE ==
+ok   K1  the tool really does write (setValues survives comment-stripping)
+ok   K2  and really does set formats
+ok   K3  and really takes and releases a lock
+ok   K4  the numeric-format override is code, not a comment
+ok   K5  the source map is read by code
+ok   K6  no executable path reads a base price out of the live pricing_list
+ok   K7  and auto_* is nowhere in the base source map
+ok   K8  the canon is taken from the shipped authority
+ok   K9  and the flag names are not re-listed locally where they could drift
+
+== L · THE OPERATOR RULING — the nine cases of the UNMATCHED / BLANK policy freeze ==
+ok   L-A  matched SKU, blank selling_price -> base_regular blank
+ok   L-B  matched SKU, blank minimum_price -> base_minimum blank
+ok   L-C  matched SKU, blank msrp -> base_msrp blank
+ok   L-C1 and the matched census counts blank beside nonblank
+ok   L-C2 for regular
+ok   L-C3 for minimum
+ok   L-D  unmatched: base_regular_price preserved
+ok   L-D1 unmatched: base_minimum_price preserved
+ok   L-D2 unmatched: base_msrp preserved
+ok   L-D3 unmatched: base_currency preserved
+ok   L-D4 including its TYPE — a preserved Date stays a Date, which is the cost of the ruling and is
+ok   L-D5 reported in the dry run rather than left to be discovered
+ok   L-D6 and re-measured on the written sheet, not just on the plan
+ok   L-E  the run completes with an unmatched row in it
+ok   L-E1 and every matched row got its SKU Details price
+ok   L-E2 for regular too
+ok   L-E3 including the rows after the unmatched one
+ok   L-F  an ambiguous sku_details mapping is counted
+ok   L-F1 and stops everything, not just that row
+ok   L-F2 with nothing written for any row
+ok   L-G  blank source base_currency preserves the existing value
+ok   L-G1 and is reported as BASE_CURRENCY_SOURCE_BLANK
+ok   L-G2 beside the ones that had a source
+ok   L-G3 and counted as preserved
+ok   L-H  no base field on any row is 0
+ok   L-I  no base value equals this row's effective or auto value
+
+208 passed, 0 failed, 9 mutants caught, 0 survived

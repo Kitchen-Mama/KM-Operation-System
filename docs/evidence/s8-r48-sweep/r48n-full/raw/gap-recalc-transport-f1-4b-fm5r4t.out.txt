@@ -1,0 +1,27 @@
+
+== C — fetch throws but calculated_at ALREADY advanced → SERVER_COMPLETED_RESPONSE_LOST ==
+
+== D — fetch throws and materialized row advances on a LATER poll → SUCCESS_RECOVERED ==
+
+== E — fetch throws and never advances → SERVER_COMPLETION_UNCONFIRMED (bounded) ==
+
+== F/G — recovery is READ ONLY: no write function, no POST, bounded ==
+
+== isTransportError classification (transport != business failure) ==
+
+== recover — UX messages (never claims failure) ==
+
+== A/B — page outcome mapping (R4J cutover: START→poll job; READ-only recovery kept as transitional §15) ==
+
+== F — the WRITE (job START) is POSTed exactly ONCE (never retried); recalculate.all no longer used by the button ==
+
+== H/I/J — READ-only status polling; both pages refresh via the READ on DONE; no per-SKU HTTP ==
+
+== K/L/M/N — READY/BLOCKED untouched · formula untouched · payload compact · no new DB table ==
+
+== O — manual + scheduled share ONE logical job owner (R4J §14) ==
+
+== wiring — shared module loaded once, both pages delegate ==
+
+----------------------------------------
+R4T GAP RECALC TRANSPORT (F1-4B-FM5-R4T): 33 passed, 0 failed

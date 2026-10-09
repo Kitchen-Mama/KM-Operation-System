@@ -1,0 +1,39 @@
+
+§A.1 — THE READ PATHS, MEASURED (cold mount). Request count is the number that moves cold load:
+        each request is a separate Apps Script Web App execution.
+  site-inventory (phase 1: regis requests=1  methods=G  bytes=960  wholeDB=0  writes=0
+     actions: inventoryScope.registry.get×1
+  sku-details (workspace)        requests=1  methods=G  bytes=5884  wholeDB=0  writes=0
+     actions: skuDetails.workspace.get×1
+  overseas-stock (LEGACY fan-out requests=4  methods=GGGG  bytes=7006  wholeDB=0  writes=0
+     actions: getTable×4
+  factory-stock (CONTROL)        requests=4  methods=GGGG  bytes=6433  wholeDB=0  writes=0
+     actions: getTable×4
+  sku-handbook (mount)           requests=3  methods=GGG  bytes=5701  wholeDB=0  writes=0
+     actions: getTable×3
+  site-inventory (phase 1 + 2)   requests=2  methods=GG  bytes=12243  wholeDB=0  writes=0
+     actions: inventoryScope.registry.get×1, inventoryReplenishment.workspace.get×1
+  overseas-stock (R3 workspace)  requests=1  methods=G  bytes=2697  wholeDB=0  writes=0
+     actions: overseasStock.workspace.get×1
+     BEFORE/AFTER  requests 4 -> 1   bytes 7006 -> 2697  (-62%)
+
+§A.2 — THE SINGLE-FLIGHT AND NAVIGATION LIFECYCLE, CLASSIFIED PER PATH
+
+  LIFECYCLE MODEL PER READ PATH (classified before any change):
+  action                            owner              mechanism                                     verdict
+  getClientCapabilities             SHARED_TRANSPORT   keyed single-flight, evicts on both outcomes  CORRECT
+  inventoryScope.registry.get       SHARED_MODULE      single-flight + session cache                 CORRECT
+  getTable (loadScopedTables)       SHARED_TRANSPORT   scope-keyed in-flight reuse (table name)      CORRECT
+  *.workspace.get                   SHARED_TRANSPORT   scope-keyed in-flight reuse (action + payload)CORRECT
+
+§A.3 — SKU DETAILS: THE METHOD DOWNGRADE, REPRODUCED AND LOCATED
+
+§A.4 — SKU HANDBOOK: WHERE THE IMAGE FIELD ACTUALLY GOES
+
+  A4 VERDICT: the field is NOT dropped, NOT renamed and NOT lost in normalization. A card can
+             therefore show the placeholder for exactly two reasons, and the renderer CANNOT
+             TELL THEM APART: (a) image_url is blank on the row, or (b) the URL is present and
+             the browser failed to load it, which the inline onerror silently converts into
+             the same placeholder. That indistinguishability is the reportable defect here.
+
+56 passed, 0 failed

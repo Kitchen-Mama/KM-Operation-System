@@ -1,0 +1,126 @@
+
+== A. §1 — the save transaction, mapped from source ==
+ok   A1 SAVE_ENTRYPOINT = saveEventUpdate() in fc-summary.js
+ok   A2 WRITE_ORDER = campaigns -> campaign_sku_lines -> fc_special_events, in that order
+ok   A3 three SEPARATE routed actions — WRITE_OWNER_COUNT = 3, one HTTP request each
+ok   A4 owners: 20_ (campaigns, lines) and 14_ (events)
+ok   A5 TRANSACTIONAL_BOUNDARY_EXISTS = NO · ROLLBACK_EXISTS = NO — the client undoes nothing
+ok   A6 PARTIAL_COMMIT_REACHABLE = YES — the page keeps a manifest of what already committed, because it must
+ok   A7 and tells the operator to reconcile by hand, which is the honest report of a partial commit
+ok   A8 stage 1 takes a ScriptLock — "two concurrent creates must not both read no match and both append"
+ok   A9 [R2 §6 REPAIRED] stage 2 now takes the SAME ScriptLock — the asymmetry R1 found is closed
+ok   A9a with its own typed timeout, so a contended line write is never mistaken for a campaign one
+ok   A9b and releases it in a finally — a leaked project-wide lock would stall every writer, not just this
+
+== B. §2 — what the success receipt is made of  [R2: REPLACED] ==
+ok   B1 [R2 §1 REPAIRED] the literal "campaigns: 1" receipt is GONE from the save
+ok   B2 [R2 §1 REPAIRED] and so is the client payload length — no sent-array length is reported as a count
+ok   B3 [R2 §1] SAVE_SUCCESS_AUTHORITY = POST_WRITE_AUTHORITATIVE_GRAPH_READBACK
+ok   B4 compared against what the save INTENDED, which is built from stage 2's receipt — not its payload
+ok   B5 and the expected line ids are the SERVER's ids (lineIdBySku), which the payload never held
+ok   B6 SUCCESS_RECEIPT_IS_AUTHORITATIVE = YES — the saved message sits AFTER the verification gate, so an unverified graph cannot reach it
+ok   B7 and a readback that cannot answer is OUTCOME_UNKNOWN — neither success nor "nothing was written"
+ok   B8 AUTOREPLAY_ON_UNKNOWN = NO — the unknown branch dispatches nothing
+ok   B9 POST_WRITE_CAMPAIGN_RECEIPT = the writer's returned row, reconciled rather than re-read
+
+== C. §3 — identity generation, and where each id is minted ==
+ok   C1 CAMPAIGN_ID_GENERATION_OWNER = SERVER (20_, CMP- + uuid)
+ok   C2 CAMPAIGN_SKU_LINE_ID_GENERATION_OWNER = SERVER (20_, CSL- + uuid)
+ok   C3 EVENT_FC_ID_GENERATION_OWNER = SERVER (14_) — the frontend never fabricates it
+ok   C4 MIXED in one direction only: the client SUPPLIES a held campaign_sku_line_id when it has one
+ok   C5 and a held event_fc_id, which is how an edit updates rather than duplicates
+
+== D. §6 — there is no referential integrity, so an orphan event is a LEGAL write ==
+ok   D1 [R2 §4 REPAIRED] an event naming a line that does not exist is REFUSED and writes nothing
+ok   D2 with its own typed reason — ORPHAN_FC_SPECIAL_EVENT is no longer a reachable write
+ok   D3 fcSpecialEventUpsert_ never reads campaign_sku_lines — nothing validates the link, in either direction
+ok   D4 the stage-3 precondition passes when the stage-2 receipt named the SKU **OR** the form still holds an id — so a stale id from a deleted row satisfies the only check there is
+
+== E. §1/§5 — the unlocked stage 2 loses a concurrent write, and needs no operator error ==
+ok   E1 the suspension point is the handler's own read/write boundary
+ok   E2 the sheet starts empty
+ok   E3 save B commits 2 lines
+ok   E4 and the sheet holds 2
+ok   E5 a read taken before B lands computes its append at row 2 — the row B has now written
+ok   E6 and the append position IS that stale number: s.rows.length + 1, from the earlier read
+ok   E7 [R2 §6 REPAIRED] the read-then-append pair is now inside the lock in BOTH stages
+ok   E7a and the lock opens BEFORE the authoritative read — locking after it would fence nothing
+
+== F. §5 — timeout, replay and the write-outcome model ==
+ok   F1 the transport REPLAYS upsertCampaignSkuLines once on a lost delivery hop
+ok   F2 and says so honestly: a dead echo target is indeterminate, not proof the handler never ran
+ok   F3 TIMEOUT_PARTIAL_COMMIT_REACHABLE = YES, bounded to ONE replay
+ok   F4 WRITE_OUTCOME_CLASSIFICATION_IMPLEMENTED = YES — proven-zero vs OUTCOME_UNKNOWN are distinguished
+ok   F5 UNKNOWN_OUTCOME_CAN_BE_RETRIED_UNSAFELY = NO automatically — nothing replays a Save by itself
+ok   F6 UNKNOWN_OUTCOME_CAN_BE_REPORTED_SUCCESS = NO for a thrown outcome — but a stage that ANSWERS is never checked against the sheet, which is the gap §6 names
+
+== G. §10 — the twelve fixtures, driven against the real handlers ==
+ok   G-A all three succeed -> 5 lines and 5 events, VALID_GRAPH
+ok   G-B a line-level refusal writes NOTHING — validate-whole-batch-first holds
+ok   G-C a stage-3 failure leaves stage 2 committed — MISSING_FC_SPECIAL_EVENT, the INCIDENT A shape
+ok   G-C1 and the event write did not silently succeed — the refusal is per row, with its own reason
+ok   G-D RETRY_IDEMPOTENT = YES for stage 2 — a replay of a landed request writes no second row
+ok   G-D1 and returns the SAME ids, so stage 3 addresses the same lines either way
+ok   G-E a retry over a PARTIAL state completes it — 3 created, 2 unchanged, no duplicates
+ok   G-G lines deleted by hand then re-saved -> 5 CREATED. The handler recovers; it does not refuse
+ok   G-H [R2 §4 REPAIRED] the INCIDENT B shape is no longer reachable — every event naming a missing line is refused, and no orphan is written
+ok   G-H1 each refusal names the reference it could not resolve
+ok   G-J an unreadable marketplace registry refuses every row and writes NOTHING — but the ENVELOPE still says success:true, and only the per-row skipped count carries the refusal
+ok   G-J1 with its own typed reason, per row
+ok   G-I a SKU named twice yields ONE row and TWO receipts — the receipt count is not the row count
+ok   G-K upserted=2 against ONE row on the sheet — a writer-return count is not an authoritative count
+ok   G-L SUCCESS_RECEIPT for an INCOMPLETE graph is emittable — nothing gates the message on the graph
+
+== K. §7 — what a recovery can and cannot reconstruct ==
+ok   K1 nine line columns have NO counterpart on the event row
+ok   K2 the IDENTITY skeleton IS carried by the event row — id, campaign, sku
+ok   K3 but NO commercial value is — the discount the operator typed exists on the line row and nowhere else
+ok   K4 PRODUCTION_REPAIR_DETERMINISTIC = NO for a full line reconstruction — identity yes, price no
+ok   K5 the re-created line gets a NEW id — the deleted one is not resurrected
+ok   K6 an id WITHOUT a version is REFUSED per row — and the ENVELOPE still says success:true
+ok   K6a with the typed reason
+ok   K7 SO THE ORPHAN LINK IS STICKY — nothing repointed it, and the graph is NOT self-healing
+ok   K8 WITH the current version the update proceeds in place
+ok   K8a and REPOINTS the orphan at the re-created line — THIS is the recovery, and it needs the version
+ok   K8b while preserving the canonical event identity, so history is not rewritten
+ok   K9 WITHOUT event_fc_id the save writes NOTHING — no duplicate is created
+ok   K9a the uniqueness gate refuses it: one event flag in one target year is one event
+ok   K9b SO A FROM-SCRATCH REBUILD CANNOT RECOVER EITHER — the orphan blocks the create and the versionless update alike. The graph is repairable only through a save that carries BOTH the event_fc_id AND its current row_version (K8/K8a).
+ok   K10 stage 2 HONOURS a supplied campaign_sku_line_id and creates the row under it
+ok   K10a so the line the orphan events point at is restored, with its original id
+ok   K10b and the events are untouched — the graph closes without rewriting a single event row
+
+== I. THE ASYMMETRY — one stage is fully instrumented, one partly, one not at all ==
+ok   I1 stage 3 matches each result to its row BY THE SERVER INDEX, not by position
+ok   I2 and records a mismatch rather than applying a result to the wrong row
+ok   I3 a row the server did not mention is REFUSED, not assumed written
+ok   I4 and a per-row skip is a refusal the operator is shown — stage 3 CANNOT silently drop a row
+ok   I5 stage 2's receipt IS read — to build lineIdBySku
+ok   I6 and its created / updated / unchanged / upserted counts are NEVER read — the one stage whose rows went missing is the one whose own report the page discards
+ok   I7 [R2 §1 REPAIRED] SUCCESS_RECEIPT_COUNT_SOURCE = the graph readback, for every figure
+ok   I7a the stage-3 classifier still runs — its counts stay as diagnostics, they are just no longer the receipt (§1 allows exactly that)
+
+== H. what this round can and cannot decide ==
+ok   H1 PROVEN — the receipt is not authoritative (B2/B3/B6/B7)
+ok   H2 PROVEN — no transaction, no rollback, partial commit reachable (A5/A6)
+ok   H3 PROVEN — no referential integrity; an orphan event is a legal write (D1/D2/D3)
+ok   H4 PROVEN — stage 2 is unlocked where stage 1 is locked (A8/A9/E6/E7)
+ok   H5 PROVEN — the INCIDENT B shape is reachable and reports success (G-H)
+ok   H6 NOT PROVEN — WHICH of these produced INCIDENT B. The handler places its appends correctly at every N (fc-special-stage2-large-batch-r1), so "the writer put them in the wrong place" is excluded; what remains needs evidence the repository does not hold. See the evidence record.
+kill M1 a receipt that reports the client payload length is caught
+kill M2 the orphan check exists on the server
+kill M3 removing stage 2's ScriptLock is caught
+kill M4 the stage-3 precondition stops trusting a client-held id
+kill M5 removing the referential gate lets the orphan back in is caught
+kill M6 a duplicate SKU in one batch mints two rows
+
+=====================================================
+FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R1 — 89 passed / 0 failed
+MUTATION 6/6  no survivors
+WRITE_OWNER_COUNT = 3   TRANSACTIONAL_BOUNDARY_EXISTS = NO   ROLLBACK_EXISTS = NO
+PARTIAL_COMMIT_REACHABLE = YES   FALSE_SUCCESS_REACHABLE = NO  [R2]
+SUCCESS_RECEIPT_IS_AUTHORITATIVE = YES [R2]  POST_WRITE_READBACK = campaign GRAPH
+REFERENTIAL_INTEGRITY_ENFORCED = YES  ORPHAN_FC_SPECIAL_EVENT_WRITABLE = NO  [R2]
+STAGE2_UNLOCKED_WHILE_STAGE1_LOCKED = NO  [R2]   RETRY_IDEMPOTENT = YES (per stage)
+PRODUCTION_ROWS_WRITTEN = 0   BEHAVIOR_CHANGED = NO
+=====================================================

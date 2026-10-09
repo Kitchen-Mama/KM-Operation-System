@@ -1,0 +1,27 @@
+ok   node status: completed
+ok   node status: current
+ok   node status: planned
+ok   node status: exception
+ok   position: latest event coord wins
+ok   position: current node when no event coord
+ok   position: last completed node
+ok   position: location_ref master
+ok   position: pending when nothing
+ok   position: 0,0 event ignored (not a coordinate)
+ok   dedupe: same source+source_event_id collapses
+ok   segment: completed→completed solid
+ok   segment: →planned dashed
+ok   segment: exception red
+ok   antimeridian: CN→US skipped (no cross-map line)
+ok   antimeridian: nearby drawn
+ok   SHP-202607-001: on the way + arriving soon (once each)
+ok   delayed: ETA past, not delivered
+ok   delivered shipment not delayed
+ok   delivered today (TPE date match)
+ok   delivered earlier ≠ delivered today
+ok   exception: status stuck
+ok   fixture: 3 upcoming nodes from shipment_routes (Long Beach / Customs / LGB8)
+ok   fixture: timeline shows 3 actual events only (no planned events fabricated)
+ok   fixture: node 3 (Pacific Ocean) is current
+
+ALL PASS

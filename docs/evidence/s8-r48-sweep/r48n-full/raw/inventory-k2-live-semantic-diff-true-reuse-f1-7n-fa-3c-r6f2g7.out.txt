@@ -1,0 +1,27 @@
+
+== 1. representation-correct field equality ==
+
+== 2. exact fixture → semantic_equal true (predicts REUSED) ==
+
+== 3. diagnostic field-by-field diff ==
+
+== 4. classification bound to the comparator ==
+
+== 5. blank≠zero, blank≠false ==
+
+== 6. genuine changes still regenerate ==
+
+== 7. membership exact ==
+
+== 8. before-write return ==
+
+== 9. strict verifier ==
+
+== 10. generic/manual unchanged ==
+
+== G. preflight may_run gate ==
+
+== H. audit history ==
+
+----------------------------------------
+R6F2G7 LIVE-SEMANTIC-DIFF: 39 passed, 0 failed

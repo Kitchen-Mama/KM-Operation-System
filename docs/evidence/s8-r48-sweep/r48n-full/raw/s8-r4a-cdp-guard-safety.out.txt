@@ -1,0 +1,140 @@
+
+== A. THE PINNED ROUTER VOCABULARY STILL MATCHES THE ROUTER ==
+ok   A1  the pinned vocabulary equals the router's own
+ok   A2  …and it is the whole vocabulary, not a fragment
+ok   A3  the GET read table is 25 actions
+ok   A3b …and the 25th is factoryStockGuard.get, the read that used to travel on POST
+ok   A4  approved factoryStockGuard.get is a real router action
+ok   A4  approved fcSummary.workspace.get is a real router action
+ok   A4  approved inventoryReplenishment.workspace.get is a real router action
+ok   A4  approved inventoryReplenishmentGap.get is a real router action
+ok   A4  approved overseasStock.workspace.get is a real router action
+ok   A4  approved purchaseOrder.workspace.get is a real router action
+ok   A4  approved recommendation.workspace.get is a real router action
+ok   A4  approved requestOrder.workspace.get is a real router action
+ok   A4  approved shipment.workspace.get is a real router action
+ok   A4  approved skuDetails.workspace.get is a real router action
+ok   A4  approved weeklyShipping.workspace.get is a real router action
+ok   A5  forbidden gapJob.status.get is a real router action
+ok   A5  forbidden inventoryReplenishmentGap.recalculate.all is a real router action
+ok   A5  forbidden orderPlanningGap.recalculate.all is a real router action
+ok   A5  forbidden orderPlanningGap.job.start is a real router action
+ok   A5  forbidden inventoryReplenishmentGap.job.start is a real router action
+ok   A5  forbidden orderPlanningGap.get is a real router action
+ok   A5  forbidden aiPlanFirstLayer.get is a real router action
+ok   A6  the forbidden poll is a known action
+ok   A7  a write nobody approved is still a known action
+ok   A8  an ordinary query param value is not an action
+ok   A9  an empty string is not an action
+
+== B. THE ACTION DECIDES BEFORE THE HOST — the regression the proof caught ==
+ok   B1.0 gapJob.status.get refused at script.google.com/macros/s/AKfyc
+ok   B2.0 …and classified FORBIDDEN, not third-party
+ok   B1.1 gapJob.status.get refused at 27.0.0.1:54755/exec?action=gapJo
+ok   B2.1 …and classified FORBIDDEN, not third-party
+ok   B1.2 gapJob.status.get refused at example.com/anything?action=gapJ
+ok   B2.2 …and classified FORBIDDEN, not third-party
+ok   B1.3 gapJob.status.get refused at kitchen-mama.github.io/proxy?act
+ok   B2.3 …and classified FORBIDDEN, not third-party
+ok   B3  a forbidden action in a POST body is refused at any host
+ok   B4  the unapproved action adjustFactoryInventory is refused off-host
+ok   B4  the unapproved action pricing.update is refused off-host
+ok   B4  the unapproved action inventoryReplenishmentGap.recalculate.all is refused off-host
+ok   B5  the source extracts the action before deciding whether it is an application request
+ok   B6  a known action makes the request an application request
+
+== C. THE FIVE TRAFFIC CLASSES, AND THE APPLICATION STILL LOADS ==
+ok   C1  five classes
+ok   C2  A_STATIC_ASSET has a stated policy
+ok   C2  B_APPROVED_APPLICATION_READ has a stated policy
+ok   C2  C_FORBIDDEN_APPLICATION_ACTION has a stated policy
+ok   C2  D_THIRD_PARTY_OR_PLATFORM has a stated policy
+ok   C2  E_UNKNOWN has a stated policy
+ok   C3.0 static asset continues: https://kitchen-mama.github.io/assets/css/layout
+ok   C3.1 static asset continues: https://kitchen-mama.github.io/assets/html/pages
+ok   C3.2 static asset continues: https://kitchen-mama.github.io/assets/js/pages/f
+ok   C3.3 static asset continues: https://fonts.googleapis.com/css2?family=Inter
+ok   C3.4 static asset continues: /assets/img/logo.png
+ok   C4  a page partial is a static asset
+ok   C5  the /exec echo target continues
+ok   C6  the third-party policy says the chain is recorded
+ok   C7  an actionless application request aborts
+ok   C8  …and the policy names the standing-gate rule it enforces
+ok   C9  an approved read continues
+ok   C10 …and the action is recorded
+ok   C11 an approved read on the wrong verb aborts
+ok   C12 data:text/ht continues
+ok   C12 blob:https:/ continues
+ok   C12 about:blank continues
+ok   C13 with no decider injected, an application read is refused
+
+== D. A DECISION BECOMES THE MATCHING CDP COMMAND ==
+ok   D1  allow -> continueRequest
+ok   D2  refuse -> failRequest
+ok   D3  …with a named reason
+ok   D4  the request id is carried
+ok   D5  an abort cannot also continue
+
+== E. THE LEDGER COUNTS WHAT §12 NAMES ==
+ok   E1  REQUEST_COUNT_TOTAL starts at zero
+ok   E1  APPLICATION_READ_REQUEST_COUNT starts at zero
+ok   E1  FORBIDDEN_REQUEST_ABORT_COUNT starts at zero
+ok   E1  UNKNOWN_REQUEST_ABORT_COUNT starts at zero
+ok   E1  STATIC_ASSET_REQUEST_COUNT starts at zero
+ok   E1  THIRD_PARTY_REQUEST_COUNT starts at zero
+ok   E2  total
+ok   E3  application reads
+ok   E4  per-action count — the amplification signal
+ok   E5  forbidden aborts
+ok   E6  unknown aborts
+ok   E7  static assets
+ok   E8  every abort is itemised, not only counted
+
+== F. AMPLIFICATION — first-return caching is not a leak ==
+ok   F1  a drop at the first return then flat is FLAT
+ok   F2  a monotonic rise is a leak candidate
+ok   F3  scattered variance is not
+ok   F4  two cycles cannot answer the question
+ok   F5  the baseline is cycle 2, not cycle 1
+ok   F6  the growth is reported
+ok   F7  the exclusion of cycle 1 is explained in the source
+
+== G. THE CDP CONSTANTS ==
+ok   G1  interception is at the Request stage
+ok   G2  REQUEST_SENT_BEFORE_DECISION = NO
+ok   G3  deny by default
+ok   G4  the abort method
+ok   G5  the Response stage is named forbidden
+ok   G6  the deprecated Network interception domain is named forbidden
+ok   G7  the source explains why the Response stage is forbidden
+
+== H. THE PROOF TOOL TOUCHES NO REAL ENDPOINT ==
+ok   H1  the proof maps the application host to a local sink
+ok   H2  the sink listens on loopback
+ok   H3  the proof carries no real deployment id
+ok   H4  the proof never reads the live endpoint from the client
+ok   H5  no TLS sink means the proof stops rather than degrading to http
+ok   H6  the permitted request uses the stable https /exec shape
+ok   H7  the proof fires local_permitted
+ok   H7  the proof fires local_forbidden
+ok   H7  the proof fires app_permitted
+ok   H7  the proof fires app_forbidden
+ok   H8  the proof states why the sink is the witness
+
+== I. MUTATION ==
+ok   MUTANT CAUGHT — host is checked before the action again
+ok   MUTANT CAUGHT — the unknown class is allowed instead of aborted
+ok   MUTANT CAUGHT — an actionless application request is allowed
+ok   MUTANT CAUGHT — the allow/refuse test is inverted
+ok   MUTANT CAUGHT — failRequest is swapped for continueRequest
+ok   MUTANT CAUGHT — interception moves to the Response stage
+ok   MUTANT CAUGHT — the guard declares the request already sent
+ok   MUTANT CAUGHT — deny-default is turned off
+ok   MUTANT CAUGHT — static assets are blocked, so the page never renders
+ok   MUTANT CAUGHT — the echo redirect target is blocked, so no answer arrives
+ok   MUTANT CAUGHT — forbidden aborts stop being itemised
+ok   MUTANT CAUGHT — amplification calls scattered variance a leak
+ok   MUTANT CAUGHT — amplification baselines on cycle 1 and so blames the cache
+ok   MUTANT CAUGHT — two cycles are treated as enough
+
+ALL PASS — 120 passed, 0 failed, 14 mutants, 0 survived

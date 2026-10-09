@@ -1,0 +1,64 @@
+
+=== A — THE SHARED CONTRACT: a region that is begun and not settled becomes INERT ===
+  ok   A1  a fresh region enters INITIAL_LOADING
+  ok   A2  and a SECOND beginLoad is refused — INITIAL_LOADING is not a legal self-transition
+  ok   A2a so the placeholder is painted once and never again
+  ok   A3  whereas a SETTLED region accepts the next load
+  ok   A4  stated on the transition table itself, so this is the contract and not an accident of createRegion
+
+=== B — EVERY READ OWNER, AND WHICH ONE MAY DRIVE THE REGION ===
+  ok   B1  the page declares five read owners
+  ok   B2  four dispatch sites carry a declared owner
+  ok   B3  EXACTLY ONE non-quiet owner — the post-write readback. The three that paint through the search gate are quiet, so no read repaints a node the gate owns.
+  ok   B4  the post-write readback routes its failure to _irRenderError_
+  ok   B4a and _irRenderError_ is what settles the region to ERROR
+  ok   B4b while the success path settles it to READY or EMPTY — both terminal paths settle
+
+=== C — EXECUTED: the gate's message survives the read on the Search path ===
+  ok   C1  while the arbiter is PREPARING the gate says so — the message R6-R5 §4 added
+  ok   C1a and publishes the phase, so this is assertable rather than a matter of wording
+  ok   C2  the region still exists — it was not deleted, it was de-scoped
+  ok   C2a and after a QUIET read dispatches, the accurate message is still the one on screen
+  ok   C3  a NON-quiet read would overwrite it — which is what C2a proves no longer happens
+  ok   C4  a failed read says FAILED
+  ok   C4a and says so explicitly — ERROR is never rendered as EMPTY
+  ok   C4b with exactly one explicit Retry, which dispatches a fresh search
+  ok   C4c and the code is shown, so the failure is diagnosable
+  ok   C5  before any search the page asks for a scope — neither ERROR nor EMPTY
+
+=== D — NO SELF-RETRY: a rejection never dispatches the next read ===
+  ok   D1  the Search rejection handler was located
+  ok   D2  and it dispatches NOTHING — no loader call, no re-entry, no re-render that could start a read
+  ok   D3  it records ERROR and stops; recovery belongs to the explicit Retry
+  ok   D4  and a superseded failure returns early — a stale rejection cannot overwrite a newer search
+  ok   D5  no interval polls the workspace read
+  ok   D5a and no timer re-dispatches it after a rejection
+
+=== E — FAIL CLOSED: a failed canonical read never falls back to business data ===
+  ok   E1  a read failure DROPS the read model — nothing can render from the broad cache behind it
+  ok   E1a and the banner is announced, not merely coloured
+
+=== F — THE PAGES THAT ARE *NOT* DEFECTIVE, and why the census counted them anyway ===
+  ok   F1  factory-stock begins its region inline and keeps no reference to it
+  ok   F1a so there is no retained controller a later load could be refused by
+  ok   F2  overseas-stock begins its region inline and keeps no reference to it
+  ok   F2a so there is no retained controller a later load could be refused by
+  ok   F3  whereas Inventory Replenishment memoizes its region — which is what made the latch reachable
+
+=== J — MUTANTS ===
+  ok   J1 the Search read drives the region again, overwriting the gate (caught)
+  ok   J2 the bootstrap read drives the region again (caught)
+  ok   J3 a failed read keeps the model, so business data survives the failure (caught)
+  ok   J4 the Search rejection re-enters the loader — the S3-R1 storm (caught)
+  ok   J5 a stale rejection overwrites a newer search (caught)
+  ok   J6 the failure banner loses the sentence that separates it from an empty result (caught)
+  ok   J7 the failure banner loses its Retry, stranding the operator (caught)
+
+  mutants caught 7
+
+====================================================================================================
+S3-R2 LOADING / RENDER OWNERSHIP — passed 41  failed 0
+RENDER_OWNERS_PER_REGION = 1 · UNSETTLED_RETAINED_REGION_PATHS = 0
+SELF_RETRY_ON_REJECTION = 0 · UNAUTHORISED_POLLING = 0 · BUSINESS_FALLBACK_ON_FAILURE = 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · DEPLOYMENTS=0
+====================================================================================================

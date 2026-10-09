@@ -1,0 +1,137 @@
+
+== A. §1 — THE SELECTOR IS DERIVED FROM THE DAMAGE ==
+ok   A1 the finder locates the incident with no selector supplied
+ok   A2 and names the campaign_id the census needs
+ok   A3 exactly one campaign is affected
+ok   A4 the finder emits NO repair plan — it is strictly less than a census
+ok   A5 and no prices
+ok   A6 and it writes nothing
+ok   A7 driven: not one write was attempted
+ok   A8 with the identity columns needed to recognise the incident
+ok   A9 and the Series breakdown
+ok   A10 whose sizes come from the graph, not from this suite
+ok   A11 a whole graph reports no affected campaign
+ok   A12 and names none
+ok   A13 two damaged campaigns are both reported
+ok   A14 by id
+
+== B. §2 — THE OPERATOR ENTRY FUNCTION ==
+ok   B1 the entry resolves the selector itself
+ok   B2 and says the selector is unique
+ok   B3 ENTRY_FUNCTION_WRITE_COUNT = 0
+ok   B4 PRODUCTION_ROWS_WRITTEN = 0
+ok   B5 and repair is not authorized
+ok   B6 driven: the whole entry path attempted zero writes
+ok   B7 and it produces a scoped plan rather than EMPTY_SELECTOR
+ok   B8 for the campaign the finder chose
+ok   B9 with two candidates the entry STOPS
+ok   B10 rather than choosing one by ordering
+ok   B11 and hands the operator both ids
+ok   B12 a STOP still writes nothing
+ok   B13 pinning one id scopes the census to it
+ok   B14 and only to it
+ok   B15.1 the entry file contains no `appendRow`
+ok   B15.2 the entry file contains no `setValue`
+ok   B15.3 the entry file contains no `deleteRow`
+ok   B15.4 the entry file contains no `insertRow`
+ok   B15.5 the entry file contains no `clear`
+ok   B15.6 the entry file contains no `flush`
+ok   B15.7 the entry file contains no `DriveApp`
+ok   B15.8 the entry file contains no `MailApp`
+ok   B15.9 the entry file contains no `PropertiesService`
+ok   B15.10 the entry file contains no `ScriptApp`
+ok   B15.11 the entry file contains no `LockService`
+ok   B16 and defines no executor
+ok   B17 the named entry point takes no arguments, so the editor can run it as-is
+
+== C. §3/§4 — THE PRICE COMES FROM 73_, AND IS NOT REIMPLEMENTED ==
+ok   C1 the census regular_price IS pricingResolveEffective_'s answer
+ok   C2 including the source band it resolved through
+ok   C3 and promo_price IS pricingRoundFx_'s answer
+ok   C4 100 at 20% is 80.00 in a two-decimal currency
+ok   C5 SECOND_PRICING_AUTHORITY_CREATED = NO
+ok   C6 named
+ok   C7 rounding owner named
+ok   C8 with 73_ absent the census says so
+ok   C9 and REFUSES the row rather than pricing it locally
+ok   C10 naming the absent owner
+ok   C11 so nothing is ready
+ok   C12 the census never reads the auto band itself — it hands the row to the resolver
+ok   C13 and holds neither the authority flag logic nor a precision table of its own
+ok   C14 it CALLS both owners
+ok   C15 which is the pattern 72_ already established and documented
+ok   C16 a row priced through auto_* resolves, and reports AUTO
+ok   C17 and the deal price follows from it
+ok   C18 a SKU with no price at all is REFUSED
+ok   C19 and named
+ok   C20 a zero price is not a price — the page's own <= 0 guard, restated
+
+== D. §4 — THE DISCOUNT IS SUPPLIED, NOT ASSUMED ==
+ok   D1 the frozen discount reaches the census
+ok   D2 DISCOUNT_PERCENT_AUTHORITY = OPERATOR_FIXED
+ok   D3 and it is declared once, in the ENTRY file, where an operator can read it
+ok   D4 the census itself does not know it — it stays a general instrument
+ok   D5 a different frozen discount produces a different deal price, through the same owner
+
+== E. THE TWO PRECISION TABLES, AND WHERE THEY DISAGREE ==
+ok   E1.1 USD — both tables agree
+ok   E1.2 CAD — both tables agree
+ok   E1.3 EUR — both tables agree
+ok   E1.4 GBP — both tables agree
+ok   E1.5 AUD — both tables agree
+ok   E1.6 JPY — both tables agree
+ok   E1.7 KRW — both tables agree
+ok   E2 TWD — the builder rounds to 2 decimals, the frozen contract stores 0. THEY DISAGREE.
+ok   E3 VND — the builder rounds to 0, the frozen contract does not know it and REFUSES
+ok   E4 CLP — likewise
+ok   E5 an UNKNOWN currency — the builder silently defaults to 2, the frozen contract refuses
+ok   E6 every currency an EU repair can use is one the two tables AGREE on — this incident is unaffected
+ok   E7 a VND row is REFUSED by the census
+ok   E8 naming the frozen contract as the reason
+ok   E9 a zero-decimal currency rounds to whole units — the table is doing real work
+
+== F. §5 — THE PRICE FIELDS ARE SNAPSHOTS, AND THE REPAIR SAYS SO ==
+ok   F1 20_ documents price_units as a SNAPSHOT of the row that supplied the prices
+ok   F2 the read path returns the STORED values verbatim — nothing is recomputed on read
+ok   F3 and consults no pricing authority while reading a saved line
+ok   F4 and the writer derives nothing — it stores the numbers the caller computed
+ok   F5 the matrix calls the reconstructed price DERIVED, naming its owner
+ok   F6 and never claims it is the value the lost row held
+
+== G. §6/§7/§8 — THE MATRIX, AND THE CARDINALITY IT IS BUILT FROM ==
+ok   G1 UNRESOLVED_REQUIRED_FIELD_COUNT = 0 — every required field is determined
+ok   G2 nothing waits on the operator
+ok   G3 REFUSED_CONFLICT_COUNT = 0
+ok   G4 UNKNOWN_COUNT = 0
+ok   G5 every missing line is READY_FOR_REPAIR
+ok   G6 the cardinality is derived from the graph the census read
+ok   G7 and every event is one state
+ok   G8 a three-row incident derives three
+
+== H. §9/§10 — SAFETY GATES AND SCHEMA ==
+ok   H1 NEW_LINE_ID_MINT_COUNT = 0
+ok   H2 nothing is deleted
+ok   H3 every missing line id is still referenced by an existing event
+ok   H4 §10 — no schema change
+ok   H5 PRODUCTION_ROWS_WRITTEN = 0
+ok   H6 and execution is not authorized
+
+== I. MUTANTS ==
+ok   MUTANT CAUGHT — M1 the census computes the deal price itself instead of calling 73_
+ok   MUTANT CAUGHT — M2 an unknown currency is rounded anyway instead of refused
+ok   MUTANT CAUGHT — M3 a zero or missing regular price is accepted
+ok   MUTANT CAUGHT — M4 the entry picks the first of several affected campaigns
+ok   MUTANT CAUGHT — M5 the finder emits a repair plan
+ok   MUTANT CAUGHT — M6 the discount is baked into the census instead of supplied
+ok   MUTANT CAUGHT — M7 the entry writes a row
+
+== SUMMARY ==
+
+SELECTOR_STRATEGY = DERIVED_FROM_ORPHANED_EVENTS   ENTRY_FUNCTION_WRITE_COUNT = 0
+REGULAR_PRICE_AUTHORITY = pricingResolveEffective_ (73_)   SECOND_PRICING_AUTHORITY_CREATED = NO
+PROMO_PRICE_DERIVATION_OWNER = pricingRoundFx_ (73_)   DISCOUNT_PERCENT_AUTHORITY = OPERATOR_FIXED
+CAMPAIGN_LINE_PRICE_SEMANTIC = HISTORICAL_SNAPSHOT   REPAIR_USES_CURRENT_CANONICAL_PRICE = YES
+TWO CURRENCY PRECISION TABLES EXIST AND DISAGREE ON TWD / VND / CLP / UNKNOWN (§E)
+PRODUCTION_ROWS_WRITTEN = 0   PRODUCTION_REPAIR_EXECUTION_AUTHORIZED = NO
+
+108 passed, 0 failed, 7 mutants (0 survived)

@@ -1,0 +1,24 @@
+
+== §C — ONE globe surface: one transform authority, and no second sphere
+
+== §D — canonical shared-edge topology, executed on the real vendored data
+  COARSE (110m countries): 8733 directed -> 6656 unique; removed 2073 duplicates (23.74%)
+    coastline 4583 · international 2073 · adm1 0
+  (every international edge has >= 2 countries)
+  (every coastline edge has exactly one owner)
+  FINE (10m ADM1): 76931 directed -> 67976 unique; removed 8041 duplicates (10.45%)
+    coastline 59935 · international 1174 · adm1 6867
+  endpoints (combined): {"vertices":60994,"dangling_endpoints":0,"odd_degree":5480,"junctions":9455}
+  antimeridian census: {"antimeridian_edges":1,"wide_edges":0,"polar_edges":3,"worst_delta_lng":360}
+  country|displayedCode  : 35 colliding keys hiding 53 rows
+  country|fullEnglishName: 13 colliding keys hiding 13 rows
+  adm1_code (used)       : 0 colliding keys
+
+== §E — the border hierarchy is three distinct, ordered weights
+
+== §D/§E — the two topologies, one active at a time
+  cross-dataset shared edges: 7 of 67976
+
+----------------------------------------
+CANONICAL TOPOLOGY (TEXTURE-3-R3 §C/§D/§E): 106 passed, 0 failed
+----------------------------------------

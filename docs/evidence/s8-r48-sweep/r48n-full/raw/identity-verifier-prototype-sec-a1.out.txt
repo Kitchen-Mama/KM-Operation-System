@@ -1,0 +1,141 @@
+
+=== §A  A TOKEN THAT IS NOT A TOKEN ===
+  ok   A1 absent credential
+  ok   A2 empty credential
+  ok   A3 null credential
+  ok   A4 malformed: not three segments
+  ok   A5 malformed: two segments
+  ok   A6 alg=none — an UNSIGNED token is refused, not read
+  ok   A7 signed by the wrong key — a real signature mismatch, not a mocked flag
+  ok   A8 payload swapped under a valid signature — tampering is caught by the signature, not by a field check
+
+=== §B  THE SEAM: A VERIFIER THAT IS DOWN IS NEVER A PASS ===
+  ok   B1 an unavailable verifier gets its OWN code, so an outage is not mistaken for a rejected caller
+  ok   B2 and it is emphatically not an allow
+  ok   B3 a verifier that THROWS is treated the same way, not as an unhandled crash
+  ok   B4 a perfect payload with a bad signature fails on the SIGNATURE
+  ok   B4a (and the attestation source was consulted, once)
+
+=== §C  EVERY CLAIM THE OFFICIAL GUIDANCE NAMES ===
+  ok   C1 wrong issuer
+  ok   C2 both official issuer spellings accepted
+  ok   C3 a VALID Google token minted for another site is not a credential here
+  ok   C3a and an unconfigured audience refuses everything rather than accepting anything
+  ok   C4 expired
+  ok   C4a within the named clock skew, still valid
+  ok   C4b no expiry at all is invalid
+  ok   C5 issued in the future
+  ok   C5a no issue time is invalid
+  ok   C6 a lifetime longer than the issuer grants is not from that issuer
+  ok   C7 not-before in the future
+  ok   C8 no subject
+  ok   C9 no email
+  ok   C10 email_verified false
+  ok   C10a absent is not true
+  ok   C10b and the STRING "true" is not the boolean — a truthiness check here would be a hole
+  ok   C11 a consumer Google account has no hd claim and is refused when a domain is required
+  ok   C12 a different hosted domain is refused
+  ok   C13 the right hosted domain passes
+  ok   C14 and an hd claim on an UNSIGNED-BY-US token proves nothing — signature first, always
+
+=== §D  THE PRINCIPAL IS BUILT FROM CLAIMS AND NOTHING ELSE ===
+  ok   D1 provider
+  ok   D2 subject
+  ok   D3 the identity key is provider+subject — an email can be renamed or reassigned, a sub cannot
+  ok   D4 verified_email, lower-cased
+  ok   D5 hosted_domain
+  ok   D6 issuer
+  ok   D7 audience
+  ok   D8 authenticated_at is when we checked, not what the token said
+  ok   D9 token_issued_at
+  ok   D10 token_expiration
+  ok   D11 authentication_method names how it was proved
+  ok   D12 the principal carries no fragment of the token
+  ok   D13 and it has exactly the frozen field set — nothing extra rode along
+
+=== §E  THE FROZEN ORDER, AND THE DATABASE STAYS SHUT ===
+  ok   E1 a real operator, a permitted action, feature on → allowed
+  ok   E1a and only then may the database be opened
+  ok   E2 no credential
+  ok   E2a  …and db_open_permitted is false
+  ok   E2b  …no principal leaks out of an auth failure
+  ok   E3 forged credential
+  ok   E3a  …and db_open_permitted is false
+  ok   E3b  …no principal leaks out of an auth failure
+  ok   E4 verifier down
+  ok   E4a  …and db_open_permitted is false
+  ok   E4b  …no principal leaks out of an auth failure
+  ok   E5 empty operator registry
+  ok   E5a  …and db_open_permitted is false
+  ok   E5b  …no principal leaks out of an auth failure
+  ok   E6 unknown operator
+  ok   E6a  …and db_open_permitted is false
+  ok   E6b  …no principal leaks out of an auth failure
+  ok   E7 action not in the permission table
+  ok   E7a  …and db_open_permitted is false
+  ok   E7b  …no principal leaks out of an auth failure
+  ok   E8 out of data scope
+  ok   E8a  …and db_open_permitted is false
+  ok   E8b  …no principal leaks out of an auth failure
+  ok   E9 feature disabled
+  ok   E9a  …and db_open_permitted is false
+  ok   E9b  …no principal leaks out of an auth failure
+  ok   E10 a stranger is refused as a stranger even when the feature is off
+  ok   E11 ALL_SITES can never match a scope entry
+  ok   E12 an incomplete scope is never in scope
+
+=== §F  THE RESPONSE MUST NOT BE AN ORACLE ===
+  ok   F1 "known but not permitted" and "unknown account" are BYTE-IDENTICAL to the caller
+  ok   F2 while the server log distinguishes them, which is where that fact belongs
+  ok   F2a and says which, so an administrator can still diagnose it
+  ok   F3 the refusal carries no raw token
+  ok   F3a not even the signature segment
+  ok   F4 and no address from the operator registry
+  ok   F5 (a token fingerprint is available for correlation instead)
+  ok   F5a the fingerprint is stable
+  ok   F5b and distinguishes tokens
+  ok   F6 and a stray token in a log line is scrubbed by shape, as defence in depth
+  ok   F7 every refusal carries a correlation id
+
+=== §G  CLIENT-ASSERTED IDENTITY IS ACCEPTED, IGNORED, AND SAID SO ===
+  ok   G1 the audit row is keyed on the VERIFIED subject
+  ok   G2 and carries the verified email, not the claimed one
+  ok   G3 named as server-derived
+  ok   G4 and it records that the body tried, which is worth logging
+  ok   G5 nothing the body claimed survives into the audit identity
+  ok   G6 buildPrincipal takes claims, attestation and now — and nothing else
+  ok   G7 and the word "body" appears nowhere inside it
+
+=== §H  THE CLIENT MUST NOT CALL A REFUSAL A NETWORK FAULT ===
+  ok   H1 NOT_AUTHENTICATED is an ANSWER, never a transport fault
+  ok   H2 INVALID_TOKEN is an ANSWER, never a transport fault
+  ok   H3 TOKEN_EXPIRED is an ANSWER, never a transport fault
+  ok   H4 WRONG_ISSUER is an ANSWER, never a transport fault
+  ok   H5 WRONG_AUDIENCE is an ANSWER, never a transport fault
+  ok   H6 TOKEN_NOT_YET_VALID is an ANSWER, never a transport fault
+  ok   H7 EMAIL_NOT_VERIFIED is an ANSWER, never a transport fault
+  ok   H8 NOT_AUTHORIZED is an ANSWER, never a transport fault
+  ok   H9 OUT_OF_SCOPE is an ANSWER, never a transport fault
+  ok   H10 FEATURE_DISABLED is an ANSWER, never a transport fault
+  ok   H12 IDENTITY_PROVIDER_UNAVAILABLE is deliberately NOT in that list — it IS an outage, and it is the one auth code a client may retry
+
+=== §I  MUTANTS — remove a control, the suite must notice ===
+  ok   A9 a source that decodes before it verifies still cannot get a forged token past the gate
+  ok   I1 the signature check is dropped (the attestation result is ignored) (caught)
+  ok   I2 an unavailable verifier becomes a pass (caught)
+  ok   I3 the issuer check is dropped (caught)
+  ok   I4 the audience check is dropped (caught)
+  ok   I5 the expiry check is dropped (caught)
+  ok   I6 email_verified is checked for truthiness instead of true (caught)
+  ok   I7 the operator registry is consulted but an empty one lets everyone in (caught)
+  ok   I8 an action missing from the permission table becomes permitted to everyone (caught)
+  ok   I9 an empty scope list starts meaning "every site" (caught)
+  ok   I10 the feature flag is checked FIRST, so a stranger is told the feature is off (caught)
+  ok   I11 db_open_permitted is returned true on a refusal (caught)
+  ok   I12 the refusal starts naming whether the account is known — an enumeration oracle (caught)
+  ok   I13 the raw token is put into the server log (caught)
+  ok   I14 the audit identity falls back to the body when the principal has no email (caught)
+
+====================================================================================================
+passed 105  failed 0  |  mutants caught 14  survived 0
+====================================================================================================

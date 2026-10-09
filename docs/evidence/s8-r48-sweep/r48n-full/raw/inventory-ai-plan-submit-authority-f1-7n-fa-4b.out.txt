@@ -1,0 +1,21 @@
+
+== 6/7. idempotency: same payload → REUSED (zero write); changed payload → CONFLICT ==
+
+== 1/2/3. canonical Submit re-reads persisted drafts (never frontend-authored lines) ==
+
+== 4/5. route completeness (K2-aware) gates Submit ==
+
+== 8. lock contention is typed ==
+
+== 9. downstream failure → draft remains unsubmitted ==
+
+== 10. Submit creates no Shipment ==
+
+== 11/12. exactly one Submit authority (wrappers delegate/refuse) ==
+
+== 13/H. shipping_plan_lines.marketplace authority ==
+
+== C. frontend single-flight (staged) ==
+
+----------------------------------------
+F1-7N-FA-4B FLOW-A SUBMIT AUTHORITY: 35 passed, 0 failed

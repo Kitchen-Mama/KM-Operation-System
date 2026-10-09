@@ -1,0 +1,37 @@
+
+== 1. Country / Marketplace and EVERY display filter never truncate Send Request ==
+
+== 2. ALL / T1 / T2 / T3 are the ONLY Send scope controls ==
+
+== 3. a raw AI Plan row cannot be sent without a persisted draft identity ==
+
+== 4. the latest user-edited DB quantity overrides the recommendation quantity ==
+
+== 5. a dirty / read-back failure blocks the WHOLE Send ==
+
+== 6. 495 / 234 / 468 cannot be mislabelled ==
+
+== 7. one client click invokes ONE orchestration request ==
+
+== 8. the orchestration reuses the canonical writers (no second writer) ==
+
+== 9. Series aggregation preserves SKU / tier / station lineage ==
+
+== 10. page navigation cannot own or cancel business progress ==
+
+== 11. a timeout RESUMES by execution key without duplication ==
+
+== 12. Site Inventory Submit stays Country + Marketplace scoped ==
+
+== 13. a mixed-site Shipping Plan payload fails closed ==
+
+== 14. Send PO stays blocked on a document failure, with the full operator contract ==
+
+== 15. no local / sessionStorage business success anywhere in the Send path ==
+
+== 16. no Demo mutation, no email, and the deployment identity moved ==
+
+== 17. §F — the slim workset read, the instrumented AI-Plan read, and the >45 s cause ==
+
+----------------------------------------
+ALL PASS  (295 assertions)

@@ -1,0 +1,73 @@
+
+== A/B/C bucket-group grain ==
+ok   A approved RO / T1 only → one PO
+ok   A the single PO is the T1 bucket group
+ok   B approved RO / T2+T3 → one combined PO
+ok   B the single PO is the T2_T3 bucket group
+ok   C approved RO / T1+T2 → exactly two canonical PO headers
+ok   C the two POs are exactly the T1 and T2_T3 bucket groups
+
+== D quantity conservation ==
+ok   D every PO line ordered_qty === request line requested_qty (Σ conserved; no re-ceil/MOQ/gap)
+ok   D total converted qty = 800 + 300 (persisted requested_qty)
+
+== E factory / supplier canonical ==
+ok   E factory_id resolved from warehouse master (WH1 → FAC-CN-1), no free-text guess
+ok   E supplier_id carried from the Request Order
+
+== F/G/H/J double-click / two-tab / lost-response → idempotent reuse ==
+ok   F first call creates the 2 canonical POs
+ok   F/G/H second call REUSES (reused:true) — no re-create
+ok   F/G/H PO row count stays 2 across double-click / two-tab / retry
+ok   J reuse returns the full canonical PO result
+
+== I PO created but RO status write lost → repair, no duplicate ==
+ok   I retry detects the durable PO set → repairs lifecycle (reused+repaired)
+ok   I no second PO set created
+ok   I RO lifecycle repaired to converted_to_po
+
+== K converted_to_po but no PO result → FAIL CLOSED ==
+ok   K converted_to_po + missing canonical PO → PO_CONVERSION_STATE_INCONSISTENT
+ok   K nothing fabricated
+
+== L duplicate persisted bucket-group PO → FAIL CLOSED ==
+ok   L two T1 POs for one RO → fail closed (never pick latest)
+
+== orphan partial-write survivor → PO_CREATION_ATOMICITY_GAP ==
+ok   orphan POL (purchase_order_id without header) → PO_CREATION_ATOMICITY_GAP (surfaced, not guessed)
+
+== M failed partial creation → scoped compensation + safe retry ==
+ok   M write failure returns compensated failure
+ok   M scoped compensation removed the PO header(s) this run created
+ok   M scoped compensation removed the PO line(s) this run created
+ok   M RO stays approved (conversion not falsely recorded)
+ok   M RO-line back-refs cleared by compensation
+ok   M retry after the fault converges to the 2 canonical POs (no duplicate)
+
+== compensation is scoped (never deletes another execution's PO) ==
+ok   unrelated RO2 PO is never touched by scoped compensation
+
+== ineligible status rejected ==
+ok   draft/pending/cancelled RO cannot be converted (eligibility preserved)
+
+== source guards — lock / identity / no-schema / no-recompute ==
+ok   §3 conversion runs under the canonical ScriptLock
+ok   §3 Request Order is RE-READ inside the lock (not a pre-lock snapshot)
+ok   §4 existing-PO detection keyed by request_order_id (existing lineage identity)
+ok   §9 no POEXEC key introduced (reuses request_order_id — no new identity)
+ok   §4 detection uses persisted lineage only (request_order_id + bucket) — no time/qty/actor dedupe
+ok   cancelled POs excluded from the live conversion result
+ok   §9 no schema migration / column add in the PO path
+ok   §7 quantity mapping unchanged (approved_qty → ordered_qty)
+ok   §7 no gap/forecast/AI recompute in PO creation
+ok   §7 recommended_qty copied as display snapshot only (not the order qty)
+ok   §5E compensation scoped to THIS run's purchase_order_id set only
+
+== frontend — UX guard only, backend is the authority ==
+ok   convert has an in-flight UX guard (double-click)
+ok   frontend surfaces idempotent reuse/repair
+ok   frontend documents that the backend is the idempotency authority
+ok   convert still calls the single canonical creator (no second PO path)
+
+----------------------------------------
+PO EXACTLY-ONCE (F1-5A-PO-R2): 44 passed, 0 failed

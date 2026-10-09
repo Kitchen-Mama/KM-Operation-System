@@ -1,0 +1,207 @@
+
+== §A/§D — asset provenance, licence, and no runtime network ==
+ok   A1 the ADM1 asset loads and defines window.KM_WORLD_ADMIN1
+ok   A2 source is recorded in the asset itself
+ok   A3 dataset is recorded
+ok   A4 licence is recorded
+ok   A5 attribution requirement is recorded (not required)
+ok   A6 the exact input SHA-256 is pinned, so the build is verifiable
+ok   A7 the source URL is pinned to an IMMUTABLE tag, not a moving branch
+ok   A8 PROVENANCE.md records the ADM1 source and licence
+ok   A9 PROVENANCE.md pins the input checksum
+ok   A10 the globe performs NO network access of any kind
+ok   A11 the asset carries ONLY its pinned provenance + licence URLs (4 occurrences)
+ok   A11b the asset contains no loader — it is inert data that assigns one global
+ok   A12 the 0.54 MB ADM1 asset is NOT eagerly loaded by index.html (§H.4 — never in the initial workspace path)
+ok   A13 it is lazy-loaded, same-origin, by the map page when the zoom first calls for it
+
+== §E — LOD thresholds and hysteresis (no flicker at a boundary) ==
+ok   E1 the three LOD boundaries are the frozen distances
+ok   E2 a hysteresis margin exists
+ok   E3 LOD is monotonic in distance — zooming in never reduces the level
+ok   E4 the four levels are reachable across the camera range
+ok   E5 zooming all the way IN crosses each of the 3 boundaries exactly once
+ok   E6 zooming all the way OUT crosses each of the 3 boundaries exactly once
+ok   E7 jittering across a boundary by less than the margin does NOT flicker the level (0 change)
+ok   E8 the same distance resolves differently depending on the level being left — that IS the hysteresis
+
+== §E/§G — layer modes and the label budget ==
+ok   E9 ADM1 borders are admitted from LOD 2
+ok   E10 ADM1 labels are admitted from LOD 2
+ok   E11 AUTO turns the layer on by zoom and off again when zoomed out
+ok   E12 ON and OFF override the zoom in both directions
+ok   E13 the label budget is zero below LOD 2 and grows with the level — no label explosion
+ok   E14 the budget is far below the 3835 available divisions, so a crowded view can never render them all
+
+== §E — authoritative division codes, never invented ==
+ok   E15 the United States has all 51 first-level divisions (50 states + DC)
+ok   E16 US uses the OFFICIAL state code: CA
+ok   E16 US uses the OFFICIAL state code: TX
+ok   E16 US uses the OFFICIAL state code: NY
+ok   E16 US uses the OFFICIAL state code: FL
+ok   E16 US uses the OFFICIAL state code: AK
+ok   E16 US uses the OFFICIAL state code: HI
+ok   E17 every US code came from ISO 3166-2, not from a guess
+ok   E18 Canada has 13 provinces/territories
+ok   E19 Canada uses official codes (BC)
+ok   E20 Japan has all 47 prefectures
+ok   E21 Japan falls to the NAME rule because its ISO codes are numeric
+ok   E22 no Japanese label is a bare number — "13" would identify nothing to a reader
+ok   E23 Japan shows readable prefecture names (Tokyo)
+ok   E24 Australia and Germany are covered
+ok   E25 no division carries an empty label
+ok   E26 the generator NEVER reads Natural Earth's invented `postal` abbreviation as a displayed code
+ok   E27 the code authority is ISO 3166-2
+ok   E28 every division is accounted for by exactly one of the three label rules
+
+== §F — real vector geometry on the sphere, antimeridian-safe ==
+ok   F1 the runtime decoder alphabet IS the generator alphabet
+ok   F2 the coordinate scale is recorded in the asset
+ok   F3 every one of the 76931 decoded vertices is a valid lng/lat
+ok   F4 the decoder recovers EXACTLY the vertex count the generator recorded
+ok   F5 decoded coordinates stay inside the graticule
+ok   F6 decoding is lossless — every value is exactly the generator's quantised coordinate
+ok   F7 the shipped builder produces real line geometry (76768 segments)
+ok   F8 every division contributes geometry
+ok   F9 the ADM1 layer is on the surface (r=1), not on a shell of its own
+ok   F9 and is rank 3 in the hierarchy, below coastline and international
+ok   F9 with the international class ranked above it
+ok   F9 two divisions of ONE country share exactly one ADM1 edge
+ok   F9 and none of it is international
+ok   F9 the same shared edge across TWO countries is international
+ok   F9 and is NOT also in the ADM1 bucket — international supersedes it
+ok   F10 NO emitted segment exceeds the subdivision limit — a line across the Pacific is impossible
+ok   F11 the longest emitted chord is 0.0349 — far below a globe-spanning line
+ok   F12 covered with geometry: Alaska
+ok   F12 covered with geometry: Hawaii
+ok   F12 covered with geometry: Japan islands
+ok   F12 covered with geometry: New Zealand
+ok   F12 covered with geometry: Indonesia
+ok   F12 covered with geometry: United Kingdom
+ok   F13 Alaska is multi-ring (islands are separate rings, never concatenated)
+ok   F14 country and ADM1 share ONE rasteriser, so the antimeridian guarantee cannot be reimplemented and re-broken
+ok   F15 worst chord sag 0.000152 stays under the 0.00025 depth bias, so a subdivided border never sinks into the globe
+
+== §G — label collision: markers and country codes always win ==
+ok   G1 a division code overlapping a blocked rect is HIDDEN, never moved
+ok   G2 the higher-ranked division wins a collision
+ok   G3 the winner does NOT depend on array order — the collision result is deterministic
+ok   G4 the country label is placed
+ok   G4 the continent label loses to the country label it overlaps
+ok   G4 and the division label is blocked by both
+ok   G4 a shipment marker rectangle beats every geographic class
+ok   G4 and the precedence is declared in one place
+ok   G5 a division label is strictly SMALLER than a country label (9 < 12)
+ok   G5 and a country label is smaller than a continent label (12 < 17)
+ok   G5 with the division/country ratio at or below 0.8 (0.75)
+ok   G5 and the continent/country ratio at or above 1.3 (1.42)
+ok   G6 rear-hemisphere division codes are hidden — never shown through the globe
+ok   G7 a near-side anchor is front-facing
+ok   G8 an anchor on the far side is NOT front-facing, so its code is not drawn
+
+== §G/§H — defaults, layer independence, degradation ==
+ok   H1 both ADM1 layers DEFAULT to auto — the ordinary user gets a correct picture without touching a control
+ok   H2 country borders and labels default ON (unchanged)
+ok   H3 the two ADM1 layers have INDEPENDENT controls
+ok   H4 all four layers are independently controllable
+ok   H4b the shared label canvas bails ONLY when neither layer has anything to draw
+ok   H4c turning country labels off suppresses only the COUNTRY candidates
+ok   H4d ADM1 labels are still built on that path, so the two toggles are genuinely independent
+ok   H5 the degradation ladder can restrict ADM1 to a country subset
+ok   H6 a failed border build is NAMED, not swallowed
+ok   H6 and a missing stable source identity is named too — never a silent fall back to a colliding key
+ok   H7 a failed asset fetch is recorded as a state, not an exception
+ok   H8 a geographic-layer failure explicitly does NOT take the shipment map down (§H.8)
+
+== §H — no per-frame geometry work; static GPU buffers ==
+ok   H9 the render loop NEVER rebuilds ADM1 geometry
+ok   H10 the render loop NEVER re-parses the ADM1 asset
+ok   H11 the render loop only BINDS the pre-built class buffers
+ok   H11 and the boundary path performs no upload of its own
+ok   H12 the class buffers are STATIC_DRAW — immutable for the life of the context
+ok   H12 the fine topology is built in its own function, not in the render or upload path
+ok   H13 a restored GL context rebuilds the ADM1 buffer rather than leaving it dangling
+ok   H14 the LOD callback fires only when the level actually CHANGES, not every frame
+ok   H15 a full ADM1 decode + rasterise takes 26ms — a one-off cost, not a per-frame one
+ok   H16 the ADM1 GPU buffer is 4.10 MB — bounded
+
+== §D/§H — capability tiering and texture fallback ==
+ok   D1 the texture tier reads MAX_TEXTURE_SIZE
+ok   D2 the tier also reads deviceMemory and hardwareConcurrency
+ok   D3 an UNKNOWN device stays on the safe base tier
+ok   D4 the tier is now verified by ACTUAL allocation success and downgrades if the upload fails (§D)
+ok   D5 the error state is drained so the check reports OUR upload
+ok   D6 mipmaps and anisotropic filtering remain in place (pre-existing V3G6A capability, verified not re-claimed)
+ok   D7 the active tier, MAX_TEXTURE_SIZE and the verification result are all observable
+ok   D8 one consolidated diagnostics accessor exists (§H)
+ok   D9 diagnostics report: render
+ok   D9 diagnostics report: texture
+ok   D9 diagnostics report: lod
+ok   D9 diagnostics report: country_layer
+ok   D9 diagnostics report: admin1_layer
+ok   D9 diagnostics report: admin1_asset
+ok   D10 the fallback RE-RASTERISES from the vector source — it never rescales an existing bitmap
+ok   D11 no sharpen filter is used to fake detail
+
+== §I/§J — nothing about shipments changed ==
+ok   I1 the new diagnostics accessor calls no shipment write API
+ok   I2 the marker pipeline is still present
+ok   I3 shipment markers still project from their OWN lat/lng — no coordinate was reinterpreted
+ok   I4 markers project at the marker radius
+ok   I4 which is still 1.012
+ok   I4 markers still sit ABOVE both reference layers (1 < 1.006 < 1.012)
+ok   I5 the asset declares itself geographic reference only — never a business coordinate
+ok   I6 the ADM1 dataset is read only by the globe and the map page
+ok   I7 km-globe.js contains no business/DB symbol: SpreadsheetApp
+ok   I7 km-globe.js contains no business/DB symbol: allocation_draft
+ok   I7 km-globe.js contains no business/DB symbol: shipment_events
+ok   I7 km-globe.js contains no business/DB symbol: planned_qty
+ok   I7 km-globe.js contains no business/DB symbol: doPost
+ok   I8 the generator is offline and touches no business system
+ok   I9 the generator is deterministic — no clock, no randomness
+
+== §J — fixed camera regression views ==
+ok   J:Global Pacific resolves to LOD 0
+ok   J:Global Pacific ADM1 borders hidden under AUTO
+ok   J:Global Pacific ADM1 labels suppressed
+ok   J:Global Pacific the focused point is front-facing
+ok   J:Global Pacific the antipode is NOT drawn through the globe
+ok   J:North America resolves to LOD 2
+ok   J:North America ADM1 borders VISIBLE under AUTO
+ok   J:North America ADM1 labels admitted
+ok   J:North America the focused point is front-facing
+ok   J:North America the antipode is NOT drawn through the globe
+ok   J:Europe resolves to LOD 2
+ok   J:Europe ADM1 borders VISIBLE under AUTO
+ok   J:Europe ADM1 labels admitted
+ok   J:Europe the focused point is front-facing
+ok   J:Europe the antipode is NOT drawn through the globe
+ok   J:Japan / East Asia resolves to LOD 2
+ok   J:Japan / East Asia ADM1 borders VISIBLE under AUTO
+ok   J:Japan / East Asia ADM1 labels admitted
+ok   J:Japan / East Asia the focused point is front-facing
+ok   J:Japan / East Asia the antipode is NOT drawn through the globe
+ok   J:Australia resolves to LOD 2
+ok   J:Australia ADM1 borders VISIBLE under AUTO
+ok   J:Australia ADM1 labels admitted
+ok   J:Australia the focused point is front-facing
+ok   J:Australia the antipode is NOT drawn through the globe
+ok   J:Dateline crossing resolves to LOD 1
+ok   J:Dateline crossing ADM1 borders hidden under AUTO
+ok   J:Dateline crossing ADM1 labels suppressed
+ok   J:Dateline crossing the focused point is front-facing
+ok   J:Dateline crossing the antipode is NOT drawn through the globe
+ok   J:Maximum supported zoom resolves to LOD 3
+ok   J:Maximum supported zoom ADM1 borders VISIBLE under AUTO
+ok   J:Maximum supported zoom ADM1 labels admitted
+ok   J:Maximum supported zoom the focused point is front-facing
+ok   J:Maximum supported zoom the antipode is NOT drawn through the globe
+ok   J:Low-capability fallback resolves to LOD 0
+ok   J:Low-capability fallback ADM1 borders hidden under AUTO
+ok   J:Low-capability fallback ADM1 labels suppressed
+ok   J:Low-capability fallback the focused point is front-facing
+ok   J:Low-capability fallback the antipode is NOT drawn through the globe
+ok   J:dateline both sides of ±180 are front-facing at once
+ok   J:dateline they land ADJACENT on screen — no 360° wrap artefact
+
+183 passed, 0 failed

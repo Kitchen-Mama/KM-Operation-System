@@ -1,0 +1,13 @@
+
+== frozen OPEN-PO status set == request-order.js RO_OPEN_PO_STATUS ==
+
+== BEFORE == AFTER equivalence fixtures ==
+
+== ZERO / EMPTY / unknown contract ==
+
+== per-line remaining formula (PDR-1 option a: preserve current browser behavior) ==
+
+== source guards: read-only, scoped, no second engine, no F1-7C change ==
+
+----------------------------------------
+API OPEN-PO REMAINING OWNER (F1-7E-PREREQ-1-R1): 28 passed, 0 failed

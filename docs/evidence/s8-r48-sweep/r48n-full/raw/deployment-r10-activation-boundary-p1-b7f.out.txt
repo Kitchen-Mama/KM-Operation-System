@@ -1,0 +1,133 @@
+
+=== §A  WHAT THE DEPLOYED R10 ENDPOINT SAID, ON THE WIRE ===
+  ok   A1 build_id is R10
+  ok   A2 and so is the deployment release
+  ok   A3 the action contract stays 14 — this fix added no action, so no browser is told its deployment aged
+  ok   A4 required action list version 12, unchanged
+  ok   A5 forty-four actions, unchanged
+  ok   A6 missing_actions is empty
+  ok   A7 router_ready
+  ok   A8 both entrypoints answer
+  ok   A9 mixed_deployment false — no half-copied project
+  ok   A10 and it is the production deployment, not a dev URL
+  ok   A11 read_only
+  ok   A12.1 db_writes is zero
+  ok   A12.2 drive_writes is zero
+  ok   A12.3 status_transitions is zero
+  ok   A12.4 emails is zero
+  ok   A12.5 demo_mutations is zero
+  ok   A13 the Product Strategy flag is still false in the deployment that answered
+  ok   A14 and the AI Plan generation flag too
+
+=== §B  THE THREE MANIFEST ROWS THIS ROUND IS ABOUT ===
+  ok   B1 63_ declares R10 in the deployment
+  ok   B2 72_ declared R10 IN THE CAPTURE — the file the fix was in. This is the immutable record of what the live deployment answered, and it does not move when the repository does.
+  ok   B3 01_router.gs is still R9, because the fix touched no route
+  ok   B3a and the manifest expects exactly that
+  ok   B4 63_ declared == expected
+  ok   B4 72_ declared == expected
+  ok   B4 01_ declared == expected
+  ok   B5 the committed 72_ is AHEAD of the build the deployment reported — that gap puts it on the sync list (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24 vs F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10)
+  ok   B6 the committed 63_ has moved past R10 — a newer release is prepared
+  ok   B7 and the committed release identity is at or after R11 (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46), which is NOT what the capture answered
+  ok   B7b and it is strictly ahead of the captured one — that gap IS the sync list
+  ok   B7a while the capture still says R10 — so an unsynced activation is visible, not inferred
+  ok   B8 while the committed router declares exactly what the manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41) — repository and deployment tell the same story
+
+=== §C  THE SITE-UNIVERSE RESPONSE, AS IT CAME OFF THE WIRE ===
+  ok   C1 meta.action names the action that actually answered
+  ok   C2 and data.schema.action agrees with it
+  ok   C3 served by R10
+  ok   C4 refused
+  ok   C5 with FEATURE_DISABLED
+  ok   C5a and the refusal is in the data too, not only the meta
+  ok   C6 dbOpened false — the flag was checked before the spreadsheet was opened
+  ok   C7 tablesRead zero
+  ok   C8 read_only
+  ok   C9 db_writes zero
+  ok   C10 no errors: a refusal is an answer, not a fault
+  ok   C11 and no site rows were published while refused
+  ok   C12 not UNKNOWN_ACTION — the action is routed
+  ok   C13 and no undefined-handler fault
+
+=== §D  THE CAPTURE IS DE-IDENTIFIED ===
+  ok   D1 the bodies carry no the endpoint host
+  ok   D2 the bodies carry no a deployment id
+  ok   D3 the bodies carry no the Web App path
+  ok   D4 the bodies carry no the echo target
+  ok   D5 the bodies carry no the per-request id
+  ok   D6 the bodies carry no the server clock
+  ok   D7 and the file declares itself immutable evidence, so a later round cannot quietly agree with it
+
+=== §E  BOTH WIRE BODIES, THROUGH THE SAME UNMODIFIED ACCESSOR ===
+  ok   E1 the accessor accepts the R10 body and reports it refused
+  ok   E2 as FEATURE_DISABLED
+  ok   E3 and NOT as SOURCE_NOT_CONNECTED
+  ok   E4 with no RESPONSE_ACTION_MISMATCH anywhere in the result
+  ok   E5 carrying the server's own sentence, not a transport guess about what went wrong
+  ok   E6 and the site-universe module says the feature is off, which is a state the board can render
+  ok   E7 the SAME accessor still rejects the R9 body
+  ok   E8 still naming the action mismatch
+  ok   E9 so the difference between E1-E6 and E7-E9 is the deployment, not the test
+
+=== §F  THE SITE UNIVERSE DID NOT DRIFT — BY RECONSTRUCTION, NOT BY EYE ===
+  ok   F1 the frozen report is the length the R10 log reported
+  ok   F2 and fingerprints to what the R10 log reported
+  ok   F3 rolled back, it is P1-B6's length exactly
+  ok   F4 and P1-B6's fingerprint exactly — not one byte of the universe moved across the envelope fix
+  ok   F5 the entire difference is one character: "R9" became "R10"
+  ok   F6 verdict unchanged
+  ok   F7 read_only
+  ok   F8.1 writes zero
+  ok   F8.2 writer_calls zero
+  ok   F8.3 sheets_created zero
+  ok   F8.4 rows_modified zero
+  ok   F9 the flag was false when it ran
+  ok   F9a and the readback did not write it to get a better answer
+  ok   F10 db_opened false
+  ok   F10a tables_read zero
+  ok   F11 ten sites
+  ok   F12 four hundred and ninety-five membership rows
+  ok   F13 same source table fingerprint as P1-B6
+  ok   F14 and the per-site counts still add up to the table
+  ok   F15 source_modified_at remains unmeasurable, and is still recorded as such
+
+=== §G  THERE IS NO SERVER-SIDE IDENTITY BOUNDARY  (P1-B8 GO/NO-GO) ===
+  ok   G1 the Web App is published to anyone, anonymously — RE-RUN THE GO/NO-GO IF THIS CHANGES
+  ok   G2 and runs as the deploying owner, so every caller has the owner's sheet authority
+  ok   G3 not one runtime file asks Apps Script who is calling — RE-RUN THE GO/NO-GO IF THIS CHANGES
+  ok   G3a (and that was checked across every runtime file, 77 of them)
+  ok   G4 the router has no token or shared-secret check in front of a handler
+  ok   G5 and no session check either
+  ok   G6 00_config.gs records the same position, in the file that owns the flag
+  ok   G7 including that created_by is asserted by the client and proves nothing about who called
+  ok   G8 caller_probe is a deployment probe, not a caller identity — it names no user even when populated
+  ok   G9 the navigation is hidden by a staged-section registry, which is a UI decision and not a boundary
+  ok   G10 PRODUCT_STRATEGY_ENABLED_ is one global boolean — the one control, and it is not about callers
+  ok   G11 and the file says outright that the flag IS the access control today
+  ok   G12 72_ still gates on the server flag before opening anything
+  ok   G12a the client pre-flight refusal names itself, so it can never be mistaken for the server one
+  ok   G12b and that server sentence exists nowhere in the client — E5 could only have come off the wire
+
+=== §H  THE CAPTURED DEPLOYMENT IS PRE-ACTIVATION, AND THE REPOSITORY IS NOT ===
+  ok   H1 the repository has Product Strategy activated
+  ok   H2 AI Plan flag false in source
+  ok   H3 and false in the deployment that answered
+  ok   H4 and the staged section activated with it — the browser gate and the server gate agree
+  ok   H5 no bypass parameter, token or debug switch was added anywhere in the gate path
+  ok   H6 72_ HAS changed since the activation (PRICING-R4G), so its stamp moved and it needs a sync
+  ok   H6b and the manifest expects exactly what the file declares, so the sync stays checkable
+  ok   H6a while 63_ carries the new release identity, so it does
+
+=== §I  MUTANTS ===
+  ok   I1 the Web App is republished with a restricted audience and §G does not notice (caught)
+  ok   I2 an identity check appears in the router and the NO-GO is not revisited (caught)
+  ok   I3 the flag gate is moved below the spreadsheet open — rollback stops being a stop (caught)
+  ok   I4 the navigation is switched off while the server stays on — the gates disagree (caught)
+  ok   I5 01_router.gs declares a build its own manifest row does not expect (caught)
+  ok   I6 the client validator is relaxed, which would make §E pass for the wrong reason (caught)
+  ok   I7 the immutable R9 capture is edited to agree with the current code (caught)
+
+====================================================================================================
+passed 104  failed 0  |  mutants caught 7  survived 0
+====================================================================================================

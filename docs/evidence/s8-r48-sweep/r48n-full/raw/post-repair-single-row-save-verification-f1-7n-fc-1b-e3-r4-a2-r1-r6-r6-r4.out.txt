@@ -1,0 +1,308 @@
+
+== §0 — THE HARNESS IS THE REAL THING ==
+ok   H1  the readiness runs against the real census
+ok   H2  and the fixture plus a readiness touched no cell
+ok   H3  69_ derives Route A's CURRENT key from the row — parcel, after stage one
+ok   H3a and Route B's as the blank-last-mile key the compensation restored
+ok   H3b there is still no k4_group_key column: the key is derived, never stored
+ok   H4  the LINE schema carries no updated_by — a route has exactly one recorded actor, on its header
+ok   H4a and 16_ resolves that actor as body.created_by or the page default, which is what makes it evidence
+ok   H4b the page sends NO created_by, so its writes carry the default
+
+== §3 — READINESS: THE EXACT SUCCESS AGAINST THE NEW BASELINE ==
+ok   R1  the post-repair state returns the ONLY success verdict
+ok   R1a with zero failed predicates
+ok   R1b and 62 passed — a count, not an empty list
+ok   R1c the counts and the list agree
+ok   R1d read_only, and five zeroes
+ok   R2  every predicate row is { predicate, expected, observed, pass } and nothing else
+ok   R2a on every row
+ok   R3  snapshot_gaps is EMPTY: every frozen field of both rows is compared
+ok   R3a route_b.updated_at is an EQUALITY gate against the production literal
+ok   R3b and so is route_b.line_updated_at
+ok   R3c the three derived gates still run, ALONGSIDE the equality gates rather than instead of them
+ok   R3c-route_b_updated_at_is_after_the_compensation_write
+ok   R3c-route_b_line_updated_at_is_after_the_compensation_write
+ok   R3c-route_b_header_and_line_instants_agree
+ok   R3d and the paste-ready literal agrees with what is frozen
+ok   R4. writer_not_constructed
+ok   R4a db_writes_is_zero
+ok   R4b writer_calls_is_zero
+ok   R5  and the authorized edit has not already been performed
+ok   R5a a readiness that succeeded still authorizes nothing — READY is a state, never a permission
+ok   R6. current_plan_total_is_520
+ok   R6a visible_route_rows_is_2
+ok   R6b header_count_is_2
+ok   R6c line_count_is_2
+ok   R6d no_ambiguous_save_target
+ok   R6e route_a_save_target_is_its_own_header_reuse
+ok   R6f route_b_save_target_would_not_be_minted
+
+== §2/§5 — THE TWO FROZEN INSTANTS, AS EQUALITY GATES ==
+ok   G1  one second on route_b_updated_at_unchanged STOPs the readiness, and writes nothing
+ok   G2  one second on route_b_line_updated_at_unchanged STOPs the readiness, and writes nothing
+ok   G3  one second EARLIER STOPs on the equality gate while the derived floor still passes
+ok   G4  a different ZONE NAME for the same moment is not a difference
+ok   G4a and neither is the same moment expressed as UTC — instants are compared, never display text
+ok   G4b through CENSUS_r6r6TsKey_, the one instant normaliser the whole R6-R6 family shares
+
+== §4 — THE COMPLETE EXPORT, SO NO UNVERSIONED WRAPPER IS EVER NEEDED AGAIN ==
+ok   F1  the readiness reports the OBSERVED Route B row over every frozen field
+ok   F1a and the observed Route A row over the same list
+ok   F1b beside the FROZEN record it was compared against
+ok   F1c so a future gap can be closed from this output alone
+ok   F1d Route A frozen at the version the Save will guard against
+ok   F2-verdict is in the readiness output
+ok   F2-predicates_passed is in the readiness output
+ok   F2-predicates_failed is in the readiness output
+ok   F2-snapshot_gaps is in the readiness output
+ok   F2-db_writes is in the readiness output
+ok   F2-writer_calls is in the readiness output
+ok   F2-route_a_frozen is in the readiness output
+ok   F2-route_a_observed is in the readiness output
+ok   F2-route_b_frozen is in the readiness output
+ok   F2-route_b_observed is in the readiness output
+ok   F3  the readiness logs exactly ONE complete export line
+ok   F3a carrying the verdict, the counts, the gaps and the zeroes
+ok   F3b and both rows, field by field
+ok   F3c including Route A
+ok   F3d and NOT the sixty predicate rows — failures are logged one by one
+ok   F4  and there is no separate FULL_EXPORT entry point to drift out of version control
+
+== §3 — THE OPERATION, SPELLED AS THE PAGE ACTUALLY BEHAVES ==
+ok   W1  the page schedules the write on a 400 ms debounce, with no explicit Save control
+ok   W1a and the row state cell reports Saved, which is the acknowledgement
+ok   W2  no operator-facing string tells anyone to press a Save button that does not exist
+ok   W2a while the comment recording WHY it changed is kept
+ok   W3  the readiness states the real mechanic: edit once, wait for the debounced auto-save to report Saved
+ok   W3a in so many words
+ok   W3b once, and not Submit Plan
+
+== §8a — THE OLD BASELINES ARE REFUSED ==
+ok   O1  the R6-R6-R1 baseline is REFUSED — that plan is two rounds gone
+ok   O1a naming Route A's last mile
+ok   O1b and its version
+ok   O1c and Route B's
+ok   O1d and a refusal wrote nothing
+ok   O2  the R6-R6-R3 PRE-repair baseline is REFUSED — the compensation has happened
+ok   O2a naming the unauthorized parcel
+ok   O2b the version that never advanced
+ok   O2c and the identity derived to match it
+ok   O2d and the actor, which is still the page rather than the repair
+ok   O2e and this refusal wrote nothing either
+
+== §8b — ROUTE B DRIFT, FIELD BY FIELD ==
+ok   B1  drift in the last mile STOPs, names route_b_last_mile_delivery_unchanged, writes nothing
+ok   B2  drift in the version STOPs, names route_b_draft_version_unchanged, writes nothing
+ok   B3  drift in the recorded actor STOPs, names route_b_updated_by_unchanged, writes nothing
+ok   B4  drift in the method STOPs, names route_b_shipping_method_unchanged, writes nothing
+ok   B5  drift in the status STOPs, names route_b_status_unchanged, writes nothing
+ok   B6  drift in the generation type STOPs, names route_b_generation_type_unchanged, writes nothing
+ok   B7  drift in the destination STOPs, names route_b_destination_id_unchanged, writes nothing
+ok   B8  drift in the source STOPs, names route_b_source_warehouse_id_unchanged, writes nothing
+ok   B9  drift in the quantity STOPs, names route_b_quantity_unchanged, writes nothing
+ok   B10  drift in the line status STOPs, names route_b_line_status_unchanged, writes nothing
+ok   B11  drift in the ETA STOPs, names route_b_expected_arrival_unchanged, writes nothing
+ok   B12 an instant that predates the compensation STOPs — the repair could not have left it there
+ok   B13 header and line instants that disagree STOP — one transaction stamped both
+
+== §8c — ROUTE A DRIFT AND THE ALREADY-SAVED CASE ==
+ok   A1  Route A drift in route_a_last_mile_delivery_unchanged STOPs and writes nothing
+ok   A2  Route A drift in route_a_draft_version_unchanged STOPs and writes nothing
+ok   A3  Route A drift in route_a_updated_by_unchanged STOPs and writes nothing
+ok   A4  Route A drift in route_a_shipping_method_unchanged STOPs and writes nothing
+ok   A5  Route A drift in route_a_quantity_unchanged STOPs and writes nothing
+ok   A6  Route A drift in route_a_expected_arrival_unchanged STOPs and writes nothing
+ok   A7  a row already at truck/version 4 is reported as ALREADY SAVED
+ok   A7a it is not a success — the readiness has nothing left to authorize
+ok   A7b and the reason says so in words, and sends the operator to the readback rather than the edit
+ok   A7c writing nothing, as every entry point in this family does
+
+== §8d — MISSING, DUPLICATED AND AMBIGUOUS TARGETS ==
+ok   D1  a missing Route A STOPs
+ok   D2  a missing Route B STOPs too
+ok   D3  a third visible route STOPs — the set is part of the baseline
+ok   D3a naming the invariant it broke
+
+== §4/§6 — THE REAL SAVE, AND THE READBACK THAT MEASURES IT ==
+ok   S1  the real 16_ writer accepts the single-route UPDATE
+ok   S1a and answers success
+ok   S1b exactly ONE mutation request — the page chains one per canonical group
+ok   S1c carrying exactly one line
+ok   S1d which is Route A's
+ok   S1e guarded by the version that was read
+ok   S1f and with NO create_idempotency_key — an UPDATE mints nothing
+ok   S1g Route B's identifiers appear nowhere in the payload
+ok   S1h and expected_arrival is ABSENT rather than blank, which is what makes the ETA untouched by construction
+ok   S2  on Route A's header exactly three columns moved: the one edited, the version, the stamp
+ok   S2a and on its line, only the stamp
+ok   S2b the derived K4 followed the last mile, having been written nowhere
+ok   S3  Route B's header is BYTE-IDENTICAL
+ok   S3a and so is its line
+ok   S3b two headers, as before
+ok   S3c and two lines — nothing was minted
+ok   S4  the readback returns the ONLY success verdict
+ok   S4a with zero failed predicates
+ok   S4b and 58 passed
+ok   S4c and it wrote nothing itself
+ok   S5  the expected key was DERIVED by substituting one segment
+ok   S5a and production agrees
+ok   S6  and the verdict states that a displayed last mile is not a stored one
+ok   S6a and neither does a confirmed readback — the authority for stage two was never this file's
+
+== §8e — THE READBACK CATCHES EVERY WAY THE SAVE COULD GO WRONG ==
+ok   E1  a last mile that changed with NO version step STOPs — nothing was persisted through the writer
+ok   E2  and a version that jumped TWO STOPs — one edit is one step
+ok   E3  a key that moved on a SECOND dimension STOPs — the substitution is exact or it is not one
+ok   E3a and the dimension that moved is named too
+ok   E4  a version that moved without a stamp STOPs — a landed write leaves both
+ok   E5  and a write recorded against a DIFFERENT actor STOPs — the Save was not what moved it
+ok   E6a the bystander updated_at moving by ONE SECOND after the Save STOPs the readback
+ok   E6b the bystander updated_at moving by ONE SECOND after the Save STOPs the readback
+ok   E6c after the authorized Save, Route B still holds the two instants that were frozen
+ok   E6d and the readback agrees — both equality gates pass on the clean single-row Save
+ok   E7  the two Route A stamps ADVANCED, and that is what a landed write looks like
+ok   E7a measured on the rows, not inferred from the verdict
+
+== §5/§8 — A PAYLOAD THAT MIXES IN ROUTE B, AND A FALLBACK THAT EXPANDS TO EVERY ROW ==
+ok   X1  the incident shape is TWO writer calls, one per group — never one payload of two
+ok   X1a and Route B was written
+ok   X1b its version advanced
+ok   X2  the readback REFUSES — this is the 2026-09-06 incident happening again
+ok   X2a naming the column nobody edited
+ok   X2b the version that should not have moved
+ok   X2c and the identity that followed it
+ok   X2d and the actor, which is now the page and was the repair
+ok   X3  the predates-the-save gate fires — which is how Route B is proven untouched WITHOUT its frozen instant
+ok   X3a on the line as well
+ok   X3b and it passes on the clean single-row Save, so it discriminates rather than always failing
+ok   X4  an expanded fallback produces the same two calls
+ok   X4a and the same refusal
+ok   X5  a mint is refused by the readback whatever the writer thought of it
+
+== §5 — THE BROWSER MUTATION AUDIT ==
+ok   M1  the audit reports the INTENT, which it could not before
+ok   M1a and the version the request is guarded by
+ok   M1b and that no idempotency key is present
+ok   M1c and that nothing would be minted
+ok   M1d one route
+ok   M1e named by id
+ok   M1f under one header
+ok   M2  and NO payload VALUE is carried — names, ids and counts only
+ok   M2a the quantity included
+ok   M3  a payload carrying two lines reports two
+ok   M3a and names the bystander it should not contain
+ok   M4  a line with no id is reported as MINTING, which is the difference between an edit and a twin
+ok   M4a and an idempotency key is reported when present
+ok   M5  the transport records ONE mutation request
+ok   M5a carrying the intent and the guarded version out to the timeline
+ok   M5b and both booleans
+ok   M5c naming exactly one line
+ok   M6  a recorder that supplied nothing leaves them NULL — "not told" never reads as "no"
+ok   M7  hydration reads produce mutation_requests 0 and an empty mutations list
+ok   M7a while the reads themselves are still visible
+ok   M8  an expired WRITE is INDETERMINATE, not "nothing written"
+ok   M8a and the command path dispatches EXACTLY ONCE — a timeout cannot become a second write
+ok   M8b with no loop anywhere in it, so there is no retry to reach
+
+== §7 — STAGE TWO, NOW THE HISTORICAL RECORD OF AN OPERATION THAT HAPPENED ==
+ok   T1  the manifest says exactly what it is
+ok   T1a authorized externally, executed, and read back
+ok   T1a1 while the file itself authorized none of it
+ok   T1a2 and the authorization is attributed to the operator, outside this file
+ok   T1b and running it wrote nothing
+ok   T2  the restore is parcel -> truck
+ok   T2a and version 3 -> 4, forward like everything else in this family
+ok   T2b landing back on the truck key
+ok   T3  the two designs reuse this round's verdicts rather than inventing a second vocabulary
+ok   T3a and stage two needs all three: the readiness, the deployed fix, and an audit showing the token
+ok   T3b the token stage two must declare is the version stage one left
+ok   T3c stated in the expected block as well
+ok   T3d and the manifest records the classification, so nobody re-derives it from the version alone
+ok   T4  the whole R6-R6-R4 section contains NO call to the atomic writer
+ok   T4a and no direct cell write of any kind
+ok   T4b the census still contains EXACTLY ONE writer call, and it is R6-R6-R3's
+
+== R4-R2 — THE OPTIMISTIC TOKEN: WHY IT WAS null, AND THE TWO SIDES THAT LET IT BE ==
+ok   V1  the production audit is REPRODUCED: intent present, expected_draft_version null
+ok   V1a because the model row carried no draft_version, so _irStoredDraftVersion_ returned blank
+ok   V1b and buildDraftHeaderPayload omits a blank rather than sending an empty string
+ok   V1c so the top-level copy is absent too
+ok   V1d intent is set on the HEADER, which is the field path that proves the extractor was not at fault
+ok   V2  a model row that carries draft_version yields it
+ok   V2a the header declares the version that was read
+ok   V2b and so does the documented top-level field
+ok   V2c beside the intent it belongs to
+ok   V2d and the audit reports "3" — read from the request, never reconstructed from the AFTER version
+ok   V3  the collector still REPLACES the model with what it rebuilds, which is why the row must carry it
+ok   V3a it reads the version from the DOM, like every other identity field
+ok   V3b falling back to the row the model already had
+ok   V3c and the rebuilt row CARRIES it
+ok   V3d re-published to the DOM, so model and DOM cannot disagree
+ok   V3e the render stamps it beside the identity it belongs to
+ok   V3f and the post-save re-stamp adopts the version the server just wrote
+ok   V3g the hydrate reads it from the stored header, as it always did
+ok   V4  an UPDATE_EXISTING_ROUTE with NO expected_draft_version is REFUSED
+ok   V4a as a proven zero write
+ok   V4b measured on the sheet: not one cell
+ok   V4c the row is exactly where it was — this is the write that used to commit anyway
+ok   V4d and the refusal publishes the CURRENT version, so the client can adopt it instead of guessing
+ok   V4e with an operator sentence, because the only way to reach this is an out-of-date page
+ok   V4f and the phrase _kmZeroWriteProven_ reads, so the client states zero-write rather than guessing
+ok   V5  a BLANK expected version is absent, not the number zero, and is refused the same way
+ok   V5a writing nothing
+ok   V6  a STALE expected version is refused, as it always was
+ok   V6a zero write, measured
+ok   V6b naming both numbers
+ok   V7  a body-level expected_draft_version alone is HONOURED — the documented shape now works
+ok   V7a and the write lands, exactly one step
+ok   V7b and a stale one there is refused, which it was not before
+ok   V7c zero write
+ok   V8  a CREATE_NEW_ROUTE is NOT caught by the new gate — it has no prior version to declare
+ok   V8a the gate is keyed on UPDATE_EXISTING_ROUTE alone
+ok   V8b exactly that condition, and nothing wider
+ok   V9  the authorized Save still carries one line, one intent and no create key
+
+== §9 — RELEASE ==
+ok   Y1  the diagnostic declares R6-R6-R4 or a later round (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   Y1a and the ledger still records the round this suite belongs to
+ok   Y1b and whatever it declares is a well-formed stamp
+ok   Y1c R6-R6-R4-R1 introduced NO cache token — it changed the diagnostic and its tests, nothing else
+ok   Y2  the cache token MOVED past R6-R6-R2 — a frontend file changed and a published token is never reused
+ok   Y2-stale index.html carries no superseded token
+ok   Y2a after the published one it may not reuse
+ok   Y2c every asset in the co-deployed set rotated together (55)
+ok   Y2d including inventory-replenishment.js, the file that actually changed this round
+ok   Y3  16_ IS changed this round — a new deployment version is required
+ok   Y3a the router is not: nothing new is reachable over HTTP
+ok   Y3b and the new refusal is typed
+ok   Y4  the AI Plan flag is still false
+ok   Y5. RUN_R6R6R4_SINGLE_ROW_SAVE_READINESS is an entry point
+ok   Y5.1 and takes no arguments, so it cannot be aimed
+ok   Y5a RUN_R6R6R4_SINGLE_ROW_SAVE_READBACK is an entry point
+ok   Y5a1 and takes no arguments, so it cannot be aimed
+ok   Y5b RUN_R6R6R4_RESTORE_STAGE_TWO_MANIFEST is an entry point
+ok   Y5b1 and takes no arguments, so it cannot be aimed
+
+== §8 — MUTANTS ==
+ok   N1  the readiness reusing R6-R6-R3's pre-repair Route B baseline (caught)
+ok   N2  the freeze put back to null, reopening the gap this round closed (caught)
+ok   N3  a frozen null silently COMPARED instead of reported as a gap (caught)
+ok   N13 the two instants left to the DERIVED gates alone, with no equality gate (caught)
+ok   N4  the K4 expectation derived from the row being checked instead of from the frozen key (caught)
+ok   N5  the version gate accepting any advance instead of exactly one (caught)
+ok   N6  the predates-the-save comparison inverted so a written Route B passes (caught)
+ok   N7  ALREADY_SAVED folded into an ordinary STOP (caught)
+ok   N8  the readiness declaring READY while a predicate failed (caught)
+ok   N9  the stage-two manifest reporting itself as the authority for the restore (caught)
+ok   N10 the mutation audit dropping the intent it was added to report (caught)
+ok   N11 a minting payload reported as an ordinary update (caught)
+ok   N12 the transport reading "not told" as "no" (caught)
+ok   N14 the writer gate removed, so an UPDATE with no token commits again (caught)
+ok   N15 the missing token FILLED IN from the row instead of refused (caught)
+ok   N16 the documented top-level expected_draft_version ignored again (caught)
+ok   N17 the collected row dropping draft_version, exactly as it did in production (caught)
+ok   N18 the audit reading the token from the body only, so a header-only request reports null (caught)
+ok   N19 the audit reconstructing the token from the AFTER version instead of reading the request (caught)
+
+passed 272  failed 0  |  mutants caught 19  survived 0

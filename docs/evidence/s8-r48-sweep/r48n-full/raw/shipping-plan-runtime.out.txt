@@ -1,0 +1,27 @@
+ok   1: non-lithium shipment → normal candidates (battery class blank)
+ok   2/9: any lithium SKU → whole shipment lithium (even mixed / combined)
+ok   1: non-lithium → Sea/Parcel + Sea/Truck (lithium Air card excluded), deduped
+ok   2: lithium → only the lithium Air candidate
+ok   6: rough Sea/Parcel/formal → TWO candidates (R1,R2) presented — no auto-cheapest
+ok   6: multiple candidates → user must choose (engine never picks)
+ok   7: same route, different marketplace → eligible to combine
+ok   not combinable: different destination warehouse
+ok   not combinable: approved plan
+ok   not combinable: different quoted currency
+ok   not combinable: already a child
+ok   8/10: Combined Parent effective owners = its children (never parent-direct)
+ok   8: normal plan effective owner = itself
+ok   8: combined totals summed ONCE from effective lines (100+50), no double count
+ok   7: combined keeps both marketplace lines separately (not merged)
+ok   7: effective lines expose both real marketplaces
+ok   7: parent marketplace = MULTI when children span marketplaces
+ok   single-marketplace parent = actual marketplace
+ok   3: changing Method clears carrier + estimated cost
+ok   3: rationale change bumps plan_version
+ok   11: MULTI shipment with a whole-shipment (blank-marketplace) card → matched
+ok   11: MULTI shipment, only per-marketplace cards → SPLIT required (no average/merge)
+ok   11: no card at all → Rate Review
+ok   5: carrier name resolved live from carrier_id
+ok   5: unknown carrier_id → blank (never fabricated)
+
+ALL PASS

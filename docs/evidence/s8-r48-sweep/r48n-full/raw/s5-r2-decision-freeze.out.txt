@@ -1,0 +1,49 @@
+
+== A. §22 — the recommendation action enum ==
+ok   A1  action: blocked beats everything
+ok   A1  action: reallocation in
+ok   A1  action: reallocation AND residual
+ok   A1  action: residual only
+ok   A1  action: nothing actionable
+ok   A2  in the closed set: blocked beats everything
+ok   A2  in the closed set: reallocation in
+ok   A2  in the closed set: reallocation AND residual
+ok   A2  in the closed set: residual only
+ok   A2  in the closed set: nothing actionable
+ok   A3  RECOMMENDATION_TYPE_ENUM is closed at four
+ok   A4  action enum excludes SHIP
+ok   A4  action enum excludes SHIPMENT
+ok   A4  action enum excludes CREATE_SHIPMENT
+ok   A4  action enum excludes USE_FACTORY_STOCK
+ok   A4  action enum excludes USE_COMMITTED_PRODUCTION
+
+== B. §24 — reason tokens are closed and evidence-gated ==
+ok   B1  the reason token set is closed at nine
+ok   B2  null evidence emits no token it cannot support
+ok   B3  a REALLOCATE line with a residual still carries both residual tokens
+ok   B4  ...and its single action label is REALLOCATE, so the one label loses nothing
+
+== C. §21 — state vocabulary and staleness ==
+ok   C1  STATE_VOCABULARY_CHANGED = NO (tier)
+ok   C2  ...and header
+ok   C3  staleness value "CURRENT" is not a stored status (display-flag only)
+ok   C3  staleness value "STALE" is not a stored status (display-flag only)
+
+== D. §23 / mainline — one consumption order, one residual owner, separate mainlines ==
+ok   D1  no second live Net Order Need formula (§44.4)
+ok   D2  no marketplace in the supply-pool key
+ok   D3  the ordering mainline creates no shipment
+ok   D4  the shipping mainline does not name table request_orders
+ok   D4  the shipping mainline does not name table purchase_orders
+
+== E. Mutation — six planted defects (in memory; no file is written) ==
+ok   E1 action rule tests NEW_ORDER before REALLOCATE (caught)
+ok   E2 BLOCKED no longer wins over a residual (caught)
+ok   E3 a reason token is emitted without its evidence (caught)
+ok   E4 a state value is added to the frozen tier vocabulary (caught)
+ok   E5 marketplace enters the supply-pool key (caught)
+ok   E6 the ordering mainline gains a shipment creator (caught)
+
+== RESULT ==
+passed 35  failed 0  mutants killed 6/6
+S5_R2_FROZEN_VOCABULARY_STILL_TRUE = YES

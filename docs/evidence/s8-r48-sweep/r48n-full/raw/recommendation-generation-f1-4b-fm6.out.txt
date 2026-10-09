@@ -1,0 +1,15 @@
+
+== INVENTORY — earliest non-zero shortage window (D18→D30→D45→D90), never the largest ==
+
+== INVENTORY — determinism / lineage / staleness / valid-zero ==
+
+== ORDER PLANNING — stored T1–T4 verbatim; total HALTED; BLOCKED safe ==
+
+== SHARED — one owner (manual + auto), no downstream write, deterministic, lineage ==
+
+== bundle / wiring — KMREC bundled for the backend + loaded in the browser ==
+
+== DTO shape (§9) — compact canonical decision output ==
+
+----------------------------------------
+RECOMMENDATION GENERATION (F1-4B-FM6): 47 passed, 0 failed

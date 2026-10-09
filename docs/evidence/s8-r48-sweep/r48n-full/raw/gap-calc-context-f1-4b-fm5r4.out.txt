@@ -1,0 +1,23 @@
+
+== canonical relationship — month + cycle DERIVE from the date (§1/N) ==
+
+== A — Inventory normal day (13:30 Asia/Taipei → same-day) ==
+
+== B — Order Planning next morning (03:30 Day D+1 → previous date) ==
+
+== C — month boundary (OP 2026-09-01 03:30 → 2026-08-31, month stays 2026-08) ==
+
+== D — after new-month source refresh (Inventory 2026-09-01 13:30 → new month) ==
+
+== E — leap-year Asia/Taipei arithmetic around Feb 28/29 ==
+
+== F — year boundary (OP 2027-01-01 03:30 → 2026-12-31) ==
+
+== timezone integrity — no UTC/DST rollover leak (a late-evening Taipei instant stays the same Taipei day) ==
+
+== invalid context → fail closed (§10 never fabricate) ==
+
+== I/J/G — no frontend clock authority for the calc context · one shared server owner ==
+
+----------------------------------------
+DETERMINISTIC CALC CONTEXT (F1-4B-FM5-R4): 24 passed, 0 failed

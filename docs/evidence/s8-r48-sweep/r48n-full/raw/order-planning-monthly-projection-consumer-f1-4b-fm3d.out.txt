@@ -1,0 +1,29 @@
+
+== map + primary-projection selection ==
+
+== canonical qty formatter — valid zero vs null vs loading (§10) ==
+
+== DOM patch — Demand Summary Gap + Order Allocation Suggested from monthlyProjection (READY marketplace) ==
+
+== E/H unavailable tier → "—" (null suggested/gap, never fabricated) ==
+
+== O WAREHOUSE blocked → NO fabricated projection values ("—", not 0) ==
+
+== loading → "…" placeholder ==
+
+== R/S/P end-to-end load — ONE request, patch applied, no writes, projection survives ==
+
+== panel markup + ownership (source scans) ==
+
+== negative mutants — the consumer wiring must be able to fail ==
+ok   M1 killed — the Send consumer stops calling _roEffectiveOrderQty
+ok   M2 killed — the display consumer stops calling _roEffectiveOrderQty
+ok   M3 killed — scope propagation broken — the tier index is not passed through
+ok   M4 killed — the canonical-draft guard is bypassed — an ephemeral qty can be asserted again
+ok   M5 killed — the consumed projection field is changed
+ok   M6 killed — the default ladder is inverted — a tier suggestion outranks a manual edit
+ok   M7 killed — a persisted manual ZERO is swallowed as a blank
+ok   M8 killed — (inverted) locals renamed with NO behaviour change — the suite must STILL pass
+
+----------------------------------------
+OP MONTHLY PROJECTION CONSUMER (F1-4B-FM3d): 50 passed, 0 failed, 8 mutants, 0 survived, vacuity clean

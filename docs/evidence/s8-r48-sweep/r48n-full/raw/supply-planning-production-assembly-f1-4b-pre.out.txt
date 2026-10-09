@@ -1,0 +1,13 @@
+
+== A. Request validation (explicit, mandatory; no inference) ==
+
+== B. Assembly produces context + facts from raw snapshots (no prebuilt facts) ==
+
+== C. END-TO-END — assembly → EXISTING production source → allocator → resolver → real recommendedQty ==
+
+== D. Frozen-property preservation (§12) — QI canonical / count-once / arrived=SHIPPED_IN_TRANSIT / late not covering ==
+
+== E. Missing / valid-zero / determinism ==
+
+----------------------------------------
+PRODUCTION ASSEMBLY (F1-4B-PRE): 30 passed, 0 failed

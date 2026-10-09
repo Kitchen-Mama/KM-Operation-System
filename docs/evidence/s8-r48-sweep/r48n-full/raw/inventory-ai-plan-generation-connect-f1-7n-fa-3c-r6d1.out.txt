@@ -1,0 +1,19 @@
+
+== B. flag OFF (default) → page-state only, NO DB generation ==
+
+== B. flag ON → routes the MANUAL click to weeklyAiPlan.generate ONCE with company+country scope ==
+
+== E. after success → DB readback hydration + atomic re-render + manual result popup ==
+
+== D. truthful result classification ==
+
+== B/D. background suppression — popup is manual-only (no non-manual caller) ==
+
+== E. flag mirror — REAL km-api-foundation (default OFF; reversible) ==
+
+== I. corrected run authority + validator (source) ==
+
+== safety — no Submit/handoff/Request-Order-Draft-Line dependency added ==
+
+----------------------------------------
+R6D1 INVENTORY AI PLAN CONNECT (F1-7N-FA-3C-R6D1): 32 passed, 0 failed

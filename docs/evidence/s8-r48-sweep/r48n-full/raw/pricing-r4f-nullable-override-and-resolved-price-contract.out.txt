@@ -1,0 +1,140 @@
+
+==============================================================================================================
+PRICING-R4F — NULLABLE MANUAL OVERRIDE AND THE RESOLVED-PRICE CONTRACT (FREEZE + AUDIT)
+==============================================================================================================
+
+== A · §1 THE CANONICAL RESOLVER — EXECUTED ==
+ok   A1  RESOLVED_PRICE_OWNER (server) = pricingResolveEffective_, declared exactly once
+ok   A1b and no other .gs file declares a second one — one rule, one implementation
+ok   A2  an override that holds a number IS the resolved price
+ok   A2b and it wins whatever the flag says — a legacy row resolves to the number it already shows
+ok   A3  no override and no auto resolves to NULL — Not Set, and not a price of zero
+ok   A3b measured as "not zero", because 0 is the answer this contract exists to refuse
+ok   A4  NA does NOT fall back to auto, even with the flag reading AUTO — "does not apply" is not a gap
+ok   A5  blank override + flag FALSE + an auto value resolves to AUTO — the case that already worked
+ok   A6  blank override + UNKNOWN flag FALLS BACK — the blank cell is the statement, not the flag
+ok   A7  blank override + MANUAL flag falls back too — a claim of ownership with no value is not a value
+ok   A7b the gate is gone from the resolver — removed, not merely bypassed
+ok   A7c while the flag is still READ, because the editing UI shows it. It simply decides nothing.
+ok   A8  MIXED_FIELD_AUTHORITY_PASS — three bands, three independent answers, from one row
+ok   A8a and three independent PRICES — an override, an auto, and a Not Set, on one row
+ok   A9  four distinguishable sources — §8 renders Override / Auto / Not set without re-deriving them
+ok   A10 RESOLVED_PRICE_OWNER (client) = normalizePricingListRecord — it already receives all three layers
+ok   A10b and the two-runtime mirror pair is an existing, proven pattern here, not a new one
+
+== B · §2 AUTHORITY — WHAT TRUE / FALSE / BLANK STILL DECIDE ==
+ok   B1  TRUE_MEANING / FALSE_MEANING / BLANK_MEANING — three states, and an unreadable cell is UNKNOWN
+ok   B2  five files name an ownership flag — a creator, a decider, two transports and a badge
+ok   B2b and 72_ still DECIDES nothing from one — it names the column, it does not branch on the value
+ok   B3  writable_by_fx is gone — FX writes no override, so no field is "writable by FX"
+ok   B3a and all three states are still reported faithfully, deciding nothing
+ok   B3b — and all three resolve to the SAME price, because all three hold the same override
+ok   B4  a populated price with a blank flag exists and is representable — so populated != TRUE today
+ok   B4b and the spec records FALSE as schema debt rather than deleting the column
+ok   B5  the two values 73_ ever writes into a flag column — it never writes blank back
+
+== C · §3 CREATION — EXECUTED. ONE LINE CHANGES, EIGHT DO NOT. ==
+ok   C1  cross-currency still fails closed: no invented rate, blank auto, blank override
+ok   C2  same-currency still computes auto from base at rate 1 — a fact about the currency, not a market claim
+ok   C3  and both branches still write the ownership flags FALSE, which is what lets a row repair itself
+ok   C4  NEW_ROW_MANUAL_OVERRIDE_INITIALIZATION = BLANK — creation writes no override at all
+ok   C4b while auto IS computed — the row has a price, it just does not claim a person chose it
+ok   C4c and no statement anywhere in the planner assigns into the override block
+ok   C5  a blank base leaves a blank auto AND a blank override — per band, and never 0
+ok   C6  still ONE pricing_list creator — R4G changes one branch of one function
+
+== D · §4 CONSUMER AUDIT — 11 SITES, CLASSIFIED FROM THE SOURCE ==
+ok   D1  72_ emits the RESOLVED price for the Product Strategy Board / Pricing Center
+ok   D1b PSB_RESOLVED_PRICE_PASS — and carries auto AND override beside it, under their own names
+ok   D1c and `analysable` is gated on the resolved price — an auto-priced SKU stays on the chart
+ok   D1d by CALLING the canonical resolver once, in one place — §12: no client-side pricing formula
+ok   D2  km-product-pricing-adapter passes 72_ through verbatim — now including all three layers
+ok   D3  psb-selectors gates PRICING_SOURCE_MISSING, chartable and analysableSiteSkuCount on the RESOLVED price
+ok   D3b and the floor-to-list band is built from the other two resolved bands
+ok   D3c while the selectors still hold NO pricing formula of their own — §12, measured as a negative
+ok   D4  FC_SUMMARY_RESOLVED_PRICE_PASS — it reads the resolved price from the canonical normalizer
+ok   D4b UNSAFE_BLANK_CONSUMER — and the Special Event save path HALTS on a null price, by design
+ok   D4c on BOTH save paths — the single-SKU rows and the grouped ones refuse separately
+ok   D4d four refusals in total: a price guard and a currency guard on each of the two paths
+ok   D5  fc-summary hands its resolved price to campaign_sku_lines — a blank one is snapshotted permanently
+ok   D6  59_ passes pricing_list rows through whole — the client CAN resolve on this transport today
+ok   D7  only two PAGES read pricing_list at all — order planning, PO, shipment and exports read no price
+ok   D7b and 58_ (the FC Summary workspace) carries no effective price either
+ok   D8  sku_details.minimum_price / .msrp are the MASTER baseline — a different grain, not this table
+ok   D8b campaign-risk reads marketplace_skus prices — a pre-existing wrong-table defect, not a R4G target
+
+== E · §5 BLANK NEVER BECOMES ZERO ==
+ok   E1  pricingReadNumber_: blank/NA/garbage are null — and a real 0 is still a real 0
+ok   E1b "absent" and "zero" are two different answers, which is the whole distinction
+ok   E2  BLANK_TO_ZERO_DEFECTS on the server = 0 — no `|| 0` on any price in any .gs file
+ok   E3  db-api normalizeMarketplaceSkuRecord — 3 sites, on the marketplace_skus columns
+ok   E3b and they are in the marketplace_skus normalizer, NOT the pricing_list one
+ok   E3c campaign-risk — 2 sites, rendered through toFixed(2) as though they were prices
+ok   E3d PRICING-R4G FIXED the fc-summary DOM read — a typed non-number is now no price, not a price of 0
+ok   E4  normalizePricingListRecord uses pricingNumOrNull_ with no zero default — the target path is clean
+ok   E5  the stale comment is gone, with the raw read it was the reason for
+ok   E5a and what replaced it records that it was false, so nobody re-derives the same wrong conclusion
+
+== F · §7 THE CONTRACT CHANGE — `Use Auto Price`, EXECUTED ==
+ok   F1  USE_AUTO_CLEARS_OVERRIDE = YES — it empties the cell instead of copying auto into it
+ok   F1b under the change_type that always said what it now does — the name survived the change
+ok   F1c and the log records the price REMOVED, which is the only trace of what the site was serving
+ok   F1d after which the row resolves to 42.31 — and TRACKS it, rather than holding a copy of it
+ok   F2  USE_AUTO_ALLOWED_WITH_BLANK_AUTO = YES — clearing needs no value to copy
+ok   F2b which is exactly the state R4E creates on every cross-currency row, and this is their repair
+ok   F3  a price supplied alongside AUTO is ignored — the field is cleared, not set to 77.77
+ok   F4  MANUAL with a blank price is refused — unchanged by R4G
+ok   F4b and says so in the refusal the operator reads
+ok   F5  NO_CHANGE writes nothing, even with a price sitting in the row
+ok   F6  FX_WRITES_MANUAL_OVERRIDE_COUNT = 0 — not even for a FALSE row, which R3 did write
+ok   F6b nor for an UNKNOWN row — auto moves, the legacy price does not. That part R4G keeps.
+ok   F6c while a row with NO override is reported as FOLLOWING — its price moves with no cell written
+ok   F7  the three labels are unchanged — only what "Use Auto Price" DOES changes
+ok   F7b and both vocabularies still resolve to the same mode
+
+== G · §6/§17 LEGACY ROWS — WHAT THE EXISTING 495 RESOLVE TO, BEFORE AND AFTER ==
+ok   G1  §17 M — every populated-override row resolves IDENTICALLY before and after PRICING-R4G
+ok   G1a measured over seven populated-override shapes, which is the whole of the legacy population
+ok   G2  §17 N — the two rules differ on blank overrides, and ONLY there: was Not Set, now resolves
+ok   G3  §17 A/C — auto when one exists, NOT_SET when none does, NA left alone
+ok   G4  an FX run does not repair a legacy UNKNOWN row today either — so R4G removes no existing repair
+ok   G4b it computes the correct auto beside it, which is what the operator compares against when reviewing
+ok   G5  EXISTING_PRODUCTION_ROWS_WRITTEN = 0 — planners are pure, and nothing here holds a Sheets handle
+ok   G6  §17 I — a new same-currency row: auto populated, override blank, RESOLVED = auto
+ok   G6a §17 J — a new cross-currency pending_fx row: auto blank, override blank, RESOLVED = null (not 0)
+ok   G6b §17 K — the first FX run writes auto_* and NOT the override
+ok   G6c and the row now RESOLVES to 40.49 — created, reconciled and priced, with no override ever written
+
+== H · THE SPEC RECORDS THE DECISION, AND THE ARGUMENT AGAINST IT ==
+ok   H1  §4F exists in the canonical mapping spec
+ok   H2  and states, in §10's own vocabulary, that a blank override means no override exists
+ok   H3  §7's contract change is recorded with the refusal it removes
+ok   H4  R4D's opposite recommendation is marked superseded — kept, not deleted
+ok   H4b with its costs carried forward as R4G line items rather than argued away
+ok   H5  and the no-migration ruling is on the record with its reason
+ok   H6  the freeze section names the round that implemented it
+ok   H6a and that section exists, so the pointer resolves
+ok   H7  every backend file R4G must change is named in the spec
+ok   H7b and each one is a file that actually exists on disk
+
+== M · MUTANTS ==
+ok   M1  caught — a resolved price with nothing behind it becomes 0 instead of null
+ok   M2  caught — NA falls back to the auto value
+ok   M3  caught — the flag gate comes back, so cleared rows stop resolving while legacy rows do not
+ok   M4  caught — USE_AUTO copies auto into the override again, freezing the price against future FX runs
+ok   M5  caught — USE_AUTO is refused again when auto is blank, stranding every pending_fx row
+ok   M6  caught — MANUAL with a blank price is accepted as a way to clear the override
+ok   M7  caught — FX writes the override column again, overwriting the legacy population
+ok   M8  caught — a blank price cell reads as present with value 0
+ok   M9  caught — every band resolves from regular_price, so Minimum and MSRP become copies of it
+ok   M10  caught — a blank flag reads as AUTO, declaring the whole legacy price book system-owned
+
+==============================================================================================================
+PRICING-R4F NULLABLE OVERRIDE AND RESOLVED-PRICE CONTRACT — passed 108  failed 0  mutants caught 10
+FINAL_PRICE_MODEL = BASE -> AUTO -> NULLABLE MANUAL OVERRIDE · MANUAL_OVERRIDE_NULLABLE = YES
+RESOLVED_PRICE_OWNER = pricingResolveEffective_ (73_) + normalizePricingListRecord (db-api mirror)
+DIRECT_EFFECTIVE_CONSUMER_COUNT = 11 · RESOLVED = 7 · MANUAL_OVERRIDE = 6 · UNSAFE_BLANK = 5
+BLANK_TO_ZERO_DEFECTS = 6 sites / 3 files · 0 on pricing_list · CONTRACT_CHANGE_REQUIRED = YES
+LEGACY_AUTOMATIC_MIGRATION_REQUIRED = NO · EXISTING_PRODUCTION_ROWS_WRITTEN = 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+==============================================================================================================

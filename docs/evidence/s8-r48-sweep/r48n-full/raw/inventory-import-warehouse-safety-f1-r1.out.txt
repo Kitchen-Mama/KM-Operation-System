@@ -1,0 +1,17 @@
+
+== A/B/C/E/F — Overseas eligibility: only ACTIVE, NON-FACTORY warehouses pass; others fail closed ==
+
+== A/C/D/F/G/H/I — Factory evaluator: mirror rejection + preserved SKU/qty (already hardened, regression) ==
+
+== J — mapping remains deterministic by warehouse_id (similar codes never remap) ==
+
+== §5 — Overseas backend WIRES the eligibility helper + builds the active/factory record map ==
+
+== §3/§4/§11/K — templates offer warehouse_id ONLY as an eligibility-filtered dropdown (no free text) ==
+
+== §10/§12 — Overseas import accepts the new .xlsx AND legacy .csv (backward compatible) ==
+
+== §14 — no allocation / FC / recommendation / quantity-semantics change in the touched files ==
+
+----------------------------------------
+INVENTORY IMPORT WAREHOUSE SAFETY (F1-R1): 28 passed, 0 failed

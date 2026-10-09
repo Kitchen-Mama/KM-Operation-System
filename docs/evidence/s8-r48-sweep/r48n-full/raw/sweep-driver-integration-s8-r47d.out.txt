@@ -1,0 +1,44 @@
+
+§A — ENUMERATION
+ok   A1 every fixture suite is enumerated  (got 9, want 9)
+ok   A2 ... in a deterministic sorted order  (got ["a-clean.test.js","b-silent-nonzero.test.js","c-fail-exit-zero.test.js","d-indented-fail.test.js","e-failed-summary.test.js","f-missing-summary.test.js","g-vacuous.test.js","h-mutant-survived.test.js","i-no-assertions.test.js"], want ["a-clean.test.js","b-silent-nonzero.test.js","c-fail-exit-zero.test.js","d-indented-fail.test.js","e-failed-summary.test.js","f-missing-summary.test.js","g-vacuous.test.js","h-mutant-survived.test.js","i-no-assertions.test.js"])
+ok   A3 ... with no duplicates  (got [], want [])
+
+§B — EVERY SUITE IS CLASSIFIED THROUGH THE COLLECTOR
+ok   B1 the roll-up accounts for every suite — none missing  (got 9, want 9)
+ok   B2 ... and reports the registered count  (got 9, want 9)
+ok   B3 ... with no duplicated records  (got [], want [])
+ok   B4 every record carries a verdict and reason codes — nothing is unclassified
+
+§C — THE TEN REQUIRED SIGNALS, END TO END THROUGH REAL PROCESSES
+ok   C1 a genuinely clean suite is CLEAN  (got "CLEAN", want "CLEAN")
+ok   C2 a suite that dies on stderr with exit 1 is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C2a exit code is captured (1)
+ok   C2b ... by NONZERO_EXIT
+ok   C2c ... and MISSING_SUMMARY — nothing ran
+ok   C2d STDERR REACHED THE CLASSIFIER — a stdout-only driver would have seen an empty suite
+ok   C3 the inverse case really does exit 0  (got 0, want 0)
+ok   C3a ... and is still NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C3b ... named FAIL_WITH_ZERO_EXIT
+ok   C4 an INDENTED FAIL line is detected  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C4a ... and counted  (got 1, want 1)
+ok   C5 a failed-summary count at exit 0 is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C5a ... with both counts parsed  (got [40,2], want [40,2])
+ok   C6 a missing summary FAILS CLOSED, never clean-by-default  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C7 a vacuous (zero-mutant) run is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C8 a surviving mutant is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C9 a zero-assertion run is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C10 exactly one fixture is CLEAN — exit 0 alone never earns it  (got [1,8], want [1,8])
+
+§D — DETERMINISTIC MACHINE-READABLE ROLL-UP
+ok   D1 the roll-up carries a reason tally
+ok   D2 ... and names every not-clean suite  (got 8, want 8)
+ok   D3 two runs produce identical verdicts — the roll-up is deterministic  (got ["a-clean:CLEAN","b-silent-nonzero:NOT_CLEAN","c-fail-exit-zero:NOT_CLEAN","d-indented-fail:NOT_CLEAN","e-failed-summary:NOT_CLEAN","f-missing-summary:NOT_CLEAN","g-vacuous:NOT_CLEAN","h-mutant-survived:NOT_CLEAN","i-no-assertions:NOT_CLEAN"], want ["a-clean:CLEAN","b-silent-nonzero:NOT_CLEAN","c-fail-exit-zero:NOT_CLEAN","d-indented-fail:NOT_CLEAN","e-failed-summary:NOT_CLEAN","f-missing-summary:NOT_CLEAN","g-vacuous:NOT_CLEAN","h-mutant-survived:NOT_CLEAN","i-no-assertions:NOT_CLEAN"])
+ok   D4 ... and serialises to JSON for machine consumption
+
+§E — WORKTREE INTEGRITY REPORTING
+ok   E1 the sweep reports worktree integrity
+ok   E2 ... as a known verdict
+ok   E3 ... and lists any paths left dirty
+
+PASS  32 passed, 0 failed  (9 negative fixtures, all detected)

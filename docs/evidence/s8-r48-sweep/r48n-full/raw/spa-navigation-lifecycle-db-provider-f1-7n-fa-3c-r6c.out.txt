@@ -1,0 +1,56 @@
+
+== A. REAL core/lifecycle.js — latest-navigation-wins + single-visible-section ==
+[KM] Lifecycle manager initialized
+[Lifecycle] Registered: request-order-section
+[Lifecycle] Registered: fc-summary-section
+[Lifecycle] Registered: ops-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: fc-summary-section
+[Lifecycle] Unmounted: fc-summary-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: fc-summary-section
+[Lifecycle] Unmounted: fc-summary-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: fc-summary-section
+[Lifecycle] Unmounted: fc-summary-section
+[Lifecycle] Mounted: ops-section
+[Lifecycle] Unmounted: ops-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: fc-summary-section
+[Lifecycle] Unmounted: fc-summary-section
+[Lifecycle] Mounted: ops-section
+[Lifecycle] Unmounted: ops-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: fc-summary-section
+[Lifecycle] Unmounted: fc-summary-section
+[Lifecycle] Mounted: ops-section
+[Lifecycle] Unmounted: ops-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: fc-summary-section
+[Lifecycle] Unmounted: fc-summary-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: ops-section
+[Lifecycle] Unmounted: ops-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: fc-summary-section
+[Lifecycle] Unmounted: fc-summary-section
+[Lifecycle] Mounted: ops-section
+[Lifecycle] Unmounted: ops-section
+[Lifecycle] Mounted: fc-summary-section
+
+== B. REAL operation-system-db-api.js — scoped-cache poisoning fix + readiness authority ==
+
+== C. request-order — mount epoch guard + pending-autosave flush on unmount (Objectives E/G) ==
+
+== D. observability — __kmLifecycleDebug + __roDebug release/provider (read-only, no secrets) ==
+
+----------------------------------------
+R6C SPA NAV / LIFECYCLE / DB-PROVIDER (F1-7N-FA-3C-R6C): 54 passed, 0 failed

@@ -1,0 +1,10 @@
+
+== C1 structural: getMarketplaceReference routed through KM.referenceCache; only upsertMarketplace invalidates ==
+
+== C1 behavioral: dedupe, shared in-flight promise, no-cache-on-failure, invalidation ==
+
+== C5 IR primary payload UNCHANGED (lazy-include deferred); C6 guards already exist ==
+
+== Frozen invariants: no global cache / no broad read / no prime reintroduced ==
+
+✓ 47 passed

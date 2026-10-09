@@ -1,0 +1,25 @@
+
+== Module surface + constants ==
+
+== Workspace Registry ==
+
+== Response Envelope contract { success, data, meta, errors } ==
+
+== Error Envelope contract { code, message, details } — never a bare string ==
+
+== Feature Flag routing (default legacy) ==
+
+== Legacy Adapter backward-compatibility (delegates to KM.DB.*) ==
+
+== Dispatcher routing + validation ==
+
+== Forbidden operations — KMSAFE mirror, fail-closed in BOTH modes ==
+
+== Cache Layer (memory only, TTL = 0 → interface present, never caches) ==
+
+== Determinism + zero-business-logic proof ==
+
+== Backward-compat guard: module is additive + inert while flag is off ==
+
+----------------------------------------
+API FOUNDATION: 70 passed, 0 failed

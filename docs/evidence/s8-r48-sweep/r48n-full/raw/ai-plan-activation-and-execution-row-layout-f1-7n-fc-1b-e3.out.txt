@@ -1,0 +1,295 @@
+
+== §A — THE HELPER COPY IS GONE, AND SO IS THE ELEMENT THAT CARRIED IT ==
+ok   A1  the sentence "No execution route yet…" is absent from the page
+ok   A1a and so is every clause of it
+ok   A1b the builder that produced it is DELETED, not left returning an empty string
+ok   A2  no empty <div> and no marker attribute is left behind (§A.2)
+ok   A2a and the stylesheet declares nothing for it either
+ok   A2b the empty state CLEARS the container rather than filling it
+ok   A2c and renders EXACTLY ONE composer, so the empty plan is one blank row (§A.3)
+ok   A3  the column header names all six columns immediately above the list
+ok   A4  the composer state machine still exists (touched flag on the row and in the model)
+ok   A4a all three states unchanged
+ok   A5  each of the four controls carries its own aria-label (§A.5)
+ok   A5a as do Expected Arrival and the Action button
+ok   A5b and the Action button says which of the two things it does on this row kind
+
+== §B — ONE SCOPED LAYOUT CONTRACT, RESOLVED THROUGH THE REAL CASCADE ==
+ok   B0  resolver self-test: the exec grid resolves display:grid
+ok   B0a and its six-track template
+ok   B0b and an element without the classes resolves NONE of the exec-plan declarations (it is not matching everything)
+ok   B0b1 nor does the grid class OUTSIDE #ops-section — the descendant combinator is really enforced
+ok   B0c and a card input outside the grid still resolves its base rule
+ok   B1 [persisted] From = To = Qty = Method for height, box-sizing, radius, vertical padding, margin and vertical alignment
+ok   B1 [ai] From = To = Qty = Method for height, box-sizing, radius, vertical padding, margin and vertical alignment
+ok   B1 [added] From = To = Qty = Method for height, box-sizing, radius, vertical padding, margin and vertical alignment
+ok   B1 [composer] From = To = Qty = Method for height, box-sizing, radius, vertical padding, margin and vertical alignment
+ok   B1a and the height is an explicit length, not left to the widget metrics (26px)
+ok   B1b margin is 0 on all four (the base select rule had margin-bottom: 8px)
+ok   B2  a persisted route, an AI route, an + Add Route row and a default composer share one row layout (§B.7)
+ok   B3  PRE (measured): scoped to .exec-route-row, a route control has a height and the COMPOSER control has none
+ok   B3a PRE: and the composer's Method select kept the base rule's 8px bottom margin, which is why the row sat low
+ok   B4  the header row and a body row resolve the same template, the same column gap and the same box padding (§B.1)
+ok   B4a and that padding is ZERO — a horizontal padding on a grid re-resolves every 1fr track
+ok   B4b the column gap is ONE length, so every inter-column gap is identical by construction (§B.3)
+ok   B4c and they stay in step inside the responsive block too (§B.9)
+ok   B4d which still declares six tracks
+ok   B5  a DISABLED Method resolves an identical box — no height, padding, radius or font change (§B.4)
+ok   B5a what it does change is the cursor…
+ok   B5b …the background colour…
+ok   B5c …and the text colour, and nothing else
+ok   B5d the default composer renders Method DISABLED (no From/To yet, so no lane to price)
+ok   B5e and a complete route renders it enabled
+ok   B6  the number input's spin buttons are suppressed (§B.5)
+ok   B6a and the UA widget metrics are replaced on both control types
+ok   B6b with the select's caret drawn as a background IMAGE, so the disabled rule can repaint colour without erasing it
+ok   B7  the row grid centres its items
+ok   B7a and Expected Arrival and the Action button state it for themselves too (§B.6)
+ok   B7b with the button centred in its own 40px track
+ok   B8  every Execution Plan control rule is scoped under #ops-section (§B.8)
+ok   B8a the box is declared on the shared grid class (2 selector(s))
+ok   B8b and NOTHING declares a control box per row kind any more — that was the defect
+
+== §C — WHY THE PAGE WAS SILENT (the five findings, each asserted against the shipped source) ==
+ok   C5  `.replen-ai-plan-result` now HAS a stylesheet rule (it had none anywhere in the repository)
+ok   C5a it is position:fixed, so it does not depend on document flow
+ok   C5b above the scope modal (1200), which closes on confirm and must not cover the answer
+ok   C5c and it paints a background, so the text is legible
+ok   C5d the rule is deliberately NOT #ops-section-scoped — the element is a child of <body>, and a scoped selector would have matched nothing and reproduced the bug exactly
+ok   C5e THE MECHANISM: body is overflow:hidden, so an unstyled body-appended notice was not merely low on the page, it was unreachable by scrolling
+ok   C2  the scope modal calls close('confirm') BEFORE the callback, so the Generate button is gone by then
+ok   C3  #replen-ai-plan-btn is the MENU ITEM, not the modal's Generate button
+ok   C3a and runReplenAiSupport hides the menu on its FIRST line, so every state written to it is invisible
+ok   C3b so the re-entry guard no longer READS that hidden element's disabled attribute
+ok   C3c it is a module-level run flag instead (§D.6)
+ok   C4  the busy state is set in the click's own turn…
+ok   C4a …and the WORK is deferred to the next task, which is the only way that state reaches the screen
+ok   C4b in that order: paint first, defer second
+ok   C4c and no work at all remains in the click's own turn
+
+== §D — VISIBLE RUNTIME FEEDBACK, DRIVEN THROUGH THE SHIPPED FUNCTIONS ==
+ok   D1  the click DISABLES the button synchronously
+ok   D1a and the always-visible AI Support trigger, which is the on-page proxy for the modal's Generate button (the modal has already closed by then)
+ok   D2  aria-busy is set on the trigger…
+ok   D3  …and on the Execution Plan area (§D.4)
+ok   D4  the trigger label states the phase (✦ Preparing…)
+ok   D5  the inline status exists…
+ok   D5a …and is visible…
+ok   D5b …with aria-live="polite" (§D.5)
+ok   D6  and a spinner is in it (§D.2)
+ok   D6a showing the first phase
+ok   D7  the Execution Plan area carries the same phase, so the operator does not have to look at the toast
+ok   D8  and NO work has run yet — the paint comes first
+ok   D8a the run flag is set
+ok   D9  the second click of a double-click is refused
+ok   D9a out loud, not silently
+ok   D10 exactly ONE generate request left the browser (§D.6)
+ok   D11 the flag-ON click reaches the canonical writer
+ok   D12 success states the ROUTE COUNT (§D "Saved N routes")
+ok   D12a and the UNITS, from what the server acknowledged
+ok   D12b with the success tone
+ok   D13 the spinner is CLEARED (§D.5)
+ok   D13a the trigger is re-enabled…
+ok   D13b …and no longer busy
+ok   D13c and neither is the Execution Plan area
+ok   D13d nor is the menu item
+ok   D14 and the OUTCOME REMAINS in the Execution Plan area after the modal closed (§D.7)
+ok   D14a saying what was REPLACED as well as what was created
+ok   D14b and the run flag is clear
+ok   D15 flag OFF → zero requests, zero writes (§E.2)
+ok   D16 the advice half is reported as the completed run it was
+ok   D16a with the two halves reported separately — advice done, nothing written
+ok   D16a1 and the flag is NAMED as the reason, after the outcome rather than in place of it
+ok   D16b as a WARNING — "your plan was not written" is not neutral news to someone who pressed Generate
+ok   D16c spinner cleared on this terminal path too
+ok   D16d and it stays in the Execution Plan area
+ok   D17 an unreachable writer is a DIFFERENT stated reason from a disabled flag
+ok   D18 a zero-result run says "no eligible route found" (§J.12)
+ok   D18a and says it is an ANSWER — the backend treats it as success precisely so it still expires the old plan
+ok   D18b never as a save (§D.9)
+ok   D18c spinner cleared
+ok   D19 a transport failure is reported (§J.14)
+ok   D19a naming the error, not swallowing the rejection (§C.13)
+ok   D19b in the error tone
+ok   D19c spinner cleared
+ok   D19d and the button is usable again
+ok   D19e and the Execution Plan is stated to be unchanged (§H.5)
+ok   D20 a timeout is reported as a timeout (§J.15)
+ok   D20a as an UNKNOWN outcome, not a failure — the request had already been sent (§D.10)
+ok   D20b spinner cleared
+ok   D20c and Submit is marked BLOCKED until a run reconciles
+ok   D21 an unacknowledged line count is UNKNOWN, not success (§J.16)
+ok   D21a naming which check disagreed
+ok   D21b and it does NOT claim to have saved anything (§D.9/§G.14)
+ok   D21c Submit is blocked until it reconciles
+ok   D21d and the Execution Plan area says so (§D.10)
+ok   D21e spinner cleared on the unknown path too
+ok   D22 Submit is refused with its own code while an AI Plan run is unreconciled (§G.14)
+ok   D22a naming the specific check that did not confirm
+ok   D23 ONE exit clears the run flag, the trigger and the busy area…
+ok   D23a …and every value-returning exit from a run is a terminal report or a delegation (§D.17)
+
+== §E — CONTROLLED ACTIVATION, AND THE FLAG KEPT AS THE ROLLBACK SWITCH ==
+ok   E1  00_config.gs holds ONE boolean of record for the flag (currently false)
+ok   E1a and it is only TRUE when the file records the activation census verdict that authorised it (§H.4)
+ok   E2  read through exactly ONE accessor (§E.1)
+ok   E3  no gate reads the variable directly — they all call the accessor (§E.1)
+ok   E4  the SERVER gate is independent of the client gate, so the button is not the only thing stopping a write
+ok   E5  and when it is off the server answers a typed refusal with zero rows (§E.2)
+ok   E6  the route allocator does not consult the flag at all, so a recommendation is computed either way (§E.2)
+ok   E7  rollback is recorded in the file that owns the flag: set false, then publish a deployment (§E.10)
+ok   E7a and the file states that the frontend keeps showing the disabled reason, so no frontend change is needed to roll back
+ok   E8  system.health reports the EFFECTIVE flag, read from the same accessor (§E.6)
+ok   E8a and the config build, so the value can be attributed to a deployment
+ok   E9  00_config.gs has a manifest entry at all (it had none before E3)
+ok   E9a and declares exactly the build its manifest entry expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11)
+ok   E9a and the module manifest expects exactly that, so a half-synced CONFIG is a mixed_deployment fault
+ok   E9b and 63_ still declares exactly what its own manifest entry expects
+ok   E10 the deployed action contract is not below the version E3 required
+ok   E10-r the required-action list is not below the version E3 required (v14)
+ok   E10-r2 and the TRANSPORT contract is UNCHANGED (§E.8) — no envelope field moved
+ok   E10a because the action it activates has been routed since R6D1
+ok   E11 the client mirror default stays fail-safe FALSE: a browser that cannot read the capability transport never offers a write it cannot confirm the server accepts
+ok   E11a and 00_config.gs says that asymmetry is deliberate, so a later round does not "fix" it
+
+== §F — THE READ-ONLY ACTIVATION CENSUS ==
+ok   F1  the census has ONE public entry point
+ok   F1a and those are the ONLY functions not prefixed CENSUS_ — nothing else is invocable from the editor by accident
+ok   F1a1 and every entry point but the named readback takes NO PARAMETERS, so none can be aimed at a scope
+ok   F1a2 and the one entry point that DOES take an argument reads no scope field out of it — its scope still comes from the runner it delegates to
+ok   F1b the fixed-scope runner takes NO parameters, so it cannot be called with the wrong scope
+ok   F1c and the scope is IN the function, not in the caller
+ok   F1d it STOPS before harvest if those four values are ever edited, rather than censusing a different site
+ok   F2  the census contains NO write CALL of any kind (§F.1: DB_WRITES = 0)
+ok   F2a and never constructs the atomic writer — the function that hands one out is not called (§F.2)
+ok   F2b nor the generation path, which is the only route from a plan to a write
+ok   F2c and it reports both facts in its own output
+ok   F2d and its header states the prohibition, which is why the sweep above must read code and not prose
+ok   F3  it calls the production weeklyAiPlanHarvest_ (§F.3)
+ok   F3  it calls the production mapWeeklyHarvestToBatchRequest (§F.3)
+ok   F3  it calls the production buildWeeklySourceLines (§F.3)
+ok   F3  it calls the production weeklyAiPlanReadCarrierAuthorities_ (§F.3)
+ok   F3  it calls the production weeklyAiPlanK2AllocatedLines_ (§F.3)
+ok   F3  it calls the production buildK2GenerationPlan (§F.3)
+ok   F3a and REFUSES to run when any of them is absent, rather than approximating one
+ok   F4  reports suggested_qty_total (§F.4)
+ok   F4  reports source_warehouse_candidates (§F.4)
+ok   F4  reports factory_stock (§F.4)
+ok   F4  reports destination_resolution (§F.4)
+ok   F4  reports matched_carrier_cards (§F.4)
+ok   F4  reports method (§F.4)
+ok   F4  reports lead_time_days (§F.4)
+ok   F4  reports expected_arrival (§F.4)
+ok   F4  reports total_allocated_quantity (§F.4)
+ok   F4  reports refusals (§F.4)
+ok   F4  reports active_allocation_drafts (§F.4)
+ok   F4  reports would_create_route_count (§F.4)
+ok   F4  reports planning_cycle (§F.4)
+ok   F5  the census hardcodes no company, SKU, warehouse or method IN CODE — all are parameters (§F.5)
+ok   F5a1 and its usage note shows them as placeholders rather than as a live scope
+ok   F5a the MATERIALIZATION PATH names no SKU, company, marketplace, warehouse, method or quantity (§G)
+ok   F5b nor does the shared contract
+ok   F6  a disagreement with the supplied expectation STOPS activation (§F.6)
+ok   F6a with STOP as the initialised default, so "not judged" is never reported as "approved"
+ok   F6b and an incomplete route, a missing method or a conservation break each STOP it
+ok   F6c a census never defaults a scope and never runs ALL_SITES
+
+== §G/§H — MATERIALIZATION BEHAVIOUR AND THE COMPOSER INTERACTION ==
+ok   G1  the modal-selected scope is retained (§G.1)
+ok   G1a and the request carries it
+ok   G2  generation goes through the existing canonical allocator (§G.3)
+ok   G3  the allocator is loadable and complete
+ok   G4  it has typed AMBIGUOUS outcomes — a tie is a refusal, not a first-row pick (§G.4/§G.5)
+ok   G5  and a typed refusal when no rate card covers the lane (§G.6)
+ok   G5a which stays a DIFFERENT answer from a missing lead time (§D.7 of E2)
+ok   G6  the one row creator refuses a row it cannot attribute (§G.7)
+ok   G6a and an incomplete collected row is stripped of identity rather than written
+ok   G7  hydrated AI routes carry AI_PLAN_EXPLICITLY_REQUESTED (§G.9)
+ok   G8  identities come from the DB READBACK, not from the generation response (§G.11/§G.12)
+ok   G8a and only a SUCCESSFUL run re-hydrates (§H.5)
+ok   G9  the server derives a deterministic execution key…
+ok   G9a …and the run id from it, so a repeat of the same scope REUSES its own rows (§G.13)
+ok   G9b which the writer records as a reuse, not a create
+ok   G10 the generation path names no shipping_plans / shipments / factory_stock table (§G.15)
+ok   G10a and calls no Submit, Shipment or dispatch action
+ok   H1  a TOUCHED composer blocks the run before anything is calculated (§H.3)
+ok   H1a explicitly, naming what is in the way
+ok   H1b with zero writes
+ok   H1c and never silently clears the operator's typing
+ok   H1d the composer is still there
+ok   H1e spinner cleared
+ok   H3  and a real route arriving retires the pristine composer (§H.2)
+ok   H3a but ONLY a pristine one — a touched composer holds typing a render must not discard
+ok   H4  declining the confirmation writes NOTHING (§H.4)
+ok   H4a and the confirmation was actually asked
+ok   H4b reported as a cancellation
+ok   H4c with the routes stated to be untouched
+ok   H6  only a route with USER_EXPLICIT_ADD_ROUTE provenance counts as a user edit…
+ok   H6a …and only a PERSISTED one, since an unsaved row has nothing to lose
+ok   H7  a BLOCKED_CONFLICT is reported by name (§H.4)
+ok   H8  + Add Route is unchanged and still adds an explicitly attributed manual row (§H.7)
+
+== §I — MANUAL COMPOSER REGRESSION (E1 + E2 rules preserved) ==
+ok   I1  the default composer renders a blank From and a BLANK Qty (§I)
+ok   I2  with Method disabled until there is a lane
+ok   I3  and the Suggested Qty is NOT prefilled (§I)
+ok   I4  a pristine composer carries NO provenance
+ok   I4a and no persisted line identity
+ok   I5  and no .exec-route-row class, so the collector's selector passes it by (§I)
+ok   I5a it is marked as a composer instead
+ok   I6  the Suggested Qty still seeds no route anywhere (§I)
+ok   I7  and there are still exactly THREE legal provenance sources
+ok   I8  a plan holding only a pristine composer answers NO_EXECUTION_ROUTES, not a complaint (§I)
+ok   I8a a TOUCHED one blocks under its own code
+ok   I9  removing the last route brings back exactly one blank composer (§I)
+ok   I9a and a plan that holds a route retires it
+ok   I10 the composer's X now clears the row — it used to select .exec-route-row and do nothing at all
+ok   I10a and a fresh blank row comes back if it was the only one
+ok   I10b with zero writes, because a pristine composer has no identity to cancel
+
+== §K — RELEASE IDENTITY ==
+ok   K1  E3 minted its own cache token
+ok   K1a and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   K1b strictly after E2's, which was published
+ok   K2  zero production references remain on E2's token (§K.5)
+ok   K2a and nothing is left behind on any superseded token
+ok   K3  the application set carries ONE current token (55 refs)
+ok   K4  inventory-replenishment.js carries it — the page and the shared module ship together
+ok   K4  inventory-compat.js carries it — the page and the shared module ship together
+ok   K4b the STYLESHEET rotated too, in its own family (irrestinglayout-20261008) — it changed this round, and the cached copy is what kept the AI notice invisible
+ok   K4c strictly at or after the token A1-R1 published in that family
+ok   K4d and the two families are not crossed in either direction
+ok   K4a and no asset carries a token from the wrong series
+ok   K5  the owner stamp this round moves is recorded in the ledger, after the previous one
+ok   K5a and the shared stamp validator admits the E-series at all (it did not, which is what broke four suites)
+
+== §J — MUTATIONS ==
+ok   N1  the helper copy reappeared (caught)
+ok   N2  one control resolved a different height (caught)
+ok   N3  the header box regained a horizontal padding (caught)
+ok   N4  a disabled Method shrank the row (caught)
+ok   N5  the control box was scoped to one row kind again (caught)
+ok   N6  the AI notice lost its stylesheet again (caught)
+ok   N7  the loading state moved after the work (caught)
+ok   N8  the work stopped being deferred (caught)
+ok   N9  a rejection was swallowed (caught)
+ok   N10 the button re-enabled before the request finished (caught)
+ok   N11 a double click produced two requests (caught)
+ok   N12 the flag was set true with no recorded activation verdict (caught)
+ok   N13 an incomplete route was materialized (caught)
+ok   N14 AI routes were rendered without a readback (caught)
+ok   N15 a repeated generation minted a second identity (caught)
+ok   N16 the generation path gained a downstream stock write (caught)
+ok   N17 an unacknowledged run was reported as a save (caught)
+ok   N18 an unreconciled AI Plan stopped blocking Submit (caught)
+ok   N19 a touched composer was silently run over (caught)
+ok   N20 regeneration over saved manual routes stopped asking (caught)
+ok   N21 the census gained a write capability (caught)
+
+----------------------------------------
+AI PLAN ACTIVATION + EXECUTION ROW LAYOUT (F1-7N-FC-1B-E3): 267 passed, 0 failed
+mutations: 21 caught, 0 missed
+ok   H2  a pristine composer does NOT block AI Plan (§H.1/§J.27)
+ok   H5  accepting it proceeds…
+ok   H5a …and passes the EXISTING confirmRegenerateOverUserEdits flag, which the page had never set (§H.4)
+ok   H5b to the server policy that has always read it

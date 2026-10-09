@@ -1,0 +1,212 @@
+
+== A. EVERY CDP COMMAND IS BOUNDED — A MISSING REPLY FAILS IN FINITE TIME ==
+ok   a registered command is pending before its deadline
+ok   and it is still unsettled one tick in — a timeout is not an instant failure
+ok   at 19999 ms it has NOT timed out — the bound is a deadline, not a guess
+ok   at 20001 ms the command rejects rather than waiting for a reply that is not coming
+ok   and it rejects with a typed code the caller can recognise
+ok   the rejection names the METHOD — the hung run could not say which command died
+ok   and the SURFACE, which is what makes the dump actionable
+ok   and the elapsed time it waited
+ok   the onTimeout hook fires exactly once so the runner can log it
+ok   and the hook carries the full window context
+ok   a reply at 19 s — inside the bound — resolves the command
+ok   a slow but real reply is NOT a timeout
+ok   and the caller receives the real payload unchanged
+ok   no timeout is recorded for a command that answered
+ok   and its timer is cleared, so a resolved command cannot fire a late timeout
+ok   the shipped bound is 20 s
+ok   and it is substantially smaller than a 180 s surface maxwait, as §3 requires
+
+== B. A LATE REPLY CANNOT CORRUPT A NEWER COMMAND, AND A TIMEOUT LEAKS NOTHING ==
+ok   the first command times out
+ok   NO PENDING ID IS LEAKED — the timed-out entry is removed from the live set
+ok   it becomes a tombstone instead, so the id stays spoken for
+ok   the next id is NOT the timed-out id — ids are monotonic and never recycled
+ok   the late reply to the dead command is identified as late and discarded
+ok   AND THE NEWER COMMAND IS UNTOUCHED — no cross-settling
+ok   the newer command settles on its OWN reply
+ok   with its own payload
+ok   a reply to an id that was never issued is reported, not swallowed
+ok   an event is not mistaken for a reply
+ok   three commands in flight
+ok   all three time out — the registry does not leak under load
+ok   and each is itemised for the dump
+
+== C. A DEAD TRANSPORT SETTLES EVERY LIVE COMMAND ==
+ok   closing the socket rejects both live commands
+ok   the first is rejected
+ok   with a code that distinguishes a dead socket from a slow page
+ok   and so is the second
+ok   nothing is left pending
+ok   and no timer survives to fire against a settled command
+
+== D. DIALOGS ARE ALWAYS ANSWERED, ALWAYS WITH THE NO-WRITE OUTCOME ==
+ok   alert is dismissed
+ok   CONFIRM IS DISMISSED — never accepted
+ok   prompt is dismissed
+ok   and submits no text
+ok   the type match is case-insensitive, so odd casing cannot accept a confirm
+ok   beforeunload is accepted — it runs no application handler, and dismissing it would cancel the navigation
+ok   and it is labelled as navigation, not as an application dialog
+ok   an UNKNOWN dialog type cannot be proven read-only-safe, so §4 aborts the surface
+ok   and is still never accepted
+ok   a dialog with no type is unknown, not assumed benign
+ok   the decision becomes the CDP command that unblocks the renderer
+ok   with accept=false for a confirm
+ok   and the dialog is recorded against the surface that raised it
+ok   with its message, so the operator can see what was refused
+ok   every dialog is counted
+ok   CONFIRM_ACCEPTED_COUNT = 0
+ok   DIALOG_DEFAULT_ACTION = DISMISS
+ok   the unknown dialog marks its surface aborted
+ok   AND THE UNKNOWN DIALOG IS STILL ANSWERED — abandoning the measurement must not re-create the hang
+
+== E. EVERY COMPLETED WINDOW IS DURABLE THE MOMENT IT COMPLETES ==
+ok   the samples file exists after the FIRST window, not at the end of the run
+ok   so does the progress file
+ok   and the safety counters file
+ok   one window is recorded
+ok   with its real content
+ok   THE SAFETY COUNTERS ARE READABLE MID-RUN — the hung run could not report them at all
+ok   progress names the completed count
+ok   and the surface under measurement, which §11 needs for the human-test avoid-list
+ok   the second window is appended, not overwritten
+ok   and window 1 is still there — losing window N+1 costs only window N+1
+ok   progress advanced to the live surface
+ok   an atomic rewrite replaces the whole document
+ok   and leaves no temp file behind
+ok   a checkpoint is written to a temp file and then RENAMED over the destination
+ok   the destination is never written to directly, so a reader never sees a partial document
+ok   an abnormal exit is recorded in the progress file, so a dead run says why it died
+
+== F. THE WATCHDOG TRIPS ON REAL SILENCE, NOT ON PLANNED IDLE ==
+ok   just under the threshold it does not trip — a slow surface is not a hang
+ok   past the threshold it trips
+ok   with a named reason
+ok   and the last thing that made progress
+ok   and how long the silence lasted
+ok   the trip hook fires once
+ok   and only once — a tripped watchdog does not trip repeatedly while the process exits
+ok   SCENARIO E IDLES FIVE MINUTES BY DESIGN — paused, the watchdog does not call that a hang
+ok   and it knows it is paused
+ok   resuming restarts the clock rather than counting the planned idle against the next surface
+ok   and after resuming, a real silence still trips it
+ok   progress resets the clock, so a long but advancing run is never killed
+ok   the watchdog is the BACKSTOP: a dead command fails on its own bound long before the watchdog sees it
+
+== G. THE RUNNER IS WIRED TO ALL OF IT — UNBOUNDED_CDP_SEND_REACHABLE = NO ==
+ok   the runner loads the resilience module
+ok   and its CDP client delegates id allocation to the bounded registry
+ok   THE UNBOUNDED SEND IS GONE — no command stores a bare resolver with no deadline
+ok   every send() goes through register(), so there is no second, unbounded path
+ok   a closed socket settles the live commands
+ok   the dialog handler is registered
+ok   and routed through the tested policy rather than an inline decision
+ok   the Fetch continue/abort is fire-and-forget, so interception cannot fill the registry with commands nobody reads
+ok   and the old awaited form is gone
+ok   the checkpoint writer is created against the output directory
+ok   and every sample path persists — note(), D-burst and F-interact
+ok   the watchdog is started
+ok   paused around the planned idle
+ok   and resumed after it
+ok   a tripped watchdog exits NON-ZERO rather than parking the process for hours
+ok   A FAILED RUN TEARS DOWN AND EXITS — it does not set exitCode and wait for an event loop that never drains
+ok   teardown kills the ephemeral browser
+ok   and closes the listening server
+ok   THE WATCHDOG IS ARMED BEFORE THE CDP DOMAINS ARE ENABLED — a hang during setup is still a hang
+ok   and its dump is defensive, because arming it early means it can trip while that state is still undefined
+ok   a timed-out evaluate returns undefined instead of throwing the whole run away
+ok   and the measurement loop breaks out of a surface whose commands are dying
+ok   as it does for a surface whose dialog could not be proven safe
+ok   the §11 human-test banner is emitted at rerun start
+ok   with HUMAN_TEST_SAFE = YES
+ok   and the final report prints CONFIRM_ACCEPTED_COUNT
+
+== H. THE R4A SAFETY CONTRACT IS UNCHANGED ==
+ok   the allowlist is still exactly 16 actions
+ok   gapJob.status.get is still refused
+ok   as forbidden, not as unknown
+ok   an unapproved write action is still refused
+ok   and a verb outside the approved set is still refused
+ok   the dialog command is named in the resilience module
+ok   accept:true appears exactly ONCE in the whole module, and it is the beforeunload branch
+ok   interception is still PRE-NETWORK, at the Request stage
+ok   and the browser profile is still ephemeral
+
+== I. S8-R4B-0 — ABANDONED READS LEAVE THE OPEN MAP, AND AN EVICTION IS NEVER A COMPLETION ==
+ok   an intercepted read is tracked as open
+ok   by its network id
+ok   and the action is reportable while it is in flight
+ok   a request with no network id is NOT tracked — an untrackable entry could never be removed
+ok   and neither is an empty one
+ok   so the map is unchanged by either
+ok   a settled read records its measured backend duration
+ok   and leaves the map
+ok   a settled read is NOT marked abandoned
+ok   and no eviction is recorded for it
+ok   settling it twice is a no-op, so a duration cannot be overwritten
+ok   AN EVICTED READ NEVER GAINS AN `ms` — BACKEND_DURATION_MUTATED = NO
+ok   and never gains an http status
+ok   it is marked abandoned, with the reason
+ok   and how long it had been open — a field that cannot be mistaken for a duration
+ok   it leaves the map, so it can no longer block stability
+ok   the eviction is RECORDED, never silent
+ok   with the action, surface, scenario and reason — enough to attribute it afterwards
+ok   AND IT CANNOT BE RESURRECTED — a late settle on an evicted id does nothing
+ok   so a late event still cannot give it a duration
+ok   a navigation evicts every open entry
+ok   the map is empty afterwards — this is the four-window defect, removed
+ok   and all three are recorded
+ok   a read still inside the bound is NOT evicted
+ok   it stays open, because it can still answer
+ok   past the bound it is evicted
+ok   with the reason that justifies it
+ok   and the map is clear
+ok   the bound is derived from the application, not chosen: KM_READ_TIMEOUT_MS_
+ok   and the stale bound is TWICE it
+ok   FALSE_STABILITY_POSSIBLE = NO rests on this: past twice its own abort bound the application has provably stopped listening, so an evicted response can no longer mutate the page
+ok   the runner uses the module map rather than a second inline one
+ok   and no bare open[...] access survives in the runner
+ok   a navigation evicts in the runner
+ok   and it happens AFTER Page.navigate, not before, so it clears the document that is actually gone
+ok   the measurement loop ages out abandoned reads
+ok   and every window records how many evictions happened inside it, so a contaminated measurement is identifiable
+ok   ms is written in EXACTLY ONE place in the module — settle() — and nowhere else
+
+== J. S8-R4B-3 — THE REDIRECT DIAGNOSTIC OBSERVES, AND CHANGES NOTHING ==
+ok   the runner records the redirect that caused each hop
+ok   AND INTERCEPTION IS STILL AT THE REQUEST STAGE — the diagnostic did not buy observability with the pre-network guarantee
+ok   nothing is intercepted at the Response stage
+ok   the capture rides the existing Network domain, not a new Fetch pattern
+ok   the Location header is reduced to PRESENCE — a Location carries a user_content_key, and a diagnostic has no business writing a token into a report
+ok   no raw redirect target is stored
+ok   and the count reaches the report
+ok   the approved action count is still 16 after the diagnostic
+ok   and gapJob.status.get is still refused
+
+== MUTANTS ==
+ok   MUTANT CAUGHT — the command timeout is removed and send can hang forever
+ok   MUTANT CAUGHT — ids are recycled after a timeout, so a late reply settles a newer command
+ok   MUTANT CAUGHT — a timed-out id stays in the live pending set
+ok   MUTANT CAUGHT — a late reply is delivered to the dead command instead of being ignored
+ok   MUTANT CAUGHT — a resolved command leaves its timer armed, leaking one live timer per command
+ok   MUTANT CAUGHT — a dead socket drops its commands without settling them, parking the process exactly as before
+ok   MUTANT CAUGHT — confirm is ACCEPTED instead of dismissed
+ok   MUTANT CAUGHT — an unknown dialog type is treated as safe to dismiss rather than aborting the surface
+ok   MUTANT CAUGHT — the unknown dialog is left unanswered, re-creating the renderer block
+ok   MUTANT CAUGHT — checkpoints are written only at the end, not per window
+ok   MUTANT CAUGHT — the sample file is overwritten with only the newest window
+ok   MUTANT CAUGHT — the destination is written directly, so a reader can see a half-written document
+ok   MUTANT CAUGHT — the watchdog never trips
+ok   MUTANT CAUGHT — the watchdog trips during the planned scenario-E idle
+ok   MUTANT CAUGHT — resume does not reset the clock, so the planned idle is charged to the next surface
+ok   MUTANT CAUGHT — progress stops resetting the idle clock, so an advancing run is killed
+ok   MUTANT CAUGHT — an eviction writes ms, inventing a backend duration for a read that never answered
+ok   MUTANT CAUGHT — a navigation leaves the entries in the map — the original four-window defect
+ok   MUTANT CAUGHT — the stale bound drops to zero, so a live in-flight read is evicted and the page can look stable early
+ok   MUTANT CAUGHT — an evicted id can be resurrected by a late settle, giving it a duration after all
+ok   MUTANT CAUGHT — evictions stop being recorded, so a forgiven request becomes invisible
+ok   MUTANT CAUGHT — a request with no network id is tracked anyway, creating an entry nothing can ever remove
+
+ALL PASS — 188 passed, 0 failed, 22 mutants, 0 survived

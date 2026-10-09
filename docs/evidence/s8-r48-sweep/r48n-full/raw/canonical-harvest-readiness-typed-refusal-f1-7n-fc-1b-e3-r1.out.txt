@@ -1,0 +1,208 @@
+
+== §A — THE READINESS DECISION, EXECUTED (not inferred from the blank timestamp) ==
+ok   A0  the §7 demand basis for RECO-2026-09 requires FOUR months, M+1..M+4 — the last of them in the NEXT year
+ok   A1  KMAF: ready = (issues.length === 0 && receiverFacts.length > 0) — zero receivers gives ready:false, ZERO issues, and the reason PLANNING_FACTS_NOT_READY
+ok   A1a one complete receiver → ready:true
+ok   A2  predicate KMAF_PRESENT = true (kmaf IS an object)
+ok   A3  predicate KMAF_READY = FALSE — this is the one that fails
+ok   A3a KMAF_RECEIVER_FACTS_ARRAY = true (it is an empty array)
+ok   A3b KMAF_RECEIVER_FACTS_NON_EMPTY = false, and NON-BLOCKING
+ok   A3c ...declared non-required, because it never gated readiness here
+ok   A3d PLANNING_CYCLE_PRESENT = true for RECO-2026-09
+ok   A3e SOURCE_DATA_AS_OF_PRESENT = false...
+ok   A3f ...and NOT required — it is not a readiness predicate
+ok   A4  EXACTLY ONE required predicate is false, and it is KMAF_READY — not the timestamp
+ok   A5  `issues` is KMAF's own array, copied at this boundary
+ok   A6  and KMAF legitimately produced an EMPTY one: every staged receiver yields a fact OR an issue, so zero of both means zero receivers — nothing was swallowed inside KMAF
+ok   A6a the reason KMAF DID give is what the boundary now carries
+ok   A7  61_ answers HARVEST_NOT_READY for a not-ready mapping
+ok   A7a and now carries the reason...
+ok   A7b ...and the typed issues, under `details`
+ok   A8  the command result shape is { success, data, error:{ code, message, details } } — SINGULAR `error`
+ok   A8a the transport reads the server code VERBATIM — it does NOT flatten (§D.2)
+
+== §B — source_data_as_of: NOT A PREDICATE, and no fabricated substitute ==
+ok   B1  §I.2 blank, null and a real source_data_as_of ALL yield ready:true — it gates nothing (executed)
+ok   B2  and each is passed through UNCHANGED — no default, no substitute, no clock
+ok   B3  a blank one IS reported — as a NON-BLOCKING warning, not as a gate we invented
+ok   B3a and a present one produces no warning
+ok   B4  naming the field...
+ok   B4a ...and where it comes from
+ok   B5  ORIGIN: the recommendation-workspace line carries it (61_ weeklyAiPlanEnumerateSites_)
+ok   B6  and 61_ takes it from the FIRST SURVIVING site only — so zero survivors leaves it null
+ok   B7  CONSUMER: weeklyAiPlanShipDate_ derives the KMWRR ship date from it (a real downstream effect)
+ok   B8  §B.5 a SECOND, AUTHORITATIVE timestamp already exists — the GAP-INV run lineage — and it BLOCKS rather than storing a blank
+ok   B8a and it is the run's own frozen input cutoff, not a clock reading
+ok   B9  §I.7/§I.8 NO fabricated timestamp anywhere: no new Date(), no spreadsheet modified time, and no clock value assigned to a source-data field
+ok   B9a (the census does use Date.now — for ELAPSED MS, which is not a data value)
+
+== §C — ready:false ALWAYS carries a typed issue ==
+ok   C1  §I.3 NOT ONE ready:false shape returns an empty issues array (§C.1)
+ok   C2  [kmaf undefined] the issue carries the full §C schema (code/field/stage/expected/actual/source_table/source_header/affected_scope) — got CANONICAL_MAPPING_INCOMPLETE
+ok   C2  [kmaf not an object] the issue carries the full §C schema (code/field/stage/expected/actual/source_table/source_header/affected_scope) — got CANONICAL_MAPPING_INCOMPLETE
+ok   C2  [kmaf.ready false, issues []] the issue carries the full §C schema (code/field/stage/expected/actual/source_table/source_header/affected_scope) — got SKU_FACTS_MISSING
+ok   C2  [kmaf.ready false, issues [x]] the issue carries the full §C schema (code/field/stage/expected/actual/source_table/source_header/affected_scope) — got DESTINATION_UNRESOLVED
+ok   C2  [receiverFacts not an array] the issue carries the full §C schema (code/field/stage/expected/actual/source_table/source_header/affected_scope) — got CANONICAL_MAPPING_INCOMPLETE
+ok   C2  [kmaf.ready false, no issues key] the issue carries the full §C schema (code/field/stage/expected/actual/source_table/source_header/affected_scope) — got SKU_FACTS_MISSING
+ok   C3  §C.5 all eight required codes exist
+ok   C4  §C.6 each existing engine code maps to a readiness code AND survives verbatim as engine_code — a boundary translation, never a rename
+ok   C4a and the demandRef is split back into a readable scope identity
+ok   C5  §C.4 an exception is kind TRANSPORT and a data gap is kind DATA — never conflated
+ok   C5a and a transport fault keeps its own code rather than being dressed as a data issue
+ok   C6  §C.3 an array `actual` is reduced to a shape description, never serialised
+ok   C6a and so is an object
+ok   C6b and a long string is capped (120 chars)
+
+== §C — AND THE DECISION IS UNCHANGED ==
+ok   C7  for ELEVEN shapes the readiness DECISION is byte-for-byte what it was before R1 — nothing tightened, nothing relaxed, no missing value defaulted
+ok   C7a including the one that looks wrong: an EMPTY receiverFacts array has always passed this gate, and 61_ refuses that universe downstream by name
+ok   C7b (which it does — REQUESTED_SCOPE_EMPTY)
+
+== §B/§I — THE SITE-DROP PREDICATE, executed on the canonical reader ==
+ok   D1  all four months present → the site SURVIVES the §7 basis gate
+ok   D2  the 2027 row MISSING → dropped (FORECAST_SHARE_INCOMPLETE). The fourth month is in the NEXT YEAR, which is the specific thing easy to miss
+ok   D3  the row present but the CELL blank → also dropped, and it is a different fix
+ok   D4  two rows DISAGREEING on one month → the reader omits it, so the site is dropped too
+ok   D5  an explicit ZERO in every month SURVIVES — a truthful zero is data, and it is never treated as missing
+ok   D6  END TO END: forecast incomplete → site dropped → zero receivers → KMAF ready:false → mapper ready:false
+ok   D6a and the refusal now carries BOTH the harvest's per-site drop and the KMAF reason (2 issues)
+ok   D6b naming the site-level cause AND the universe-level effect, each with its own engine code
+ok   D6c and the site-level one says WHICH marketplace and WHICH SKU
+ok   D7  §D 61_'s harvest SUCCESS return now carries `errors` + the site and receiver counts
+ok   D7a and passes them into the mapper, which is what turns them into typed issues
+
+== §D — PRODUCTION REFUSAL VISIBILITY, driven through the shipped page functions ==
+ok   E1  §I.10 the classifier reads the SINGULAR `error` and reports the server code
+ok   E1a and the error list is no longer empty (it was ALWAYS empty before R1)
+ok   E1b and the typed readiness block survives the transport
+ok   E1c with its issues...
+ok   E1d ...its non-blocking warnings...
+ok   E1e ...and its predicates
+ok   E1f plus the harvest counts that turn "empty" into "7 sites, 0 receivers"
+ok   E2  PRE (executed): reading only `res.errors` gave ZERO errors, no code and no readiness — which is why production said "could not complete — FAILED"
+ok   E3  §D.3 the notice states that AI Plan did NOT run
+ok   E3a and states the ISSUE in a sentence an operator can act on, not a token
+ok   E3b with the typed code alongside it, for a bug report
+ok   E3c naming the TABLE...
+ok   E3d ...and the specific month
+ok   E3e and the affected scope
+ok   E3f plus the harvest counts
+ok   E3g the non-blocking warning is shown as non-blocking
+ok   E3h and labelled as such
+ok   E3i and states that nothing was written
+ok   E4  §D.8 it never says "Saved"
+ok   E4a §D.7 it is not an empty result
+ok   E5  §I.11 the spinner is CLEARED on this terminal path
+ok   E5a the Generate proxy is re-enabled
+ok   E5b and no longer busy
+ok   E5c and neither is the Execution Plan area
+ok   E5d nor the menu item
+ok   E6  and the outcome STAYS in the Execution Plan area
+ok   E6a with the run flag clear
+ok   E7  §I.12 exactly one request, and it was a refusal — zero writes
+
+== §D — the generic label is gone ==
+ok   F1  the readiness refusal has its own branch, before the generic one
+ok   F2  and the generic branch prefers the SERVER'S CODE over the literal 'FAILED'
+ok   F3  §D.7 the operator gets a sentence, not a token dump
+ok   F4  §D.7 nothing about the outcome is written ONLY to the console
+
+== §F/§G — THE CENSUS: an early refusal keeps the diagnosis, and stays read-only ==
+ok   G1  §I.13 the census contains NO write call of any kind
+ok   G1a §F.6 and never constructs the atomic writer
+ok   G1b nor calls the generation path
+ok   G1c and declares both facts
+ok   G1d it reads the gap-run lineage through the PRODUCTION resolver rather than touching script properties itself
+ok   G2  §I.6 the census still answers STOP for a real data gap — the gate is not relaxed
+ok   G2a §I.13 db_writes 0, writer_constructed false
+ok   G2b EXECUTED: the writer, the generation path, KMWRB and the ALLOCATOR were never called, and no sheet write was attempted
+ok   G3  §F.2 the readiness block SURVIVES the early refusal...
+ok   G3a with ready:false
+ok   G3b and non-empty typed issues (2)
+ok   G3c the predicates, with their true/false (8)
+ok   G3d naming the required one(s) that failed
+ok   G3e the missing field name(s)
+ok   G3f and the canonical field names it reads
+ok   G4  §G the source_data_as_of DERIVATION is reported...
+ok   G4a stating that the harvest value is blank
+ok   G4b and WHY — naming the authority the value now comes from
+ok   G4b1 and that the workspace line is no longer an authority for it
+ok   G4c naming the second, authoritative timestamp
+ok   G4d and that nothing was fabricated
+ok   G5  §G the FORECAST COVERAGE is reported...
+ok   G5a naming the exact month with no row — as an OBSERVATION, not a verdict
+ok   G5b and with no KMFCN present it refuses to judge rather than reviving the old gate
+ok   G5b1 blocking is UNKNOWN, never defaulted to true
+ok   G5b2 and it does not claim the site would be dropped
+ok   G5c and classifying it as NO_ROW_FOR_YEAR — not as a blank cell and not as a conflict
+ok   G5d naming the table
+ok   G6  §G the next blocked stage is named
+ok   G6a and the allocator says why it was skipped rather than reporting a zero it did not compute
+ok   G6b marked skipped, not "0 routes found"
+ok   G7  the harvest counts are carried (7 sites, 0 receivers)
+ok   G7a and the per-site drop list the harvest used to discard
+ok   G8  the four required months are stated
+ok   G9  §F.7 the parameter schema is UNCHANGED, so RUN_E3_CENSUS_ONCE is reusable as published
+ok   G10 §F.2 the LOG carries the whole diagnosis (36 lines), not one BLOCKED line
+ok   G10a including the forecast coverage
+ok   G10b and the predicates
+ok   G10c and the next blocked stage
+ok   G11 §I.1/§I.16 a READY scope DOES reach the canonical allocator, exactly once
+ok   G11a a matching expectation produces NO differences
+ok   G11a1 and does not stop the run
+ok   G11b with the quantity and route count
+ok   G11c readiness true...
+ok   G11d ...with no issues
+ok   G11e and the forecast coverage is STILL reported even on a ready run (a PARTIAL run is the case nobody could see)
+ok   G11e1 with the months that have no row still named
+
+== §H — FLAG SAFETY ==
+ok   H1  §H.3/§H.4 the flag is FALSE: the root cause is not fully fixed, and E3 had already pushed flag=true, so a report alone could not satisfy §H.4
+ok   H1a and the file records WHY, so this is not read as a lost edit
+ok   H1b naming the live refusal that caused it
+ok   H2  §H.5 with the re-activation condition recorded: a census verdict of PROCEED first
+ok   H3  §H.5 the rollback switch is PRESERVED — one boolean, one accessor
+ok   H4  §H.6 system health still reports the EFFECTIVE value...
+ok   H4a ...and the config build it belongs to
+ok   H5  the config stamp is at or after E3-R1
+ok   H5a and the manifest expects exactly what the file declares
+ok   H6  61_ carries a build stamp — it owns the readiness refusal and had none before R1
+ok   H6a registered in the manifest, so a deployment that predates this fix is a NAMED fault
+ok   H6b and 61_ declares exactly the build its manifest entry expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5)
+ok   H7  §I.14 flag FALSE → the server refuses with zero rows
+ok   H0  the generation handler was extracted (7800 chars) - the ordering claims below are measured on real text
+ok   H8  §I.15 the READINESS GATE precedes the writer construction — flag true + not ready still writes nothing
+ok   H8a and precedes the generation call
+
+== §J — RELEASE IDENTITY ==
+ok   J1  this round minted its own cache token
+ok   J1b and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   J1a strictly after E3's, which was PUBLISHED (origin/main carries it)
+ok   J2  zero production refs remain on it
+ok   J2a and nothing is left behind on any superseded token
+ok   J3  the page carries the CURRENT application token — it is one of the assets R1 changed
+ok   J4  and the stylesheet stays on its own family's token: it did NOT change this round
+ok   J5  the owner stamp is recorded, after E3's
+ok   J5a and the shared stamp validator accepts it
+ok   J6  §I.23 the regenerated bundle carries the readiness vocabulary...
+ok   J6a  the adapter declares a module version
+ok   J6a1 ...and the bundle was rebuilt at exactly it (f1-7n-fc-1b-e3-r4-readiness)
+ok   J6b and it is NOT the pre-R1 bundle (the adapter is a bundle source, so a rebuild is REQUIRED)
+
+== §I — MUTATIONS ==
+ok   N1  ready:false with an empty issues list (caught)
+ok   N2  the source timestamp replaced with a clock reading (caught)
+ok   N3  a missing field silently defaulted (caught)
+ok   N4  the UI swallows the issues (caught)
+ok   N5  a generic HARVEST_NOT_READY replaces the typed issue (caught)
+ok   N6  the classifier goes back to reading only the plural `errors` (caught)
+ok   N7  the writer is constructed before readiness (caught)
+ok   N8  the allocator is called while not ready (caught)
+ok   N9  the flag bypasses the readiness gate (caught)
+ok   N10 the census early return loses the diagnosis (caught)
+ok   N11 the harvest goes back to discarding its per-site drops (caught)
+ok   N12 the readiness decision is TIGHTENED behind the diagnosis (caught)
+
+----------------------------------------
+CANONICAL HARVEST READINESS + TYPED REFUSAL (F1-7N-FC-1B-E3-R1): 182 passed, 0 failed
+mutations: 12 caught, 0 missed

@@ -1,0 +1,13 @@
+
+== A. Frontend line resolver (REAL _roResolveCommercial) — SKU authority + Supplier optional ==
+
+== B. Frontend source-scan guards — Supplier gate removed ==
+
+== C. Backend manual validator (REAL validateManualRequestOrderDraft_) ==
+
+== D. Backend safety — validate-before-mutate, no schema/sheet creation, supplier optional writes ==
+
+== E. Golden Matrix + full-suite health ==
+
+----------------------------------------
+REQUEST ORDER MANUAL DRAFT HOTFIX: 36 passed, 0 failed

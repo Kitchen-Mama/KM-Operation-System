@@ -1,0 +1,201 @@
+
+-- A. BOOT — what no longer runs before the menu works -------------------------------------------
+
+  ok   A1  less JavaScript at boot than before this round
+  ok   A1a over 1.5 MB removed
+  ok   A1b and fewer script tags
+  ok   A1c the recorded count matches index.html as it stands
+  ok   A1d  UNDECLARED_BOOT_SCRIPT_COUNT = 0 — every script index.html loads is in the declared census
+  ok   A1d1 and no declared boot script has silently stopped loading
+  ok   A1d2 BOOT_SCRIPT_SET_UNEXPECTED_CHANGE_COUNT = 0 — a swap is visible now, which it was not before
+  ok   A1d3 BOOT_ORDER_DRIFT_COUNT = 0 — and they still load in the declared order
+  ok   A1d4 NEW_ROUTE_SCRIPT_AT_BOOT_COUNT = 0 — no file app.js owns as a ROUTE asset is loaded at boot, checked across the whole registry rather than against nine remembered names
+  ok   A1d5 and boot is still smaller than before this round deferred the two payloads. BOOT PAYLOAD IS REPORTED, NOT GATED — S8 owns the budget
+  ok   A1e PERCENT_BOOT_BYTES_REDUCED_FROM_S4_R1_BASELINE
+  ok   A2  no route script has been appended at boot
+  ok   A2a MENU_AVAILABLE_WITH_IR_AND_MAP_UNLOADED
+  ok   A2b and neither page's code has run
+  ok   A2c which the loader agrees with
+  ok   A2d and nothing threw getting there
+  ok   A3  index.html no longer loads inventory-replenishment.js
+  ok   A3a and KM_ROUTE_ASSETS_ does
+  ok   A3b index.html no longer loads world-countries-110m.js
+  ok   A3c and KM_ROUTE_ASSETS_ does — world-countries-110m.js
+  ok   A3b index.html no longer loads geo-names-zh-hant.js
+  ok   A3c and KM_ROUTE_ASSETS_ does — geo-names-zh-hant.js
+  ok   A3b index.html no longer loads geo-display-aliases-zh-tw.js
+  ok   A3c and KM_ROUTE_ASSETS_ does — geo-display-aliases-zh-tw.js
+  ok   A3b index.html no longer loads geo-admin1-display-names-zh-tw.js
+  ok   A3c and KM_ROUTE_ASSETS_ does — geo-admin1-display-names-zh-tw.js
+  ok   A3b index.html no longer loads geo-name-resolver.js
+  ok   A3c and KM_ROUTE_ASSETS_ does — geo-name-resolver.js
+  ok   A3b index.html no longer loads km-geo-topology.js
+  ok   A3c and KM_ROUTE_ASSETS_ does — km-geo-topology.js
+  ok   A3b index.html no longer loads km-globe.js
+  ok   A3c and KM_ROUTE_ASSETS_ does — km-globe.js
+  ok   A3b index.html no longer loads global-logistics-map.js
+  ok   A3c and KM_ROUTE_ASSETS_ does — global-logistics-map.js
+  ok   A3d MAP_FAMILY_FILES is the eight-file family
+
+-- B. OWNERSHIP — the one symbol that had to move, and the ones that did not ---------------------
+
+  ok   B1  inventory-replenishment.js no longer declares replenishmentMockData
+  ok   B1a the shared data file does
+  ok   B1b CO1100-R survived the move
+  ok   B1b CO1100-S survived the move
+  ok   B1b CO1150-R survived the move
+  ok   B1b CO1150-AG survived the move
+  ok   B1b SP3120-R survived the move
+  ok   B1b SP3410-R survived the move
+  ok   B1b MO5600-R survived the move
+  ok   B1c and it loads at BOOT, where Weekly Shipping Plan can still see it
+  ok   B1d which is what shipping-plan.js needs — it reads it unguarded
+  ok   B2  the boot read arbiter names no IR symbol in CODE (its hits were all comments)
+  ok   B2a nor does the method registry
+  ok   B2b nor inventory-compat.js
+  ok   B3  #ops-section is not in index.html, so the boot DOMContentLoaded init returned at once
+  ok   B3a which is exactly what _inventoryReplenStaticInit does when it is absent
+  ok   B3b and the mount calls it itself
+
+-- C. ROUTES — fetched once, executed once, mounted once -----------------------------------------
+
+  ok   C1  the ops route was driven
+  ok   C1a cold entry fetches each declared script exactly once
+  ok   C1b and executes each exactly once
+  ok   C1c DUPLICATE_SCRIPT_FETCH_COUNT = 0
+  ok   C1d DUPLICATE_SCRIPT_EXECUTION_COUNT = 0
+  ok   C1e the route's own code is present after the load
+  ok   C1f and the section is showing
+  ok   C1g exactly one mounted section
+  ok   C1h nothing left open on leave
+  ok   C1i and the section is no longer showing
+  ok   C1j WARM re-entry fetches and executes NOTHING
+  ok   C1k a rapid A->B->A fetches nothing
+  ok   C1l and executes nothing
+  ok   C1m DUPLICATE_MOUNT_COUNT = 0
+  ok   C1n with one visible section throughout
+  ok   C2  the global-logistics-map route was driven
+  ok   C2a cold entry fetches each declared script exactly once
+  ok   C2b and executes each exactly once
+  ok   C2c DUPLICATE_SCRIPT_FETCH_COUNT = 0
+  ok   C2d DUPLICATE_SCRIPT_EXECUTION_COUNT = 0
+  ok   C2e the route's own code is present after the load
+  ok   C2f and the section is showing
+  ok   C2g exactly one mounted section
+  ok   C2h nothing left open on leave
+  ok   C2i and the section is no longer showing
+  ok   C2j WARM re-entry fetches and executes NOTHING
+  ok   C2k a rapid A->B->A fetches nothing
+  ok   C2l and executes nothing
+  ok   C2m DUPLICATE_MOUNT_COUNT = 0
+  ok   C2n with one visible section throughout
+  ok   C3  Site Inventory is one script
+  ok   C3a the map family is eight
+  ok   C4  a route this round did not touch still opens
+
+-- D. FAILURE — scoped, truthful, reads nothing, and clears when it recovers ---------------------
+
+  ok   D1  the ops failure path was driven
+  ok   D1a the shell is still visible
+  ok   D1b the refusal is on screen, exactly once
+  ok   D1c and the route's code did NOT run
+  ok   D1d SCRIPT executions during the failure = 0
+  ok   D1e NO DATA WAS READ before the code owner was ready
+  ok   D1f HALF_MOUNT_COUNT = 0
+  ok   D1g every other route is still usable
+  ok   D1h the refusal says so in words
+  ok   D1i and does not call it empty
+  ok   D1j Retry = exactly one new load per declared script
+  ok   D1k and the code is present afterwards
+  ok   D1l THE REFUSAL IS GONE once the code arrives
+  ok   D1m RECOVERED
+  ok   D2  the global-logistics-map failure path was driven
+  ok   D2a the shell is still visible
+  ok   D2b the refusal is on screen, exactly once
+  ok   D2c and the route's code did NOT run
+  ok   D2d SCRIPT executions during the failure = 0
+  ok   D2e NO DATA WAS READ before the code owner was ready
+  ok   D2f HALF_MOUNT_COUNT = 0
+  ok   D2g every other route is still usable
+  ok   D2h the refusal says so in words
+  ok   D2i and does not call it empty
+  ok   D2j Retry = exactly one new load per declared script
+  ok   D2k and the code is present afterwards
+  ok   D2l THE REFUSAL IS GONE once the code arrives
+  ok   D2m RECOVERED
+  ok   D3  the router has a way to remove a refusal
+  ok   D3a and calls it on the success branch — a page that has loaded must not still say it is loading
+
+-- E. CROSS-ROUTE — Weekly Shipping Plan without ever opening Site Inventory ---------------------
+
+  ok   E1  Site Inventory was never loaded in that run
+  ok   E1a and replenishmentMockData still resolves
+  ok   E2  Weekly Shipping Plan opens
+  ok   E2a as does Shipment Overview
+  ok   E3  GLOBAL_MISSING_SYMBOL_COUNT = 0 — nothing threw
+  ok   E3a and no identifier was reported undefined
+  ok   E3b with no unhandled rejection
+
+-- F. TOKENS — three families, none collapsed ----------------------------------------------------
+
+  ok   F1  this round's token is in the application series
+  ok   F1a and it appears exactly once
+  ok   F1b and the current token is this one or a later one
+  ok   F2  STALE_APPLICATION_TOKEN_REFS = 0 in index.html
+  ok   F2a and 0 among the route-owned assets
+  ok   F3  MISPLACED_TOKEN_FAMILY_REFS = 0 across the release
+  ok   F4 world-countries-110m.js is cache-versioned by the router
+  ok   F4 geo-names-zh-hant.js is cache-versioned by the router
+  ok   F4 geo-display-aliases-zh-tw.js is cache-versioned by the router
+  ok   F4 geo-admin1-display-names-zh-tw.js is cache-versioned by the router
+  ok   F4 geo-name-resolver.js is cache-versioned by the router
+  ok   F4 km-geo-topology.js is cache-versioned by the router
+  ok   F4 km-globe.js is cache-versioned by the router
+  ok   F4 global-logistics-map.js is cache-versioned by the router
+  ok   F5  km-globe.js keeps the map token it already had
+  ok   F5a and world-countries-110m.js keeps its own family
+  ok   F5b while inventory-replenishment.js, which DID change, is on the current application token
+  ok   F6  the extracted data file is part of the release
+
+-- G. LIFECYCLE — drift, leaks and missing globals -----------------------------------------------
+
+  ok   G1  ops lifecycle was driven
+  ok   G1a LISTENER_DRIFT = 0 across repeated entries
+  ok   G1b OPEN_REQUEST_LEAK_COUNT = 0
+  ok   G1c one mounted section
+  ok   G1d one visible section
+  ok   G1e GLOBAL_MISSING_SYMBOL_COUNT = 0
+  ok   G1f no unhandled rejection
+  ok   G1g no window error
+  ok   G2  global-logistics-map lifecycle was driven
+  ok   G2a LISTENER_DRIFT = 0 across repeated entries
+  ok   G2b OPEN_REQUEST_LEAK_COUNT = 0
+  ok   G2c one mounted section
+  ok   G2d one visible section
+  ok   G2e GLOBAL_MISSING_SYMBOL_COUNT = 0
+  ok   G2f no unhandled rejection
+  ok   G2g no window error
+  ok   G3  the hard-reload case is recorded as not supported rather than as measured
+  ok   G3a and app.js has no hash route to reload into
+
+-- G2. MAP FIDELITY — by the only evidence that exists -------------------------------------------
+
+  ok   G4  not one byte of any map file changed this round — which is why icons, tooltips and multi-leg behaviour cannot have
+  ok   G4a and the runner says so rather than implying otherwise
+
+-- H. MUTATION — each defence broken on purpose --------------------------------------------------
+
+  ok   H1 inventory-replenishment.js is put back on the boot list KILLED
+  ok   H2 km-globe.js is put back on the boot list KILLED
+  ok   H3 the router mounts without waiting for the code KILLED
+  ok   H4 the loader re-inserts scripts it already has KILLED
+  ok   H5 a refused set is recorded as loaded anyway KILLED
+  ok   H6 a map asset is served under the application token KILLED
+  ok   H7 the refusal is left behind after a successful Retry KILLED
+
+  mutants: 7 killed, 0 survived, 0 harness errors
+  ok   H  every planted defect was caught
+
+====================================================================================================
+S4-R5 ROUTE PAYLOADS: 168 passed, 0 failed
+====================================================================================================

@@ -1,0 +1,48 @@
+ok   D future ETA valid
+ok   E past ETA is VALID (overdue stays legitimate, not rejected)
+ok   invalid month rejected
+ok   invalid calendar day rejected
+ok   blank ETA rejected (must supply a date)
+ok   non-ISO format rejected (no parse-guess)
+ok   H final-node partial set → partially_received (NOT received)
+ok   G all lines full → received
+ok   I zero receipt → no status (final node alone never auto-receives)
+ok   ETA writer validates via the canonical pure validator
+ok   ETA writer writes the eta cell from the NORMALIZED intended value
+ok   ETA writer performs exactly THREE cell writes (got 3)
+ok   ETA writer writes ONLY eta + updated_at + updated_by — no other column is addressed
+ok   ETA writer READS THE CELL BACK and normalizes it before judging the outcome
+ok   ETA writer has typed failures for an unreadable and a mismatched read-back
+ok   ETA writer compares the PERSISTED value against the intended one
+ok   ETA writer returns the PERSISTED value, never the echoed input
+ok   ETA writer types not-found, ambiguous-identity and missing-header separately
+ok   ETA writer refuses to guess when more than one row carries the id
+ok   the ETA normalizer uses the named script timezone and never UTC (no UTC day shift)
+ok   the ETA normalizer never locale-parses a string into a Date
+ok   ETA writer runs under a ScriptLock
+ok   ETA writer opens EXACTLY ONE sheet, and it is shipments
+ok   ETA writer addresses no receipt or route column
+ok   ETA writer appends no shipment_event and runs no status promotion — the canonical event enum has no ETA member
+ok   ETA writer never WRITES the status cell (it only reads it back as proof)
+ok   ETA writer reports status_unchanged and a zero event count as part of its success envelope
+ok   ETA writer stamps updated_at/updated_by where present
+ok   router routes shipment.eta.update → handleUpdateShipmentEta_
+ok   DB adapter posts shipment.eta.update + runs the post-write seam on success (F1-7K: page owns scoped readback; no whole-DB reload)
+ok   §8 Receive All fills each input to its shipped qty (draft)
+ok   §8/§16 Receive All performs NO immediate DB write (Save Receipt commits)
+ok   Save Receipt commits through the canonical shipment.receipt.update owner
+ok   §17.L receipt validation error keeps Receiving expanded (values preserved)
+ok   ETA control commits through the bounded ETA adapter
+ok   Current Position commits through the canonical route.advance owner
+ok   §6 Receiving is a collapsible <details>, default collapsed (open only when autoExpand)
+ok   §6 auto-expand when partially_received OR at/after the receiving-capable node
+ok   §2 Current Position selector uses canonical route nodes
+ok   §4 ETA is an editable date control
+ok   §3 status shown read-only (no status dropdown; backend-derived)
+ok   §9 Receive All gated on remaining>0 AND at receiving-capable node
+ok   frontend never writes shipments.status (backend-derived only)
+ok   §5 only cancelled shipments are excluded (overdue never removes a shipment)
+ok   §5 past ETA surfaces as delayed (shipment remains visible)
+ok   §13 single reload owner rebuilds canonical DB truth after any successful mutation
+
+46 passed, 0 failed

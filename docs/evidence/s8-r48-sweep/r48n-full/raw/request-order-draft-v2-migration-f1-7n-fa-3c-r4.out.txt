@@ -1,0 +1,21 @@
+
+== shape / drift gate ==
+
+== selection: 26 migrated, 98 dropped, submitted preserved ==
+
+== ID preservation — verbatim, 0 conversions, RD + RAD both kept ==
+
+== flatten mapping (via KMRDV2.flattenLegacy) + missing-tier canonical init ==
+
+== schema: exactly 53 V2 headers; no retired columns ==
+
+== no source mutation (planner is pure) ==
+
+== staging validator — structural gates on the verbatim (no-authority) path ==
+
+== drift + safety halts ==
+
+== business-math invariance ==
+
+----------------------------------------
+MONTHLY V2 R4 MIGRATION (F1-7N-FA-3C-R4): 35 passed, 0 failed

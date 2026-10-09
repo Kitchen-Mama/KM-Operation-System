@@ -1,0 +1,32 @@
+
+== §A2 — DID THE FB-4B ADDENDUM REACH THE LIVE BROWSER? ==
+
+== §C — the duplicate diagnostic, against the EXACT §A1 live fixture ==
+
+== §B — the REAL 16_ writers, driven by the REAL client grouping ==
+
+== §B/§A2.3 — Route A 800 then Add Route B 400 ==
+
+== §A2.4/§A2.5 — re-saving Route A touches only Route A ==
+
+== §A2.6 — reload hydrates BOTH routes with their persisted identities ==
+
+== §B2 — a pre-existing duplicate primary key BLOCKS the write ==
+
+== §B5 — Submit through the REAL production Submit owner ==
+
+== §B1/§B4 — identities, and client adoption bound to the group key ==
+
+== §D — SKU Details and SKU Regional, traced separately ==
+
+== §D3 — page switching, retries, and structural read-path guarantees ==
+
+== §D1 — the redirect claim, corrected to what is actually provable ==
+
+== §E — the deployment contract can prove all four owners ==
+
+== §G — nothing this round writes, deletes, migrates or mutates Demo ==
+
+----------------------------------------
+LIVE CLOSURE SITE INVENTORY + SKU READ (F1-7N-FB-4D): 233 passed, 0 failed
+----------------------------------------

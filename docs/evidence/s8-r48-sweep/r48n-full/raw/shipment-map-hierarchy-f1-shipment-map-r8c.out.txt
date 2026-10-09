@@ -1,0 +1,62 @@
+
+== Shipment Status buckets (A/B/C) ==
+ok   A in_transit → In Transit = 1
+ok   B partially_received → Partial = 1
+ok   C received → Received = 1
+ok   In Transit bucket = shipped/in_transit/arrived
+
+== Attention tiles (R11 supersedes R8C More/collapse) ==
+ok   §8 On the Way removed from Attention (redundant with Shipment Status In Transit)
+ok   R11 §2/§5 every Attention category is always rendered (incl. zero-value)
+ok   R11 §2 the More/collapse control is removed
+ok   R11 §1 Attention renders unified KPI tiles (no separate chip/empty-state family)
+ok   §16 active KPI filter reflected on the tile (existing filter behavior preserved)
+
+== Per-shipment issue detector (F/G/H) ==
+ok   F no route nodes → NO_ROUTE_NODES issue
+ok   G valid route + drawable → no issue
+ok   H coordinate pending → COORDINATE_PENDING issue (shipment not hidden)
+ok   both gaps surface together
+
+== §1/§2 header ==
+ok   §2 Refresh sits in the header bar (top-right)
+ok   §1 one concise subtitle
+ok   §1 no architecture / reference-layer / DB wording in the subtitle
+ok   §2 header bar lays title left / Refresh right
+
+== §3/§4 filter bar ==
+ok   §3 kept: Search, Company, Carrier, Method, ETA From/To, Clear Filters
+ok   §4 single canonical Destination control = destination-warehouse identity
+ok   §3 Origin filter control removed
+ok   §4 no duplicate country-Destination control
+ok   §4 no separate "Dest Warehouse" control (merged into Destination)
+ok   §3 Status + Stage filter controls removed
+ok   §3 Exception / Delayed / Arriving checkboxes removed
+ok   §3 Route Template filter control removed (not in the keep list)
+ok   §3 removed controls keep their underlying filter logic (only the visible controls were removed)
+ok   §3 clearFilters neutralizes every removed-control state
+
+== §5/§6/§7/§17 status vs attention ==
+ok   §5 renamed: Shipment Status + Attention
+ok   §5 old "Lifecycle status" / "Operational" labels gone
+ok   §6/§7 Shipment Status (primary) + Attention (secondary) in one region
+ok   R12 order: full-width status/attention rail → main workspace (filters relocated into the in-map Map Control Panel)
+
+== §11 global banner removed ==
+ok   §11 renderPartialNote removed
+ok   §11 page-wide incomplete-route banner text gone
+ok   R8C body top bar removed (Refresh moved to header)
+
+== §13/§14 issue UX ==
+ok   §13 card derives issues from existing facts + shows a restrained issue pill
+ok   §14 drawer explains the issue (same detector; no second engine)
+ok   §13/§18 issue pill is amber (restrained; not a large orange block)
+ok   R11 §1/§3 Attention + Status share the compact KPI-tile family in a wrapping rail
+ok   R11 §3 KPI tiles share one baseline / equal height (align-items: stretch)
+
+== §20 no backend/business change ==
+ok   §20 (map page is read/UI only — no new backend writer introduced)
+ok   §6 status mapping unchanged (same backend-status buckets)
+
+----------------------------------------
+SHIPMENT MAP HIERARCHY (F1-SHIPMENT-MAP-R8C): 41 passed, 0 failed

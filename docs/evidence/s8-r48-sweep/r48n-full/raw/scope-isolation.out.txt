@@ -1,0 +1,22 @@
+
+== Scope isolation: KM/US/Amazon vs ResUS/US/Amazon ==
+  ✓ KM SKU list = [KM-APPLE]
+  ✓ ResUS SKU list = [RES-BERRY]
+  ✓ KM and ResUS SKU lists differ
+  ✓ KM never sees ResUS SKU
+  ✓ KM forecast = 500
+  ✓ ResUS forecast = 120
+  ✓ KM scope returns no ResUS forecast row
+  ✓ KM sales = 40 (via KM SKU universe)
+  ✓ ResUS sales = 9 (via ResUS SKU universe)
+  ✓ KM and ResUS sales differ
+  ✓ KM price = 29.99
+  ✓ ResUS price = 19.99
+  ✓ KM and ResUS pricing differ
+  ✓ KM 3PL pool = 700 (David Warehouse only)
+  ✓ ResUS 3PL pool = 400 (Winit Warehouse only)
+  ✓ KM and ResUS 3PL pools differ
+  ✓ country+marketplace-only predicate merges BOTH companies (documents the bug the company key fixes)
+
+All scope-isolation assertions passed.
+

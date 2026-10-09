@@ -1,0 +1,21 @@
+ok   G6: Execution Plan head has "From" column
+ok   G6: Execution Plan head has "To" column
+ok   G6: Execution Plan head has "Qty" column
+ok   G6: Execution Plan head has "Method" column
+ok   G6: Execution Plan head has "Expected Arrival" column
+ok   G6: Execution Plan head has "Action" column
+ok   G7: route row renders the remove (X) button
+ok   G7: X button wired to removeExecutionRoute
+ok   G7: X button is NOT absolutely positioned (stays in the Action track)
+ok   G7: Action is a fixed 40px last grid track
+ok   G6: six explicit grid tracks
+ok   C: exec grid is border-box (fits inside the card)
+ok   G5: Decision Area min-width fits the Execution Plan grid (560px)
+ok   G1: inventory (left analysis) group has a fixed, non-shrinking width
+ok   H: expanded row is a single nowrap flex row (main table scrolls it)
+ok   H: expanded row overflow visible (no clipping)
+ok   H: no nested scrollbar on the expanded row
+ok   G4: Recommendation Summary + Execution Plan stacked in the decision area
+ok   G4: decision area stacks its two cards vertically (same width)
+
+ALL PASS

@@ -1,0 +1,48 @@
+[KM] Lifecycle manager initialized
+[Lifecycle] Registered: home-section
+[Lifecycle] Registered: request-order-section
+[Lifecycle] Registered: fc-summary-section
+
+== Home→Order→Logo→Home routes through the SPA authority ==
+[Lifecycle] Mounted: home-section
+[Lifecycle] Unmounted: home-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: home-section
+
+== single-visible-section invariant holds ==
+
+== re-click Logo while on Home does not duplicate the mount ==
+
+== rapid Logo / menu navigation → exactly one visible, latest wins ==
+[Lifecycle] Unmounted: home-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: home-section
+[Lifecycle] Unmounted: home-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: home-section
+[Lifecycle] Unmounted: home-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: home-section
+[Lifecycle] Unmounted: home-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: home-section
+[Lifecycle] Unmounted: home-section
+[Lifecycle] Mounted: request-order-section
+
+== slow Logo then fast menu → only the newer page (stale Logo mount discarded) ==
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: fc-summary-section
+[Lifecycle] Unmounted: fc-summary-section
+[Lifecycle] Mounted: home-section
+[Lifecycle] Unmounted: home-section
+[Lifecycle] Mounted: fc-summary-section
+
+== source guards ==
+
+----------------------------------------
+R6C1 LOGO→HOME NAV (F1-7N-FA-3C-R6C1): 18 passed, 0 failed

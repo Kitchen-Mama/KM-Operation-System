@@ -1,0 +1,32 @@
+
+== CASE 1 — ordered 100, completed 0, valid completion date → 100 Ongoing future supply ==
+
+== CASE 2 — ordered 100, completed 40 → only 60 Ongoing future supply ==
+
+== CASE 3 — ordered 100, completed 100 → 0 Ongoing future supply ==
+
+== CASE 4 — expected_completion_date blank → fail closed, no timely coverage ==
+
+== CASE 5 — completion date in M+2 → caller tier = T2 ==
+
+== CASE 6 — request_bucket T1 but completion date M+3 → timing tier T3 (bucket is provenance only) ==
+
+== CASE 7 — two PO lines same SKU/site/month → separate incomingId lineage ==
+
+== CASE 8 — same PO line to multiple receivers → receiver-specific identity preserved ==
+
+== CASE 9 — received qty already in Factory Current must NOT remain Ongoing (count-once) ==
+
+== CASE 10 — no Shipment exists → Ongoing future supply still materializes ==
+
+== Outside horizon — valid date beyond M+1..M+4 → tier null, qty still carried ==
+
+== BLOCKED upstream KMOOP line → no incoming, reason carried ==
+
+== Phase-1 resolver is isolated + labeled (the Phase-2 swap point) ==
+
+== Determinism + input immutability ==
+
+== End-to-end — adapter output feeds real KMTPP, tier rollup + count-once balance ==
+
+OK — all 46 assertions passed

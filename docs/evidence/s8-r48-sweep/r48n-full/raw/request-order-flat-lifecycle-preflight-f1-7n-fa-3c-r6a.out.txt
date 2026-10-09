@@ -1,0 +1,21 @@
+
+== A. EDIT contract — only order/carton/note + user_edited change; recommended_qty & created_at protected ==
+
+== A. optimistic token/version prevents a stale edit (KMRDV2P.applyFlat CONFLICT) ==
+
+== A. PARTIAL SUBMIT — only the selected tier; header partially_submitted ==
+
+== A. FULL SUBMIT — all submittable tiers; zero-qty tier never blocks / never a false line ==
+
+== A. SEND explode — one flat row → value lines for order_qty>0 non-cancelled tiers only ==
+
+== B. READ-ONLY preflight + validators against a mock live DB (TEMP helper) ==
+
+== B. preflight HALT/consumed/collision verdicts ==
+
+== B. staged validators (read-only, frozen target + lineage) ==
+
+== C. SOURCE — lifecycle wiring is flat-V2 native with zero Draft-Line dependency ==
+
+----------------------------------------
+R6A FLAT LIFECYCLE PREFLIGHT (F1-7N-FA-3C-R6A): 55 passed, 0 failed

@@ -1,0 +1,137 @@
+
+=== A — THE RECEIPT: written only after the commit, and only for a real write ===
+  ok   A1 the write succeeds
+  ok   A1a one row written
+  ok   A2 the envelope states committed
+  ok   A2a and carries the write id back
+  ok   A2b and says the receipt was stored
+  ok   A3 a receipt exists under the write id
+  ok   A3a it records committed
+  ok   A3b with the affected row count
+  ok   A3c and the change-log count
+  ok   A3d and the canonical entity identifiers
+  ok   A3e and when
+  ok   A4 pricing_list carries the new regular_price
+  ok   A4a and pricing_change_log has the audit row
+  ok   A4b and the flush happened
+  ok   A5 a dry run succeeds as a preview
+  ok   A5a and writes NO receipt — a preview that left a receipt would make a later verification claim a commit that never happened
+  ok   A5b and changes nothing
+  ok   A6 the write still succeeds when the receipt store refuses
+  ok   A6a and says so honestly rather than claiming a receipt it does not have
+  ok   A6b the mutation is the truth; the receipt is only evidence of it
+
+=== B — THE STATUS LOOKUP: read-only, and careful about absence ===
+  ok   B1 the status lookup answers
+  ok   B1a COMMITTED for a write that landed
+  ok   B1b and declares itself a zero-write
+  ok   B1c carrying the receipt figures
+  ok   B2 NOT_COMMITTED when no receipt exists
+  ok   B2a and it says HOW LONG that absence can be trusted, rather than asserting it forever
+  ok   B3 a lookup with no write id is refused
+  ok   B4 a status call mutates nothing
+  ok   B5 an unavailable receipt store answers UNKNOWN
+  ok   B5a naming why
+  ok   B5b and gives the operator a safe action rather than a verdict it cannot support
+  ok   B6 a 100-day-old receipt still reports COMMITTED — the TTL is a cleanup horizon, not an expiry of truth
+
+=== C — §7 IDEMPOTENCY: the same logical write twice ===
+  ok   C1 the first arrival writes
+  ok   C2 the second arrival of the SAME write id succeeds
+  ok   C2a and is marked as a replay rather than a fresh write
+  ok   C2b reporting the commit that really happened
+  ok   C2c with the ORIGINAL row count, not zero
+  ok   C3 NO duplicate pricing_change_log row — DUPLICATE_SAME_WRITE_ID_EFFECT = no duplicate business event
+  ok   C3a and pricing_list is unchanged by the replay
+  ok   C4 a DIFFERENT write id is a different write and does act
+  ok   C4a landing the second value
+  ok   C5 a replayed write id is answered from the receipt
+  ok   C5a and mutates nothing, even when the resent payload differs — one write id, one mutation
+  ok   C6 a dry run does not consume the write id — the preview must not make the real write look like a replay
+
+=== D — §12 THE CLIENT: the four outcomes, driven end to end ===
+  ok   D1 §12A a committed write whose response was lost resolves as SUCCESS
+  ok   D1a final outcome CONFIRMED_COMMITTED
+  ok   D1b marked as recovered by verification rather than by the response
+  ok   D1c EXACTLY ONE write was dispatched — no replay
+  ok   D1d and exactly one read-only verification
+  ok   D1e through the read-only status action
+  ok   D2 §12B a write that did not commit is reported as a failure
+  ok   D2a CONFIRMED_REJECTED
+  ok   D2b and only here is a zero-write claimed
+  ok   D2c because verification established it, not because the transport failed
+  ok   D2d still exactly one dispatch
+  ok   D3 §12C an undeterminable outcome is not presented as success
+  ok   D3a it stays OUTCOME_UNKNOWN
+  ok   D3b and explicitly does NOT claim a zero-write — this is the whole defect, asserted
+  ok   D3c carrying the write id, so the operator has a reference to check
+  ok   D3d and still no replay
+  ok   D4 verification that itself fails leaves the outcome UNKNOWN
+  ok   D4a and does not trigger a retry of the write
+  ok   D5 §12D an authoritative server rejection is CONFIRMED_REJECTED
+  ok   D5a a real zero-write
+  ok   D5b carrying the server code
+  ok   D5c and the per-line problems
+  ok   D5d NO verification read — the server already answered, so asking again would be noise
+  ok   D6 a normal successful write is CONFIRMED_COMMITTED
+  ok   D6a with no verification needed
+  ok   D6b and the post-write refresh still runs
+  ok   D6c the write carried a write_id
+  ok   D7 a dry run carries NO write id
+  ok   D7a and triggers no post-write refresh
+
+=== E — §10 NO AUTO REPLAY, AND §4 IDENTITY STABILITY ===
+  ok   E1 lost response + committed — exactly ONE write dispatched
+  ok   E1a lost response + committed — and it was the write, once
+  ok   E1 lost response + not committed — exactly ONE write dispatched
+  ok   E1a lost response + not committed — and it was the write, once
+  ok   E1 lost response + unknown — exactly ONE write dispatched
+  ok   E1a lost response + unknown — and it was the write, once
+  ok   E1 server rejection — exactly ONE write dispatched
+  ok   E1a server rejection — and it was the write, once
+  ok   E2 verification asks about the SAME write id that was dispatched
+  ok   E2a and the identity is namespaced to pricing
+  ok   E3 50 writes in one session produce 50 distinct ids (crypto.randomUUID present)
+  ok   E3 50 writes in one session produce 50 distinct ids (crypto.randomUUID absent)
+
+=== F — SOURCE OBLIGATIONS: what must remain true ===
+  ok   F1 the session-sequential correlation id is NOT used as the idempotency key — it collides across tabs, which would answer one operator's write from another's receipt
+  ok   F2 the raw "API returned <status>" throw is gone — that sentence was a claim about the browser reported as a claim about the database
+  ok   F3 the write is dispatched through the BOUNDED transport
+  ok   F4 there is no write retry loop
+  ok   F5 pricing.write.status is on the client GET read registry
+  ok   F5a and pricing.update is NOT — a write never joins the read table
+  ok   F6 the router routes it to the read-only handler
+  ok   F6a and dispatches it
+  ok   F7 and it is declared in the health manifest
+  ok   F8 the receipt is written AFTER the change-log write and AFTER the flush — it cannot exist without the mutation it attests to
+  ok   F8a and still inside the lock
+  ok   F9 the page routes write failures through one truthfulness helper
+  ok   F9a which branches on OUTCOME_UNKNOWN
+  ok   F9b keeping "Nothing was written" for the rejected case and a non-committal wording for the unknown one
+  ok   F9c and tells the operator not to resubmit — the one action that turns uncertainty into damage
+  ok   F10 no post-dispatch surface still asserts a zero-write unconditionally
+
+=== G — §13 THE PRICING AUTHORITY MODEL IS UNTOUCHED ===
+  ok   G1 regular_price takes the manual value
+  ok   G1a and is flagged manual
+  ok   G2 minimum_price is UNTOUCHED
+  ok   G2a and its flag is untouched
+  ok   G2b msrp is untouched
+  ok   G3 base_regular_price is not writeable and did not move
+  ok   G3a auto_regular_price is not writeable and did not move
+  ok   G4 Use Auto clears the manual flag
+  ok   G4a and the resolved override is cleared so auto_regular_price becomes the source again
+  ok   G4b while the auto value itself is untouched
+
+=== J — MUTANTS ===
+  ok   J1 the replay guard is removed KILLED
+  ok   J2 a dry run stores a receipt KILLED
+  ok   J3 an old receipt is expired into NOT_COMMITTED KILLED
+  ok   J4 an unavailable store claims NOT_COMMITTED KILLED
+  ok   J5 the envelope claims a receipt that was never stored KILLED
+  ok   J6 a replay reports written: 0 KILLED
+  mutants: 6 killed, 0 survived, 0 harness errors
+
+PASS  117 passed, 0 failed
+WRITE_AUTOREPLAY_ADDED = NO · OUTCOME_UNKNOWN != REJECTED · DUPLICATE_WRITE_ID = NO DUPLICATE MUTATION

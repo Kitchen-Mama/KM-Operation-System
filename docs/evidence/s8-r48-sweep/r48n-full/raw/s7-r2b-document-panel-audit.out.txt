@@ -1,0 +1,132 @@
+ok   S1  the shipped 39_ pure prelude loaded and exposes the three interpretation owners
+ok   S2  the shipped Document Panel renderer loaded and runs outside a browser
+
+== A  OWNER MAP — one engine, one renderer, and the chain between them ==
+ok   A1  document.list owner is 39_
+ok   A1a document.get owner is 39_
+ok   A1b document.retry owner is 39_
+ok   A1c and the router dispatches all three to them — MISSING_DOCUMENT_ROUTER_ACTION_COUNT = 0
+ok   A2  DOCUMENT_ENGINE_OWNER_COUNT = 1 — one file owns the retry/generation runtime
+ok   A3  DOCUMENT_PANEL_RENDER_OWNER_COUNT = 1 — nobody built a second panel
+ok   A3a and it is exported for the other surface to reuse rather than copy
+
+== B  SURFACES — two, and they are NOT the same feature set ==
+ok   B1  DOCUMENT_PANEL_SURFACE_COUNT = 2 — Purchase Order Overview and the Shipment pages
+ok   B1a the PO caller declares its entity type and id
+ok   B1b the Shipment caller declares its entity type and id
+ok   B2  the Shipment page ALSO carries a Generate widget the PO page does not have
+ok   B2a which the PO page neither calls nor reimplements — the asymmetry is real and is not a PO gap
+ok   B2b the Generate widget caches its own last result in memory, for its immediate Download link only
+ok   B2c and the panel renderer never reads that cache — rediscovery does not depend on browser memory. The widget is a second PRESENTATION path, not a second read authority over the registry
+
+== C  CANONICAL IDENTITY + ENTITY SCOPE — no cross-entity bleed ==
+ok   C1  the registry keys documents by document_id + related_entity_type + related_entity_id
+ok   C1a and the DTO carries all four fields, with the type normalized to lower case
+ok   C2  the Shipment workspace drops every row whose entity type is not shipment
+ok   C2a and the PO workspace does the same for purchase_order
+ok   C2b PO groups with the literal purchase_order, so a shipment document cannot reach a PO card
+ok   C2c and Shipment groups with the literal shipment — DOCUMENT_ENTITY_SCOPE_DRIFT_COUNT = 0
+ok   C2d and the direct document.list path refuses any other entity type outright
+
+== D  READ AUTHORITY — one, and the browser never enumerates Drive ==
+ok   D1  the PO workspace reads the registry as a bounded, include-gated table
+ok   D1a and so does the Shipment workspace — DOCUMENT_PANEL_READ_AUTHORITY = generated_documents
+ok   D2  neither surface enumerates Drive — SECOND_DOCUMENT_READ_AUTHORITY_COUNT = 0
+ok   D2a and neither derives a document from a FILENAME
+ok   D3  both workspaces project through the ONE canonical DTO owner, so they cannot disagree
+
+== E  REDISCOVERY — the Phase-1 requirement, on fresh entry and on re-entry ==
+ok   E1  PO_DOCUMENT_REDISCOVERY_SUPPORTED — the PO page asks for the registry projection on its main read
+ok   E1a SHIPMENT_DOCUMENT_REDISCOVERY_SUPPORTED — the Shipment page does the same
+ok   E1b and the PO bounded post-write readback asks for it too, so a write never blanks the panel
+ok   E2  PO_REENTRY / SHIPMENT_REENTRY — a document present in canonical read data renders with no prior state
+ok   E2a GENERATED_DOCUMENT_REDISCOVERABLE = YES — and it reads READY, from the registry row alone
+ok   E2b DOCUMENT_ID_PRESERVED_AFTER_REENTRY — the row keeps its own file reference across the boundary
+ok   E3  the renderer is pure — two calls with equal input give equal output, so re-entry cannot drift
+
+== F  OPEN — the list payload already carries the link, so document.get is not forced ==
+ok   F1  the DTO resolves a download reference server-side
+ok   F2  PO_ / SHIPMENT_DOCUMENT_OPEN_SUPPORTED — the row offers Open and Download from the list payload
+ok   F2a and offers NEITHER when no artifact exists — never a fabricated link
+ok   F3  the document.get adapter action exists
+ok   F3a and has no caller — DOCUMENT_GET_PATH_USED_WHEN_REQUIRED = not required, because the list carries the link
+
+== G  RETRY — FINDING 1 and FINDING 2, pinned AS FOUND ==
+ok   G1  document.retry reads related_entity_type as the ENTITY TYPE
+ok   G1a and routes to the PO generator ONLY when that type is exactly purchase_order
+ok   G1b the adapter passes its two arguments straight through in that order
+ok   G1c and the handler declares (entityType, entityId, btnEl)
+ok   G2  the row renderer now takes the entity TYPE as a fourth parameter
+ok   G2a and both call sites supply it
+ok   G2b so the button passes (type, id) in the order the handler declares them
+ok   G2c with the row DTO as the fallback source of truth — never inferred from the id format
+ok   G3  the unconditional shipment re-read is gone
+ok   G3a each surface registers how to re-read ITSELF
+ok   G3b the Shipment page registers its own re-read
+ok   G3c and the PO page registers its bounded single-PO readback
+ok   G3d the 'shipment' default is gone — a retry whose target is unknown is not sent
+ok   G4  a READY document is REUSED by the retry planner, never re-rendered
+ok   G4a a superseded attempt resolves to SUPERSEDED
+ok   G4b and the read path drops it, so one logical document shows ONE row — RETRY_CREATES_SECOND_LOGICAL_DOCUMENT_COUNT = 0
+
+== H  STATUS TRUTH — no false success, no false failure ==
+ok   H1  a generated row with NO file is GENERATING, not READY — DOCUMENT_FALSE_SUCCESS_COUNT = 0
+ok   H1a and READY only once a file exists
+ok   H2  a failed row carries its retryability from the canonical note
+ok   H2a and a terminal failure is not offered as retryable
+ok   H3  one document of five expected is PARTIAL, never READY — the panel trusts the backend count
+ok   H3a and the panel defers to that backend verdict over its own row tally
+ok   H3b with no backend verdict, ready + failed is PARTIAL
+ok   H3c and all-failed is FAILED — DOCUMENT_FALSE_FAILURE_COUNT = 0, DOCUMENT_STATUS_DRIFT_COUNT = 0
+
+== J  EMPTY / UNREAD / READ-FAILED ==
+ok   J1  READY_EMPTY reads as NONE — "No documents generated yet"
+ok   J1a the UNREAD input exists and is honoured
+ok   J1b and so does PENDING
+ok   J2  FINDING 3 — no caller ever passes `checking`, so the UNREAD state is unreachable
+ok   J2a and `pending` is read from documentsPending, which no adapter or backend ever produces
+ok   J2b DOCUMENT_FALSE_EMPTY_COUNT = 0 all the same: the panel is not rendered before the read resolves
+ok   J3  a failed Shipment read nulls the model and shows a typed banner + Retry
+ok   J3a and the PO page does exactly the same — symmetric, and an S4-R7 decision, not a document behaviour
+ok   J4  DOCUMENT_PERMANENT_LOADING_COUNT = 0 — no poller can leave a panel spinning for ever
+
+== K  REQUEST BUDGET + WRITE TRUTH ==
+ok   K1  PER_DOCUMENT_RENDER_REQUEST_COUNT = 0 — six documents render with no transport of any kind available
+ok   K1a MULTI_DOCUMENT_COLLAPSE_COUNT = 0 — six rows stay six, five shown and the rest behind View all
+ok   K1b DOCUMENT_TYPE_DRIFT_COUNT = 0 — two types render as two types
+ok   K2  DOCUMENT_LIST_REQUEST_COUNT_COLD/WARM = 0 additional — the list rides each page's existing workspace read, so there is no separate document request to duplicate
+ok   K2a DUPLICATE_DOCUMENT_LIST_REQUEST_COUNT = 0 on the PO main read
+ok   K3  RETRY_REQUEST_COUNT_PER_CLICK = 1 — the button disables itself before the call
+ok   K4  DOCUMENT_PANEL_MOUNT_WRITE_COUNT = 0 — the renderer reaches no adapter, no transport, nothing
+ok   K4a DOCUMENT_AUTORETRY_COUNT = 0 — exactly one call site, inside the click handler
+
+== L  DOCUMENT FAMILIES + API MIGRATION ==
+ok   L1  CURRENT_DOCUMENT_TYPE_SET = purchase_order · shipment_detail · commercial_invoice · packing_list · carrier_booking_form
+ok   L1a and carrier_booking_form is declared with NO renderer — a class without a runtime, classified not built
+ok   L2  LEGACY_DOCUMENT_DIRECT_CALL_COUNT = 0 — nothing invokes Apps Script directly
+ok   L2a every document action goes through the one current transport
+ok   L3  MISSING_DOCUMENT_ADAPTER_ACTION_COUNT = 0 — KM.DB.listEntityDocuments exists
+ok   L3  MISSING_DOCUMENT_ADAPTER_ACTION_COUNT = 0 — KM.DB.getGeneratedDocument exists
+ok   L3  MISSING_DOCUMENT_ADAPTER_ACTION_COUNT = 0 — KM.DB.retryDocumentGeneration exists
+
+== P  THE BLOCKER THAT HELD THE REPAIR — and how S7-R2B1 resolved it ==
+ok   P1  the boot topology is intact: declared set, declared order, and no route asset at boot
+ok   P2  the boot payload is still smaller than before S4-R5 deferred the two route payloads
+ok   P3  and the brittle aggregate byte floor is gone from the gate — boot payload budgeting is now S8_BOOT_PAYLOAD_HEADROOM_AND_LOADING_ARCHITECTURE
+ok   P4  both Document Panel owners remain boot-loaded — moving them off boot is S8 work, not this round's
+
+== Q  MUTANTS ==
+ok   MUTANT CAUGHT — Q1 would catch the PO workspace listing documents for the wrong entity type
+ok   MUTANT CAUGHT — Q2 would catch the entity-type scope guard being dropped from the grouper
+ok   MUTANT CAUGHT — Q3 would catch a failed document being shown as ready
+ok   MUTANT CAUGHT — Q4 would catch a generated row with no file being called READY
+ok   MUTANT CAUGHT — Q5 would catch an unread model being reported as empty
+ok   MUTANT CAUGHT — Q6 would catch a superseded attempt resurfacing as a second live document
+ok   MUTANT CAUGHT — Q7 would catch an auto-retry being wired into the panel
+ok   MUTANT CAUGHT — Q8 would catch a per-document get request added on render
+ok   MUTANT CAUGHT — Q9 would catch a Drive scan introduced as a second read authority
+ok   MUTANT CAUGHT — Q10 would catch a second Document Panel renderer appearing anywhere in the browser
+ok   MUTANT CAUGHT — Q11 would catch the Retry call site regressing to the transposed argument order
+ok   MUTANT CAUGHT — Q12 would catch the per-surface refresh registry being removed again
+
+PASSED  104 passed / 0 failed   mutants 12, survived 0

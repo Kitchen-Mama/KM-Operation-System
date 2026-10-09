@@ -1,0 +1,51 @@
+
+== A. BLOCKING 1 — RESOLVED by S6-R4A: the fallback is still present, its condition now MET ==
+ok   A1 05_ still declares WH_LEGACY_ — the temporary pre-migration header map
+ok   A2 and it maps five columns — NOT wh_physical_stock, which has no legacy alias at all
+ok   A3 05_ resolves canonical-then-legacy at 7 readers — the live spelling is not assumed
+ok   A4 the fallback's own removal condition is "renamed + VERIFIED"
+ok   A5 RESOLVED — one evidence round records the live overseas header verification
+ok   A6 and it records CANONICAL_WH_FIELDS_PRESENT = YES — the fallback's removal condition is met
+
+== B. BLOCKING 2 — RECLASSIFIED BENIGN by S6-R4A: the extra namespace matches no live column ==
+ok   B1 31_ writes wh_available_stock AND available_stock on the same auto-created row
+ok   B2 and wh_reserved_stock AND reserved_stock, likewise
+ok   B3 and it writes NO physical column in EITHER namespace — a receipt-created row has no physical balance
+
+== C. BLOCKING 3 — RESOLVED by S6-R4A: the live header decides it, and 43_ was right ==
+ok   C1 43_ reads wh_available_stock with NO legacy fallback
+ok   C2 and treats a missing value as "missing, not zero" — a skipped row, which raises no error
+ok   C3 while 54_ reads the SAME column WITH a legacy fallback
+ok   C4 and so does the client normalizer
+ok   C5 RESOLVED — the live header makes 43_'s unfallbacked read correct; CURRENT_PRODUCTION_DEFECT = NO
+
+== D. BLOCKING 4 — STANDS. wh_physical_stock has no writer, and §7 requires decrementing it ==
+ok   D1 BLOCKING — NO shipped handler writes overseas wh_physical_stock
+ok   D2 BLOCKING — it is absent from the importer's writable qtyFields
+ok   D3 BLOCKING — required headers = qtyFields + eta, so wh_physical_stock is never required to exist
+ok   D4 05_ READS it, solely to copy it unchanged onto the movement before/after pair
+ok   D5 and the client normalizer defaults it to 0 — an absent column is indistinguishable from zero stock
+ok   D6 BLOCKING — §7 requires wh_physical_stock to decrement; nothing has ever populated it
+ok   D7 BLOCKING — and the live verification classifies the system as outcome B, not as a header problem
+
+== E. what is NOT blocked — the two columns the lifecycle could otherwise use ==
+ok   E1 wh_available_stock and wh_reserved_stock ARE in the importer's writable set
+ok   E2 and the adjust handler maintains the available bucket through the declared ledger
+ok   E3 §3 / §5 / §6 are reachable; §7 is not — and §8 forbids shipping the reachable subset alone
+
+== F. the frozen mapping is unchanged by this block ==
+ok   F1 the R3 freeze still declares OVERSEAS_RESERVED_IS_SUBTRACTED_FROM_AVAILABLE = NO
+ok   F2 the R3 freeze still declares R4_MUST_LAND_AS_ONE_CHANGE = YES
+ok   F3 the R3 freeze still declares DOUBLE_ALLOCATION_PATH_IF_SOURCE_UNBLOCKED_ALONE = 1
+ok   F4 the R3 freeze still declares S6_MAPPING_FREEZE_COMPLETE = YES
+ok   F5 [R4B] the overseas reservation writer now exists — added by the round that had a frozen mapping to write through, not by R4, which did not
+ok   F5a and both freezes it writes through are declared in the contract, so the order is checkable and not merely asserted
+
+=====================================================
+S6-R4 OVERSEAS HEADER CONTRACT GATE — 30 passed / 0 failed
+R4_BLOCKED_BY_HEADER_CONTRACT = NO  (resolved by S6-R4A)
+R4_BLOCKED_BY_UNMAINTAINED_PHYSICAL_BUCKET = YES   LIVE_STORAGE_OUTCOME = B
+LIVE_WRITE_OWNER_EXPECTS_WH_HEADERS = PROVEN (operator-verified live header)
+BLOCKING_CONDITION_COUNT = 1   OPERATOR_DECISION_REQUIRED = YES (A/B/C model board)
+PRODUCTION_ROWS_WRITTEN = 0   BEHAVIOR_CHANGED = NO
+=====================================================

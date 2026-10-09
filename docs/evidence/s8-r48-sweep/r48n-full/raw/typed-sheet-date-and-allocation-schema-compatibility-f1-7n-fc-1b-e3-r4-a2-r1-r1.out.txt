@@ -1,0 +1,171 @@
+
+== A. THE TYPED SHEET DATE — reproduced, then canonicalized ==
+ok   A0  the live cell is a Date object rendering as "Thu Sep 03 2026 …" under String()
+ok   A0a and toISOString().slice(0,10) yields the PREVIOUS day — the silent one-day shift
+ok   A1  KMSNF exposes canonicalDate as the one conversion authority
+ok   A2  a real Date at Taipei midnight → 2026-09-03
+ok   A2a and it is reported as having ARRIVED as a Date
+ok   A3  a canonical YYYY-MM-DD string passes through unchanged
+ok   A4  00:00 Taipei stays 2026-09-03 (never 09-02)
+ok   A4a 23:59 Taipei stays 2026-09-03 (never 09-04)
+ok   A4b and one minute later IS the next business day
+ok   A5  an Invalid Date is refused
+ok   A6  a locale date STRING is refused, never re-parsed
+ok   A6a so is a datetime string — two legal inputs and no others
+ok   A7  a blank is MISSING, distinct from unreadable
+ok   A7a and so is null
+ok   A8  a numeric serial is refused, never decoded
+ok   A9  a well-shaped non-day is refused — shape is not existence
+ok   A10 with no zone authority there is no business day, and it refuses rather than guessing
+ok   A10a same for undefined
+ok   A11 the reader now ACCEPTS the live typed-date row (it refused before)
+ok   A11a distinctDates holds a canonical date, not a locale rendering
+ok   A11b freshness_state = CURRENT_PRE_SCHEDULE at 11:36
+ok   A11c accepted_snapshot_date = 2026-09-03
+ok   A11d and the audit records that it ARRIVED as a Date object
+ok   A11e with nothing unreadable
+ok   A12 a Date object and a canonical string for one day collapse to ONE date
+ok   A12a so the scope is not falsely reported as a partial snapshot
+ok   A13 two GENUINELY different days still block as a partial snapshot
+ok   A13a and both canonical dates are named
+ok   A14 a genuinely unreadable date still fails closed
+ok   A14a and the audit counts it
+ok   A14b naming why
+ok   A15 with no timezone authority the read refuses rather than assuming +08:00
+
+== B. SCHEDULE-AWARE FRESHNESS, over typed dates ==
+ok   B1  11:36, run due 13:30 → yesterday is CURRENT
+ok   B1a and it is accepted
+ok   B2  13:29, one minute before due → still CURRENT
+ok   B3  14:00, run in flight → yesterday still current
+ok   B3a and still accepted (a half-written today is not a better answer)
+ok   B4  17:46, past drift+budget → the SAME snapshot is refused
+ok   B4a which is what no fixed age tolerance could express
+ok   B5  today complete → accepted
+ok   B6  a FUTURE snapshot blocks
+ok   B7  a snapshot from a FOREIGN planning cycle blocks
+ok   B8  the accepted quantity is the snapshot 520, not the live 999
+ok   B8a the live number is kept beside it for diagnosis only
+ok   B8b and the lineage carries the state that admitted it
+
+== C. ALLOCATION SCHEMA GENERATIONS — one authority, enumerated shapes ==
+ok   C0  the known lineage is 30 → 34 → 35 → 36, enumerated and named
+ok   C0a only the post-lifecycle generations are lifecycle-complete
+ok   C0b every generation has a stable comparable version string
+ok   C0c the two legally appended columns are named by their own owners, in append order
+ok   C0d destination_marketplace sits at index 34
+ok   C0e create_idempotency_key at 35
+ok   C1  legal base 30 resolves
+ok   C2  legal migrated 34 resolves
+ok   C3  legal migrated 35 resolves
+ok   C4  legal migrated 36 resolves
+ok   C5  the writer accepts 30
+ok   C5a and 36
+ok   C6  the lifecycle accepts all three lifecycle-complete generations
+ok   C6a but NOT the pre-migration base — the four lifecycle columns are what it needs
+ok   C7  33 columns (a half-applied append) is refused — it is not a generation
+ok   C8  a missing base header is refused
+ok   C9  a reordered base header is refused, at its index
+ok   C10 a duplicate header is named as a duplicate
+ok   C10a and refused
+ok   C11 an unknown 36th header is refused — count alone would have passed it
+ok   C12 the two appended columns in the WRONG order are refused
+ok   C13 a 37th column is beyond the known lineage and refused
+
+== D. §6 VERSION SEMANTICS — and the advice that used to be wrong ==
+ok   D1  a legal 36 reports a definite version, never a blank
+ok   D1a the resolver itself no longer returns "" for a legal 36
+ok   D1b and the accepted set is reported, not implied
+ok   D2  the refusal states the observed header count
+ok   D2a and that no version resolved
+ok   D2b with the exact first difference
+ok   D2c and the unexpected header named
+ok   D2d beside the versions that WOULD be accepted
+ok   D3  and it no longer tells the operator to re-sync a project that is already current
+ok   D3a it says so explicitly
+ok   D4  MIGRATION_VERSION_MISMATCH survives, for a genuinely unknown schema only
+
+== E. §9 PARITY — the writer and the lifecycle read ONE authority ==
+ok   E1  the writer verdict equals the resolver verdict for every shape
+ok   E2  and the lifecycle verdict is exactly "recognized AND lifecycle-complete"
+ok   E3  the atomic writer calls the shared authority by name
+ok   E4  and the lifecycle delegates to it rather than keeping its own copy
+ok   E5  the old byte-equality-with-34 rule is gone
+
+== F. THE THIRD BLOCKER — reproduced, pinned, NOT fixed ==
+ok   F1  as 61_ calls it TODAY, generation succeeds (the blocker is fixed)
+ok   F1a creating the plan
+ok   F2  the intent requirement is still real, and still lives in 16_
+ok   F2a and 61_ now DECLARES the server-owned generation intent at its call site
+ok   F2b strip the declaration and the writer refuses exactly as before
+ok   F2c with zero rows written
+ok   F3  with CREATE_NEW_ROUTE injected the write succeeds …
+ok   F3a one header
+ok   F3b holding 520
+ok   F3c … but it mints a K4 CREATE identity, bypassing the deterministic K2 identity entirely
+ok   F4  a second CREATE under a MOVED create key succeeds …
+ok   F4a … and leaves TWO active headers — the duplicate plan
+ok   F4b holding 1040 units for a scope whose demand is 520
+ok   F5  and UPDATE_EXISTING_ROUTE cannot be used: it requires an id the first run does not have
+ok   F6  61_ declares the third intent — neither manual intent fits a deterministic upsert
+ok   F6a and it is NOT client-grantable: a request can never declare it
+
+== G. THE REST OF THE PATH IS SOUND — measured on that same state ==
+ok   G1  the absent 2027 forecast month is ONE accounted default-zero …
+ok   G1a … and blocks nothing
+ok   G1b three months were real
+ok   G2  the allocator carries 520 through whole-carton allocation (upc 20 divides it)
+ok   G3  the stored route is complete: From, To and Method
+ok   G3a the method came from the real carrier authority
+ok   G4  the header carries the accepted gap run lineage
+ok   G5  line count matches the one generated route
+ok   G6  hydration finds the draft
+ok   G6a the same identity that was stored
+ok   G6b hydrated total = stored total = 520
+ok   G6c with no duplicate line identity
+ok   G7  the scope guard kept the allowlisted scope
+ok   G7a and was enforced
+ok   G8  shipping_plans — present and still empty (no downstream mutation)
+ok   G8  shipments — present and still empty (no downstream mutation)
+ok   G8  factory_stock_movements — present and still empty (no downstream mutation)
+ok   G8a factory_stock untouched (still its single fixture row)
+
+== H. SAFETY — nothing was armed ==
+ok   H1  the repository flag is still false — activation was simulated in a VM, never committed
+ok   H2  the allowlist is unchanged and holds exactly one scope
+ok   H3  the 2027 rollover migration is still unrun
+ok   H4  the census still declares zero writes and no writer
+ok   H5  the census contains EXACTLY ONE call to the atomic writer
+ok   H5a and it is inside RUN_R6R6R3_ROUTE_B_REPAIR_EXECUTE_ONCE, the only function allowed to have it
+ok   H5b and no entry point writes a cell directly — every mutation goes through 16_ under its own lock
+ok   H6  the census reports the live allocation schema (§10)
+ok   H7  and reads the freshness out of a REFUSAL, not only a success
+ok   H8  every recorded owner stamp is well-formed under the stamp vocabulary
+ok   H8a including this round's
+ok   H9  61_ carries a stamp at or after this round's (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5)
+ok   H9a and its deployment manifest expects exactly that stamp
+ok   H10 no stale frontend token (no browser asset changed this round)
+
+== N. MUTATIONS — each defect, reintroduced, must be caught ==
+ok   N1  String(date) returns at the reader boundary (caught)
+ok   N2  the UTC ISO conversion returns (the silent one-day shift) (caught)
+ok   N3  an Invalid Date is accepted (caught)
+ok   N4  a locale date string is parsed instead of refused (caught)
+ok   N5  the timezone authority becomes an assumed default (caught)
+ok   N6  mixed-date protection is removed (caught)
+ok   N7  the schedule comparison is removed (overdue never arrives) (caught)
+ok   N8  the known lineage shrinks back to the single frozen 34-column shape (caught)
+ok   N9  count-only 30..36 acceptance replaces positional comparison (caught)
+ok   N10 an unknown appended header is accepted (caught)
+ok   N11 a duplicate header stops being detected (caught)
+ok   N12 the writer stops reading the shared authority (divergence returns) (caught)
+ok   N13 the census constructs a writer (caught)
+ok   N14 the census stops reporting the allocation schema (caught)
+ok   N15 the feature flag is enabled in the repository (caught)
+ok   N16 the allowlist is widened (caught)
+ok   N17 the rollover migration is armed (caught)
+ok   N18 the stamp vocabulary loses the B-series again (caught)
+
+----------------------------------------
+TYPED SHEET DATE + ALLOCATION SCHEMA COMPATIBILITY (F1-7N-FC-1B-E3-R4-A2-R1-R1): 149 passed, 0 failed
+mutations: 18 caught, 0 missed

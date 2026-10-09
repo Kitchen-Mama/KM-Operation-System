@@ -1,0 +1,22 @@
+
+== A. Monthly create → locked COMPLETED ==
+
+== B. zero active → create; one active → reuse (refresh preserves user edit) ==
+
+== C. duplicate active → BLOCKED_CONFLICT, zero writes ==
+
+== D. foreign / legacy draft (non-canonical id) → adopt-required, zero writes ==
+
+== E. terminal draft at canonical id → blocked (never mutates submitted) ==
+
+== F. token race between capture and lock → CONFLICT, zero writes ==
+
+== G. missing source → blocked result, NOT a fabricated zero draft ==
+
+== H. blocked line flows through as blocked (no fabricated zero) ==
+
+== I. lock unavailable → LOCK_UNAVAILABLE, zero writes; no unlocked apply ==
+
+== J. keyed-delta write planner (pure) ==
+
+All Round 1G Recommendation Orchestrator assertions passed (37 assertions).

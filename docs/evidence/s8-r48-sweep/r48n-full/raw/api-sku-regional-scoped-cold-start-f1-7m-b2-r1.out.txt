@@ -1,0 +1,11 @@
+
+== Phase 2 — useDb() is cache-independent cloud eligibility ==
+
+== source: gate no longer keys on the broad cache (getDataSourceMode / _opDbCache) ==
+
+== Phase 3 — canonical workspace data contract unchanged ==
+
+== Phase 5 — canonical cold path uses the workspace, never getOperationDb ==
+
+---------------------------------------------
+PASS 22  FAIL 0

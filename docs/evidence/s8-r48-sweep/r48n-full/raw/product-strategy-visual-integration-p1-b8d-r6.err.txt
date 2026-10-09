@@ -1,0 +1,1 @@
+warning: in the working copy of 'assets/specs/active/apps-script/03_master_data_handlers.gs', LF will be replaced by CRLF the next time Git touches it

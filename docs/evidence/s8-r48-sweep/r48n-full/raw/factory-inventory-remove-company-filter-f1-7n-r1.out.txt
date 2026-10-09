@@ -1,0 +1,11 @@
+
+== 1-4 filter bar — Company gone, Factory/Country present, correct remaining order ==
+
+== 5-8 behavior — Factory/Country still filter; no stale company predicate hides rows ==
+
+== 9-10 data authority + backend UNCHANGED (only the UI filter removed) ==
+
+== 11 deploy — factory-stock.js cache token bumped (no alignment/CSS regression; flex bar reflows) ==
+
+----------------------------------------
+FACTORY INVENTORY REMOVE COMPANY FILTER (F1-7N-R1): 17 passed, 0 failed

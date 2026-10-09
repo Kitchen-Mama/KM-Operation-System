@@ -1,0 +1,9 @@
+
+== (A) Order Planning — Category count source scoped to Country + Marketplace ==
+
+== (B) Shipment Draft cold-start gate cache-independent ==
+
+== (C) residual audit — no ACTIVE cache-dependent READ eligibility gate remains ==
+
+---------------------------------------------
+PASS 20  FAIL 0

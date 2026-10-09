@@ -1,0 +1,23 @@
+
+== §B.1 — ONE authority, and the duplicate is GONE rather than merely unused ==
+
+== §B.2/§B.3 — the labels the operator actually reads ==
+
+== §B — ISO codes and source-name variants both reach the decided name ==
+
+== §B.4/§B.5 — the fallback, which is where removing the inline table could have cost something ==
+
+== §B — no duplicate authority can disagree SILENTLY ==
+
+== §B — the formal name cannot reach a display surface by accident ==
+
+== §C — what the merge had to bring across from main, intact ==
+
+== §D — script order, uniqueness and the two token families ==
+
+== §G — the seven negative tests: each guard is made to BITE ==
+
+== §A — the merge did not move what it was not supposed to move ==
+
+----------------------------------------
+MAP / MAIN INTEGRATION (TEXTURE-3-R5): 242 passed, 0 failed

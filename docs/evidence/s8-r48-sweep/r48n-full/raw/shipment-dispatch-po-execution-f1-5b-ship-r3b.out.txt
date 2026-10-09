@@ -1,0 +1,58 @@
+
+== A single PO execution ==
+ok   A P1 shipped_qty = 600 after dispatch
+ok   A remaining = completed 1000 − shipped 600 = 400
+ok   A allocation flipped draft→executed
+
+== B multi-PO execution ==
+ok   B P1=300, P2=300 executed
+ok   B remaining P1=0, P2=200
+
+== C existing executed allocation (other shipment) reconciles cumulatively ==
+ok   C shipped = 300 (existing executed) + 400 (new) = 700 via reconciliation
+ok   C remaining = 1000 − 700 = 300
+
+== D/F retry idempotent (no double-consume) ==
+ok   D re-executing yields the SAME shipped_qty (reconciliation, not +=)
+ok   D still one executed allocation (no duplication)
+
+== G missing allocation ==
+ok   G shipment_qty>0 with no draft allocation → SHIPMENT_PO_ALLOCATION_MISSING
+
+== H qty mismatch ==
+ok   H alloc 500 ≠ shipment 600 → SHIPMENT_PO_ALLOCATION_QTY_MISMATCH
+
+== I capacity changed before dispatch → fail closed ==
+ok   I would-be-shipped 600 > completed 400 → PO_CAPACITY_CHANGED_BEFORE_DISPATCH
+ok   I no partial execution (shipped stays 0)
+
+== J/K conservation + remaining ==
+ok   K completed 1000, executed 700 → shipped 700, remaining 300
+ok   J PO shipped = Σ executed allocation for that PO line
+
+== L/M/N ordered/completed/shipment_qty untouched ==
+ok   M completed_qty unchanged (1000)
+ok   N shipment_lines (physical qty) never rewritten by execution
+ok   L execution never reads/writes ordered_qty
+
+== S legacy shipped_qty drift → fail closed ==
+ok   S PO shipped_qty=500 with no executed lineage → PO_SHIPPED_QTY_LEGACY_BASELINE_UNRESOLVED (never reset/backfill)
+
+== shipped_qty is reconciliation SET, never += ==
+ok   shipped_qty SET = Σ executed (no incremental += anywhere)
+ok   reconciliation = other-executed + this shipment consumption (canonical formula)
+
+== T / §14 no second FIFO, no nested lock, single authority ==
+ok   T dispatch execution contains NO FIFO sorter (order_date/po_no/sort) — one FIFO authority (R3A)
+ok   §11 execution helpers take NO lock (run inside the existing dispatch ScriptLock — no nesting)
+
+== dispatch wiring (22_) — reuses the same lock + rollback boundary ==
+ok   validation calls the R3A/R3B allocation authority BEFORE writes
+ok   fail-closed dispatch on allocation error (no partial dispatch)
+ok   execution runs inside the staged-write block under the SAME rollback stack (all-or-nothing)
+ok   §10 existing dispatch idempotency pre-check preserved (retry short-circuits before re-execution)
+ok   §12 existing factory_stock deduction preserved (separate ledger, same boundary)
+ok   §14 no FIFO logic added inside 22_ (dispatch does not re-run FIFO)
+
+----------------------------------------
+SHIPMENT DISPATCH PO EXECUTION (F1-5B-SHIP-R3B): 29 passed, 0 failed

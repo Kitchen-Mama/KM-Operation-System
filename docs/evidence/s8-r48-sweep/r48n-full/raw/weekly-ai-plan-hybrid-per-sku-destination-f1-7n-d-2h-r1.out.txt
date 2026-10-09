@@ -1,0 +1,17 @@
+
+== A non-hybrid self_fulfilled UNCHANGED — WAREHOUSE mode, fulfillmentModel=self_fulfilled ==
+
+== B non-hybrid platform_fulfilled UNCHANGED — MARKETPLACE logical destination, warehouseId null ==
+
+== C hybrid + per-SKU platform_fulfilled → MARKETPLACE (no allocation rule required) ==
+
+== D hybrid + per-SKU self_fulfilled → WAREHOUSE (this lane DOES need an allocation rule) ==
+
+== E hybrid + blank / both-lane SKU → fail-closed UNRESOLVED (never guessed) ==
+
+== F ONE hybrid marketplace emits BOTH a WAREHOUSE and a MARKETPLACE lane for different SKUs ==
+
+== G self-fulfilled warehouse-grain — 30/70 split is independent + conserves demand ONCE (KMDA, pure) ==
+
+----------------------------------------
+WEEKLY AI PLAN HYBRID PER-SKU DESTINATION (F1-7N-D-2h): 25 passed, 0 failed

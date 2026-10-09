@@ -1,0 +1,41 @@
+
+== A — [tests 1-8] the schema acceptance matrix, asked of the production gate ==
+
+== B — [tests 9-12] before the columns exist, today's behaviour is preserved and nothing is dropped ==
+
+== C — [test 13] the lifecycle-only state (34 header / 30 line) is fully functional ==
+
+== D — [tests 14-15] with both columns present, both fields persist and hydrate ==
+
+== E — [tests 16-21] identity: what moves it, what must never move it ==
+
+== F — [tests 22-23] replay is idempotent; a genuinely different route is a different header ==
+
+== G — [tests 24-26] the destination is exactly one thing, and a contest is blocked ==
+
+== H — [test 27] the runtime never mutates the schema ==
+
+== I — [tests 28-29] the deployment manifest is internally consistent, and the contract is unchanged ==
+
+== J — [test 30] the B2 dry run still reproduces the recorded LIVE result ==
+
+== K — [test 31] the lifecycle migration is still compatible and still idempotent ==
+
+== L — [test 32] negative tests: every fail-closed rule, and every mutation proves it mutated ==
+  caught: L1 a supplied marketplace silently dropped when its column is absent
+  caught: L2 a supplied line ETA silently dropped when its column is absent
+  caught: L3 K4 activated before its destination column exists
+  caught: L4 destination_marketplace placed before the lifecycle tail
+  caught: L5 the lifecycle migration widened to append the route-identity column
+  caught: L6 the K2 group key extended, re-keying every existing header
+  caught: L7 both destination identities allowed on one route
+  caught: L8 sea_express collapsed into sea
+  caught: L10 the line writer drops the ETA even when its column exists
+  caught: L11 the header writer drops the marketplace even when its column exists
+  caught: L12 the write gate reverted to the pre-B3 authority
+  caught: L13 a schema-creating call introduced into the runtime
+  caught: L14 the manifest expectation drifting from what the file declares
+  caught: L15 a create replay creating a second header
+
+PASS — 217 passed, 0 failed
+negative tests: 14 caught, 0 missed

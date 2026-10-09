@@ -1,0 +1,29 @@
+
+== A. config absent → both false ==
+
+== B. save A=true / B=false ==
+
+== C. reload → persists (round-trip through the same blob) ==
+
+== D. save B=true ==
+
+== E. Cancel → no mutation ==
+
+== F/G/N. Save writes ONLY the config blob — no inventory / TW / CO1100 row mutation ==
+
+== H. OFF excludes TW from general allocation pool ==
+
+== I. OFF → restricted planning scope = ResUS / US / Amazon only ==
+
+== J. ON → canonical allocator considers TW ==
+
+== K. setting A does not retroactively backfill SKUs ==
+
+== L. scheduler-readable headlessly — Script Property only (no browser session, no DB) ==
+
+== M. no localStorage anywhere in this feature ==
+
+== wiring — router actions + api client + menu entry + modal ==
+
+----------------------------------------
+FACTORY OPERATION CONFIG — TW POLICIES (F1-7N-R1): 32 passed, 0 failed

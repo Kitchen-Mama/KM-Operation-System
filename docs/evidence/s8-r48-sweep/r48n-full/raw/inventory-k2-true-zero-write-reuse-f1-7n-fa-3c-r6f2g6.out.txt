@@ -1,0 +1,15 @@
+
+== A. root cause: Date/number coercion in the REUSE fingerprint ==
+
+== B. atomic core REUSE early-return precedes every mutation ==
+
+== C. genuine change is NOT collapsed ==
+
+== D. verifier: REUSED only when every group outcome REUSED + content checksum unchanged ==
+
+== E. verifier wiring + content checksum + diagnostic ==
+
+== F. generic + legacy behavior unchanged ==
+
+----------------------------------------
+R6F2G6 TRUE-ZERO-WRITE-REUSE: 37 passed, 0 failed

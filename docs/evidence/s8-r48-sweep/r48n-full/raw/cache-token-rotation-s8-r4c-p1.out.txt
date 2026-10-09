@@ -1,0 +1,73 @@
+
+== A — the two families rotated, and neither borrowed the other's token ==
+ok   A1  the application family rotated off the token origin/main already serves
+ok   A2  and the Site Inventory CSS family rotated off its own
+ok   A3  the new application token is APPENDED, not spliced — the order is the ledger
+ok   A3a and so is the new IR CSS token
+ok   A3b the spent token is still in the ledger and still before the current one — append-only, never rewritten
+ok   A4  the IR CSS token is NOT a member of the application series
+ok   A4a and the application token is not a member of the IR CSS series
+ok   A5  each series carries the new token exactly ONCE — a duplicate would invert tokenAtOrAfter
+ok   A5a likewise the CSS series
+ok   A6  the four known token families are all still present and none was replaced
+
+== B — every served reference moved, and none was left behind ==
+ok   B1  STALE_APPLICATION_TOKEN_REFERENCE_COUNT = 0 in index.html
+ok   B1a and 0 among app.js's route-owned assets
+ok   B2  and no asset carries a token from the wrong family — checked in BOTH directions
+ok   B3  no reference is left on the spent application token
+ok   B3a nor on the spent IR CSS token
+ok   B3b nor in app.js
+ok   B3c nor in the LOCAL acceptance harness, which loads the SAME assets and would otherwise exercise stale bytes — it is gitignored, so this is a local-hygiene check, not a publication one
+   APPLICATION_TOKEN_REFERENCE_COUNT_POST(index.html) = 55
+ok   B4  index.html serves the application set on the new token
+ok   B5.1 inventory-replenishment.js is served on the new application token
+ok   B5.2 inventory-compat.js is served on the new application token
+ok   B5.3 km-api-foundation.js is served on the new application token
+ok   B6  and the stylesheet on the new IR CSS token — its own family, which is the whole point of the split
+
+== C — the six classes that make the CSS rotation load-bearing ==
+ok   C1  NEW_LAZY_EXPOSURE_CLASS_SET = six, not the five an earlier note claimed
+ok   C2.1 the NEW stylesheet has a rule for .replen-card__value--pending
+ok   C2.2 the NEW stylesheet has a rule for .replen-card__note
+ok   C2.3 the NEW stylesheet has a rule for .replen-card__row--error
+ok   C2.4 the NEW stylesheet has a rule for .replen-card__row--meta
+ok   C2.5 the NEW stylesheet has a rule for .ir-exposure-retry
+ok   C2.6 the NEW stylesheet has a rule for .ir-exposure-refresh
+ok   C3.1 and the page really emits replen-card__value--pending — not a rule for nothing
+ok   C3.2 and the page really emits replen-card__note — not a rule for nothing
+ok   C3.3 and the page really emits replen-card__row--error — not a rule for nothing
+ok   C3.4 and the page really emits replen-card__row--meta — not a rule for nothing
+ok   C3.5 and the page really emits ir-exposure-retry — not a rule for nothing
+ok   C3.6 and the page really emits ir-exposure-refresh — not a rule for nothing
+ok   C4  OLD_CACHED_CSS_MISSING_CLASS_COUNT = 6 — origin/main's stylesheet has ZERO rules for all six, so a browser holding it renders every new state unstyled while the state itself is correct
+
+== D — what this round did NOT rotate ==
+ok   D1  the method-registry family did NOT rotate — that file did not change in R4B-2B or R4B-2D
+ok   D1a and is still served on its own current token
+ok   D2  the map family is untouched — no map browser file changed
+ok   D2.1 geo-names-zh-hant.js still carries a MAP token, not this round's
+ok   D2.2 geo-display-aliases-zh-tw.js still carries a MAP token, not this round's
+ok   D2.3 geo-admin1-display-names-zh-tw.js still carries a MAP token, not this round's
+ok   D2.4 geo-name-resolver.js still carries a MAP token, not this round's
+ok   D2.5 km-geo-topology.js still carries a MAP token, not this round's
+ok   D2.6 km-globe.js still carries a MAP token, not this round's
+ok   D2.7 global-logistics-map.js still carries a MAP token, not this round's
+ok   D2.8 global-logistics-map.css still carries a MAP token, not this round's
+
+== E — mutants: every guard above is load-bearing ==
+ok   M1  the old APPLICATION token is left behind on one asset (caught)
+ok   M1a and likewise on the route-loaded page module, which lives in app.js rather than index.html (caught)
+ok   M2  the old IR CSS token is left behind on the stylesheet (caught)
+ok   M3  the WRONG family is used — the stylesheet is given the application token (caught)
+ok   M3a ...and the mirror: an application asset is given the IR CSS token (caught)
+ok   M4  a FOURTH token family is invented instead of extending one that exists (caught)
+ok   M5  the lazy-exposure classes are absent from the rotated stylesheet (caught)
+ok   M6  an UNRELATED family is rotated along for the ride (caught)
+ok   M7  the new token is SPLICED into the middle of the ledger rather than appended (caught)
+
+== F — vacuity: every mutant predicate is FALSE against the unmutated tree ==
+ok   F1  every mutant is checked against a tree where the fault is absent
+
+57 passed, 0 failed
+mutations: 9 caught, 0 missed

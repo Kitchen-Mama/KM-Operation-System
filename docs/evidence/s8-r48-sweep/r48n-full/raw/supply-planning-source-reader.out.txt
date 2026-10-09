@@ -1,0 +1,24 @@
+
+== A. Public API + DTO shape ==
+
+== B. Sheet Row → Domain Object mapping (column rename) ==
+
+== C. 2D header values form (Apps Script getValues) === object form ==
+
+== D. Null / type / enum normalize (MISSING ≠ ZERO) ==
+
+== E. Missing required + fail-closed structural errors ==
+
+== F. Duplicate identity — fail closed ==
+
+== G. demandKey linker — identity normalize (never recomputed) ==
+
+== H. Purity / determinism ==
+
+== I. Integration — Reader → Ledger → Allocation → Weekly Resolver → Bridge → Plan Builder ==
+
+== J. Integration — Monthly Reader → … → Plan Builder ==
+
+== K. Blocked row surfaced, valid rows continue ==
+
+All Round 1P Apps Script Source Reader assertions passed (48 assertions).

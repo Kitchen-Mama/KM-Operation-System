@@ -1,0 +1,245 @@
+
+== A. §1/§2 — THE INVENTORY AUTHORITY AND THE DEDUP IDENTITY ==
+ok   A1  the canonical factory balance columns are fac_current_stock / fac_reserved_stock (21_)
+ok   A1a and 21_ derives available as current - reserved, which is NOT a stored column
+ok   A2  the ONLY reservation owner in the frozen model is a shipment (21_:405)
+ok   A2a and the AI Plan activation manifest declares that a draft reserves NOTHING
+ok   A2b with `reservations` named in tables_guaranteed_zero_mutation
+ok   A3  the guard seam acquires NO reservation and writes no reserved delta
+ok   A3a and neither does the pure authority
+ok   A4  the pool key is warehouse_id || sku
+ok   A4a a blank warehouse yields NO pool key — never a catch-all bucket
+ok   A4b and neither does a blank sku
+ok   A4c an explicit inventory_pool_id takes precedence, so a future migration needs no code change here
+ok   A5  §6 an allocation draft holds exposure in exactly {draft, site_confirmed, partially_submitted}
+ok   A5a and submitted/cancelled/expired hold nothing
+ok   A6  §6 a shipping plan holds exposure in {draft, pending_approval, approved}
+ok   A6a and cancelled/completed hold nothing
+ok   A6b `rejected` is in NEITHER set, because 11_ writes status back to draft on reject — it is not a resting status
+ok   A7  §6 a superseded / cancelled / expired LINE holds nothing, and a submitted line still does
+ok   A8  16_ SAD_STATUSES_ is still the five-member header enum the matrix above was derived from
+ok   A8a and 16_'s own ACTIVE literal is byte-for-byte the exposure set
+ok   A9  DRAFT -> PLAN: 16_ transitions the draft to `submitted` …
+ok   A9a … only after the plan is committed and read back, with a verified rollback if it cannot be confirmed
+ok   A10 PLAN -> SHIPMENT: 12_ stamps transferred_shipment_id …
+ok   A10a … in the same journalled operation that ACQUIRES the factory reservation
+ok   A10b so the guard releases a transferred plan by name — its units are already inside fac_reserved_stock
+
+== B. §2 — available_to_allocate, EXECUTED, and never filtered by company ==
+ok   B1  the guard read every table it needs
+ok   B1a and it is the ONLY reader: five exposure tables plus warehouses and marketplaces, once
+ok   B2  factory current stock 1000
+ok   B2a of which 100 is reserved by a shipment
+ok   B2b so the physical available is 900 (current - reserved)
+ok   B3  draft exposure is 350 — ResUS 200 PLUS OtherCo 150, summed ACROSS COMPANIES
+ok   B3a plus a third company's Pending Approval plan
+ok   B3b already allocated 400
+ok   B4  available_to_allocate = 900 - 400 = 500
+ok   B4a and the contract says so, because filtering first is exactly how two companies plan the same units
+ok   B5  §9.7 two factory warehouses are TWO pools, never one
+ok   B5a and the CN pool offers 100, not 1000 — stock at two factories is not interchangeable
+ok   B6  a NON-factory warehouse row in factory_stock is skipped, exactly as 43_ skips it
+ok   B6a and contributes no pool
+ok   B7  §9.22 SUPERSEDED / cancelled / expired / submitted / completed / transferred hold NOTHING
+ok   B7a so the whole 1000 is still allocatable
+ok   B7b and the transferred plan is released for the NAMED reason, not by accident
+ok   B8  §9.18 the recheck excludes the plan itself from already-allocated …
+ok   B8a … and reports it separately as current_plan_qty
+ok   B8b so the projected total is 700 and nothing is counted twice
+
+== C. §3 — MECHANISM A: THE AI HARD GUARD, EXECUTED ==
+ok   C1  §9.1 available 1000, protected manual 300, AI asks 700 → PASS
+ok   C1a granting the full 700
+ok   C1b and the resulting total exposure is EXACTLY 1000 — the pool, to the unit
+ok   C2  §9.2 AI asks 800 against 700 of headroom → CLAMPED
+ok   C2a granting 700, not 800
+ok   C2b and reporting the 100 it refused
+ok   C2c total exposure is 1000 and NEVER 1100
+ok   C3  §9.5 a MANUAL draft named in the release set is still counted — AI cannot supersede an operator
+ok   C3b and the refusal is recorded with its reason
+ok   C3c and with NO provenance classifier it fails CLOSED rather than releasing an unknown row
+ok   C3a because 69_'s own selector preserves a manual row by name, and 61_ builds the release set from it
+ok   C4  without a release set the run competes with its OWN previous output (200 still counted) …
+ok   C4a … and WITH it the replacement set is released IN MEMORY first
+ok   C4b so the regeneration passes
+ok   C4c at its full 250 — a net increase of 50, never a double count of 450
+ok   C5  §9.6 another COMPANY on the same pool is protected exposure
+ok   C5a leaving only 50 of headroom
+ok   C6  §9.7 a claim on FW-TW is judged against FW-TW alone
+ok   C6a granting 800 from the 900 that pool actually holds
+ok   C7  §9.10 two receivers competing for 100 with EQUAL priority → STOP, never 160 committed
+ok   C7a §3.9 because splitting a tie is an allocation decision this guard may not invent
+ok   C7b and it grants nothing at all
+ok   C8  with a DISTINCT allocation_priority the frozen order is applied
+ok   C8a the higher priority (Walmart, 9) is served in full
+ok   C8b and the lower gets the 20 that remain
+ok   C8c conserving the pool exactly
+ok   C8d and allocation_priority is the EXISTING frozen authority 43_ already reads
+ok   C9  a claim on a pool with NO factory_stock row STOPs …
+ok   C9a … named, rather than clamped to zero and reported as a plan that generated nothing
+ok   C10 §3.8 the AI verdict declares itself NOT overridable
+ok   C10a and evaluateAiGuard's body contains no override vocabulary at all
+ok   C10b passing a confirmation to the AI guard changes NOTHING — it is still clamped to 700
+
+== D. §4/§5 — MECHANISM B: THE MANUAL OVERAGE, EXECUTED THROUGH 11_ ==
+ok   D1  §9.11 a plan that fits goes to Pending Approval
+ok   D1a the status really moved
+ok   D1b with overage_present FALSE — no modal is required
+ok   D1c and no override was recorded, because none happened
+ok   D1d and the whole transition ran inside exactly one acquired-and-released ScriptLock
+ok   D2  §9.12 an over-committing plan is REFUSED
+ok   D2a with the typed confirmation code
+ok   D2b and the plan is STILL a Draft — zero mutation
+ok   D2c stated as zero_write
+ok   D2d the overage is 100 (300 already allocated + 800 vs 1000 available)
+ok   D2e §4 the response carries pool, SKU, available, already-allocated, this plan, projected and overage
+ok   D2f and an inventory_snapshot_fingerprint
+ok   D2g and a server challenge token
+ok   D2h the exact required title
+ok   D2i and the exact required message
+ok   D2j Cancel / Confirm Overage
+ok   D2k with the four required reasons
+ok   D3  §9.19 the affected holder is reported …
+ok   D3a … by company, quantity and plan id, across companies on one pool
+ok   D4  §9.13 Cancel returns the original refusal and sends NOTHING further
+ok   D4a and the confirm path is a single follow-up, never a loop
+ok   D5.1 §9.15 no fingerprint → refused, and the plan is still a Draft
+ok   D5.2 §9.15 no actor → refused, and the plan is still a Draft
+ok   D5.3 §9.15 no reason → refused, and the plan is still a Draft
+ok   D5.4 §9.15 an unrecognised reason → refused, and the plan is still a Draft
+ok   D6  §9.16 a stale fingerprint is refused
+ok   D6a with zero mutation
+ok   D6b and the response carries the CURRENT overage, not an error alone
+ok   D6c naming both fingerprints so the drift is visible
+ok   D7  §9.14 a valid confirmation is accepted
+ok   D7a the plan moves to Pending Approval
+ok   D7b and the override is reported with reason, actor, quantity and a PERSISTED audit
+ok   D7c one append-only audit row per affected pool
+ok   D7d identifying the plan, transition and pool
+ok   D7e §4.6 with every required quantity recorded
+ok   D7f and the override flag, reason and actor
+ok   D7g plus the snapshot fingerprint and the time it was accepted
+ok   D7h and a findable breadcrumb on the plan's own note
+ok   D8  a confirmation sent for a plan that FITS still succeeds …
+ok   D8a … but records NO override: the plan never needed one
+ok   D8b and writes no audit row
+ok   D9  §9.17 the only guard ACTION in the router is a READ …
+ok   D9a … there is no confirm endpoint, so no second door to the write
+ok   D9b the gate is inside handleUpdateShippingPlanStatus_'s own core, which every caller goes through
+ok   D10 §9.20 Approve with an UNCHANGED snapshot passes …
+ok   D10a the plan is approved
+ok   D10b … SILENTLY — the approver is not asked again
+ok   D10c because the snapshot is the confirmed one
+ok   D11 §9.21 stock fell to 600, so the shortfall grew → Approve is refused
+ok   D11a with the confirmation code
+ok   D11b and the plan does NOT become approved
+ok   D11c reporting the NEW shortfall of 500
+ok   D11d beside the 100 that was actually accepted
+ok   D11e so a stale acceptance cannot carry a larger overage through
+ok   D12 a wildly over-committed plan can still be CANCELLED — the gate does not run for cancel
+ok   D12a and reports no inventory verdict, because none was needed
+ok   D13 §9.23 Shipment Draft admits an approved plan whose snapshot still matches
+ok   D13a and REFUSES a moved snapshot rather than repairing the number itself
+ok   D13b an unapproved plan is not admissible
+ok   D13c and it declares NO override channel of its own
+ok   D13d 12_ contains no second override logic
+
+== E. §3/§4 — THE ORDERING FACTS: guard before writer, lock around recheck ==
+ok   E1  §3 the guard runs BEFORE PASS 2, and PASS 2 is where the only write lives
+ok   E1a after the activation/schema gate, so it is the LAST check before the writer
+ok   E2  it builds its claims from the complete PASS-1 set, not one group at a time
+ok   E3  a guard that cannot read the pool REFUSES rather than being treated as finding nothing wrong
+ok   E3a and every refusal on that path states db_writes: 0
+ok   E4  §4.6 the transition is wrapped in a ScriptLock …
+ok   E4a … released in a finally, so no early return can leak it
+ok   E4b and the core takes no lock of its own, so the recheck and the write are ONE critical section
+ok   E5  the gate is reached BEFORE the first status write
+ok   E5a and the audit is appended after it, inside the same lock
+ok   E6  a refusal returns before any setCell — zero mutation is structural, not asserted
+ok   E7  §3 the page says outright that its own check is not the enforcement
+ok   E7a and it computes no availability of its own
+ok   E7b KMFSG is not even loaded in the browser — the page cannot compute a verdict
+ok   E7c and the adapter exposes a READ only, with no confirm method
+ok   E8  §3.10 the guard is entered only when a positive claim exists …
+ok   E8a … and the NO_ACTION short circuit returns before it, so a valid zero still writes nothing
+
+== F. RELEASE IDENTITY — one shared authority, and the deployment can be asked for it ==
+ok   F1.1 71_ FSG is at or after the round that introduced the guard
+ok   F1.2 11_ SP is at or after the round that introduced the guard
+ok   F1.3 61_ WAP is at or after the round that introduced the guard
+ok   F1.4 01_ RTR is at or after the round that introduced the guard
+ok   F1.5 63_ RELEASE is at or after the round that introduced the guard
+ok   F1a and the RELEASE is at or after every module stamp it ships
+ok   F2.1 and 63_'s manifest row for 71_api_v1_factory_stock_guard.gs expects exactly what it declares
+ok   F2.2 and 63_'s manifest row for 11_shipping_plan_handlers.gs expects exactly what it declares
+ok   F2.3 and 63_'s manifest row for 61_api_v1_weekly_ai_plan.gs expects exactly what it declares
+ok   F2.4 and 63_'s manifest row for 01_router.gs expects exactly what it declares
+ok   F2a with exactly ONE row per owner file — a duplicate row is two answers to one question
+ok   F3  00_config.gs did NOT change, so its stamp is not marched forward
+ok   F4  this round is registered in the release order
+ok   F5  the action contract is at or after 12, where R5 moved it because a router ACTION was added
+ok   F5a and the frontend pins its minimum to MATCH the deployed contract, in the same commit
+ok   F5b while the transport envelope is unchanged
+ok   F6  the new action is registered with its handler …
+ok   F6a … which is defined exactly once, in 71_
+ok   F7  KMFSG is a global in the generated bundle
+ok   F7a registered in the build tool's dependency order
+ok   F7b and the committed bundle is exactly what the tool produces from the canonical modules
+ok   F8.1 KMFSG.fnv1a is byte-identical to 16_ sadFnv1a_
+ok   F8.2 KMFSG.fnv1a is byte-identical to 16_ sadFnv1a_
+ok   F8.3 KMFSG.fnv1a is byte-identical to 16_ sadFnv1a_
+ok   F8.4 KMFSG.fnv1a is byte-identical to 16_ sadFnv1a_
+ok   F9  no cache token is misplaced in index.html
+ok   F9a and no co-deployed asset was left behind on a previous token
+ok   F9b index.html carries a REGISTERED round token
+
+== G. §8/§10 — SCHEMA BOUNDARY AND THE SAFETY INVARIANTS ==
+ok   G1  §8 the only new table is factory_stock_override_audit
+ok   G1a  §A the runtime seam contains NO ensure-sheet and NO insertSheet path at all
+ok   G1a1 it REQUIRES the ledger instead, with one named refusal
+ok   G1b with a DRY-RUN validator that writes nothing
+ok   G1c and a stated rollback
+ok   G1d and 71_ adds no column to any existing table and renames nothing
+ok   G2 SHIPPING_PLANS_HEADERS_ is still declared in 11_shipping_plan_handlers.gs
+ok   G2a SHIPPING_PLANS_HEADERS_ is BYTE-IDENTICAL to HEAD — no column added, none reordered
+ok   G2 SHIPPING_PLAN_LINES_HEADERS_ is still declared in 11_shipping_plan_handlers.gs
+ok   G2a SHIPPING_PLAN_LINES_HEADERS_ is BYTE-IDENTICAL to HEAD — no column added, none reordered
+ok   G2 SHIPPING_ALLOCATION_DRAFTS_HEADERS_ is still declared in 16_shipping_allocation_handlers.gs
+ok   G2a SHIPPING_ALLOCATION_DRAFTS_HEADERS_ is BYTE-IDENTICAL to HEAD — no column added, none reordered
+ok   G2 SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ is still declared in 16_shipping_allocation_handlers.gs
+ok   G2a SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ is BYTE-IDENTICAL to HEAD — no column added, none reordered
+ok   G2 SAD_LIFECYCLE_TAIL_COLUMNS_ is still declared in 16_shipping_allocation_handlers.gs
+ok   G2a SAD_LIFECYCLE_TAIL_COLUMNS_ is BYTE-IDENTICAL to HEAD — no column added, none reordered
+ok   G2 SAD_LINE_ETA_TAIL_COLUMNS_ is still declared in 16_shipping_allocation_handlers.gs
+ok   G2a SAD_LINE_ETA_TAIL_COLUMNS_ is BYTE-IDENTICAL to HEAD — no column added, none reordered
+ok   G3  §10 INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ is still false
+ok   G3a and no file this round touched contains an ASSIGNMENT to it
+ok   G3b the flag is DECLARED in exactly ONE place, and that place is 00_config.gs
+ok   G4  §10 the activation allowlist still holds exactly one entry
+ok   G4a with no wildcard
+ok   G5  every read path in the seam is free of setValue / appendRow / insertSheet / LockService
+ok   G5a and the ONLY writer in 71_ is the audit append
+ok   G5b which refuses to write unless an override was actually confirmed …
+ok   G5c and a MISSING ledger is a distinct typed refusal, not the same 0
+ok   G6  the pure authority touches no spreadsheet API — it is executable and auditable in Node
+
+== H. MUTANTS — §9 ==
+neg  N1 the company filter isolates the shared pool (each company sees only its own exposure) — caught
+neg  N2 the current plan double-counts itself at recheck — caught
+neg  N3 the old AI draft is not released, so a regeneration competes with its own output — caught
+neg  N4 the release set is widened so a MANUAL draft can be released by a generation — caught
+neg  N5 the guard is a FRONTEND check only — the server transition stops consulting it — caught
+neg  N6 a STALE confirmation is accepted — caught
+neg  N7 the override channel becomes reachable from the AI guard — caught
+neg  N8 a TERMINAL row is counted again as live exposure — caught
+neg  N9 the same quantity is counted in BOTH the plan and the shipment reservation it became — caught
+neg  N10 the writer runs before the guard (the guard moves inside PASS 2) — caught
+neg  N11 the lock is dropped, so the recheck and the write stop being one operation — caught
+neg  N12 the idempotency of a replayed confirmation is lost — a second confirm re-stamps the override — caught
+neg  N13 an unrecognised plan status is treated as live exposure — caught
+neg  N14 the per-pool arithmetic is collapsed to one global total — caught
+
+----------------------------------------------------------------------------------------------------------------
+SHARED FACTORY STOCK GUARD + WEEKLY SHIPPING PLAN OVERAGE APPROVAL (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5):
+passed 210  failed 0  |  mutants caught 14  survived 0
+----------------------------------------------------------------------------------------------------------------

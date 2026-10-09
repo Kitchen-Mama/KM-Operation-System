@@ -1,0 +1,15 @@
+
+== shipWorkspaceBuild_ View-Model ==
+
+== include-gated MAP tables ==
+
+== filter / sort / pagination / empty ==
+
+== §12/§13/§16 source guards: read-only, no FIFO/allocation/receipt/PO/factory authority ==
+
+== activation + db-api adapter (BEFORE == AFTER via SAME normalizers + filters) ==
+
+== pages: workspace primary read, no broad DB, fail-closed ==
+
+----------------------------------------
+API SHIPMENT WORKSPACE (F1-7F-R1): 45 passed, 0 failed

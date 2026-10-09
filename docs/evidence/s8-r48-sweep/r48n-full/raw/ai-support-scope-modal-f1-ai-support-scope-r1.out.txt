@@ -1,0 +1,31 @@
+
+== A/B — legacy orange catch-all no longer matches either menu (narrowed with :not guards) ==
+
+== C — SKU Details visual token parity for menu surfaces (padding 9px 10px + background none) ==
+
+== J — Country selection filters Marketplace (pure) ==
+
+== K — Marketplace resolves company correctly (off the canonical row, not a frontend label) ==
+
+== I/L — All/unselected never auto-confirms; Confirm gated on a concrete scope ==
+
+== D/F — Inventory: AI Plan + Recalculate Current Scope open the modal ==
+
+== E/G — Order Planning: AI Plan + Recalculate Current Scope open the modal ==
+
+== H — current toolbar scope prefills the modal ==
+
+== M/N — scoped recalc delegates to the EXISTING CURRENT_SCOPE gap job (no new route) ==
+
+== O — Recalculate All Sites still delegates to the existing all-sites owner, unchanged ==
+
+== P/Q/R/W — no per-SKU loop, no page-side formula, no second engine, no DB/schema write in the modal ==
+
+== S/T — modal closes cleanly on Cancel and on Escape ==
+
+== U/V — terminal/idle + DB-refresh behavior owned by the EXISTING job (delegation proven above) ==
+
+== cache-version + wiring — new module is loaded and version bumped ==
+
+----------------------------------------
+AI SUPPORT SCOPE MODAL (F1-AI-SUPPORT-SCOPE-R1): 52 passed, 0 failed

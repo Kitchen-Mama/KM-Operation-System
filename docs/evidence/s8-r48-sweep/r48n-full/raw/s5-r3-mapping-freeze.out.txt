@@ -1,0 +1,158 @@
+
+== A. canonical owners — one each, and each already existed ==
+ok   A1 RECOMMENDATION_QTY_OWNER = KMREC.generateOrderPlanningRecommendation exists
+ok   A2 staleness owner = KMREC.isStale exists
+ok   A3 source-ref owner = KMREC.fingerprint exists
+ok   A4 OPERATOR_DECISION_OWNER = KMRDV2.applyTierEdit exists
+ok   A5 RUN_OWNER table is recommendation_calculation_runs
+ok   A6 exactly ONE core module defines the carton CEILING
+ok   A6b no core module reimplements the carton CEILING except the named read-only audit
+ok   A6c that exception is still declared READ-ONLY at the top of its own file
+ok   A6d the recommendation owner is among the callers — it delegates, it does not reimplement
+ok   A7 the order total is cartonized ONCE over the raw T1-T3 sum (frozen authority string)
+
+== B. current data shape — asserted against the live header arrays ==
+ok   B1 order_planning_gap has 24 columns
+ok   B2 gap business key carries company
+ok   B2 gap business key carries country
+ok   B2 gap business key carries marketplace
+ok   B2 gap business key carries sku
+ok   B3 gap carries the §41 snapshot column factory_available_qty_snapshot
+ok   B3 gap carries the §41 snapshot column reallocation_in_qty_snapshot
+ok   B3 gap carries the §41 snapshot column reallocation_out_qty_snapshot
+ok   B4 gap does NOT carry calculation_run_id — §42.1a — no run id on the gap row, so run-id staleness has no left-hand side
+ok   B4 gap does NOT carry destination_warehouse_id — §42.1b — the monthly mainline has no warehouse axis
+ok   B4 gap does NOT carry required_by_date — §43.1 — the tier grain is a month, not a date
+ok   B4 gap does NOT carry site_sku — §43 — the gap table stores the MASTER sku only
+ok   B4 gap does NOT carry own_supply_qty_snapshot — §47 class C — computed at 42_:463, never persisted
+ok   B4 gap does NOT carry overseas_supply_qty_snapshot — §47 class C — computed at 42_:463, never persisted
+ok   B4 gap does NOT carry committed_supply_qty_snapshot — §47 class C — not separable from a stored column
+ok   B5 flat-V2 carries t1_recommended_qty
+ok   B5 flat-V2 carries t1_order_qty
+ok   B5 flat-V2 carries t1_carton_qty
+ok   B5 flat-V2 carries t1_status
+ok   B5 flat-V2 carries t1_user_edited
+ok   B5 flat-V2 carries t1_month
+ok   B5 flat-V2 carries t2_recommended_qty
+ok   B5 flat-V2 carries t2_order_qty
+ok   B5 flat-V2 carries t2_carton_qty
+ok   B5 flat-V2 carries t2_status
+ok   B5 flat-V2 carries t2_user_edited
+ok   B5 flat-V2 carries t2_month
+ok   B5 flat-V2 carries t3_recommended_qty
+ok   B5 flat-V2 carries t3_order_qty
+ok   B5 flat-V2 carries t3_carton_qty
+ok   B5 flat-V2 carries t3_status
+ok   B5 flat-V2 carries t3_user_edited
+ok   B5 flat-V2 carries t3_month
+ok   B6 flat-V2 carries lineage column draft_version
+ok   B6 flat-V2 carries lineage column calculation_run_id
+ok   B6 flat-V2 carries lineage column formula_version
+ok   B6 flat-V2 carries lineage column calculated_at
+ok   B6 flat-V2 carries lineage column source_data_as_of
+ok   B7 flat-V2 is still the frozen 53-column shape
+ok   B8 T4 is never persisted in the flat model
+ok   B9 the run journal stage sequence is the frozen seven
+ok   B10 run_status enum is RUNNING|PARTIAL|COMPLETED|FAILED
+
+== C. the stored gap is POST-coverage — DC-1, guarded from both ends ==
+ok   C1 residual coverage terms are literal 0 (coverage already folded into opening supply)
+ok   C2 opening supply = site + overseas + factory (the single place coverage is applied)
+ok   C3 the persisted tier gap is KMTPP remainingGapQty (post-coverage), summed across destination lines
+
+== D. §41 reallocation is INTRA-company — the S5-R2 field name was wrong ==
+ok   D1 §41 groups receivers by company||sku — a transfer cannot cross a company boundary
+ok   D2 the live transfer names itself FACTORY_SURPLUS_REALLOCATION — the renamed token is the code's own word
+ok   D3 the transfer ledger carries donor lineage
+ok   D4 43_ reduces that ledger to a COUNT — source_warehouse_id is therefore NOT_AVAILABLE
+ok   D5 cross-company arbitration is the separate R2G-B pre-pass, not §41
+
+== E. §45 action derivation — the frozen rule as a model, over the REAL KMREC DTO ==
+ok   E1 no gap -> NO_ACTION
+ok   E2 residual shortage -> NEW_ORDER
+ok   E3 reallocation in -> REALLOCATE, tested BEFORE NEW_ORDER
+ok   E4 reallocation with no residual is still REALLOCATE
+ok   E5 BLOCKED -> MANUAL_REVIEW
+ok   E6 unclassifiable (no units-per-carton) -> MANUAL_REVIEW, never a fabricated qty
+ok   E7 a BLOCKED row carries a NULL quantity, not 0
+ok   E8 a BLOCKED row carries a NULL actionable gap, not 0
+ok   E9 need only in T4 -> NO_ACTION (forward visibility)
+ok   E10 the T4 number is still surfaced, just not actioned
+ok   E11 ACTION_DERIVATION_IS_PURE — same input, same output
+ok   E12 ACTION_DERIVATION_MUTATES_STATE = NO — the row is untouched
+ok   E13 there is exactly ONE reallocation-in column — so the action grain is the row, not the tier
+ok   E14 no stored column named recommendation_type — the action stays derived
+ok   E14 no stored column named recommendation_action — the action stays derived
+ok   E14 no stored column named action — the action stays derived
+
+== F. §46 reason tokens — every token has stored evidence, withdrawn ones stay withdrawn ==
+ok   F1 REASON_TOKEN_SET_SIZE = 7
+ok   F2 FACTORY_SUPPLY_APPLIED — every cited column exists in order_planning_gap
+ok   F2 FACTORY_SURPLUS_REALLOCATION_APPLIED — every cited column exists in order_planning_gap
+ok   F2 RESIDUAL_SHORTAGE — every cited column exists in order_planning_gap
+ok   F2 NEW_ORDER_REQUIRED — every cited column exists in order_planning_gap
+ok   F2 NO_ACTION_REQUIRED — every cited column exists in order_planning_gap
+ok   F2 MANUAL_REVIEW_REQUIRED — every cited column exists in order_planning_gap
+ok   F2 FORWARD_VISIBILITY_ONLY — every cited column exists in order_planning_gap
+ok   F3 TOKEN_WITHOUT_EVIDENCE_COUNT = 0
+ok   F4 NEW_ORDER_REQUIRED evidence (totalRecommendedQty) is a real DTO field
+ok   F5 NO_ACTION_REQUIRED evidence (actionableGapQty) is a real DTO field
+ok   F6 OWN_SUPPLY_APPLIED stays withdrawn while own_supply_qty_snapshot stays absent
+ok   F6 OVERSEAS_SUPPLY_APPLIED stays withdrawn while overseas_supply_qty_snapshot stays absent
+ok   F6 COMMITTED_SUPPLY_APPLIED stays withdrawn while committed_supply_qty_snapshot stays absent
+ok   F7 CROSS_COMPANY_REALLOCATION is renamed, not carried — §41 is intra-company (D1)
+ok   F8 factory_supply_used identity = MAX(0, initial - out + in), owned by 43_
+
+== G. §49 identity, staleness, and the operator boundary — all already live ==
+ok   G1 RECOMMENDATION_ID is the live composed id
+ok   G2 same calculated_at -> not stale
+ok   G3 the gap row advanced -> stale
+ok   G4 STALE_PERSISTED = NO — no stale column on either table
+ok   G5 DRAFT_ID is the deterministic live identity (alphabetical scopeKey)
+ok   G6 SOURCE_REF_FORMAT = product#businessKey#calculated_at
+ok   G7 SYSTEM_VALUE_OWNER — recommended qty as generated
+ok   G8 operator qty defaults to the recommendation
+ok   G9 OPERATOR_VALUE_OWNER — the edit lands on order_qty
+ok   G10 applyTierEdit NEVER touches recommended_qty
+ok   G11 the edit is stamped
+ok   G12 SYSTEM_RECALC_OVERWRITES_USER_EDIT = NO — refresh leaves the operator qty
+ok   G13 refresh does not touch an edited tier at all
+ok   G14 regenerate without confirmation preserves the operator qty
+ok   G15 confirmed regenerate overwrites — explicitly, never silently
+ok   G16 and clears the flag rather than leaving a stale claim
+
+== H. downstream — Phase-1 separation holds at the mapping layer ==
+ok   H1 REQUEST_ORDER_CANDIDATE_MAPPING produces lines from order_qty
+ok   H2 only positive tiers become candidates
+ok   H3 the candidate carries no shipment, carrier or PO field — PHASE2_FIELD_OR_ACTION_COUNT = 0
+ok   H4 the draft owner auto-creates no downstream execution artifact
+ok   H5 13_ still declares the PO/request-order/shipment separation
+
+== I. mutation — every claim above must bite ==
+ok   I1 REALLOCATE stops being tested before NEW_ORDER (caught)
+ok   I2 a MISSING reallocation snapshot is coerced to a number (caught)
+ok   I3 a BLOCKED row is allowed to present a zero quantity (caught)
+ok   I4 T4 is admitted into the actionable total (caught)
+ok   I5 staleness stops depending on calculated_at (caught)
+ok   I6 an operator edit is overwritten by a plain refresh (caught)
+ok   I7 regenerate stops requiring confirmation over an edit (caught)
+ok   I8 applyTierEdit starts writing the system quantity (caught)
+ok   I9 the absence probes accept a header list that grew (caught)
+ok   I10 a withdrawn token is quietly re-admitted (caught)
+ok   I11 the S5 action is matched as a substring (caught)
+ok   I12 a second module starts DEFINING the carton CEILING (caught)
+ok   I13 an inline carton CEILING appears outside the owner and the named audit (caught)
+
+== J. D-S5-7 / D-S5-8 — the accepted operator decisions, enforced structurally ==
+ok   J1 D-S5-8 — no NOT_AVAILABLE field has appeared in either storage table
+ok   J2 the deferred/closed set is the eleven fields the decision named
+ok   J3 OWN_SUPPLY_APPLIED and own_supply_qty_snapshot agree — withdrawal tracks the column
+ok   J3 OVERSEAS_SUPPLY_APPLIED and overseas_supply_qty_snapshot agree — withdrawal tracks the column
+ok   J3 COMMITTED_SUPPLY_APPLIED and committed_supply_qty_snapshot agree — withdrawal tracks the column
+ok   J4 D-S5-7 — the rename is derived from the declaration in live code
+ok   J5 a NOT_AVAILABLE field is quietly added to storage (caught)
+ok   J6 a token is withdrawn while its evidence column is present (caught)
+
+== RESULT ==
+passed 134  failed 0  mutants killed 15/15
+S5_MAPPING_FREEZE = model and live agree; SECOND_CALCULATION_PATH_COUNT = 0

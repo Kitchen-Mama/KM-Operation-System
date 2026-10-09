@@ -1,0 +1,19 @@
+
+== canonical accessors + exact-30 field mapping ==
+
+== readback: five frozen actual DB line IDs recognized; from DB not token ==
+
+== readback: zero matched lines cannot yield line_fk_ok=true (vacuous-truth fix) ==
+
+== readback: missing / wrong-FK / route completeness ==
+
+== diagnostic verdict: divergent id scheme → RECONCILIATION_REQUIRED (business data present, not malformed) ==
+
+== diagnostic verdict: exact committed 1+5 → FROZEN_SCOPE_VALIDATED (all gates) ==
+
+== diagnostic: malformed (orphan line) → RECONCILIATION_REQUIRED; no repair ==
+
+== executor committed-state detection = zero generation (flag false, matched fixture) ==
+
+----------------------------------------
+R6F2F2 POST-COMMIT READBACK RECONCILIATION: 32 passed, 0 failed

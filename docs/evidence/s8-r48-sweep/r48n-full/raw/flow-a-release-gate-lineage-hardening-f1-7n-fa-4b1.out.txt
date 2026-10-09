@@ -1,0 +1,31 @@
+
+== A/B/K. physical(marketplace_seperate)/logical(marketplace) accessor ==
+
+== B. normalize + one-column remap (no duplicate marketplace columns) ==
+
+== L1/L2/L3/L4. Header MULTI rule; line retains real marketplace, never MULTI ==
+
+== C/L7/L8. route grouping authority (physical compatibility, not marketplace) ==
+
+== K/L21. schema-mapping fail-closed before any write ==
+
+== F/L12/L14/L15. durable idempotency (persisted, not in-memory) ==
+
+== H/L13/L20. version/token gate + no-duplicate-by-another-key ==
+
+== G/L16/L17/L19. durable journal + inserted-only rollback + restore ==
+
+== L18. rollback is inserted-only — never removes a pre-existing / other-batch row ==
+
+== I/L22. read-only Flow A schema/lineage preflight verdicts ==
+
+== D/addendum. shipment_line_allocations = PO-supply bridge (NOT the plan-line bridge) ==
+
+== addendum2/3/7. the Flow A Submit PATH creates no shipment_line_allocations, no PO change, no dispatch ==
+
+== L23. no Shipment/PO/stock/document/K2 mutation in the Flow A Submit path ==
+
+== L24. compatibility wrappers delegate to the one writer ==
+
+----------------------------------------
+F1-7N-FA-4B1 RELEASE-GATE + LINEAGE: 65 passed, 0 failed

@@ -1,0 +1,133 @@
+
+== A. §11 — the Factory selector, built from the model already in hand ==
+ok   A1 the Factory selector offers each eligible factory warehouse ONCE, by warehouse_id (executed)
+ok   A2 FACTORY_SELECTOR_NEW_REQUEST_COUNT = 0 — built from the loaded factory_stock model, nothing fetched
+ok   A3 the friendly factory name is the DISPLAY text…
+ok   A4 …and is NEVER the identity — the option value is the canonical warehouse_id (§10)
+
+== B. §12 — SKU is disabled before a Factory is chosen, and says so truthfully ==
+ok   B1 the SKU selector is DISABLED before Factory selection
+ok   B2 and its empty state INSTRUCTS rather than claiming "No data found" (executed)
+ok   B3 the false claim about the database is nowhere in the control
+
+== C/D/E. §12 — the SKU list is scoped to ONE warehouse_id ==
+ok   C1 Factory A shows only A’s SKUs (executed)
+ok   C2 and the selector is now enabled
+ok   C3 FACTORY_SELECTION_REQUEST_COUNT = 0
+ok   D1 Factory B shows only B’s SKUs (executed)
+ok   D2 CROSS_FACTORY_SKU_VISIBLE_COUNT = 0 (computed from the option values)
+ok   E1 the SAME SKU code in two factories resolves to two DIFFERENT canonical records (executed)
+ok   E2 SKU_SELECTION_REQUEST_COUNT = 0 — selecting a SKU fetches nothing
+
+== F. §13 — changing Factory clears the SKU ==
+ok   F0 a record is selected under A
+ok   F1 FACTORY_CHANGE_CLEARS_SKU = YES — the selection is dropped, not carried across (executed)
+ok   F2 and the Current Available readout is cleared with it
+ok   F3 and New Available is re-disabled — nothing is adjustable without a record
+ok   F4 CO1100-R is offered again under B — as B’s record, requiring a fresh explicit choice
+
+== G. §14/§15 — the form reads the canonical record, and the arithmetic is untouched ==
+ok   G1 SKU / Warehouse / Company / Country come from the selected record (executed)
+ok   G2 and Current Available with it
+ok   G3 Adjustment Qty is still New Available − Current Available (executed)
+ok   G4 Confirm is armed once record + qty + note are valid
+
+== H. §3/§8 — a clean commit, then Done ==
+ok   H1 one user submit → ONE write request (executed)
+ok   H1a carrying the ABSOLUTE target, not a delta — which is what makes it verifiable
+ok   H2 the committed outcome renders success
+ok   H2a with the server’s movement id
+ok   H3 SUCCESS_AND_ERROR_VISIBLE_SIMULTANEOUSLY = NO
+ok   H4 Confirm LEAVES and Done ARRIVES — they are different elements (executed)
+ok   H5 RECEIPT_VERIFICATION_REQUEST_COUNT = 0 on a clean commit — no readback is needed
+ok   H6 POST_WRITE_REFRESH goes through the existing _fsAfterWrite owner, once
+ok   H7 DONE_CLICK_CLOSE_COUNT = 1, DONE_CLICK_WRITE_REQUEST_COUNT = 0 (executed)
+ok   H8 a SECOND Done click closes nothing further and still writes nothing
+
+== I. §2/§4 — INCIDENT A: committed, then the answer was lost ==
+ok   I1 a 404 AFTER a committed write shows SUCCESS — the row is read back and believed over the transport
+ok   I1a and no error is shown beside it
+ok   I1b RECEIPT_READ_COUNT = 1 — one bounded read, through the existing scoped owner
+ok   I1c AUTOMATIC_DUPLICATE_WRITE_COUNT = 0 — verification is a READ, never a resend
+ok   I1d and the receipt says HOW it was confirmed, since the movement id was lost with the answer
+ok   I1e no movement id is INVENTED to fill the gap
+ok   I1f and the dialog settles into the same Done state as a clean commit
+ok   I2 the doGet-downgrade shape settles the same way — even though the router said zero_write, which was true of the GET leg and false of the operation
+
+== J. §18 — NOT committed: no false success, and no false accusation either ==
+ok   J1 no false success when the row still holds the old balance
+ok   J2 CONFIRMED_NOT_STARTED is stated plainly, because the readback PROVED it
+ok   J3 the modal stays OPEN with Confirm available — this is a state the operator can act on
+ok   J4 and nothing was resent on their behalf
+ok   J5 a BUSINESS rejection is settled WITHOUT a readback — the server answered, and that is authoritative
+ok   J6 and the server’s own reason is what the operator is shown
+ok   J7 the modal stays open so it can be corrected
+
+== K. §3 — OUTCOME_UNKNOWN says neither yes nor no, and never replays ==
+ok   K1 UNKNOWN does not show success
+ok   K2 FALSE_NOT_WRITTEN_CLAIM_COUNT = 0 — and it does NOT claim nothing was written
+ok   K3 it states the uncertainty and gives the safe next action
+ok   K4 AUTOREPLAY_ON_UNKNOWN = NO (executed)
+ok   K5 a FAILED verification stays UNKNOWN — it never collapses into either verdict
+
+== L/M. §20 — double Confirm, and Confirm after commit ==
+ok   M1 DUPLICATE_SUBMIT_COUNT = 0 — a double Confirm sends ONE write (executed)
+ok   M1a and Confirm is disabled while the write is unresolved
+ok   M2 DUPLICATE_MOVEMENT_FROM_ONE_USER_SUBMIT_COUNT = 0
+ok   M3 editing Reason AFTER a commit can no longer re-arm Confirm — the committed latch outranks validity
+ok   M3a and calling the submit handler directly after a commit writes NOTHING (executed)
+
+== N/P. §16 — Done closes; reopening is clean ==
+ok   N0 the modal is still open on the success screen
+ok   N1 DONE_CLICK_CLOSE_COUNT = 1 (executed)
+ok   P1 reopening restores the initial state — no Factory, SKU disabled (executed)
+ok   P2 no previous success text, movement id, reason, reference or New Available
+ok   P3 Confirm is back and Done is gone
+ok   P4 and the committed latch is cleared, so the dialog is usable again
+ok   P5 STALE_PREWRITE_QUANTITY_AFTER_SUCCESS = NO — Current Available is the COMMITTED balance, not 13,000
+ok   P6 and reopening wrote nothing
+
+== Q/R/S/T. §15/§19 — validation, listeners, and what was NOT touched ==
+ok   Q1 a missing Reason keeps Confirm disabled
+ok   Q2 and a validation failure keeps the modal OPEN
+ok   Q3 New Available equal to Current is refused client-side too
+ok   R1 LISTENER_DRIFT = 0 — reopening binds no further document listeners (executed)
+ok   R1a the Escape binding is latched, which is why
+ok   R2 DUPLICATE_HANDLER_COUNT = 0 — handlers are inline attributes, bound once by the markup
+ok   S1 the submit path still never sends a reserved-stock value
+ok   T1 RESERVED_MANUAL_EDIT_ADDED = NO — the dialog contains no reserved input/select/textarea (computed)
+ok   T1a while the standing promise to the operator is still printed
+ok   T2 the write payload is UNCHANGED — same six fields the backend already accepts (executed)
+ok   T2a and it addresses the row by canonical warehouse_id + sku, never by the factory label
+
+== U. source — the raw fetch is gone, and the backend is untouched ==
+ok   U1 the adjustment accessor no longer calls fetch() directly
+ok   U2 and no longer turns an HTTP status into the write’s verdict
+ok   U3 it dispatches through the canonical write owner — the same one every other command uses
+ok   U4 REGISTERED_ACTION = adjustFactoryInventory — it IS in the POST router, so this was never a missing action
+ok   U5 and the operator’s message is doGet’s terminal — a GET-handler answer, not a verdict on a POST
+ok   U6 INVENTORY_ARITHMETIC_CHANGED = NO — 21_ still derives after_current from new_available + reserved
+ok   U7 and still refuses a no-op, which is what makes a re-send incapable of minting a second movement
+
+== V. NEGATIVE CONTROLS — §25 M1..M10 ==
+ok   M1 settling from the transport code alone (HTTP 404 = rejected) is caught (caught)
+ok   M1a a settlement that confirms a commit the row does not show is caught (caught)
+ok   M2 an automatic replay on OUTCOME_UNKNOWN is caught (caught)
+ok   M3 a Done button wired to submit is caught (caught)
+ok   M4 a Done button that never appears after success is caught (caught)
+ok   M5 a SKU list that ignores warehouse_id is caught (caught)
+ok   M6 a Factory change that preserves the previous SKU is caught (caught)
+ok   M7 a second write from a double Confirm is caught (caught)
+ok   M8 a success screen showing the stale pre-write quantity is caught (caught)
+ok   M9 a document listener re-registered on reopen is caught (caught)
+ok   M10 a Factory option carrying its display label as the value is caught (caught)
+
+=====================================================
+FACTORY-INVENTORY-ADJUSTMENT-STABILITY-R1
+FALSE_NOT_WRITTEN_CLAIM_COUNT = 0   FALSE_REJECTED_CLAIM_COUNT = 0
+AUTOREPLAY_ON_UNKNOWN = NO   AUTOMATIC_DUPLICATE_WRITE_COUNT = 0
+DONE_CLICK_WRITE_REQUEST_COUNT = 0   DONE_CLICK_CLOSE_COUNT = 1
+CROSS_FACTORY_SKU_VISIBLE_COUNT = 0   FACTORY_CHANGE_CLEARS_SKU = YES
+INVENTORY_ARITHMETIC_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0
+=====================================================
+PASSED  95 passed, 0 failed   (negative controls: 11 caught, 0 missed)

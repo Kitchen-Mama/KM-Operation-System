@@ -1,0 +1,190 @@
+
+== §A1 / §B — THE PRISTINE COMPOSER, EXECUTED ==
+ok   A1  with no active draft, EXACTLY ONE pristine composer is rendered
+ok   A2  and ZERO execution routes — a composer is not a route
+ok   A2a an empty plan renders exactly one PRISTINE composer and no execution route
+ok   B1  its Qty is BLANK — never the Suggested Qty, and never 0
+ok   B2  From is blank
+ok   B3  To is blank
+ok   B4  Method is blank
+ok   B5  and the Method select is DISABLED — there is no lane to resolve a carrier for
+ok   B6  the row declares its KIND
+ok   B7  and carries NO provenance — it is not claiming to be a route
+ok   B8  no allocation_draft_line_id
+ok   B8a no allocation_draft_id
+ok   B8b no route_group_key
+ok   B9  and NO client_route_instance_id — a pure render mints nothing
+ok   B10 it does NOT carry `.exec-route-row`, so the collector's own SELECTOR passes it by
+ok   B11 Total = 0
+ok   B12 and the canonical model holds nothing
+ok   B13 zero writes of every kind
+ok   B14 Suggested Qty 0 gives the identical blank composer — it was never seeded from the number
+ok   B15 five re-renders still leave EXACTLY ONE composer, never a stack of them
+ok   B15a and none of them marked anything dirty
+
+== §C — THE COMPOSER STATE MACHINE ==
+ok   C1  three states, named
+ok   C2  untouched → PRISTINE
+ok   C3  touched and not yet legal → TOUCHED_INCOMPLETE
+ok   C4  all four fields legal → COMPLETE
+ok   C5  a Method that is not an eligible value does NOT complete a route
+ok   C5a nor does Qty 0
+ok   C5b nor two contradictory destinations — the XOR still holds
+ok   C6  USER_EXPLICIT_MANUAL_ROUTE is the SAME act as USER_EXPLICIT_ADD_ROUTE, aliased not duplicated
+ok   C6a so the legal provenance set is still THREE
+ok   C7  before the first edit the collector can see nothing
+ok   C7a and a collect run over a pristine composer puts NOTHING in the model
+ok   C7b queueing nothing to write
+ok   C8  the first edit marks the composer TOUCHED
+ok   C8a and only now does it become visible to the collector
+ok   C8b while still declaring itself a composer
+ok   C9  the edit IS preserved in the model — it is not thrown away
+ok   C9a as a composer
+ok   C9b in the TOUCHED state
+ok   C10 with NO allocation ids minted — §C.2
+ok   C10a and no provenance, because it is not yet a route
+ok   C10b and no CREATE/UPDATE intent
+ok   C11 nothing was queued to write — §C.2 zero DB write
+ok   C12 From alone does not complete a route
+ok   C13 From + To does not complete it either
+ok   C13a still zero queued to write
+ok   C14 From + To + Qty with no Method does not complete it
+ok   C14a still zero queued to write — §L.8
+ok   C14b and still no line id has been minted
+ok   C15 completing it produces EXACTLY ONE route, not a second
+ok   C16 which graduates to USER_EXPLICIT_ADD_ROUTE
+ok   C17 declared as CREATE_NEW_ROUTE
+ok   C18 and NOW mints a stable line id (SADL-NEW-1)
+ok   C18a and a stable client_route_instance_id
+ok   C19 it stops declaring itself a composer — it is a route now
+ok   C20 and only now is it queued to be written — §C.3
+ok   C20a the DOM row drops its composer kind too
+ok   C20b and carries the graduated provenance
+ok   C21 a persisted route renders as a route, not a composer
+ok   C21a and no composer is added beside it — §E.2
+ok   C22 a Qty edit UPDATES the same line id — §L.11
+ok   C22a under the same header
+ok   C22b as UPDATE_EXISTING, never a replacement ticket
+
+== §D — FIELD DEPENDENCY: no Method before there is a lane ==
+ok   D1  the renderer has an explicit route-resolvable gate
+ok   D2  and the Method select is disabled unless BOTH a lane and eligible methods exist
+ok   D3  EXECUTED: even with eligible methods in the catalogue, a composer with no From/To has Method DISABLED
+ok   D4  EXECUTED: a route whose From and To ARE known gets an enabled Method select
+ok   D5  NO_CARRIER_CARD_FOR_LANE is a typed method-unresolved reason
+ok   D6  and "no eligible method" is a DIFFERENT block from "cannot rank the ones there are"
+ok   D6a the page names NO_ELIGIBLE_METHOD_CONFIGURED
+ok   D7  §D.7 NO_LEAD_TIME stays a separate reason from NO_ELIGIBLE_METHOD — never merged
+
+== §E — DEFAULT COMPOSER AND ADD ROUTE ==
+ok   E1  active routes = 0 → exactly one pristine composer
+ok   E2  active routes > 0 → no composer is auto-appended
+ok   E3  + Add Route once adds EXACTLY ONE row beside the persisted route
+ok   E4  one persisted route on screen
+ok   E5  after the explicit delete, zero execution routes
+ok   E5a and ONE fresh pristine composer takes the slot
+ok   E5b whose Qty is BLANK — not 800 (the deleted route) and not 520 (the suggestion)
+ok   E5c Total = 0
+ok   E5d the model holds nothing
+ok   E5e and nothing was queued to write
+ok   E6  the composer builder names no allocation identity at all, so it cannot revive a cancelled draft
+
+== §F — TOTAL AND SUBMIT ==
+ok   F1  a pristine composer alone is an EMPTY plan — NO_EXECUTION_ROUTES, not a complaint about the composer
+ok   F1a and it is not reported as a phantom or a stale route — §F.6
+ok   F2  a TOUCHED incomplete composer BLOCKS
+ok   F2a naming exactly what is missing — §C.2
+ok   F3  §F.7 a default composer does NOT whole-batch block a route that is ready
+ok   F4  but a STARTED one does — a half-typed route is a decision in progress
+ok   F5  only persisted complete routes are candidates
+ok   F6  and nothing at all is NO_EXECUTION_ROUTES
+ok   F7  a pristine composer contributes 0 to the Total, because its Qty is blank
+
+== §G / §A2 — THE AI PLAN CALL CHAIN, TRACED AND EXECUTED ==
+ok   G1  the AI Plan menu item calls runReplenAiSupport('aiplan')
+ok   G2  which opens the scope modal
+ok   G3  whose confirm button is "Generate AI Plan"
+ok   G4  and whose onConfirm hands the SELECTED SCOPE to handleReplenAiPlan
+ok   G5  the selected scope (Amazon US) is retained on the page
+ok   G6  the RECOMMENDATION half runs: KMREC regenerates per SKU
+ok   G7  and the EXECUTION half is gated on two conditions
+ok   G8  THE BREAK POINT is ONE boolean of record in 00_config.gs (currently false)
+ok   G8a1 read through exactly ONE accessor, so every gate agrees on the value
+ok   G8a and the EFFECTIVE value is reportable from system.health, so the deployed posture is a fact
+ok   G8b with the client mirroring it fail-safe OFF
+ok   G9  the browser adapter EXISTS
+ok   G10 the router action EXISTS
+ok   G11 the server handler EXISTS
+ok   G12 and it calls the authoritative route planner
+ok   G13 so the click is category 3: it recalculates the RECOMMENDATION only
+
+== §H — THE AUTHORITATIVE ALLOCATOR, EXECUTED (it exists, and it is a ranking policy) ==
+ok   H1  EXECUTED: the allocator produces ONE complete route group for the live shape
+ok   H2  From is complete
+ok   H3  To is complete
+ok   H4  Qty is the allocated quantity
+ok   H5  Method is DERIVED — the "four blank dimensions" note is STALE
+ok   H5a as is last-mile
+ok   H5b and the group number
+ok   H6  the outcome is AI_RANKED
+ok   H7  with an Expected Arrival derived from the lead time
+ok   H8  §H the allocator output is CONSERVED — no quantity invented or lost
+ok   H9  §H.3 two tying route pairs are NOT first-row picked — the allocator refuses and says AMBIGUOUS
+ok   H9a under a typed block
+ok   H10 §I no authority for the lane → typed NO_TRANSIT_AUTHORITY_FOR_LANE, and ZERO half-routes
+ok   H11 §D.7 a missing lead time is NO_LEAD_TIME — a different answer from a missing card
+ok   H11a and it still offers the method for MANUAL selection, because the card exists
+
+== §I — AI PLAN OUTCOME VISIBILITY ==
+ok   I1  the run names EXECUTION_MATERIALIZATION_NOT_ENABLED when the flag is off
+ok   I1a and EXECUTION_MATERIALIZATION_UNAVAILABLE when the writer is not reachable at all
+ok   I2  saying separately which half ran and which did not
+ok   I3  and telling the operator what they CAN do instead
+ok   I4  the old message, which read as "the plan ran and produced nothing", is gone
+ok   I5  a cancelled modal is still a stated outcome
+ok   I6  a double click is still refused out loud
+ok   I7  a throw is still reported with its message
+ok   I8  only a SUCCESSFUL generation re-hydrates
+ok   I8a and its routes carry AI provenance
+ok   I9  a zero-result run has its own typed message
+ok   I10 and a failure says the plan was left alone
+
+== §J / §K — REPEATED AI PLAN AND PERSISTENCE IDENTITY ==
+ok   J1  §J.4 a retry derives the SAME generation run id, so a repeat REUSEs its committed rows
+ok   J2  §J.2 a regenerate over user edits requires an explicit confirmation flag — the policy exists
+ok   J2a and a conflict is a named per-marketplace outcome, never a silent overwrite
+ok   J3  §K.2 the plan is computed in full BEFORE any write, so a gate refusal cannot half-write
+ok   J4  §J.6 and AI Plan cannot revive a cancelled draft — the hydrate excludes them
+ok   J5  §K.6 allocation identity stays the deterministic K2 header/line contract
+
+== §L regression / §M release identity ==
+ok   M1  §L the Suggested Qty still seeds no route anywhere
+ok   M1a and the deleted seeding literal has not returned
+ok   M2  E2 minted its own cache token
+ok   M2a and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   M2b strictly after E1's, which was published
+ok   M3  zero production references remain on E1's token
+ok   M4  and nothing is left behind on a superseded token
+ok   M5  the page carries it
+ok   M5a and so does the shared module
+ok   M6  §M.3 no Apps Script build stamp was churned by a frontend-only round
+
+== §N — MUTATIONS ==
+ok   N1  the composer gets `.exec-route-row` while still pristine (caught)
+ok   N2  the Suggested Qty prefilled into the default composer (caught)
+ok   N3  an incomplete composer allowed to mint an identity and be queued (caught)
+ok   N4  the Method select enabled before the route resolves (caught)
+ok   N5  a pristine composer allowed to block Submit (caught)
+ok   N6  a touched incomplete composer allowed through Submit (caught)
+ok   N7  the composer never graduates, so a completed route is never created (caught)
+ok   N8  deleting the last route re-seeds the Suggested Qty instead of a blank composer (caught)
+ok   N9  the AI Plan click made a silent no-op again (caught)
+ok   N10 the allocator reduced to picking the first rate card (caught)
+ok   N11 a zero-result generation reported as a completed plan (caught)
+ok   N12 a cancelled draft reused by the hydrate (caught)
+ok   N13 the E1 rule broken: a route seeded from the Suggested Qty (caught)
+ok   N14 the composer collected but its state discarded, so Submit cannot tell it from a route (caught)
+
+---
+164 passed, 0 failed
+mutations: 14 caught, 0 missed

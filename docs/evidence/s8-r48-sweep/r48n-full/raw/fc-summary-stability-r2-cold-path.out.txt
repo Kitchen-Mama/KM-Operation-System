@@ -1,0 +1,72 @@
+
+== A. §3/§16 — the Special cold path is one round, and the arithmetic says why ==
+ok   A1 the lane pool is still 2 — this round did not widen it
+ok   A2 §12 and the read budget is still 45s — the path was repaired, not the timeout
+ok   A3 the Regular cold set is the scope/datalist pair
+ok   A4 and the Special cold set is now the SAME pair
+ok   A5 REGULAR: 2 blocking table requests, 1 round (unchanged)
+ok   A6 SPECIAL: 2 blocking table requests, 1 round — was 3 and 2
+ok   A7 and a THIRD table would be a second serial 45s budget — which is what campaigns cost
+ok   A8 §4 campaigns is no longer a Special cold-path prerequisite
+
+== B. §2/§4 — campaigns is deferred to its two real consumers, and both gate on it ==
+ok   B1 campaigns is DECLARED in the deferred table set
+ok   B1a (list parser sanity — an empty declaration reads as empty, not as absent)
+ok   B2 the Base Campaign selector gates on campaigns being pending
+ok   B3 and is the consumer that buys it
+ok   B4 existing-event hydration waits for campaigns AND lines at the same boundary
+ok   B5 and awaits them TOGETHER — two serial subsection waits would move the cost, not remove it
+ok   B6 the selector has exactly two call sites — the method handler and its own re-entry
+ok   B7 §4 and the outer one fires ONLY on the growth method — never on modal open
+ok   B8 the re-entry re-checks the method rather than closing over it — one re-entry, never a loop
+
+== C. §17 — FC-5 is not traded away for a request ==
+ok   C1 the FC-5 table gate still distinguishes a refused read from an empty one
+ok   C2 and still renders LOADING rather than "No data found" for an unread slice
+ok   C3 asked of the readiness owners, not of the row count
+ok   C4 §17 the campaigns selector says LOADING while unread — never "(no matching campaign)"
+ok   C5 and a failed campaigns read disables the control with its reason, not with a false absence
+
+== D. §11 — FC-ID-R2 identity boundary is untouched ==
+ok   D1 the save still resolves identity through the ONE owner
+ok   D2 and still refuses every non-READY_UNIQUE state — BLANK_MARKETPLACE_ID_WRITE_COUNT = 0
+ok   D3 with the gate still ABOVE _fcWriteBegin_ — the refusal is still CONFIRMED_NOT_STARTED
+ok   D4 §11 and the registry was NOT added to the cold path — identity stays a save-boundary concern
+
+== E. §7/§8 — pricing isolation, which was already correct and must stay so ==
+ok   E1 §8 Retry asks for pricing ALONE, through the one pricing owner — PRICING_RETRY_REQUEST_COUNT = 1
+ok   E1a and names no sibling table — a price retry re-reads prices, not the builder
+ok   E2.1 and never re-reads sku_details — no sibling is discarded
+ok   E2.2 and never re-reads marketplace_skus — no sibling is discarded
+ok   E2.3 and never re-reads campaigns — no sibling is discarded
+ok   E2.4 and never re-reads fc_special_events — no sibling is discarded
+ok   E3 §14 the row-level request is single-flight — DUPLICATE_PRICING_REQUEST_COUNT = 0
+ok   E4 §7 PENDING and MISSING are distinct row states — an unread price is never a false zero
+ok   E5 and a Save while pricing is pending is refused rather than saved against a blank
+
+== F. §9/§10 — the post-save path cools tables, not paths, and poisons nothing ==
+ok   F1 §9 an unknown write scope still invalidates everything — fail-closed is preserved
+ok   F2 and a table the receipt proved current is kept, not re-read
+ok   F3 §9 the warm-up still holds deferred tables this session has actually used — campaigns included
+ok   F4 and warms nothing when there is nothing held — a session that never used them buys nothing
+ok   F5 §9 NO write scope changes a builder prerequisite — so a save cannot cool the cold path
+
+== G. mutation ==
+ok   G1 campaigns is moved back onto the Special cold path (caught)
+ok   G2 the read timeout is raised instead of the path repaired (caught)
+ok   G3 the lane pool is widened instead (caught)
+ok   G4 pricing Retry reloads its siblings (caught)
+ok   G5 the identity guard is weakened to let a blank through (caught)
+ok   G6 an unread slice renders as empty again (caught)
+ok   G7 the campaigns selector reports an absence while still loading (caught)
+ok   G8 hydration stops waiting for campaigns and reads it unread (caught)
+
+=====================================================
+FC-SUMMARY-STABILITY-R2 COLD PATH — 48 passed / 0 failed
+mutants: 8 caught / 8 planted
+SPECIAL_COLD_BLOCKING_TABLE_REQUESTS 3 -> 2   SPECIAL_COLD_ROUNDS 2 -> 1
+REGULAR_COLD unchanged at 2 requests / 1 round
+READ_TIMEOUT_MS unchanged at 45000   LANES unchanged at 2
+FC5_SEAL_HELD = YES   FC_ID_R2_SEAL_HELD = YES   BLANK_MARKETPLACE_ID_WRITE_COUNT = 0
+PRODUCTION_ROWS_WRITTEN = 0   FORECAST_FORMULA_CHANGED = NO
+=====================================================

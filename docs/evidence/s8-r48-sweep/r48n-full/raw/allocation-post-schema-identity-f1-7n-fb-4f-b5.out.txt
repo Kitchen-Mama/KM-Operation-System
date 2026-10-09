@@ -1,0 +1,32 @@
+
+== A — shape: read-only by construction, no commit, no route, right directory ==
+
+== B — [tests 1, 2, 3, 4, 22] the recorded 35/31 state, read exactly once per table ==
+
+== C — [tests 5, 6, 11] the four headers, classified ==
+
+== D — [tests 7, 8, 9, 10] the target: persisted sea/800 versus attempted sea_express/Amazon/400 ==
+
+== E — [tests 12, 13, 14] simulated user input, collisions, downstream references ==
+
+== F — [tests 15, 19] the server hydration boundaries, measured ==
+
+== G — [tests 16, 18] the CLIENT boundary, by executing the shipped page functions ==
+
+== H — the six readiness booleans and the one global verdict ==
+
+== I — the authority gate, and the evidence vocabulary ==
+
+== J — [test 23] mutation tests: every guard is load-bearing ==
+
+== K — the neighbours this round must not have disturbed ==
+
+== L — [R1] the COMPACT view: one builder, two renderings ==
+
+== M — [R1, tests 3, 8] a header with NO lines is still a header, and nothing live is hardcoded ==
+
+== N — [R1, test 11] the planning doc separates fixture from live evidence ==
+
+== O — [R1, test 12] mutation tests for the compact view ==
+
+PASS  384 passed, 0 failed

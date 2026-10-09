@@ -1,0 +1,11 @@
+
+== bundle registration ==
+
+== calc-DATE authority (Script Property; fail-closed; no clock) ==
+
+== MARKETPLACE end-to-end — additive line.horizons D18–D90 + monthlyProjection non-regression ==
+
+== additive fail-closed — calc-DATE absent → horizons omitted, OP response unaffected ==
+
+----------------------------------------
+DAY-HORIZON TRANSPORT (F1-4B-FM4a): 18 passed, 0 failed

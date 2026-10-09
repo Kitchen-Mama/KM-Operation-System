@@ -1,0 +1,90 @@
+
+== A. THE VOCABULARY, MEASURED FROM THE WRITERS — not from either list ==
+ok   A0  the writer census found movement types at all (non-vacuous)
+ok   A1  shipment_receipt is emitted by EXACTLY ONE writer, 31_ — and 31_ appends to the OVERSEAS ledger
+ok   A1a which is the whole finding: the type was declared in the FACTORY enum by a file that never writes it, while its only writer touches the overseas ledger and not the factory one
+ok   A2  manual_adjustment is emitted in BOTH domains — 21_ into factory_stock_movements and 05_ into overseas_inventory_movements. The overseas half was written for rounds without ever being declared
+ok   A3  §2 FACTORY_MOVEMENT_TYPE_COUNT = 6 — derived, and shipment_receipt is not among them
+ok   A3a exactly six
+ok   A4  §4 SHIPMENT_RECEIPT_FACTORY_ENUM_COUNT_POST = 0
+ok   A4a and the constant itself left 21_ — the domain move is real, not a list edit with the name left behind
+ok   A5  §3 the OVERSEAS vocabulary is SIX — the four R4B declared plus the two this ledger already carried
+ok   A6  §4 SHIPMENT_RECEIPT_OVERSEAS_ENUM_COUNT_POST = 1 — exactly once, no synonym beside it
+ok   A6a and §3's forbidden synonyms are absent — shipment_receipt already names the event truthfully
+ok   A7  §0 MOVEMENT_VOCABULARY_EXPANDED = NO — five of the six have a live writer, and the ONE that does not is inventory_import, which R4B declared and which is kept rather than quietly removed
+
+== B. THE GUARD AND THE VOCABULARY ARE NOT THE SAME QUESTION ==
+ok   B1  ovsApplyDeltaTx_ may emit exactly the three reservation-lifecycle types
+ok   B1a and every one of them is in the vocabulary — a STRICT SUBSET, not a second list
+ok   B1b strictly smaller
+ok   B2  and the guard reads the SUBSET. Widening the vocabulary without splitting the two would have let a warehouse receipt be booked through the reservation transaction
+ok   B2a the split made the guard STRICTER, not looser: inventory_import used to be accepted here and no caller has ever passed it
+ok   B3  the three lifecycle callers were located
+ok   B3a and each passes a type the guard admits — the narrowing broke no caller
+
+== C. §11 — THE LEDGER TELLS THE TRUTH ABOUT WHICH AXIS MOVED (executed) ==
+ok   C1  §20.C reservation_acquire: available DOWN, reserved UP, physical untouched
+ok   C1a and the ledger row states BOTH axes truthfully
+ok   C1b and records physical as UNCHANGED — §11: no movement may claim physical moved when it did not
+ok   C2  §20.D reservation_release: available UP, reserved DOWN
+ok   C2a with both axes on the row
+ok   C3  §20.E shipment_out: reserved DOWN ONLY — available is NOT deducted a second time (70/30 dispatch 30 is 70/0, never 40/0)
+ok   C3a and the row says available did not move, which is the claim a reader would otherwise have to guess
+
+== D. §5/§6/§12 — THE RECEIPT CHAIN (pure helpers, executed) ==
+ok   D1  §20.H a first receipt of 60 against shipment_qty 100 is accepted, delta 60
+ok   D2  §6 a second receipt to cumulative 100 is accepted, delta 40 — PARTIAL_RECEIPT_SUPPORTED = YES
+ok   D3  §20.I over-receipt is REFUSED by a typed code
+ok   D3a and a cumulative that goes BACKWARD is refused too — the field is cumulative, not a delta
+ok   D4  §20.I and validation precedes application — the refusal cannot follow a write
+ok   D5  §12 the movement reference encodes the line AND the cumulative level it posted
+ok   D5a so the highest already-posted cumulative is readable straight out of the ledger
+ok   D6  §20.J a REPLAY of the same cumulative posts ZERO — no duplicate inventory increase
+ok   D6a and a genuine second receipt posts only the DELTA, never the cumulative and never shipment_qty
+ok   D6b and a cumulative BELOW what was posted can never post a negative
+ok   D7  §12 the amount is a function of the ledger, so a crash between the qty write and the inventory write is repaired exactly-once on the next call rather than lost or doubled
+
+== E. §15 — STATUS IS NOT A MOVEMENT ==
+ok   E1  §20.G no delivered path reaches wh_available_stock
+ok   E1a and the overseas balance writer does not know the word at all
+ok   E2  §15 DELIVERED_INVENTORY_MUTATION_COUNT = 0 — no lifecycle STATUS word is a movement type in either vocabulary. `delivered` is what the shipment is; `shipment_receipt` is what moved
+
+== F. §8/§10 — SOURCE IDENTITY IS warehouse_id, AND THE DEPRECATED FIELD DECIDES NOTHING ==
+ok   F1  §8 DEPRECATED_FIELD_RUNTIME_AUTHORITY_COUNT = 0 — source_factory_warehouse_id appears in NO shipped runtime handler on this path
+ok   F1a and is never read as a COLUMN anywhere — it decides no source identity
+ok   F2  the overseas owner keys by warehouse id
+ok   F3  §10 SHIPPING_SOURCE_IDENTITY = warehouse_id — the shipment and dispatch owners resolve their source by source_warehouse_id
+ok   F3a §10 SOURCE_IDENTITY_DRIFT_COUNT = 0 — warehouse_code is never assigned into a source variable
+ok   F3b nor is a display name, a factory name, or company/country/marketplace, used as the source key
+ok   F3c the SAME srcWarehouseId is what domain routing is asked about — the identity is not re-derived from anything else on the way into the reservation
+ok   F3d and BOTH domain ledgers key by warehouse_id + sku, in the same shape — so warehouse_id is the source identity end to end, Plan -> Shipment -> reservation -> ledger, in either domain
+
+== G. §7 — PO OVER-RECEIPT IS STILL REFUSED (frozen, revalidated, unchanged) ==
+ok   G1  §7 the typed refusal exists
+ok   G2  §7 PO_SILENT_CLAMP_PATH_COUNT = 0 — the quantity is refused, not quietly reduced to fit
+ok   G3  §7 and the refusal is reached BEFORE the factory stock writer — zero inventory mutation
+
+== H. §13/§14 — FACTORY OUT, OVERSEAS IN, AND THE DESTINATIONS ==
+ok   H1  §13 FACTORY_OUT_EVENT — the dispatch deducts through the factory authority
+ok   H2  §13 DESTINATION_INCREASE_EVENT — the warehouse receipt raises overseas available
+ok   H3  §13 and a FACTORY destination is never credited by a receipt — the two domains stay separate through the transfer, not merely at rest
+ok   H4  §14 destination eligibility reuses the EXISTING canonical overseas warehouse model — this round invents no warehouse-type rule and broadens no destination
+ok   H5  §14/§23 and nothing here implements refurbish
+ok   H6  §20.O the receipt and overseas owners write no Request Order and no PO table
+
+== I. §21 — MUTATIONS ==
+ok   MUTANT CAUGHT — M1 shipment_receipt left in the Factory enum
+ok   MUTANT CAUGHT — M2 shipment_receipt absent from the Overseas vocabulary
+ok   MUTANT CAUGHT — M3 manual_adjustment quietly dropped again from the Overseas vocabulary
+ok   MUTANT CAUGHT — M4 the transactional guard is widened back onto the whole vocabulary
+ok   MUTANT CAUGHT — M5 delivered increases inventory
+ok   MUTANT CAUGHT — M6 shipment_out decrements available again
+ok   MUTANT CAUGHT — M7 the receipt increases reserved instead of available
+ok   MUTANT CAUGHT — M8 the receipt posts shipment_qty instead of the authoritative delta
+ok   MUTANT CAUGHT — M9 the over-receipt clamp is restored
+ok   MUTANT CAUGHT — M10 a duplicate receipt increments inventory twice
+ok   MUTANT CAUGHT — M11 source_factory_warehouse_id made authoritative
+ok   MUTANT CAUGHT — M12 warehouse_code substituted for warehouse_id as source identity
+ok   MUTANT CAUGHT — M13 the Factory and Overseas movement owners are merged
+
+PASS  70 passed, 0 failed, 13 mutants, 0 survived

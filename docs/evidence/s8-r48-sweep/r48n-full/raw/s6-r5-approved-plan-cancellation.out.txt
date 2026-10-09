@@ -1,0 +1,108 @@
+
+== A. THE OWNERSHIP MODEL, MEASURED — why this round releases no reservation ==
+ok   A1  BOTH domains declare their reservation owner type as `shipment` — a plan can never be one
+ok   A2  and EVERY acquire call site in the project is in 12_, the shipment owner — no other file reserves
+ok   A2a none of them passes a PLAN id as the owner
+ok   A3  KMFSG counts `approved` as plan exposure and releases it on `cancelled` — the status IS the release
+ok   A3a and a cancelled plan is not in the exposure set at all, so nothing has to subtract it
+
+== B. §17.A/§17.J — approved Factory plan, no Shipment: the exit that did not exist ==
+ok   B0  the pre-R5 refusal text is GONE from the cancel branch — approved is no longer rejected outright
+ok   B1  §17.A an approved plan with no Shipment CANCELS
+ok   B1a and the row records who cancelled it and when
+ok   B2  §17.A/§11 factory stock is UNTOUCHED and NO movement row was written — there was nothing held, and a movement for a release that did not happen would be a lie in the ledger
+ok   B3  §5 the answer states the exposure and the reservation are both zero
+ok   B4  §8 and that the cancellation was READ BACK from the row, not inferred from a silent setValue
+ok   B5  §12 EXACTLY five cells were written — no approved quantity was rewritten to ease the transition
+ok   B5a and not one plan LINE was touched or deleted
+
+== C. §17.B/§17.D/§9 — IDEMPOTENCY: a second cancel releases nothing a second time ==
+ok   C1  §17.B a second cancel does NOT succeed a second time
+ok   C1a and says so truthfully, naming the current status
+ok   C2  §9 no duplicate release, no duplicate movement, no second availability change, and the original cancelled_at is not overwritten
+ok   C3  §17.D the overseas pool is unchanged by BOTH cancels and no overseas movement was ever written
+
+== D. §17.E/§6 — a Shipment exists: REFUSED, and nothing moves ==
+ok   D1  §17.E the cancel is REFUSED with a typed code
+ok   D1a naming the Shipment that owns the quantity
+ok   D2  §6 no exposure mutation — the plan is still approved
+ok   D3  §6 no inventory mutation and no movement row
+ok   D4  §6 NOT ONE CELL was written — the eligibility check runs before the first setCell, so a refusal cannot leave half a transition behind
+ok   D5  §6 and no Shipment mutation — this round implements no reverse transfer
+ok   D6  §17.I a plan that already transferred its exposure is refused — the authoritative owner wins
+ok   D6a with nothing written
+
+== E. §5 — PLAN_ACTIVE_EXPOSURE = 0, driven against the REAL KMFSG ==
+ok   E1  BEFORE: the approved plan holds 30 units of exposure against FW-CN||SKU1 — this is the ghost
+ok   E2  AFTER: zero counted lines, the pool entry is GONE, and KMFSG reports it as STATUS_RELEASED. PLAN_ACTIVE_EXPOSURE = 0 and the quantity is allocatable again
+ok   E3  and a REFUSED cancel releases nothing — the exposure is still held, which is the point of refusing
+
+== F. §7.C/§17.F — UNKNOWN is not ABSENT ==
+ok   F1  §17.F the shipments sheet is absent, so whether a Shipment exists is UNKNOWN — and UNKNOWN REFUSES
+ok   F1a naming which lookup could not answer
+ok   F2  §17.F no release, no false success, nothing written
+ok   F3  a shipments sheet carrying NO plan reference is UNKNOWN too — an empty scan of a sheet that cannot answer the question is not proof that the answer is no
+ok   F3a and says which
+ok   F4  EXISTS is a positive finding
+ok   F4a ABSENT is also a POSITIVE finding — the sheet was read and no row names this plan
+ok   F5  and the old projection still answers the id
+ok   F5a and still answers "" for both ABSENT and UNKNOWN — its contract is unchanged, which is why its four existing callers did not have to move
+ok   F5b the two answers diverge exactly where S6-R5 needs them to
+
+== G. §10/§17.G — the cancel/create race has ONE owner ==
+ok   G1  the cancel runs under the ScriptLock and releases it — the same lock domain the shipment creator takes, so the two serialise rather than interleave
+ok   G2  §10 create won: the cancel is refused, so the Shipment keeps the quantity it reserved
+ok   G3  §10 cancel won: the plan is cancelled and its exposure released
+ok   G3a and it is no longer approved, so a creator that ran next would not find an approved plan to build from
+ok   G4  §10 a cancel that cannot take the lock is told to read back rather than retry — an unserialised second attempt is exactly how both paths could win
+
+== H. §17.H — active exposure, no reservation: truthful, and no invented movement ==
+ok   H1  §17.H the plan cancels — its own exposure is what it holds, and it holds no reservation
+ok   H2  §17.H/§11 ANOTHER shipment's 40-unit hold is untouched and no movement was invented. A handler that "released what the pool showed" would have handed back units it never held
+ok   H2a and the answer claims a release of zero, truthfully
+
+== I. §4 — THE OVERSEAS CASE, AND WHERE THE TASK SPEC CONTRADICTS THE FROZEN MODEL ==
+ok   I1  the 70/30 the spec describes, reached the only way the runtime can reach it
+ok   I2  and the cancel is REFUSED, because the units are held by SHP-3 — which is §0, §2 and §6 working
+ok   I3  so the pool stays 70/30. The spec's 100/0 is NOT produced, and producing it would mean either cancelling a plan whose Shipment owns the stock (§0/§6 forbid it) or giving a plan a reservation of its own (a second reservation owner, which the frozen model does not have). Recorded, not worked around.
+ok   I4  an approved overseas plan with NO Shipment necessarily sits on 100/0 ...
+ok   I5  ... it cancels, the pool is already 100/0, and NO reservation_release row is written because nothing was ever held. §11: no movement when nothing held.
+
+== J. §14/§17.L — the Phase-1 boundary, and §16 — no schema ==
+ok   J1  §17.L the cancellation path names no Request Order and no Purchase Order table or handler
+ok   J2  §14 and reaches no S5 ordering, forecast or gap authority — cancellation does not feed back into it
+ok   J3  §16 every cell the cancellation writes already exists on shipping_plans — no column was added
+ok   J3a §16 and neither the eligibility check nor the cancel branch ensures a column — the round widens no sheet, needs no migration and needs no backfill
+
+== K. §1 — ONE status mutation owner, and §13 — the operator surface ==
+ok   K1  §1 exactly ONE file writes a shipping plan status of `cancelled`
+ok   K1a and exactly one line inside it — no parallel cancel endpoint was created
+ok   K1b the approved-without-shipment render branch was located
+ok   K2  §13 approved + no Shipment offers Cancel
+ok   K2a and approved WITH a Shipment does NOT — Done is offered there, and the plan is no longer the owner of rollback
+ok   K3  §13 and the approved prompt tells the operator what cancelling actually does to the stock
+ok   K4  the typed refusals are canonical codes, so they survive the transport instead of arriving as prose
+
+== L. §19 — ATOMICITY: status and release cannot disagree ==
+ok   L1  §19 eligibility is evaluated BEFORE the first write, and the readback AFTER the last one
+ok   L1a and NOTHING is written between the two — there is no window in which a refused cancel has already changed a cell
+ok   L2  §19 the exposure release and the status change are ONE cell write, so a partial commit between them is not a window that can be made smaller — it does not exist
+ok   L3  §19 and that write is journalled into the SAME transaction the round before it built, so a failure after it unwinds through one compensation path rather than a second one invented here
+ok   L4  §8 EXECUTED: a status write the sheet silently drops is NOT reported as a cancellation
+ok   L4a and it lands in the existing journalled unwind, with its existing two-answer vocabulary
+
+== M. MUTATIONS — each is applied to shipped source and must be caught ==
+ok   MUTANT CAUGHT — M1 approved is omitted from the cancel-eligible set
+ok   MUTANT CAUGHT — M2 the shipment-exists guard is removed
+ok   MUTANT CAUGHT — M3 an UNKNOWN shipment lookup is treated as no shipment
+ok   MUTANT CAUGHT — M4 the transfer marker is ignored
+ok   MUTANT CAUGHT — M5 a movement row is emitted although nothing was held
+ok   MUTANT CAUGHT — M6 the release runs before eligibility is verified
+ok   MUTANT CAUGHT — M7 the status readback is dropped
+ok   MUTANT CAUGHT — M8 the mixed-deployment seam check is removed
+ok   MUTANT CAUGHT — M9 ABSENT and UNKNOWN are collapsed back into one answer
+ok   MUTANT CAUGHT — M10 a throw inside the shipments read is swallowed as ABSENT
+ok   MUTANT CAUGHT — M11 cancel rewrites the plan lines to make the transition easy
+ok   MUTANT CAUGHT — M12 the cancelled plan keeps holding exposure in KMFSG
+
+PASS  80 passed, 0 failed, 12 mutants, 0 survived

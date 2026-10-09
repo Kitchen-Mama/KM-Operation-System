@@ -1,0 +1,194 @@
+
+== A · CANONICAL FROM CODE, LIVE COLUMNS CLASSIFIED AGAINST IT ==
+ok   A1  the authority declares 30 canonical columns
+ok   A2  the three flags sit at canonical indexes 20..22, not at the end
+ok   A3  canonical position 3 is `sku` — which is exactly what the live sheet disagrees with
+ok   A3a while live position 3 is `marketplace_id`
+ok   A4  the live header carries 29 columns
+ok   A5  LIVE_EXTENSION_COLUMNS = marketplace_id, company
+ok   A6  and the ONLY canonical columns absent are the three this round provisions
+ok   A7  the arithmetic closes: live minus extensions plus the three flags IS the canonical list
+ok   A8  `asin` is absent from production
+ok   A8a and the tool never mentions it — an extension absent from production is not invented
+ok   A9  every live column is classified
+
+== B · THE TARGET LAYOUT AND THE MAP ==
+ok   B1  the target is 32 columns: 30 canonical + 2 preserved extensions
+ok   B2  would_drop_columns = 0
+ok   B3  would_add_columns = 3
+ok   B4  and the number of moved columns is reported
+ok   B4a the target block lists all 32 positions
+ok   B5  target positions 1..30 ARE the canonical list, in order
+ok   B6  and the extensions follow it in their existing relative order
+
+== C · §10 — THE REAL SCHEMA CLASSIFIER, NOT A WEAKER ONE ==
+ok   C0  the real classifier is loaded
+ok   C1  PRE — the live header is REFUSED by the real classifier
+ok   C1a with a header fault
+ok   C2  APPENDING the flags still fails — every required column present, still refused
+ok   C2a specifically on ORDER
+ok   C3  POST — the projected header PASSES the real classifier
+ok   C3a SCHEMA_VALID
+ok   C3b with the extensions reported as expected-but-tolerated rather than silently ignored
+
+== D · THE DRY RUN — zero writes, nothing dropped, values proven by name ==
+ok   D1  ZERO writes to pricing_list
+ok   D2  ZERO writes to pricing_change_log
+ok   D3  and the sheet is not widened
+ok   D4  no snapshot sheet is created by a dry run
+ok   D5  the projected logical hash MATCHES the pre hash — the migration is a rearrangement, not an edit
+ok   D6  and the sample rows prove OLD == projected NEW, field by field
+ok   D6a with no row differing
+ok   D7  the row count is reported
+ok   D8  and both PRE hashes
+ok   D9  the dry run prints the exact constants COMMIT will demand
+ok   D10 it handles the production row count
+ok   D10a still writing nothing
+
+== E · THE COMMIT — drift gate, snapshot, one bounded write, a validator that can fail ==
+ok   E1  COMMIT with unarmed constants is REFUSED
+ok   E1a having written nothing
+ok   E2  armed with the dry run's own values, the gate passes
+ok   E3  a PRE snapshot is created
+ok   E3a and it is a real sheet in the spreadsheet
+ok   E3b holding the header and all 495 rows
+ok   E3c in the ORIGINAL layout, which is what makes it a rollback
+ok   E4  pricing_list is rewritten in ONE range write
+ok   E4a with zero per-cell writes
+ok   E4b and the change log in one
+ok   E5  the canonical prefix is now EXACT
+ok   E6  extensions preserved, in order, to the right
+ok   E7  495 rows, unchanged
+ok   E8  every value in row 1 sits under the same NAME it started under
+ok   E9  identities unchanged
+ok   E10 price values unchanged
+ok   E11 and the full logical hash is unchanged
+ok   E12 regular_price_is_manual is BLANK on all 495 rows
+ok   E12a regular_price_is_manual has no FALSE value anywhere
+ok   E12 minimum_price_is_manual is BLANK on all 495 rows
+ok   E12a minimum_price_is_manual has no FALSE value anywhere
+ok   E12 msrp_is_manual is BLANK on all 495 rows
+ok   E12a msrp_is_manual has no FALSE value anywhere
+ok   E13 SCHEMA_RECONCILE_PASS
+ok   E14 pricing_change_log gains change_type at its canonical position
+ok   E15 the committed sheet passes the REAL classifier — writes are unblocked
+
+== F · ROLLBACK ==
+ok   F1  the sheet is migrated
+ok   F2  ROLLBACK restores the ORIGINAL 29-column header
+ok   F3  with every row back
+ok   F4  byte for byte
+ok   F5  and it replaced the sheet rather than merging into it
+
+== G · THE TOOL IS NOT A RELEASE FILE ==
+ok   G1  no manifest row
+ok   G2  it does not sit in the deployed directory
+ok   G3  it declares no build stamp and no release identity
+ok   G3a while it does READ the authority's stamp, to print which one it used
+ok   G4  THE TOOL CARRIES NO HARD-CODED COLUMN LIST — the layout is derived from the deployed authority
+ok   G4a and says so
+
+== I · pricing_change_log — THE LIVE 15-COLUMN SHAPE AND ITS TARGET ==
+ok   I1  the authority declares 9 canonical change_log columns
+ok   I2  and the canonical primary key is log_id
+ok   I3  the live sheet carries 15
+ok   I4  whose first column is named pricing_log_id
+ok   I5  CHANGE_LOG_EXTENSION_COLUMNS = the six contextual columns
+ok   I6  9 canonical + 6 extensions IS the live 15 — nothing is unaccounted for
+ok   I7  after the rename NO canonical column is missing — change_type is already live
+ok   I8  the dry run declares the rename it applies
+ok   I9  change_log drops nothing
+ok   I10 and adds nothing — change_type is already there
+ok   I11 twelve of the fifteen columns move
+ok   I12 the change_log projection is value-identical
+ok   I12a and says so in the verdict block
+ok   I13 the target header is printed
+ok   I14 target positions 1..9 ARE the canonical list, in order
+ok   I15 and the six extensions follow it in their existing relative order
+ok   I16 PRE — the real classifier REFUSES the live change_log
+ok   I17 POST — and accepts the target
+
+== J · THE RENAME IS AUDITED, NOT INFERRED FROM THE NAME ==
+ok   J1  73_api_v1_pricing_write.gs has never heard of pricing_log_id
+ok   J1  02_core_sheet_db.gs has never heard of pricing_log_id
+ok   J1  03_master_data_handlers.gs has never heard of pricing_log_id
+ok   J1  01_router.gs has never heard of pricing_log_id
+ok   J1  operation-system-db-api.js has never heard of pricing_log_id
+ok   J2  02_ filters change_log rows on r.log_id, by name
+ok   J3  the browser normalizer reads r.log_id, by name
+ok   J4  and the only writer MINTS log_id rather than reading one
+ok   J5  the writer projects by header NAME, so a mismatched name silently yields a blank key
+ok   J6  but prodRequireSheet_ refuses the sheet before any write — hence 0 live rows
+ok   J7  the rename is a declared constant, not a similarity heuristic
+ok   J8  and nothing in the tool CODE guesses a rename from the shape of a name
+ok   J8a while the prose still says why that would be wrong
+ok   J9  SKU_MASTER_FLOW.md does not present pricing_log_id as canonical
+ok   J9  PRICING_DATABASE_MAPPING.md does not present pricing_log_id as canonical
+ok   J9  DATABASE_RELATIONSHIP_MAP.md does not present pricing_log_id as canonical
+
+== K · WHAT THE CHANGE_LOG MIGRATION REFUSES, AND WHAT IT DOES WITH ROWS ==
+ok   K1  a rename collision is REFUSED, not resolved
+ok   K1a with nothing written
+ok   K2  a duplicate change_log header is REFUSED
+ok   K3  a blank change_log header is REFUSED
+ok   K4  a missing canonical column this tool does not provision is REFUSED
+ok   K5  with 0 rows the rename proof reports itself VACUOUS rather than PASSED
+ok   K6  with rows present the proof becomes a per-row check of every renamed value
+ok   K7  and the migration completes
+ok   K8  the committed change_log has the canonical prefix EXACT
+ok   K9  and the six extensions preserved, in order
+ok   K10 with every row still there
+ok   K11 every pricing_log_id value now sits under log_id, unchanged
+ok   K12 and the extension values came across too
+ok   K13 the POST logical hash matches PRE
+ok   K14 and the REAL gate accepts the migrated change_log
+ok   K14a as it does pricing_list
+
+== L · THE LOCK, AND A PARTIAL MIGRATION THAT ROLLS BOTH TABLES BACK ==
+ok   L1  COMMIT takes the script lock exactly once
+ok   L1a and releases it
+ok   L2  a lock it cannot take REFUSES the migration
+ok   L2a with nothing written
+ok   L3  a DRY RUN takes no lock, because it writes nothing
+ok   L4  the change_log write fails loudly
+ok   L5  and BOTH tables are rolled back
+ok   L6  reported as a failure, never as partial success
+ok   L6a with no automatic retry
+ok   L7  pricing_list is back to its ORIGINAL 29-column header
+ok   L7a byte for byte
+ok   L8  and the change_log to its original 15
+ok   L9  the lock is released even on the failing path
+ok   L10 ROLLBACK proves header, row count and values against the snapshot
+ok   L11 pricing_list restored
+ok   L12 change_log restored
+ok   L13 and says so only after the proof
+ok   L14 a restore that does not reproduce its snapshot FAILS loudly
+ok   L15 AND the second table is restored anyway — a failing first restore cannot cancel it
+ok   L16 pricing_change_log really is back at its PRE 15-column header, not left in the migrated shape
+ok   L17 with the failing table named
+ok   L18 the restore copies cells, not just their numbers
+ok   L18a and no longer writes values into cells whose type it did not restore
+
+== H · MUTANTS ==
+ok   H1  the flags are appended instead of placed at their canonical positions (caught)
+ok   H2  marketplace_id is dropped from the target layout (caught)
+ok   H3  company is dropped from the target layout (caught)
+ok   H4  the absent `asin` column is invented (caught)
+ok   H5  the new authority flags are initialized FALSE instead of blank (caught)
+ok   H6  row values are projected by column index instead of by name (caught)
+ok   H7  a duplicate header name is allowed through (caught)
+ok   H8  the live-drift gate is skipped (caught)
+ok   H9  a price value is altered while the columns move (caught)
+ok   H10 the logical hash ignores field names (caught)
+ok   H11 the dry run executes the commit path (caught)
+ok   H12 a partial write is treated as success (caught)
+ok   H13 the change_log drift gate is skipped (caught)
+ok   H14 the declared rename is never applied (caught)
+ok   H15 a rename that collides with an existing column is allowed through (caught)
+ok   H16 change_log rows are projected by column index instead of by name (caught)
+ok   H17 a failed write leaves a half-migrated pair behind (caught)
+ok   H18 the script lock is not required (caught)
+ok   H19 the POST state is not put through the real production gate (caught)
+ok   H20 the rollback does not verify what it restored (caught)
+
+148 passed / 0 failed   ·   20 mutants, 0 survived

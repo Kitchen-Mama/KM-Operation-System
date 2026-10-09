@@ -1,0 +1,11 @@
+
+== BEFORE == AFTER equivalence ==
+
+== scope matrix: all dimensions IGNORED except sku ==
+
+== ZERO / EMPTY / ERROR + missing table ==
+
+== source guards + no cutover ==
+
+----------------------------------------
+API LEAD TIME OWNER (F1-7E-PREREQ-4-R1): 27 passed, 0 failed

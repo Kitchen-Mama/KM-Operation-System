@@ -1,0 +1,20 @@
+
+-- A. THE DIAGNOSIS IS ABOUT THE SHIPPED SOURCE ---------------------------------------------------
+
+-- B. THE RETRY PATH — ORDER OF COMMITMENT --------------------------------------------------------
+
+-- C. THE ADAPTER IS TOTAL — PROVEN, THEN NO LONGER TRUSTED TO CLASSIFY ---------------------------
+
+-- D. THE REAL STATE MACHINE, DRIVEN --------------------------------------------------------------
+
+-- E. §6.1-6.12 — THE REQUIRED MATRIX -------------------------------------------------------------
+
+-- F. MUTATION — each defect is restored, and must be caught --------------------------------------
+
+-- G. VACUITY — with mutation neutered, every mutant must SURVIVE ---------------------------------
+
+-- H. §6.21-6.25 — SEALED REGRESSIONS -------------------------------------------------------------
+
+-- I. THE HOME BOOT — the census this suite recorded, now asserted as REPAIRED --------------------
+
+PASS  158 passed, 0 failed, 11 mutants, 0 survived, vacuity clean

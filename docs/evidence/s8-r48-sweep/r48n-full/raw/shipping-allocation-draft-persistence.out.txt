@@ -1,0 +1,34 @@
+
+-- header payload: route context is HEADER-level (C2-D1R §7) --
+ok   H-1: base header shape
+ok   H-2: no id → handler idempotent-matches/creates
+ok   H-3: no route context provided → no recommended_* on header
+ok   H-4: From → recommended_source_warehouse_id (HEADER)
+ok   H-5: To → recommended_destination_warehouse_id (HEADER)
+ok   H-6: From/To code snapshots on the HEADER
+ok   H-7: Method + Last-mile → header recommended_shipping_method / recommended_last_mile_delivery
+ok   H-8: Amazon logical To → blank recommended_destination_warehouse_id + destination_marketplace=Amazon
+
+-- line payload: SKU + qty grain (NO selected_*) --
+ok   L-1: edit targets the SAME line id (not replace)
+ok   L-2: planned_qty updated to user value
+ok   L-3: recommended_qty NOT sent on a user edit (snapshot protected)
+ok   L-4: NO selected_* on the 28-col line (route is HEADER-level)
+ok   L-5: route_no carried on the line
+ok   L-6: system line sends recommended_qty
+ok   L-7: system generation_type
+ok   L-8: first insert omits id → handler assigns SADL-
+ok   L-9: manual add → new id, user_created, planned only, no recommended
+
+-- soft cancel --
+ok   C-1: soft cancel = line_status cancelled (single line; never hard delete/replace)
+
+-- MOCK adapter flow (header with route, then incremental lines; no REPLACE) --
+ok   M-1: exactly two calls (header, then lines)
+ok   M-2: header upserted first
+ok   M-3: route context is carried on the HEADER payload
+ok   M-4: lines upserted under returned draft id
+ok   M-5: incremental — one line sent (not a full REPLACE)
+ok   M-6: line payload carries NO selected_* (28-col grain)
+
+ALL PASS

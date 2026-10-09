@@ -1,0 +1,22 @@
+
+== CASE A/B — source-grain preserved additively; Σ initialAllocationBySource == factoryCoveredQty ==
+
+== CASE B/H — multiple warehouses: initialAllocationBySource keeps every contributing source separately ==
+
+== CASE C/I — per-source physical conservation: Σ WH1 attribution across receivers ≤ WH1 physical ==
+
+== CASE D — cross-company R2G-B: original physical source warehouse survives (never receiver/company) ==
+
+== CASE E — §41 eligible surplus reallocation: donor surplus → eligible receiver; Σin == Σout ==
+
+== CASE F — ineligible direction (later-tier donor → earlier-tier receiver) → no transfer ==
+
+== CASE G — T4 receiver is visibility-only: excluded from §41, coverage untouched ==
+
+== CASE J — unused physical residual is NOT donor surplus (§43.6) ==
+
+== CASE K — no second §40 allocation: KMFSR path calls allocateFactoryDeterministic ZERO times ==
+
+== CASE M — determinism: receiver ordering does not change canonical output ==
+
+OK — all 28 assertions passed

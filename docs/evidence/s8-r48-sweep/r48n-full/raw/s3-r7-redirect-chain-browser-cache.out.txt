@@ -1,0 +1,94 @@
+
+=== A — EXECUTED: the S3-R7 capture tool, driven against a scripted backend ===
+  ok   A1 the tool loads and exposes matrix()
+  ok   A1a loading it issues ZERO requests — pasting it into a console changes nothing
+  ok   A1b its declared contract is zero writes
+  ok   A1c and GET only
+  ok   A2 matrix(1) issues exactly 8 requests — 2 actions x 4 scenarios x 1 repetition
+  ok   A3 every request is a GET — nothing here can mutate anything
+  ok   A4 every request goes to the canonical /exec — the googleusercontent host is never requested directly
+  ok   A4a every probe is abortable, so none can hang the console forever
+  ok   A4b two probes send NO cache option (browser default)
+  ok   A4c two send cache:'reload'
+  ok   A4d four send cache:'no-store' (no-store and unique-URL)
+  ok   A5 an expired echo target is counted as REDIRECT_404 by KM.transport.codeForHtml — not by a second classifier
+  ok   A5a and every row carries the production code, verbatim
+  ok   A5b with the production html_source, so a 404 counted here is a 404 by production's own definition
+  ok   A5c a failing probe is still one request — the tool adds no retry of its own
+  ok   A6 the report contains no user_content_key material
+  ok   A6a it records an identity hash instead
+  ok   A6b and the key LENGTH, which is comparable without being disclosable
+  ok   A7 given a server that reissues one key, the tool reports SAME_EXPIRED_KEY_REAPPEARS = YES
+  ok   A7a and USERCONTENT_KEY_CHANGES_PER_REQUEST = NO — the instrument is capable of the answer it did not give
+  ok   A7b and given distinct keys it reports NO — both answers are reachable, so either one is evidence
+  ok   A8 every D_UNIQUE_URL probe used a URL no other probe used
+  ok   A8a and the control condition really is one repeated URL — otherwise there is nothing to compare against
+  ok   A9 not one probe re-requests a googleusercontent target, even after being handed eight of them
+
+=== B — EXECUTED: §12, the diagnostic that could not read its own instrument ===
+  ok   B1 timeline() is an OBJECT, not an array — which is the whole defect
+  ok   B1a the rows live under .request_timeline
+  ok   B1b calling .forEach on it throws — so the old passive() produced nothing at all, silently
+  ok   B2 the repaired passive() runs against the real timeline() shape
+  ok   B2a and it prints the request rows it was always meant to print
+  ok   B2b including the totals only the object shape carries
+  ok   B3 a bare array still works — the repair accepts both shapes rather than swapping one assumption for another
+
+=== C — FETCH CACHE POLICY, in every dispatcher that reads ===
+  ok   C1 a read is dispatched as GET
+  ok   C2 READ_FETCH_CACHE_MODE = 'no-store' — already, in the shipped transport
+  ok   C3 no credentials option is set, so the fetch default (same-origin) applies and no cookie crosses to Google
+  ok   C4 no redirect option is set, so the fetch default ('follow') applies — the 302 is followed by the browser, which is why the intermediate hop is not observable from script
+  ok   C5 a write is still a POST
+  ok   C6 and also no-store — unchanged by this round
+  ok   C7 _kmGapRead_ sends GET + cache:'no-store' for reads
+  ok   C8 getTable sends GET + cache:'no-store'
+  ok   C9 AND getTable already carries a per-attempt cache-busting value — both of §8's authorised fixes are already shipped on the action the operator reports failing
+  ok   C10 every cache option in the db-api is no-store — none is force-cache or default
+
+=== D — §7 CANONICAL URL UNIQUENESS: is the same GET ever re-issued? ===
+  ok   D1 two reads of the SAME action with different request ids produce DIFFERENT URLs
+  ok   D2 because the request id is in the query — so a browser cache has no entry to serve from
+  ok   D3 one expired redirect produces exactly one recovery attempt
+  ok   D4 and the recovery uses a DIFFERENT URL from the attempt that expired
+  ok   D5 both rebuilt from the canonical /exec — EXACT_CANONICAL_GET_REUSED = NO
+
+=== E — §1: the APPLICATION redirect cache is still absent (S3-R5A, re-asserted, not re-quoted) ===
+  ok   E1 the only mention of the redirect host in transport policy is the classifier that REFUSES it
+  ok   E2 there is no endpoint cache, no last-good endpoint and no endpoint setter
+  ok   E3 EXECUTED: after four expired targets in a row, not one is ever requested back
+
+=== F — §5 SERVICE WORKER OWNERSHIP ===
+  ok   F1 the repository ships no service worker file
+  ok   F2 index.html registers none
+  ok   F3 SERVICE_WORKER_REGISTERED = NONE in shipped code — no module registers one
+  ok   F4 CACHE_STORAGE_ENTRIES = NONE in shipped code — nothing opens a CacheStorage
+  ok   F5 and the capture tool asks the BROWSER for registrations and for the controlling worker — a stale worker from an earlier deploy would not appear in this repository at all
+  ok   F6 and for the live CacheStorage entries
+  ok   F7 and checks whether window.fetch itself has been replaced
+
+=== G — §13 WRITE SAFETY: nothing on the write path moved ===
+  ok   G1 the retry predicate refuses every write BEFORE it consults any code-based allowance
+  ok   G2 EXECUTED: a write that meets an expired redirect is dispatched ONCE — WRITE_AUTOREPLAY_ADDED = NO
+  ok   G2a and it is reported as a failure rather than replayed into a possible twin
+  ok   G3 the S3-R7 capture tool contains no POST at all
+  ok   G4 and names only read actions
+  ok   G5 and the Pricing write-truthfulness debt is carried forward in the evidence, still untouched
+
+=== H — THE EVIDENCE, AND WHAT IT REFUSES TO CLAIM ===
+  ok   H1 the evidence names its round
+  ok   H2 the application layer verdict is carried forward
+  ok   H3 the browser layer is recorded separately from it
+  ok   H4 the round reaches a verdict rather than stopping at UNKNOWN
+  ok   H5 and states the basis — the action that already carries both authorised fixes and fails anyway
+  ok   H6 what the operator still owns is listed, not implied
+  ok   H7 WRITE_AUTOREPLAY_ADDED = NO
+  ok   H8 PRICING_WRITE_TRUTHFULNESS_TOUCHED = NO
+  ok   H9 the twelve-day-old live capture is dated, so it is never mistaken for today's production
+  ok   H10 and the tool distinguishes "nobody measured it" from "the browser refused to expose it"
+
+=== I — HARNESS HYGIENE ===
+  ok   I1 no generated files were left behind in assets/tests
+  ok   I2 the evidence directory holds exactly the tool and the measurements
+
+PASS  74 passed, 0 failed

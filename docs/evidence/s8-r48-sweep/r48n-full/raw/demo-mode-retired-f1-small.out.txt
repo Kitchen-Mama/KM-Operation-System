@@ -1,0 +1,19 @@
+
+== D1/D5 — the Demo Mode OWNER file is gone and is NOT loaded by the production bootstrap ==
+
+== D1/D2 — no Demo Mode toggle control or badge style can be produced (owner + CSS removed) ==
+
+== D3/D4 — no storage key and no query parameter can activate Demo Mode ==
+
+== D9 — every remaining Demo guard is NULL-SAFE (owner gone → falsy → NO throw, production path runs) ==
+
+== D6 — production (real DB) data paths are PRESERVED ==
+
+== D7 — SHARED / PRODUCTION data that merely carries a "Mock" name is NOT removed ==
+
+== D8 — no automated test depends on the Demo owner (nothing broken by its removal) ==
+
+== D10 — demo cleanup is CODE/UI-only: no live DB write was introduced by this round ==
+
+----------------------------------------
+DEMO MODE RETIRED (F1-SMALL-DEMO-CLEANUP): 23 passed, 0 failed

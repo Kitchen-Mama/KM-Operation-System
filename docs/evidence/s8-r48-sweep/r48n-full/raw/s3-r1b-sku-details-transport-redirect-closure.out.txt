@@ -1,0 +1,48 @@
+
+====================================================================================================
+S3-R1 §B — SKU DETAILS TRANSPORT REDIRECT: CLOSURE EVIDENCE
+====================================================================================================
+
+-- A. THE CANONICAL TRANSPORT — §B2 -------------------------------------------------------------------
+ok   A1 the read action is named once, as a constant — SKU_DETAILS_CANONICAL_TRANSPORT
+ok   A2 and the read goes through KM.api.getWorkspace — no page-level endpoint construction
+ok   A3 the page contains no "fetch(" — transport is not its business
+ok   A3 the page contains no "XMLHttpRequest" — transport is not its business
+ok   A3 the page contains no "google.script.run" — transport is not its business
+ok   A3 the page contains no "km_via" — transport is not its business
+ok   A3 the page contains no "googleusercontent" — transport is not its business
+ok   A3 the page contains no "/exec" — transport is not its business
+ok   A3 the page contains no "redirect:" — transport is not its business
+
+-- B. NO FALLBACK TRANSPORT, NO REDIRECT SHIM — §B2 ---------------------------------------------------
+ok   B1 the only broad reload left is behind _skEffectiveWorkspace() — the kill switch, not a fallback
+ok   B2 §D3 a missing read model RETURNS before rendering — SKU_DETAILS_FALLBACK_REACHABLE = NO
+ok   B3 the demo arrays are still reachable in LEGACY mode only, which is what B2 guards
+ok   B4 no error path renders through the override/demo layer
+
+-- C. STALE-RESPONSE PROTECTION WAS ALREADY THERE — §B1 -----------------------------------------------
+ok   C1 a monotonic sequence is captured at DISPATCH
+ok   C2 and compared before the commit — an older answer cannot land
+ok   C3 a superseded read is ANNOUNCED, so the caller stands down instead of rendering a null model
+ok   C4 ... on the post-write reconcile too
+ok   C5 the rejection handler is the two-argument form, so it guards the READ only
+ok   C6 and a render throw is classified as a view failure that does not discard the data
+
+-- D. THE REDIRECT CASES ARE CLASSIFIED AT THE TRANSPORT — §B1 ----------------------------------------
+ok   D1 a POST that arrived at doGet has its own code — the redirect follow that drops the body
+ok   D2 the transport records whether the response was redirected at all
+ok   D3 and a 404 from the redirect TARGET is ordered before the generic 404, so they cannot be confused
+ok   D4 a sign-in page and a 404 page are separate typed outcomes, not one "API error"
+
+-- E. REQUEST BUDGET — §B3, §4 ------------------------------------------------------------------------
+ok   E1 exactly ONE dispatcher of the skuDetails workspace read
+ok   E2 and exactly three callers of it: the mount, the post-write reconcile and Refresh DB
+ok   E3 the region load state begins with the read it belongs to
+ok   E4 and settles to READY or EMPTY on success — never left hanging
+ok   E5 with a typed error path for the failure — PERMANENT_LOADING_COUNT = 0
+
+====================================================================================================
+S3-R1 §B SKU DETAILS TRANSPORT REDIRECT CLOSURE — passed 28  failed 0
+SKU_DETAILS_TRANSPORT_REDIRECT_ERROR = CLOSED · no production file changed by this workstream
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+====================================================================================================

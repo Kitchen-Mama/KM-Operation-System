@@ -1,0 +1,122 @@
+
+== A — THE LIVE SCREEN, REPRODUCED THROUGH THE PRODUCTION ENTRY ==
+ok   A1  the production mount passes a ROUTE and no scope
+ok   A2  and there is no production call site that supplies one
+
+== B — THE OPTIONS EXISTED ALL ALONG ==
+
+== C — THE CHOOSER IS THE UNIVERSE, AND NOTHING ELSE ==
+ok   C6  the page names no marketplace in its code
+ok   C7  it names no company
+ok   C8  and no country
+ok   C9  and it reads no URL and no browser storage to decide a site
+
+== D — CHOOSING CONVERGES, AND READS ONCE ==
+
+== E — MEMBERSHIP, STALENESS, AND FAILING CLOSED ==
+
+== F — SIX VIEWS, SIX DIFFERENT PAGES ==
+
+== G — PRESENTATION IS A STATE, NOT A CLASS ==
+
+== H — THE SIDEBAR SUB-TABS ==
+ok   H1  switchTo refuses to re-mount the current page
+ok   H2  and the page consumes pendingRoute on mount
+ok   H3  the sidebar children call one entry point
+ok   H4  which applies the route itself when the section is ALREADY the current one
+
+== I — MUTANTS ==
+ok   I12 the replay harness does not hand the page a scope
+ok   I13 and it still does not raise the capability for it
+ok   I14 the visual runner does not mount the board with rows of its own
+ok   I15 it drives the page through the same transport seam as everything else
+ok   I16 the visual runner no longer selects a site by calling the controller
+ok   I17 it operates the real controls and dispatches real change events
+ok   I18 and chooseSite reaches the page only through what is on screen
+
+== J — THE RULES THIS ROUND DOES NOT OWN ==
+ok   J1  the server flag is still the last gate — activation suite §F
+ok   J2  SUPERSEDED (R10D): the capability is still derived from a server payload, never declared
+ok   J3  every refusal still has exactly one host
+ok   A3  the universe IS read — exactly once
+ok   A4  and the workspace is not, because no site was chosen
+ok   A5  the universe answered OK
+ok   A6  with the ten live sites
+ok   A7  and three companies cannot narrow to one site on their own
+ok   A8  the live headline, character for character
+ok   A9  and no standing paragraph under it
+ok   B1  narrow() computed the company options before anything was rendered
+ok   B2  and country is empty until a company is chosen, which is the ladder working
+ok   B3  the page has a site-selection host of its own
+ok   B4  and the screen asking for a site offers at least one control
+ok   C1  the chooser renders into the page-owned host
+ok   C2  Company is a real control while three companies are on offer
+ok   C3  its options are the universe companies and only those
+ok   C4  led by an unchosen placeholder — the page never picks for the operator
+ok   C5  Country cannot be used before Company, rather than offering every country
+ok   D1  the choice is taken
+ok   D2  and no workspace read yet — the scope is still incomplete
+ok   D3  Country has re-converged onto that company
+ok   D4  one marketplace on that country resolves itself — a fact is not a choice
+ok   D5  and THAT completes the scope: exactly one workspace read
+ok   D6  exactly one on the wire, too
+ok   D7  the board mounted
+ok   D8  one country under KM resolves itself and marketplace stays open
+ok   D9  still no read — two of three is not a scope
+ok   D10 the third tier completes it
+ok   D11 one read
+ok   D12 re-picking the SAME site reads nothing — a repeat click is not an unbounded request
+ok   D13 a DIFFERENT site does read again
+ok   D14 and the scope followed it
+ok   E1  a company outside the universe is refused, not adopted
+ok   E2  and nothing is read for it
+ok   E3  the newer selection is the one on screen
+ok   E4  and the older answer was DROPPED rather than rendered
+ok   E5  an unreadable universe is not OK
+ok   E6  and NO control is offered over a list that was never read
+ok   E7  and nothing is read on its behalf
+ok   F0  a site is loaded before any view is asked for
+ok   F1.1 overview is the showing route
+ok   F1.2 category is the showing route
+ok   F1.3 risk is the showing route
+ok   F1.4 quality is the showing route
+ok   F1.5 workspace is the showing route
+ok   F1.6 advanced is the showing route
+ok   F2  the six views render six DIFFERENT DOM shapes
+ok   F3  and six different bodies of text
+ok   F4.1 overview rendered something
+ok   F4.2 category rendered something
+ok   F4.3 risk rendered something
+ok   F4.4 quality rendered something
+ok   F4.5 workspace rendered something
+ok   F4.6 advanced rendered something
+ok   F2a every view leads with a heading of its own
+ok   F2b and the six headings are six different sentences
+ok   F5  no NaN on any of the six
+ok   F6  no undefined
+ok   F7  no [object Object]
+ok   F8  and the shared state host is not covering any of them
+ok   F9  Category Analysis draws an actual chart
+ok   G1  the Presentation control exists
+ok   G2  and a loaded board binds it
+ok   G3  clicking it CHANGES the page, not just the button
+ok   G4  into presentation mode
+ok   G5  and the same control brings it back
+ok   G7  the fullscreen control is NOT on the production board (R8, kept by R9)
+ok   G8  but the row that held it is back (R9 §4)
+ok   G9  carrying the controls that size and layer the chart
+ok   G9a and not one of them is a fullscreen control
+ok   G6  with no workspace, Presentation does not pretend to open
+ok   I1  the universe arrives and nothing is rendered from it (caught)
+ok   I2  a site that is not in the universe is adopted (caught)
+ok   I3  ten sites are offered and the selection stays null (caught)
+ok   I4  a default site is hard-coded into the page (caught)
+ok   I5  switching site does not read the new one (caught)
+ok   I6  a superseded answer is rendered anyway (caught)
+ok   I7  the six routes all render the same view (caught)
+ok   I8  the state host is left covering the mounted board (caught)
+ok   I9  Presentation is bound to a no-op (caught)
+ok   I10 only the control changes, the presentation state does not (caught)
+ok   I11 a write-shaped action is sent (caught)
+
+passed 100  failed 0  |  mutants caught 11  survived 0

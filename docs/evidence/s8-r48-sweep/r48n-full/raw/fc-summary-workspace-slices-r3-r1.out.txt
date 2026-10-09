@@ -1,0 +1,19 @@
+
+-- A  FULL is exactly what it was — the backend deploys before the frontend -----------------------
+
+-- B  One read per sheet, and only the sheets the slice needs -------------------------------------
+    FULL cell-transferring reads per sheet: {"fc_regular_forecast":1,"fc_special_events":1,"fc_target_rules":1,"marketplaces":1}
+    bootstrap reads: {"fc_regular_forecast":1,"fc_special_events":1,"fc_target_rules":1,"marketplaces":1}
+
+-- C  Every refusal the two-read path could produce, from the one-read path -----------------------
+
+-- D  The facets are the universes the page would have built for itself ---------------------------
+    facets: {"years":["2027","2026","2025"],"companies":["KMJP","RESUS"],"marketplaces":["AMAZON","RAKUTEN","SHOPIFY"],"countries":["CA","JP","US"],"categories":["Grinders","Openers"],"series":["CO1100","KM2200"],"events":["Black Friday","Prime Day"]}
+
+-- E  Release identity and the manifest -----------------------------------------------------------
+
+-- F  Mutants -------------------------------------------------------------------------------------
+    12 mutants, 0 survived
+
+================================================================
+FC-SUMMARY-R3-R1 §B WORKSPACE SLICES:  90 passed, 0 failed, 12 mutants, 0 survived

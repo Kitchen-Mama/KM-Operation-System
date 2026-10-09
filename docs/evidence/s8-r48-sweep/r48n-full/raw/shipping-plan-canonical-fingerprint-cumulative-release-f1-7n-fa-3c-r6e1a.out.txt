@@ -1,0 +1,19 @@
+
+== fingerprint version + coverage (every listed field participates) ==
+
+== C/E. REUSE cases ==
+
+== C/E. CONFLICT cases (any material change) ==
+
+== D. partial / legacy / duplicate fail-closed ==
+
+== E. concurrent identical Submit under one key → exactly one CREATE ==
+
+== A/16. request-order.js on the unified release token ==
+
+== 17. cumulative frontend + backend manifests complete ==
+
+== 18. three-flag posture preserved ==
+
+----------------------------------------
+R6E1A CANONICAL FINGERPRINT + CUMULATIVE RELEASE (F1-7N-FA-3C-R6E1A): 105 passed, 0 failed

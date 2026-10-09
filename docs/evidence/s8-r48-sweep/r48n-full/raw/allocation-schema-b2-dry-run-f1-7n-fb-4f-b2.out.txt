@@ -1,0 +1,48 @@
+
+== A — the file, its placement, and the absence of an execute path ==
+
+== B — the schema authority, measured (not restated) ==
+
+== C — THE FINDING: the positional write gate refuses the append for EVERY reachable live state ==
+
+== D — the ordering constraint between two queued migrations ==
+
+== E — [tests 1-6] the six schema states, each answered ==
+
+== F — [tests 7-11] sea is not sea_express, and identity holds the line ==
+
+== G — [tests 12-14, 18] destination: exactly one owner, and never a fake warehouse ==
+
+== H — [test 17] the header marketplace scope does not authorize a destination backfill ==
+
+== I — [tests 15, 16] the ETA that must stay blank, and why the client value is not evidence ==
+
+== J — [tests 19, 20] quantity conservation and the foreign keys ==
+
+== K — [tests 22, 23, 24] the checksum, and repeatability ==
+
+== L — [test 20] zero write, proven by EXECUTION ==
+
+== M — the five decisions are separate, and all five are false today ==
+
+== N — negative tests: every fail-closed rule, and every mutation proves it mutated ==
+  caught: N1 duplicate headers no longer detected
+  caught: N2 a differently-cased twin accepted as the target column
+  caught: N3 a missing sheet no longer named
+  caught: N4 the write gate refusal of the proposed append ignored
+  caught: N5 the lifecycle-tail ordering precondition dropped
+  caught: N6 the header scope marketplace promoted into a destination backfill
+  caught: N7 an ETA backfilled from a nearby planning date
+  caught: N8 the checksum made order-insensitive
+  caught: N9 the mid-run schema-stability re-read removed
+  caught: N10 an unknown quantity treated as zero
+  caught: N11 a contested identity ignored
+  caught: N12 a sheet write introduced into the diagnostic
+  caught: N13 a sheet write attempted at runtime
+  caught: N14 sea_express collapsed into sea
+  caught: N15 the diagnostic placed in the Apps Script deploy directory
+
+== O — the round changed nothing it was told not to change ==
+
+PASS — 275 passed, 0 failed
+negative tests: 15 caught, 0 missed

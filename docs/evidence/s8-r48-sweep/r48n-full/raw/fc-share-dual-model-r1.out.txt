@@ -1,0 +1,150 @@
+
+== A — THE COLLISION. The defect an operator reported, and the identity that fixes it. ==
+ok   A1 three sites sharing a marketplace name are THREE share entries
+ok   A2 US takes its own share (was 14.3%)
+ok   A3 CA takes its own share (was 14.3%)
+ok   A4 JP takes its own share
+ok   A5 and they sum to 1 — the case that displayed 42.9%
+ok   A6 the page's own row identity carries country — the old share key did not
+ok   A7 distinct share keys == distinct CANONICAL site identities
+ok   A8 and every key is KMFSA's, not a hyphen-joined page string
+ok   A9 "Res-US"+"TW" and "Res"+"US-TW" remain two sites
+ok   A10 distinct marketplaces still normalize
+ok   A11 ... and still sum to 1
+
+== B — TWO DENOMINATORS. Company-wide, and source-constrained. ==
+ok   B1 KM/US is 75% OF KM
+ok   B2 KM/CA is 25% OF KM
+ok   B3 ResUS is its company's only site
+ok   B4 company shares sum to 1 PER COMPANY — three companies, total 3 (never 1 across all)
+ok   B5 the KM denominator spans COUNTRIES (US+CA=800); a company+country denominator would read 1.0
+ok   B6 a CN source is shared across companies
+ok   B7 and its receiver shares sum to 1
+ok   B8 ResTW is an eligible CN receiver
+ok   B9 a TW source is ResUS-only
+ok   B10 KM gets NO eligible-receiver share from TW — null, not 0
+ok   B11 and neither does ResTW, despite being the TW company
+ok   B12 ResUS takes the whole TW pool
+ok   B13 §B12-5 receiver shares sum to 1
+ok   B14 an unauthorized factory country yields no policy
+ok   B15 ... and says so, typed
+ok   B16 the all-site diagnostic sums to 1 across all companies
+ok   B17 and it is NOT the company share — one heading could never have carried both
+ok   B18 KMFCS declares no source policy of its own — it calls KMFSA.policyFor / isEligibleReceiver
+ok   B19 ... and is wired to exactly those
+ok   B20 site identity, company identity and the window all come from KMFSA too
+
+== C — THE BASIS. Raw Regular FC over M+1..M+4, and nothing else. ==
+ok   C1 the window is M+1..M+4
+ok   C2 ... and it crosses the year boundary
+ok   C3 a cross-year window sums BOTH years' rows (100 dec-26 + 150 of 2027), and jan-2026 is not in it
+ok   C4 §B12-11 the basis is 4 raw months (4×25); total_fc / fc_share / event / safety are ignored
+ok   C5 §B12-12 no target rule appears in the executable basis
+ok   C6 §B12-13 no Special Event quantity appears in the executable basis
+ok   C7 ... and the canonical owner says the same, so this is inherited rather than re-decided
+ok   C8 §B12-15 output is byte-identical regardless of input order
+ok   C9 KMFCS reads no clock and no RNG
+ok   C10 a missing anchor is UNAVAILABLE
+ok   C11 a malformed anchor is INVALID, not coerced
+ok   C12 a real anchor is VALID
+ok   C13 with no anchor there are no shares at all
+ok   C14 ... and the reason is typed, not silent
+
+== D — ZERO, MISSING, INACTIVE, INCOMPLETE. None of them become a fake share. ==
+ok   D1 §B12-16 a zero denominator gives null, not 0.5
+ok   D2 ... for every site in the group
+ok   D3 ... and says why
+ok   D4 §B12-17 a site with no row in the window matched 0 months
+ok   D5 ... contributes 0 to the denominator
+ok   D6 ... and is REPORTED, so a silent zero can be told from a real one
+ok   D7 a REAL zero matched its months — a different fact
+ok   D8 ... and is not reported as missing
+ok   D9 §B12-18 an explicitly inactive site is excluded
+ok   D10 ... typed
+ok   D11 ... and a BLANK is_active is NOT an exclusion — the remaining site takes the whole share
+ok   D12 §B12-19 a scope missing country is excluded
+ok   D13 ... typed
+ok   D14 §B12-20 every share is null or a finite number in [0,1] — no NaN, Infinity or negative
+ok   D15 ... and a negative basis is clamped AND reported, never silently inflating its siblings
+
+== E — ROUNDING. Display is 1dp; the invariant is never checked against display. ==
+ok   E1 §B12-21 three equal sites sum to 1 on DECIMALS at 1e-9
+ok   E2 display is 1 decimal
+ok   E3 ... and the displayed strings legitimately sum to 99.9
+ok   E4 §B12-22 so a validator reading the DISPLAY would raise a false alarm the decimal one does not
+ok   E5 the tolerance is the repository's established epsilon
+ok   E6 and it is a real tolerance, not a loose one
+ok   E7 a null share is an em dash
+ok   E8 ... and a genuine zero share is still 0.0%
+
+== F — THE PAGE. Authoritative denominator, typed unavailability, no local formula. ==
+ok   F1 §B12-27 calculateFcPercentages is GONE from the page
+ok   F2 ... and so is calculateEventFcPercentages
+ok   F3 the old grand-total denominator is gone from the page
+ok   F3b ... and so are both share lookup tables
+ok   F3c ... and the percent arithmetic with it
+ok   F4 the page reaches the ONE runtime owner
+ok   F5 the page declares no planning anchor of its own
+ok   F6 §B2 the page does not substitute a browser clock
+ok   F7 ... and neither does the owner it delegates to
+ok   F7b the basis it DOES use is the operator-selected year, and the heading says so
+ok   F8 §B12-9/10 the renderer projects over the unfiltered source
+ok   F9 ... never over filteredData or paginatedData
+ok   F10 the projection consumes the pre-filter assignment
+ok   F10b ... and filtering is a SEPARATE derivation from the same source, applied to the view only
+ok   F11 driven: Amazon is 80.0% of the full set
+ok   F12 the filter really does drop a row
+ok   F13 §B12-9 the share is unchanged while that filter is active (denominator is the full set)
+ok   F14 ... and passing the FILTERED set instead would have produced 84.2% — so the input choice is the fix
+ok   F15 §B12-10 likewise a page slice would change it — which is why the slice is never passed
+ok   F16 with no basis both columns are an em dash
+ok   F17 ... and the cell says why, naming what was deliberately NOT substituted
+ok   F18 ... and a REAL share still carries the sentence saying what kind of number it is
+ok   F19 the adapter reads a months[] render row
+ok   F20 ... and a raw jan..dec row
+ok   F21 and the live path prefers the RAW rows — a twelve-times ceiling is display, not a forecast
+
+== G — MARKUP, EVENT TABLE, AND THE LEGACY COLUMN. ==
+ok   G1 the Regular table names the company denominator
+ok   G2 ... and the all-site one
+ok   G3 the ambiguous single heading is gone from every table
+ok   G4 §B10 the Event table offers no share column at all
+ok   G5 no heading promises a planning-window share, because none of them computes one
+ok   G5b ... and both say what they ARE: a selected-year diagnostic
+ok   G6 §B12-24 the writer still creates fc_share as the empty string
+ok   G7 §B12-23 ... and still never adds fc_share to an UPDATE run
+ok   G8 the column is still REQUIRED in the header — renaming or dropping it would refuse every batch
+ok   G9 fc_special_events still has NO fc_share column, and gained none
+ok   G10 KMFCS never reads the legacy column in CODE — it is named only in the note saying it is not truth
+ok   G11 index.html loads KMFSA -> KMFCS -> fc-summary.js
+ok   G12 the pinned §7 literal is retained verbatim (the R4B-R1 regression depends on it)
+ok   G13 §B13 the rules doc states the company denominator is company-wide, not company+country
+ok   G14 ... and that the DB column is legacy, not runtime truth
+ok   G15 FC_SUMMARY_SPEC records the unavailable anchor AND names the missing owner
+ok   G16 ... and records the measured defect it closes
+
+== H — DRIVEN MUTANTS. Each injects a real fault into real source and must be caught. ==
+ok   M1 §B12-25 the old company-sku-marketplace basis key is restored (country dropped) (caught)
+ok   M2 §B12-8 the site key drops country, collapsing three sites into one entry (caught)
+ok   M3 §B12-16 a zero denominator is turned into an equal split (caught)
+ok   M4 §B12-17 a missing forecast window stops being reported, so it reads as a real zero (caught)
+ok   M5 §B12-6 the factory-source policy is bypassed, giving KM a share of a TW (ResUS-only) pool (caught)
+ok   M6 §B3 the company denominator is narrowed to company+country (caught)
+ok   M7 §B12-14 the rolling window is shortened, so the basis is no longer Σ over M+1..M+4 (caught)
+ok   M8 §B2 a missing anchor silently becomes the browser clock (caught)
+ok   M9 §B12-20 a negative basis is no longer clamped, poisoning the denominator (caught)
+ok   M10 §B12-22 the invariant is evaluated on display-rounded values, raising a false alarm (caught)
+ok   M11 an undefined share is displayed as a real 0.0% (caught)
+ok   M12 §B12-26 the denominator is pointed back at the filtered set (caught)
+ok   M13 §B12-27 a page-local share calculator is reintroduced (caught)
+ok   M14 KMFCS declares a second factory-source policy instead of delegating to KMFSA (caught)
+ok   M15 §B11 the B1 Regular writer starts populating fc_share (caught)
+ok   M16 §B10 an Event share column is reintroduced (caught)
+ok   M17 §B12-18 an explicitly inactive site is counted in the denominator (caught)
+ok   M18 §B12-19 an incomplete site scope is admitted into the denominator (caught)
+ok   M19 §B2/§B6 the basis falls back to annual total_fc instead of the raw month (caught)
+ok   M20 the year leaves the basis key, pulling an out-of-window month in from another year (caught)
+
+====================================================================================================
+FC SHARE DUAL MODEL (R1) — passed 130  failed 0  |  mutants 20  survived 0
+====================================================================================================

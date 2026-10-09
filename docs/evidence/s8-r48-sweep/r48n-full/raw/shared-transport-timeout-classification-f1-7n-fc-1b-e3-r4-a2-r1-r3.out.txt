@@ -1,0 +1,142 @@
+
+== A. §16 / §16.2 — five timeouts across four actions is not a read timeout ==
+ok   A1  all five timeouts are seen
+ok   A2  across FOUR distinct actions
+ok   A2a and every one of them is named
+ok   A2b including the workspace read twice
+ok   A3  no request produced any server evidence
+ok   A3a and that is a KNOWN false, not an absent field
+ok   A4  so the classification is SHARED_TRANSPORT_OR_DISPATCH_TIMEOUT …
+ok   A4a … and NOT a repeated READ timeout
+ok   A4b … and not a cold start
+ok   A5  every failure is in DISPATCH
+ok   A6  asking about ONE action can never produce the shared class (a single-action view cannot see the others)
+ok   A6a because it only sees one
+ok   A7  when ONLY the workspace read fails, REPEATED_READ_TIMEOUT is still the right answer
+ok   A8  and a single timeout of a single action is still transient
+ok   A9  any server evidence at all removes the shared-transport reading
+ok   A10 a typed server failure still outranks every timeout class
+
+== B. §16.1 — did it reach Apps Script? Only the evidence answers. ==
+ok   B1  with no status, no redirect and no envelope, the honest answer is UNRESOLVED
+ok   B1a and it states what it DID observe
+ok   B2  naming the server-side evidence that would decide it
+ok   B2a whether an execution started for the correlation id
+ok   B2b whether it queued
+ok   B2c whether it blocked on a lock
+ok   B3  and all five carry a correlation id a server record can be matched to
+ok   B4  server execution time on a timed-out request ⇒ the server was slower than the client waited
+ok   B5  a status with no parseable envelope ⇒ a response arrived and could not be read
+ok   B6  the redirect completed and nothing followed ⇒ a platform redirect failure
+ok   B7  pre-R3 samples carry UNKNOWN server evidence, not false
+ok   B7a explicitly
+ok   B8  so the reach is unresolved …
+ok   B8a … and it names the client field that is absent rather than blaming the platform
+ok   B9  and a pre-R3 deployment still gets the SHARED class, because four actions failing is visible either way
+ok   B10 no timeout ⇒ nothing to classify
+ok   B10a said as such
+ok   B11 all eight buckets are enumerated
+ok   B11a and the classifier ranks nothing by likelihood
+
+== C. §16.1 — the transport records the evidence that closes the gap ==
+ok   C1  the HTTP status is recorded, and null means NO response arrived
+ok   C2  whether the platform redirect happened
+ok   C3  whether a parseable envelope came back
+ok   C4  the server's own execution time when it reports one
+ok   C5  and the correlation id
+ok   C6  all of it read from what the path already computed
+ok   C6a no extra request is issued to obtain it
+ok   C7  an external sample records UNKNOWN, never a false it did not observe
+ok   C8  and the sample carries no payload and no URL
+
+== D. §16.3 — who dispatched the duplicate read ==
+ok   D1  the page keeps a dispatch ledger
+ok   D2  COALESCED_BOOTSTRAP declares itself at its call site
+ok   D2  RESTORED_MOUNT_REVALIDATION declares itself at its call site
+ok   D2  SEARCH_CLICK declares itself at its call site
+ok   D2  POST_WRITE_READBACK declares itself at its call site
+ok   D3  and those are the FOUR dispatch sites — every one of them declares an owner
+ok   D3a no call site dispatches without declaring one
+ok   D4  an unrecognised owner is recorded as UNDECLARED, never guessed
+ok   D5  each dispatch records a payload fingerprint, so identity is compared not assumed
+ok   D6  and a dispatch wall clock
+ok   D6a with a settlement time, so overlap is decidable
+ok   D7  the report decides CONCURRENT vs SEQUENTIAL from those two times
+ok   D7a a concurrent pair is a coalescing finding …
+ok   D7b … and a sequential pair is a SCHEDULING finding — different fixes, never conflated
+ok   D8  the ledger is bounded
+ok   D9  a read that could not be shared records WHY
+ok   D9a and the reasons are reported beside `coalesced`
+ok   D10 including the deliberate one: a cancellable read is never shared
+ok   D10a with the correctness argument beside it
+ok   D11 the primary read passes no abort signal …
+ok   D11a … so in-flight sharing is available to it
+
+== E. §16.2 / §16.6 — the two findings are kept apart ==
+ok   E1  the report splits shared-transport availability from workspace cost
+ok   E2  and when no read completed, the workspace cost is UNMEASURED — not zero and not fine
+ok   E2a while a session with no outage says so
+ok   E3  the cross-action evidence is carried out …
+ok   E3a … with the distinct count …
+ok   E3b … and whether server evidence was even observable
+ok   E4  and the reach classification reaches the report
+
+== F. §16.7 — one outage is one message, and the scope survives it ==
+ok   F1  four failed stages produce ONE notice, not four
+ok   F1a naming the shared cause
+ok   F2  the page shell is never part of the failure
+ok   F2a and the Country/Marketplace selection is kept
+ok   F2b which the message says, so the operator is not left guessing
+ok   F3  Retry covers ONLY the stages that failed …
+ok   F3a … and never the non-blocking capability read that is not worth blocking on
+ok   F3b there is no whole-page reload offered
+ok   F4  a capability failure alone is DEGRADED, never an outage
+ok   F4a it blocks nothing
+ok   F4b and still keeps the scope
+ok   F5  a single failed stage is reported as itself
+ok   F5a with a retry scoped to it
+ok   F5b and named in words
+ok   F6  a healthy session produces NO notice
+ok   F6a and no mode
+ok   F6b (the scope is preserved unconditionally — it has no false branch)
+ok   F7  a stage that timed out and then SUCCEEDED is not a failed stage
+ok   F8  and the decision touches no DOM — it is pure
+
+== G. §16.5 / §19 — no timeout was raised, nothing was merged, nothing blindly retried ==
+ok   G1  no timeout bound was increased
+ok   G2  the read path adds no automatic retry
+ok   G3  and no whole-page reload anywhere on the page
+ok   G4  the six read stages are still separate (nothing merged into one mega-request)
+ok   G4a the workspace action is unchanged
+ok   G5  metadata-only single-flight still refuses business scopes
+ok   G5a by construction
+ok   G6  nothing in the transport track ASSIGNS the AI Plan flag
+ok   G6a nor overrides its accessor
+ok   G7  and nothing reaches for a remote
+
+== H. release identity ==
+ok   H1  no browser asset is left behind on an older application token
+ok   H1a and the co-deployed set carries the current one
+ok   H2  this round minted a NEW application token, and the shared ledger records it
+ok   H3  inventory-compat.js carries the CURRENT application token (co-deployed set)
+ok   H3  km-transport.js carries the CURRENT application token (co-deployed set)
+ok   H3  km-api-foundation.js carries the CURRENT application token (co-deployed set)
+ok   H3  inventory-replenishment.js carries the CURRENT application token (co-deployed set)
+
+== I. §17 — mutations. Each restores one way of misreading the evidence. ==
+ok   I1  the shared class removed (five timeouts read as a workspace cost again) (caught)
+ok   I2  missing telemetry read as a NEGATIVE (a reporting gap becomes a platform finding) (caught)
+ok   I3  the reach classifier DEFAULTS to a bucket instead of UNRESOLVED (caught)
+ok   I4  a cold start claimed for four different actions (caught)
+ok   I5  the capability read made BLOCKING (a degraded page becomes an outage) (caught)
+ok   I6  four errors rendered for one shared outage (caught)
+ok   I7  the scope discarded on an outage (caught)
+ok   I8  Retry widened from the failed stages to everything (caught)
+ok   I9  the transport stops recording whether the server answered (caught)
+ok   I10 a dispatch owner left undeclared (caught)
+ok   I11 concurrent and sequential duplicates conflated (caught)
+ok   I12 the workspace cost reported as fine when nothing completed (caught)
+
+----------------------------------------
+R3 SHARED TRANSPORT / DISPATCH CLASSIFICATION: 120 passed, 0 failed
+mutations: 12 caught, 0 missed

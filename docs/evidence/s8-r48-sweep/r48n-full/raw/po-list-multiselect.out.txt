@@ -1,0 +1,29 @@
+
+-- F1: correct owner is purchase-order-list (NOT purchase-order-overview workspace) --
+ok   F1: controller targets purchase-order-list-section
+
+-- F2: native <select> filter owners removed; shared mounts present --
+ok   F2: native <select> Status/Supplier/Category/Series removed from filter bar
+ok   F3: shared-filter mount present — status
+ok   F3: shared-filter mount present — supplier
+ok   F3: shared-filter mount present — category
+ok   F3: shared-filter mount present — series
+ok   F4: SKU stays a free-text search (not converted)
+
+-- F5: filters created via the shared component; multi-value state --
+ok   F5: filters created via KM.ui.multiFilter.create
+ok   F6: filter state is a multi-value array ([] = All)
+ok   F7: selection flows through onChange into the existing render/query path
+
+-- F8: predicate reads the Set (OR within a filter, AND across filters) --
+ok   F8: applyFilters reads polFilterState (not a native <select>.value)
+ok   F9: Status OR-set membership (empty = All)
+ok   F10: Category OR across the row list-field (AND across filters via sequential returns)
+ok   F11: old scalar val('pol-f-status') read removed (no dual owner)
+
+-- F12: reset + cascading option prune --
+ok   F12: reset clears the shared controllers
+ok   F13: state re-synced after setOptions prunes invalid selections (cascade cleanup)
+ok   F14: Status option values preserved (draft excluded from this page, as before)
+
+ALL PASS (17 assertions)

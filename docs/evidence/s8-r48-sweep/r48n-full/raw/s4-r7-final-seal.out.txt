@@ -1,0 +1,254 @@
+====================================================================================================
+S4-R7 — L2 SCOPE PREPARATION / RETRY CLOSURE / S4 FINAL SEAL
+====================================================================================================
+
+-- A. SCOPE — reused, not invented ---------------------------------------------------------------
+
+  ok   A1  the preparation has one owner
+  ok   A2  and it enumerates sites with the page’s existing helper
+  ok   A3  the consumer looks the site up under the SAME canonical key the store writes
+  ok   A3a both the store and the in-flight map are read under that key
+  ok   A4  and the record names it
+  ok   A5  the scope store has no clock in it — no TTL, no interval, no timestamp
+  ok   A6  two invalidation owners, both pre-existing
+  ok   A6a the gap recalculation owner reaches the store
+
+-- B. PREPARATION — once per site, and the first layer does not wait for it ----------------------
+
+  ok   B1  the Search prepared more than one site
+  ok   B1a and read the seven second-layer tables
+  ok   B1b over a first layer that really had rows
+  ok   B2  L2_PREFETCH_DUPLICATE_REQUEST_COUNT = 0 — no table read twice
+  ok   B2a one gap read per site
+  ok   B3  a second Search over the same sites prepares nothing again
+  ok   B3a and re-reads no table
+  ok   B4  two preparations started in the same task issue one read per site, not two
+  ok   B4a and re-read no table at all when the set is already READY
+  ok   B5  FIRST_LAYER_BLOCKED_BY_L2_PREFETCH = NO — rows were on screen with requests still open
+
+-- C. EXPAND — zero requests, however many SKUs --------------------------------------------------
+
+  ok   C1  first, second and third SKU expand each cost 0 requests
+  ok   C1a and nothing is dispatched in the click’s own task
+  ok   C1b an expand after a recovered failure costs 0 too
+  ok   C2  the expand handler consults the state instead of loading
+  ok   C2a and reaches no read of its own
+  ok   C2b the only loader call left in the handler is the attaching one
+  ok   C3  the seven tables are a declared deferred dependency
+  ok   C3a with the SAME read as before — moved, not reshaped
+  ok   C4  the system-wide expand probe agrees
+  ok   C4a ops still costs 0 on expand
+  ok   C4a skuDetails still costs 0 on expand
+  ok   C4a sku-regional-details still costs 0 on expand
+  ok   C4a factory-stock still costs 0 on expand
+  ok   C5  IR_EXPAND_CONTRACT: rows were really there
+  ok   C5a IR_PER_SKU_EXPAND_REQUEST_COUNT = 0
+  ok   C5b and its detail appears in the click’s own task
+
+-- D. FAILURE — the first layer survives, and the recovery is one read per site ------------------
+
+  ok   D1  the site reads were really refused
+  ok   D2  L2_FAILURE_PRESERVES_FIRST_LAYER = YES — every row still on screen
+  ok   D2a and nothing was left open
+  ok   D3  the scoped Retry sends exactly one read per site
+  ok   D3a and the rows are still there afterwards
+  ok   D4  STALE_L2_SCOPE_COMMIT_COUNT = 0
+  ok   D4a and that was measured with reads genuinely in flight
+  ok   D5  a superseded preparation stops dispatching, not merely stops committing
+
+-- E. RETRY — six surfaces closed, every one through its page’s canonical owner ------------------
+
+  ok   E1  MISSING_RETRY_CONTROL_COUNT_PRE = 6
+  ok   E1a and they are the six S4-R6 named
+  ok   E2  MISSING_RETRY_CONTROL_COUNT_POST = 0
+  ok   E3  the refusal probe reached most of the system
+  ok   E3a ops rendered a truthful failure
+  ok   E3a factory-stock rendered a truthful failure
+  ok   E3a overseas-stock rendered a truthful failure
+  ok   E3a fc-summary rendered a truthful failure
+  ok   E3a request-order rendered a truthful failure
+  ok   E3a shippingplan rendered a truthful failure
+  ok   E3a shipment-draft rendered a truthful failure
+  ok   E3a global-logistics-map rendered a truthful failure
+  ok   E3a request-order-draft rendered a truthful failure
+  ok   E3a purchase-order-overview rendered a truthful failure
+  ok   E3a purchase-order-list rendered a truthful failure
+  ok   E3a campaign-risk rendered a truthful failure
+  ok   E3a skuDetails rendered a truthful failure
+  ok   E3a sku-regional-details rendered a truthful failure
+  ok   E3a carrier-rate-card rendered a truthful failure
+  ok   E3a sku-handbook rendered a truthful failure
+  ok   E3a automation rendered a truthful failure
+  ok   E3a product-strategy rendered a truthful failure
+  ok   E4  RETRY_SURFACE_COUNT = 18
+  ok   E4a ops Retry dispatches at least one real request
+  ok   E4b ops and does not storm
+  ok   E4c ops and the refusal is gone after it succeeds
+  ok   E4a factory-stock Retry dispatches at least one real request
+  ok   E4b factory-stock and does not storm
+  ok   E4c factory-stock and the refusal is gone after it succeeds
+  ok   E4a overseas-stock Retry dispatches at least one real request
+  ok   E4b overseas-stock and does not storm
+  ok   E4c overseas-stock and the refusal is gone after it succeeds
+  ok   E4a fc-summary Retry dispatches at least one real request
+  ok   E4b fc-summary and does not storm
+  ok   E4c fc-summary and the refusal is gone after it succeeds
+  ok   E4a request-order Retry dispatches at least one real request
+  ok   E4b request-order and does not storm
+  ok   E4c request-order and the refusal is gone after it succeeds
+  ok   E4a shippingplan Retry dispatches at least one real request
+  ok   E4b shippingplan and does not storm
+  ok   E4c shippingplan and the refusal is gone after it succeeds
+  ok   E4a shipment-draft Retry dispatches at least one real request
+  ok   E4b shipment-draft and does not storm
+  ok   E4c shipment-draft and the refusal is gone after it succeeds
+  ok   E4a global-logistics-map Retry dispatches at least one real request
+  ok   E4b global-logistics-map and does not storm
+  ok   E4c global-logistics-map and the refusal is gone after it succeeds
+  ok   E4a request-order-draft Retry dispatches at least one real request
+  ok   E4b request-order-draft and does not storm
+  ok   E4c request-order-draft and the refusal is gone after it succeeds
+  ok   E4a purchase-order-overview Retry dispatches at least one real request
+  ok   E4b purchase-order-overview and does not storm
+  ok   E4c purchase-order-overview and the refusal is gone after it succeeds
+  ok   E4a purchase-order-list Retry dispatches at least one real request
+  ok   E4b purchase-order-list and does not storm
+  ok   E4c purchase-order-list and the refusal is gone after it succeeds
+  ok   E4a campaign-risk Retry dispatches at least one real request
+  ok   E4b campaign-risk and does not storm
+  ok   E4c campaign-risk and the refusal is gone after it succeeds
+  ok   E4a skuDetails Retry dispatches at least one real request
+  ok   E4b skuDetails and does not storm
+  ok   E4c skuDetails and the refusal is gone after it succeeds
+  ok   E4a sku-regional-details Retry dispatches at least one real request
+  ok   E4b sku-regional-details and does not storm
+  ok   E4c sku-regional-details and the refusal is gone after it succeeds
+  ok   E4a carrier-rate-card Retry dispatches at least one real request
+  ok   E4b carrier-rate-card and does not storm
+  ok   E4c carrier-rate-card and the refusal is gone after it succeeds
+  ok   E4a sku-handbook Retry dispatches at least one real request
+  ok   E4b sku-handbook and does not storm
+  ok   E4c sku-handbook and the refusal is gone after it succeeds
+  ok   E4a automation Retry dispatches at least one real request
+  ok   E4b automation and does not storm
+  ok   E4c automation and the refusal is gone after it succeeds
+  ok   E4a product-strategy Retry dispatches at least one real request
+  ok   E4b product-strategy and does not storm
+  ok   E4c product-strategy and the refusal is gone after it succeeds
+  ok   E5  RETRY_NO_DISPATCH_COUNT = 0
+  ok   E6  RETRY_STORM_COUNT = 0
+  ok   E7 roRetryFirstLayer exists
+  ok   E7a roRetryFirstLayer calls _opLoadFirstLayerComposer_() — the page’s canonical read
+  ok   E7b roRetryFirstLayer shows loading feedback before dispatching
+  ok   E7c roRetryFirstLayer is reachable from the button
+  ok   E7d and the button calls it
+  ok   E7 shRetryRead exists
+  ok   E7a shRetryRead calls _shLoadAndRender() — the page’s canonical read
+  ok   E7b shRetryRead shows loading feedback before dispatching
+  ok   E7c shRetryRead is reachable from the button
+  ok   E7d and the button calls it
+  ok   E7 rodRetryRead exists
+  ok   E7a rodRetryRead calls loadAndRender() — the page’s canonical read
+  ok   E7b rodRetryRead shows loading feedback before dispatching
+  ok   E7c rodRetryRead is reachable from the button
+  ok   E7d and the button calls it
+  ok   E7 poRetryRead exists
+  ok   E7a poRetryRead calls loadAndRender() — the page’s canonical read
+  ok   E7b poRetryRead shows loading feedback before dispatching
+  ok   E7c poRetryRead is reachable from the button
+  ok   E7d and the button calls it
+  ok   E7 polRetryRead exists
+  ok   E7a polRetryRead calls loadAndRender() — the page’s canonical read
+  ok   E7b polRetryRead shows loading feedback before dispatching
+  ok   E7c polRetryRead is reachable from the button
+  ok   E7d and the button calls it
+  ok   E7 skRetryRead exists
+  ok   E7a skRetryRead calls _skLoadAndRender() — the page’s canonical read
+  ok   E7b skRetryRead shows loading feedback before dispatching
+  ok   E7c skRetryRead is reachable from the button
+  ok   E7d and the button calls it
+
+-- F. SYSTEM — the twenty-one routes, re-measured after both implementations ---------------------
+
+  ok   F1  USER_VISIBLE_ROUTE_COUNT = 21
+  ok   F1a and all of them were measured again this round
+  ok   F2  FALSE_EMPTY_PAGE_COUNT = 0
+  ok   F3  PERMANENT_LOADING_PAGE_COUNT = 0
+  ok   F4  LISTENER_DRIFT_PAGE_COUNT = 0 and TIMER_DRIFT_PAGE_COUNT = 0
+  ok   F4a ops leaves no request open
+  ok   F4a factory-stock leaves no request open
+  ok   F4a overseas-stock leaves no request open
+  ok   F4a forecast leaves no request open
+  ok   F4a fc-summary leaves no request open
+  ok   F4a request-order leaves no request open
+  ok   F4a shippingplan leaves no request open
+  ok   F4a shipment-draft leaves no request open
+  ok   F4a shipment-overview leaves no request open
+  ok   F4a global-logistics-map leaves no request open
+  ok   F4a request-order-draft leaves no request open
+  ok   F4a purchase-order-overview leaves no request open
+  ok   F4a purchase-order-list leaves no request open
+  ok   F4a campaign-risk leaves no request open
+  ok   F4a skuDetails leaves no request open
+  ok   F4a sku-regional-details leaves no request open
+  ok   F4a carrier-rate-card leaves no request open
+  ok   F4a sku-handbook leaves no request open
+  ok   F4a supplychain leaves no request open
+  ok   F4a automation leaves no request open
+  ok   F4a product-strategy leaves no request open
+  ok   F5  PAGES_WITH_4PLUS_INITIAL_REQUESTS = 0
+  ok   F6  PAGES_WITH_3PLUS_INITIAL_ROUNDS = 0
+  ok   F7  Order Planning still mounts on its three pre-existing reads
+  ok   F7a and the scope preparation does NOT run before Search
+  ok   F8  ZERO_READ_WARM_REENTRY_COUNT = 13
+  ok   F8a WARM_REFETCH_ROUTE_COUNT = 8
+  ok   F9  no window error in the failure pass
+  ok   F9a nor in the L2 pass
+  ok   F9b and no unhandled rejection
+
+-- G. BOOT — route-owned code unchanged, tokens current ------------------------------------------
+
+  ok   G1  BOOT_SCRIPT_COUNT = 67 — no code-splitting round happened here
+  ok   G2  BOOT_JS_BYTES under the S4-R6 ceiling
+  ok   G3  STALE_APPLICATION_TOKEN_REFS = 0
+  ok   G3a and 0 among the route-owned assets
+  ok   G4  MISPLACED_TOKEN_FAMILY_REFS = 0
+  ok   G5  the application token is registered and at or after this round's
+  ok   G5a request-order.js is on the current token
+  ok   G5a sku-details.js is on the current token
+  ok   G5a shipping-history.js is on the current token
+  ok   G5a request-order-draft.js is on the current token
+  ok   G5a purchase-order-overview.js is on the current token
+  ok   G5a purchase-order-list.js is on the current token
+
+-- H. MUTATION — each defence broken on purpose --------------------------------------------------
+
+  ok   H1 the expand handler loads the second layer again KILLED
+  ok   H2 two preparations each read every site KILLED
+  ok   H3 a refused site read empties the rows KILLED
+  ok   H4 a superseded preparation commits anyway KILLED
+  ok   H5 the Purchase Order Overview Retry button is gone KILLED
+  ok   H6 the SKU Details Retry sends no request KILLED
+  ok   H7 the SKU Details Retry sends a second, different read KILLED
+
+  mutants: 7 killed, 0 survived, 0 harness errors
+  ok   H  every planted defect was caught
+
+-- I. S4 FINAL SEAL — the eleven conditions, each read from a measurement ------------------------
+
+  ok   I1  all 21 user-visible routes audited
+  ok   I2  six missing Retry controls closed
+  ok   I3  individual SKU expand issues zero requests
+  ok   I4  no N+1 expansion pattern
+  ok   I5  no listener or timer leak
+  ok   I6  no request storm
+  ok   I7  no false-empty error
+  ok   I8  no permanent loading
+  ok   I9  no stale response commit
+  ok   I10  no retry that fails to dispatch
+  ok   I11  first layer never blocked by the preparation
+  ok   I  S4_FINAL_SEAL = YES
+
+====================================================================================================
+S4-R7 FINAL SEAL: 218 passed, 0 failed
+====================================================================================================

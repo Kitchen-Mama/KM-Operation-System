@@ -1,0 +1,303 @@
+
+== §B — THE DUAL-FLOW TOPOLOGY, MEASURED ==
+
+flow  id    router handler manifest adapter page reach  class                      stage
+----  ----  ------ ------- -------- ------- ---- -----  -------------------------  ------------------------------
+SHIP  S1    2      1       yes      1       0    2      CONNECTED                  Inventory Replenishment Summary
+SHIP  S1b   2      1       NO       1       1    1      CONNECTED                  Replenishment gap (shortage) materialization
+SHIP  S2    1      1       NO       1       1    1      CONNECTED                  Shipping AI Plan
+SHIP  S3    1      1       yes      1       1    1      CONNECTED                  Allocation Draft save / + Add Route
+SHIP  S3b   1      1       yes      1       1    1      CONNECTED                  Allocation Draft readback
+SHIP  S4    1      1       yes      1       1    1      CONNECTED                  Submit Plan
+SHIP  S5    2      1       yes      1       0    1      CONNECTED                  Weekly Shipping Plan readback
+SHIP  S6    1      1       NO       1       1    1      CONNECTED                  Plan approve = Execution Commit -> Shipment Draft
+SHIP  S6b   1      1       yes      1       1    1      CONNECTED                  Shipment Draft creation RETRY (standalone)
+SHIP  S7    1      1       NO       1       1    1      CONNECTED                  Carrier / method selection
+SHIP  S7b   1      1       NO       1       0    0      SERVER_ONLY                Method candidates for a shipment route
+SHIP  S8    1      1       NO       1       1    1      CONNECTED                  Shipment document generation
+SHIP  S8b   1      1       yes      0       0    0      SERVER_ONLY                Shipment final output snapshot
+SHIP  S9    1      1       yes      1       1    1      CONNECTED                  Confirm Shipment + dispatch
+SHIP  S11   1      1       yes      1       1    1      CONNECTED                  On the Way map / route progress
+SHIP  S11b  2      1       yes      1       0    2      CONNECTED                  Shipment workspace (Draft / Overview / Map) readback
+SHIP  S12   1      1       NO       1       1    1      CONNECTED                  Destination receiving -> overseas inventory
+BUY   P1    2      1       NO       1       1    1      CONNECTED                  Order Planning calculation (gap)
+BUY   P2    1      1       NO       1       1    1      CONNECTED                  Order AI Plan (resumable scope job)
+BUY   P3    1      1       yes      1       1    1      CONNECTED                  Request Order Allocation Draft edit
+BUY   P4    1      1       yes      1       1    1      CONNECTED                  Send Request (server orchestration)
+BUY   P5    2      1       yes      0       0    1      CONNECTED                  Request Order workspace readback
+BUY   P6    1      1       NO       1       1    1      CONNECTED                  Request Order line quantity edit
+BUY   P7    1      1       NO       1       1    1      CONNECTED                  Request Order approval / rejection
+BUY   P8    1      1       yes      1       1    1      CONNECTED                  Purchase Order creation from Request
+BUY   P10   1      1       yes      1       1    1      CONNECTED                  Document retry (PO + shipment panels)
+BUY   P10b  1      1       yes      1       0    0      SERVER_ONLY                Document list (standalone surface)
+BUY   P11   2      1       yes      0       0    2      CONNECTED                  Purchase Order Overview / List readback
+BUY   P12   1      1       yes      1       1    1      CONNECTED                  Send PO / status advance
+BUY   P13   1      1       NO       1       1    1      CONNECTED                  Factory receipt -> Factory Stock increase
+BUY   P14   1      1       NO       1       1    1      CONNECTED                  Manual factory stock adjustment
+
+ok   B1   S1 inventoryReplenishment.workspace.get has exactly ONE handler owner (60_api_v1_inventory_replenishment_workspace.gs)
+ok   B2   S1b inventoryReplenishmentGap.get has exactly ONE handler owner (43_api_v1_gap_materialization.gs)
+ok   B3   S2 weeklyAiPlan.generate has exactly ONE handler owner (61_api_v1_weekly_ai_plan.gs)
+ok   B4   S3 upsertShippingAllocationDraftAtomic has exactly ONE handler owner (16_shipping_allocation_handlers.gs)
+ok   B5   S3b getShippingAllocationDraftWorkspace has exactly ONE handler owner (16_shipping_allocation_handlers.gs)
+ok   B6   S4 submitAllocationDraftsToShippingPlans has exactly ONE handler owner (16_shipping_allocation_handlers.gs)
+ok   B7   S5 weeklyShipping.workspace.get has exactly ONE handler owner (40_api_v1_weekly_workspace.gs)
+ok   B8   S6 updateShippingPlanStatus has exactly ONE handler owner (11_shipping_plan_handlers.gs)
+ok   B9   S6b createShipmentFromPlan has exactly ONE handler owner (12_shipment_handlers.gs)
+ok   B10   S7 updateShipment has exactly ONE handler owner (12_shipment_handlers.gs)
+ok   B11   S7b getShippingMethodCandidates has exactly ONE handler owner (17_carrier_handlers.gs)
+ok   B12   S8 shipmentDocument.generate has exactly ONE handler owner (36_document_template_handlers.gs)
+ok   B13   S8b finalizeShipmentFinalOutput has exactly ONE handler owner (34_shipment_final_output_handlers.gs)
+ok   B14   S9 confirmShipmentAndDispatch has exactly ONE handler owner (22_shipment_dispatch_handlers.gs)
+ok   B15   S11 shipment.route.advance has exactly ONE handler owner (31_shipment_receipt_route_handlers.gs)
+ok   B16   S11b shipment.workspace.get has exactly ONE handler owner (57_api_v1_shipment_workspace.gs)
+ok   B17   S12 shipment.receipt.update has exactly ONE handler owner (31_shipment_receipt_route_handlers.gs)
+ok   B18   P1 orderPlanningGap.get has exactly ONE handler owner (43_api_v1_gap_materialization.gs)
+ok   B19   P2 requestOrderDraft.job.start has exactly ONE handler owner (48_api_v1_request_order_draft_job.gs)
+ok   B20   P3 requestOrder.allocationDraft.ensureAndEdit has exactly ONE handler owner (15_request_allocation_handlers.gs)
+ok   B21   P4 requestOrder.send.orchestrate has exactly ONE handler owner (66_api_v1_request_order_send.gs)
+ok   B22   P5 requestOrder.workspace.get has exactly ONE handler owner (51_api_v1_request_order_workspace.gs)
+ok   B23   P6 updateRequestOrderLineQty has exactly ONE handler owner (13_procurement_handlers.gs)
+ok   B24   P7 updateRequestOrderStatus has exactly ONE handler owner (13_procurement_handlers.gs)
+ok   B25   P8 createPurchaseOrderFromRequest has exactly ONE handler owner (13_procurement_handlers.gs)
+ok   B26   P10 document.retry has exactly ONE handler owner (39_document_runtime_service.gs)
+ok   B27   P10b document.list has exactly ONE handler owner (39_document_runtime_service.gs)
+ok   B28   P11 purchaseOrder.workspace.get has exactly ONE handler owner (50_api_v1_purchase_order_workspace.gs)
+ok   B29   P12 updatePurchaseOrderStatus has exactly ONE handler owner (13_procurement_handlers.gs)
+ok   B30   P13 receivePurchaseOrderLines has exactly ONE handler owner (13_procurement_handlers.gs)
+ok   B31   P14 adjustFactoryInventory has exactly ONE handler owner (21_factory_inventory_handlers.gs)
+ok   B1a  S1 is dispatched by the router
+ok   B2a  S1b is dispatched by the router
+ok   B3a  S2 is dispatched by the router
+ok   B4a  S3 is dispatched by the router
+ok   B5a  S3b is dispatched by the router
+ok   B6a  S4 is dispatched by the router
+ok   B7a  S5 is dispatched by the router
+ok   B8a  S6 is dispatched by the router
+ok   B9a  S6b is dispatched by the router
+ok   B10a  S7 is dispatched by the router
+ok   B11a  S7b is dispatched by the router
+ok   B12a  S8 is dispatched by the router
+ok   B13a  S8b is dispatched by the router
+ok   B14a  S9 is dispatched by the router
+ok   B15a  S11 is dispatched by the router
+ok   B16a  S11b is dispatched by the router
+ok   B17a  S12 is dispatched by the router
+ok   B18a  P1 is dispatched by the router
+ok   B19a  P2 is dispatched by the router
+ok   B20a  P3 is dispatched by the router
+ok   B21a  P4 is dispatched by the router
+ok   B22a  P5 is dispatched by the router
+ok   B23a  P6 is dispatched by the router
+ok   B24a  P7 is dispatched by the router
+ok   B25a  P8 is dispatched by the router
+ok   B26a  P10 is dispatched by the router
+ok   B27a  P10b is dispatched by the router
+ok   B28a  P11 is dispatched by the router
+ok   B29a  P12 is dispatched by the router
+ok   B30a  P13 is dispatched by the router
+ok   B31a  P14 is dispatched by the router
+ok   B1b  S1 owner file is 60_api_v1_inventory_replenishment_workspace.gs
+ok   B2b  S1b owner file is 43_api_v1_gap_materialization.gs
+ok   B3b  S2 owner file is 61_api_v1_weekly_ai_plan.gs
+ok   B4b  S3 owner file is 16_shipping_allocation_handlers.gs
+ok   B5b  S3b owner file is 16_shipping_allocation_handlers.gs
+ok   B6b  S4 owner file is 16_shipping_allocation_handlers.gs
+ok   B7b  S5 owner file is 40_api_v1_weekly_workspace.gs
+ok   B8b  S6 owner file is 11_shipping_plan_handlers.gs
+ok   B9b  S6b owner file is 12_shipment_handlers.gs
+ok   B10b  S7 owner file is 12_shipment_handlers.gs
+ok   B11b  S7b owner file is 17_carrier_handlers.gs
+ok   B12b  S8 owner file is 36_document_template_handlers.gs
+ok   B13b  S8b owner file is 34_shipment_final_output_handlers.gs
+ok   B14b  S9 owner file is 22_shipment_dispatch_handlers.gs
+ok   B15b  S11 owner file is 31_shipment_receipt_route_handlers.gs
+ok   B16b  S11b owner file is 57_api_v1_shipment_workspace.gs
+ok   B17b  S12 owner file is 31_shipment_receipt_route_handlers.gs
+ok   B18b  P1 owner file is 43_api_v1_gap_materialization.gs
+ok   B19b  P2 owner file is 48_api_v1_request_order_draft_job.gs
+ok   B20b  P3 owner file is 15_request_allocation_handlers.gs
+ok   B21b  P4 owner file is 66_api_v1_request_order_send.gs
+ok   B22b  P5 owner file is 51_api_v1_request_order_workspace.gs
+ok   B23b  P6 owner file is 13_procurement_handlers.gs
+ok   B24b  P7 owner file is 13_procurement_handlers.gs
+ok   B25b  P8 owner file is 13_procurement_handlers.gs
+ok   B26b  P10 owner file is 39_document_runtime_service.gs
+ok   B27b  P10b owner file is 39_document_runtime_service.gs
+ok   B28b  P11 owner file is 50_api_v1_purchase_order_workspace.gs
+ok   B29b  P12 owner file is 13_procurement_handlers.gs
+ok   B30b  P13 owner file is 13_procurement_handlers.gs
+ok   B31b  P14 owner file is 21_factory_inventory_handlers.gs
+ok   B90 §K THREE stages remain deployed and startable by nobody: the shipment method candidate list, the shipment final-output snapshot, and the standalone document list (S6b was CLOSED by FC-1A)
+ok   B91 §K and no stage is SPEC_ONLY or UI_ONLY — every mainline stage has a real server owner
+ok   B92 §K two of them are REQUIRED actions with no frontend consumer at all
+ok   B93 §G every stage with an inventory effect is fully connected
+ok   B94 §K the message naming an unreachable recovery route is GONE from the live code
+ok   B94a and the frontend now REACHES the retry action — the recovery route it names exists
+ok   B94b and it is a REQUIRED action, so a deployment missing it is a NAMED deployment fact
+ok   B94c and the caller is the Approved plan card — the page where the recoverable plan actually is
+
+== §B / §K — ATOMICITY OF THE ONE COMPOUND TRANSITION ==
+ok   K1  §K S6 writes status=approved BEFORE it creates the Shipment Draft
+ok   K1a and the Shipment Draft creation is inside a try/catch that does not undo the status
+ok   K1b so a failed Shipment Draft leaves an APPROVED plan with no shipment — CONNECTED_NOT_ATOMIC, and the only stated recovery (B93) has no caller
+
+== §G — THE SHARED STOCK LEDGER, EXECUTED ==
+ok   G1  §G.4 Confirm Shipment completes on a ready_to_ship shipment
+ok   G2  §G.4 factory stock is deducted EXACTLY once: 1000 - 800 = 200
+ok   G3  §G.2 exactly ONE factory_stock_movements row was written
+ok   G3a §G.2 typed shipment_out, and the quantity is signed NEGATIVE
+ok   G4  §G.3 the movement row carries the before AND after balance — the snapshot and the movement agree
+ok   G4a and it names the shipment that caused it (§E source lineage)
+ok   G5  §G.6 reserved stock is UNCHANGED by the deduction
+ok   G6  §E.8 the shipment ends at `shipped` — the formal hand-over, never in_transit
+ok   G6a stamped with who and when
+ok   G7  §E.9 the route snapshot is one row per template node
+ok   G7a and exactly ONE real initial event is created
+ok   G7b bound to this shipment
+ok   G11 §E a failure AFTER the deduction fails the whole confirmation
+ok   G11a under a stage that says the writes were rolled back
+ok   G11b §G.3 the factory balance is RESTORED to 1000
+ok   G11c §G.10 and the movement row is gone — no orphan movement survives
+ok   G11d and the shipment is back at ready_to_ship, not half-shipped
+ok   G11e with no route snapshot and no event left behind
+ok   G8  §G.10/§J.8 a replayed Confirm reports already_confirmed
+ok   G8a and deducts NOTHING a second time
+ok   G8b §G.10 no duplicate movement row
+ok   G8c and not one cell anywhere changed on the replay
+ok   G9  §G.11 insufficient factory stock REFUSES the confirmation
+ok   G9a typed, and about the DECLARED source rather than about factory stock in general
+ok   G9a1 naming the shortfall, the warehouse, and that nothing was deducted
+ok   G9b and the balance is untouched
+ok   G9c with no movement row
+ok   G9d §G.2 not one table was mutated — the refusal is before every write
+ok   G10 §J.10 the declared source holds 600 of the 800 needed, so the dispatch REFUSES
+ok   G10a named, not a generic failure
+ok   G10b and it names the warehouse it was told to use
+ok   G10c §G.2 no movement row was written
+ok   G10d and NOTHING was deducted — WH-B-SECOND's 300 is untouched, which is the whole point
+ok   G12 the declared source covers 800, so the dispatch completes
+ok   G12a ONE movement row — there is only ever one warehouse in play now
+ok   G12b naming the DECLARED warehouse
+ok   G12c for the whole shipped quantity
+ok   G12d the declared source gave all 800
+ok   G12e and the warehouse with far more stock was never touched
+
+== §G — THE RESERVATION COLUMN, AND WHAT NOTHING DOES TO IT ==
+ok   G20 §G.6 MEASURED: no handler anywhere assigns a non-zero reserved stock — factory stock is never RESERVED
+ok   G20a while the availability formula subtracts it, so availability always equals current stock
+ok   G20b §J.4 after a Submit Plan and a Shipment Draft for 800, availability still reads the full 1000
+
+== §G — WHO MAY MOVE FACTORY STOCK AT ALL ==
+ok   G30 §G the movement vocabulary is SEVEN: import, manual adjustment, PO receipt, reservation acquire, reservation release, shipment out, shipment receipt (FC-1A added the two reservation values)
+ok   G31 §G exactly FOUR files may reach the factory stock movements table (FC-1A added 12_, which acquires the Shipment Draft reservation)
+ok   G32 21_ owns the shared stock transaction
+ok   G32a 13_ (PO receipt) reuses it
+ok   G32b §G FC-1A CLOSED IT: 22_ (Confirm Shipment) now DELEGATES to the shared transaction instead of carrying a second stock-mutation implementation
+ok   G32c and 12_ reaches stock ONLY through the shared reservation primitives, never a balance cell of its own
+ok   G32d §G and NO file outside 21_ writes a factory_stock balance cell
+ok   G33 §G.11 the shared transaction refuses to go negative
+ok   G33a and the dispatch path refuses up front — both honour the same frozen policy by different code
+
+== §G / §F — PO RECEIPT: THE INCREASE, EXECUTED ==
+ok   F1  §F.15 a PO receipt of 200 completes
+ok   F2  §G.5 Factory Stock rises EXACTLY once: 1000 + 200 = 1200
+ok   F3  §G.2 exactly ONE movement row
+ok   F3a §G.2 typed po_receipt with a POSITIVE quantity
+ok   F4  §G.3 before and after are recorded together with the snapshot change
+ok   F4a §F lineage names the receipt
+ok   F4b and the exact PO LINE it came from
+ok   F5  §F.14 completed_qty rises and remaining_qty = MAX(0, completed - shipped) is recomputed
+ok   F6  §G.10 the idempotency key is recorded on the movement lineage
+ok   F7  §J.9 a replayed receipt under the same key succeeds
+ok   F7a and adds NOTHING a second time
+ok   F7b §G.10 with no duplicate movement row
+ok   F7c and completed_qty does not double
+ok   F8.1  §F a receipt into a not a factory warehouse destination is refused
+ok   F8.1a and no stock moved
+ok   F8.1b with no movement row
+ok   F8.2  §F a receipt into a inactive destination is refused
+ok   F8.2a and no stock moved
+ok   F8.2b with no movement row
+ok   F9  §J.7 a CANCELLED purchase order cannot receive
+ok   F9a and nothing anywhere was written
+ok   F10 §J.15 two instalments of 300 + 200 land exactly 500 units
+ok   F10a as two separate movement rows
+ok   F10b summing to the ordered quantity
+ok   F10c and the line is fully completed
+ok   F10d §F remaining_qty = MAX(0, completed - shipped) = 500 received and not yet shipped (NOT an outstanding-order quantity)
+
+== §J — CROSS-FLOW QUANTITY CONSERVATION ==
+ok   J1  §J.3 the available 700 ships and the factory balance reaches exactly zero
+ok   J1a §J.2 and the purchase mainline delivers the remaining 300 into the same balance
+ok   J2  §J.15 the cross-flow ledger balances: 700 - 700 + 300 = 300
+ok   J3  §J.4 a second site cannot confirm 800 against the 200 the first one left
+ok   J3a and the refusal writes nothing
+ok   J3b naming exactly what was needed, what was there, and WHERE
+ok   J3c NOTE §G.6 — nothing RESERVED the first 800, so both sites saw 1000 available while planning; the collision is only discovered at the confirmation, which is the last possible moment
+
+== §I — THE READ-ONLY LEDGER CENSUS ==
+ok   I1   the census never names setValue in code
+ok   I2   the census never names appendRow in code
+ok   I3   the census never names deleteRow in code
+ok   I4   the census never names clearContent in code
+ok   I5   the census never names setValues in code
+ok   I6   the census never names insertSheet in code
+ok   I7   the census never names getScriptLock in code
+ok   I8   the census never names PropertiesService in code
+ok   I9   the census never names UrlFetchApp in code
+ok   I10   the census never names MailApp in code
+ok   I11   the census never names DriveApp in code
+ok   I12  every sheet goes through the read-only facade
+ok   I13  exactly ONE entry point
+ok   I14  it states its own zero-write, zero-movement, zero-repair result
+ok   I15.1  it reads factory_stock
+ok   I15.2  it reads factory_stock_movements
+ok   I15.3  it reads shipping_allocation_drafts
+ok   I15.4  it reads shipping_plans
+ok   I15.5  it reads shipments
+ok   I15.6  it reads shipment_routes
+ok   I15.7  it reads shipment_events
+ok   I15.8  it reads request_orders
+ok   I15.9  it reads purchase_orders
+ok   I15.10  it reads purchase_order_lines
+ok   I16.1  it reports BROKEN
+ok   I16.2  it reports BALANCE_DISAGREES
+ok   I16.3  it reports APPROVED_PLAN_WITH_NO_SHIPMENT
+ok   I16.4  it reports SHIPPED_WITH_NO_STOCK_MOVEMENT
+ok   I16.5  it reports COMPLETED_QTY_WITH_NO_STOCK_MOVEMENT
+ok   I16.6  it reports RECEIPT_QUANTITY_UNRECONCILED
+ok   I17  §G it refuses to round an unreconciled quantity into agreement
+ok   I18  and nothing in its code repairs, restores or back-fills
+ok   I19  the approved-plan-with-no-shipment finding names the audit stage whose retry has no caller
+
+== §M — MUTATIONS. Each is applied to shipped source and must be caught. ==
+ok   M1  the deduction happens twice for one shipment (caught)
+ok   M2  stock is deducted without writing a movement row (mutating the SHARED authority) (caught)
+ok   M3  the sufficiency gate is removed and stock goes negative (caught)
+ok   M4  the movement records a positive quantity for an OUTBOUND move (caught)
+ok   M5  the before/after balance is dropped from the movement row (SHARED authority) (caught)
+ok   M6  the shipment lineage is dropped from the movement row (SHARED authority) (caught)
+ok   M7  Confirm ends at in_transit instead of the formal hand-over (caught)
+ok   M8  a PO receipt raises completed_qty without raising Factory Stock (caught)
+ok   M9  the receipt idempotency pre-scan is removed and a retry double-counts (caught)
+ok   M10 a stage loses its single-owner guarantee (caught)
+ok   M11 the reservation audit stops noticing a real reservation write (caught)
+
+== §K — THE CLASSIFICATION, AND WHAT IT FORBIDS ==
+  classification: {"CONNECTED":["S1","S1b","S2","S3","S3b","S4","S5","S6","S6b","S7","S8","S9","S11","S11b","S12","P1","P2","P3","P4","P5","P6","P7","P8","P10","P11","P12","P13","P14"],"SERVER_ONLY":["S7b","S8b","P10b"]}
+ok   C1  §K no required stage is UI_ONLY or SPEC_ONLY
+ok   C2  §K the overall verdict, stated as data rather than prose
+
+== §L — THE INVARIANTS THIS AUDIT PINNED, RE-CHECKED AFTER FC-1A ==
+ok   L1  11_ declares exactly the build its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34) — its Approve answer changed shape, and the frontend binds to it
+ok   L2  16_ carries a stamp at or after the round before FC-0A
+ok   L3  22_ still names shipment_out — FC-1A moved WHERE the movement is written, never WHAT it is called
+ok   L4  13_ unchanged — the PO receipt path was not touched
+ok   L5  and 22_ declares exactly the build its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37) — a 22_ a round behind returns SUCCESS while never releasing a reservation, so only a declared build can tell the two apart
+ok   L6  12_ declares exactly the build its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34)
+ok   L7  as does 21_ (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35) — the file that owns every factory stock mutation
+
+---
+241 passed, 0 failed
+mutations: 11 caught, 0 missed

@@ -1,0 +1,43 @@
+
+-- A. THE CHAIN IS REAL — no stub between the payload and the classifier ------------------------------
+
+-- B. SERIES — the existing identity the operator actually selected -----------------------------------
+
+-- C. SKU — the narrower identity, and October 150 ----------------------------------------------------
+
+-- D. DIRTY TRACKING — the edit, and the change of mind -----------------------------------------------
+
+-- E. NEW — only when the canonical key matches nothing -----------------------------------------------
+
+-- F. DUPLICATE — two rows, one identity, nothing written ---------------------------------------------
+
+-- G. UNREADABLE IS NOT EMPTY — the state that must never become NEW ----------------------------------
+
+-- H. RECEIPT MERGE — two rows must stay two rows -----------------------------------------------------
+
+-- I. A GENUINELY NEW RECEIPT MAY APPEND — exactly one row --------------------------------------------
+
+-- J. THE STALE-WRITE CONTRACT STILL HOLDS, AND IS BUILT FROM THE CANONICAL ROW -----------------------
+
+-- K. THE PAGE STILL EVALUATES, AND THE ROUTE STILL REGISTERS -----------------------------------------
+FC Summary Debug Tools Available: window.fcDebug
+
+-- L. MUTANTS — every one of these was, or would have been, the shipped bug ---------------------------
+  caught: M1  _trExistingRules_ hands back display rows again
+  caught: M2  the .raw mapping is dropped
+  caught: M3  a missing canonical record becomes an empty list
+  caught: M4  DATA_UNAVAILABLE is answered as NEW
+  caught: M5  the receipt merge compares canonical target_rule_id against normalized rows
+  caught: M6  the receipt is appended instead of replacing
+  caught: M7  the receipt is stored without normalization
+  caught: M8  BOTH blank-id refusals are removed
+  caught: M9  hydration reads the display percentages instead of canonical month names
+  caught: M10 an existing match is reset to the 100 defaults
+  caught: M11 a duplicate identity silently picks the first row
+  caught: M12 the fingerprint is computed from a display row
+
+-- M. VACUITY — the suite can fail --------------------------------------------------------------------
+
+====================================================================================================
+PASS  107 passed, 0 failed, 12 mutants, 0 survived, vacuity clean
+====================================================================================================

@@ -1,0 +1,146 @@
+
+== A  OWNERS — counted from live source, not carried forward as prose ==
+ok   A1  the carriers master is declared by exactly the two workspaces that serve a carrier-bearing surface
+ok   A1a SECOND_CARRIER_MASTER_COUNT = 0 — one sheet, one required identity column, two readers
+ok   A2  CARRIER_DISPLAY_RESOLVER_OWNER_COUNT = 1 — KM.display.carrierDisplay in the canonical adapter
+ok   A2a and no page declares a resolver of its own
+ok   A3  DOCUMENT_ENGINE_OWNER = 39_ — one DTO, one interpretation of a document row
+ok   A3a generation keeps its own existing owner — SECOND_DOCUMENT_ENGINE_COUNT = 0
+ok   A3b DOCUMENT_RETRY_OWNER (backend) = 39_
+ok   A4  DOCUMENT_PANEL_RENDER_OWNER_COUNT = 1
+ok   A4a and the PO page CONSUMES it rather than declaring a second panel
+ok   A4b through the shared window contract
+ok   A5  DOCUMENT_RETRY_OWNER (frontend) = 1 — shipping-history.js owns the click
+ok   A5a and the PO page declares no retry of its own
+ok   A6  CARRIER_LEADTIME_WRITE_OWNER = 17_
+ok   A6a SECOND_CARRIER_LEADTIME_WRITE_OWNER_COUNT = 0 — exactly one FUNCTION anywhere in the runtime both names the table and writes
+ok   A6b and 03_ names the table only inside READ handlers — a generic table writer there would be a real second owner, so it is checked rather than assumed
+ok   A7  APPS_SCRIPT_DEPLOY_SURFACE_OWNER is directory membership, declared in one module
+ok   A7a SECOND_DEPLOY_SURFACE_OWNER_COUNT = 0 — three tooling directories, none of them a runtime source
+
+== B  CARRIER display truth — the shipped resolver and the shipped label, executed ==
+ok   B1  the shipped carrier resolver loaded and runs outside a browser
+ok   B2  an id with a master row RESOLVES
+ok   B2a and renders the NAME
+ok   B3  an id with no master row shows the ID — not a no-carrier state
+ok   B3a and says so
+ok   B4  a master row that cannot name the carrier is UNKNOWN, not ""
+ok   B5  only a MISSING id is the no-carrier state
+ok   B6  carriers NOT READ is distinguishable from carriers EMPTY — the one distinction that makes "no carrier" a truthful claim rather than a default
+ok   B6a an EMPTY master cannot resolve, and does not pretend to
+ok   B7  CARRIER_RAW_ID_ONLY_WHEN_NAME_AVAILABLE_COUNT = 0
+ok   B8  CARRIER_ID_NAME_MISMATCH_COUNT = 0 — the id is carried through unchanged beside the name
+ok   B9  the Weekly plan renders name AND id — the Confirm-summary pair form
+ok   B9a a legacy row with no name falls back to the id
+ok   B9b and ONLY a missing id renders the no-carrier state
+ok   B10 40_ serves the joined carrier object, which is why the Weekly plan needs no resolver and no request
+ok   B11.1 11_shipping_plan_handlers.gs never writes carrier_name — CARRIER_NAME_PERSISTENCE_COUNT = 0
+ok   B11.2 12_shipment_handlers.gs never writes carrier_name — CARRIER_NAME_PERSISTENCE_COUNT = 0
+ok   B11.3 and 17_ states the same rule where the resolver lives
+ok   B11.4 which the rate-card importer ENFORCES: carrier_name is a system column a template may not set, so an import cannot persist a name onto a rate card
+ok   B12 CARRIER_SELECTION_CHANGED_BY_DISPLAY_COUNT = 0 — the resolver assigns nothing
+ok   B12a and issues no request: resolving a carrier costs nothing per shipment
+
+== C  DOCUMENT identity and rediscovery — both entities, the shipped panel, executed ==
+ok   C1  the shipped Document Panel loaded and runs outside a browser
+ok   C2  PO_DOCUMENT_REDISCOVERY_SUPPORTED = YES — a PO document that already exists renders from the canonical read, with no generation call
+ok   C2a SHIPMENT_DOCUMENT_REDISCOVERY_SUPPORTED = YES
+ok   C3  PO_REENTRY_REDISCOVERY_PASS = YES — the panel holds no state to lose
+ok   C3a SHIPMENT_REENTRY_REDISCOVERY_PASS = YES
+ok   C3b DOCUMENT_ID_PRESERVED_AFTER_REENTRY = YES — the same document_id comes back
+ok   C3c and it keeps no browser-side cache that a re-entry could serve stale
+ok   C4pre the mixed row DOES render a retry control, so the address it carries is observable
+ok   C4  DOCUMENT_ENTITY_SCOPE_DRIFT_COUNT = 0 — the panel addresses the ENTITY IT WAS GIVEN, never the one written on a row, so a mis-scoped row cannot make a PO panel act on a shipment
+ok   C5  MULTI_DOCUMENT_COLLAPSE_COUNT = 0 — all six survive, including the five-row fold
+ok   C5a and the fold declares the full count rather than hiding it
+ok   C6  DOCUMENT_TYPE_DRIFT_COUNT = 0 — a second document_type survives the render
+ok   C7  a FAILED document offers Retry, addressed to the ENTITY (type + id)
+ok   C7a DOCUMENT_AUTORETRY_COUNT = 0 — the panel starts no timer, so nothing retries on its own
+ok   C8  and withholds it when the read model says retry is not available
+ok   C9  the shipment workspace reads generated_documents as a bounded include
+ok   C9a and so does the purchase order workspace
+ok   C10 SECOND_DOCUMENT_WRITE_AUTHORITY_COUNT = 0 — the registry write primitive is defined once
+ok   C10a and so is the row-state interpretation, so no caller can invent a second meaning for a status
+ok   C10b and the PO owner records outcomes by CALLING it, never by writing the sheet itself
+ok   C10c exactly three files ACQUIRE the registry sheet — the creator, the interpreter, and the PO owner that goes through the interpreter. Enumerated, so a fourth is a failure rather than a shrug
+ok   C10d and the dispatch owner, which NAMES the registry in its response, never acquires it — it calls dgsGenerateShipmentDocuments_ and reports what came back
+
+== D  CARRIER LEAD TIME — the chain, end to end, and the two things it must not do ==
+ok   D1  the Carrier Rate Card page calls the canonical adapter method
+ok   D1a the adapter declares it
+ok   D1b and sends the canonical action name
+ok   D1c the router dispatches it
+ok   D1d to the 17_ owner
+ok   D1e which writes carrier_lead_times
+ok   D1f S7_STALE_LEGACY_DIRECT_CALL_COUNT = 0 for this page — no transport of its own
+ok   D2  LEADTIME_DELETE_SUPPORTED = NO — with no status column, removing a lane silently un-routes it, and no workflow asked for that
+ok   D2a and no action routes a delete
+ok   D3  LEADTIME_UPDATE_IDENTITY = lead_time_id
+ok   D4  the lane guard resolves through KMRA, not through a private copy of its rules
+ok   D4a and REFUSES when KMRA is absent rather than falling back to one
+ok   D5  CONCURRENT_DUPLICATE_LANE_REACHABLE = NO — the existing script lock, not a second lock architecture
+ok   D5a and no second lock was introduced
+ok   D6  RATE_CARD_WRITE_FROM_LEADTIME_COUNT = 0 — the lead-time writer never names the rate table
+ok   D6a the rate importer is extracted whole, by brace matching
+ok   D6b LEADTIME_WRITE_FROM_RATECARD_COUNT = 0 — the rate importer performs no write against the table
+ok   D6b1 and names it exactly once — in the refusal that keeps the two authorities apart
+ok   D6b2 which is that sentence, quoted from the shipped refusal
+ok   D6c SECOND_CARRIER_RATE_AUTHORITY_COUNT = 0 — the rate import still REJECTS lead-time columns outright
+ok   D7  LEADTIME_READ_ON_PAGE_MOUNT_COUNT = 0 — S4-R4 §6 took the lead-time read off this first screen and the maintenance panel is no more entitled to it than the rate column was
+ok   D7a LEADTIME_READ_ON_SHOW_ACTION_COUNT = 1 — exactly one place starts the read, and the operator asks
+ok   D7b and NOT_LOADED renders an OFFERED state, because printing "Loading…" for a read nobody asked for would be a lie about what the page is doing
+ok   D7c the deferred read exists to be asked for
+ok   D8  PER_ROW_LEADTIME_REQUEST_COUNT = 0 — the renderer reads nothing
+
+== E  DEPLOY SURFACE and TEMP — carried from R4 and re-derived, not assumed ==
+ok   E1  UNDECLARED_RUNTIME_FILE_COUNT = 0
+ok   E1a and no declared runtime owner has left the folder
+ok   E2  NON_RUNTIME_TEMP_IN_FINAL_PRODUCTION_DEPLOY_SET = 0
+ok   E3  FINAL_PRODUCTION_APPS_SCRIPT_RUNTIME_FILE_COUNT derived, not assumed
+ok   E4  the generated runtime owner remains INCLUDED — generated is not diagnostic
+ok   E5  DEMO_SEED_PRODUCTION_DEPLOY_REACHABLE = NO — it is not in the runtime universe
+ok   E5a and no runtime file names any of its entry points
+ok   E6  the relocated tools declare a large symbol surface
+ok   E6a TEMP_RUNTIME_HANDLER_DEPENDENCY_COUNT = 0 — the router CALLS no symbol that left the runtime
+ok   E7  the whole handler surface was collected
+ok   E7a MISSING_ROUTER_HANDLER_COUNT = 0 and ORPHAN_PRODUCTION_ACTION_COUNT = 0
+
+== F  CROSS-MAINLINE — a supporting flow may not execute a business mainline ==
+ok   F1  S7_TO_SHIPPING_AUTO_EXECUTION_COUNT = 0 — lead-time maintenance names no mainline table
+ok   F1a S7_TO_ORDERING_AUTO_EXECUTION_COUNT = 0 — and calls no mainline writer
+ok   F2  document retry mutates no PO or Shipment business state — only its own document artifact
+ok   F3  SUPPORTING_PHASE2_ORCHESTRATION_COUNT = 0 — no supporting flow orchestrates a mainline
+ok   F4  carrier maintenance creates no Shipment and no Shipping Plan
+
+== G  what S7 did NOT touch ==
+ok   G1a and its master spec is still there — DEFERRED_UNCHANGED means unchanged, not removed
+ok   G1b as is the page it belongs to; S7 neither hid it, relabelled it nor rewired its navigation
+ok   G2  S7_TO_S5_BEHAVIOR_DRIFT_COUNT = 0 and S7_TO_S6_BEHAVIOR_DRIFT_COUNT = 0 — no ordering, shipping, factory, overseas, dispatch or receipt owner changed in any S7 round
+ok   G3  IN S7 - between S7_BASE and S7-R5 - S7_BACKEND_CHANGED_OWNER_SET = exactly four, and every one is a supporting-flow owner
+ok   G3a and the interval really is closed - there ARE commits after S7, which is the whole reason G3 had to stop reading HEAD
+
+== H  BOOT topology — the corrected R2B1 contract still holds ==
+ok   H1  UNDECLARED_BOOT_SCRIPT_COUNT = 0
+ok   H2  and no declared boot script has stopped loading
+ok   H3  BOOT_SCRIPT_SET_UNEXPECTED_CHANGE_COUNT = 0
+ok   H4  NEW_ROUTE_SCRIPT_AT_BOOT_COUNT = 0
+ok   H5  BOOT_ORDER_DRIFT_COUNT = 0
+ok   H6  BOOT_PAYLOAD_BYTES_CURRENT is REPORTED, not gated — S8 owns the budget
+
+== I  mutants — every integration claim above is load-bearing ==
+ok   MUTANT CAUGHT — I1 a second carrier display resolver appearing on a page
+ok   MUTANT CAUGHT — I2 the resolver printing the id when it HAS the name
+ok   MUTANT CAUGHT — I3 UNREAD collapsed into NONE — "we did not look" reported as "there is none"
+ok   MUTANT CAUGHT — I4 the Weekly label rendering the no-carrier state for a real id
+ok   MUTANT CAUGHT — I5 the panel addressing retry at the ROW entity instead of the panel entity
+ok   MUTANT CAUGHT — I6 the five-row fold silently dropping the sixth document
+ok   MUTANT CAUGHT — I7 a delete action appearing on the lead-time surface
+ok   MUTANT CAUGHT — I8 the lane guard reimplementing KMRA instead of calling it
+ok   MUTANT CAUGHT — I9 the Rate Card mount acquiring the lead-time read again — the S7-R3 regression
+ok   MUTANT CAUGHT — I10 the rate importer acquiring a lead-time write
+ok   MUTANT CAUGHT — I11 the demo seed returning to the runtime universe
+ok   MUTANT CAUGHT — I12 an S5/S6 owner changing under an S7 round
+ok   MUTANT CAUGHT — I13 document retry reaching into shipment business state
+ok   MUTANT CAUGHT — I14 the panel starting a timer, which is how an auto-retry gets in
+
+FAILED  126 passed / 1 failed   mutants 14, survived 0

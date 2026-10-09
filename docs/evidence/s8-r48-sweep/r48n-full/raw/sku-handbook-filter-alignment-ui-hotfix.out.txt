@@ -1,0 +1,15 @@
+
+== A. filter row structure — shared row owner, four groups, Search is a plain input ==
+
+== B. ONE shared control-geometry owner for BOTH the <input> and the .kmf trigger ==
+
+== C. no forbidden positioning hacks / Search-only offset in the block ==
+
+== D. Data-mode badge hidden by its own SKU-Handbook selector (no reserved space) ==
+
+== E. mock/live logic UNCHANGED (presentation-only hide) ==
+
+== F. language toggle preserved ==
+
+----------------------------------------
+SKU HANDBOOK FILTER ALIGNMENT + MOCK BADGE (UI-HOTFIX): 23 passed, 0 failed

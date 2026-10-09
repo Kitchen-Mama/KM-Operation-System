@@ -1,0 +1,127 @@
+
+== A. one write owner, one eligibility owner ==
+ok   A1 MONTHLY_FLAT_WRITE_OWNER = rpoFlatLockedApply_
+ok   A2 every flat path reaches it through exactly ONE injected dep
+ok   A3 LEGACY_PARALLEL_WRITE_PATH_COUNT = 0 — the flat path never calls the line engine boundary
+ok   A4 one planner
+ok   A5 WRITE_ELIGIBILITY_OWNER_COUNT = 1 — declared once
+ok   A6 and the eligible-action set is spelled in ONE file
+ok   A7 47_api_v1_recommendation_generation.gs never derives the action itself
+ok   A7 24_recommendation_orchestrator.gs never derives the action itself
+ok   A7 48_api_v1_request_order_draft_job.gs never derives the action itself
+
+== B. the verdict reaches the live path, from the one place that has the gap row ==
+ok   B1 47_ asks the canonical owner rather than imitating it
+ok   B2 once — recGenBuildGapDraftBody_ is the only gap-row -> body builder
+ok   B3 and the verdict is attached to the body
+ok   B4 a project without the bundle FAILS CLOSED rather than writing with no verdict
+ok   B5 the manual job path reaches it
+ok   B6 and the scheduled driver drives the SAME 48_ job — not a second persister
+
+== C. the guard decides on the live path, before anything is planned ==
+ok   C1 NEW_ORDER writes one draft row
+ok   C2 REALLOCATE_AND_NEW_ORDER writes — its order half only
+ok   C3 REALLOCATE is refused by the guard
+ok   C3a REALLOCATE with the reason named
+ok   C3b REALLOCATE — ZERO mutation and the writer was never even entered
+ok   C3 NO_ACTION is refused by the guard
+ok   C3a NO_ACTION with the reason named
+ok   C3b NO_ACTION — ZERO mutation and the writer was never even entered
+ok   C3 MANUAL_REVIEW is refused by the guard
+ok   C3a MANUAL_REVIEW with the reason named
+ok   C3b MANUAL_REVIEW — ZERO mutation and the writer was never even entered
+ok   C4 the guard is consulted before planFlat is called, not after
+ok   C5 an action outside the closed set writes nothing
+ok   C6 a caller carrying no verdict behaves exactly as before — the guard adds no new refusal to old callers
+
+== D. the quantity authority did not move ==
+ok   D1 KMREC cartonizes the raw T1-T3 sum once -> 36
+ok   D2 TIER_WRITE_SOURCE = the stored per-tier suggestion, written verbatim
+ok   D3 which sums to 48 — the two authorities are still different numbers
+ok   D4 KMREC_TOTAL_IS_WRITE_SOURCE = NO — it reached no column
+ok   D5 SECOND_QUANTITY_AUTHORITY_COUNT = 0 — neither the planner nor the body builder reads it
+ok   D6 EXECUTION_RECARTONIZES = NO — the execution layer runs no carton math
+ok   D7 EXECUTION_RECALCULATES_GAP = NO
+ok   D8 EXECUTION_RECALCULATES_RECOMMENDATION = NO — the verdict is only ever read
+
+== E. combined action boundary ==
+ok   E1 SCHEMA_EXTENSION_REQUIRED = NO — still no reallocation column
+ok   E2 the order half is the gap suggestion, untouched by the 30 reallocated in
+ok   E3 and order_qty defaults to it
+ok   E4 COMBINED_QTY_WRITTEN = NO — no merged 30 + 72
+ok   E5 REALLOCATION_QTY_WRITTEN_TO_ORDER_DRAFT = NO
+ok   E6 and the action itself was not persisted as lifecycle
+
+== F. staleness and the optimistic token — four cases, measured ==
+ok   F-A current + current commits
+ok   F-B STALE_WRITE_CAN_COMMIT = NO
+ok   F-B1 and nothing was written, planned or dispatched
+ok   F-C TOKEN_MISMATCH_CAN_COMMIT = NO
+ok   F-C1 and the tables are byte-identical to before the attempt
+ok   F-C2 reported as a conflict, not as a success
+ok   F-D the fingerprint move is detectable by KMREC.isStale, the single owner
+ok   F-D1 and the execution layer holds no fingerprint logic of its own
+
+== G. operator edit preservation, through the real path ==
+ok   G1 the edit moves order_qty only
+ok   G2 USER_EDIT_SURVIVES_RECALC = YES — a system refresh left it alone
+ok   G3 and the flag survived
+ok   G4 SYSTEM_VALUE_REMAINS_COMPARABLE = YES
+ok   G5 still one row
+ok   G6 SYSTEM_RECALC_OVERWRITES_USER_EDIT = NO, even on regenerate
+
+== H. the refusals are not failures — and without this they would be reported as one ==
+ok   H1 NOT_ELIGIBLE is NOT_READY with the action as its reason — never FAILED
+ok   H2 and so is STALE_RECOMMENDATION
+ok   H3 48_ answers an unknown status with F for FAILED — which is why no new status was invented
+ok   H4 so a truthfully refused SKU reaches the job as NOT_READY, not as a failure
+ok   H5 the committed path is untouched
+
+== J. write truth — the four states, run against the real locked apply ==
+ok   J1 confirmed committed
+ok   J2 outcome UNKNOWN surfaces the committed id and demands reconciliation
+ok   J3 confirmed rejected
+ok   J4 confirmed not started — the lock was never taken, so nothing can have been written
+ok   J4a and no write was attempted
+ok   J5 FALSE_NOT_WRITTEN_CLAIM_COUNT = 0 — an unverified commit is none of the confident answers
+ok   J6 and it reaches the job as its own state, neither success nor failure
+ok   J7 AUTOREPLAY_ON_UNKNOWN = NO — no timer, no sleep, no retry in the write boundary
+ok   J7a and the apply is entered exactly once per call — a committed-unknown write is never resent
+ok   J8 and the operator surface says so where the operator reads it
+
+== K. idempotency, without a database ==
+ok   K1 the same operator action yields the same RD:: identity
+ok   K2 DUPLICATE_DRAFT_ROW_COUNT = 0
+ok   K3 DUPLICATE_RUN_ROW_COUNT = 0
+ok   K4 the replay is counted rather than hidden
+ok   K5 both applied — an upsert, not a second row
+ok   K6 DUPLICATE_DOWNSTREAM_CANDIDATE_COUNT = 0 — the ROEXEC execution key is unchanged
+
+== L. boundaries: operator authority, Request Order, shipping ==
+ok   L1 OPERATOR_ACTION_NAME = handleRequestOrderAiPlan
+ok   L2 and it is latched by _roAiPlanBusy
+ok   L3 DOUBLE_CLICK_DUPLICATE_DISPATCH = 0 — a second activation returns before dispatching
+ok   L4 with an immediate visual acknowledgement
+ok   L5 supply-planning-request-draft-v2-persistence.js AUTO_CREATE_REQUEST_ORDER / PO = NO
+ok   L6 supply-planning-request-draft-v2-persistence.js SHIPPING_TABLE_WRITE_COUNT = 0
+ok   L5 47_api_v1_recommendation_generation.gs AUTO_CREATE_REQUEST_ORDER / PO = NO
+ok   L6 47_api_v1_recommendation_generation.gs SHIPPING_TABLE_WRITE_COUNT = 0
+ok   L7 the execution writes exactly two tables, both of them Ordering
+ok   L8 DRAFT_TO_REQUEST_ORDER_TRANSITION = Send Request (66_), delegating to 13_ — a separate operator act
+ok   L9 driven by tN_order_qty > 0, the OPERATOR value
+
+== M. mutation ==
+ok   MA REALLOCATE becomes write-eligible (caught)
+ok   MB MANUAL_REVIEW becomes write-eligible (caught)
+ok   MC the combined action adds the reallocation to the order quantity (caught)
+ok   MD the KMREC display total becomes the write source (caught)
+ok   ME a stale recommendation is allowed through (caught)
+ok   MF the optimistic token check is removed (caught)
+ok   MG a system refresh overwrites the operator edit (caught)
+ok   MH an unknown write outcome is reported as a clean success (caught)
+ok   MI the duplicate-activation latch is removed (caught)
+ok   MJ a shipping table joins the written set (caught)
+
+== RESULT ==
+passed 99  failed 0  mutants killed 10/10
+PRODUCTION_ROWS_WRITTEN = 0 · REAL_DB_WRITE_TEST_COUNT = 0 · WRITE_ELIGIBILITY_OWNER_COUNT = 1

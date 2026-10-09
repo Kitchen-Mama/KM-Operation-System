@@ -1,0 +1,13 @@
+
+== A platform_fulfilled → line.fulfillmentModel emitted verbatim (MARKETPLACE mode) ==
+
+== B self_fulfilled → line.fulfillmentModel emitted (WAREHOUSE mode; even a rule-blocked line carries it) ==
+
+== C hybrid marketplace + BLANK SKU-level fulfillment_model → per-SKU fail-closed (D-2h supersede) ==
+
+== D no marketplaces row → fail-closed fulfillmentModel="" (never inferred from marketplace name) ==
+
+== E consumer contract — 61_ reads exactly line.fulfillmentModel ==
+
+----------------------------------------
+WEEKLY AI PLAN WORKSPACE FULFILLMENT PROJECTION (F1-7N-D-2f-R2): 12 passed, 0 failed

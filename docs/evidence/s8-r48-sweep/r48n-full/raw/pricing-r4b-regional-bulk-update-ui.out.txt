@@ -1,0 +1,148 @@
+
+== A · THE CATEGORY STEP — a list, so a second category is a row rather than a redesign ==
+ok   A1  categories are declared as a list
+ok   A2  Pricing is the one available category
+ok   A3  with the description the spec names
+ok   A4  the dialog is titled Update Regional SKU Data
+ok   A5  an unavailable category renders disabled
+ok   A6  and choosing one advances the step
+ok   A7  exactly one category is declared — nothing is stubbed in
+
+== B · THE TARGETS — derived from the pricing rows that exist, not from a list of marketplaces ==
+ok   B1  one target per country + marketplace that HAS pricing rows
+ok   B2  the CA target
+ok   B2a carrying exactly its own marketplace_sku_ids
+ok   B3  the US target
+ok   B4  a target whose rows disagree about currency has NO currency
+ok   B4a and both are reported rather than one being picked
+ok   B5  companies present in a target are listed, since pricing_list carries none
+ok   B6  a row with neither country nor marketplace produces no target
+
+== C · COUNTRY -> MARKETPLACE FILTERING ==
+ok   C1  the country list is the countries that have targets
+ok   C2  choosing a country narrows the marketplace list to that country
+ok   C2a case-insensitively, because a country code typed by hand is not a promise about case
+ok   C3  a country with no targets narrows to nothing
+ok   C4  an unknown target key resolves to nothing, never to the first one
+
+== D · THE CURRENCY NOTICE — and where the currency is allowed to come from ==
+ok   D1  the notice states the target currency
+ok   D2  and that an import may not change it
+ok   D3  the page derives no currency from the browser locale
+ok   D4  the module says which column the currency comes from
+ok   D4a and refuses a file that would hit the server refusal
+ok   D5  a lower-case currency cell is the same currency, not a second one
+
+== E · THE TEMPLATE IS SCOPED TO THE TARGET ==
+ok   E1  the template carries only the target's rows
+ok   E1a and they are the target's ids
+ok   E1b no row from another target appears
+ok   E2  an unedited scoped template is valid and asks for nothing
+ok   E3  the reference export names the per-field owner
+ok   E3a and an unstated owner exports as NOT_SET, never as AUTO
+
+== F · WHAT A SCOPED IMPORT REFUSES ==
+ok   F1  a valid scoped edit passes
+ok   F2  a currency that disagrees with the target is refused, and the file offers nothing
+ok   F2a  and the browser never emits the server's own refusal code
+ok   F3  a row from another target is refused even when its country cell has been relabelled
+ok   F4  validateFile still DROPS a value beside AUTO — the frozen contract is untouched
+ok   F4a while the scoped import refuses the contradiction outright
+ok   F4b reported against the file line, which is what the operator edits
+ok   F5  a target with two currencies refuses the upload rather than choosing one
+ok   F5a naming both, so someone can go and settle it
+ok   F6  and no target at all is refused too
+ok   F7  MANUAL with a blank price is still refused — blank is not zero
+ok   F7a and an unknown mode still is
+ok   F7b and a duplicated identity still is
+
+== G · THE PREVIEW IS DRIVEN BY THE SERVER RECEIPT, NOT BY A SECOND OPINION ==
+ok   G1  only the fields the SERVER said would change are shown
+ok   G1a and NO_CHANGE is not one of them
+ok   G2  MANUAL shows the current value and the supplied one
+ok   G2a UNKNOWN -> MANUAL
+ok   G3  AUTO shows the restore coming from auto_*
+ok   G3a UNKNOWN -> AUTO, with the price unmoved
+ok   G4  each line names the SKU and the site SKU
+ok   G5  an unchanged row contributes nothing to the preview
+ok   G6  the result summary counts what the server reported, split by mode
+ok   G6a and an empty receipt summarises to zero rather than to nothing
+
+== H · PREVIEW BEFORE WRITE, AND ONE WRITE PATH ==
+ok   H1  the preview asks the server with dry_run
+ok   H2  Confirm Update is disabled until a preview has found something to change
+ok   H3  and confirming goes through the confirmation step, not straight to the write
+ok   H4  the confirmation leads with the number of price CHANGES, not the number of rows uploaded
+ok   H4b with the target and the currency stated beside it
+ok   H4c and what ownership may do, in the words §9 allows rather than the schema's
+ok   H5  all five pricing calls on this page go through KM.DB.updatePricing
+ok   H5a the page never names a pricing action itself
+ok   H5b and performs no transport of its own
+ok   H6  the write sends the lines the preview validated, not the file re-read
+ok   H7  changing the target resets anything validated against the previous one
+ok   H7a including the lines that were about to be written
+
+== I · base_*, auto_* AND fx_* ARE NOT WRITABLE THROUGH ANY OF IT ==
+ok   I1  the update template has exactly the thirteen columns of the frozen contract
+ok   I2  base_regular_price is not an update-template column
+ok   I2  base_minimum_price is not an update-template column
+ok   I2  base_msrp is not an update-template column
+ok   I2  auto_regular_price is not an update-template column
+ok   I2  auto_minimum_price is not an update-template column
+ok   I2  auto_msrp is not an update-template column
+ok   I2  fx_rate is not an update-template column
+ok   I2  fx_rate_date is not an update-template column
+ok   I3  a file carrying those columns is not rejected for carrying them
+ok   I3a but not one of them reaches the payload
+ok   I4  the reference export may show auto and fx values, because reading them is not writing them
+
+== J · THE ENTRY POINT EXISTS, AND EVERY CLASS IT EMITS HAS A RULE ==
+ok   J1  the page toolbar carries an Update button
+ok   J1a wired to the bulk update entry point
+ok   J1b which is exported, so the inline handler resolves
+ok   J2  srdCloseBulkUpdate is exported
+ok   J2a  and reachable
+ok   J2  srdBulkPickCategory is exported
+ok   J2a  and reachable
+ok   J2  srdBulkSetCountry is exported
+ok   J2a  and reachable
+ok   J2  srdBulkSetMarketplace is exported
+ok   J2a  and reachable
+ok   J2  srdBulkDownloadCurrent is exported
+ok   J2a  and reachable
+ok   J2  srdBulkDownloadTemplate is exported
+ok   J2a  and reachable
+ok   J2  srdBulkPreview is exported
+ok   J2a  and reachable
+ok   J2  srdBulkToConfirm is exported
+ok   J2a  and reachable
+ok   J2  srdBulkBackToPreview is exported
+ok   J2a  and reachable
+ok   J2  srdBulkConfirm is exported
+ok   J2a  and reachable
+ok   J2  srdBulkDownloadResult is exported
+ok   J2a  and reachable
+ok   J3  .srd-modal--wide has a CSS rule
+ok   J3  .srd-bulk__cat has a CSS rule
+ok   J3  .srd-bulk__cur has a CSS rule
+ok   J3  .srd-bulk__target has a CSS rule
+ok   J3  .srd-bulk__files has a CSS rule
+ok   J3  .srd-bulk__tbl has a CSS rule
+ok   J3  .srd-bulk__confirm has a CSS rule
+ok   J3  .srd-bulk__ok has a CSS rule
+ok   J3a and the new rules are scoped to the section, as every other rule here is
+ok   J4  the dialog is appended inside the section, not to <body>
+ok   J5  the bulk preview labels ownership with the same function the single-row editor uses
+ok   J5a and the three states are the three the editor shows
+ok   J5b and the export token is a SEPARATE function, so the wording cannot change the file
+ok   J6  Master SKU Details still has no pricing write of any kind
+
+== K · MUTANTS ==
+ok   K1  an ambiguous target picks a currency instead of refusing  (mutant caught)
+ok   K2  a row from another target is admitted by its country cell  (mutant caught)
+ok   K3  a file in the wrong currency reaches the server  (mutant caught)
+ok   K4  the preview shows a field the server said would not change  (mutant caught)
+ok   K5  the preview shows AUTO restoring to the file value  (mutant caught)
+ok   K6  the result summary counts an AUTO hand-back as a manual field  (mutant caught)
+
+124 passed / 0 failed   ·   6 mutants, 0 survived

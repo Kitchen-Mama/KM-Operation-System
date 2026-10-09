@@ -1,0 +1,21 @@
+
+== roWorkspaceBuild_ View-Model ==
+
+== filter / sort / pagination ==
+
+== io: optional line_sources missing-safe; provisioned tables fail-closed ==
+
+== end-to-end orchestrator via injected io (envelope + scope) ==
+
+== §1/§5/§12/§13 no second engine — source guards ==
+
+== activation + router ==
+
+== db-api adapter reuses canonical normalizers + master normalizers (BEFORE == AFTER) ==
+
+== page: workspace primary read, no broad DB, fail-closed, read-model accessors ==
+
+== §11/§12 user-edit protection + Monthly Recommendation chain untouched (request-order.js deferred) ==
+
+----------------------------------------
+API REQUEST ORDER WORKSPACE (F1-7D-R1): 58 passed, 0 failed

@@ -1,0 +1,20 @@
+
+== F · SKU Regional whole-page BEFORE==AFTER (skuDetails workspace include.regional) ==
+
+== F · SKU Regional source: canonical uses workspace + include.regional; fail-closed; write unchanged ==
+
+== B · PO detail modal wiring (purchaseOrder read-model; adapter BEFORE==AFTER proven in F1-7C) ==
+
+== D · IR marketplace/warehouse reference equivalence (via _irWsGet) + source ==
+
+== A · RESOLVED in A2: weeklyShipping now projects bounded SKU logistics ==
+
+== C · RESOLVED in A2: RO scope resolver uses a bounded marketplace reference ==
+
+== E · HALT proof: allocation-draft SSOT is not BEFORE==AFTER-equivalent to the sync hydrate ==
+
+== I/J/K · no new API route / workspace / formula / authority drift ==
+
+----------------------------------------
+F1-7J-A cutover: 54 passed, 0 failed
+ALL GREEN

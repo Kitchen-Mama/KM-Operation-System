@@ -1,0 +1,218 @@
+
+==============================================================================================================
+PRICING-R4E — CREATION CONTRACT FIX
+==============================================================================================================
+
+== A · §8 THE CREATION CENSUS — ONE OWNER ==
+ok   A1  PRICING_LIST_CREATOR_COUNT = 1 · PRICING_LIST_CREATOR_OWNER = 04_marketplace_forecast_import.gs
+ok   A1b and it appends in exactly ONE place, so the contract below has one implementation
+ok   A2  no frontend file creates a pricing row
+ok   A2b and the master-data endpoint still states that it creates none
+ok   A3  the creation rule is one pure function — pricingNewRowPlan_
+ok   A3b which takes no sheet and no clock — the as-of date is passed in
+
+== B · §3 SAME-CURRENCY CREATION ==
+ok   B1  USD -> USD: rate 1 — a fact about two identical currencies
+ok   B1b USD with the creation date recorded beside it
+ok   B2  USD: auto_* is the base at this currency's precision
+ok   B3  USD: the manual override initialises BLANK
+ok   B3a USD: and the row RESOLVES to the auto value, which is what the site charges
+ok   B4  USD: ownership is FALSE — determinable, so it is recorded
+ok   B5  USD: a complete row keeps the caller's status
+ok   B1  CAD -> CAD: rate 1 — a fact about two identical currencies
+ok   B1b CAD with the creation date recorded beside it
+ok   B2  CAD: auto_* is the base at this currency's precision
+ok   B3  CAD: the manual override initialises BLANK
+ok   B3a CAD: and the row RESOLVES to the auto value, which is what the site charges
+ok   B4  CAD: ownership is FALSE — determinable, so it is recorded
+ok   B5  CAD: a complete row keeps the caller's status
+ok   B1  EUR -> EUR: rate 1 — a fact about two identical currencies
+ok   B1b EUR with the creation date recorded beside it
+ok   B2  EUR: auto_* is the base at this currency's precision
+ok   B3  EUR: the manual override initialises BLANK
+ok   B3a EUR: and the row RESOLVES to the auto value, which is what the site charges
+ok   B4  EUR: ownership is FALSE — determinable, so it is recorded
+ok   B5  EUR: a complete row keeps the caller's status
+ok   B1  GBP -> GBP: rate 1 — a fact about two identical currencies
+ok   B1b GBP with the creation date recorded beside it
+ok   B2  GBP: auto_* is the base at this currency's precision
+ok   B3  GBP: the manual override initialises BLANK
+ok   B3a GBP: and the row RESOLVES to the auto value, which is what the site charges
+ok   B4  GBP: ownership is FALSE — determinable, so it is recorded
+ok   B5  GBP: a complete row keeps the caller's status
+ok   B1  AUD -> AUD: rate 1 — a fact about two identical currencies
+ok   B1b AUD with the creation date recorded beside it
+ok   B2  AUD: auto_* is the base at this currency's precision
+ok   B3  AUD: the manual override initialises BLANK
+ok   B3a AUD: and the row RESOLVES to the auto value, which is what the site charges
+ok   B4  AUD: ownership is FALSE — determinable, so it is recorded
+ok   B5  AUD: a complete row keeps the caller's status
+ok   B1  JPY -> JPY: rate 1 — a fact about two identical currencies
+ok   B1b JPY with the creation date recorded beside it
+ok   B2  JPY: auto_* is the base at this currency's precision
+ok   B3  JPY: the manual override initialises BLANK
+ok   B3a JPY: and the row RESOLVES to the auto value, which is what the site charges
+ok   B4  JPY: ownership is FALSE — determinable, so it is recorded
+ok   B5  JPY: a complete row keeps the caller's status
+ok   B6  a JPY master price of 3200.4 stores as a whole yen
+ok   B6b and the override is blank, so there is no second copy to round differently
+ok   B6c while the row resolves to the SAME rounded number — one rounding, one answer
+ok   B6c a USD master price of 29.999 stores at 2 decimals
+ok   B7  the rounder is 73_'s, and its absence is handled rather than worked around
+ok   B7b 04_ contains no rounding arithmetic of its own — one authority for precision, not two
+ok   B8  with 73_ absent the row is PENDING, not rounded by a second rule
+ok   B8b marked pending_fx
+ok   B8c naming the deployment condition that caused it
+ok   B9  all bases blank: the rate is still 1 — it is about currencies, not prices
+ok   B9b BLANK_BASE_NEVER_BECOMES_ZERO — blank in, blank out
+ok   B9c for every band
+ok   B9d and ownership is still determinable: the system owns a field nobody has priced
+ok   B10 one blank base leaves ONE blank auto — fields are independent
+ok   B10b and three blank overrides, because a created row has none — never a zero either
+ok   B10c while the RESOLVED prices are 29.99 / Not Set / 39.99 — the blank band stays Not Set, not 0
+ok   B11 a non-numeric base price produces a BLANK override, never 0
+ok   B11b and is reported on the row
+ok   B11c and the band RESOLVES to null — no auto was computed, so there is nothing to fall back to
+ok   B11d while its siblings are unaffected and resolve normally
+
+== C · §4 CROSS-CURRENCY CREATION — FAIL-CLOSED ==
+ok   C1  USD -> CAD: NO_INVENTED_FX_RATE_1 — no rate is written at all
+ok   C1b CAD: and no date, because no conversion happened
+ok   C2  CAD: NO_RAW_BASE_AS_LOCAL_AUTO — auto_* is blank, not the USD number relabelled
+ok   C3  CAD: NO_RAW_BASE_AS_LOCAL_EFFECTIVE — the effective price is blank
+ok   C4  CAD: base_* IS written — this is what makes the row repairable
+ok   C4b CAD: with the base currency it is denominated in
+ok   C5  CAD: NEW_ROW_UNKNOWN_AUTHORITY_COUNT = 0 — FALSE, not blank
+ok   C6  CAD: PENDING_FX is on the row, in a column
+ok   C6b CAD: with the reason stated
+ok   C6c and the action that completes it
+ok   C7  CAD: and the import RESULT says so, so it is not discovered later off a chart
+ok   C7b in the row's own message
+ok   C1  USD -> EUR: NO_INVENTED_FX_RATE_1 — no rate is written at all
+ok   C1b EUR: and no date, because no conversion happened
+ok   C2  EUR: NO_RAW_BASE_AS_LOCAL_AUTO — auto_* is blank, not the USD number relabelled
+ok   C3  EUR: NO_RAW_BASE_AS_LOCAL_EFFECTIVE — the effective price is blank
+ok   C4  EUR: base_* IS written — this is what makes the row repairable
+ok   C4b EUR: with the base currency it is denominated in
+ok   C5  EUR: NEW_ROW_UNKNOWN_AUTHORITY_COUNT = 0 — FALSE, not blank
+ok   C6  EUR: PENDING_FX is on the row, in a column
+ok   C6b EUR: with the reason stated
+ok   C6c and the action that completes it
+ok   C7  EUR: and the import RESULT says so, so it is not discovered later off a chart
+ok   C7b in the row's own message
+ok   C1  USD -> GBP: NO_INVENTED_FX_RATE_1 — no rate is written at all
+ok   C1b GBP: and no date, because no conversion happened
+ok   C2  GBP: NO_RAW_BASE_AS_LOCAL_AUTO — auto_* is blank, not the USD number relabelled
+ok   C3  GBP: NO_RAW_BASE_AS_LOCAL_EFFECTIVE — the effective price is blank
+ok   C4  GBP: base_* IS written — this is what makes the row repairable
+ok   C4b GBP: with the base currency it is denominated in
+ok   C5  GBP: NEW_ROW_UNKNOWN_AUTHORITY_COUNT = 0 — FALSE, not blank
+ok   C6  GBP: PENDING_FX is on the row, in a column
+ok   C6b GBP: with the reason stated
+ok   C6c and the action that completes it
+ok   C7  GBP: and the import RESULT says so, so it is not discovered later off a chart
+ok   C7b in the row's own message
+ok   C1  USD -> AUD: NO_INVENTED_FX_RATE_1 — no rate is written at all
+ok   C1b AUD: and no date, because no conversion happened
+ok   C2  AUD: NO_RAW_BASE_AS_LOCAL_AUTO — auto_* is blank, not the USD number relabelled
+ok   C3  AUD: NO_RAW_BASE_AS_LOCAL_EFFECTIVE — the effective price is blank
+ok   C4  AUD: base_* IS written — this is what makes the row repairable
+ok   C4b AUD: with the base currency it is denominated in
+ok   C5  AUD: NEW_ROW_UNKNOWN_AUTHORITY_COUNT = 0 — FALSE, not blank
+ok   C6  AUD: PENDING_FX is on the row, in a column
+ok   C6b AUD: with the reason stated
+ok   C6c and the action that completes it
+ok   C7  AUD: and the import RESULT says so, so it is not discovered later off a chart
+ok   C7b in the row's own message
+ok   C1  USD -> JPY: NO_INVENTED_FX_RATE_1 — no rate is written at all
+ok   C1b JPY: and no date, because no conversion happened
+ok   C2  JPY: NO_RAW_BASE_AS_LOCAL_AUTO — auto_* is blank, not the USD number relabelled
+ok   C3  JPY: NO_RAW_BASE_AS_LOCAL_EFFECTIVE — the effective price is blank
+ok   C4  JPY: base_* IS written — this is what makes the row repairable
+ok   C4b JPY: with the base currency it is denominated in
+ok   C5  JPY: NEW_ROW_UNKNOWN_AUTHORITY_COUNT = 0 — FALSE, not blank
+ok   C6  JPY: PENDING_FX is on the row, in a column
+ok   C6b JPY: with the reason stated
+ok   C6c and the action that completes it
+ok   C7  JPY: and the import RESULT says so, so it is not discovered later off a chart
+ok   C7b in the row's own message
+ok   C8  the spec states there is no FX provider and no rate table
+ok   C8b and no file anywhere offers one — the branch is unreachable by construction
+ok   C8c 04_ looks nothing up: a rate compiled in would be a business fact frozen into a deployment
+ok   C9  a currency outside the frozen precision table fails closed
+ok   C9b as UNSUPPORTED_CURRENCY — never converted at a guessed precision
+ok   C10 with no base currency anywhere, USD is the LAST resort
+ok   C10b and the row completes, because USD == USD is then a fact
+
+== D · THE SELF-REPAIR — 04_'s PENDING ROW, HANDED TO 73_ ==
+ok   D1  the first FX run converts the pending row
+ok   D2  auto_* is computed from the base the row already carried
+ok   D3  AND no override is written — §6 forbids it, and there is nothing to keep in step anyway
+ok   D3a the row nevertheless RESOLVES to 40.49 — which is the whole self-repair, reached by reading
+ok   D3b reported as AUTO, not as UNKNOWN
+ok   D4  with the rate recorded on the row
+ok   D5  and no flag is written by the FX run — it did not have to be, which is the point
+ok   D6  a LEGACY row still gets its auto value corrected
+ok   D6b and its effective price still cannot be — which is exactly why R4F exists and R4E is not enough
+ok   D6c EXISTING_PRICING_ROWS_WRITTEN = 0: this round changed creation, not history
+
+== E · §6 THE REGRESSION MATRIX ==
+ok   E1  six currency pairs x three base shapes — every §6 assertion holds
+ok   E2  §6 case B (cross-currency with a canonical rate) is UNREACHABLE at creation — see C8/C8b. The rate arrives later, through pricing.fxReconcile, and section D proves that path end to end.
+ok   E3  §6 case C — every cross-currency creation without a rate is PENDING_FX
+ok   E4  an import row that supplies prices is still written verbatim
+ok   E4b and its ownership is left BLANK — the file did not say who owns those numbers
+ok   E4c on the import branch, which this round did not touch
+
+== F · §5 THE FC SUMMARY ZERO COERCION ==
+ok   F1  FC_MISSING_PRICE_AS_ZERO_POST = NO — the wrapper that returned 0 for a missing price is gone
+ok   F1b and no other expression in the file turns a missing price into zero
+ok   F1c with the removal recorded where the function was, so it is not re-added by habit
+ok   F2  a missing price sets priceState = missing_price
+ok   F2b and the input stays blank with a placeholder that says so
+ok   F3  and the guard itself is unchanged — FC calculations for numeric prices are not touched
+ok   F3a while the field it guards is the resolved price, not the raw override cell
+
+== G · §7/§9 NOTHING ELSE MOVED ==
+ok   G1  FX_CONTRACT_UNCHANGED — TRUE: auto refreshes, the effective price is preserved
+ok   G1b PRICING-R4G — FALSE: auto refreshes and NO override is written. §6 applies to every authority.
+ok   G1c blank: auto refreshes, the effective price is preserved
+ok   G1d and neither a flag nor a base price is written in state TRUE
+ok   G1d and neither a flag nor a base price is written in state FALSE
+ok   G1d and neither a flag nor a base price is written in state blank
+ok   G2  PRICING_UPDATE_CONTRACT_UNCHANGED — three modes
+ok   G2b NO_CHANGE still writes nothing
+ok   G2c AUTO CLEARS with no auto value — the repair for exactly the rows this file creates
+ok   G2d and blank is still UNKNOWN on read — the schema did not move
+ok   G3  EXISTING_PRICING_ROWS_WRITTEN = 0 for prices — the only in-place writes are the product id and its audit pair
+ok   G3a and all three address a row this import already matched
+ok   G3b and that sync touches no price, no flag and no rate
+ok   G4  DB_MIGRATION_REQUIRED = NO — regular_price_is_manual is an existing column
+ok   G4  DB_MIGRATION_REQUIRED = NO — minimum_price_is_manual is an existing column
+ok   G4  DB_MIGRATION_REQUIRED = NO — msrp_is_manual is an existing column
+ok   G4  DB_MIGRATION_REQUIRED = NO — price_status is an existing column
+ok   G4  DB_MIGRATION_REQUIRED = NO — fx_rate is an existing column
+ok   G4b PENDING_FX rides in price_status — a value, not a column
+ok   G5  72_ does not filter on price_status
+ok   G5b and the board counts its values byte for byte, so a new one is one more bucket
+ok   G5c no server-side branch compares price_status to a literal
+ok   G6  the canonical spec carries the contract — no parallel spec was created
+ok   G6b and R4D's open §7 is marked implemented rather than left open
+
+== H · MUTANTS ==
+ok   M1  a cross-currency row is given rate 1 again (caught)
+ok   M2  creation seeds the manual override from the computed auto value again (caught)
+ok   M3  a blank base price becomes 0 (caught)
+ok   M4  the ownership flags are left blank at creation (caught)
+ok   M5  the master row base_currency is overruled by the USD constant (caught)
+ok   M6  a pending row is created without its base prices (caught)
+ok   M7  a pending row is not marked pending_fx (caught)
+ok   M8  an unsupported currency is accepted at a guessed precision (caught)
+ok   M9  the import result does not report a pending pricing row (caught)
+
+==============================================================================================================
+PRICING-R4E CREATION CONTRACT FIX — passed 191  failed 0  mutants caught 9
+PRICING_LIST_CREATOR_COUNT = 1 · NO_INVENTED_FX_RATE_1 = YES · NEW_ROW_AUTHORITY = FALSE
+NEW_NON_USD_EFFECTIVE_CAN_RECEIVE_RAW_BASE = NO · EXISTING_PRICING_ROWS_WRITTEN = 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+==============================================================================================================

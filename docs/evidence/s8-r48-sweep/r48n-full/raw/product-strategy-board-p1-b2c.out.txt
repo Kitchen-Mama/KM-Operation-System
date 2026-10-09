@@ -1,0 +1,199 @@
+
+=== SECTION A  THE PAGE STILL BOOTS, AND STILL CHECKS ITSELF ===
+ok   A1 the page boots with no exception
+     (the page reported self-test 242/242)
+ok   A2 and every one of its own DOM assertions still passes
+ok   A3 Auto Fit is the default
+
+=== SECTION B  THE LAYOUT FUNCTION IS PURE, AND IT IS THE WHOLE ENGINE ===
+ok   B1 the same inputs give byte-identical output, twenty times over
+ok   B2.1 the engine never reaches for document
+ok   B2.2 the engine never reaches for window.
+ok   B2.3 the engine never reaches for localStorage
+ok   B2.4 the engine never reaches for Math.random
+ok   B2.5 the engine never reaches for Date.now
+ok   B2.6 the engine never reaches for new Date
+ok   B2.7 the engine never reaches for fetch(
+ok   B2.8 the engine never reaches for requestAnimationFrame
+ok   B3 and it answers with no DOM in the process at all
+ok   B4 an unmeasured container falls back
+ok   B5 and still produces a usable drawing
+ok   B6 three modes
+ok   B7 and an unrecognised one is Auto Fit rather than an exception
+ok   B8 every density profile is smaller than the one above it, in every axis
+ok   B9 spacious is the 50px the last round settled on
+ok   B10 normal is inside the brief’s 42-46
+ok   B11 and compact inside its 32-38
+ok   B12 while the overview thumbnail stays big enough to be a picture
+ok   B13 the marker gutter is at least half an image at every density
+ok   B14 1-12 spacious, 13-24 normal, 25 and up overview
+
+=== SECTION C  SEVEN PRODUCTS FIT, ON EVERY TARGET VIEWPORT ===
+ok   C1 seven products need no vertical scroll on any target viewport
+ok   C2 and no horizontal scroll either
+ok   C3 with both axes and the label lane inside the drawing on every one
+ok   C4 and nothing shrunk below the point where it can be read
+ok   C5 the panel can shrink, so an over-wide chart cannot push the page
+ok   C5a and so can the chart container
+ok   C6 Auto Fit declares no vertical overflow at all
+ok   C7 and on the smallest desktop target it needs none
+
+=== SECTION D  THE COORDINATE IS NOT THE PIXEL ===
+ok   D1 every price keeps the same fraction of its domain at every viewport
+ok   D2 and there were prices to check
+ok   D3 while the PIXELS did move — otherwise nothing responsive happened at all
+ok   D3a a shorter window produces a shorter plot
+ok   D3b and the fractions are identical across that too
+ok   D4 the canonical domain is identical at every viewport
+ok   D5 and so is the number of products drawn
+
+=== SECTION E  DENSITY, FROM ONE PRODUCT TO FORTY-FOUR ===
+ok   E1 1/7/12 spacious, 24 normal, 44 overview
+ok   E2 the box is always wide enough for every column the chart has
+ok   E3 the 44-product fixture loads
+ok   E4 forty-four products, all of them
+ok   E5 and forty-four price points, none dropped
+ok   E6 at the overview density
+ok   E7 every one of them carrying its own price
+ok   E8 the card says it is a compact overview
+ok   E9 and names the mode that gives the large images back
+ok   E10 Comfortable restores the 50px images
+ok   E11 at the size the review asked for
+ok   E12 and the container carries the overflow, not the page
+ok   E13 with all forty-four still on it
+ok   E14 the axis is pinned when it has to be
+ok   E15 and follows the reader by exactly the distance they scrolled
+ok   E16 as a translate in X, so no price moved
+
+=== SECTION F  THE OBSERVER WATCHES THE CONTAINER ===
+ok   F1 something is being observed
+ok   F2 and it is #view — a container, not the window, and not a node a redraw throws away
+ok   F3 through a real ResizeObserver rather than a window resize listener
+ok   F4 with a window listener kept only as the fallback foran environment without one
+ok   F4a and that fallback can be taken off again — it is held, not anonymous
+ok   F5 a container resize produces a new layout
+ok   F6 the callback schedules rather than redraws
+ok   F7 re-reporting the same size changes nothing
+ok   F8 and the page did not register a second observer while redrawing
+ok   F9 the redraw queue settles instead of feeding itself
+ok   F10 a resize keeps the scenario
+ok   F11 and the filters
+ok   F12 and the category
+ok   F13 and the layers that were switched off
+ok   F14 and the mode
+ok   F15 and does not move the page under the reader
+ok   F16 a resize rebuilds no filter control
+ok   F17 and #view itself is never replaced
+
+=== SECTION G  THE MODES ===
+ok   G1 Auto Fit is pressed by default
+ok   G2 and offers no contradicting manual size
+ok   G3 Comfortable is a mode of its own
+ok   G4 with the full-size images
+ok   G5 and the preferred gridline pitch
+ok   G6 and the manual sizes appear with it
+ok   G7 fullscreen turns on
+ok   G8 and the chart is laid out for it
+ok   G9 with the whole window to spend
+ok   G10 the layer that was off is still off
+ok   G11 and fullscreen composes with the mode rather than replacing it
+ok   G12 Escape leaves it
+ok   G13 and puts the reader back where they were
+ok   G14 in the mode they left from
+ok   G15 with their layers intact
+ok   G16 Exit fullscreen leaves it
+ok   G17 and restores the scroll position too
+ok   G18 the page never calls requestFullscreen — only explains why not
+ok   G19 it is a fixed overlay in the stylesheet
+ok   G20 and print has its own layout, so a meeting overlay never reaches paper
+ok   G21 the KPI strip is hidden rather than covered
+ok   G22 and comes back on paper, where there is no overlay
+
+=== SECTION H  THE CONTROL BAR ===
+ok   H1 Layers starts folded
+ok   H2 with its switches out of the bar
+ok   H3 while the count stays on its face
+ok   H4 one press opens it
+ok   H5 with all six inside
+ok   H6 and the count follows the switches
+ok   H7 the disclosure is a button
+ok   H8 pointing at the panel it owns
+ok   H9 which is a labelled group
+ok   H10 with a name
+ok   H11 and it closes
+ok   H12 the control bar wraps
+ok   H13 and so does each group
+ok   H14 the layers panel floats over the page rather than displacing it
+ok   H15 and the chart is the same size with it open
+ok   H16 Reset returns to Auto Fit
+ok   H17 and brings the layers back
+ok   H18 and folds the panel
+
+=== SECTION I  THE INSIGHT PILLS ===
+ok   I1 the drawer summarises with pills
+ok   I2 each is a label and a count, not one run-together string
+ok   I3 and the label is a word, not an enum shouted in capitals
+ok   I4 while the count is just the number
+ok   I5 published as data as well as painted
+ok   I6 they are status elements, not buttons that do nothing
+ok   I7 announced as a list
+ok   I8 of list items
+ok   I9 a token gap between them, so they are not flush
+ok   I10 and they wrap onto a second line rather than squeezing
+ok   I11 in a header that can be two rows
+ok   I12 the pill is a capsule
+ok   I13 and so is the count inside it, like the Operation System tab-rail count
+ok   I14 every pill declares a foreground, a background and a border
+ok   I15 with green, amber and red keeping their meanings
+ok   I16 and print drops the tint rather than spending the ink
+ok   I17 the drawer starts collapsed
+ok   I18 with the pills OUTSIDE the collapse, still visible
+ok   I19 and every finding card is inside the part that is collapsed
+ok   I20 one press opens it
+ok   I21 and the cards appear
+ok   I22 the summary no longer borrows the half-styled finding-group class
+
+=== SECTION J  THE REUSABLE CONTRACT, PUBLISHED BEFORE ANYTHING ADOPTS IT ===
+ok   J1 the contract is published as data
+ok   J2 container-driven
+ok   J3 not a table of window-width breakpoints
+ok   J4 coordinates separate from pixels
+ok   J5 layer visibility changes no layout
+ok   J6 state survives a resize
+ok   J7 print has its own layout
+ok   J8 and it says out loud that nothing else has adopted it yet
+ok   J9 the production shell is where it was
+ok   J10 and the engine reaches into none of it
+
+=== SECTION K  WHAT ONLY A SCREENSHOT COULD SEE ===
+ok   K1 no marker code is wider than the plate it is painted on
+ok   K2 the overview marker is 24px
+ok   K3 and carries no code at all at that size
+ok   K4 the plate says what it is instead
+ok   K5 naming the product
+ok   K6 and why there is no picture
+ok   K7 while the column still announces it to a screen reader
+ok   K8 Comfortable is back to 50px
+ok   K9 and the codes come back with the room
+ok   K10 with enough characters to identify something
+ok   K11 no gap label is ever just a number
+ok   K12 every gap label that is printed names its currency first
+ok   K13 and more than one form was actually used across the five screens
+
+=== MUTANTS ===
+ok   M1 Auto Fit goes back to a fixed 48px per tick, whatever room there is (caught)
+ok   M2 the layout reads the window instead of the container (caught)
+ok   M3 a resize clears the scenario (caught)
+ok   M4 the forty-fourth product is cut off to make the chart fit (caught)
+ok   M5 the label lane is folded back into the plot, so the axis loses its floor (caught)
+ok   M6 Comfortable lets its overflow out onto the page (caught)
+ok   M7 the observer redraws on every report, so a resize feeds itself (caught)
+ok   M8 the insight pills go back to four flush blocks of colour (caught)
+ok   M9 leaving fullscreen loses the reader’s place on the page (caught)
+ok   M10 the density ladder stops stepping down, so a narrow card keeps the biggest images (caught)
+ok   M11 a viewport change moves a price, not just its pixels (caught)
+ok   M12 the axis stops following the reader when the chart scrolls sideways (caught)
+ok   M13 the marker code stops shrinking with its plate, and forty-four of them smear (caught)
+ok   M14 the gap label degrades to a naked number when the gutter is narrow (caught)
+
+PASS — passed 158, failed 0, mutants caught 14, survived 0

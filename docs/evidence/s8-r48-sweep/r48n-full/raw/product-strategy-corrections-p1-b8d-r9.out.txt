@@ -1,0 +1,176 @@
+
+== A — THE CONTROL ROW IS BACK, AND ONE CONTROL IS NOT (§4) ==
+ok   A1  the toolbar sequence ran clean
+ok   A2  #chartControls is in the production document again
+ok   A3  carrying the controls that size and layer the chart
+ok   A4.1 mode-auto is present
+ok   A4.2 mode-comfortable is present
+ok   A4.3 view-clean is present
+ok   A4.4 view-detail is present
+ok   A4.5 layersToggle is present
+ok   A4.6 zoom-reset is present
+ok   A5  and #mode-fullscreen is not
+ok   A6  no control in the row is labelled fullscreen
+ok   A7  and nothing empty is holding space open
+ok   A8  the restored controls are genuinely reachable by keyboard
+ok   A9  and nothing matching fullscreen is anywhere in the order
+ok   A10 while the page header's own Presentation button is untouched
+ok   A11 no step of the toolbar run widened the page
+ok   A12 and the row wrapped inside its own box rather than pushing
+ok   A13 the chart `?` controls are still gone
+ok   A14 and the X axis still does not print the price
+ok   A15 while the tooltip still carries it
+ok   A16 the row has exactly one builder in the renderer
+ok   A17 and the page did not grow a toolbar of its own
+ok   A18 toggleFullscreen is retained — suppressed, not deleted
+ok   A19 with the default stated as data, so the prototype still shows it
+ok   A20 and this page is the one host that turns it off
+
+== B — EVERY RESTORED CONTROL DOES SOMETHING (§4) ==
+ok   B1  every control the run reached for was actually on the page
+ok   B2  Comfortable brings the Size group into existence
+ok   B3  and the pressed state follows the mode
+ok   B4  Size 125% draws the chart wider
+ok   B5  Clean turns the layers down to one
+ok   B6  and Detail turns all six back on
+ok   B7  each with its own pressed state
+ok   B8  Layers opens a popover with one switch per layer
+ok   B9  and says so to a screen reader
+ok   B10 Reset view puts the chart back to its Auto Fit width
+ok   B11 and the Size group goes away with the mode
+ok   B12 Auto Fit is pressed again
+ok   B13 the layer set is back to Detail
+ok   B14 and the popover is closed
+
+== C — A SIMULATION IS AN OUTCOME, NOT A FAULT (§3) ==
+ok   C1  the appearance sequence ran clean
+ok   C2  before a scenario the strip is empty
+ok   C3  and takes no height at all — `:empty` removes it
+ok   C4  applying one writes a TAG, so the state is a word and not only a hue
+ok   C5  the fill is the simulation tint, not an orange one
+ok   C6  the sentence is the simulation ink
+ok   C7  and the left border carries --km-ui-utility, the system's own token
+ok   C8  the chip answers in exactly the same vocabulary
+ok   C9  as does the tag
+ok   C10 it says a scenario is ACTIVE
+ok   C11 that nothing is saved and it is page-local
+ok   C12 that these are not the company's prices
+ok   C13 and that a reload OR a site switch clears it — the half R8 left unsaid
+ok   C14 naming the site the numbers belong to
+ok   C15 a genuine refusal is on screen at step 3
+ok   C16 still the STOP shape — six pixels, doubled, in the accent red
+ok   C17 which is nothing like the scenario's border
+ok   C18 base.css is where the purple is declared — this page did not mint a sixth one
+ok   C19 and the page takes it by name
+ok   C20 no warning-family colour is left on any scenario surface
+ok   C21 on paper the tag inverts to solid black, because colour is not available there
+ok   C22 the simulated panel keeps its dashed frame
+ok   C23 and the chart keeps its dashed link
+ok   C24 no character class in the measurement script is single-escaped
+ok   C25 the runner reported its own view of the page
+ok   C26 and the sentence reads as written, letter for letter
+
+== D — THREE KINDS OF IMAGE FAILURE, COUNTED APART (§5) ==
+ok   D1  the manifest holds one entry per file on disk
+ok   D2  and every one of them matches, in order and in case
+ok   D3  with the generator that produced it committed beside it
+ok   D4  and the file says so in its own head
+ok   D5  a real repo file still resolves
+ok   D6  a path under a covered root with no file behind it is refused BEFORE the request
+ok   D7  and carries no url, so nothing downstream can fetch it
+ok   D8  a case mismatch is its own answer — a different defect with a different fix
+ok   D9  and is still REFUSED: following it would put a photograph on a row that is wrong
+ok   D10 while the note names the exact path the row should carry
+ok   D11 a reference outside every root is not judged by the manifest
+ok   D12 and with NO manifest the policy fails OPEN — it only ever removes images
+ok   D13 a script url is still refused
+ok   D14 a local file path is still refused
+ok   D15 a bare Drive id is still refused
+ok   D16 and an empty cell is still ABSENT, not a rejection
+ok   D17 the SVG marker image has an error handler at last
+ok   D18 and a failure is COUNTED rather than merely survived
+ok   D19 with its own sentence — "nobody recorded one" and "the one recorded is missing" differ
+ok   D20 the page loaded the manifest
+ok   D21 the same one this suite read
+ok   D22 NETWORK: not one image request failed in the acceptance run
+ok   D23 nor any other resource
+ok   D24 and no chart marker fell back from a failed load
+ok   D25 no broken <img> on the page either
+ok   D26 JAVASCRIPT: exceptions are counted on their own axis
+ok   D27 and the two counts exist independently — neither can absorb the other
+ok   D28 SKU Details and SKU Handbook ask the shared policy
+ok   D29 Product Strategy asks the shared policy
+ok   D30 Campaign Risk asks it through resolveSkuImageUrl
+ok   D30a and that function is the shared policy and nothing else
+ok   D31 and none of the three kept a scheme regex of its own
+ok   D32 neither new file writes anything
+
+== E — R8 LIFECYCLE STILL HOLDS (§6) ==
+ok   E1  the teardown sequence still runs clean
+ok   E2  the old board is still gone in the same turn the next site is asked for
+ok   E3  header and scope with it
+ok   E4  while B's read is still outstanding
+ok   E5  the leave-and-return sequence still runs clean
+ok   E6  coming back restores the same site
+ok   E7  with its board up
+ok   E8  and STILL no second workspace read
+ok   E9  the scenario-scope sequence still runs clean
+ok   E10 a scenario applies on site A
+ok   E11 a different VIEW keeps it
+ok   E12 a different CATEGORY keeps it
+ok   E13 and a different SITE clears it
+ok   E14 (the run had a toolbar to measure)
+ok   E15 the drawer still derives its top from the shell's own token
+
+== F — THE CENSUS STILL DESCRIBES THIS TREE (§7) ==
+ok   F0  the census states the number of scripts it describes
+ok   F0a and it is the number index.html actually loads
+ok   F1  the census still reports 5 STANDARD_API
+ok   F2  19 LEGACY_API_WRAPPER
+ok   F3  and it carries an R9 line, because this round added a loaded script
+ok   F4  naming the file that changed the count, rather than moving a number quietly
+ok   F5  SUPERSEDED (R10D): two business reads behind one shared bootstrap, and nothing else
+ok   F6  with no KM.DB anywhere in the board or the page
+ok   F7  and no browser storage used as a price or site source
+
+== G — THE S2 PACKAGE IS A PLAN, NOT A RUNTIME (§8) ==
+ok   G1  the P1 → S2 handoff exists
+ok   G2.1 S2-A is specified
+ok   G2.2 S2-B is specified
+ok   G2.3 S2-C is specified
+ok   G3  contract-first is stated as the rule
+ok   G4  and the kickoff order carries the same boundary this round did
+ok   G5  S2-A names the promotion records that have no server side
+ok   G6  no S2 action was wired into campaign-risk
+
+== H — WHAT THIS ROUND WAS NOT ALLOWED TO TOUCH (§11) ==
+ok   H1  (the Apps Script sources are where they were)
+ok   H2  no feature flag moved into index.html
+ok   H3  no write-shaped action was added
+ok   H4  no unscoped rule was added to the page stylesheet
+ok   H5  the !important count is unchanged at 21
+ok   H6  base.css was not edited
+ok   H7  and no other page's runtime was touched
+
+== K — MUTANTS (§10) ==
+ok   K1  the scenario banner is orange again (caught)
+ok   K2  a real refusal is painted like a simulation (caught)
+ok   K3  the production Fullscreen button returns (caught)
+ok   K4  the entire toolbar is deleted again (caught)
+ok   K5  a restored control has DOM but no function (caught)
+ok   K6  the chart `?` controls come back (caught)
+ok   K7  the X axis prints the price again (caught)
+ok   K8  a network failure is counted as a console exception (caught)
+ok   K9  onerror hides the failure and it is reported as absent (caught)
+ok   K10 the manifest gate refuses a file that is present (caught)
+ok   K11 a case mismatch is silently rewritten to the real file (caught)
+ok   K12 the policy fails CLOSED when no manifest is loaded (caught)
+ok   K13 one image consumer goes back to its own rule (caught)
+ok   K14 site A stays on screen while site B is loading (caught)
+ok   K15 the scenario survives a site change (caught)
+ok   K16 an inventory number is changed with nothing to back it (caught)
+ok   K17 another page's runtime is quietly changed (caught)
+
+====================================================================================================
+P1-B8D-R9 CORRECTIONS — passed 154  failed 0  |  mutants caught 17  survived 0
+====================================================================================================

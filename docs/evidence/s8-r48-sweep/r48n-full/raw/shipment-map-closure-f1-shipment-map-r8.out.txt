@@ -1,0 +1,21 @@
+ok   §13 In Transit groups shipped/in_transit/arrived/ready_to_ship
+ok   §13 Partially Received groups partially_received + legacy partial_received
+ok   §13 Received groups received/completed/delivered
+ok   §13 known vocabulary leaves Other empty
+ok   §13 unknown + blank fall into Other (conservative, no invented bucket)
+ok   §13 Other reports the raw unknown status token (blank omitted)
+ok   §7 derived partially_received counts as Partially Received
+ok   summary does not mutate input
+ok   D only the changed cumulative line is submitted
+ok   G unchanged 600→600 submits nothing
+ok   H backward value still submitted for backend rejection
+ok   blank value + missing id skipped
+ok   blank prev = 0 → first value is a change
+ok   receipt Save reuses the canonical shipment.receipt.update adapter
+ok   route update reuses the canonical shipment.route.advance adapter
+ok   Map performs NO overseas inventory math (backend-owned)
+ok   no second current-route-point authority on the frontend
+ok   remaining is derived display arithmetic only
+ok   §12/§13 summary uses the same filteredVms() collection as list + map
+
+19 passed, 0 failed

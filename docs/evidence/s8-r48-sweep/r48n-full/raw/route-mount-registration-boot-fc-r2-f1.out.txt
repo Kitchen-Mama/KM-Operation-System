@@ -1,0 +1,24 @@
+
+-- A. THE GRAPH UNDER TEST IS THE ONE THE PAGE ACTUALLY DECLARES --------------------------------------
+
+-- B. EVERY SHIPPED SCRIPT EVALUATES TO COMPLETION ----------------------------------------------------
+
+-- C. EVERY ROUTE THE NAVIGATION OFFERS IS REGISTERED -------------------------------------------------
+
+-- D. THE SPECIFIC DEFECT CANNOT COME BACK ------------------------------------------------------------
+
+-- E. LOAD ORDER — the shared resolver precedes every consumer ----------------------------------------
+
+-- F. MUTATION — each guard above is load-bearing -----------------------------------------------------
+  caught: M1  THE INCIDENT — the dangling getEffectiveFcSafe reference restored
+  caught: M2  a throw anywhere before the registration
+  caught: M3  the lifecycle.register call removed outright
+  caught: M4  a controller registered without a mount
+  caught: M5  two controllers claiming one section
+  caught: M6  the resolver moved after a consumer
+  caught: M7  a route added to the navigation with no page to mount it
+  caught: M8  the resolver tag made blocking
+
+====================================================================================================
+PASS  28 passed, 0 failed, 8 mutants, 0 survived, vacuity clean
+====================================================================================================

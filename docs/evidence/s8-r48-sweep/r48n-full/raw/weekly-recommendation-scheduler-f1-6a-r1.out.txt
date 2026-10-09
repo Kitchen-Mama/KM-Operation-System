@@ -1,0 +1,11 @@
+
+== retirement: the ambiguous single Weekly Recommendation entry is gone ==
+
+== legacy handler FULLY REMOVED (F1-6B-AUTOMATION-LEGACY-WEEKLY-CLEANUP-R1) ==
+
+== the two product-isolated handlers exist ==
+
+== F1-6A invariants that must survive ==
+
+----------------------------------------
+WEEKLY RECOMMENDATION SCHEDULER → F1-6B SPLIT MIGRATION: 12 passed, 0 failed

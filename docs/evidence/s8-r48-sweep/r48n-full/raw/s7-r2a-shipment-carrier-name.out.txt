@@ -1,0 +1,90 @@
+
+== A  THE DEFECT, CONFIRMED BEFORE IT IS CLAIMED FIXED ==
+ok   A1  KM.DB.getOperationDb is assigned NOWHERE — the member the old resolver asked for does not exist
+ok   A2  and the resolver no longer asks for it
+ok   A3  carrier_name is still not persisted by the shipment owner — the fix is a projection, not a column
+
+== B  THE CANONICAL MASTER REACHES THE SHIPMENT READ ==
+ok   B1  57_ declares the carriers master as a BASE table, keyed on carrier_id
+ok   B1a which is the same declaration 40_ already carries — one definition of the master, not two
+ok   B2  and emits it, raw, like every other master in this read
+ok   B3  without reintroducing the whole-DB read — WHOLE_DB_READ_REINTRODUCED = NO
+ok   B4  the adapter maps an ABSENT carriers key to null, not to []
+ok   B4a and normalizes present rows with the SAME normalizer the broad path uses
+ok   MUTANT CAUGHT — B1 would catch the master being dropped from the read
+ok   MUTANT CAUGHT — B3 would catch the whole-DB getter returning to this read
+
+== C  THE RESOLVER — four states, and none of them interchangeable ==
+ok   C1  §15.A a known carrier_id resolves to the canonical name
+ok   C1a and a second id resolves to ITS name, from the same one map — §15.C
+ok   C2  §15.D an id with no master row keeps the ID on screen — identity is never hidden
+ok   C2a and is NOT turned into "no carrier" — the row has one, we just cannot name it
+ok   C3  §15.E an UNREAD master is its own state — never an authoritative "missing carrier"
+ok   C3a undefined reads the same way as null
+ok   C3b while an EMPTY master really is a lookup that failed — the two are distinguished
+ok   C4  no carrier id at all is NONE
+ok   C4a and so is null
+ok   C5  a master row with a BLANK name resolves UNKNOWN — an empty label is not an answer
+ok   C5a so the id stays on screen
+ok   C6  carrierName projects the SAME answer
+ok   C6a and is empty when the name is genuinely not known
+ok   C7  CARRIER_ID_NAME_MISMATCH_COUNT = 0 — every id maps to its own row and no other
+ok   MUTANT CAUGHT — C2 would catch an unknown id being collapsed to an empty label
+ok   MUTANT CAUGHT — C3 would catch an unread master being reported as a missing carrier
+ok   MUTANT CAUGHT — C7 would catch the resolver answering with the FIRST row rather than the matching one
+ok   MUTANT CAUGHT — C5 would catch a blank master name rendering as an empty carrier
+
+== D  ONE RESOLVER, ONE DATA PATH ==
+ok   D1  exactly one carrierDisplay definition
+ok   D1a and one carrierName, which delegates to it
+ok   D1b CARRIER_DISPLAY_RESOLVER_COUNT = 1 — two shapes of one answer, never two data sources
+ok   D2.1 shipping-history.js builds no carrier-name lookup of its own
+ok   D2a.1 it calls the shared resolver instead
+ok   D2.2 global-logistics-map.js builds no carrier-name lookup of its own
+ok   D2a.2 it calls the shared resolver instead
+ok   D3  shipping-history CALLS the resolver from one place, so its two renders cannot drift
+ok   D3a and the map likewise
+ok   MUTANT CAUGHT — D3 would catch a second, divergent call site appearing
+
+== E  NO NEW REQUESTS — the master rides the slice that was already being read ==
+ok   E1  shipping-history still issues ONE shipment workspace read
+ok   E1a and no request of its own
+ok   E2  it does NOT fall back to the broad-cache carrier getter — that is the whole-DB path this round may not depend on
+ok   E2a the master comes from the held read model, or is honestly unread
+ok   E3  PER_SHIPMENT_CARRIER_REQUEST_COUNT = 0 — there is no per-row read to make one
+ok   E3a the map keeps exactly its two existing reads (full load + the bounded one-shipment refresh)
+ok   E4  DUPLICATE_CARRIER_FETCH_COUNT = 0 — the map indexes the master once per rebuild, not per card
+ok   E5  LAST_GOOD_CARRIER_MAP_LOSS_COUNT = 0 — the merge never assigns carriers, so the held master survives a bounded refresh by construction rather than by remembering to copy it
+ok   MUTANT CAUGHT — E2 would catch the broad-cache getter being used as a fallback
+ok   MUTANT CAUGHT — E5 would catch the bounded merge dropping the held carrier master
+
+== F  THE SURFACES — name shown, identity kept, write payload untouched ==
+ok   F1  §15.G the Draft no longer prints the raw id as the whole field
+ok   F1a it renders through the resolver instead
+ok   F1b and says WHICH of the two unresolved states it is in, rather than showing a bare id twice
+ok   F2  §7 DRAFT_CARRIER_NAME_WRITE_COUNT = 0 — no carrier_name is ever sent
+ok   F2a DRAFT_CARRIER_WRITE_FIELD = carrier_id — the completeness gate still reads the id
+ok   F3  the Confirm summary resolves through the same helper
+ok   F3a and shows name AND id on the last screen before stock moves
+ok   F4  the map view model keeps `carrier` as the ID and adds a separate label
+ok   F4a so the Carrier FILTER still matches on identity, not on display text
+ok   F4b the shipment card shows the label
+ok   F4c and the detail drawer shows name AND id, collapsing to one value when they are the same
+ok   MUTANT CAUGHT — F2 would catch carrier_name entering the Draft write payload
+ok   MUTANT CAUGHT — F4a would catch the filter being switched to match on the display label
+
+== G  WHAT THIS ROUND DID NOT DO ==
+ok   G1  the Weekly page reads carrier.id exactly as it did — the identity never moved
+ok   G1a and R2A1 added the NAME beside it, from the same pair 40_ had always served
+ok   G1b with no resolver call: on that path the join already happened in 40_, against the real master, so calling the resolver would mean handing it a one-row list built from its own answer
+ok   G2  57_ gained no rate or cost field — RATE_SELECTION_CHANGED = NO
+ok   G2b and the quantity passthrough it always had is still described, and still a passthrough
+ok   G2a and still declares itself free of business logic
+ok   G3  the shared Document Panel renderer exists, in shipping-history.js
+ok   G3a and is exported for other surfaces to reuse
+ok   G3b the Purchase Order workspace CALLS it — the PO Document Panel is built, not missing
+ok   G3c and asks its own workspace for the documents projection that feeds it
+ok   G3d retry is wired too — through a local db alias, which is why an R1 probe for KM.DB.<name> missed it
+ok   G3e and this round left the panel exactly as it found it
+
+74 passed / 0 failed   (11 mutants, 0 survived)

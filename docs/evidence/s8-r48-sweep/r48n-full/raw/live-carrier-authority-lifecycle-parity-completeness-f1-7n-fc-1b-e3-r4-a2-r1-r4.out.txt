@@ -1,0 +1,201 @@
+
+== A. §1/§6.A — the exact live fixture: no carrier authority, and it must fail closed ==
+ok   A0  the production harvest → map → source → allocate chain completes
+ok   A1  one receiver fact — the target scope only
+ok   A1a one source line
+ok   A1b one allocated line
+ok   A2  ship date = the live source snapshot
+ok   A3  exactly one line for the target SKU
+ok   A3a window D90, as live
+ok   A3b required by 2026-12-03, as live
+ok   A3c 760 units
+ok   A4  the whole 760 sources from the in-country 3PL
+ok   A4a and it is typed NON_FACTORY — never a factory
+ok   A4b CN factory allocation = 0, because 3120 covers 760 with no residual
+ok   A4c one pool, so no multi-pool refusal
+ok   A5  zero routes
+ok   A5a routes = []
+ok   A5b one ROUTE_METHOD_UNRESOLVED
+ok   A5c sub-typed NO_TRANSIT_AUTHORITY_FOR_LANE — not a bare token
+ok   A5d THE LANE QUERY REACHES THE CONSUMER — R3 attached it to the refusal and the routed-line hand-off silently dropped it; measured as [null] before this round
+ok   A6  no header written
+ok   A6a no line written
+ok   A6b and every unrelated table — shipping_plans, shipments, reservations, POs — is untouched
+
+== B. §4 — three verdicts, because one word was answering two questions ==
+ok   B1  authorized quantity 760
+ok   B1a supply allocated 760
+ok   B1b emitted route quantity 0
+ok   B1c unresolved quantity 760 — stated as a number, not left to be derived
+ok   B2  supply_allocation_conserved TRUE — the SAFETY property, unchanged in meaning
+ok   B2a route_quantity_conserved FALSE — 760 authorized, 0 routed. This is the reading the single word hid
+ok   B2b fully_routable FALSE
+ok   B3  both tokens present — the symptom AND the actionable cause
+ok   B3a and the blocker carries the quantity it is blocking
+ok   B3b and the lane it is blocking on
+ok   B4  THE PAIR THAT WAS UNREADABLE: safe and incomplete are now separately sayable
+ok   B5  nothing authorized and nothing routed is conserved and routable — not a failure
+
+== C. §6.B — the authorized-card fixture closes the loop deterministically ==
+ok   C1  ONE deterministic K4 route
+ok   C1a nothing blocked
+ok   C2  source warehouse = the in-country 3PL
+ok   C2a quantity 760
+ok   C2b destination marketplace Amazon
+ok   C2c and NO fabricated destination warehouse — an FBA destination is a logical node
+ok   C3  the canonical method comes from the fixture card, not from anywhere else
+ok   C3a window D90
+ok   C3b required by 2026-12-03
+ok   C4  factory quantity STILL 0 — adding a carrier card changes the ROUTE, never the supply policy
+ok   C5  all three verdicts true, unresolved 0
+ok   C6  the group carries the resolved arrival date — blank on every run before this round
+ok   C6a with its currency and ranking status
+ok   C6a1 and the TRANSIT DAYS the ranking used — §F.4 has asked the census for `lead_time_days` since E3 and it read `head.transit_days`, which no K2 header carries, so the number the plan ranked on was never obtainable by any consumer
+ok   C6b uniform across the group’s lines, and reported rather than assumed
+ok   C6c and it is NOT in the line payload — `expected_arrival` is documented as user-supplied in 16_, so an AI-computed date must not change what the writer stores
+ok   C7  the generation succeeds
+ok   C7a exactly ONE header created
+ok   C7b exactly ONE line created
+ok   C7c and the stored quantity reconciles to 760
+ok   C7d stored source = the 3PL
+ok   C7e stored destination marketplace = Amazon
+ok   C7f stored method = TRUCK
+ok   C7g system-generated provenance — never stored with a manual marker
+ok   C7h and stamped with the generation run id
+ok   C7i no unrelated table touched, and Submit was never executed
+ok   C7j the stored row HAS an identity — stated before it is compared, so C8d cannot pass by comparing two blanks
+ok   C8  a REPLAY of the same generation succeeds
+ok   C8a and still exactly ONE header — the deterministic identity is reused
+ok   C8b and one line
+ok   C8c quantity unchanged at 760
+ok   C8d the SAME row identity, not a second ticket
+ok   C9  a MOVED execution key does not duplicate the plan — one active header survives
+ok   C9a and the quantity is still 760, not 1520
+
+== D. §2 — the carrier authority census, over BOTH tables ==
+ok   D1  the rate-card authority is `carrier_rate_cards`, owned by 17_carrier_handlers.gs
+ok   D2  and it stores NO lead time — stated in the file itself
+ok   D2a transit columns are REJECTED from the rate template, by design
+ok   D3  lead time is a SECOND authority: `carrier_lead_times`
+ok   D3a keyed by carrier + origin + destination + method + last mile
+ok   D4  a rate card is created ONLY by the Master Template import; the Update Template cannot create
+ok   D4a and that path is a real, routed production action
+ok   D5  THERE IS NO GENERIC LEAD-TIME WRITE ACTION — so a new lane’s lead time cannot be created by any existing UI, and the report must say so rather than imply the Master Template covers it
+ok   D5a the only lead-time writer in the project is the hard-coded CN→JP Sinotrans seed
+ok   D6  the lane key under census is US → US / Amazon
+ok   D6a measured by KMRA’s own normalize/axisOk/rateCardUsable — not a private copy
+ok   D6b origin matched 0 → route matched 0 → eligible 0, layer by layer
+ok   D6c cause typed
+ok   D6d and the nearest misses name WHICH axis differed, so the answer is never only a zero
+ok   D7  carrier master data NOT ready
+ok   D7a on this lane key
+ok   D7b BOTH are missing — a rate card ALONE would not have produced a route
+ok   D7c and the field list covers both tables
+ok   D7d naming the required rate fields
+ok   D7e and the required transit field
+ok   D7f and it warns that the lead-time row has no handler to create it
+ok   D8  the field list DESCRIBES what is needed and invents no carrier, rate or transit time
+ok   D9  a card WITHOUT a lead-time row still produces zero routes
+ok   D9a and refuses with a DIFFERENT token — not the one the operator was told to fix
+ok   D9b sub-typed NO_LEAD_TIME
+ok   D9c and readiness had PREDICTED exactly that, before the route ran
+ok   D9d with the token the route would produce
+ok   D9e and asks only for the table that is actually missing
+ok   D10 a lead time for a method the card does NOT offer is not authority for this lane
+ok   D10a so the lane is still not ready
+
+== E. §3 — one schema authority, and a disagreement that names only what it measured ==
+ok   E1  34 columns: both authorities resolve, and to the SAME version
+ok   E1a 35 columns: the same
+ok   E1b 36 columns — THE LIVE SHAPE: a non-empty version, equal on both sides. §3.4 holds in source
+ok   E2  the pre-migration 30-column base is WRITABLE but has no lifecycle version — and says so
+ok   E3  a HALF-APPLIED migration (32) is refused — an interrupted append is a state to finish
+ok   E3a a reordered tail is refused
+ok   E3b a duplicate is refused, and reported AS a duplicate, not as "column 35 is wrong"
+ok   E3c an unknown 37th column is refused
+ok   E3d and a blank intervening header is refused
+ok   E4  the resolver never opens by returning ok:true
+ok   E4a and the lifecycle DELEGATES rather than keeping a second opinion
+ok   E5  live header count reported
+ok   E5a writer version and lifecycle version, both named
+ok   E5b recognized generation
+ok   E5c lifecycle required columns
+ok   E5d missing lifecycle columns — none
+ok   E5e parity verdict: agree
+ok   E5f and ONE AUTHORITY is verified at RUNTIME — the lifecycle resolver is asked the same header and its verdict compared, which is the only way to tell one authority from one that used to be shared
+ok   E6  and a generation on the live 36-column schema is NOT refused
+ok   E6a with no MIGRATION_VERSION_MISMATCH anywhere in the response
+ok   E7  and the response names the version it RESOLVED — found by probe reporting FB4C-AI-LIFECYCLE-1 on a 36-column sheet, because it printed the frozen EXPECTED constant instead
+ok   E7a with the expected constant reported separately, named for what it is
+ok   E7b and it says where the resolution came from
+
+== F. §5 — the 3PL policy is not quietly changed by any of this ==
+ok   F1  the frozen allocator still runs the overseas/3PL pool first
+ok   F2  with a carrier card present, the source is STILL the 3PL
+ok   F3  and when the lane has no lead time, the source does NOT silently become the factory
+ok   F3a the 760 fails closed as unresolved — never routed without method authority, never silently dropped
+ok   F4  and no factory fallback was introduced — that is a product decision, not this round’s work
+
+== G. §7 — the census output an operator can act on ==
+ok   G1  the operator entry point still takes NO parameters
+ok   G1a with the scope hard-coded
+ok   G2  the census contains EXACTLY ONE call to the atomic writer
+ok   G2a and it is inside RUN_R6R6R3_ROUTE_B_REPAIR_EXECUTE_ONCE, which is the only function allowed to have it
+ok   G2b and no entry point writes a cell directly — every mutation goes through 16_ under its own lock
+ok   G2a and reports that it did not
+ok   G2b zero DB writes from a census run
+ok   G3  authorized_quantity
+ok   G3a supply_allocated_quantity
+ok   G3b emitted_route_quantity
+ok   G3c unresolved_quantity
+ok   G3d supply_allocation_conserved
+ok   G3e route_quantity_conserved
+ok   G3f fully_routable
+ok   G3g carrier_master_data_ready
+ok   G3h carrier_missing_fields
+ok   G3i carrier_lane_key
+ok   G4  production_parity.blockers is assembled AFTER the verdict — it equals the census's own list, never a snapshot taken before the route was judged
+ok   G4a and the route findings reach it
+ok   G4b carrying the typed route cause
+ok   G4c and the parity block states the completeness verdicts beside the historical `conserved`
+ok   G4d the historical key keeps its historical meaning — an operator comparing rounds still finds it
+ok   G5  a carrier gap is no longer the AI Plan's verdict
+ok   G5a and it is not a blocker at all
+ok   G5a1 it is a WARNING, named
+ok   G5b and the caveat that carrier_lead_times has no handler to create the row is preserved
+ok   G5b1 together with the exact field list R4 introduced
+ok   G5c and the FIRST failing predicate is named — not a vague "not ready"
+ok   G5d PROVING every other gate passed, so the remaining action is identifiable master data
+ok   G6  and with the authorized card, no predicate fails
+ok   G7  the census now prints the arrival date the plan resolved — blank on every run before this round
+ok   G7a and its currency
+ok   G7b and lead_time_days, which was null on every run before this
+ok   G8  the activation allowlist is still exactly the one authorized scope
+ok   G9  and the repository generation flag is STILL false — this round enables nothing
+ok   G10 census build stamp
+ok   G11 and the shared release ledger still resolves a current token
+ok   G13 the master-data field list never quotes a card that is already in the table — a fixture row must not come back to the operator dressed as the production authority they were asked to supply
+ok   G14 and the AI route intent is NOT client-grantable — no external caller can authorize itself into it
+ok   G15 the operator’s own route row still exists after an AI generation
+ok   G15a and is NOT expired — a user_created DRAFT is preserved by the manual-source rule alone
+ok   G15b and it rests on TWO independent guards — manual source, then non-draft status
+
+== H. §8 — mutation coverage: every claim above must be shown to bite ==
+ok   H1  36-column lifecycle version forced to null → parity DISAGREES, and names the DEPLOYMENT skew (never "columns incomplete", which the same block can see is false) (caught)
+ok   H2  lifecycle given its own private 34-column resolver → shares_authority FALSE (caught)
+ok   H3  lifecycle_complete forced true for every generation → the pre-migration 30-column base wrongly reports a lifecycle version (caught)
+ok   H4  route_quantity_conserved hard-coded true → 760 unrouted units report as conserved (caught)
+ok   H5  the parity blocker list never assembled → it stays at its pre-verdict null (caught)
+ok   H6  the lane predicate removed from laneCards → the typed refusal A5b/A5c assert on CHANGES (a CN→US card enters the US→US lane; the lead-time axis then refuses it differently) (caught)
+ok   H7  canonicalMethodKey returns the raw token when unmapped → a GROUND card is treated as canonical (caught)
+ok   H8  statusActive forced true → an INACTIVE card produces a route (caught)
+ok   H9  inEffectiveWindow forced true → a card that expired in 2025 produces a 2026 route (caught)
+ok   H10 PASS 1 (overseas/3PL) skipped → the 760 sources from the CN factory instead (caught)
+ok   H11 the missing-field list made to quote the lane’s existing cards → a FIXTURE row is returned to the operator as production authority (caught)
+ok   H12 the AI route intent added to the client-grantable set → an external caller could authorize it (caught)
+ok   H13 the K4 route-identity group key made non-deterministic → the resolver stops matching and a replay creates a SECOND ticket (caught)
+ok   H14 the MANUAL_SOURCE preservation removed → the operator’s own route is expired by a generation (caught)
+
+================================================================================================================
+passed 181  failed 0  |  mutants caught 14  survived 0
+================================================================================================================

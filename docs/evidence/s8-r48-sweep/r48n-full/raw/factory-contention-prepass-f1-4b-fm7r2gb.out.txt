@@ -1,0 +1,31 @@
+
+== §1/§13/§14 A-D — candidate discovery is a cheap conservative superset (>=2 companies AND factory stock) ==
+
+== §3/§13 F-G — candidate is NOT yet contended: canonical demand confirms it ==
+
+== §4/§8/§I/§J H-J — physical pool counted once; Σ allocated <= supply; conserved partition ==
+
+== §15/§L K — K1 scenario: monolithic conserved == resumable (per-company slices consume the SAME partition) ==
+
+== §12/§O O — a CONTENDED receiver missing from the partition FAILS CLOSED (never a full-pool fallback) ==
+
+== §10/§13/§17/§P P-Q — uncontended skus keep the existing company-local path; mixed workload ==
+
+== §16/§R R — the no-contention FAST PATH: an empty/absent contention runs the existing per-company path ==
+
+== §4/§S S — MULTI-WAREHOUSE physical pools (warehouse_id+sku) counted once each; conserved across companies ==
+
+== §6/§16 — pre-pass owner: no candidate → fast path (NO harvest); candidate → harvest + conserve ==
+
+== §6 M/N — job runs the pre-pass phase BEFORE the company slices; the partition is persisted + injected ==
+
+== public STATUS surfaces contention COUNTS only — never the partition/receiver payload (§8/§29 Test 2) ==
+
+== §7 — pre-pass that never completes → truthful terminal CONTENDED_FACTORY_PREPASS_EXCEEDS_WORKER_BUDGET ==
+
+== §9 — F1-7N-FA-3C-PRE1: an oversize partition is stored via MULTI-PROPERTY chunks (authorized) — no size terminal, no auto-split of allocation ==
+
+== §22/§X — INVENTORY has NO pre-pass phase (unchanged); it starts directly in COMPANY_SLICES ==
+
+----------------------------------------
+FACTORY CONTENTION PRE-PASS (F1-4B-FM7-R2G-B): 48 passed, 0 failed

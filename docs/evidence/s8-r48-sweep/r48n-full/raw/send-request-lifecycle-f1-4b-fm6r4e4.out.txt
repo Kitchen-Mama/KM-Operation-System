@@ -1,0 +1,47 @@
+
+== §10 Send quantity authority (A/B/H) ==
+ok   A canonical persisted order_qty (1000) wins over any live value
+ok   B edited persisted order_qty (800) is the confirmed quantity
+ok   H no canonical draft → manual effective value (NO AI recompute)
+ok   blank canonical order_qty → NOT asserted (never an ephemeral recompute, never a fabricated 0)
+ok   a persisted ZERO is a real decision and is returned as 0 (§E.6)
+ok   a drafted SKU whose tier row is missing is NOT asserted from an ephemeral value (the CO1150-N defect)
+
+== §9 backend optimistic-lock verify (F) ==
+ok   F token match → ok (confirmation proceeds)
+ok   F stale draft_version → CONCURRENCY_TOKEN_MISMATCH (fail closed)
+ok   F stale line fingerprint → fail closed (no overwrite)
+ok   no token supplied → check skipped (backward compatible)
+ok   missing draft → fail closed
+
+== F1-7N-FB-3B §E: the lifecycle invariants, re-asserted at their NEW OWNER (66_) ==
+ok   §3/§16 the orchestration never writes an allocation draft header or line (no competing active row)
+ok   §3/§16 it consumes only ALREADY-ACTIVE persisted drafts, addressed by their own persisted id
+ok   §5 (§C) the Send transition no longer creates or confirms a draft — the create-inside-Send path is retired
+ok   §9 drift / no-persisted-draft / tier-absent are each named distinctly, never merged
+ok   §9 any single failure blocks the run
+ok   §9 the barrier runs BEFORE any Request Order is created (no partial downstream write)
+ok   §9 the page also blocks the Send when a pending quantity edit failed to save
+ok   §11 create Request Order -> PROVE the header + line count -> only then advance the lifecycle
+ok   §14/§17.K downstream Request Order creation is DELEGATED to the existing canonical writer (13_)
+ok   §11 and the lifecycle advance to the existing canonical submit writer (15_)
+ok   the page still reloads the latest canonical truth after a Send
+
+== §10/§18 no frontend recommendation/gap recompute for execution (I) ==
+ok   I Send performs NO gap/KMREC/suggested recompute (execution qty = persisted order_qty)
+ok   J Send does not drive the AI Plan job (no per-SKU generation fan-out introduced)
+
+== §12 T4 non-actionable ==
+ok   §12 the line writer drops T4 (never an actionable/executed allocation line)
+
+== §8 real conflicts still fail closed (E) — getActive NOT weakened ==
+ok   §8 active set unchanged (draft|site_confirmed) — not weakened to tolerate duplicates
+ok   E >1 active canonical row still → BLOCKED_CONFLICT (no newest-row-wins / silent selection)
+ok   E single-SKU getActive also still reports BLOCKED_CONFLICT
+
+== §9 backend terminal guard intact ==
+ok   terminal (submitted/cancelled) confirmation still rejected
+ok   §9 the public upsert handler enforces the optimistic-lock token when supplied
+
+----------------------------------------
+SEND REQUEST LIFECYCLE (F1-4B-FM6-R4E4): 30 passed, 0 failed

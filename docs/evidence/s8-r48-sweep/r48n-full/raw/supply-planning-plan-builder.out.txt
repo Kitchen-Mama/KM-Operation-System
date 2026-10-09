@@ -1,0 +1,16 @@
+
+== A. generation-type mapping ==
+
+== B. Weekly projection ==
+
+== C. Weekly blocked line — no fabricated zero ==
+
+== D. Monthly projection + partial-carton exact ==
+
+== E. live-analysis exclusion ==
+
+== F. determinism + validation ==
+
+== G. boundary — no Submit / handoff surface ==
+
+All Round 1G Recommendation Plan Builder assertions passed (50 assertions).

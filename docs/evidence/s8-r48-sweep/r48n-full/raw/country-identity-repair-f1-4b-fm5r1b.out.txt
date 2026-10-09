@@ -1,0 +1,17 @@
+
+== KMCID · canonical country identity matrix ==
+
+== KMDR · MARKETPLACE stock resolves a GB snapshot from a UK scope (Site Stock = 233+1+0 = 234) ==
+
+== KMDR · valid zero stays 0; missing stays missing ==
+
+== KMDR · non-UK unchanged + no accidental alias ==
+
+== Fallback · KMDR without KMCID uses exact equality (isolated module = unchanged legacy) ==
+
+== MATERIALIZED BATCH · UK/GB fixture no longer MARKETPLACE_STOCK_MISSING (end-to-end via bundle+handler) ==
+
+== NO page-side alias patch / no formula change ==
+
+----------------------------------------
+COUNTRY IDENTITY REPAIR (F1-4B-FM5-R1b): 32 passed, 0 failed

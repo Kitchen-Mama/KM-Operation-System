@@ -1,0 +1,77 @@
+
+====================================================================================================
+S3-R1 §A — FACTORY INVENTORY LOADING STABILITY
+====================================================================================================
+
+-- A. THE OWNERS — §A1 --------------------------------------------------------------------------------
+ok   A1 ROUTE OWNER: the page lifecycle, one registration
+ok   A2 READ OWNER: the mount performs ONE bounded scoped read
+ok   A2a and factory_stock - the row universe of the visible table - is in it
+ok   A2b never a broad whole-DB read on the canonical path
+ok   A2c and factory_stock_movements is still owned by this page
+ok   A3 the broad read is gated behind !_fsScopedActive() — the Legacy kill switch, not a fallback
+ok   A3b and getOperationDb is never called by this page at all
+ok   A4 REQUEST OWNER: exactly one gate decides whether a read may start
+ok   A5 and the commit is guarded by monotonic request identity, not by timing — §A3
+ok   A6 CACHE OWNER: one read model
+ok   A7 LOADING/ERROR OWNER: one state renderer
+ok   A8 the INVENTORY table consults the state renderer
+ok   A9 the MOVEMENTS table does too — the one that always did
+ok   A10 "not connected" can be RENDERED from exactly one place — escapes decoded
+
+-- B. THE NINE SCENARIOS — §A2 ------------------------------------------------------------------------
+ok   B1 §A2.1 first entry issues exactly ONE request — FIRST_ENTRY_REQUESTS
+ok   B2 ... for exactly the tables the mount read declares, never a broad read
+ok   B3 ... and the load settles
+ok   B4 ... with rows, not "not connected"
+ok   B5 §A2.2 re-entry re-reads NOTHING — the model is already held — REENTRY_REQUESTS
+ok   B6 §A2.3 three entries during one flight issue ONE request — FAST_REENTRY_DUPLICATES = 0
+ok   B7 ... and the page is honestly LOADING while it waits
+ok   B8 §A2.4 a slow response still settles the load — LOADING_STUCK_COUNT = 0
+ok   B9 ... and released nothing extra
+ok   B10 §A2.5 a failing read issues ONE request, not a storm (was 41 and climbing)
+ok   B11 ... the failure is a state, and it settles
+ok   B12 ... never a permanent LOADING latch
+ok   B13 ... the table says so, in the operator's words
+ok   B14 ... with the typed reason
+ok   B15 ... and NOT "not connected", which would be false — FALSE_EMPTY_COUNT = 0
+ok   B16 ... a 404 page is marked non-retryable
+ok   B16b ... so no Retry button is drawn for it
+ok   B16c ... and the screen names what would actually fix it
+ok   B17 §A3 one Retry = exactly ONE new request
+ok   B17b a transient failure is marked retryable
+ok   B17c ... and DOES draw a Retry the operator can press
+ok   B17d ... and it too issued exactly one request, not a storm
+ok   B18 the first entry failed, once
+ok   B19 §D9 a FRESH ROUTE ENTRY really retries — recovery needs no browser reload
+ok   B20 ... while re-entering a READY page re-reads nothing
+ok   B21 §A2.6 two flights are open
+ok   B22 ... the page settles
+ok   B23 §A3 STALE_RESPONSE_COMMITS = 0 — an older answer is dropped by request identity
+ok   B24 §A2.8 an empty read is READY, not an error
+ok   B25 ... and does NOT say "not connected" — that was the false-empty render
+ok   B26 ... it says the table is empty, which is what happened
+ok   B27 §A2.9 a malformed response still settles the load
+ok   B28 ... and issues no extra request
+ok   B29 §A2.7 a hard reload starts from IDLE with no carried state
+ok   B30 ... and has issued nothing before the page is entered — STATE_BLEED_COUNT = 0
+
+-- C. LISTENERS AND TIMERS — §A4, §4 ------------------------------------------------------------------
+ok   C1 three more inits add no document listener — LISTENER_DRIFT = 0
+ok   C1b and the steady state is a small fixed number, not a growing one
+ok   C2 the page registers no interval — no polling, TIMER_DRIFT = 0
+ok   C3 and no timer re-arms the read
+
+-- D. MUTANTS — each returns TRUE when the defect is CAUGHT -------------------------------------------
+ok   D0  the unmutated baseline issues ONE request and lands in ERROR
+ok   D1  the rejection re-arms the gate — the unbounded retry loop is back (caught)
+ok   D2  the inventory table stops consulting the state renderer — the typed error vanishes (caught)
+ok   D3  the empty render claims a disconnection again — a false empty (caught)
+ok   D4  the gate lets a second read start while one is in flight (caught)
+ok   D5  an older answer is committed over a newer one — request identity removed (caught)
+ok   D6  a fresh route entry no longer re-arms a failure — recovery needs a reload again (caught)
+
+====================================================================================================
+S3-R1 §A FACTORY INVENTORY LOADING STABILITY — passed 60  failed 0  |  mutants caught 6  survived 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+====================================================================================================

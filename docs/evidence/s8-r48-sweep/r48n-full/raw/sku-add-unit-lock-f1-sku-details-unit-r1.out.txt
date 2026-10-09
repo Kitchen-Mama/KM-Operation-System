@@ -1,0 +1,15 @@
+
+== H/§5 — legacy non-metric cached draft: numbers CLEARED (never reinterpreted), units forced cm/kg ==
+
+== A/B/C — already-metric or empty draft is PRESERVED (only unit token normalized) ==
+
+== D/§2 — Add SKU unit selectors are LOCKED (disabled, canonical-only); user cannot choose in/lb ==
+
+== E/F/§3/§6 — Create payload force-normalizes the six unit tokens (ADD only) ==
+
+== I/§4 — Edit mode untouched (selectable unit path preserved; force is add-only) ==
+
+== §5 compat — asRec sanitizes; new drafts store canonical; no new columns / DB / converter ==
+
+----------------------------------------
+SKU ADD UNIT LOCK (F1-SKU-DETAILS-UNIT-R1): 22 passed, 0 failed

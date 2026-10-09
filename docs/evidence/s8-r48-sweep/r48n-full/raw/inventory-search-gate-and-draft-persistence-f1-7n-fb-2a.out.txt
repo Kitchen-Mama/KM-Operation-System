@@ -1,0 +1,20 @@
+
+== A. preconditions — the audited defects really are in the shipped baseline ==
+
+== C. the render gate — no rows can appear before a successful Search ==
+
+== D. production never keeps a failed business write as canonical local data ==
+
+== E. the typed inner reason is preserved and exposed — executing the real classifiers ==
+
+== F. the read-only diagnostic — reuses the production evaluators, writes nothing ==
+
+== G. system.health covers the Execution Plan actions ==
+
+== H. request-count discipline (source-proven where execution is impossible) ==
+
+== I. flow invariants — reload from DB, one Submit writer, no document/Drive/email side effects ==
+
+== B. the Search gate — EXECUTING the real shipped functions ==
+
+ALL PASS  (303 assertions)

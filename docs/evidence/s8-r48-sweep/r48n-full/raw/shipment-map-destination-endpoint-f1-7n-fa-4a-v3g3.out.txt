@@ -1,0 +1,23 @@
+
+== V3G3-B1. the exact warehouse -> logistics master coordinate still WINS (production precedence unchanged) ==
+
+== V3G3-B2. the approved address-derived FINAL route coordinate supplies the labelled destination endpoint ==
+
+== V3G3-B3. a gateway route row can NEVER become the destination endpoint ==
+
+== V3G3-B4. a current-marker coordinate can NEVER become the destination endpoint ==
+
+== V3G3-B5. a route row from ANOTHER shipment can never be used ==
+
+== V3G3-B6. invalid / blank / (0,0) / out-of-range route coordinates fail closed ==
+
+== V3G3-B7. unordered or ambiguous final-route evidence fails closed ==
+
+== V3G3-B8. existing production behaviour is preserved ==
+
+== V3G3-B9. resolveNodeCoord is unchanged and consistent with the endpoint ==
+
+== V3G3-B10. no runtime geocoder or network call is introduced ==
+
+----------------------------------------
+SHIPMENT MAP DESTINATION ENDPOINT (V3G3): 50 passed, 0 failed

@@ -1,0 +1,27 @@
+
+== A. sequential monthly carry-forward — opening supply NOT reused ==
+
+== B. incoming becomes usable between tiers ==
+
+== C. late incoming does NOT cover an earlier tier ==
+
+== D. count-once — one shipment cannot cover two tiers ==
+
+== E. valid zero — zero demand / zero gap remains valid zero ==
+
+== F. missing opening supply ≠ zero (fail closed) ==
+
+== G. special-event demand enters ONCE (at its prep date) — not double-counted ==
+
+== H. multi-warehouse isolation — WH-A stock/incoming never leaks into WH-B ==
+
+== I. MARKETPLACE — destination identity passthrough, no fabricated warehouse ==
+
+== J. determinism — permutation-invariant, no mutation, no clock/RNG, JSON-safe ==
+
+== K. generic checkpoint mechanism (day-horizon ARCHITECTURE-ready) + authority HALT (no invented day values) ==
+
+== L. full T1..T4 sequential chain ==
+
+----------------------------------------
+TIME-PHASED SUPPLY PROJECTION (F1-4B-FM3b): 27 passed, 0 failed

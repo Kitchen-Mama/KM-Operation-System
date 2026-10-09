@@ -1,0 +1,27 @@
+
+== §6.1/§6.2 — create Inventory + Order Planning continuation triggers → cleanup SUCCEEDS via getProjectTriggers ==
+
+== §6.3 — owned trigger selection is handler-SPECIFIC (only the exact handler is deleted) ==
+
+== §6.4 — Amazon import trigger is NEVER deleted ==
+
+== §6.5 — unrelated scheduled triggers are NEVER deleted (no delete-all) ==
+
+== §6.6 — CANCEL cleans ONLY its own product continuation (gapJobClearContinuationTriggers_) ==
+
+== §6.7 — duplicate continuation cleanup is safe (all copies of the same handler removed) ==
+
+== §6.8 — missing target trigger is HARMLESS (0 deleted, no throw) ==
+
+== §6.9 — CREATE failure still classified as authorization failure (NOT cleanup) ==
+
+== §6.10 — CLEANUP failure classified SEPARATELY as TRIGGER_CLEANUP_FAILED (create succeeded) ==
+
+== §6.10b — a NON-owned handler that was created is never cleaned (isOwned guard) and does not fail cleanup ==
+
+== ROOT CAUSE contract — the verifier NEVER deletes the create()-returned object; safe provenance only ==
+
+== §5 negative constraints — no formula / cadence / DB / recommendation change in this repair ==
+
+----------------------------------------
+GAP TRIGGER CLEANUP (F1-4B-FM5-R4J-AUTH3): 29 passed, 0 failed

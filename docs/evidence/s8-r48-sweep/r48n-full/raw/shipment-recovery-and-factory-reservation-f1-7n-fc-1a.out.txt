@@ -1,0 +1,363 @@
+
+== §A — PRECONDITIONS AND THE FROZEN DECISIONS ==
+ok   A1  the release-order registry is readable
+ok   A2  and it reports a current cache token
+ok   A3  FC-1A owns a stamp in the release order
+
+== §B — THE S6 FAILURE CONTRACT, BEFORE AND AFTER ==
+ok   B1  §B.1 approve writes status=approved
+ok   B2  §B.2 and THEN attempts the Execution Commit
+ok   B3  §B.2 the failure is CAUGHT, not propagated
+ok   B4  §B.3 and nothing rolls the approval back — the human decision is kept (frozen §0)
+ok   B5  §D.6 a SECOND approve is answered, not refused
+ok   B5a and it says so explicitly
+ok   B5b and it reports the CURRENT execution-commit state rather than a bare success
+ok   B6  §B.6 §D.6 and the replay writes NOTHING — no duplicate approval, no duplicate shipment
+ok   B7  §D.2 it names the retry action
+ok   B7a and where to find it
+ok   B8  the approval itself still succeeds (the frozen §0 decision)
+ok   B9  §D.1 but the operation is NOT reported as fully complete
+ok   B9a and the cause is typed, not prose
+ok   B9b naming the SKU, the warehouse, the need and what is actually available
+ok   B10 §E.4 no Shipment Draft exists
+ok   B10a no shipment lines either
+ok   B11 §B.4 and NOT ONE stock movement was written
+ok   B11a the balance is untouched — current 100, reserved 0
+ok   B12 §E.4 the ONLY table written is the approval itself
+ok   B13 §D.3 the recovery state is derivable: approved + no shipment
+
+== §C — THE RETRY, CONNECTED END TO END ==
+ok   C1  precondition: the plan is approved with no shipment
+ok   C2  §C.2 the retry calls the EXISTING routed action and succeeds
+ok   C3  §C.4 and answers CREATED
+ok   C4  §C.1 naming the exact shipping_plan_id
+ok   C5  §C.9 the approval status is explicitly declared unchanged
+ok   C6  §C.5 exactly ONE shipment now exists
+ok   C6a with its line
+ok   C6b carrying the approved quantity
+ok   C7  §C.9 and the plan is still approved — the retry never touched it
+ok   C7a nor who approved it
+ok   C8  §C.4 a replayed retry succeeds rather than erroring
+ok   C9  §C.4 and answers REUSED
+ok   C10 §C bound to the SAME shipment
+ok   C11 §C.5 still exactly one shipment
+ok   C12 §C.5 and the replay changed NOT ONE CELL in ANY table
+ok   C13 §C a retry on a NOT-approved plan is refused
+ok   C13a with a typed code, not prose
+ok   C13b and writes nothing
+ok   C14 §C.1 and a retry with no plan id is refused by name
+ok   C14a writing nothing
+ok   C15 §C.3 an unavailable lock refuses the retry
+ok   C15a by name
+ok   C15b and nothing is written — never a reservation raced against another writer
+ok   C16 §C the page defines the retry command
+ok   C16a and exports it for the card markup
+ok   C17 §C.2 which calls the existing routed action
+ok   C18 §C the Approved plan card carries the button
+ok   C19 §C.3 with a stable correlation key
+ok   C20 §C.6 through the shared command runner, which performs the ONE authoritative readback
+ok   C21 §C.4 and the page distinguishes REUSED from CREATED
+ok   C22 §C.10 and it promises no documents and no stock deduction
+ok   C23 §C the instruction naming an unreachable page is GONE from the live message
+
+== §D — THE APPROVAL RESULT, AND THE DERIVED RECOVERY STATE ==
+ok   D1  §K.1 approval + shipment creation succeeds together
+ok   D2  §D.1 and reports the commit as PRESENT
+ok   D3  §D with no recovery object, because there is nothing to recover
+ok   D4  the Shipment Draft was created
+ok   D4a exactly one
+ok   D5  and the plan is approved
+ok   D6  §D.3 the plan records its shipment, which is what makes the state derivable on reload
+ok   D7  §D a draft plan is not in an execution-commit state
+ok   D7a nor is a pending one
+ok   D8  §D approved WITH a shipment is complete
+ok   D8a and offers no retry
+ok   D9  §D approved WITHOUT one is the recoverable condition
+ok   D9a and it offers the retry
+ok   D10 §D.5 the same rows always give the same answer — a reload cannot show something different
+ok   D11 §J.2 a deployment mismatch leaves the state visible but the retry unavailable, and says which
+ok   D12 §J.3 an in-flight retry disables a duplicate click, and says so
+ok   D13 §J.2 an UNANSWERED contract probe (null) is not treated as a mismatch
+ok   D14 §D.2 Approve inspects the typed commit state
+ok   D15 §D.1 and does NOT report the operation as complete
+ok   D16 §D.2 pointing at the action that exists on this card
+ok   D17 §D.2 and surfaces the stock shortfall when that was the cause
+ok   D18 §D.5 and the CARD carries the same condition, so it survives a reload
+ok   D19 §D the card has a distinct recoverable branch
+ok   D19a §D and Done is NEVER offered on a recoverable plan
+ok   D19b only the retry is
+
+== §E — THE RESERVATION: SOURCE OF TRUTH, ACQUIRE, RELEASE ==
+ok   E1  §E the reserved BALANCE is factory_stock.fac_reserved_stock (existing column)
+ok   E2  §E the LINEAGE is factory_stock_movements, two new movement_type values
+ok   E3  §E the OWNER is related_entity_type/related_entity_id — the same field pair 13_ already uses for idempotency
+ok   E4  §E the LIFECYCLE is derived (sum of acquire minus release), never a second stored status
+ok   E5  §E NO reservation table was added — the existing model expresses all seven facts
+ok   E5a and no new column was ensured onto factory_stock either
+ok   E6  §E.5 approval creates the Shipment Draft
+ok   E7  §E.5 current is UNCHANGED at 1000 and reserved rises to 800 — a reservation is not a deduction
+ok   E8  §E.5 exactly ONE movement row records it
+ok   E8a typed reservation_acquire
+ok   E8b with a POSITIVE quantity — reserved rose
+ok   E9  §E.5 and the current balance is recorded as unchanged, not omitted
+ok   E9a while the reserved pair carries the actual change
+ok   E10 §E the owner is the SHIPMENT — the reservation has lineage, not just a number
+ok   E10a at the exact warehouse and SKU
+ok   E11 §E.5 and the answer reports what was reserved, and in which domain, so the UI never has to guess
+ok   E12 §E.7 a replay returns REUSED
+ok   E12a §E.7 with a ZERO delta in every table — reserved did NOT double to 1600
+ok   E12b reserved is still 800
+ok   E13 §K.7 insufficient AVAILABILITY refuses the draft
+ok   E13a typed
+ok   E13b and the refusal is computed on AVAILABLE (1000 - 500), not on current — which is the entire point
+ok   E14 §E.4 no shipment, no lines, no reservation
+ok   E14a and the pre-existing reservation is untouched
+ok   E15 §K.14 a missing source warehouse is refused BY NAME, never reserved against a guess
+ok   E15a writing no movement
+ok   E15b and no shipment
+ok   E16 §K.10 Confirm Shipment completes
+ok   E17 §E current -= 800 → 200
+ok   E18 §E.6 reserved -= 800 → 0: no reservation remains for dispatched quantity
+ok   E19 §E EXACTLY ONE shipment_out movement — one indivisible ledger fact
+ok   E19a signed negative
+ok   E20 §E carrying the current pair
+ok   E20a AND the reserved pair — the deduction and the release are the SAME row
+ok   E21 §E and the answer reports the release
+ok   E21a total ledger: the acquire, then the shipment_out. Nothing else.
+ok   E22 §K.10 a replayed Confirm is idempotent
+ok   E23 §E.7 and changes ZERO cells in EVERY table
+ok   E23a the balance is exactly where it was
+ok   E24 §E a pre-reservation shipment still dispatches
+ok   E24a deducting current and leaving reserved at zero
+ok   E24b releasing nothing, and saying so
+ok   E25 §E.5 reserved is NEVER negative
+ok   E26 §E SHP-1 dispatches
+ok   E26a its 800 units leave
+ok   E27 §E and SHP-2's 200-unit reservation is UNTOUCHED — a release is owner-scoped
+ok   E27a SHP-1 released nothing, because it held nothing
+ok   E28 §K.9 precondition: 800 reserved, current untouched
+ok   E29 §K.9 cancellation releases the reservation
+ok   E29a in full
+ok   E30 §K.9 current_stock is UNCHANGED — a cancellation returns nothing physical
+ok   E31 §K.9 and the reservation is gone
+ok   E32 §K.9 released exactly ONCE
+ok   E32a and the reason is recorded on the ledger row
+ok   E33 §K.9 a replayed release is a no-op, not an error
+ok   E34 §K.9 with a ZERO delta
+ok   E35 two owners hold 300 + 400
+ok   E36 §E SHP-A asking to release 700 releases only the 300 it holds
+ok   E37 §E SHP-B's 400 survives — no owner can release another's reservation
+ok   E37a and the per-owner ledger says so independently of the balance
+ok   E38 §K.15 a release for an owner with NO reservation lineage is refused, not guessed
+ok   E38a and changes nothing
+ok   E39 §K.14 a release at the WRONG warehouse finds nothing and refuses
+ok   E39a the real reservation is intact
+ok   E40 §K.14 and an unknown warehouse reads as zero availability rather than throwing
+ok   E41 §E shipment_qty is NOT editable — the quantity-adjustment branch is VACUOUS BY DESIGN, not unimplemented
+ok   E41a and no handler writes shipment_qty after creation
+ok   E42 §E source_warehouse_id IS editable, so the source branch is real and had to be implemented
+ok   E43 §K.13 the source warehouse change is accepted
+ok   E44 §K.13 WH-F releases its 800; current is untouched
+ok   E45 §K.13 WH-G acquires 800; current is untouched
+ok   E46 §K.13 recorded as a release and an acquire — the move has full lineage at BOTH warehouses
+ok   E47 §K.13 a move to a warehouse without availability is REFUSED
+ok   E47a by name
+ok   E48 §K.13 and NOTHING was written — the reservation is not half-moved
+ok   E48a the original reservation is exactly where it was
+ok   E49 §E FC-1A-R1 CLOSED IT: cancelShipmentDraft is routed, so the release-at-cancellation contract now has a TRIGGER as well as an authority
+ok   E49a the primitive it uses exists and is proved above (E28-E34)
+ok   E49b and the cancellation handler reaches it through the SHARED authority, never a balance cell of its own
+
+== §F — ONE STOCK AUTHORITY, AND EVERY CALLER DELEGATES ==
+ok   F1  §F.1 21_ defines the shared transaction
+ok   F2.1 §F.1 factoryStockReadBalanceTx_ is defined ONCE, in 21_
+ok   F2.2 §F.1 factoryStockOwnerReservedTx_ is defined ONCE, in 21_
+ok   F2.3 §F.1 factoryStockAcquireReservationTx_ is defined ONCE, in 21_
+ok   F2.4 §F.1 factoryStockReleaseReservationTx_ is defined ONCE, in 21_
+ok   F2.5 §F.1 factoryStockRollbackJournal_ is defined ONCE, in 21_
+ok   F3  §F 22_ (dispatch) CALLS the shared transaction
+ok   F4  §F.6 13_ (PO receipt) still calls it — no regression
+ok   F5  §F 12_ (Shipment Draft) calls the reservation primitive
+ok   F6  §F.1 NO file outside 21_ writes a factory_stock balance cell
+ok   F6a and 22_'s old inline balance write is GONE
+ok   F7  §F.7 21_ records that its own previous ownership claim was false, and why
+ok   F7a and the false sentence itself is gone
+ok   F7b replaced by the delegation that is now true
+ok   F7c and 22_ says the same thing from its own side
+ok   F8  §F.2 every caller takes the script lock; 21_ runs UNDER the caller's lock and never takes its own
+ok   F8a which is what prevents a nested-lock deadlock
+ok   F9  §F.8 both the balance cell and the movement row are journaled — they roll back together or not at all
+ok   F10 §F.5 the movement type comes from the caller
+ok   F10a and dispatch/receipt still name their own
+ok   F11 §F a reservedDelta that would make reserved NEGATIVE is refused
+ok   F12 §F reserving more than is available is refused — the invariant that makes a reservation mean something
+ok   F13 §F.11 and the pre-existing negative-current guard is unchanged
+ok   F14 §F all three refusals happen BEFORE the first write — the sheet is byte-identical
+ok   F15 §F.6 a plain current-stock delta still works
+ok   F15a moving current only
+ok   F15b and reporting reserved unchanged
+ok   F16 §F.6 exactly THREE cell writes (current, last_transaction_at, updated_at) — the reserved cell was NOT touched
+
+== §G — THE TWO-SITE COLLISION, AT THE SHIPMENT DRAFT ==
+ok   G1  §G.1 Site A gets its Shipment Draft
+ok   G2  §G.1 current 1000, reserved 800
+ok   G3  §G.1 available is 200 — and this is the number that used to always read 1000
+ok   G4  §0 Site B's APPROVAL is still committed — the frozen decision
+ok   G5  §G.2 but its Shipment Draft is REFUSED — the collision no longer waits for Confirm Shipment
+ok   G5a typed
+ok   G5b naming need 800 against available 200, with current and reserved both shown
+ok   G6  §G.2 current 1000, reserved 800 — unchanged by the refusal
+ok   G7  §G.2 still exactly ONE shipment
+ok   G8  §G.2 ZERO partial rows: no shipment, no line, no balance write, no movement
+ok   G9  §G.3 Site A dispatches
+ok   G10 §G.3 current 200, reserved 0
+ok   G11 §G.3 ONE shipment_out of -800
+ok   G12 §G.4 Site A's dispatch replay changes NOTHING
+ok   G13 §G.6 after dispatch, availability is the physical remainder
+ok   G14 §G.5 Site A holds 800
+ok   G15 §G.5 cancellation: current 1000, reserved 0
+ok   G16 §G.6 and Site B can now reserve the full 1000 — the retry is unblocked by the release, not by a timer
+
+== §H — THE PURCHASE FLOW, RE-EXECUTED OVER THE SHARED AUTHORITY ==
+ok   H1  §H.1 a PO receipt of 200 completes over the shared authority
+ok   H2  §H.1 current +200 → 1200
+ok   H3  §H.1 exactly ONE po_receipt movement
+ok   H3a with a positive quantity
+ok   H4  §H.6 and reserved is UNCHANGED — a receipt raises availability, it never touches a reservation
+ok   H5  §H.2 a replay with the same idempotency key writes ZERO cells
+ok   H5a and the balance is unchanged
+ok   H6  §H.3 a PARTIAL receipt of 300: completed 300, shipped 0, remaining_qty = MAX(0, 300-0) = 300
+ok   H7  §H.3 completing the order reads 500, NOT 0 — remaining_qty is received-and-unshipped, and a report that read it as outstanding-to-receive would be wrong by the whole received amount
+ok   H7a with 500 units physically received in total
+ok   H8  §H.4 FC-1A-R1 CLOSED IT: over-receipt is REFUSED, not silently clamped
+ok   H8a with a typed code
+ok   H8b reporting attempted 900, remaining 500, excess 400
+ok   H8c and completed_qty did NOT move
+ok   H8d factory stock is unchanged
+ok   H8e with no movement row
+ok   H8f and nothing anywhere was written
+ok   H9  §H.7 a non-factory destination warehouse fails closed
+ok   H9a and no stock moved
+ok   H10 §H.5 a failure after the balance rose UNWINDS it — 1000, not 1200
+ok   H10a and the movement row is gone
+ok   H10b and completed_qty never rose either
+ok   H11 §H.6 a receipt into a reserved warehouse succeeds
+ok   H12 §H.6 current 1200, reserved still 800 — the ONLY interaction is increased availability
+ok   H12a available went from 200 to 400
+
+== §I — THE COMPACT CENSUS ==
+ok   I1   §I the census never names setValue in code
+ok   I2   §I the census never names appendRow in code
+ok   I3   §I the census never names deleteRow in code
+ok   I4   §I the census never names setValues in code
+ok   I5   §I the census never names insertSheet in code
+ok   I6   §I the census never names getScriptLock in code
+ok   I7   §I the census never names PropertiesService in code
+ok   I8   §I the census never names UrlFetchApp in code
+ok   I9   §I the census never names MailApp in code
+ok   I10   §I the census never names DriveApp in code
+ok   I11   §I the census never names clearContent in code
+ok   I12  §I.5 every sheet goes through the read-only facade
+ok   I12a and the facade never hands back a write-capable Sheet handle
+ok   I13  §I ONE main entry point plus TWO explicitly-single-id detail helpers (§I.4)
+ok   I14  §I it declares its own zero-write, zero-repair, zero-reservation result
+ok   I15  §I.3 a numeric cap on every id list
+ok   I15a and a truncated list still reports its EXACT total and says it was truncated
+ok   I16  §I.2 every id list (18 of them) goes through the cap
+ok   I17  §I.2 and no full row dump anywhere
+ok   I18  §I.1 no carrier trace — that is what truncated A3
+ok   I19  §I ONE compact JSON object is printed
+ok   I20.1 §I it reports active_complete
+ok   I20.2 §I it reports active_incomplete_with_missing_fields
+ok   I20.3 §I it reports orphan_headers
+ok   I20.4 §I it reports cancelled_headers
+ok   I20.5 §I it reports APPROVED_SHIPMENT_CREATION_PENDING
+ok   I20.6 §I it reports ledger_net_by_warehouse_sku
+ok   I20.7 §I it reports available_total
+ok   I20.8 §I it reports duplicate_movement_ids
+ok   I20.9 §I it reports reserved_balance_vs_ledger
+ok   I21  §I.6 and nothing in its code repairs, back-fills or restores a production row
+ok   I22  §I an unreconciled quantity is reported as unreconciled, never rounded into agreement
+
+== §J — THE DEPLOYMENT CONTRACT AND THE UI GATES ==
+ok   J1  §J.1 createShipmentFromPlan is in the page-specific required set
+ok   J1a alongside the Approve transition it recovers
+ok   J2  §J.1 and in the server-side required-action registry
+ok   J3  §J.1 SYS_REQUIRED_ACTION_LIST_VERSION_ is at or after 11, so a "nothing missing" answer from a list older than FC-1A is still distinguishable from a current one
+ok   J4  §J the ACTION-contract version is at or after 10 (FC-1A added no route; R1 adds one)
+ok   J4a and the frontend pins exactly what the deployment declares
+ok   J4b because that action has been routed all along
+ok   J5.1 §J.2 12_shipment_handlers.gs declares exactly the build its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34)
+ok   J5.1a and the frontend probes §J.2 SHIPMENT_BUILD_VERSION_ as an owner symbol
+ok   J5.2 §J.2 21_factory_inventory_handlers.gs declares exactly the build its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35)
+ok   J5.2a and the frontend probes §J.2 FSTX_BUILD_VERSION_ as an owner symbol
+ok   J5.3 §J.2 22_shipment_dispatch_handlers.gs declares exactly the build its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37)
+ok   J5.3a and the frontend probes §J.2 CSD_BUILD_VERSION_ as an owner symbol
+ok   J6  §J.2 and 11_'s stamp MOVED, because the shape of its Approve answer moved
+ok   J7.1 §J.2 spApprovalRecoveryState_ is probed as an owner symbol
+ok   J7.2 §J.2 factoryStockAcquireReservationTx_ is probed as an owner symbol
+ok   J8  §J.2 the page has one gate-attribute helper
+ok   J8a fed by the page-scoped verdict
+ok   J9  §J.2 Approve carries the gate
+ok   J9a and so does Submit
+ok   J9b and Retry is gated on its own state
+ok   J10 §J.2 and the command itself fails CLOSED on a known-bad deployment, not just the button
+ok   J11 §J.2 an unanswered probe is null, never false
+ok   J12 §J.3 the card reads the in-flight key
+ok   J12a and the command sets the same key
+ok   J13 §J.4 the adapter uses the canonical command runner
+ok   J13a and no longer throws a business rejection as a transport error
+ok   J14 §J.5 a superseded read is ignored rather than applied
+ok   J15 §J.5 and a failed contract probe returns null rather than a false verdict that would blank the page
+ok   J15a the probe never throws into the render path
+
+== §K — THE REMAINING SIMULATIONS ==
+ok   K1  a shipment is created (imagine the answer never arrived)
+ok   K2  §K.6 the retry after an unknown outcome answers REUSED
+ok   K3  §K.6 having changed nothing — an unknown outcome is safe to retry
+ok   K4  §K.6 and there is still exactly one shipment
+ok   K5  §C.8 and once the rows say a shipment exists, the card stops offering the retry
+ok   K6  §K.16 a mismatch blocks the retry
+ok   K6a and a healthy deployment allows it
+ok   K7  §K.16 naming the reason, because a merely inert button teaches the operator the page is broken
+ok   K8  §K.11 the dispatch fails
+ok   K8a and says it was rolled back
+ok   K9  §K.11 BOTH balances came back: current 1000 AND reserved 800 — the reservation was not silently lost
+ok   K10 §K.11 the shipment_out movement is gone
+ok   K11 §K.11 and the shipment is back at ready_to_ship
+ok   K12 §K.11 with no route and no event rows left behind
+ok   K13 §I.3 a 5000-item list is capped at 60 and still reports its TRUE total
+ok   K14 §I.3 and the WORST-CASE whole report is 22403 bytes — under the Apps Script log limit with room to spare, which is the entire reason this file replaces the A3 census
+
+== §L — MUTATIONS. Each is applied to shipped source and must be caught. ==
+ok   L1  the retry creates a DUPLICATE shipment (idempotency guard removed) (caught)
+ok   L2  the retry CHANGES the approval status (caught)
+ok   L3  a shipment is created WITHOUT its reservation (caught)
+ok   L4  a reservation is written WITHOUT its shipment (caught)
+ok   L5  insufficient stock leaves PARTIAL rows (caught)
+ok   L6  a replay DOUBLES the reservation (owner-ledger idempotency removed) (caught)
+ok   L7  dispatch deducts current but RETAINS the reservation (caught)
+ok   L8  cancellation RETAINS the reservation (release becomes a no-op) (caught)
+ok   L9  ANOTHER shipment's reservation is released (owner scoping removed) (caught)
+ok   L10 22_ BYPASSES the shared transaction (its own inline write comes back) (caught)
+ok   L11 the PO receipt stops using the shared authority (caught)
+ok   L12 the movement row is OMITTED by the shared authority (caught)
+ok   L13 the balance is updated WITHOUT the movement (reserved cell only) (caught)
+ok   L14 a failure SKIPS the rollback and leaves a half-applied draft (caught)
+ok   L15 the current/reserved SIGN is reversed at dispatch (caught)
+ok   L16 the UI promises success while the shipment is missing (caught)
+ok   L17 a deployment mismatch still allows the retry (caught)
+ok   L18 the census output becomes UNBOUNDED (caught)
+
+== §M — WHAT THIS ROUND DID NOT DO ==
+ok   M1  §M no TW carrier rate card was added (no master data write)
+ok   M1a and only the pre-existing importer can write them
+ok   M2  §M the final document output is still NOT connected
+ok   M3  §M Shipment Draft creation generates no documents
+ok   M4  §M the carrier candidate list is still for a later batch
+ok   M5  §M On the Way / receiving semantics are untouched — 31_ still owns shipment_receipt
+ok   M6  §M no new sheet is created for the reservation model
+
+---
+333 passed, 0 failed
+mutations: 18 caught, 0 missed

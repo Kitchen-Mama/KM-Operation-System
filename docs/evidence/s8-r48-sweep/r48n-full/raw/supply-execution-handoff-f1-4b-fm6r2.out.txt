@@ -1,0 +1,19 @@
+
+== §1/§11 — CO1100-R canonical trace: Overseas → Factory → uncovered (numbers DERIVED, not hard-coded) ==
+
+== §1 — fill-order boundaries ==
+
+== §10 — NO_ACTION / BLOCKED never fabricate allocation ==
+
+== §4 — a stored 0 is a real 0 (no line); a MISSING availability != zero (surfaced, never a "0" line) ==
+
+== §1 — Inventory gap is unchanged; Factory/Overseas participate ONLY in KMREX (never in the gap) ==
+
+== §8/§B7 — deterministic (pure): identical input → identical execution draft (idempotent at the owner) ==
+
+== §2 — Order Planning passthrough: T1–T4 retained, frozen total, T4 forward-only, NO second allocator ==
+
+== §12/§13 — draft-only boundary + one shared owner; bundle + browser registration ==
+
+----------------------------------------
+RECOMMENDATION → EXECUTION HANDOFF (F1-4B-FM6-R2): 30 passed, 0 failed

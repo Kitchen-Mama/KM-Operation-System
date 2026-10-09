@@ -1,0 +1,27 @@
+ok   A departed_origin present exactly once (unchanged)
+ok   B move A→B is a forward ADVANCE
+ok   B one route_node_reached after reaching B
+ok   C move B→B is idempotent
+ok   C repeat same node adds no event
+ok   D reaching C adds a second route event
+ok   E move C→B rejected as backward
+ok   E backward writes no event
+ok   route event idempotent by source_event_id on retry
+ok   F derives partially_received
+ok   F one partial_receipt lifecycle event
+ok   G repeated partial adds no duplicate lifecycle event
+ok   H derives received
+ok   H one received event on transition to full
+ok   I repeat full save adds no duplicate received event
+ok   0→full emits no partial_receipt
+ok   0→full emits received once
+ok   L event_sequence monotonic 1..5 (departed_origin + B + C + partial + received)
+ok   single canonical event appender exists
+ok   route.advance appends route_node_reached
+ok   receipt.update maps derived status → lifecycle event
+ok   reuses the EXISTING shipment_events table (no new table)
+ok   no second event/timeline store introduced
+ok   receipt event appended AFTER inventory posting (trailing, same lock)
+ok   idempotency identity documented = source_event_id
+
+25 passed, 0 failed

@@ -1,0 +1,120 @@
+
+== A. THE POLICY IS FROZEN, IN ONE PLACE ==
+ok   A1  FC_SUMMARY_SPEC.md §10.1 owns the window-change contract
+ok   A2  SPECIAL_EVENT_UNIQUENESS_KEY is frozen
+ok   A2  SECOND_EVENT_FOR_SAME_KEY is frozen
+ok   A2  WINDOW_CHANGE_SEMANTICS is frozen
+ok   A2  EVENT_FC_ID_POLICY is frozen
+ok   A2  WINDOW_EDIT_STRATEGY is frozen
+ok   A2  OLD_CAMPAIGN_POLICY is frozen
+ok   A2  EMPTY_CAMPAIGN_AUTO_DELETE is frozen
+ok   A2  PER_SKU_SHARED_HEADER_MUTATION is frozen
+ok   A3  and the A3-R8 answers it replaces are removed, not annotated
+ok   A4  Campaign header identity is CITED, not copied — one authority, no second copy to drift
+ok   A5  and it is frozen in exactly ONE planning document
+
+== B. WHICH PERSISTED EVENT DOES A SINGLE ROW ADDRESS? ==
+ok   B1  a LOADED row keeps the identity it was hydrated with — event_fc_id preserved
+ok   B2  detached onto an OCCUPIED window, the row resolves THAT event
+ok   B2a with that window's line
+ok   B2b and that row's current version — so the save is an update, not a refusal
+ok   B2c the ids the row was LOADED with are gone — they would have repointed the BFCM event
+ok   B3  detached onto an EMPTY window, the row carries nothing — a create, and no stale id
+ok   B4  an UNREAD read model resolves nothing — the server's own gate is the backstop, not a guess
+ok   B5  and the single-row save composes its line from the RESOLVER, not from the dataset
+ok   B6  the row identity is RESOLVED from the stated window or kept from the load — never a constant
+ok   C0  the model's campaign key IS 20_'s CAMPAIGN_KEY_FIELDS_, field for field
+ok   C0a and its header fingerprint IS CAMPAIGN_FINGERPRINT_FIELDS_
+ok   C0b 20_ really does refuse to repoint a campaign's window — CAMPAIGN_IDENTITY_MISMATCH
+ok   C0c and really does REUSE an identical header with zero writes
+ok   C0d 14_ really does refuse a versionless save over an existing event
+ok   C0e and really does resolve by campaign_id + campaign_sku_line_id
+ok   C0f 20_ really does write the BODY's campaign_id onto a line it resolved by id — the reparent
+ok   C0g and 14_ really does write every supplied header onto the located event, campaign_id included
+ok   C0h and the authoritative uniqueness refusal is in the handler, not only in the browser
+
+== C. THE FIRST SAVE AFTER A WINDOW CHANGE WRITES NOTHING ==
+ok   C1  a changed START → the first Save writes NOTHING, at any table
+ok   C1a and the operator is told, once
+ok   C1b with the typed code
+ok   C1c stating the OLD window and the NEW one
+ok   C2  a changed END → the first Save writes NOTHING, at any table
+ok   C2a and the operator is told, once
+ok   C2b with the typed code
+ok   C2c stating the OLD window and the NEW one
+ok   C3  BOTH dates changed → the first Save writes NOTHING, at any table
+ok   C3a and the operator is told, once
+ok   C3b with the typed code
+ok   C3c stating the OLD window and the NEW one
+
+== D. THE SAME WINDOW IS AN ORDINARY UPDATE ==
+ok   D1  an unchanged window saves without refusal
+ok   D1a the loaded event is UPDATED in place
+ok   D1b no fourth event row — the update is not a create
+ok   D2  and event_fc_id is preserved
+ok   D2a the shared campaign header is not written — adding a forecast is not editing the header
+ok   D3  a stale version is still refused — the round weakened nothing
+ok   D3-1 and the refusal names the SKU it belongs to, which the thrown failure never did
+ok   D3a and nothing was written
+
+== E. RESTORE — option 1 ==
+ok   E1  Restore puts the SAVED window back
+ok   E1a and the form stays attached to the loaded event — campaign_id retained
+ok   E1b so the next Save is an ordinary edit
+ok   E1c with no confirmation left ticked behind the abandoned change
+
+== F. A CONFIRMED PERIOD CHANGE MOVES THE SAME EVENT ==
+ok   F1  a confirmed change KEEPS the loaded event — its lineage is what moves
+ok   F1a keeping the period the operator typed
+ok   F1b so the confirmed save proceeds
+ok   F1c and the save is told to resolve the header for the NEW period
+ok   F2  the confirmed move succeeds
+ok   F3  the OLD campaign header is byte-for-byte unchanged — it is shared, so it is never repointed
+ok   F4  the campaign_sku_line keeps its id and changes parent — reassigned, not re-created
+ok   F5  the SAME fc_special_event now carries the new period
+ok   F6  and its event_fc_id is preserved — the lineage moved with it
+ok   F7  no second event was created for this SKU, flag and year
+ok   F8  a campaign for the new period exists — resolved or created, never mutated into being
+ok   F9  the sibling SKU on the old campaign is untouched
+ok   F9a and still points at the old campaign — siblings do not travel
+ok   F10 and no campaign was deleted — an emptied header is never swept
+ok   F11 no shared campaign header was MUTATED anywhere in the flow
+ok   F12 moving onto a period whose campaign exists is not refused
+ok   F13 the existing target campaign is REUSED, not twinned
+ok   F13a and reusing it writes nothing at all
+ok   F14 and no duplicate event is created
+ok   F15 the moved event now belongs to the target campaign
+ok   F15a carrying the forecast the operator typed
+ok   F16 while the sibling stays exactly where it was
+
+== G. A3-R7 IS PRESERVED ==
+ok   G1  Base Event FC is unaffected
+ok   G1a and a stored zero is still a value
+ok   G1b while no persisted event is still null
+ok   G2  the A3-R7 redirect recovery is still in the write dispatcher
+ok   G2a still gated on the typed code alone
+ok   G2b and still capped at ONE extra attempt
+ok   G3  the A3-R7 guard still runs BEFORE stage 1
+
+== M. MUTANTS ==
+ok   M1  a confirmed move quoting the loaded campaign_id anyway (caught)
+ok   M2  a move that drops the loaded lineage, creating a second event (caught)
+ok   M3  the resolver dropping the version while keeping the ids (caught)
+ok   M4  the window guard letting the first save through (caught)
+ok   M5  the create preflight letting a duplicate through (caught)
+ok   M6  the resolver matching on SKU alone, ignoring the window (caught)
+ok   M7  the model's campaign key losing the window, so two windows merge (caught)
+ok   M8  the spec allowing a SILENT period edit (caught)
+ok   M9  the spec permitting an emptied campaign to be swept (caught)
+ok   M10 the spec copying HEADER_IDENTITY_KEY instead of citing it (caught)
+ok   M11 the stale-version gate being relaxed during a move (caught)
+ok   M12 the guard moving to AFTER stage 1 (caught)
+
+== H. VACUITY — the unfaulted tree behaves as the mutants assume ==
+ok   H1  the real move really does succeed, keep its id and create no twin, so M1/M2 can fail
+ok   H2  and an empty window really does resolve nothing, so M6 can fail
+ok   H3  while an occupied one really does carry a version, so M3/M11 can fail
+
+====================================================================================================
+PASS  98 passed, 0 failed, 12 mutants, 0 survived
+====================================================================================================

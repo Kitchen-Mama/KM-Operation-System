@@ -1,0 +1,29 @@
+
+== PURE — scope enumeration (distinct, deterministic, READY-only) ==
+
+== PURE — 48_ envelope interpretation ==
+
+== A1 — weekly START enumerates scopes + arms the FIRST continuation (fast, no scope driven) ==
+
+== A2 — one scope drives to DONE across self-arming steps; counts folded (persisted actionable draft) ==
+
+== A3/A4 — multi-scope queue drains deterministically; same cycle supplied to every 48_ START ==
+
+== A9 — duplicate weekly trigger fire is a no-op JOIN (never a 2nd run) ==
+
+== A10/A15 — duplicate continuation is idempotent; a lease-held run rejects a second concurrent worker (no browser) ==
+
+== A8/A13/A14 — manual/scheduled collision: a FOREIGN 48_ job is deferred (bounded), never overwritten ==
+
+== A11/A16 — timeout+retry safe; trigger-arm failure fails CLOSED (no dangling run, no leak) ==
+
+== A18 — Administration disable still prevents execution (defensive per-job gate, 45_-owned config) ==
+
+== A5/A7/A2 — INTEGRATION: scheduler drives the REAL 48_ job (SHARED lock) → converges on the manual authority ==
+
+== A6/A12/A17 — reuse, no second engine, correct provenance (source scans) ==
+
+== A19/A20 — Administration scheduler + RO workflow untouched (F1-6B: Monthly Order owns the persistence run) ==
+
+----------------------------------------
+WEEKLY RECOMMENDATION PERSISTENCE (F1-6B Part A): 45 passed, 0 failed

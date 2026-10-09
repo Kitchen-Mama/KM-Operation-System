@@ -1,0 +1,16 @@
+
+== M. monthly line projection — grain, CEILING, demand-based ==
+
+== M. carton CEILING boundary (real calculateSuggestedOrderQty) ==
+
+== M. Net Order Need ownership (named helpers, not UI) ==
+
+== M. factory allocation lineage (real allocator) ==
+
+== M. blocked / separation / Weekly rejection ==
+
+== M. partial-carton / user-qty exclusion + live analysis ==
+
+== P. determinism / purity / error ==
+
+All Round 1N Monthly Recommendation Facts assertions passed (42 assertions).

@@ -1,0 +1,175 @@
+
+== A — READ-ONLY IS A PROPERTY OF THE RUN, NOT A PROMISE ==
+ok   A1 the census completed having attempted zero writes
+ok   A2 PRODUCTION_ROWS_WRITTEN = 0
+ok   A3 DB_WRITES = 0
+ok   A4 DRY_RUN_ONLY = YES
+ok   A5 PRODUCTION_REPAIR_EXECUTION_AUTHORIZED = NO
+ok   A6.1 the census source contains no `appendRow`
+ok   A6.2 the census source contains no `setValue`
+ok   A6.3 the census source contains no `setValues`
+ok   A6.4 the census source contains no `deleteRow`
+ok   A6.5 the census source contains no `insertRow`
+ok   A6.6 the census source contains no `clearContent`
+ok   A6.7 the census source contains no `LockService`
+ok   A6.8 the census source contains no `getScriptLock`
+ok   A6.9 the census source contains no `DriveApp`
+ok   A6.10 the census source contains no `MailApp`
+ok   A6.11 the census source contains no `PropertiesService`
+ok   A6.12 the census source contains no `ScriptApp`
+ok   A6.13 the census source contains no `SpreadsheetApp.flush`
+ok   A7 it never calls a write handler
+ok   A8 loaded beside the real write modules it still writes nothing and answers the same
+
+== B — NO INCIDENT CARDINALITY IS REACHABLE FROM THE SOURCE ==
+ok   B1 the only numeric literals in the census are 0, 1, 2 and the percent denominator
+ok   B1a and 100 appears exactly once in the code, as the named PERCENT_DENOMINATOR
+ok   B1b which is used as a divisor of the discount, not as a quantity
+ok   B2 no constant declares an expected incident size
+ok   B3 no campaign, marketplace or event flag is named anywhere but the file/task name
+ok   B4 no company, country or marketplace literal
+ok   B5 NEW_LINE_ID_MINT_COUNT = 0
+ok   B6 NEW_EVENT_ID_COUNT = 0
+ok   B7 NEW_CAMPAIGN_ID_COUNT = 0
+
+== C — THE CARDINALITY IS DERIVED (the same code answers nine, and two) ==
+ok   C1 CURRENT_CAMPAIGN_COUNT
+ok   C2 CURRENT_EVENT_COUNT = the events the fixture holds
+ok   C3 CURRENT_LINE_COUNT = 0 — the lines are gone
+ok   C4 EXPECTED_LINE_COUNT derived from the surviving references
+ok   C5 MISSING_LINE_COUNT
+ok   C6 ORPHAN_EVENT_COUNT
+ok   C7 GRAPH_CLASSIFICATION — every event is one state, and it is the missing-line state
+ok   C8 a two-row incident derives two, not the previous answer
+ok   C9 MISSING_LINE_COUNT follows the graph
+ok   C10 the plan has one row per missing line
+ok   C11 expected = referenced ids UNION existing lines
+ok   C12 an unreferenced existing line is not counted missing
+
+== D — CLASSIFICATION: one state per event, each one derived ==
+ok   D1 line present under the same campaign -> VALID_GRAPH
+ok   D2 line absent -> MISSING_CAMPAIGN_SKU_LINE
+ok   D3 line exists under ANOTHER campaign -> CAMPAIGN_MISMATCH
+ok   D4 two rows share the line id -> DUPLICATE_LINE
+ok   D5 two events share company|country|marketplace|sku|event_name|year -> DUPLICATE_EVENT
+ok   D6 the line is there but for another SKU -> IDENTITY_MISMATCH
+ok   D7 an event carrying NO line reference is UNKNOWN — there is no id to reconstruct under, and §4 forbids minting one
+ok   D8 a campaign that is not there is reported as not there
+ok   D9 the requested id is named as not found
+ok   D10 no line is proposed against a campaign that does not exist
+
+== E — IDENTITY COMES FROM THE EVENT, AND NOTHING IS MINTED ==
+ok   E1 every proposed id IS an id the surviving events already name
+ok   E2 no proposed row exists without an event that references it
+ok   E3 REPAIR_IDEMPOTENCY_KEY is the row id itself
+ok   E4 the census cannot generate an id — no uuid, no prefix construction, no randomness
+ok   E5 DELETE_CAMPAIGN_COUNT = 0
+ok   E6 DELETE_EVENT_COUNT = 0
+ok   E7 DELETE_VALID_LINE_COUNT = 0
+ok   E8 the parent campaign comes from the event
+
+== F — THE FIELD MATRIX SAYS WHAT IT DOES NOT KNOW ==
+ok   F1 the line id is deterministic
+ok   F2 the campaign id is deterministic
+ok   F3 the SKU is deterministic — one event, one SKU
+ok   F4 a one-to-one marketplace_skus match is deterministic
+ok   F5 discount_percent is the operator-fixed value
+ok   F6 so nothing is awaited for it
+ok   F6a and it is labelled OPERATOR_FIXED
+ok   F7 promo_price is DERIVED, not awaited
+ok   F8 by 73_'s frozen rounding owner, named in the matrix
+ok   F9 regular_price comes from 73_'s canonical resolver — not reimplemented here
+ok   F10 price_units is the currency of the SAME pricing row that supplied regular_price
+ok   F11 line_status has an allowed default
+ok   F12 source is NOT the builder token — a reconstructed row did not come from the builder
+ok   F13 with the discount frozen and the price resolved, the row is READY
+ok   F14 nothing is left awaiting an operator value
+ok   F15 every missing row is ready
+ok   F13a and the derived values are the canonical owner's, not this suite's
+ok   F13b without a discount the row waits — the value is supplied, not assumed
+ok   F13c and the report says so
+ok   F13d a project without 73_ is detected
+ok   F13e and every row is refused, not priced
+ok   F13f naming the missing authority
+ok   F16 DISCOUNT_RECOVERABLE = NO
+ok   F17 discount_percent is a campaign_sku_lines column and is on no fc_special_events column
+ok   F18.1 promo_price is likewise line-only
+ok   F18.2 regular_price is likewise line-only
+ok   F18.3 price_units is likewise line-only
+ok   F19 R2's graph slice carries no commercial field, so the reconciliation needs its own read
+ok   F20 two marketplace_skus rows for one SKU -> refused
+ok   F21 and the reason is named
+ok   F22 no marketplace_skus row -> not deterministic, and the operator is asked
+
+== G — §7 CONFLICTS REFUSE RATHER THAN OVERWRITE ==
+ok   G1 the identity is held by another line -> REFUSED_CONFLICT
+ok   G2 and the refusal names the line that holds it
+ok   G3 REFUSED_CONFLICT_COUNT counts it
+ok   G4 and there is no path by which it could have overwritten
+ok   G5 two events naming one line id with different SKUs -> refused
+ok   G6 and the row is not proposed
+ok   G12 an event under ANOTHER campaign naming the same line id -> refused
+ok   G13 and the row is not proposed
+ok   G14 the row is still described by the TARGET campaign, not the other one
+ok   G7 an empty selector STOPS
+ok   G8 and says why
+ok   G9 a refusal still reports zero writes
+ok   G10 a missing campaign_sku_lines sheet STOPS
+ok   G11 and names the blocker
+
+== H — THE OPERATOR WORKSHEET, GROUPED BUT NOT ASSUMED ==
+ok   H1 the blanks are grouped by Series
+ok   H2 each Series carries its own rows
+ok   H3 every row carries the operator-fixed discount — still ONE VALUE PER ROW, not one per Series
+ok   H3a and each row carries its own derived prices, so the operator reviews values rather than supplying them
+ok   H4 each blank is addressed by SKU and line id, so it can be filled unambiguously
+ok   H5 one row per line awaiting a value
+ok   H6 series is an fc_special_events column, which is why it survived
+
+== I — IDEMPOTENCY: the second run does nothing ==
+ok   I1 nothing is missing after the repair
+ok   I2 so the plan is empty — a second execution has nothing to do
+ok   I3 DUPLICATE_REPAIR_EFFECT = NO_OP, and the verdict says so
+ok   I4 zero orphans
+ok   I5 every event is VALID_GRAPH
+ok   I6 the report states the duplicate-run effect
+ok   I7 after a partial repair only the remainder is planned
+ok   I8 and no already-repaired row is proposed again
+
+== J — §10 ACCEPTANCE ==
+ok   J1 the acceptance test refuses the broken graph
+ok   J2 and names the failing check
+ok   J3 and accepts the repaired graph
+ok   J4 with nothing outstanding
+ok   J5 line count meets expected
+ok   J6 the acceptance test writes nothing either
+ok   J7 a campaign mismatch is not accepted
+
+== K — §12 SCHEMA: nothing is extended ==
+ok   K1 NEW_TABLE_REQUIRED = NO
+ok   K2 NEW_COLUMNS_REQUIRED = NONE
+ok   K3 SCHEMA_EXTENSION_REQUIRED = NO
+ok   K4 DB_MIGRATION_REQUIRED = NO
+ok   K5 the census mirrors the CANONICAL campaign_sku_lines header exactly
+ok   K6 a column missing from the live sheet is reported as drift
+ok   K7 and named
+
+== L — MUTANTS ==
+ok   MUTANT CAUGHT — M1 minting a new id for a missing line
+ok   MUTANT CAUGHT — M2 declaring the discount recoverable
+ok   MUTANT CAUGHT — M3 hardcoding the expected cardinality
+ok   MUTANT CAUGHT — M4 dropping the already-exists refusal
+ok   MUTANT CAUGHT — M5 dropping the identity-occupancy refusal
+ok   MUTANT CAUGHT — M6 the census writing a single row
+ok   MUTANT CAUGHT — M8 building the reference set from this campaign only
+ok   MUTANT CAUGHT — M7 reporting a refused row as ready
+
+== SUMMARY ==
+
+PRODUCTION_ROWS_WRITTEN = 0   DRY_RUN_ONLY = YES   PRODUCTION_REPAIR_EXECUTION_AUTHORIZED = NO
+HARDCODED_INCIDENT_ROW_COUNT = NO   NEW_LINE_ID_MINT_COUNT = 0
+DELETE_CAMPAIGN_COUNT = 0   DELETE_EVENT_COUNT = 0   DELETE_VALID_LINE_COUNT = 0
+NEW_TABLE_REQUIRED = NO   NEW_COLUMNS_REQUIRED = NONE   DB_MIGRATION_REQUIRED = NO
+DISCOUNT_RECOVERABLE = NO   REPAIR_IDEMPOTENCY_KEY = campaign_sku_line_id
+
+141 passed, 0 failed, 8 mutants (0 survived)

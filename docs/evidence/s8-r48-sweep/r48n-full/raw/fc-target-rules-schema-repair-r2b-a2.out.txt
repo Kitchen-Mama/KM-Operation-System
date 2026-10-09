@@ -1,0 +1,30 @@
+
+-- A. THE LIVE HEADER — exactly what is wrong with it -------------------------------------------
+
+-- B. THE R2B-A REPAIR ALONE CANNOT FIX THIS — and would be dangerous if it could ---------------
+
+-- C. DRY RUN — reads only, and says exactly what it would do -----------------------------------
+
+-- D. EXECUTE — appends once, verifies its own post-conditions, and is idempotent ---------------
+
+-- E. AFTER THE REPAIR — the write works, and every month lands under its own column ------------
+
+-- F. THE DELETE PATH IS NO LONGER THE LAXER DOOR -----------------------------------------------
+
+-- G. SCOPE — nothing else moved ----------------------------------------------------------------
+
+-- H. MUTANTS -----------------------------------------------------------------------------------
+ok   M1  fc_target_rules omitted from the approved list (caught)
+ok   M2  a missing monthly column is accepted instead of refused (caught)
+ok   M3  a duplicate header is accepted (caught)
+ok   M4  a blank header is accepted (caught)
+ok   M5  a numeric-position write is introduced into the append writer (caught)
+ok   M6  the global allowlist is accidentally expanded to every table (caught)
+ok   M7  the NO_OP guard is removed, so a rerun stops reporting itself as a no-op (caught)
+ok   M7b  ALL THREE idempotence guards defeated — the appended headers then really do duplicate (caught)
+ok   M8  the delete path loses its gate and can deleteRow on an unvalidated header (caught)
+ok   M9  the migration stops verifying that no pre-existing header moved (caught)
+
+====================================================================================================
+FC TARGET RULES SCHEMA REPAIR (R2B-A2) — passed 106  failed 0  |  mutants caught 10  survived 0
+====================================================================================================

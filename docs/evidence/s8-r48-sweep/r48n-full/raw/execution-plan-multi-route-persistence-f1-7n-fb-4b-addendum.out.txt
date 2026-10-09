@@ -1,0 +1,160 @@
+
+== §C — canonical header identity: the client key IS the server key ==
+ok   C1 the client grouping dimensions are IDENTICAL to the server's SAD_K2_GROUP_DIMENSIONS_ (10 frozen dims)
+ok   C2 exactly ten grouping dimensions
+ok   C3 route dimension participates in the header key: recommended_source_warehouse_id
+ok   C3 route dimension participates in the header key: recommended_destination_warehouse_id
+ok   C3 route dimension participates in the header key: recommended_shipping_method
+ok   C3 route dimension participates in the header key: recommended_last_mile_delivery
+ok   C3 route dimension participates in the header key: recommendation_group_no
+ok   C4 station dimension participates in the header key: company
+ok   C4 station dimension participates in the header key: country
+ok   C4 station dimension participates in the header key: marketplace
+ok   C4 station dimension participates in the header key: planning_cycle
+ok   C4 station dimension participates in the header key: source_page
+ok   C5 Route A: client canonical key === server sadK2GroupKey_ of the same header
+ok   C6 Route B: client canonical key === server sadK2GroupKey_ of the same header
+ok   C7 Route A and Route B are DIFFERENT shipment groups (different destination identity)
+ok   C8 two routes distinguished only by an UNSTORED dimension are REFUSED (ROUTE_IDENTITY_NOT_PERSISTABLE), never merged
+ok   C9 schema gap CONFIRMED and reported: destination_marketplace is an accepted payload field but NOT a stored column
+
+== §F.1-§F.5 — Route A, then Route B: two headers, two lines, 1200 units ==
+ok   F1a first save of Route A creates exactly ONE header
+ok   F1b first save of Route A creates exactly ONE line
+ok   F1c the header is a canonical SADH-K2- identity: SADH-K2-F484F87E
+ok   F1d the line is a canonical SADL-K2- identity
+ok   F1e Route A quantity is 800
+ok   F2a re-saving Route A does NOT add a header
+ok   F2b re-saving Route A does NOT add a line (UPDATE, not append)
+ok   F2c the writer reports created=0
+ok   F2d the writer reports updated=1
+ok   F2e the same header id is reused
+ok   F3a adding Route B creates a SECOND header (not a refusal)
+ok   F3b adding Route B creates a SECOND line
+ok   F3c the two routes are under DIFFERENT headers
+ok   F3d Route B's header is also a canonical SADH-K2- identity: SADH-K2-FDE73A2D
+ok   F3e both routes report persisted
+ok   F4a re-saving both routes does NOT add a header
+ok   F4b re-saving both routes does NOT add a line
+ok   F4c nothing was created on the re-save
+ok   F4d both lines were updated in place
+ok   F5a Route A holds 800
+ok   F5b Route B holds 400
+ok   F5c the page total is 1200
+ok   F5d both lines are the same SKU under different headers
+
+== §F.6 — a failing route never duplicates a healthy one ==
+ok   F6a an INCOMPLETE route is not a persistable group at all (never silently merged into Route A)
+ok   A0R1-1 a supplied marketplace with no column is REFUSED
+ok   A0R1-2 with the named reason
+ok   A0R1-3 declaring a zero write
+ok   A0R1-4 and the table is untouched
+ok   F6b a partial route is refused with PLAN_HEADER_INCOMPLETE
+ok   F6c Route A's line count is unchanged by Route B's failure
+ok   F6d Route A's header count is unchanged by Route B's failure
+ok   F6e Route A's quantity is untouched
+
+== §F.7 / §F.8 — replay idempotency and the client temporary id ==
+ok   F7a four replays of the same request add NO header
+ok   F7b four replays of the same request add NO line
+ok   F7c the total is still exactly 1200 after replay
+ok   F8a a client temporary id does not create extra rows
+ok   F8b every persisted line carries the CANONICAL SADL-K2- id, never the client placeholder
+ok   F8c re-sending the stale placeholder ids STILL does not append (the live defect stays closed)
+ok   F8d the client id is named SADL-LOCAL- so it can never be mistaken for a durable identity
+
+== §F.9 — refresh hydrates BOTH routes ==
+ok   F9a the readback succeeds
+ok   F9b two shipment groups read back as ACTIVE_DRAFT_GROUP_FOUND, NOT BLOCKED_CONFLICT
+ok   F9c both headers are returned
+ok   F9d both lines are returned
+ok   F9e the readback total is 1200
+ok   F9f `draft` is NULL for a multi-group station — one header is never presented as the whole plan
+ok   F9g no duplicate identities in a healthy plan
+ok   F9h ONE header still reads back as ACTIVE_DRAFT_FOUND (exact back-compat)
+ok   F9i the single-draft shape still carries `draft`
+ok   F9j the single-draft shape still carries its lines
+ok   F9k two headers claiming the SAME group key is STILL a BLOCKED_CONFLICT
+ok   F9l a conflict returns no lines (unchanged fail-closed behaviour)
+
+== §F.10 — Submit selects BOTH persisted route groups ==
+ok   F10a Submit selects TWO draft ids when the SKU holds two persisted routes
+ok   F10b both canonical headers are in the Submit selection
+ok   F10c a route with no persisted header adds NO id to the Submit selection
+ok   F10d two SKUs sharing one header contribute that header ONCE
+
+== §A.7 — header lifecycle: no orphaned header, no header cancelled while still in use ==
+ok   L1 clearing every route releases BOTH headers — the second is never orphaned as an empty active draft
+ok   L2 only the header nothing references any more is cancelled
+ok   L3 a header ANOTHER SKU still occupies is never cancelled
+ok   L4 a route whose dimensions changed releases NOTHING - it is the same route, updated in place
+ok   L5 and KEEPS its immutable entity identities (§4) instead of being re-keyed by an edit
+ok   L5a only the collision signature is refreshed, so the next diff compares against what is now stored
+ok   L6 an unchanged route is never released
+ok   L7 and keeps its persisted identity
+
+== §F.11 — duplicate-corrupted identity blocks Submit and is never summed ==
+ok   F11a three physical rows now share one primary key (the live corruption reconstructed)
+ok   F11b the readback DISCLOSES the duplicated identity
+ok   F11c it names all three physical rows
+ok   F11d it names the affected SKU
+ok   F11e a DUPLICATE_LINE_IDENTITY_PERSISTED issue is raised
+ok   F11f the page reports duplicate corruption
+ok   F11g the affected SKU is named for the Submit block
+ok   F11h Submit fails CLOSED on a duplicate identity — the operator is told so
+ok   F11i and the block carries a typed code naming the duplicate line identity
+ok   F11i hydrate renders ONE physical row per primary key — three 800-unit rows can never display as 2400
+ok   F11j the corruption is DISCLOSED in the UI, not hidden
+
+== §F.12 / §E — the cleanup tool is untouched and still writes nothing by default ==
+ok   F12a the cleanup tool is still DRY_RUN by default
+ok   F12b it still requires a live-recomputed confirmation checksum, blank by default
+ok   F12c it still requires a byte-identical classification
+ok   F12d it still writes a rollback journal before deleting
+ok   F12e this task did NOT modify the cleanup tool
+
+== §A — the blanket multi-route refusal is GONE from the persistence path ==
+ok   A1a the persistence path no longer refuses a SKU for holding several route contexts
+ok   A1b the retired token is gone from the page entirely, so a stale message cannot re-type as a supported state
+ok   A2 the shared Save validator no longer refuses several route contexts either
+ok   A3 the persistence path pre-flights ROUTE GROUPS instead
+ok   A4 each route group is persisted under its own header
+ok   A5 the SAME route stated twice with the SAME quantity is idempotent, not a conflict
+ok   A6 the SAME route identity with CONTRADICTORY quantities is a typed conflict
+ok   A7 both quantities are named so neither is silently discarded
+ok   A8 each group holds only its OWN route
+
+== §D — zero-write pre-flight, per-route reporting, scoped adoption ==
+ok   D1a the batch is resolved and pre-flighted BEFORE the first write call (a proven zero-write)
+ok   D1b a failed pre-flight RETURNS out of the function rather than falling through to the writes
+ok   D2 queued soft-cancels are PUT BACK on a pre-flight refusal — a cancel is itself a write
+ok   D3 line-id adoption is SCOPED to one header (§D.9 — Route A never adopts Route B's id)
+ok   D4 a partial multi-header write reports per route, not a bare SAVE_FAILED
+ok   D5 per-route outcome state exists: persisted
+ok   D5 per-route outcome state exists: not_persisted
+ok   D5 per-route outcome state exists: indeterminate
+ok   D6 a timeout is classified INDETERMINATE, never reported as "not persisted"
+ok   D7 a route that moved to a different header releases its line on the header it LEFT (never counted twice)
+ok   D8 pre-submit verification checks ROUTE COUNT, so a wholly missing route is caught
+ok   D9 pre-submit verification checks the TOTAL QUANTITY
+ok   D10a every route's read-after-write verification passes
+ok   D10b no duplicate primary keys under either header
+ok   D10c exactly one verified line per header
+
+== §E — the writer can no longer append a fourth row ==
+ok   E1 the pre-insert primary-key assertion is still in place
+ok   E2 resolution still goes through the canonical id, not the caller's
+ok   E3a three corrupted rows in place
+ok   E3b saving again does NOT append a fourth row
+ok   E3c the save is NOT reported as a clean success while the identity is duplicated
+ok   E3d the corruption is still disclosed after the attempted save
+
+== §D/§G — no unauthorised behaviour introduced ==
+ok   G1 the shipping allocation handler still contains NO row deletion
+ok   G2a the page never hard-codes the reconcile authority into a payload
+ok   G2b it is carried ONLY from the caller's explicit parameter, and only for a literal true
+ok   G2c and a declined confirmation RETURNS out of the flush before any request is issued
+ok   G3 the adapter preserves the new canonical reason codes instead of discarding them
+ok   G4 the multi-group readback status is a real server contract
+
+132 passed, 0 failed

@@ -1,0 +1,88 @@
+ok   first shortage = first negative balance tier (T2, idx 1)
+ok   T1 recommended = 0 (covered)
+ok   T2 recommended = 100 (its own gap)
+ok   T3 recommended = 250 (its own gap)
+ok   Recommended is per-tier — never the summed 350 (B.7)
+ok   T2 suggested = ceil(100/12)*12 = 108 (carton round-up)
+ok   T3 suggested = ceil(250/12)*12 = 252
+ok   Order Qty unedited → defaults to Suggested (108)
+ok   explicit edit overrides the Suggested default
+ok   live-DB placeholder (no calc) → Recommended null → "--" (D)
+ok   live: no calc → no first-shortage tier
+ok   full-carton qty (108, box 12) → no Partial (G9)
+ok   108/12 = 9 full cartons
+ok   partial qty (100, box 12) → Partial (G10)
+ok   100 = 8 cartons + 4 loose units
+ok   partial carton is VALID (non-blocking, saveable) (G10)
+ok   negative qty → invalid (blocking) (G11)
+ok   non-numeric qty → invalid (blocking) (G11)
+ok   G3: request-order.js does NOT render a DOS chip
+ok   G1/G2: request-order.js does NOT render 90+/180+ aging badges
+ok   G: RO DOS/aging helper functions removed
+ok   G4: request-order.js does NOT call getAmazonInventoryHealthSnapshot (no UI aging fetch)
+ok   A9: request-order.js no longer calls getAmazonWeeklySalesSnapshot for DOS
+ok   G5: request-order.js does not reference IRMap (shared helper left intact elsewhere)
+ok   RO CSS: DOS band + aging badge styles removed
+ok   G6: three-block v6 grid preserved
+ok   G6: Achievement&Forecast + Factory Supply + Recommendation blocks present
+ok   G6: old six-card v5 grid not used
+ok   retained: carton/first-shortage/suggested helpers present
+ok   retained: non-blocking partial warning + badge
+ok   A: Site Stock cell shows the canonical quantity only
+ok   demand = adjusted basic FC (Target 100%)
+ok   demand = basic*0.8 + special = 800 + 200
+ok   T4 missing Month+4 source + no special → null (shows --, never fake 0)
+ok   demand from special-only when basic month absent
+ok   engine t4Fc = fcMonth4*tf + campaign*ctf
+ok   engine t4Fc applies target + campaign factors
+ok   engine t4Fc null when Month+4 not provided (no fake 0)
+ok   B: Demand Summary subsection present
+ok   B: Demand Summary covers T1–T4
+ok   B: T4 uses the Month+4 window (next 4 months)
+ok   B: demand table rendered
+ok   A: Order Allocation has NO visible Recommended column
+ok   A: Order Allocation columns = Suggested / Order Qty / Carton / Note
+ok   engine: t4Fc demand projection added
+ok   engine: NO shortageMonth4 (T4 is not a Request Bucket)
+ok   engine: T1–T3 recursion intact
+ok   D: Basic/Special FC stacked — no side-by-side fc-split
+ok   E: prose removed → "live-DB forecast-engine connec…"
+ok   E: prose removed → "Evidence shown in Demo Data…"
+ok   E: prose removed → "there is no T4 term…"
+ok   E: prose removed → "gaps are never summed…"
+ok   E: prose removed → "not a full-month recalculation…"
+ok   E: prose removed → "Replenishment Model…"
+ok   E: prose removed → "never written to factory_stock…"
+ok   E: prose removed → "Special Event FC stays traceab…"
+ok   C: v6 grid tracks grow to content (no minmax(0,fr) collapse)
+ok   C: old collapsing minmax(0,fr) tracks removed
+ok   B1: delegated row-expand binder present
+ok   B1: delegation bound once on the body containers (survives re-render)
+ok   B1: interactive-target guard present
+ok   B1: interactive tag excluded — BUTTON
+ok   B1: interactive tag excluded — A
+ok   B1: interactive tag excluded — INPUT
+ok   B1: interactive tag excluded — SELECT
+ok   B1: interactive tag excluded — TEXTAREA
+ok   B1: interactive tag excluded — LABEL
+ok   B1: contentEditable excluded from row toggle
+ok   B1: ARIA interactive roles excluded from row toggle
+ok   B1: Enter/Space activates expand
+ok   B1: toggle carries aria-expanded synced to state
+ok   B1: toggle aria-controls points at the panel id
+ok   B1: stable panel id helper present
+ok   B1: disclosure toggle exposed as a button
+ok   B1: gear icon has no inline onclick (row delegation toggles it)
+ok   B2: single Forward Forecast matrix table rendered
+ok   B2: grouped header — Base FC spans FC Qty + Target %
+ok   B2: grouped header — Special FC spans Event/Date/Prep/FC Qty
+ok   B2: Month + Base cells rowspan the event rows (month shown once, demand not duplicated)
+ok   B2: multiple events in a month → one row each (span = event count)
+ok   B2: old separate "Basic FC" subtitle removed
+ok   B2: unified matrix subtitle uses "Base FC"
+ok   B2: standalone Special-Event FC table removed (merged into the matrix)
+ok   B2: Forward Forecast matrix builder located
+ok   B2: Base FC column applies Target %
+ok   B2: Special FC shows the raw event qty (never × Target%)
+
+ALL PASS

@@ -1,0 +1,324 @@
+
+== A · THE MIGRATION REFUSES WHAT IT CANNOT SAFELY DECIDE ==
+ok   A1  with 73_ absent the tool refuses rather than guessing the header
+ok   A1a and says BLOCKED
+ok   A1b having written nothing
+ok   A2  an extra column INSIDE the canonical prefix is refused
+ok   A2a naming the error the sheet would actually produce
+ok   A2b and nothing is inserted
+ok   A3  a missing pricing_list is refused, never created
+
+== B · THE PLAN — INSERT AT THE CANONICAL INDEX, NEVER APPEND ==
+ok   B1  regular flag planned at position 21
+ok   B2  minimum flag planned at position 22
+ok   B3  msrp flag planned at position 23
+ok   B4  and the plan says why appending would be wrong
+ok   B5  change_type planned at its canonical position too
+ok   B6  A DRY RUN INSERTS NOTHING
+ok   B6a and writes nothing at all
+ok   B6b including the change log
+ok   B7  and the verdict is GO
+ok   B8  a sheet already provisioned is reported as nothing to do
+ok   B8a and would insert nothing
+
+== C · COMMIT — HEADER CELLS ONLY, AND BLANK STAYS BLANK ==
+ok   C1  three columns inserted, left to right, at the canonical indexes
+ok   C2  exactly three HEADER cells written
+ok   C3  ZERO data-row writes — no existing row was touched
+ok   C3a and one header cell in the change log
+ok   C3b with no data row touched there either
+ok   C4  the three flags now sit at indexes 20..22, exactly as the canonical list has them
+ok   C5  and the whole header is now byte-for-byte the canonical order — no HEADER_ORDER_MISMATCH
+ok   C6  EVERY existing row gets a BLANK flag in all three columns
+ok   C7  and not one of them is FALSE — blank is UNKNOWN, and FALSE would classify the price book
+ok   C8  and the tool says so in the output the operator reads
+
+== D · THE VALIDATOR — identities and price values survive the insert ==
+ok   D1  ROW_COUNT_PRE
+ok   D2  ROW_COUNT_POST — unchanged
+ok   D3  the identities are unchanged
+ok   D4  and so is every price value
+ok   D5  UNKNOWN_REGULAR_COUNT = every row
+ok   D6  UNKNOWN_MINIMUM_COUNT = every row
+ok   D7  UNKNOWN_MSRP_COUNT = every row
+ok   D8  DB_MIGRATION_PASS
+ok   D9  and the file records why the hash is keyed by name
+
+== E · THE CENSUS — read-only, and what it counts ==
+ok   E1  THE CENSUS WRITES NOTHING
+ok   E1a and inserts nothing
+ok   E2  PRICING_ROWS_TOTAL
+ok   E3  SAME_CURRENCY_ROWS — P2 is USD on USD
+ok   E4  FX_CONVERTIBLE_ROWS — P1 (CAD) and P3 (JPY)
+ok   E5  every row still has at least one unclaimed field
+ok   E6  CROSS_CURRENCY_FX_RATE_1_PRE — two rows priced across a currency boundary at rate 1
+ok   E7  and the required pairs are listed
+ok   E8  while the same-currency pair is NOT listed — an identity needs no rate
+ok   E9  DUPLICATE_PRICING_IDENTITY_ROWS
+ok   E10 INVALID_ROWS
+ok   E11 per-field authority is reported three-state, not as a boolean
+ok   E12 an unsupported currency is called out by name
+ok   E13 and counted
+ok   E14 a pre-migration sheet is reported as such
+ok   E15 with every row UNKNOWN
+ok   E16 and still nothing written
+
+== H · THE FX PRECHECK CENSUS — the rate, its date, and what a refresh would rebuild ==
+ok   H0  the extended census still writes nothing
+ok   H1  FX_RATE_MISSING_ROWS — every fixture row carries a rate
+ok   H2  two rows have no fx_rate_date at all
+ok   H3  the oldest date is reported
+ok   H3a and the newest
+ok   H4  with the distribution, so a threshold can be chosen from real data
+ok   H5  FX_RATE_STALE_ROWS is NOT_DEFINED, not guessed
+ok   H5a and the report says why
+ok   H6  once the operator declares a threshold it is applied, and the threshold is shown with the count
+ok   H7  base regular availability
+ok   H7a base minimum
+ok   H7b base msrp
+ok   H8  auto regular reference
+ok   H8a auto minimum
+ok   H8b auto msrp
+ok   H9  and the report says a blank base never becomes 0
+ok   H10 a Date-typed fx_rate_date is normalised and sorts correctly
+ok   H10a and counts as present
+
+== F · MUTANTS ==
+ok   F1  the migration back-fills FALSE instead of leaving the flag blank (caught)
+ok   F2  the flags are appended to the right instead of inserted at the canonical index (caught)
+ok   F3  the canonical-order guard is disabled (caught)
+ok   F4  the dry run falls through into the commit path (caught)
+ok   F5  the post-migration value check always agrees (caught)
+ok   F6  the census reads a blank ownership flag as AUTO (caught)
+ok   F7  the census asks for a rate for a same-currency pair (caught)
+ok   F8  the census writes to the sheet (caught)
+
+== J · THE CENSUS ANSWERS THE OPERATOR REPORT, FIELD BY FIELD, BY NAME ==
+ok   J1  the census reports PRICING_ROWS_TOTAL by name
+ok   J1  the census reports SUPPORTED_BASE_CURRENCIES by name
+ok   J1  the census reports SUPPORTED_LOCAL_CURRENCIES by name
+ok   J1  the census reports CURRENCY_PAIRS_REQUIRED by name
+ok   J1  the census reports SAME_CURRENCY_ROWS by name
+ok   J1  the census reports CROSS_CURRENCY_ROWS by name
+ok   J1  the census reports BASE_REGULAR_AVAILABLE by name
+ok   J1  the census reports BASE_REGULAR_BLANK by name
+ok   J1  the census reports BASE_MINIMUM_AVAILABLE by name
+ok   J1  the census reports BASE_MINIMUM_BLANK by name
+ok   J1  the census reports BASE_MSRP_AVAILABLE by name
+ok   J1  the census reports BASE_MSRP_BLANK by name
+ok   J1  the census reports AUTO_REGULAR_EXISTING by name
+ok   J1  the census reports AUTO_REGULAR_BLANK by name
+ok   J1  the census reports AUTO_MINIMUM_EXISTING by name
+ok   J1  the census reports AUTO_MINIMUM_BLANK by name
+ok   J1  the census reports AUTO_MSRP_EXISTING by name
+ok   J1  the census reports AUTO_MSRP_BLANK by name
+ok   J1  the census reports FX_RATE_MISSING_ROWS by name
+ok   J1  the census reports FX_RATE_INVALID_ROWS by name
+ok   J1  the census reports FX_RATE_DATE_MISSING_ROWS by name
+ok   J1  the census reports CROSS_CURRENCY_FX_RATE_1_ROWS by name
+ok   J1  the census reports FX_RATE_DATE_DISTRIBUTION by name
+ok   J1  the census reports UNKNOWN_AUTHORITY_ROWS by name
+ok   J1  the census reports JOIN_AMBIGUITY_COUNT by name
+ok   J2  JOIN_AMBIGUITY_COUNT is not silently measured twice
+ok   J2a and its owner is named
+ok   J2b beside the duplicate-identity count it is easy to confuse with
+ok   J3  the earlier name for CROSS_CURRENCY_ROWS still prints
+ok   J3a and for CROSS_CURRENCY_FX_RATE_1_ROWS
+ok   J4  local currencies as one copyable line
+ok   J4a base currencies likewise
+ok   J4b and the required pairs
+ok   J4c with the same-currency identity still excluded from the copyable line
+
+== I · MUTANTS FOR THE FX PRECHECK ==
+ok   I1  the census invents a staleness threshold instead of saying NOT_DEFINED  (mutant caught)
+ok   I2  a blank auto reference is counted as existing  (mutant caught)
+ok   I3  a blank fx_rate_date is treated as present  (mutant caught)
+ok   I5  a required report field loses its name  (mutant caught)
+ok   I4  a blank base price is counted as available  (mutant caught)
+
+== L · THE FX PLAN DECOMPOSITION — WHY A PER-FIELD COUNT CAN EXCEED THE CONVERTIBLE ROWS ==
+ok   L0  the envelope constant is rewritable for the fixture
+ok   L1  against a different table the tool says the envelope no longer describes it
+ok   L1a and does not claim the sums match
+ok   L2  with the envelope matching, the recount agrees
+ok   L2a  8 rows planned
+ok   L2b  none skipped
+ok   L2c  5 same-currency
+ok   L2d  3 cross-currency
+ok   L3  AUTO_REGULAR_WOULD_UPDATE = 5, above the 3 cross rows
+ok   L3a  and it decomposes 2 cross + 3 identity
+ok   L3b  AUTO_MINIMUM_WOULD_UPDATE = 1
+ok   L3c  1 cross + 0 identity
+ok   L3d  AUTO_MSRP_WOULD_UPDATE = 2
+ok   L3e  and every part sums to its reported total
+ok   L4  a cross row whose converted value equals its auto is reported as not moving
+ok   L5  one identity row moved because auto was blank
+ok   L5a  one because auto disagreed with its base
+ok   L5b  one because the base carries more decimals than USD can hold
+ok   L6  no identity change departs from ROUND(base)
+ok   L6a  stated as a verdict
+ok   L6b  and 12.347 is shown becoming 12.35
+ok   L7  8 auto log rows
+ok   L7a  and no effective log rows
+ok   L7b  the log count is exactly the sum of the auto counts
+ok   L8  the write set is the three auto columns and the two rate columns
+ok   L8a  no override is written for UNKNOWN authority — nor for any other
+ok   L8b  and no ownership flag is written at all
+ok   L8c  the rows left at rate 1 are exactly the identity rows
+ok   L9  no regular price is blank beside a live auto
+ok   L9a  one minimum price is
+ok   L9b  no msrp is
+ok   L9c  and the verdict says so
+ok   L9d  while saying it did not clean them
+ok   L10  7 existing / 1 blank
+ok   L10a  3 / 5
+ok   L10b  3 / 5
+ok   L11  the tool writes nothing to the sheet
+ok   L11a  and says so
+ok   L11b  authorising nothing
+ok   L12  with 73_ absent the tool refuses
+ok   L12a  naming the planner it will not reimplement
+ok   L12b  and says BLOCKED
+ok   L13  PRICING-R4G — even a row flagged AUTO puts NO override in the write set
+ok   L13a0 both runs report a follow count at all
+ok   L13a  it is counted as FOLLOWING instead: its displayed price moves, with no cell written
+ok   L13b  and it has no log row, because the log records writes and there was none
+ok   L13c  so the log count IS purely the auto sum now — which is the §6 contract, stated arithmetically
+ok   L13d  the flag itself is still never written
+
+== M · MUTANTS FOR THE DECOMPOSITION ==
+ok   M1  the identity rows are filed as cross-currency  (mutant caught)
+ok   M2  the identity target skips the rounding  (mutant caught)
+ok   M3  the blank-base stale-auto test is inverted  (mutant caught)
+ok   M4  the write-set audit stops noticing effective prices  (mutant caught)
+ok   M5  the duplicate-identity guard is dropped from the replication  (mutant caught)
+ok   M6  the envelope reconciliation always reports YES  (mutant caught)
+
+== P · PRICING-R4 §2/§3/§4 — SELECTING FOUR SMOKE ROWS THAT CANNOT BE PICKED BY EYE ==
+ok   P1  the selector writes nothing
+ok   P1a  and says so
+ok   P2  it read all fourteen rows
+ok   P2a  the funnel names NO_MARKETPLACE_SKUS_ROW
+ok   P2a  the funnel names NOT_ACTIVE_phasing_out
+ok   P2a  the funnel names AMBIGUOUS_MARKETPLACE_SKUS_SOURCE
+ok   P2a  the funnel names AUTHORITY_ALREADY_STATED
+ok   P2a  the funnel names BLANK_BASE_AUTO_OR_EFFECTIVE
+ok   P2a  the funnel names EFFECTIVE_EXCEEDS_CURRENCY_PRECISION
+ok   P2a  the funnel names CURRENCY_UNSUPPORTED
+ok   P2a  the funnel names DUPLICATE_IN_PRICING_LIST
+ok   P2a  the funnel names IDENTITY_MISSING
+ok   P3  exactly the four healthy rows survive
+ok   P4  row A is MA
+ok   P4a row B is MB
+ok   P4b row C is MC
+ok   P4c row D is MD
+ok   P4d all four cases come from one target
+ok   P4r  the report answers SMOKE_TARGET_COUNTRY by name
+ok   P4r  the report answers SMOKE_TARGET_MARKETPLACE by name
+ok   P4r  the report answers SMOKE_TARGET_CURRENCY by name
+ok   P4r  the report answers TARGET_PRICING_ROW_COUNT by name
+ok   P4r  the report answers TARGET_CANDIDATE_ROW_COUNT by name
+ok   P4r  the report answers SINGLE_SCOPE_SMOKE_AVAILABLE by name
+ok   P4r  the report answers MINIMUM_SCOPES_REQUIRED by name
+ok   P4r  the report answers WHY_THIS_TARGET by name
+ok   P4r  the report answers A_TEST_VALUE by name
+ok   P4r  the report answers B_TEST_VALUE by name
+ok   P4r  the report answers C_TEST_VALUE by name
+ok   P4r  the report answers AUTO_SELECTED_FIELD by name
+ok   P4r  the report answers AUTO_EFFECTIVE_VALUE by name
+ok   P4r  the report answers AUTO_REFERENCE_VALUE by name
+ok   P4r  the report answers EFFECTIVE_EQUALS_AUTO by name
+ok   P4r  the report answers ROW_D_EFFECTIVE_EQUALS_AUTO by name
+ok   P4r  the report answers PRICING_CHANGE_LOG_PRE_COUNT by name
+ok   P4r  the report answers SMOKE_PRE_SNAPSHOT_READY by name
+ok   P4r  the report answers PRODUCTION_WRITE_AUTHORIZED by name
+ok   P4j the country is named on its own line
+ok   P4k and the marketplace
+ok   P4l and the currency, from the rows themselves
+ok   P4m the target row count is every pricing row of the target, not only the healthy ones
+ok   P4n beside the count that passed every guard
+ok   P4o the ranking rule is stated
+ok   P4p with the ranked list and which one was taken
+ok   P4e which is named
+ok   P4f so the smoke is a single upload
+ok   P4g and every one of the four rows says it belongs to that target
+ok   P4h the template is one block
+ok   P4i and so is the restore
+ok   P5  and D tests the MINIMUM price — the least customer-visible field that qualifies
+ok   P5a  with its effective already equal to its auto
+ok   P5b  and again in the copyable required-output block
+ok   P6  company comes from marketplace_skus, which is where it lives
+ok   P7  price_status is reported and never filtered on — its default is still an open question
+ok   P8  44.99 + 1 = 45.99 — the .99 ending is kept, not invented
+ok   P8a 20 + 1 = 21 — and a round price does not acquire an ending
+ok   P8b 30.49 + 1 = 31.49
+ok   P8c  the per-row block carries pricing_id
+ok   P8d  the base prices, under their own column names
+ok   P8e  and a blank flag printed as what it MEANS — an empty space transcribes as FALSE
+ok   P8f  the tool states it authorises nothing, rather than leaving that to whoever writes the report
+ok   P9  row A asks for regular only
+ok   P9a row B asks for minimum only
+ok   P9b row C asks for msrp only
+ok   P9c row D asks for AUTO with an EMPTY value cell
+ok   P10 the generated file passes the real browser validator
+ok   P10a and all four rows ask for something
+ok   P10b with AUTO carrying no value across the seam
+ok   P11 the restore puts A back to 44.99, not to the test value
+ok   P11a and B back to 20
+ok   P11b and C back to 30.49
+ok   P11c row D has NO restore line — its price never moved
+ok   P11d and the limit is stated where the restore is
+ok   P12 the snapshot carries the §4 columns in order
+ok   P12a with base, auto, effective and three BLANK flags — blank being the UNKNOWN state
+ok   P13 and the change-log baseline is counted, header excluded
+ok   P13b under the earlier name too, so an old report stays readable
+ok   P13a four rows found, so the snapshot is complete
+ok   P14 a second run selects exactly the same four rows
+ok   P15 without 73_ it refuses rather than guessing precision
+ok   P16 no candidates is a BLOCK
+ok   P16a and it does not relax one of its own constraints to produce an answer
+ok   P17 with no equal-valued field anywhere, row D is refused
+ok   P17a for the reason that matters
+ok   P17b while A, B and C stay usable
+ok   P17c and the run is not declared ready
+ok   P18 the currency precision is read from the deployed contract
+ok   P18a and a 0-decimal currency gets a whole-number test value
+ok   P18b and it is still a single-target smoke
+ok   P19  one stray currency makes the whole target ambiguous
+ok   P19a so that target cannot host the smoke
+ok   P20  with two completable targets the one holding more healthy rows is chosen
+ok   P20a and the tool says how many it chose between
+ok   P21  three rows in one target and one in another is not a single-target smoke
+ok   P21a and two uploads is the minimum, computed rather than guessed
+ok   P21b with the equality rule explicitly not traded away for a tidier answer
+ok   P21c and the template comes as one block per upload
+ok   P21d naming which target carries the constrained case
+ok   P21e the plan names each scope in the form the operator report asks for
+ok   P21f and which cases each one hosts
+ok   P21g including the scope that carries the single leftover case
+ok   P22  with no AUTO-capable row anywhere, no number of uploads helps and the tool says so
+ok   P22a and row D is still refused rather than approximated
+
+== Q · MUTANTS FOR THE SMOKE SELECTOR ==
+ok   Q0  the mutant baseline selects a complete single target, so a probe can tell the two apart
+ok   Q1  row D is chosen without the effective-equals-auto check  (mutant caught)
+ok   Q2  a duplicated marketplace_sku_id is offered as a smoke row  (mutant caught)
+ok   Q3  a price the currency cannot hold is no longer screened out  (mutant caught)
+ok   Q4  a row already carrying authority is offered as a smoke row  (mutant caught)
+ok   Q5  the test value is rounded away from the currency precision  (mutant caught)
+ok   Q7  an incomplete target is offered as a single-target smoke  (mutant caught)
+ok   Q6  the restore rows carry the test value instead of the original price  (mutant caught)
+
+== G · THE TOOLS ARE NOT RELEASE FILES ==
+ok   G1  TEMP_PRICING_R2_MIGRATION.gs has no manifest row — it is not an owner
+ok   G1a and does not sit in the deployed directory
+ok   G2  TEMP_PRICING_R3_PRODUCTION_CENSUS.gs has no manifest row — it is not an owner
+ok   G2a and does not sit in the deployed directory
+ok   G3  TEMP_PRICING_R3_FX_DECOMPOSE.gs has no manifest row — it is not an owner
+ok   G3a and does not sit in the deployed directory
+ok   G4  TEMP_PRICING_R4_SMOKE_SELECT.gs has no manifest row — it is not an owner
+ok   G4a and does not sit in the deployed directory
+ok   G3  and all four say so at the top, where an operator reads it
+ok   G4  none of them declares or touches the release identity
+
+286 passed / 0 failed   ·   26 mutants, 0 survived

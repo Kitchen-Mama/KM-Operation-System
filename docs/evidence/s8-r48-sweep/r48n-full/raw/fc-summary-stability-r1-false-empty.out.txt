@@ -1,0 +1,61 @@
+
+== A. AA / AE — cold entry must show LOADING, never "No data found" ==
+ok   A1 regular cold entry renders a loading state
+ok   A2 regular cold entry does NOT claim "No data found"
+ok   A1 event cold entry renders a loading state
+ok   A2 event cold entry does NOT claim "No data found"
+ok   A3 regular pending slice renders loading
+ok   A4 regular pending slice claims no authoritative empty
+ok   A3 event pending slice renders loading
+ok   A4 event pending slice claims no authoritative empty
+
+== B. AB / AF — a successful read with rows renders rows ==
+ok   B1 regular with rows renders neither loading nor empty
+ok   B2 event with rows renders neither loading nor empty
+
+== C. AC / AG — a TRUE empty still says "No data found" ==
+ok   C1 regular authoritative zero rows → "No data found"
+ok   C2 event authoritative zero rows → "No data found"
+
+== D. AD / AH — a failed read is an error, not an empty and not a permanent loading ==
+ok   D1 regular REFUSED does not claim an empty result
+ok   D2 regular REFUSED does not sit in a permanent Loading
+ok   D3 regular REFUSED says so, and points at Retry
+ok   D1 event REFUSED does not claim an empty result
+ok   D2 event REFUSED does not sit in a permanent Loading
+ok   D3 event REFUSED says so, and points at Retry
+
+== E. AI / AJ — last-good rows survive a refresh, and a failed refresh ==
+ok   E1 a refresh in flight over last-good rows keeps the rows on screen
+ok   E2 a FAILED refresh with last-good rows still shows the rows — the banner owns the failure, not the table
+
+== F. AN / §3L — pagination may not claim an authoritative zero while pending ==
+ok   F1 LOADING_SHOWS_0_OF_0_AS_FINAL_RESULT = NO
+ok   F2 LOADING_SHOWS_PAGE_0_OF_0_AS_FINAL_RESULT = NO
+ok   F3 …and the paging controls are inert, because there is no page to move to
+ok   F4 an AUTHORITATIVE empty still reports 0 of 0 — the canonical convention is unchanged
+ok   F5 …and Page 0 / 0 with it
+ok   F6 a loaded table counts normally
+
+== G. AK — a tab switch cannot make the other tab lie ==
+ok   G1 Regular shows its rows…
+ok   G2 …while Event truthfully shows loading. TAB_SWITCH_FALSE_EMPTY_COUNT = 0
+
+== H. the gate is derived, never stored ==
+ok   H1 no cached gate state was introduced — it is recomputed, so it cannot drift
+ok   H2 no competing page-local state machine — the existing FC_FRESH_ vocabulary is reused (§3H)
+
+== I. mutation ==
+ok   I1 the gate stops asking whether the model is ready (caught)
+ok   I2 a REFUSED slice is reported as still loading (caught)
+ok   I3 a true empty starts rendering as loading (caught)
+ok   I4 pagination goes back to claiming 0 of 0 while pending (caught)
+
+=====================================================
+FC-SUMMARY-STABILITY-R1 FC-5 FALSE EMPTY — 34 passed / 0 failed
+mutants: 4 caught / 4 planted
+INITIAL_FALSE_EMPTY_COUNT = 0   REFRESH_FALSE_EMPTY_COUNT = 0
+TIMEOUT_FALSE_EMPTY_COUNT = 0   TAB_SWITCH_FALSE_EMPTY_COUNT = 0
+LOADING_SHOWS_0_OF_0_AS_FINAL_RESULT = NO   LOADING_SHOWS_PAGE_0_OF_0_AS_FINAL_RESULT = NO
+LAST_GOOD_DATA_PRESERVED = YES   PRODUCTION_ROWS_WRITTEN = 0   S6_BEHAVIOR_CHANGED = NO
+=====================================================

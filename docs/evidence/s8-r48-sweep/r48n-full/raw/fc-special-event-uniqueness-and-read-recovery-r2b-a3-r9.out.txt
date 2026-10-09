@@ -1,0 +1,140 @@
+
+== A. THE UNIQUENESS KEY, AND WHAT IT DOES NOT CONTAIN ==
+ok   A1  the key carries NO date — that is the whole ruling
+ok   A2  and it is case- and whitespace-insensitive, so a typed scope matches a stored one
+ok   A3  marketplace IS in the key — KM Amazon and KM Walmart are separate events
+ok   B1  a SKU with no event at all is allowed (§10.1)
+ok   B2  the same SKU + flag + year is blocked — same window (§10.2)
+ok   B3  and blocked whatever window the operator types (§10.3/10.4/10.5)
+ok   B6  a DIFFERENT event flag is a different event — allowed (§10.6)
+ok   B6a while a flag this SKU DOES hold is blocked — the key is per flag, not per SKU
+ok   B7  a different target year is a different event — allowed (§10.7)
+ok   B7a while the year that DOES hold one is still blocked
+ok   B7b and another company is another site — KM and ResUS never collide
+ok   B9  every conflicting SKU is listed, not just the first
+ok   B9a and the refusal names each one with the window it already occupies
+ok   B9b and states plainly that nothing was written
+ok   B9c the save returns on ANY conflict — conflicting rows are never skipped so the rest can save
+ok   B9c1 and it never narrows the conflict set — a partial save of an authored set is a different set
+ok   B9c2 an UNREADABLE event model refuses HERE, rather than walking into a predictable stage-1 refusal
+ok   B9c3 and it is decided BEFORE the conflict count, because null has no length to read
+ok   B9d and it runs BEFORE stage 1, so a blocked save writes nothing at any table
+ok   B9e while an EXISTING event is exempt — it addresses the row it loaded
+ok   B10 an UNREAD read model yields null — never a clean preflight
+
+== C. THE SERVER IS THE AUTHORITY (§10.8, §10.10) ==
+ok   C1  14_ keys uniqueness on the SAME six fields the client does
+ok   C1a and on no date — client and server agree on what an event IS
+ok   C2  the gate runs inside the canonical upsert, so BOTH the single and batch actions inherit it
+ok   C3  before the create branch — a refused duplicate never appends
+ok   C4  and it is a typed, zero-write refusal
+ok   C5  an UPDATE excludes its own row — editing an event is not colliding with it
+ok   C6  an incomplete key proves nothing and refuses nothing
+ok   C7  the code is registered canonically, so the UI shows the refusal and not READ_FAILED
+ok   C8  and the residual race a scan cannot close is stated in the file, not hidden
+ok   C8a naming why it is a scan — closing it fully needs a schema change this round did not make
+ok   C9  §10.8 — a save the browser believed was new is caught by the server anyway
+ok   C9a and it reports the window the stored event occupies
+ok   C10 §10.10 — the row updating ITSELF is not a conflict
+ok   C11 and a different year passes, so the guard is a key and not a blanket
+ok   C12 while an incomplete key refuses nothing
+
+== D. THE EXISTING-EVENT SKU CAP (§10.11-10.14) ==
+ok   D1  §10.14 — NEW EVENT single-SKU authoring keeps MAX 8
+ok   D2  §10.12/10.13 — an EXISTING event has no authoring cap, so 13 or 20 rows all load
+ok   D3  the add-row guard consults the cap, not the constant
+ok   D4  and so does the save — an existing 20-SKU event is never refused for being what it is
+ok   D5  no path still compares against the bare constant — truncation has one owner, not four
+ok   D6  and the add-row button is re-enabled when an existing event loads past the cap
+
+== E. THE PERIOD IS EDITABLE, BEHIND A CONFIRMATION (§10.15-10.22) ==
+ok   E1  the confirmation control exists in the markup
+ok   E1a and the period inputs are ordinary date fields
+ok   E2  scope, flag and year stay disabled while editing — they ARE the uniqueness key
+ok   E2a while the period is explicitly ENABLED — §0 FAIL E, closed
+ok   E2b and the confirmation is shown only while an event is loaded
+ok   E2b1 and the dates follow the mode: always on a new event, only when confirmed on a saved one
+ok   E2b2 with the chrome delegating to that one owner rather than keeping a second copy
+ok   E2c and cleared when none is
+ok   E3  §10.15 — unchanged dates never need the confirmation
+ok   E4  §10.19 — a ticked confirmation lets the change through
+ok   E5  §10.16-10.18 — otherwise it blocks, naming both windows
+ok   E6  and it runs before stage 1, so a blocked save writes nothing
+ok   E7  §10.19 — a confirmed move does NOT quote the loaded campaign_id
+ok   E7a while an ordinary edit still does, so the A3-R4 reuse contract is untouched
+ok   E8  §10.22 — a loaded row keeps its event_fc_id and line id through the move
+ok   E9  §10.21 — "save the new window as a second event" is GONE, not merely unreachable
+ok   E9a0 the confirmation control carries a visible label
+ok   E9a and the notice points at that control instead of offering that second event
+ok   E9b while abandoning the change is still one click
+ok   E9c and it says none of that in write-path vocabulary
+
+== F. READ TRANSPORT — THE EXPIRED DELIVERY HOP (§10.23-10.26) ==
+ok   F1  getTable now has a recovery wrapper around one bounded attempt
+ok   F2  §10.25 — every other typed failure is rethrown untouched, timeout included
+ok   F3  §10.23/10.26 — exactly ONE extra attempt, never a loop
+ok   F4  and the URL is rebuilt from the stable /exec every time
+ok   F5  §10.26 — the expired target is never stored and so can never be retried
+ok   F6  the typing this depends on is still the shared transport's, not a second copy
+
+== G. READ TRANSPORT — TIMEOUT STAYS THE OPERATOR'S (§10.27-10.32) ==
+ok   G1  §10.27 — a timeout is still typed REQUEST_TIMEOUT
+ok   G1a and still marked retryable, so the Retry control stays offered
+ok   G2  §8 — the prerequisite loader classifies by typed CODE, never by message text
+ok   G2a and an unclassified failure is worth one operator-driven retry, not a dead end
+ok   G2b a contract fault is permanent; a timeout is not
+ok   G3  §8 — the two failures are distinct states, so a Builder one click from working says so
+ok   G4  §10.30 — success CLEARS the previous failure
+ok   G4a on both success paths — the fetch that succeeded and the one that found everything warm
+ok   G5  §10.28 — the latch is released on failure, so Retry issues exactly ONE new request
+ok   G6  §10.31 — marketplace_skus is NOT in the fcSummary workspace, so the Builder read is REQUIRED
+ok   G6a and the prerequisite list still asks for it
+ok   G7  marketplaces IS in the workspace model
+ok   G7a so it is NOT a builder prerequisite — zero physical getTable reads for it
+ok   G7b because every builder call site now asks the page accessor instead
+ok   G7c and that accessor is read-model-first, so no second cache authority was created
+
+== H. REGRESSION — WHAT LIVE SMOKE ALREADY PASSED (§10.33-10.40) ==
+ok   H1  §10.34 — the campaign REUSE contract is untouched
+ok   H1a and an identical header still writes nothing
+ok   H2  §10.35 — the stale-version gate is untouched
+ok   H3  §10.36 — an unchanged existing event still writes nothing
+ok   H4  §10.37/10.38 — Base Event FC still reads the persisted value, zero included
+ok   H5  §10.39/10.40 — the A3-R2 write transport and its one-shot write recovery are unchanged
+ok   H5a a write is still never auto-retried by the shared transport
+
+== M. MUTANTS ==
+ok   M1  the window put back into the uniqueness comparison (caught)
+ok   M2  the preflight reporting an unread model as clean (caught)
+ok   M3  the preflight stopping at the first conflict (caught)
+ok   M4  the server gate moved AFTER the create branch (caught)
+ok   M5  the server gate conflicting with its own row (caught)
+ok   M6  the server keying uniqueness on the window too (caught)
+ok   M7  the existing-event cap falling back to 8 (caught)
+ok   M8  the period fields disabled again while editing (caught)
+ok   M9  a confirmed move quoting the loaded campaign_id (caught)
+ok   M10 the read recovery retrying a timeout too (caught)
+ok   M11 the read recovery becoming a loop (caught)
+ok   M12 a transient prerequisite failure classified as permanent (caught)
+ok   M13 the new refusal left out of the canonical code registry (caught)
+
+== V. VACUITY — the unfaulted tree behaves as the mutants assume ==
+ok   V1  the real preflight really does catch one conflict, so M1 can fail
+ok   V2  and really does report both, so M3 can fail
+ok   V3  and really does return null when unread, so M2 can fail
+ok   V4  the real cap really is uncapped while editing, so M7 can fail
+ok   V5  the real recovery really does test the code, so M10 can fail
+ok   V6  an unclassified failure really is retryable, so M12 can fail
+
+== F(b). THE RECOVERY, EXERCISED ==
+ok   F7  §10.23/10.24 — an expired hop is followed by exactly one fresh attempt
+ok   F7a and the Builder gets its data, with no reload and no navigation
+ok   F8  §10.25 — when the fresh attempt fails too, the TYPED failure is preserved
+ok   F8a and there is no third attempt
+ok   F9  §10.27 — a timeout is NOT auto-retried; it stays the operator's explicit Retry
+ok   F9a exactly one request, and the bound is not doubled behind their back
+ok   F10 and a healthy read is still one request — the wrapper costs nothing
+
+====================================================================================================
+PASS  116 passed, 0 failed, 13 mutants, 0 survived
+====================================================================================================

@@ -1,0 +1,170 @@
+
+== A · THE VERIFIER SHARES NOTHING WITH THE THING IT VERIFIES ==
+ok   A1  the verifier CODE calls no function belonging to the migration tool
+ok   A1a while the migration tool is full of them — they really are in scope
+ok   A2  it carries its own digest and its own logical hash
+ok   A3  both digest functions are found
+ok   A3a the INDEPENDENT digest uses none of the reconciliation tool's separators
+ok   A3b while the BASELINE digest uses exactly them — it has to be comparable to the frozen number
+ok   A3c and that really is the tool's encoding
+ok   A4  READ ONLY BY CONSTRUCTION — no write call of any kind appears in the code
+ok   A5  and it takes no lock, because it changes nothing that needs one
+ok   A6  it never deletes a snapshot
+ok   A7  the BASELINE digest reproduces the reconciliation tool's, byte for byte
+ok   A7a while the INDEPENDENT digest deliberately does not — that is what makes agreement mean something
+ok   A7b and the baseline digest still moves when a value moves
+
+== B · A REAL MIGRATION, VERIFIED BY THE OTHER IMPLEMENTATION ==
+ok   B0  the migration reports success
+ok   B1  and the INDEPENDENT verifier seals it
+ok   B1a with every invariant passing
+ok   B1b and not one FAIL line
+ok   B2  ROW_COUNT_POST = 495
+ok   B3  COLUMN_COUNT_POST = 32
+ok   B4  canonical positions 1..30 exact
+ok   B5  extensions at 31 / 32
+ok   B6  change_log is 15 columns
+ok   B7  the PK is log_id and pricing_log_id is gone
+ok   B8  change_log canonical order exact
+ok   B9  PRICING_IDS_UNCHANGED = YES
+ok   B9  BASE_VALUES_UNCHANGED = YES
+ok   B9  FX_VALUES_UNCHANGED = YES
+ok   B9  AUTO_VALUES_UNCHANGED = YES
+ok   B9  EFFECTIVE_VALUES_UNCHANGED = YES
+ok   B9  EXTENSION_VALUES_UNCHANGED = YES
+ok   B10 the real gate accepts pricing_list
+ok   B11 and pricing_change_log
+ok   B12 ROLLBACK_REQUIRED = NO
+ok   B13 both PRE snapshot tabs are named
+ok   B14 and it says the header hash is expected to differ, rather than treating that as a fault
+
+== C · THE THREE-STATE FLAG CENSUS — READ FROM THE RAW CELL ==
+ok   C1  regular_price_is_manual blank on all 20, no TRUE, no FALSE
+ok   C1  minimum_price_is_manual blank on all 20, no TRUE, no FALSE
+ok   C1  msrp_is_manual blank on all 20, no TRUE, no FALSE
+ok   C2  a single boolean FALSE among 20 blanks is caught — false is not blank
+ok   C2a and counted as FALSE, not blank
+ok   C2b with the checkbox formatting called out, because that is how blanks silently become false
+ok   C2c and the schema is NOT sealed
+ok   C2d ROLLBACK is NOT required for it: no value moved, and restoring would discard a good migration
+ok   C3  a TRUE is caught too — the migration claims neither owner
+ok   C4  and anything that is none of the three
+ok   C4a naming the row and the value rather than just a count
+
+== D · IT CATCHES A MIGRATION THAT PASSED ITS OWN VALIDATOR ==
+ok   D1  the migration reports a clean PASS with not one FAIL line, while every effective price is wrong
+ok   D2  and the independent verifier refuses to seal it
+ok   D3  naming EFFECTIVE_VALUES as the group that moved
+ok   D3a the migration did write — this is a committed sheet, not a blocked run
+ok   D4  and the frozen baseline disagreeing too
+ok   D5  THIS one requires rollback — data is gone
+ok   D6  reported as NO in the §7 block
+ok   D7  while BASE_VALUES, untouched, still reads YES
+ok   D7a and EXTENSION_VALUES too
+
+== E · WHAT ELSE IT REFUSES ==
+ok   E1  a row that disappeared after the migration is caught
+ok   E1a and nothing is sealed
+ok   E2  a dropped extension column is caught
+ok   E2a including its values
+ok   E2b and that IS a data loss — rollback required
+ok   E3  a canonical order fault is caught
+ok   E3a and the REAL gate refuses it, which is what would have blocked every price write
+ok   E4  a duplicate header is caught
+ok   E4a with the real classifier naming HEADER_DUPLICATE
+ok   E5  an undeclared extension column is reported
+ok   E6  a rename that did not happen is caught
+ok   E6a stated as its own invariant
+ok   E6b and called out in the §7 block
+ok   E7  a change_log row appearing afterwards is reported
+
+== F · THE TWO DECLARATIONS, AND THE MISSING SNAPSHOT ==
+ok   F1  a disagreement between 73_ and the transcribed order BLOCKS before anything is verified
+ok   F1a and says why
+ok   F1b nothing is sealed on a contested list
+ok   F2  a missing snapshot is reported, not skipped
+ok   F2a as a failed invariant
+ok   F2b and the per-group answers say NOT MEASURED rather than YES
+ok   F2c PRE_SNAPSHOT_TABS = (none)
+ok   F3  both snapshot tabs still exist after verifying
+ok   F4  and the verifier added no write of its own
+ok   F4a on either table
+ok   F4b and cleared nothing
+
+== G · NOT A RELEASE FILE ==
+ok   G1  no manifest row
+ok   G2  it does not sit in the deployed directory
+ok   G3  it declares no build stamp and no release identity
+ok   G3a while printing which authority build it measured against
+
+== H · MUTANTS ==
+ok   H1  a FALSE authority flag is counted as blank (caught)
+ok   H2  the snapshot comparison compares POST against itself (caught)
+ok   H3  the frozen PRE baseline is never compared (caught)
+ok   H4  row identity between snapshot and POST is not established (caught)
+ok   H5  every failure is treated as a reason to roll back (caught)
+ok   H6  prodRequireSheet_ is not consulted (caught)
+ok   H7  a missing PRE snapshot is not reported as a gap (caught)
+ok   H8  only the grouped fields are compared, not every PRE field (caught)
+ok   H9  the frozen baseline is compared in an encoding it was never measured in (caught)
+
+== J · BASE_SOURCE_SYNC MODE — the acceptance rule that replaces "unchanged from PRE" ==
+ok   J1  the run declares the mode it is judging by
+ok   J1a an authorised base sync does NOT ask for rollback
+ok   J1b because the base values match sku_details
+ok   J1c and the base layer seals
+ok   J1d the mutation is named as expected
+ok   J1e and the moved fields are listed
+ok   J1f with nothing outside the declared set
+ok   J1g §1 contract re-derived and agreeing
+ok   J1h §1 join re-derived and agreeing
+ok   J1i every row resolved to exactly one source
+ok   J1j no ambiguity
+ok   J2  the SAME sheet under SCHEMA_ONLY demands a rollback — which is the defect this mode fixes
+ok   J2a naming BASE_VALUES as the loss it thinks it found
+ok   J3  a base value disagreeing with sku_details is counted
+ok   J3a and the row is named, both sides shown
+ok   J3b it is a VALUE failure, so rollback is required
+ok   J3c and the base layer does not seal
+ok   J4  a blank source against a nonblank target is a mismatch, not a tolerated blank
+ok   J4e and it is a value failure
+ok   J4a blank source + blank target is a MATCH...
+ok   J4b ...and counts zero mismatches
+ok   J4c and still seals
+ok   J4d with the blank counted apart from the four matches
+ok   J5  fx_rate drifting still fails FX_VALUES_UNCHANGED in sync mode
+ok   J5a fx_rate drift still demands rollback
+ok   J5b fx_rate is named as an UNEXPECTED mutation
+ok   J5  auto_msrp drifting still fails AUTO_VALUES_UNCHANGED in sync mode
+ok   J5a auto_msrp drift still demands rollback
+ok   J5b auto_msrp is named as an UNEXPECTED mutation
+ok   J5  msrp drifting still fails EFFECTIVE_VALUES_UNCHANGED in sync mode
+ok   J5a msrp drift still demands rollback
+ok   J5b msrp is named as an UNEXPECTED mutation
+ok   J5  company drifting still fails EXTENSION_VALUES_UNCHANGED in sync mode
+ok   J5a company drift still demands rollback
+ok   J5b company is named as an UNEXPECTED mutation
+ok   J5  marketplace_sku_id drifting still fails PRICING_IDS_UNCHANGED in sync mode
+ok   J5a marketplace_sku_id drift still demands rollback
+ok   J5b marketplace_sku_id is named as an UNEXPECTED mutation
+ok   J6  an ungrouped field outside the declared set is still data loss
+ok   J6a and still asks for the snapshot back
+ok   J7  a base sync that moved nothing is reported, not sealed as clean
+ok   J7a in words the operator can act on
+ok   J8  a Date in base_msrp is counted
+ok   J8a and is a value failure
+ok   J9  a date FORMAT on a numeric base cell is caught even while the value is still a number
+ok   J9a it is the mechanism of the incident, so it blocks
+ok   J10 a duplicate marketplace_sku_id is ambiguous
+ok   J10a and fails
+ok   J11 sync mode with no source table is a VALUE failure, not a quiet pass
+ok   J11a and cannot seal
+ok   J12 and the clean sync seals the schema too
+
+== K · MUTATION — the ways the narrowing could quietly become a relaxation ==
+ok   K1  sync mode skips the PRE check for every field, not just the declared four (caught)
+ok   K2  the base-vs-sku_details comparison can never fail (caught)
+ok   K3  a missing source table no longer blocks the seal (caught)
+ok   K4  the mode is inferred rather than declared (caught)
+
+135 passed / 0 failed   ·   13 mutants, 0 survived

@@ -1,0 +1,13 @@
+
+== Request Order _roUseDb — cache-independent ==
+
+== Carrier Rate Card useDb — cache-independent (SAME_COLD_START_DEFECT confirmed + fixed) ==
+
+== Request Order canonical composer path fires on cold; never getOperationDb ==
+
+== Phase 4 — SKU Regional f13a0b6 contract preserved (regression guard) ==
+
+== Phase 5 — no ACTIVE canonical cache-dependent read-eligibility predicate remains ==
+
+---------------------------------------------
+PASS 28  FAIL 0

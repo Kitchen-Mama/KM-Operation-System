@@ -1,0 +1,84 @@
+ok   1 module exports adaptExternalIncomingAuthority
+ok   2 adapterType fixed
+ok   3 valid stable identity accepted structurally, still 0
+ok   4 missing externalCandidateId fails closed (review, not throw)
+ok   4b missing externalCandidateId still 0
+ok   5 missing provider → identity incomplete review
+ok   6 missing external account ref → review
+ok   7 missing external operation ref → review
+ok   8 missing external line ref → review
+ok   9 no SKU+ETA identity inference (id not minted)
+ok   10 no quantity-based identity inference
+ok   11 linked evidence with Shipment ID → evidence only, 0
+ok   12 linked evidence with Operation ID → evidence only, 0
+ok   13 linked evidence independently contributes zero
+ok   14 linked evidence does not become KM_CANONICAL (authorityState unchanged)
+ok   15 linked evidence with no KM linkage → LINKAGE_MISSING
+ok   16 unlinked quarantined record → QUARANTINED_UNLINKED, 0
+ok   16b quarantined contributes zero
+ok   17 fresh quarantined record still contributes zero
+ok   18 stale-looking quarantined record still contributes zero
+ok   19 quarantined record requires human review
+ok   20 quarantine with linkage conflict flagged
+ok   21 adoption pending contributes zero
+ok   22 adopted-to-KM external row contributes zero
+ok   23 adopted-to-KM with Shipment linkage points to KM record
+ok   24 adopted-to-KM missing KM linkage flagged
+ok   25 adopted row does not itself become planning eligible
+ok   26 rejected contributes zero
+ok   27 ignored contributes zero
+ok   28 superseded contributes zero
+ok   29 reversed contributes zero
+ok   30 missing authority state review
+ok   31 unknown authority state review
+ok   32.1 supported source EXTERNAL_INBOUND_RECORD accepted structurally
+ok   32.2 supported source EXTERNAL_WMS_INBOUND accepted structurally
+ok   32.3 supported source EXTERNAL_OMS_INBOUND accepted structurally
+ok   33 unsupported source type fail closed
+ok   34 platform/FBA domain fail closed/deferred
+ok   35 outbound source fail closed/deferred
+ok   35b KM Shipment candidate rejected by this external adapter
+ok   36 valid observed quantity preserved (audit), planning 0
+ok   37 zero observed quantity preserved
+ok   38 negative quantity flagged
+ok   39 NaN flagged
+ok   40 Infinity flagged
+ok   41 string quantity flagged/not coerced (raw retained)
+ok   42.1 adapterEligibleQuantity always zero (LINKED_EXTERNAL_EVIDENCE)
+ok   42.2 adapterEligibleQuantity always zero (EXTERNAL_UNLINKED_QUARANTINED)
+ok   42.3 adapterEligibleQuantity always zero (ADOPTION_PENDING)
+ok   42.4 adapterEligibleQuantity always zero (ADOPTED_TO_KM)
+ok   42.5 adapterEligibleQuantity always zero (REJECTED_EXTERNAL_RECORD)
+ok   42.6 adapterEligibleQuantity always zero (IGNORED_FOR_PLANNING)
+ok   42.7 adapterEligibleQuantity always zero (SUPERSEDED)
+ok   42.8 adapterEligibleQuantity always zero (REVERSED)
+ok   42.9 adapterEligibleQuantity always zero (null)
+ok   42.10 adapterEligibleQuantity always zero (WEIRD)
+ok   43 ETA preserved without parsing
+ok   44 sourceUpdatedAt preserved without evaluation
+ok   45 missing ETA may be reviewed
+ok   46 missing source timestamp may be reviewed
+ok   47 no Required-By result
+ok   48 no freshness-admission result (ETA not a Date, still 0)
+ok   49.1 planningEligible always false (LINKED_EXTERNAL_EVIDENCE)
+ok   49.2 planningEligible always false (EXTERNAL_UNLINKED_QUARANTINED)
+ok   49.3 planningEligible always false (ADOPTED_TO_KM)
+ok   50-54 no qualifiedIncoming/timely/coverage/lateRisk/dedup keys
+ok   55 deterministic exclusion order
+ok   56 deterministic review order
+ok   57 no duplicate reasons
+ok   58 null input → TypeError
+ok   59 array candidate → TypeError
+ok   60 missing candidate → TypeError
+ok   61 invalid candidate shape → TypeError
+ok   62 blank required SKU → RangeError
+ok   63 non-string SKU (unsupported shape) → TypeError
+ok   64 input candidate not mutated
+ok   65 output snapshot fresh (not input ref)
+ok   66 reason arrays fresh per call
+ok   67 one result cannot affect another
+ok   FIX-A linked evidence + KM Shipment: KM 250, external 0, authority separated (no sum)
+ok   FIX-B unlinked external: observed 300 visible, planning 0, quarantined, review required
+ok   FIX-C adopted external 0; resulting KM Shipment (S-ADOPT-1) may be eligible 180
+
+All B4-R5 external-incoming-authority assertions passed (82 assertions).

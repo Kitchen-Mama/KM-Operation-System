@@ -1,0 +1,39 @@
+
+== §L7 — the asset is pinned, and the pin is the one the engine and the fetch tool both believe ==
+
+== §L1/§L3 — the correction came from IMAGERY, not from political-country colouring ==
+
+== §L2/§L6 — REGIONAL STATISTICS over the vendored surface ==
+  decoded 5400x2700 -> DC 676x338 (one DC pixel ~= 59 km)
+  Vancouver / Fraser            rgb(32,43,30) L 40 sat0.30
+  S British Columbia            rgb(34,42,20) L 39 sat0.53
+  Calgary / Red Deer            rgb(56,64,30) L 60 sat0.53
+  Saskatoon                     rgb(60,68,33) L 64 sat0.52
+  Winnipeg                      rgb(41,56,21) L 50 sat0.63
+  Prairies AB/SK/MB belt        rgb(62,69,34) L 65 sat0.51
+  S Ontario / Quebec            rgb(26,45,14) L 39 sat0.69
+  Toronto belt                  rgb(28,41,16) L 37 sat0.61
+  Montreal                      rgb(33,51,16) L 45 sat0.69
+  Boreal 55N                    rgb(26,38,12) L 33 sat0.68
+  Boreal 60N                    rgb(37,38,18) L 37 sat0.53
+
+  Greenland interior            rgb(251,253,253) L253 sat0.01  SNOW
+  N Ellesmere                   rgb(241,242,244) L242 sat0.01  SNOW
+  St Elias / Mt Logan           rgb(168,176,178) L175 sat0.06  SNOW
+
+  arctic L152  tundra L88  boreal L34  southPrairie L67   separation = 85
+
+  49th parallel -120..-117   US L58  CA L38   step 21
+  49th parallel -110..-107   US L82  CA L76   step 7
+  49th parallel -100..-97   US L58  CA L55   step 3
+
+  Amazon                        rgb(22,36,9) L 31 sat0.76
+  Sahara                        rgb(183,150,108) L154 sat0.41
+  Open Pacific                  rgb(4,11,34) L 11 sat0.89
+
+== §L6 SELF-CHECK — these thresholds WOULD have rejected the December asset ==
+
+== §A2/§A3 — vendored, pinned, and NO runtime network dependency ==
+
+----------------------------------------
+CANADA SEASONAL SURFACE (TEXTURE-3-R2 §L): 80 passed, 0 failed

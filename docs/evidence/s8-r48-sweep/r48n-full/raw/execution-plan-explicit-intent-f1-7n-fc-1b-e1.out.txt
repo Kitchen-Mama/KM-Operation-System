@@ -1,0 +1,208 @@
+
+== §A — THE DEFECT, AND ITS REMOVAL, ON THE SAME EXECUTED FUNCTION ==
+ok   A1  PRE (executed): one Execution Route materialised with no user action at all
+ok   A2  PRE: its Qty is the Suggested Qty — 520
+ok   A3  PRE: and it carries NO persisted line identity
+ok   A3a PRE: nor any header identity
+ok   A4  PRE: the Execution Plan Total reads 520 — a quantity nobody committed to
+ok   A4s STALE SCOPE: a result stamped for another scope does NOT reach the Execution Plan Total
+ok   A4s2 ... and no route is seeded with the other scope's Suggested Qty
+ok   A5  PRE: no empty state, because the state was unreachable
+ok   A6  POST: zero Execution Routes
+ok   A7  POST: Total = 0
+ok   A8  POST: one pristine COMPOSER is offered instead of a seeded route
+ok   A8a which claims no provenance, because it is not an execution route
+ok   A9  POST: and the canonical model holds nothing for this SKU
+ok   A10 POST: no persistence scheduled and no route marked dirty by a render
+
+== §B — SUGGESTED QTY IS A NUMBER, NOT A DECISION ==
+ok   B1  the Suggested Qty authority still answers 520 — the recommendation is not removed
+ok   B2a Suggested Qty pushes no route object
+ok   B2a1 and the composer offered in its place has a BLANK Qty — the number is not substituted into it
+ok   B2b it does not initialise a routes array in the model
+ok   B2c it fabricates no client_route_instance_id
+ok   B2d it fabricates no allocation_draft_id
+ok   B2e it marks nothing dirty
+ok   B2f it schedules no persistence
+ok   B2g and it writes no recovery cache either
+ok   B3  five re-renders (Search, expand, recommendation render, retry, filter change) create no ROUTE
+ok   B3a and still exactly ONE composer, never a stack of them
+ok   B3b with zero writes across all five
+ok   B4  _renderExecutionRoute is named 4 times: its definition + exactly THREE call sites
+ok   B4a1 call site 3 of 3: the manual composer, which is an INPUT SURFACE and not a route
+ok   B4a call site 1 of 2: + Add Route
+ok   B4b call site 2 of 2: the hydrated-rows loop, and NOTHING else in that function
+ok   B4c and it is the only creator of an .exec-route-row
+ok   B4d no call site seeds a route from the Suggested Qty any more
+ok   B4e and the blank-route literal the seeding branch used is gone
+ok   B5  the empty plan renders exactly one row, and it is a COMPOSER
+ok   B5a  ...which is not an .exec-route-row, so the collector's selector passes it by
+ok   B5b and the Total is 0, because its Qty is BLANK - not because there is no input
+ok   B5c and it is not a hidden row pretending to be an empty state
+
+== §C — CANONICAL ROUTE PROVENANCE ==
+ok   C1  exactly three legal sources, and no fourth
+ok   C2  SUGGESTED_QTY_PLACEHOLDER is not a legal provenance
+ok   C2a and no shipped call site declares SUGGESTED_QTY_PLACEHOLDER
+ok   C2  AUTO_SEEDED_ROUTE is not a legal provenance
+ok   C2a and no shipped call site declares AUTO_SEEDED_ROUTE
+ok   C2  DEFAULT_ROUTE is not a legal provenance
+ok   C2a and no shipped call site declares DEFAULT_ROUTE
+ok   C3  an absent provenance is not legal — it fails closed
+ok   C3a and neither is an unrecognised one
+ok   C4  a Qty alone yields NO provenance
+ok   C4a nor does a group key
+ok   C4b nor does a COMPLETE route with no identity and no declaration
+ok   C5  a route carrying BOTH stored identities is a persisted active draft
+ok   C5a a header id alone is not enough — an orphan is not a route
+ok   C6  a declared legal provenance is honoured
+ok   C6a a declared FORBIDDEN provenance is refused, not trusted
+ok   C7  a persisted route still carries its own header + line identity beside its provenance
+ok   C7a and the line identity is still assigned from the stored/DOM id, not from provenance
+ok   C8  a cancelled header is excluded from the hydrate
+ok   C8a as is a submitted one — and an expired one, which the old two-exclusion rule admitted
+ok   C9  and every cancelled LINE is excluded
+ok   C10 every hydrated row is stamped with the provenance its caller declared
+ok   C10a defaulting to PERSISTED_ACTIVE_DRAFT for an ordinary Search
+
+== §D — THE EMPTY STATE ==
+ok   D1  the empty-plan helper copy is GONE from production, not shortened (§A.1)
+ok   D1a and so is the element that carried it - no empty container, no reserved blank height (§A.2)
+ok   D1b the column header still names every field directly above the row (§A.3)
+ok   D1c and each control carries its own accessible label, on the control (§A.5)
+ok   D2  Total = 0
+ok   D3  no execution ROUTE row is shown...
+ok   D3a ...and the one row that is shown is a composer
+ok   D3b holding no line identity
+ok   D4  Submit is refused when there are no routes
+ok   D4a with the typed code NO_EXECUTION_ROUTES
+ok   D5  the empty state marks nothing dirty
+ok   D6  and sends no write request of any kind
+
+== §E — EXPLICIT AI PLAN ==
+ok   E1  the default AI Plan path regenerates the RECOMMENDATION
+ok   E1a and creates no execution route itself
+ok   E1b saying so to the operator...
+ok   E1b1 ...and naming why execution did not materialize
+ok   E2  only a SUCCESSFUL generation re-hydrates the Execution Plan
+ok   E2a and the routes it produces are stamped AI_PLAN_EXPLICITLY_REQUESTED
+ok   E2b through the canonical hydrate, so From/To/Qty/Method come from the persisted route, never from a default
+ok   E3  a zero-result AI Plan leaves the Execution Plan empty
+ok   E3a showing the empty-plan message...
+ok   E3a1 ...beside one blank composer, and never a Qty-only placeholder
+ok   E3b and the result popup states the zero outcome as its own typed reason
+ok   E4  a failure never clears the current Execution Plan
+ok   E4a and says so
+ok   E4b the failure branch neither re-hydrates nor renders a fallback route
+ok   E5  no Suggested Qty figure appears in the AI Plan path
+
+== §F — EXPLICIT ADD ROUTE ==
+ok   F1  + Add Route declares USER_EXPLICIT_ADD_ROUTE
+ok   F2  one click renders exactly one row
+ok   F3  the plan starts empty
+ok   F3a the explicit add is accepted
+ok   F3b one ROUTE row exists
+ok   F3c and the empty-plan message is gone, because the plan now holds a route
+ok   F4  the row carries its provenance in the DOM, so a collect never has to guess
+ok   F5  an incomplete explicit route stays in the model (the edit is not lost)
+ok   F5a with its provenance carried into the model
+ok   F5b and NO line identity, because nothing was persisted
+ok   F6  the incomplete explicit route is not persistable...
+ok   F6a ...and the flush writes ONLY complete routes, so an incomplete one is zero DB write
+ok   F6b every incomplete route still gets its OWN per-route state (A2-R4 §G.8: never dropped in silence)
+ok   F6c and a row-local sentence, in the INCOMPLETE state rather than a save outcome
+ok   F6d and it is NOT the red failure surface: zero requests were issued, so nothing failed
+ok   F7  completing it produces exactly ONE route, not a second
+ok   F7a declared as CREATE_NEW_ROUTE
+ok   F7b now holding a stable line id so every later edit updates the same row
+ok   F7c and it is marked for writing
+ok   F7d provenance unchanged by completion
+ok   F8  it received a NEW client_route_instance_id
+ok   F9  the row + Add Route created is bound to NO existing header — it cannot resurrect a cancelled one
+
+== §G — CANCEL / REMOVE LIFECYCLE ==
+ok   G1  a persisted active route hydrates and renders
+ok   G1a with its stored quantity
+ok   G1b so no empty state
+ok   G2  after an explicit remove, zero routes
+ok   G3  and the model holds none
+ok   G4  the plan shows the empty-plan message...
+ok   G4a ...and one BLANK composer takes the slot — never the cancelled route's quantity, never the suggestion
+ok   G5  Total = 0
+ok   G6  the Suggested Qty is still 520
+ok   G7  four repaints (render / re-render / Search / reload) leave it empty
+ok   G7a still the empty-plan message
+ok   G7a1 and still exactly ONE composer after four repaints
+ok   G7b Total still 0 — no 520 placeholder returned
+ok   G8  and no second write was sent by any of them
+ok   G9  nothing called AI Plan on the page's behalf
+
+== §H — SUBMIT SAFETY ==
+ok   H1  zero routes cannot build a Weekly Shipping Plan
+ok   H2  a Qty-only placeholder is refused for what it IS, not advised on for what it lacks
+ok   H2a and it never enters the submit candidate collection
+ok   H2b contributing no draft id
+ok   H3  a stale placeholder beside a valid route blocks the submit
+ok   H3a naming the placeholder, and only it
+ok   H4  a complete route of legal provenance is a valid candidate
+ok   H4a counted once
+ok   H4b at its own stored quantity
+ok   H5  a COMPLETE route with no provenance is still refused — completeness is not consent
+ok   H6  A3 whole-batch incomplete blocking is unchanged
+ok   H6a and it still blocks the whole batch, never submitting the routes beside it
+ok   H6b with no partial candidate built
+ok   H7  the submit snapshot supplies each route's EFFECTIVE provenance, so the gate is live and not hand-fed
+ok   H8  a pre-E1 cached route with BOTH stored identities and no provenance field still submits
+ok   H8a because the identity pair IS the declaration — the one derivation §C.6 permits
+ok   H8b and nothing else stands in for one
+
+== §I — SCOPE AUDIT: every flow that could rebuild a placeholder ==
+ok   I  initial Search → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  SKU row expand → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  Recommendation render → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  AI Plan open/cancel (no generation) → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  AI Plan zero result → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  AI Plan failure (plan left as it was) → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  draft hydration with no active draft → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  all routes cancelled → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  filter change → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  Retry Search → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  hard reload → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  DOM re-render → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  coalesced save flush (nothing to flush) → 0 routes, empty state, 0 model rows, 0 routes queued to write
+ok   I  route removal → 0 routes, empty state
+ok   I1  a stale Qty-520 row is present in the DOM
+ok   I2  the collect refuses to adopt it into the canonical model
+ok   I3  and drops the row rather than leaving a phantom on screen
+ok   I4  restoring the empty state
+ok   I5  saying so — a row that vanishes with no explanation is this round's own failure mode
+ok   I6  nothing was marked for writing
+
+== §K — RELEASE IDENTITY ==
+ok   K1  E1 minted its own cache token
+ok   K1a and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   K1b strictly after HF1's, which was published
+ok   K2  zero production references remain on HF1's published token
+ok   K3  and the application set carries ONE current token (55 refs)
+ok   K4  nothing is left behind on a superseded application token
+ok   K5  the page this round changed carries the CURRENT token
+ok   K5a and so does the shared module it changed with it — they cannot be served from different rounds
+
+== §N — MUTATIONS: every defect this round removed, reintroduced ==
+ok   N1  the suggestedQty fallback reintroduced into initializeShippingAllocation (caught)
+ok   N2  a default empty route pushed instead of the empty state (caught)
+ok   N3  a missing identity treated as an implicit create (caught)
+ok   N4  a cancelled header hydrated (caught)
+ok   N5  an orphan / zero-active-line header hydrated as a route (caught)
+ok   N6  a zero-provenance route allowed into the submit candidate set (caught)
+ok   N7  the plan reseeded after the final cancel (caught)
+ok   N8  the empty state marked dirty (caught)
+ok   N9  persistence called from the recommendation render (caught)
+ok   N10 the provenance gate removed from the only row creator (caught)
+ok   N11 a forbidden provenance name accepted as legal (caught)
+ok   N12 the zero-route Submit refusal removed (caught)
+ok   N13 A2-R4 regression: an incomplete route stripped of its persisted identity (caught)
+
+---
+182 passed, 0 failed
+mutations: 13 caught, 0 missed

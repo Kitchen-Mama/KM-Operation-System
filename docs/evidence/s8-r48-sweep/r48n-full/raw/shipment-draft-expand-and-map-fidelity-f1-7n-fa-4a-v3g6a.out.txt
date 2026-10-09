@@ -1,0 +1,19 @@
+
+== V3G6A-A. the root cause is reproduced, and the fix resolves the card from the CLICKED node ==
+
+== V3G6A-B. independence, every status section, and rerender safety ==
+
+== V3G6A-B. Expand is pure DOM: it can never invoke a status action ==
+
+== V3G6A-C. the expanded content is the EXISTING detail DOM — nothing invented ==
+
+== V3G6A-D/E. the map renderer audit: DPR was already correct, the TEXTURE was the ceiling ==
+
+== V3G6A-E/F. texture tier, mipmaps and anisotropy ==
+
+== V3G6A-G. no coordinate mutation, no marker jitter, no aggregation added ==
+
+== V3G6A-H. the existing map regressions remain intact ==
+
+----------------------------------------
+SHIPMENT DRAFT EXPAND + MAP FIDELITY (V3G6A): 112 passed, 0 failed

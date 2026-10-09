@@ -1,0 +1,11 @@
+
+== §1 recoWsResolveSalesRate_ attaches a compact diagnostic detail to every fail-closed reason ==
+
+== §1 the reason + detail is stamped verbatim onto the line (marketplace + warehouse) ==
+
+== §1 the diagnostic is metadata only — no threshold moved, no rule relaxed ==
+
+== §1 materialization surfaces the full enriched string verbatim (round-trip) ==
+
+----------------------------------------
+R7V SALES-BASIS DIAGNOSTIC (F1-4B-FM5-R4UI-R7V): 11 passed, 0 failed

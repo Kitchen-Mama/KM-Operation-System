@@ -1,0 +1,43 @@
+ok   F2: country options = distinct UPPERCASE destinationCountry (trimmed, deduped)
+ok   F2: no hard-coded fallback country list when data is empty
+ok   F5: value=carrier_id, label=carrier_name, each id once, Unmapped fallback
+ok   F5: unmapped carrier_id (no master row) surfaces a mapping warning, card NOT hidden
+ok   F5: rate card with unmapped carrier_id still appears as an option
+ok   F5: no fabricated carrier name (raw id never used as a real label)
+ok   F6: method facet under Country=US is data-derived from matching rows
+ok   F6: downstream "Express" resets to All when no longer valid under US
+ok   F6: still-valid downstream selection is preserved
+ok   F1: range touching effectiveTo overlaps (inclusive end)
+ok   F1: range entirely after effectiveTo does not overlap
+ok   F1: open-ended card overlaps a range reaching its effectiveFrom
+ok   F1: card starting after the range end excluded
+ok   F1: empty range = All dates (no date filtering)
+ok   F1: display format is zero-padded local YYYY-MM-DD
+ok   F2: Country/Ship To is a crcf-multi checkbox filter (search + list)
+ok   F2: Country is no longer a <select> (converted to checkbox multi-select)
+ok   F2: search matches country by membership of the selected array (empty = All)
+ok   F2: old substring country match removed
+ok   F2: checkbox panels have search + Select All + Clear + toggle
+ok   F5: console.warn "[CRC] mapping warning:" present
+ok   F5: "Unmapped Carrier (id)" label present
+ok   F5: join is carrier_id → carrier name (id is the key)
+ok   F6: faceted rebuild function present
+ok   F6: checkbox toggle rebuilds downstream facets
+ok   F6: invalid downstream selections pruned to the current universe
+ok   F6: carrier-scoped export requires exactly one selected carrier
+ok   F1: Date trigger opens the shared modal (crcOpenDateModal)
+ok   F1: self-contained crc- date modal markup removed
+ok   F1: Clear affordance present (resets to All dates)
+ok   F1: controllers drive the shared #frDateModal / #frDateBackdrop
+ok   F1: reuses the shared modal inputs + calendars (fr* ids)
+ok   F1: binds the shared .fr-preset-item / .fr-calendar-nav controls
+ok   F1: full Shipment-Overview preset set handled (last-60-days / last-month / last-year)
+ok   F1: zero-padded LOCAL date parts (YYYY-MM-DD)
+ok   F1: own committed/temp crc- date state retained
+ok   F1: day cells use LOCAL crcFmt for data-date (off-by-one safe, no toISOString)
+ok   F1: day-click auto-swap keeps the range ordered
+ok   F1: manual day click clears the active preset
+ok   F1: "All dates" label preserved
+ok   F1: toolbar Clear affordance styled (scoped crc- CSS)
+
+ALL PASS

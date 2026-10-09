@@ -1,0 +1,97 @@
+PRODUCT STRATEGY — UNMOUNTED DISPATCH OWNERSHIP (P1-B8D-R10E-F5)
+
+== §A — one predicate, answered at the shared dispatch points ==
+  ok   A1  the invariant is DEFINED exactly once  [M1]
+  ok   A2  and consulted at exactly two dispatch points — one definition, two call sites
+  ok   A3  the universe guard is INSIDE readSiteUniverse — the one function every road funnels through
+  ok   A4  and the workspace guard is the FIRST thing in loadWorkspace
+  ok   A5  the universe guard precedes the accessor call  [M3]
+  ok   A6  and precedes the request counter, so a blocked read is not charged either
+  ok   A7  the workspace guard precedes the token bump, so the single-flight latch is not disturbed
+  ok   A8  and precedes the fetch  [M3]
+  ok   A9  the liveness test itself is written once  [M2]
+  ok   A10 and it introduces no timer, poll or animation loop
+
+== §B — a controller the lifecycle has put down starts nothing ==
+  ok   B1  SERVER_TRUE settling after unmount issues ZERO universe reads  [M1, M2, M4]
+  ok   B2  and zero workspace reads
+  ok   B3  zero requests of any action at all
+  ok   B4  and the DOM the unmount left is untouched afterwards  [M5]
+  ok   B5  nothing threw
+  ok   B6  the lifecycle owns no controller after the unmount
+  ok   B7  SOURCE_TIMED_OUT after unmount delegates NOTHING
+  ok   B8  zero requests
+  ok   B9  DOM unchanged after the unmount
+  ok   B10 HTTP_NOT_FOUND after unmount delegates NOTHING
+  ok   B11 zero requests
+  ok   B12 nothing threw
+  ok   B13 a settled SERVER_FALSE after unmount issues nothing
+  ok   B14 and neither does a non-allowlisted failure
+  ok   B15 nothing threw on either
+
+== §C — a mounted page is unaffected ==
+  ok   C1  a mounted SERVER_TRUE reads the universe EXACTLY once  [M6]
+  ok   C2  nothing threw
+  ok   C3  and the chooser was built — the read produced a usable page  [M6]
+  ok   C4  with an OK universe on the controller
+  ok   C5  a mounted transient delegation reads the universe EXACTLY once  [M6]
+  ok   C6  nothing threw
+  ok   C7  and so does HTTP_NOT_FOUND — F3-R4 behaviour is unchanged
+  ok   C8  (the workspace is refused by this rig; see the header)
+
+== §D — the next visit ==
+  ok   D1  the abandoned visit read nothing
+  ok   D2  and parked nothing — there was no complete site to keep
+  ok   D3  the FRESH controller reads the universe exactly once  [M5]
+  ok   D4  the capability mirror is re-read from the SETTLED state, not re-requested
+  ok   D5  capability rereads on the wire = 0
+  ok   D6  the first visit read once
+  ok   D7  the unmount itself issued no request
+  ok   D8  and the outgoing controller is marked not-alive  [M2]
+  ok   D9  and a dead controller asked to load AGAIN starts nothing — no race with the next visit  [M1]
+  ok   D10 including the workspace read  [M8]
+
+== §E — the retry control ==
+  ok   E1  the first read went out and failed
+  ok   E2  a retry control is offered
+  ok   E3  two clicks share ONE in-flight retry — single-flight unchanged  [M7]
+  ok   E4  and the retry issued exactly one more read  [M7]
+  ok   E5  the retry latch was released  [M8]
+  ok   E6  a retry on an unmounted controller dispatches NOTHING  [M7]
+  ok   E7  (signature is read twice from the same DOM — stability check)
+  ok   E8  and the retry latch is not left hanging  [M8]
+  ok   E9  nothing threw
+  ok   E10 the controller is still not-alive — the guard did not resurrect it
+
+== §F — settlement, latches, idle ==
+  ok   F1  the page-life promise still RESOLVES after an unmount  [M5]
+  ok   F2  it does not reject
+  ok   F3  the lifecycle holds no controller
+  ok   F4  and the whole life cost zero requests
+  ok   F5  with nothing thrown
+  ok   F6  an idle window after the unmount adds no request
+  ok   F7  and no DOM mutation
+  ok   F8  and nothing threw
+  ok   F9  (the count it held at was zero)
+  ok   F10 the universe read is open
+  ok   F11 the in-flight read completed and started NO second request
+  ok   F12 it drew nothing into the emptied page — F2 contract intact
+  ok   F13 and nothing threw
+  ok   F14 the page opens no transport of its own
+  ok   F15 the read timeout is still 45000ms
+  ok   F16 the read runner still makes at most two physical attempts
+  ok   F17 and the F3-R4 transient allowlist is untouched
+  ok   F18 F4's action verification is still attached to the capability getter
+  ok   F19 and F4's provenance-gated FEATURE_DISABLED copy is unchanged
+
+== §M — eight mutants, each driven ==
+  ok   M1  the central guard is removed — the ORIGINAL DEFECT returns  [B1] (caught)
+  ok   M2  the liveness test is INVERTED  [B1, C1, D8] (caught)
+  ok   M3  the guard runs AFTER the request has been started  [A5, B1] (caught)
+  ok   M4  only the delegated branch is protected, as before this round  [B1] (caught)
+  ok   M5  the guard blocks permanently — the next visit never loads  [D3, F1] (caught)
+  ok   M6  the guard reads the wrong controller property  [C1, C3] (caught)
+  ok   M7  the user retry dispatches around the shared point  [E6] (caught)
+  ok   M8  the workspace dispatch loses its guard  [D10] (caught)
+
+passed 72  failed 0  |  mutants caught 8  survived 0

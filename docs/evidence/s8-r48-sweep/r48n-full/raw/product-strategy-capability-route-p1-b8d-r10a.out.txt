@@ -1,0 +1,108 @@
+
+== §A — THE CENSUS THAT WOULD HAVE CAUGHT THE GAP ==
+ok   A1  the private POST shim has ZERO callers in the Product Strategy accessor
+ok   A2  and zero in the page controller
+ok   A3  and the accessor opens no socket of its own
+ok   A4  the workspace action is unchanged
+ok   A5  the universe action is unchanged
+ok   A6  SUPERSEDED (R10D): there is no capability ACTION constant — the read is gone, not moved
+ok   A7  SUPERSEDED (R10D): readOnce is defined once and called by BOTH remaining reads
+ok   A8  and there is exactly ONE KM.transport.request call site in the whole accessor
+ok   A9  SUPERSEDED (R10D): refreshCapability dispatches nothing — not even through readOnce
+ok   A10 and no longer builds its own envelope beside it
+ok   A11 neither the accessor nor the controller contains a second retry or recovery loop
+ok   A12 and no write-shaped dispatch exists in either file
+
+== §B — WHAT "false" MEANS, AND WHAT IT MUST NOT BE ALLOWED TO MEAN ==
+ok   B1  the accessor can say WHY the mirror is false
+ok   B2  it starts closed — nothing is offered before a server has spoken
+ok   B3  and it knows it has not heard one
+ok   B4  with no reason recorded, because nothing has failed — it simply has not asked
+ok   B5.0 the literal true -> true
+ok   B5.1 false -> false
+ok   B5.2 the STRING "true" -> false
+ok   B5.3 the number 1 -> false
+ok   B5.4 a missing field -> false
+ok   B5.5 no payload at all -> false
+ok   B6  SUPERSEDED (R10D): the accessor no longer runs a capability read, so it keeps no generation
+ok   B7  the transport-failure branch records NOTHING as heard — closed, but never latched
+ok   B8  that branch records the CLASSIFIED reason instead
+ok   B9  SUPERSEDED (R10D): exactly TWO branches may record that a server was heard — the literal true and the literal false. Every other input leaves it unheard.
+ok   B10 and a capability set from the boot bootstrap clears any remembered reason
+ok   B11 SUPERSEDED (R10D): the bootstrap takes the generation, because the bootstrap owns the read
+ok   B12 and BOTH supersede guards are evaluated before the mirror is written
+ok   B13 the controller asks the accessor why the mirror is false
+ok   B14 and FEATURE_DISABLED is shown from exactly one place — the answered-false case
+
+== §C — THE CAPABILITY READ SITS UNDER THE SAME BOUND AS THE OTHER TWO ==
+ok   C1  §5.4 an echo redirect 404 is recoverable — once
+ok   C2  §5.6 a sign-in page is not retried
+ok   C3  §5.7 a generic HTML body is not retried
+ok   C4  §5.8 an action mismatch is not retried
+ok   C5  §5.9 a schema/contract mismatch is not retried
+ok   C6  a business refusal is not retried
+ok   C7  §5.14 and a write is never retried, under the one code reads do recover from
+ok   C8  an unreadable echo target is a 404, not a disabled feature
+ok   C9  a sign-in page is an account fact
+ok   C10 an unreadable body is unreadable
+ok   C11 and nothing at all, on an offline browser, is offline
+ok   C12 HTTP_NOT_FOUND is not FEATURE_DISABLED
+ok   C12 NOT_AUTHORIZED is not FEATURE_DISABLED
+ok   C12 RESPONSE_NOT_READABLE is not FEATURE_DISABLED
+ok   C12 BROWSER_OFFLINE is not FEATURE_DISABLED
+
+== §E — THE STATE MACHINE, DRIVEN. Not inspected as text. ==
+ok   E6  SUPERSEDED (R10D): a sign-in page leaves the mirror closed
+ok   E7  and NOT latched — nothing was heard, so nothing is settled
+ok   E8  a sign-in page is remembered as NOT_AUTHORIZED
+ok   E9  and a later server answer of true opens the feature
+ok   E10 recording, only now, that a server was heard — the stale reason is cleared
+ok   E11.0 a server answer of true -> true
+ok   E12.0 and it counts as heard only when a BOOLEAN was actually read
+ok   E11.1 a server answer of false -> false
+ok   E12.1 and it counts as heard only when a BOOLEAN was actually read
+ok   E11.2 a server answer of the STRING "true" -> false
+ok   E12.2 and it counts as heard only when a BOOLEAN was actually read
+ok   E11.3 a server answer of the number 1 -> false
+ok   E12.3 and it counts as heard only when a BOOLEAN was actually read
+ok   E14 SUPERSEDED (R10D): repeated answers do not disturb the mirror
+ok   E15 nor leave a stale reason behind
+ok   E1  SUPERSEDED (R10D): a forced refresh dispatches NOTHING
+ok   E2  and it answers from the mirror, which no one has raised
+ok   E3  SUPERSEDED (R10D): it invents no transport fault, because it attempted no transport
+ok   E4  and it records nothing as heard
+ok   E5  the mirror is still exactly where it started
+
+== §D — THE CAPABILITY READ, IN A BROWSER, UNDER EACH NAMED FAULT ==
+ok   D1  a capability read that 404s once and then answers NEVER shows FEATURE_DISABLED
+ok   D2  the board mounts — the recovery carried the whole page life, not just the one read
+ok   D3  and it actually drew something
+ok   D4  the capability read cost exactly two physical requests: the read and ONE recovery
+ok   D5  every one of them a GET — no POST for a 302 to strip the body from
+ok   D6  a server that says the feature is off IS reported as FEATURE_DISABLED
+ok   D7  and NO site-universe read is issued — the saving the mirror exists for
+ok   D8  nor a workspace read
+ok   D9  a sign-in page on the capability read is NOT reported as a disabled feature
+ok   D9a it is reported as the authorization fact it is
+ok   D10 and it is asked ONCE — a second ask cannot create a session
+ok   D11 a generic HTML error page is not a disabled feature either
+ok   D11a it is reported as unreadable
+ok   D12 and not retried — the same page would come back
+ok   D13 an offline browser is NOT told the feature is switched off
+ok   D13a it is told it is offline
+ok   D14 external ATTEMPTS stay within the existing bounded contract (<=2)
+ok   D15 and it is not mislabelled as a server that failed to answer
+ok   D16 nor as an unreadable response — nothing was received to be unreadable
+
+== §Z — THE MUTANTS. Zero survivors, zero broken probes. ==
+ok   Z1  the accessor reacquires a capability dispatch of its own (caught)
+ok   Z2  a POST fallback is reinstated inside readOnce (caught)
+ok   Z3  a transport failure is remembered as though a server had answered (caught)
+ok   Z4  a capability transport failure is rendered as FEATURE_DISABLED again (caught)
+ok   Z5  the capability failure reason is never recorded (caught)
+ok   Z6  a superseded capability answer is allowed to write (caught)
+ok   Z7  the capability accepts any truthy value (caught)
+ok   Z8  a stale failure reason survives setCapability (caught)
+ok   Z9  the capability read is given a retry of its own (caught)
+
+passed 94  failed 0  |  mutants caught 9  survived 0

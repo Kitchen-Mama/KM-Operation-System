@@ -1,0 +1,35 @@
+ok   coord: numeric STRING parsed to number
+ok   coord: numeric string lng parsed
+ok   coord: blank → null (Coordinate Pending)
+ok   coord: non-numeric → null
+ok   coord: out-of-range lat → null
+ok   coord: 0 latitude is KEPT (not treated as falsy)
+ok   coord: (0, 121.5) is a valid coordinate — 0-lat not excluded
+ok   coord: (0,0) rejected — never a fabricated origin
+ok   resilient filter: row with only a NAME is kept (PK column mismatch survivable)
+ok   resilient filter: coordinate-only row kept
+ok   resilient filter: truly-empty row dropped
+ok   resilient filter: PK present, no coord → kept (Coordinate Pending, still listed)
+ok   ref filter: active kept
+ok   ref filter: explicit inactive hidden
+ok   ref filter: blank active treated as active (string/true/number tolerant)
+ok   ref filter: country filter excludes
+ok   ref filter: search matches name
+ok   one bad-coord row does not drop the valid rows (A + C survive; empty dropped)
+ok   cache: fresh production cache reused (no reload)
+ok   cache: mock cache NOT trusted → reload (no silent mock)
+ok   cache: manual Refresh forces reload (bypass stale empty cache)
+ok   cache: no cache → load
+ok   diag: raw 0 → getter/sheet/router
+ok   diag: raw N & kept 0 → normalizer/column filter
+ok   diag: raw N & kept N → OK
+ok   diag: mock → API failed
+ok   placement: drawable current position → current marker
+ok   placement: no current, dest warehouse has coord → destination endpoint
+ok   placement: SHP-...230A style (no coord anywhere) → Coordinate Pending TRAY (never dropped, never 0,0)
+ok   placement: (0,0) current is NOT drawable → falls through to pending (no fabricated origin)
+ok   tray: the 1 coordinate-pending shipment is retained (visible), not silently removed
+ok   centroid: LA-area cluster → ~34N,118W (sensible initial focus)
+ok   centroid: trans-Pacific CN+US pair yields a sensible northern focus (not 0,0)
+
+ALL PASS
