@@ -493,12 +493,78 @@ function changedBetween(a, b) {
 }
 var s7Changed = changedBetween(S7_BASE, 'HEAD');
 var s7Only = changedBetween(S7_BASE, S7_END);
-eq(s7Changed.filter(function (f) { return /forecast/i.test(f); }), [],
-  'G1  FORECAST_REVIEW_CHANGED_IN_S7 = NO — no file whose path names forecast changed in ANY S7 round');
+// S8-R48-P — WHAT "A FORECAST FILE" IS, SAID IN PATHS RATHER THAN IN A SUBSTRING.
+//
+// THE INTERVAL IS NOT THE DEFECT AND IS NOT TOUCHED. 3cb5231 left G1 and G2 reading HEAD deliberately:
+// what they assert is a STANDING invariant, where against HEAD they are strictly stronger. R48-N read the
+// failure as the fourth interval bug and proposed bounding G1 to S7_END. That recommendation was WRONG and
+// is superseded: bounding it would turn a live guarantee into a claim about a frozen range that can never
+// change again, and would leave G1a/G1b guarding these files EXISTENCE forever while nothing guarded their
+// CONTENT.
+//
+// THE MATCHER WAS THE DEFECT. /forecast/i over every changed path also matches
+// docs/evidence/.../raw/forecast-missing-means-zero-....out.txt — a captured TRANSCRIPT of a suite, named
+// after the suite. A transcript of a test about forecast is not the forecast product, and R48-G committing
+// its own evidence was enough to make a true invariant report false. G2 survived the same sweep only
+// because its needles carry a .gs extension and so cannot collide with a transcript name.
+//
+// The exclusions below are because those trees are not forecast SOURCE — never merely because a name
+// contains the word. G1d keeps that honest: it is fail-closed over the whole repository.
+var FORECAST_SPEC_DIR = 'assets/specs/active/pages/forecast/';
+var FORECAST_SOURCE_TREES = ['assets/html/', 'assets/js/', 'assets/specs/active/apps-script/'];
+var FORECAST_NON_SOURCE_TREES = ['docs/evidence/', 'assets/tests/', 'assets/tools/', 'docs/planning/',
+  'backup_legacy_files_'];
+function isForecastSource(f) {
+  // The dedicated spec folder is forecast source whatever a file inside it happens to be called.
+  if (f.indexOf(FORECAST_SPEC_DIR) === 0) return true;
+  if (!/forecast/i.test(f)) return false;
+  for (var i = 0; i < FORECAST_SOURCE_TREES.length; i++) {
+    if (f.indexOf(FORECAST_SOURCE_TREES[i]) === 0) return true;
+  }
+  return false;
+}
+function isAccountedNonSource(f) {
+  for (var i = 0; i < FORECAST_NON_SOURCE_TREES.length; i++) {
+    if (f.indexOf(FORECAST_NON_SOURCE_TREES[i]) === 0) return true;
+  }
+  return false;
+}
+eq(s7Changed.filter(isForecastSource), [],
+  'G1  FORECAST_REVIEW_CHANGED_IN_S7 = NO — no forecast SOURCE file changed in any S7 round, still '
+  + 'measured through HEAD because the deferral is a standing promise, not a historical one');
 ok(fs.existsSync(path.join(REPO, 'assets/specs/active/pages/forecast/Forecast_Review_Aggregation_Master_Spec.md')),
   'G1a and its master spec is still there — DEFERRED_UNCHANGED means unchanged, not removed');
 ok(fs.existsSync(path.join(REPO, 'assets/html/pages/forecast.html')),
   'G1b as is the page it belongs to; S7 neither hid it, relabelled it nor rewired its navigation');
+// COVERAGE, AS AN ASSERTION RATHER THAN A CLAIM. A hardcoded list goes stale the first time somebody adds
+// a file, so the classifier is checked against the repository it classifies: a forecast file appearing in
+// a tree nobody thought of FAILS here instead of quietly losing its protection.
+var TRACKED_FILES = cp.execFileSync('git', ['ls-files'], { cwd: REPO, encoding: 'utf8' })
+  .trim().split(String.fromCharCode(10)).filter(Boolean);
+var forecastNamed = TRACKED_FILES.filter(function (f) {
+  return /forecast/i.test(f) || f.indexOf(FORECAST_SPEC_DIR) === 0;
+});
+ok(forecastNamed.length > 0,
+  'G1c the repository really does carry forecast files — the classifier is not reasoning over an empty set',
+  forecastNamed.length);
+eq(forecastNamed.filter(function (f) { return !isForecastSource(f) && !isAccountedNonSource(f); }), [],
+  'G1d every forecast-named path is classified SOURCE or explicitly accounted for as non-source — one in a '
+  + 'NEW tree fails here rather than going unprotected');
+var CANONICAL_FORECAST_SOURCE = [
+  'assets/html/pages/forecast.html',
+  'assets/js/pages/forecast.js',
+  'assets/js/utils/forecast-engine.js',
+  'assets/js/core/supply-planning-forecast-normalization.js',
+  'assets/js/core/supply-planning-forecast-share.js',
+  'assets/specs/active/apps-script/04_marketplace_forecast_import.gs',
+  'assets/specs/active/pages/forecast/Forecast_Review_Aggregation_Master_Spec.md',
+  'assets/specs/active/pages/forecast/Forecast_DataModel_Spec.md',
+  'assets/specs/active/pages/forecast/Forecast_Order_Engine_Spec.md'
+];
+CANONICAL_FORECAST_SOURCE.forEach(function (f) {
+  ok(fs.existsSync(path.join(REPO, f)) && isForecastSource(f),
+    'G1e protected forecast source is present AND classified protected: ' + f);
+});
 // S5 / S6 owners: S7 changed no ordering or shipping handler.
 var S5_S6_OWNERS = ['11_shipping_plan_handlers.gs', '12_shipment_handlers.gs', '13_procurement_handlers.gs',
   '15_request_allocation_handlers.gs', '16_shipping_allocation_handlers.gs', '21_factory_inventory_handlers.gs',
@@ -600,6 +666,54 @@ mut('I14 the panel starting a timer, which is how an auto-retry gets in', functi
   return count(code(PANEL_SRC) + '\nsetTimeout(retry, 1000);\n', /setTimeout/g) === 1;
 });
 
+
+// ---- I15..I20 — THE FORECAST MATCHER AND THE STANDING BOUNDARY, BOTH LOAD-BEARING. -------------------
+// Fixtures only. No historical commit is touched and no real file is written: each mutant hands the
+// classifier a path list it would have been given, which is the whole of what G1 reads.
+function isForecastSourceWith(trees, specDir) {
+  return function (f) {
+    if (specDir && f.indexOf(specDir) === 0) return true;
+    if (!/forecast/i.test(f)) return false;
+    return trees.some(function (t) { return f.indexOf(t) === 0; });
+  };
+}
+var POST_S7 = changedBetween(S7_END, 'HEAD');
+mut('I15 a real protected forecast source file changed after S7_END — G1 must fail', function () {
+  var withChange = [].concat(s7Changed, ['assets/js/pages/forecast.js']);
+  return withChange.filter(isForecastSource).length > 0;
+});
+mut('I16 bounding G1 to S7_END would go BLIND to exactly that change — the HEAD boundary is load-bearing',
+  function () {
+    var changedAfter = 'assets/js/pages/forecast.js';
+    // The standing interval reaches it; the bounded one cannot, because the change is after S7_END.
+    var standingSees = [].concat(s7Changed, [changedAfter]).filter(isForecastSource).length > 0;
+    var boundedSees = s7Only.filter(isForecastSource).length > 0;
+    return standingSees && !boundedSees && POST_S7.length > 0;
+  });
+mut('I17 a forecast-NAMED evidence artifact must NOT trip G1 — the inverted case, which must stay passing',
+  function () {
+    var ev = 'docs/evidence/s8-r48-sweep/r48p-full/raw/forecast-missing-means-zero-x.out.txt';
+    // CAUGHT here means the classifier correctly refused it AND still accounts for it as non-source.
+    return !isForecastSource(ev) && isAccountedNonSource(ev)
+      && [].concat(s7Changed, [ev]).filter(isForecastSource).length === 0;
+  });
+mut('I18 restoring the broad /forecast/i substring matcher — G1 must fail against THIS repository',
+  function () {
+    return s7Changed.filter(function (f) { return /forecast/i.test(f); }).length > 0;
+  });
+mut('I19 dropping assets/js/ from the protected trees — a canonical owner loses its protection',
+  function () {
+    var narrowed = isForecastSourceWith(['assets/html/', 'assets/specs/active/apps-script/'],
+      FORECAST_SPEC_DIR);
+    return !narrowed('assets/js/pages/forecast.js') && !narrowed('assets/js/utils/forecast-engine.js');
+  });
+mut('I20 G2 and G3 boundaries — an S5/S6 owner edit is still caught, and G3 is still bounded', function () {
+  var g2 = [].concat(s7Changed, [GS + '12_shipment_handlers.gs']).filter(function (f) {
+    return S5_S6_OWNERS.some(function (o) { return f.indexOf(o) !== -1; });
+  }).length > 0;
+  var g3Bounded = s7Only.length < s7Changed.length && S7_END !== 'HEAD';
+  return g2 && g3Bounded;
+});
 console.log('\n' + (fail ? 'FAILED' : 'PASSED') + '  ' + pass + ' passed / ' + fail + ' failed'
   + '   mutants ' + mutants + ', survived ' + survived);
 process.exitCode = fail ? 1 : 0;
