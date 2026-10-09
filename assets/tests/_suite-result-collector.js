@@ -28,6 +28,7 @@ var R = {
     MISSING_SUMMARY: 'MISSING_SUMMARY',
     AMBIGUOUS_SUMMARY: 'AMBIGUOUS_SUMMARY',
     NO_ASSERTIONS: 'NO_ASSERTIONS',
+    INCOMPLETE: 'INCOMPLETE',
     VACUOUS: 'VACUOUS',
     MUTANTS_SURVIVED: 'MUTANTS_SURVIVED'
 };
@@ -35,19 +36,68 @@ var R = {
 // INDENTED FAIL LINES COUNT. See the header.
 var FAIL_LINE = /^[ \t]*FAIL\b/;
 
-// The summary dialects actually in use across this suite set.
+// TWO-SIDED DIALECTS — both counts are printed, so nothing has to be inferred. Scanned over the
+// whole transcript, as they have been since R47-B.
 var SUMMARY_FORMS = [
     /(\d+)\s+passed\s*,\s*(\d+)\s+failed/i,     // "33 passed, 0 failed"
     /(\d+)\s+passed\s*\/\s*(\d+)\s+failed/i,    // "106 passed / 0 failed"
-    /passed\s+(\d+)\s+failed\s+(\d+)/i          // "passed 186  failed 0"
+    /passed\s+(\d+)\s+failed\s+(\d+)/i,         // "passed 186  failed 0"
+    /passed\s+(\d+)\s*,\s*failed\s+(\d+)/i,     // (B) "PASS — passed 253, failed 0, mutants caught 17, survived 0"
+    /\bPASS\s+(\d+)\s+FAIL\s+(\d+)\b/i          // (A) "PASS 20  FAIL 0"  — also (G), above trailing separators
 ];
+
+// THE FAILURE BRANCH OF THE ONE-SIDED DIALECTS, WHICH PRINTS ITS COUNTS IN THE OPPOSITE ORDER.
+// `(fail ? ('✗ ' + fail + ' FAILED, ') : '✓ ') + pass + ' passed'` — failed comes FIRST here, so it
+// needs its own form rather than a capture-group reuse. Without it a failing suite in this dialect
+// would fall through to the success form below and be read as clean.
+var SUMMARY_FORM_FAILED_FIRST = /✗\s*(\d+)\s+FAILED\s*,\s*(\d+)\s+passed/i;
+
+// ONE-SIDED SUCCESS DIALECTS — the PHRASE is the suite's own encoding of "failed === 0", so reading
+// it is parsing the contract, not inventing a number.
+//
+//   (C) `✓ 21 passed`                     printed ONLY on the zero-failure branch; the glyph IS the
+//                                         encoding, and the failure branch prints ✗ (above).
+//   (D) `OK — all 22 assertions passed`   "ALL ... passed" states completeness in words.
+//   (E) `All X assertions passed (28 assertions)`
+//
+// `ALL PASS` is deliberately absent and must stay absent: it carries no number at all, and inferring
+// one from a success phrase is the exact inference that let ten dead suites look fine.
+var SUCCESS_FORMS = [
+    /✓\s*(\d+)\s+passed\b/,
+    /\ball\s+(\d+)\s+assertions?\s+passed\b/i,
+    /assertions?\s+passed\s*\(\s*(\d+)/i
+];
+
+// A FIXED terminal region. The one-sided forms are phrase-anchored but still weaker evidence than a
+// printed failure count, so they are read only where a summary actually belongs — the end — and the
+// window NEVER grows to go looking for a match.
+var TERMINAL_WINDOW_LINES = 15;
+
+function terminalRegion(text) {
+    var lines = String(text).split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
+    return lines.slice(Math.max(0, lines.length - TERMINAL_WINDOW_LINES));
+}
 
 function parseSummaries(text) {
     var out = [];
     String(text).split(/\r?\n/).forEach(function (line) {
+        var fm = SUMMARY_FORM_FAILED_FIRST.exec(line);
+        if (fm) { out.push({ passed: Number(fm[2]), failed: Number(fm[1]), line: line.trim(), source: 'counts' }); return; }
         for (var i = 0; i < SUMMARY_FORMS.length; i++) {
             var m = SUMMARY_FORMS[i].exec(line);
-            if (m) { out.push({ passed: Number(m[1]), failed: Number(m[2]), line: line.trim() }); break; }
+            if (m) { out.push({ passed: Number(m[1]), failed: Number(m[2]), line: line.trim(), source: 'counts' }); break; }
+        }
+    });
+    return out;
+}
+
+/** One-sided success phrases, terminal region only. failed is 0 BY THE PHRASE, never by inference. */
+function parseTerminalSuccess(text) {
+    var out = [];
+    terminalRegion(text).forEach(function (line) {
+        for (var i = 0; i < SUCCESS_FORMS.length; i++) {
+            var m = SUCCESS_FORMS[i].exec(line);
+            if (m) { out.push({ passed: Number(m[1]), failed: 0, line: line.trim(), source: 'phrase' }); break; }
         }
     });
     return out;
@@ -136,14 +186,28 @@ function classify(run) {
     // S2 — explicit FAIL lines, indented or not.
     if (failLines.length) reasons.push(R.FAIL_LINES);
 
+    // S8 — AN INCOMPLETE RUN IS NEVER CLEAN, whatever else it printed.
+    // `supply-planning-golden-scenarios` ends with "FULL 40-SCENARIO MATRIX NOT COMPLETE". That is a
+    // suite reporting that it did not finish its own coverage, and no amount of dialect support may
+    // turn it into a pass.
+    if (/\b(NOT\s+COMPLETE|INCOMPLETE)\b/i.test(text)) reasons.push(R.INCOMPLETE);
+
     // S5 — the summary must exist and must not contradict itself.
-    var authoritative = summaries.length ? summaries[summaries.length - 1] : null;
+    // Printed counts outrank a success phrase; the phrase is consulted only when no counts exist.
+    var phraseSummaries = summaries.length ? [] : parseTerminalSuccess(text);
+    var authoritative = summaries.length ? summaries[summaries.length - 1]
+        : (phraseSummaries.length ? phraseSummaries[phraseSummaries.length - 1] : null);
     if (!authoritative) {
         reasons.push(R.MISSING_SUMMARY);
     } else {
         // A suite that reported failures earlier and then claims a clean total is not trustworthy.
         var contradicts = summaries.some(function (s) { return s.failed > 0; }) && authoritative.failed === 0;
         if (contradicts) reasons.push(R.AMBIGUOUS_SUMMARY);
+        // Two success phrases disagreeing on the count is also unusable evidence.
+        if (!summaries.length && phraseSummaries.length > 1
+            && phraseSummaries.some(function (s) { return s.passed !== authoritative.passed; })) {
+            reasons.push(R.AMBIGUOUS_SUMMARY);
+        }
         // S3 — the summary's own failed count.
         if (authoritative.failed > 0) reasons.push(R.SUMMARY_FAILED);
         // "Nothing ran" is not "nothing wrong".

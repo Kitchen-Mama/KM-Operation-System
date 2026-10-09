@@ -154,6 +154,67 @@ ok(PARTIAL.reason_codes.indexOf('MUTANTS_SURVIVED') !== -1, 'C11d ... and those 
 // =============================================================================================
 // §D — ROLL-UP
 // =============================================================================================
+console.log('\n§E — R48-A SUMMARY DIALECTS (each with a near-miss that must NOT parse)');
+// =============================================================================================
+function dia(label, out, wantP, wantF) {
+    var r = C.classify({ name: 'd', exitCode: 0, stdout: out });
+    eq([r.passed_assertions, r.failed_assertions], [wantP, wantF], label);
+    return r;
+}
+
+// (A) "PASS 20  FAIL 0"  — and (G), the same line sitting above trailing separator rules.
+dia('E-A  "PASS 20  FAIL 0"', 'ok one\nPASS 20  FAIL 0', 20, 0);
+dia('E-G  the summary one line above trailing separators is still found',
+    'ok one\n----------------------------------------\nPASS 622   FAIL 0\n----------------------------------------', 622, 0);
+eq(C.classify({ name: 'n', exitCode: 0, stdout: 'ok one\nPASS 20  FAIL 2' }).reason_codes.indexOf('SUMMARY_FAILED') !== -1,
+    true, 'E-A2 ... and a nonzero FAIL in that dialect is still a failure');
+
+// (B) "PASS — passed 253, failed 0, mutants caught 17, survived 0"
+var rB = dia('E-B  "passed 253, failed 0, mutants caught 17, survived 0"',
+    'PASS — passed 253, failed 0, mutants caught 17, survived 0', 253, 0);
+eq([rB.mutant_count, rB.survived_mutants], [17, 0], 'E-B2 ... with the mutant counts read from the SAME line, not confused with the failed count');
+eq(rB.verdict, 'CLEAN', 'E-B3 ... and the suite is CLEAN');
+
+// (C) "✓ 21 passed" — the glyph is the suite's own encoding of failed === 0.
+dia('E-C  "✓ 21 passed"', 'ok one\n\n✓ 21 passed', 21, 0);
+// ... and its failure branch prints the counts in the OPPOSITE order.
+dia('E-C2 "✗ 3 FAILED, 18 passed" reads failed FIRST', 'ok one\n\n✗ 3 FAILED, 18 passed', 18, 3);
+ok(C.classify({ name: 'c3', exitCode: 1, stdout: '✗ 3 FAILED, 18 passed' }).reason_codes.indexOf('SUMMARY_FAILED') !== -1,
+    'E-C3 ... and is reported as a failure, not read as a clean 18');
+
+// (D) "OK — all 22 assertions passed"
+dia('E-D  "OK — all 22 assertions passed"', 'ok one\nOK — all 22 assertions passed', 22, 0);
+// (E) "All X assertions passed (28 assertions)"
+dia('E-E  "All Amazon daily-sales assertions passed (28 assertions)"',
+    'ok one\nAll Amazon daily-sales date-key assertions passed (28 assertions)', 28, 0);
+
+// --- NEAR MISSES: none of these may yield a count ------------------------------------------------
+function noCount(label, out) {
+    var r = C.classify({ name: 'nm', exitCode: 0, stdout: out });
+    ok(r.passed_assertions === null && r.reason_codes.indexOf('MISSING_SUMMARY') !== -1, label);
+}
+noCount('E-N1 "ALL PASS" carries NO number and must never yield one', 'ok one\nALL PASS');
+noCount('E-N2 "ALL PASS  (fast path)" likewise', 'ok one\nALL PASS  (fast path)');
+noCount('E-N3 "All scope-isolation assertions passed." without a count yields none', 'ok\nAll scope-isolation assertions passed.');
+noCount('E-N4 a bare success sentence is not evidence', 'ok\nEverything looks fine');
+
+// Requirement 10 — the one-sided phrases are read ONLY in the terminal region, and the window never
+// grows. A success phrase buried far above a long tail is not a summary.
+var buried = ['✓ 99 passed'].concat(new Array(30).join('x').split('x').map(function (_, i) { return 'trailing line ' + i; })).join('\n');
+noCount('E-N5 a success phrase 30 lines above the end is OUT of the terminal window', buried);
+
+// Requirement 9 — an incomplete matrix can never be CLEAN, whatever else it printed.
+var inc = C.classify({ name: 'inc', exitCode: 0, stdout: 'ok one\nPASS 40  FAIL 0\nFULL 40-SCENARIO MATRIX NOT COMPLETE' });
+eq(inc.verdict, 'NOT_CLEAN', 'E-N6 an incomplete scenario matrix is NOT_CLEAN even with a clean count');
+ok(inc.reason_codes.indexOf('INCOMPLETE') !== -1, 'E-N6b ... named INCOMPLETE');
+
+// Requirement 12 — conflicting counts are unusable.
+ok(C.classify({ name: 'cf', exitCode: 0, stdout: 'ok\n✓ 10 passed\n✓ 44 passed' }).reason_codes.indexOf('AMBIGUOUS_SUMMARY') !== -1,
+    'E-N7 two success phrases disagreeing on the count are AMBIGUOUS');
+// Printed counts outrank a phrase rather than competing with it.
+dia('E-N8 a printed count outranks a success phrase in the same output', 'ok\n✓ 10 passed\n7 passed, 1 failed', 7, 1);
+
+// =============================================================================================
 console.log('\n§D — ROLL-UP');
 
 var RU = C.rollup([CLEAN, SILENT, ZEROEXIT, INDENTED]);
@@ -243,8 +304,41 @@ mutants++;
     } else { survived++; failed++; console.log('FAIL X' + mutants + ' SURVIVED — the collector is verdict-unstable'); }
 })();
 
-ok(mutants >= 7, 'X9 the mutant set is non-empty (' + mutants + ' mutants) — not vacuous');
+// --- R48-A mutants: one per way the new dialects could be made to lie ---------------------------
+
+// X9 — drop the terminal-window restriction so success phrases are hunted through the whole
+// transcript. A number in prose then becomes an assertion count.
+mutant('one-sided phrases searched through ALL prose, not the terminal region',
+    'terminalRegion(text).forEach', 'String(text).split(/\\r?\\n/).forEach',
+    function (M) {
+        var buried = '✓ 99 passed\n' + new Array(40).join('filler line\n');
+        return M.classify({ name: 'x', exitCode: 0, stdout: buried }).passed_assertions === 99;
+    });
+
+// X10 — accept a bare success phrase with no number as evidence.
+mutant('"ALL PASS" accepted as numeric evidence',
+    '/✓\\s*(\\d+)\\s+passed\\b/,', '/\\bALL\\s+PASS\\b()/i, /✓\\s*(\\d+)\\s+passed\\b/,',
+    function (M) { return M.classify({ name: 'x', exitCode: 0, stdout: 'ok\nALL PASS' }).reason_codes.indexOf('MISSING_SUMMARY') === -1; });
+
+// X11 — ignore the INCOMPLETE signal.
+mutant('an incomplete scenario matrix allowed to pass',
+    'if (/\\b(NOT\\s+COMPLETE|INCOMPLETE)\\b/i.test(text)) reasons.push(R.INCOMPLETE);', '/* removed */',
+    function (M) { return M.classify({ name: 'x', exitCode: 0, stdout: 'PASS 40  FAIL 0\nFULL 40-SCENARIO MATRIX NOT COMPLETE' }).verdict === 'CLEAN'; });
+
+// X12 — let a success phrase outrank printed counts, so a stale phrase hides a real failure.
+mutant('success phrase allowed to outrank printed counts',
+    'var phraseSummaries = summaries.length ? [] : parseTerminalSuccess(text);',
+    'var phraseSummaries = parseTerminalSuccess(text); summaries = phraseSummaries.length ? phraseSummaries : summaries;',
+    function (M) { return M.classify({ name: 'x', exitCode: 0, stdout: '✓ 10 passed\n7 passed, 1 failed' }).failed_assertions === 0; });
+
+// X13 — read the failure branch of the ✓ dialect in the wrong order, turning 3 failures into 3 passes.
+mutant('"✗ 3 FAILED, 18 passed" read in the wrong order',
+    'out.push({ passed: Number(fm[2]), failed: Number(fm[1]), line: line.trim(), source: \'counts\' }); return;',
+    'out.push({ passed: Number(fm[1]), failed: Number(fm[2]), line: line.trim(), source: \'counts\' }); return;',
+    function (M) { return M.classify({ name: 'x', exitCode: 1, stdout: '✗ 3 FAILED, 18 passed' }).passed_assertions === 3; });
+
+ok(mutants >= 13, 'X14 the mutant set is non-empty (' + mutants + ' mutants) — not vacuous');
 
 console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed, '
-    + mutants + ' mutants, ' + survived + ' survived, ' + (mutants >= 7 ? 'vacuity clean' : 'VACUOUS'));
+    + mutants + ' mutants, ' + survived + ' survived, ' + (mutants >= 13 ? 'vacuity clean' : 'VACUOUS'));
 if (failed > 0) process.exitCode = 1;
