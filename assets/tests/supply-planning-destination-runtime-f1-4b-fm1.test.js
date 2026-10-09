@@ -193,11 +193,51 @@ section('Safety / determinism (§10)');
 // =====================================================================================================
 section('Golden Matrix + full-suite health (§10)');
 (function () {
-  var out;
-  try { out = cp.execSync('node assets/tests/supply-planning-golden-scenarios.test.js', { cwd: path.join(__dirname, '..', '..'), encoding: 'utf8' }); }
-  catch (e) { out = (e.stdout || '') + (e.stderr || ''); }
-  ok(/39\/40 scenarios EXECUTED_EXISTING_CORE and PASSED/.test(out), '48 Golden Matrix remains ≥ 39/1/0');
-  ok(/1\/40 scenarios IMPLEMENTATION_PENDING/.test(out) && /0\/40 scenarios reported as CANONICAL-BLOCKED/.test(out), '49 Scenario #34 remains Pending (1 pending / 0 blocked)');
+  // S8-R48-S — FACTS, NOT PROSE.
+  //
+  // This guard used to regex the Golden suite's matrix SENTENCE:
+  //     /39[/]40 scenarios EXECUTED_EXISTING_CORE and PASSED/
+  //     /1[/]40 scenarios IMPLEMENTATION_PENDING/
+  // R48-R1 re-based that sentence onto the APPLICABLE denominator for the approved ownership split,
+  // and both consumers broke while every fact they were defending was still true and still printed.
+  // A guard coupled to another suite's wording fails when the wording improves, which is the opposite
+  // of what a guard is for. So it now reads the LABELLED FACTS and derives the rest.
+  var r = cp.spawnSync(process.execPath, ['assets/tests/supply-planning-golden-scenarios.test.js'],
+    { cwd: path.join(__dirname, '..', '..'), encoding: 'utf8', maxBuffer: 1 << 28 });
+  var out = (r.stdout || '') + (r.stderr || '');
+  var exitOk = r.status === 0;
+  function num(re) { var m = re.exec(out); return m ? Number(m[1]) : null; }
+  var canonicalTotal = num(/Canonical inventory:[ \t]*(\d+)/);
+  var applicable     = num(/Allocation Runtime applicable:[ \t]*(\d+)/);
+  var executedCount  = num(/Executed scenario count[ \t]*=[ \t]*(\d+)/);
+  var pendingCount   = num(/Pending implementation count[ \t]*=[ \t]*(\d+)/);
+  var excludedCount  = num(/Downstream-owned exclusions:[ \t]*(\d+)/);
+  var excludedId     = num(/Excluded scenario:[ \t]*#(\d+)/);
+  var blockedCount   = num(/(\d+)[/]\d+ scenarios reported as CANONICAL-BLOCKED/);
+  // WHICH scenario is pending is MEASURED, not assumed: the suite prints a header per executed
+  // scenario, so the one that never ran is derivablerather than taken on trust.
+  var ranIds = (out.match(/^== Golden #(\d+)/gm) || [])
+    .map(function (s) { return Number(s.replace(/[^0-9]+/g, '')); });
+  var notRun = [];
+  for (var i = 1; i <= (canonicalTotal || 0); i++) { if (ranIds.indexOf(i) === -1) notRun.push(i); }
+
+  ok(exitOk && !/^FAIL\b/m.test(out),
+     '48 Golden suite itself passes — exit 0 and no FAIL line (its result is the premise of all of this)');
+  ok(canonicalTotal === 40, '48a canonical §33 inventory total = 40');
+  ok(applicable === 39, '48b Allocation Runtime applicable = 39');
+  ok(executedCount === 39 && ranIds.length === 39,
+     '48c executed = 39 reported AND 39 scenario headers actually printed');
+  ok(applicable !== null && excludedCount !== null && canonicalTotal !== null
+     && applicable + excludedCount === canonicalTotal,
+     '48d applicable + excluded === canonical total (nothing counted twice, nothing dropped)');
+  ok(blockedCount === 0, '48e canonical-blocked count remains 0');
+  ok(excludedCount === 1 && pendingCount === 1,
+     '49 exactly one downstream-owned exclusion and exactly one pending scenario');
+  ok(excludedId === 34, '49a the declared exclusion is #34');
+  // The pending count and the exclusion count are ONE scenario, not two. Asserted on the observed ID.
+  ok(notRun.length === 1 && notRun[0] === excludedId,
+     '49b the scenario that did NOT run is exactly the declared exclusion — pending and excluded are the SAME id, never double-counted');
+  ok(/Downstream owner:[ \t]*§37/.test(out), '49c #34 remains owned by §37');
   ok(typeof R.resolveUnifiedDestinationRecommendation === 'function' && typeof R.resolveMarketplaceRecommendation === 'function' && typeof R.resolveWarehouseRecommendation === 'function' && typeof R.resolveMarketplaceQualifiedIncoming === 'function' && typeof R.normalizeRecommendationDestination === 'function', '50 unified core entry + §5–§8 owners exported');
 })();
 
