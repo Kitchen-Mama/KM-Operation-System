@@ -283,6 +283,14 @@ function rosBuildWorkset_(draftRows, opts) {
     var series = rosStr_(seriesBySku[rosUc_(sku)] || '');
     var upc = rosQty_(row.units_per_carton);
     if (upc == null) upc = rosQty_(upcBySku[rosUc_(sku)]);
+    // §14/§17/§37 CARTON CONFIGURATION GATE (S8-R49-D). rosQty_ already maps blank AND non-numeric to null, so
+    // this single test covers missing, blank, non-numeric, zero and negative. Nothing is defaulted: §14 is
+    // explicit that there is no silent default, "never 1, 12, or any other number".
+    //
+    // A PARTIAL CARTON IS NOT THIS GATE. §37 allows a user partial-carton order_qty all the way through Send,
+    // and §12.13 says Send is "not blocked merely because order_qty is not a full-carton multiple". What blocks
+    // Send is an unusable CARTON SIZE, which is a different fact about a different field.
+    var upcUsable = (upc != null && upc > 0);
 
     var sendable = [];
     ['T1', 'T2', 'T3'].forEach(function (tier) {
@@ -296,6 +304,26 @@ function rosBuildWorkset_(draftRows, opts) {
       // FB-3C §B.7 — the canonical zero-quantity rule. A persisted 0 is a REAL, saved decision, and it produces
       // NO Request Order line. It is counted so the dialog can show that the tier was considered and excluded.
       if (qty == null || qty <= 0) { out.excluded.tier_zero_or_blank_qty++; return; }
+      // §14 — a POSITIVE quantity with no usable carton size REFUSES THE SEND. Deliberately a blocking_conflict
+      // (the §H fail-closed seam) and deliberately NOT an `excluded` counter: §14 says "Send Request is blocked",
+      // and a silent exclusion would quietly ship a PARTIAL Send that the operator approved the full version of.
+      // A row with no positive in-scope tier never reaches here, so a dormant draft with a blank carton size
+      // cannot block an unrelated Send.
+      if (!upcUsable) {
+        out.blocking_conflicts.push({
+          code: 'MISSING_UNITS_PER_CARTON',
+          natural_key: a.natural_key,
+          request_allocation_draft_id: draftId,
+          company: rosStr_(row.company), country: rosStr_(row.country),
+          marketplace: rosStr_(row.marketplace), sku: sku, series: series,
+          request_bucket: tier, request_month: month, order_qty: qty,
+          units_per_carton_raw: rosStr_(row.units_per_carton),
+          units_per_carton_effective: (upc == null ? null : upc),
+          resolution: 'Set a positive units_per_carton on the SKU master (sku_details) for this SKU, then Send '
+            + 'again. No carton size is assumed and nothing was written.'
+        });
+        return;
+      }
       out.positive_selected_tier_allocations++;
       out.total_units += qty;
       sendable.push({
@@ -1114,11 +1142,39 @@ function handleRequestOrderSendOrchestrate_(body, io) {
       positive_selected_tier_allocations: ws.positive_selected_tier_allocations });
 
     // §H fail-closed: a duplicated business identity is never resolved by guessing.
+    // §H fail-closed. The refusal itself is unchanged — it is still "all or nothing, nothing was written" — but
+    // the REPORTED CODE is now derived from the conflicts instead of assumed.
+    //
+    // S8-R49-D: this used to hardcode DUPLICATE_BUSINESS_IDENTITY. With a second producer on the same seam
+    // (MISSING_UNITS_PER_CARTON, §14) that hardcode would have told an operator holding a SKU with no carton
+    // size to go and reconcile duplicate allocation drafts — the wrong diagnostic for the wrong problem, and a
+    // refusal nobody could act on. A single-code workset still reports exactly that code, so the duplicate
+    // identity contract and its existing acceptance are untouched.
     if (ws.blocking_conflicts.length) {
-      return rosBuildEnvelope_(false, null, [{ code: 'DUPLICATE_BUSINESS_IDENTITY',
-        message: ws.blocking_conflicts.length + ' business scope(s) have more than one active allocation draft. Neither row is sent, because which quantity is authoritative is a business decision. Nothing was written.',
+      var byCode = {};
+      ws.blocking_conflicts.forEach(function (c) {
+        var cc = rosStr_(c && c.code) || 'BLOCKING_CONFLICT';
+        byCode[cc] = (byCode[cc] || 0) + 1;
+      });
+      var conflictCodes = Object.keys(byCode).sort();
+      var primaryCode = (conflictCodes.length === 1) ? conflictCodes[0] : 'SEND_BLOCKED_BY_MULTIPLE_CONFLICTS';
+      var conflictMessage, conflictNextAction;
+      if (primaryCode === 'DUPLICATE_BUSINESS_IDENTITY') {
+        conflictMessage = byCode.DUPLICATE_BUSINESS_IDENTITY + ' business scope(s) have more than one active allocation draft. Neither row is sent, because which quantity is authoritative is a business decision. Nothing was written.';
+        conflictNextAction = 'Run the allocation-draft identity diagnostic (system.allocationDraftIdentityDiagnostic) and resolve the duplicates.';
+      } else if (primaryCode === 'MISSING_UNITS_PER_CARTON') {
+        conflictMessage = byCode.MISSING_UNITS_PER_CARTON + ' Request Order line(s) carry a positive quantity but no usable units_per_carton (missing, zero, negative or non-numeric). Send is blocked until the carton configuration is fixed and no carton size is assumed (§14). Nothing was written.';
+        conflictNextAction = 'Set a positive units_per_carton on the SKU master (sku_details) for the listed SKUs, then Send again. A PARTIAL-carton quantity is allowed and is not what blocked this Send.';
+      } else {
+        conflictMessage = ws.blocking_conflicts.length + ' blocking conflict(s) across ' + conflictCodes.length
+          + ' rule(s) (' + conflictCodes.join(', ') + ') withheld this Send. It is all-or-nothing, so nothing was written.';
+        conflictNextAction = 'Resolve every listed conflict and Send again. Each entry names the rule that withheld it.';
+      }
+      return rosBuildEnvelope_(false, null, [{ code: primaryCode,
+        message: conflictMessage,
         details: { conflicts: ws.blocking_conflicts.slice(0, 25),
-          next_action: 'Run the allocation-draft identity diagnostic (system.allocationDraftIdentityDiagnostic) and resolve the duplicates.' } }],
+          conflict_codes: conflictCodes, conflict_counts: byCode,
+          next_action: conflictNextAction } }],
         { zero_write: true, trace: trace, serverDurationMs: io.now() - t0 });
     }
 
