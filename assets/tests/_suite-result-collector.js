@@ -73,14 +73,40 @@ var SUCCESS_FORMS = [
 // window NEVER grows to go looking for a match.
 var TERMINAL_WINDOW_LINES = 15;
 
+// AN ASSERTION-RESULT LINE IS NARRATION, NOT A SUMMARY.
+//
+// Suites print `ok   <label>` and `FAIL <label>` per assertion, and a label is free text that may
+// quote anything -- including a summary dialect. This collector's own gate quotes
+// `"✗ 3 FAILED, 18 passed"` and `"an incomplete scenario matrix"` in its mutant labels, and read as
+// results they made an 84-of-84 suite report itself AMBIGUOUS and INCOMPLETE.
+//
+// Excluding these lines costs nothing: no suite writes its TOTAL on a line that begins `ok ` or
+// `FAIL `. FAIL-line DETECTION is unaffected -- that runs over the full transcript (S2), which is
+// the whole point of it.
+// CASE-SENSITIVE, DELIBERATELY. Assertion lines are lowercase `ok` and uppercase `FAIL` by
+// convention across this suite set, while the (D) dialect's SUMMARY opens `OK — all 22 assertions
+// passed`. A case-insensitive match swallowed that summary and cost the dialect its recovery.
+var RESULT_LINE = /^[ \t]*(ok|FAIL)\b/;
+
 function terminalRegion(text) {
-    var lines = String(text).split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
+    var lines = String(text).split(/\r?\n/)
+        .filter(function (l) { return l.trim() !== '' && !RESULT_LINE.test(l); });
     return lines.slice(Math.max(0, lines.length - TERMINAL_WINDOW_LINES));
 }
 
+// THE SUMMARY LIVES AT THE END, AND LOOKING ANYWHERE ELSE READS PROSE AS RESULT.
+//
+// This was learned three times before it was believed. A section heading reading "AND IT IS NOT
+// VACUOUS" became a vacuity verdict. A line of prose above the summary became a mutation score. And
+// when "PASS 20  FAIL 0" was added as a dialect, this very collector's own test suite -- which
+// QUOTES that string in its assertion labels -- began reporting itself as having 20 assertions, and
+// an incompleteness fixture flagged the suite that tests incompleteness detection.
+//
+// So every summary form is read only inside a FIXED terminal window. A suite with no summary in its
+// last lines has no summary, and says so, rather than borrowing a number from its own narration.
 function parseSummaries(text) {
     var out = [];
-    String(text).split(/\r?\n/).forEach(function (line) {
+    terminalRegion(text).forEach(function (line) {
         var fm = SUMMARY_FORM_FAILED_FIRST.exec(line);
         if (fm) { out.push({ passed: Number(fm[2]), failed: Number(fm[1]), line: line.trim(), source: 'counts' }); return; }
         for (var i = 0; i < SUMMARY_FORMS.length; i++) {
@@ -190,7 +216,12 @@ function classify(run) {
     // `supply-planning-golden-scenarios` ends with "FULL 40-SCENARIO MATRIX NOT COMPLETE". That is a
     // suite reporting that it did not finish its own coverage, and no amount of dialect support may
     // turn it into a pass.
-    if (/\b(NOT\s+COMPLETE|INCOMPLETE)\b/i.test(text)) reasons.push(R.INCOMPLETE);
+    // Terminal region only, for the same reason every other parser here is: this suite's own gate
+    // prints "an incomplete scenario matrix is NOT_CLEAN" as an assertion label, and a whole-text
+    // match flagged the suite that tests the signal.
+    if (terminalRegion(text).some(function (l) { return /\b(NOT\s+COMPLETE|INCOMPLETE)\b/i.test(l); })) {
+        reasons.push(R.INCOMPLETE);
+    }
 
     // S5 — the summary must exist and must not contradict itself.
     // Printed counts outrank a success phrase; the phrase is consulted only when no counts exist.

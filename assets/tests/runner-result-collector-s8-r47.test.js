@@ -308,8 +308,10 @@ mutants++;
 
 // X9 — drop the terminal-window restriction so success phrases are hunted through the whole
 // transcript. A number in prose then becomes an assertion count.
-mutant('one-sided phrases searched through ALL prose, not the terminal region',
-    'terminalRegion(text).forEach', 'String(text).split(/\\r?\\n/).forEach',
+// (The window is the single lever: widening it is exactly the "silently expand until a match
+// appears" failure the contract forbids, and it is what re-reads narration as result.)
+mutant('the terminal window silently expanded to cover the whole transcript',
+    'var TERMINAL_WINDOW_LINES = 15;', 'var TERMINAL_WINDOW_LINES = 100000;',
     function (M) {
         var buried = '✓ 99 passed\n' + new Array(40).join('filler line\n');
         return M.classify({ name: 'x', exitCode: 0, stdout: buried }).passed_assertions === 99;
@@ -322,7 +324,7 @@ mutant('"ALL PASS" accepted as numeric evidence',
 
 // X11 — ignore the INCOMPLETE signal.
 mutant('an incomplete scenario matrix allowed to pass',
-    'if (/\\b(NOT\\s+COMPLETE|INCOMPLETE)\\b/i.test(text)) reasons.push(R.INCOMPLETE);', '/* removed */',
+    'reasons.push(R.INCOMPLETE);', '/* removed */',
     function (M) { return M.classify({ name: 'x', exitCode: 0, stdout: 'PASS 40  FAIL 0\nFULL 40-SCENARIO MATRIX NOT COMPLETE' }).verdict === 'CLEAN'; });
 
 // X12 — let a success phrase outrank printed counts, so a stale phrase hides a real failure.
