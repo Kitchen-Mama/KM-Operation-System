@@ -60,12 +60,23 @@ var SUMMARY_FORM_FAILED_FIRST = /✗\s*(\d+)\s+FAILED\s*,\s*(\d+)\s+passed/i;
 //   (D) `OK — all 22 assertions passed`   "ALL ... passed" states completeness in words.
 //   (E) `All X assertions passed (28 assertions)`
 //
-// `ALL PASS` is deliberately absent and must stay absent: it carries no number at all, and inferring
-// one from a success phrase is the exact inference that let ten dead suites look fine.
+// `ALL PASS` ON ITS OWN is deliberately absent and must stay absent: it carries no number at all, and
+// inferring one from a success phrase is the exact inference that let ten dead suites look fine.
+//
+//   (F) `ALL PASS  (294 assertions)`   S8-R48-Q. This is NOT that rule being relaxed - it is the same
+//                                      rule applied to a DIFFERENT string. The bare phrase is still
+//                                      refused; what is read here is the COUNT the suite printed beside
+//                                      it, exactly as (D) and (E) already do in another word order.
+//       Verified before admitting it, in all thirteen suites that print it: the phrase is emitted only
+//       on the zero-failure branch - eight behind a ternary on the fail counter, three behind
+//       `if (fail === 0)`, two behind a guard that exits first - and every failure branch prints
+//       `N passed, N failed`, which the two-sided forms above already parse. So these suites were
+//       machine-readable exactly when they FAILED and opaque when they passed, which is backwards.
 var SUCCESS_FORMS = [
     /✓\s*(\d+)\s+passed\b/,
     /\ball\s+(\d+)\s+assertions?\s+passed\b/i,
-    /assertions?\s+passed\s*\(\s*(\d+)/i
+    /assertions?\s+passed\s*\(\s*(\d+)/i,
+    /\bALL\s+PASS\s*\(\s*(\d+)\s+assertions?\s*\)/i
 ];
 
 // A FIXED terminal region. The one-sided forms are phrase-anchored but still weaker evidence than a
@@ -114,7 +125,44 @@ function parseSummaries(text) {
             if (m) { out.push({ passed: Number(m[1]), failed: Number(m[2]), line: line.trim(), source: 'counts' }); break; }
         }
     });
+    // S8-R48-Q - the VERTICAL dialect, consulted ONLY when no single line carried both counts.
+    // Strictly additive by construction: it can turn MISSING_SUMMARY into a parsed summary and can
+    // never outrank, reorder or overwrite a summary one of the forms above already found.
+    if (!out.length) {
+        var v = parseVerticalSummary(text);
+        if (v) out.push(v);
+    }
     return out;
+}
+
+// (H) TWO COUNTS, TWO LINES - and the halves are only evidence TOGETHER.
+//
+//     === P1-B8C-R1 ROW SHAPE SAMPLE ===
+//     passed   435
+//     failed   0
+//     mutants  27 (caught 27, survived 0)
+//
+// Every other form here fits on one line, so a line-at-a-time scan could never see this one: the suite
+// printed both numbers and still read as having printed none.
+//
+// IT REFUSES AMBIGUITY RATHER THAN RESOLVING IT. Exactly one `passed N` and exactly one `failed N` are
+// required - a missing half proves nothing, and two halves are not a tie to be broken, they are a
+// reason to say so. `failed` must come AFTER `passed`, because the order is the dialect and not an
+// accident; a pair found the other way round is some other text that happens to use these words.
+// Anchored whole-line, so `43 passed / 1 failed` inside a sentence cannot supply either half.
+var VERTICAL_PASSED = /^passed\s+(\d+)$/i;
+var VERTICAL_FAILED = /^failed\s+(\d+)$/i;
+function parseVerticalSummary(text) {
+    var p = [], f = [];
+    terminalRegion(text).forEach(function (line, i) {
+        var t = line.trim();
+        var mp = VERTICAL_PASSED.exec(t); if (mp) p.push({ n: Number(mp[1]), i: i });
+        var mf = VERTICAL_FAILED.exec(t); if (mf) f.push({ n: Number(mf[1]), i: i });
+    });
+    if (p.length !== 1 || f.length !== 1) return null;   // fail closed: missing, or duplicated
+    if (f[0].i <= p[0].i) return null;                   // the order IS the dialect
+    return { passed: p[0].n, failed: f[0].n, source: 'counts',
+        line: 'passed ' + p[0].n + '  failed ' + f[0].n };
 }
 
 /** One-sided success phrases, terminal region only. failed is 0 BY THE PHRASE, never by inference. */

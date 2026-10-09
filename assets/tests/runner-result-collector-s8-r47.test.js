@@ -458,6 +458,91 @@ mutant('INCOMPLETE matched as an adjective — suites ABOUT incompleteness are a
         }).reason_codes.indexOf('INCOMPLETE') !== -1;
     });
 
+
+// =============================================================================================
+// S8-R48-Q - THE TWO DIALECTS FOURTEEN SUITES WERE ALREADY SPEAKING.
+// =============================================================================================
+// (F) ALL PASS (N assertions). The bare phrase stays refused; the COUNT beside it is what is read.
+var F_OK = C.classify({ name: 'f-ok', exitCode: 0, stdout: 'ALL PASS  (294 assertions)' });
+eq([F_OK.verdict, F_OK.passed_assertions, F_OK.failed_assertions], ['CLEAN', 294, 0],
+    'Q1  ALL PASS (294 assertions) is CLEAN, with the count actually parsed');
+eq(C.classify({ name: 'f-tight', exitCode: 0, stdout: 'ALL PASS (35 assertions)' }).passed_assertions, 35,
+    'Q1a one space or two, it still parses');
+eq(C.classify({ name: 'f-sing', exitCode: 0, stdout: 'ALL PASS (1 assertion)' }).passed_assertions, 1,
+    'Q1b including the singular form');
+// Separators around it are harmless - three of the thirteen print dashed rules on both sides.
+var F_SEP = C.classify({ name: 'f-sep', exitCode: 0,
+    stdout: '----------------------------------------\nALL PASS  (162 assertions)\n----------------------------------------' });
+eq([F_SEP.verdict, F_SEP.passed_assertions], ['CLEAN', 162],
+    'Q1c and a summary fenced by separator rules still reads');
+
+// ---- the seven ways it must NOT become CLEAN ------------------------------------------------
+var QN1 = C.classify({ name: 'q-n1', exitCode: 0, stdout: 'ALL PASS' });
+has(QN1, 'MISSING_SUMMARY', 'Q1d BARE `ALL PASS` is still refused - the whole rule, unchanged');
+eq(QN1.passed_assertions, null, 'Q1e and invents no number for it');
+has(C.classify({ name: 'q-n2', exitCode: 0, stdout: 'ALL PASS (0 assertions)' }),
+    'NO_ASSERTIONS', 'Q1f `(0 assertions)` is NOT_CLEAN - nothing ran is not nothing wrong');
+has(C.classify({ name: 'q-n3', exitCode: 0, stdout: 'ALL PASS (many assertions)' }),
+    'MISSING_SUMMARY', 'Q1g a malformed count parses as no count at all, never as success');
+has(C.classify({ name: 'q-n4', exitCode: 0, stdout: '  FAIL something broke\nALL PASS  (12 assertions)' }),
+    'FAIL_LINES', 'Q1h a FAIL line anywhere still outranks the phrase');
+has(C.classify({ name: 'q-n5', exitCode: 1, stdout: 'ALL PASS  (12 assertions)' }),
+    'NONZERO_EXIT', 'Q1i a non-zero exit still outranks the phrase');
+has(C.classify({ name: 'q-n6', exitCode: 0,
+    stdout: 'ALL PASS  (12 assertions)\nFULL 40-SCENARIO MATRIX NOT COMPLETE' }),
+    'INCOMPLETE', 'Q1j a run that declares itself unfinished stays unfinished');
+has(C.classify({ name: 'q-n7', exitCode: 0, stdout: 'ALL PASS  (12 assertions)\n7 passed, 3 failed' }),
+    'SUMMARY_FAILED', 'Q1k printed COUNTS still outrank a success phrase that contradicts them');
+
+// (H) the vertical dialect - two counts, two lines.
+var VERT = '=== P1-B8C-R1 ROW SHAPE SAMPLE ===\npassed   435\nfailed   0\nmutants  27 (caught 27, survived 0)';
+var V_OK = C.classify({ name: 'v-ok', exitCode: 0, stdout: VERT });
+eq([V_OK.verdict, V_OK.passed_assertions, V_OK.failed_assertions], ['CLEAN', 435, 0],
+    'Q2  the vertical summary parses both counts separately');
+eq([V_OK.mutant_count, V_OK.survived_mutants], [27, 0],
+    'Q2a and the mutation metadata beneath it survives intact');
+has(C.classify({ name: 'v-f1', exitCode: 0, stdout: VERT.replace('failed   0', 'failed   1') }),
+    'SUMMARY_FAILED', 'Q2b `failed 1` is NOT_CLEAN');
+has(C.classify({ name: 'v-p0', exitCode: 0, stdout: VERT.replace('passed   435', 'passed   0') }),
+    'NO_ASSERTIONS', 'Q2c `passed 0` is NOT_CLEAN');
+has(C.classify({ name: 'v-miss', exitCode: 0, stdout: VERT.replace('failed   0\n', '') }),
+    'MISSING_SUMMARY', 'Q2d a missing half is not half an answer - it is no answer');
+has(C.classify({ name: 'v-dup', exitCode: 0, stdout: VERT.replace('failed   0', 'failed   0\nfailed   3') }),
+    'MISSING_SUMMARY', 'Q2e two `failed` lines are not a tie to break - the pair is refused');
+has(C.classify({ name: 'v-mal', exitCode: 0, stdout: VERT.replace('passed   435', 'passed   4x5') }),
+    'MISSING_SUMMARY', 'Q2f a malformed number supplies no half');
+has(C.classify({ name: 'v-exit', exitCode: 1, stdout: VERT }),
+    'NONZERO_EXIT', 'Q2g a non-zero exit still outranks it');
+has(C.classify({ name: 'v-rev', exitCode: 0,
+    stdout: 'failed   0\npassed   435\nmutants  27 (caught 27, survived 0)' }),
+    'MISSING_SUMMARY', 'Q2h reversed, the order is not the dialect and the pair is refused');
+has(C.classify({ name: 'v-inline', exitCode: 0, stdout: 'the run passed 435 of them and failed 0 of them' }),
+    'MISSING_SUMMARY', 'Q2i neither half can be lifted out of a sentence - both are whole-line anchored');
+
+// ---- the new code, mutated ------------------------------------------------------------------
+mutant('the (F) dialect removed - the thirteen suites go back to being unreadable',
+    '/\\bALL\\s+PASS', '/\\bNEVERMATCH\\s+PASS',
+    function (M) { return M.classify({ name: 'x', exitCode: 0, stdout: 'ALL PASS  (294 assertions)' })
+        .reason_codes.indexOf('MISSING_SUMMARY') !== -1; });
+// The rule this dialect must never become: admit the PHRASE and let the count go missing. With no
+// capture group the parsed count is NaN, which is not 0, so the zero-assertion gate never fires and a
+// suite that printed nothing at all reads CLEAN. That is the ten-dead-suites failure exactly.
+mutant('(F) reduced to the BARE phrase - `ALL PASS` alone would read as success',
+    '/\\bALL\\s+PASS\\s*\\(\\s*(\\d+)\\s+assertions?\\s*\\)/i', '/\\bALL\\s+PASS\\b/i',
+    function (M) { return M.classify({ name: 'x', exitCode: 0, stdout: 'ALL PASS' }).verdict === 'CLEAN'; });
+mutant('the vertical parser stops requiring exactly one of each - duplicates become readable',
+    'if (p.length !== 1 || f.length !== 1) return null;', 'if (!p.length || !f.length) return null;',
+    function (M) { return M.classify({ name: 'x', exitCode: 0,
+        stdout: VERT.replace('failed   0', 'failed   0\nfailed   3') }).verdict === 'CLEAN'; });
+mutant('the vertical parser stops requiring passed BEFORE failed',
+    'if (f[0].i <= p[0].i) return null;', 'if (false) return null;',
+    function (M) { return M.classify({ name: 'x', exitCode: 0,
+        stdout: 'failed   0\npassed   435' }).verdict === 'CLEAN'; });
+mutant('the vertical parser stops deferring to a one-line summary it must never outrank',
+    'if (!out.length) {', 'if (true) {',
+    function (M) { return M.classify({ name: 'x', exitCode: 0,
+        stdout: '7 passed, 3 failed\npassed   435\nfailed   0' }).failed_assertions === 0; });
+
 ok(mutants >= 13, 'X' + (mutants + 1) + ' the mutant set is non-empty (' + mutants + ' mutants) — not vacuous');
 
 console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed, '
