@@ -39,9 +39,26 @@ suite that has been invisible**. It must be triaged, not merely re-counted.
 
 ### R47-A — the ten dead suites
 
-All ten are F1A-era harnesses that inject free variables by name and were never told about
-`_irResultMatchesAppliedScope_` / `_irAppliedScopeKey_`. All pre-existing at `0511b9b`. One
-(`sales-velocity-authority-f1-4b-fm5r4jlive9`) was already repaired this cycle and is the worked example.
+All ten are F1A-era harnesses that `eval()` a marker-delimited region of `inventory-replenishment.js`.
+The region **calls** the scope guards but the guards are defined far outside it, so the eval'd code
+resolves against nothing and throws before one assertion runs. All pre-existing at `0511b9b`.
+
+**Corrected by the S8-R47 Accelerated Preflight R1** — the first draft of this plan got three things
+wrong, and each is recorded here rather than quietly overwritten:
+
+- The split is **not** uniform. **4** suites miss `_irResultMatchesAppliedScope_`
+  (`co1100r-live-hydration-closure-f1-7n-fb-4g-a0`, `expanded-planning-atomic-reveal-f1-7n-fb-4g-a1`,
+  `execution-plan-explicit-intent-f1-7n-fc-1b-e1`, `sales-velocity-authority-f1-4b-fm5r4jlive9`) and
+  **6** miss `_irAppliedScopeKey_` (`gap-materialized-read-f1-4b-fm5r1`,
+  `inventory-horizon-ui-f1-4b-fm4br`, `inventory-outlook-containment-f1-4b-fm6`,
+  `recommendation-production-cutover-f1-4b-fm2b`, `recommendation-session-cache-f1-4b-fm3a`,
+  `replen-recommendation-cutover-f1-4b-b`).
+- **`sales-velocity-authority-f1-4b-fm5r4jlive9` is STILL DEAD.** The first draft called it repaired and
+  the worked example; it is neither. The suite repaired earlier in the cycle was a different one. The
+  worked example is `site-switch-stale-scope-guard-s8-r4d-f1a.test.js`, which was never broken.
+- Guard definitions: `_irAppliedScopeKey_` at `inventory-replenishment.js:9941`,
+  `_irResultMatchesAppliedScope_` at `:9949`, exported at `:9954`. The extraction markers sit at
+  `__IRCTX__ 13192–13379` and `__IRRECO__ 13488–14255` — thousands of lines away, which is the defect.
 
 **Triage first, repair second.** A suite that starts running may reveal a real failure, as
 `live-readback-and-display-closure` already has. Report any such failure as a finding; do **not** silence it.
@@ -55,8 +72,10 @@ based. A suite is not-clean if **either** signal fires. Required output per suit
 ### R47-C — vacuous-test detection
 
 `M12` (advanced-sheets) and `M13` both went vacuous this cycle — an injection that injected nothing, passing
-for the wrong reason. Only two suites self-report vacuity today. Minimum bar: a mutant that survives and a
-mutant set that is empty must be **distinguishable in the output**, and an empty mutant set must fail.
+for the wrong reason. **Corrected census (Preflight R1): 13 suites PRINT a vacuity verdict and 25 mention
+vacuity at all** — the first draft of this plan claimed two. 13 of 623 is still the point: ~2% of the suite
+can tell you its mutants meant something. Minimum bar: a mutant that survives and a mutant set that is
+empty must be **distinguishable in the output**, and an empty mutant set must fail.
 
 ### R47-D — baseline restatement
 
