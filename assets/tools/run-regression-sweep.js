@@ -47,10 +47,14 @@ function runOne(file, dir) {
     });
     // status is null on timeout or signal kill. The collector treats a null exit code as nonzero,
     // which is the fail-closed answer: a suite that did not finish did not pass.
-    var merged = String(r.stdout || '') + String(r.stderr || '');
-    var rec = COLLECTOR.classify({ name: file.replace(/\.test\.js$/, ''), exitCode: r.status, stdout: merged });
+    var out = String(r.stdout || ''), err = String(r.stderr || '');
+    var rec = COLLECTOR.classify({ name: file.replace(/\.test\.js$/, ''), exitCode: r.status, stdout: out + err });
     rec.timed_out = (r.status === null && !!r.error && /timeout|ETIMEDOUT/i.test(String(r.error.message || '')));
     rec.duration_ms = null;
+    // S8-R48-F — the two streams are kept APART even though classification reads them joined. A
+    // suite that dies writes only to stderr, and that distinction is what revealed the ten dead
+    // harnesses; evidence that merges the streams throws it away.
+    rec.raw = { stdout: out, stderr: err };
     return rec;
 }
 
@@ -99,7 +103,25 @@ if (require.main === module) {
     console.log('\n' + COLLECTOR.report(ru));
     console.log('\nregistered: ' + ru.registered_count + '   worktree: ' + ru.worktree_integrity);
     var out = arg('--out');
-    if (out) { fs.writeFileSync(out, JSON.stringify(ru, null, 1), 'utf8'); console.log('wrote ' + out); }
+    if (out) {
+        // The JSON summary carries no raw bytes; evidence is where those live.
+        var slim = JSON.parse(JSON.stringify(ru, function (k, v) { return k === 'raw' ? undefined : v; }));
+        fs.writeFileSync(out, JSON.stringify(slim, null, 1), 'utf8'); console.log('wrote ' + out);
+    }
+    var ev = arg('--evidence');
+    if (ev) {
+        var EV = require(path.join(__dirname, 'sweep-evidence.js'));
+        var head = '';
+        try { head = cp.execSync('git rev-parse HEAD', { cwd: ROOT, encoding: 'utf8' }).trim(); } catch (e) {}
+        var res = EV.writeEvidence({
+            root: ev,
+            runId: arg('--run-id') || ('run-' + new Date().toISOString().replace(/[:.]/g, '-')),
+            records: ru.records,
+            gitCommit: head,
+            collectorHash: EV.sha256(fs.readFileSync(path.join(TESTS_DIR, '_suite-result-collector.js')))
+        });
+        console.log('evidence: ' + res.dir);
+    }
     if (ru.not_clean > 0 || ru.worktree_integrity !== 'INTACT') process.exitCode = 1;
 }
 
