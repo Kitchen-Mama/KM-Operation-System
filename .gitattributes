@@ -51,3 +51,9 @@ assets/js/data/world-admin1-10m.js -text
 # it ran in production, and an EOL rewrite on checkout would break that proof on a file nobody
 # touched. The .txt suffix keeps it out of every *.gs glob that scans active Apps Script sources.
 assets/tests/fixtures/TEMP_migrate_fc_target_rules_header_r2ba2.retired.gs.txt -text
+
+# S8-R48-F sweep evidence: raw bytes are HASHED, so git must not convert them.
+# Without this, core.autocrlf rewrites every LF on checkout and each stored sha256
+# mismatches on a fresh clone, turning the integrity check into a permanent false alarm.
+docs/evidence/s8-r48-sweep/**/raw/** -text -diff
+docs/evidence/s8-r48-sweep/**/manifest.json -text

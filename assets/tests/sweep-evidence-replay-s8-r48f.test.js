@@ -138,6 +138,27 @@ throws(function () { EV.writeEvidence({ root: ROOT, runId: 'run-leak', records: 
     /SECRET_SCAN_FAILED/, 'D7 a secret anywhere in the batch refuses the entire write');
 ok(!fs.existsSync(path.join(ROOT, 'run-leak')), 'D8 ... and leaves NOTHING on disk — the scan runs before any write');
 
+// =============================================================================================
+console.log('\n§E — COMMITTED EVIDENCE MUST NOT BE REWRITTEN BY GIT');
+// =============================================================================================
+// The stored bytes are HASHED. This repo runs core.autocrlf=true, so without an explicit
+// .gitattributes rule every LF in committed evidence is rewritten on checkout and each sha256
+// mismatches on a fresh clone -- an integrity check that fails forever on files nobody touched.
+// The committed fixture is the thing being protected, so it is the thing that is checked.
+var EV_DIR = path.join(__dirname, '..', '..', 'docs', 'evidence', 's8-r48-sweep', 'fixture-r48f-controlled');
+if (fs.existsSync(EV_DIR)) {
+    var attrs = fs.readFileSync(path.join(__dirname, '..', '..', '.gitattributes'), 'utf8');
+    ok(/docs\/evidence\/s8-r48-sweep\/\*\*\/raw\/\*\*\s+-text/.test(attrs),
+        'E1 .gitattributes pins the raw evidence bytes against EOL conversion');
+    ok(/docs\/evidence\/s8-r48-sweep\/\*\*\/manifest\.json\s+-text/.test(attrs),
+        'E2 ... and the manifest alongside them');
+    var live = EV.verifyIntegrity(EV_DIR);
+    eq([live.ok, live.problems.length], [true, 0], 'E3 the COMMITTED fixture still verifies against its own hashes');
+    eq(EV.replay(EV_DIR, C).diffs, [], 'E4 ... and replays to the same verdicts it was stored with');
+} else {
+    ok(false, 'E0 the committed evidence fixture is missing');
+}
+
 rmrf(TMP);
 
 console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed'
