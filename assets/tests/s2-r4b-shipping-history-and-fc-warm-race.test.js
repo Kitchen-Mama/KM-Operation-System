@@ -73,18 +73,37 @@ section('A · SHIPMENT_CENTER_SPEC — Shipping History is a projection, and the
   ok(/must read from the \*\*same shipment data source\*\*, not create a parallel DB/.test(SPEC),
     'A2  and forbids a parallel shipment database outright');
 
-  // The negative that makes PROJECTION the only available answer: no such table is declared anywhere.
-  var declared = [];
-  ['specs/active/apps-script', '../docs/planning'].forEach(function (dir) {
-    var base = path.join(__dirname, '..', dir);
-    if (!fs.existsSync(base)) return;
-    fs.readdirSync(base).forEach(function (f) {
-      if (!/\.(gs|md)$/.test(f)) return;
-      var s = fs.readFileSync(path.join(base, f), 'utf8');
-      if (/\bshipping_history\b|\bshipment_history\b/.test(s)) declared.push(dir + '/' + f);
+  // The negative that makes PROJECTION the only available answer: no such table exists in the code.
+  //
+  // S8-R48-L2 — THIS SCANNED PLANNING DOCUMENTATION TOO, AND THE DOCUMENTATION DEFEATED IT.
+  //
+  // The three files it named were not declarations. They were, in order: a runbook QUOTING this very
+  // assertion's label; a results table recording this suite's own FAIL line; and a migration
+  // inventory stating that no such table exists. The suite failed because its claim had been written
+  // down — including because its earlier failure had been written down. Prose about a table is not a
+  // table, and an audit that cannot tell a mention from a declaration reports the opposite of the
+  // truth: production is, and was, entirely clean.
+  //
+  // Executable source only, and still strict there. Documentation is deliberately out of scope; if a
+  // doc ever needs auditing it needs a check that reads declarations, not occurrences.
+  var FORBIDDEN_TABLE = /\bshipping_history\b|\bshipment_history\b/;
+  function forbiddenInProductionSource(extraFiles) {
+    var base = path.join(__dirname, '..', 'specs', 'active', 'apps-script');
+    if (!fs.existsSync(base)) throw new Error('FAIL-CLOSED: production Apps Script source not found');
+    var files = fs.readdirSync(base).filter(function (f) { return /\.gs$/.test(f); });
+    if (!files.length) throw new Error('FAIL-CLOSED: no .gs source to scan — a silent pass would be a lie');
+    var hits = [];
+    files.forEach(function (f) {
+      var s = (extraFiles && extraFiles[f] !== undefined) ? extraFiles[f] : fs.readFileSync(path.join(base, f), 'utf8');
+      if (FORBIDDEN_TABLE.test(s)) hits.push('specs/active/apps-script/' + f);
     });
-  });
-  eq(declared, [], 'A3  no shipping_history / shipment_history table is declared in any spec or handler', declared);
+    return hits;
+  }
+  var declared = forbiddenInProductionSource(null);
+  eq(declared, [], 'A3  no shipping_history / shipment_history table exists in production Apps Script source', declared);
+  ok(fs.readdirSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script'))
+      .filter(function (f) { return /\.gs$/.test(f); }).length > 50,
+    'A3a  ... measured over the whole handler set, not an empty directory');
 }
 
 // =========================================================================================================
@@ -258,9 +277,24 @@ var fPromise = (function () {
   var reopenP = W.api.prereq('special');
   eq(W.calls.length, 1, 'F1  one read in flight, joined by the reopen');
   W.settle(false);                       // the warm-up request dies
-  return Promise.resolve(warmP).then(function () {
-    return Promise.resolve(reopenP).then(function () { return 'resolved'; }, function () { return 'rejected'; });
-  }).then(function (outcome) {
+  // S8-R48-L2 — THE HARNESS STRANDED ITSELF ON THE VERY BEHAVIOUR IT IS TESTING.
+  //
+  // The dead read is not the end of the story: F2 below expects the reopen to issue its OWN request.
+  // This harness never settled that second request, so warmP stayed pending for ever — and so did
+  // everything chained to it. F2, F3 and F4 never ran, the closing Promise.all never resolved, the
+  // numeric summary never printed, and node drained its loop and exited 0 with FAIL lines on screen.
+  // That is this suite's MISSING_SUMMARY and its FAIL_WITH_ZERO_EXIT, both from one unsettled gate.
+  //
+  // Also: `Promise.resolve(warmP).then(onFulfilled)` with no rejection handler would have swallowed
+  // the whole chain had the read merely rejected. A failure path is asserted by SETTLING it, in
+  // either direction, and then asking what happened.
+  var settled = function (p) { return Promise.resolve(p).then(function () { return 'resolved'; }, function () { return 'rejected'; }); };
+  var tick = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
+  return settled(warmP).then(tick).then(function () {
+    var g2 = W.gate();                   // the reopen's own request, issued after the first died
+    if (g2) g2.res([]);                // let the reopen's own read COMPLETE — F3 asks that it settles
+    return tick();
+  }).then(function () { return settled(reopenP); }).then(function (outcome) {
     // The join released the index, saw the tables still missing, and asked properly on its own behalf.
     eq(W.calls.length, 2, 'F2  the reopen then issues its OWN request rather than inheriting a dead one');
     ok(outcome === 'resolved' || outcome === 'rejected', 'F3  and it settles — never a permanent Loading', outcome);
@@ -305,12 +339,51 @@ section('H · nothing business-bearing moved');
     'H5  the R20 stage-2 batch resolver is still in place');
   // §12 — pricing is a different task and this round did not enter it.
   ok(!/auto_regular_price|base_regular_price/.test(SH), 'H6  Shipping History touches no pricing field');
+  // S8-R48-L2 — the positive half of A3: the page reads the CANONICAL tables. "No history table"
+  // only means something alongside evidence that the real ones are what it uses.
+  ok(/\bshipments\b/.test(SH) && /\bshipment_lines\b/.test(SH),
+    'H7  Shipping History routes to the canonical shipments / shipment_lines');
 }
+
+// =========================================================================================================
+section('J · source-scan mutants (S8-R48-L2)');
+// =========================================================================================================
+// A3 used to scan planning documentation as well as code, and the documentation defeated it: the three
+// files it named were a runbook quoting the assertion's own label, a results table recording this
+// suite's FAIL line, and an inventory stating the table does not exist. These pin the repaired scope —
+// strict on executable source, indifferent to prose.
+var caught = 0, survived = 0;
+function scanMutant(label, probe) {
+  var died = false;
+  try { died = probe(); } catch (e) { died = false; console.error('  (' + label + ' threw: ' + e.message + ')'); }
+  score(died, label);
+}
+
+scanMutant('M9 a forbidden table name is reintroduced in PRODUCTION source', function () {
+  var base = path.join(__dirname, '..', 'specs', 'active', 'apps-script');
+  var victim = fs.readdirSync(base).filter(function (f) { return /\.gs$/.test(f); })[0];
+  var inject = {};
+  inject[victim] = fs.readFileSync(path.join(base, victim), 'utf8')
+    + '\nfunction readHistory_() { return kmRead_("shipping_history"); }\n';
+  return forbiddenInProductionSource(inject).length === 1;
+});
+scanMutant('M10 the canonical routing is replaced by a parallel history table', function () {
+  var mutatedSH = SH.split('shipment_lines').join('shipping_history_lines');
+  if (mutatedSH === SH) throw new Error('routing anchor absent');
+  return !(/\bshipments\b/.test(mutatedSH) && /\bshipment_lines\b/.test(mutatedSH));
+});
+scanMutant('M11 (inverted) forbidden terminology added to historical DOCUMENTATION — must stay passing', function () {
+  // Documentation is not executable. A doc that discusses the table — including one recording this
+  // suite's own past failure — must never turn production red.
+  var inject = {};   // production untouched; the "doc" change is simply outside the scanned scope
+  return forbiddenInProductionSource(inject).length === 0
+    && /\bshipping_history\b/.test('a doc paragraph naming shipping_history for the record');
+});
 
 // =========================================================================================================
 section('I · driven mutants');
 // =========================================================================================================
-var caught = 0, survived = 0;
+// counters are initialised in section J, which runs first — re-zeroing here would discard it.
 function mutant(label, mutations, detect) {
   var W;
   try { W = fcWorld(mutations); }
