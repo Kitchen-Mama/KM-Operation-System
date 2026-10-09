@@ -126,6 +126,31 @@ eq(PROSE.vacuity_verdict, 'NOT_REPORTED', 'C9a the word VACUOUS in a heading is 
 eq([PROSE.mutant_count, PROSE.survived_mutants], [11, 0], 'C9b ... and "mutations 11 caught / 0 missed" parses');
 eq(PROSE.verdict, 'CLEAN', 'C9c ... so the suite is CLEAN');
 
+// C10 — THE R47-D SWEEP REGRESSION. Mutant counts were read from the WHOLE transcript, first match
+// wins, so a line of prose far above the summary became the mutation score. b1-product-first-layer
+// prints "16 mutants, 0 survived, vacuity clean" and was classified mutants=0 -> VACUOUS ->
+// NOT_CLEAN. Thirteen clean suites were accused that way in the full sweep.
+var FARPROSE = C.classify({ name: 'farprose', exitCode: 0, stdout:
+    'section: zero mutants were needed here, see the note\n'
+  + 'ok   some assertion\n'
+  + 'PASS  141 passed, 0 failed, 16 mutants, 0 survived, vacuity clean' });
+eq([FARPROSE.mutant_count, FARPROSE.survived_mutants], [16, 0],
+    'C10a mutant counts come from the SUMMARY line, not from prose earlier in the transcript');
+eq(FARPROSE.verdict, 'CLEAN', 'C10b ... so a suite with 16 killed mutants is CLEAN, not VACUOUS');
+// And an explicit vacuity verdict outranks a zero-count heuristic.
+eq(C.classify({ name: 'explicit', exitCode: 0, stdout: 'PASS 10 passed, 0 failed, vacuity clean' }).verdict,
+    'CLEAN', 'C10c an explicit "vacuity clean" is not overruled by an unparsed mutant count');
+
+// C11 — "mutants killed 6/6". With "killed" between the word and the number, the fallbacks skid
+// past and match the `failed 0` in FRONT of "mutants" — declaring nine 6/6 suites vacuous in the
+// R47-D sweep. killed/total also means survivors are the REMAINDER, not a separate count.
+var KILLED = C.classify({ name: 'killed', exitCode: 0, stdout: 'passed 35  failed 0  mutants killed 6/6' });
+eq([KILLED.mutant_count, KILLED.survived_mutants], [6, 0], 'C11a "mutants killed 6/6" → 6 declared, 0 survived');
+eq(KILLED.verdict, 'CLEAN', 'C11b ... so a 6-of-6 suite is CLEAN, not vacuous');
+var PARTIAL = C.classify({ name: 'partial', exitCode: 0, stdout: 'passed 35  failed 0  mutants killed 4/6' });
+eq([PARTIAL.mutant_count, PARTIAL.survived_mutants], [6, 2], 'C11c "killed 4/6" → 2 survivors, the remainder');
+ok(PARTIAL.reason_codes.indexOf('MUTANTS_SURVIVED') !== -1, 'C11d ... and those survivors are NOT_CLEAN');
+
 // =============================================================================================
 // §D — ROLL-UP
 // =============================================================================================
@@ -201,7 +226,7 @@ mutant('zero-assertion run treated as clean',
 
 // X6 — let a vacuous mutant set pass.
 mutant('vacuous (zero-mutant) execution treated as clean',
-    'else if (mut.declared === 0) reasons.push(R.VACUOUS);', '/* removed */',
+    "else if (mut.declared === 0 && vacuity !== 'CLEAN') reasons.push(R.VACUOUS);", '/* removed */',
     function (M) { return M.classify({ name: 'x', exitCode: 0, stdout: '9 passed, 0 failed, 0 mutants, 0 survived' }).verdict === 'CLEAN'; });
 
 // X7 — let surviving mutants pass.

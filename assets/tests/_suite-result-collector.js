@@ -58,16 +58,37 @@ function parseSummaries(text) {
 // `(\d+)\s+survived` happily matched the CAUGHT count sitting in front of the word. A suite with a
 // perfect mutation score was reported NOT_CLEAN. So the "word first" dialects are tried first, and
 // the "number first" dialects only fill what they left null.
+// MUTANT COUNTS LIVE ON THE SUMMARY LINE, NOT ANYWHERE IN THE OUTPUT.
+// Scanning the whole transcript and taking the FIRST match read some earlier line of prose as the
+// mutation score. The R47-D sweep caught it: b1-product-first-layer-batch-read prints
+// "141 passed, 0 failed, 16 mutants, 0 survived, vacuity clean" and was classified mutants=0, hence
+// VACUOUS, hence NOT_CLEAN -- thirteen clean suites accused that way. It is the same whole-text
+// mistake already fixed for the vacuity verdict, which had read a section heading as a result, so
+// the scope restriction is applied here too rather than patched case by case.
+function summaryLines(text) {
+    return String(text).split(/\r?\n/).filter(function (l) {
+        return /vacuit|mutant|mutation|surviv|missed/i.test(l) || SUMMARY_FORMS.some(function (re) { return re.test(l); });
+    });
+}
+
 function parseMutants(text) {
-    var t = String(text);
+    var cand = summaryLines(text);
+    var t = cand.length ? cand[cand.length - 1] : '';
     var declared = null, survived = null;
     var m;
 
+    // --- "mutants killed 6/6" — killed over total, so survivors are the remainder. This one must
+    // be tried FIRST: with "killed" between the word and the number, the later fallbacks skid past
+    // it and match the `failed 0` sitting in front of "mutants", declaring a 6/6 suite vacuous.
+    if ((m = /mutants?\s+killed\s+(\d+)\s*\/\s*(\d+)/i.exec(t))) {
+        declared = Number(m[2]); survived = Number(m[2]) - Number(m[1]);
+    }
+
     // --- count AFTER the word:  "mutants caught 12  survived 0" | "mutants 12, survived 0"
-    if ((m = /mutants?\s+caught\s+(\d+)/i.exec(t))) declared = Number(m[1]);
-    else if ((m = /mutants?\s+(\d+)/i.exec(t))) declared = Number(m[1]);
-    if ((m = /survived\s+(\d+)/i.exec(t))) survived = Number(m[1]);
-    else if ((m = /missed\s+(\d+)/i.exec(t))) survived = Number(m[1]);
+    if (declared === null && (m = /mutants?\s+caught\s+(\d+)/i.exec(t))) declared = Number(m[1]);
+    else if (declared === null && (m = /mutants?\s+(\d+)/i.exec(t))) declared = Number(m[1]);
+    if (survived === null && (m = /survived\s+(\d+)/i.exec(t))) survived = Number(m[1]);
+    else if (survived === null && (m = /missed\s+(\d+)/i.exec(t))) survived = Number(m[1]);
 
     // --- count BEFORE the word:  "5 mutants, 0 survived" | "mutations: 11 caught, 2 missed"
     if (declared === null && (m = /(\d+)\s+mutants?\b/i.exec(t))) declared = Number(m[1]);
@@ -84,10 +105,7 @@ function parseMutants(text) {
 // perfect mutation score as NOT_CLEAN. A detector that cries wolf gets ignored, which is how a
 // baseline rots. Prose is not a verdict; only the line that also carries the summary is.
 function parseVacuity(text) {
-    var lines = String(text).split(/\r?\n/);
-    var candidates = lines.filter(function (l) {
-        return /vacuit/i.test(l) || SUMMARY_FORMS.some(function (re) { return re.test(l); });
-    });
+    var candidates = summaryLines(text);
     for (var i = candidates.length - 1; i >= 0; i--) {
         if (/vacuity\s+clean/i.test(candidates[i])) return 'CLEAN';
         if (/\bVACUOUS\b/.test(candidates[i])) return 'VACUOUS';
@@ -138,8 +156,10 @@ function classify(run) {
     }
 
     // S6 — vacuity. A declared-but-empty mutant set proves nothing.
+    // An EXPLICIT "vacuity clean" from the suite outranks the zero-count heuristic: the suite is
+    // stating a verdict about its own mutants, and a parse artifact must not overrule it.
     if (vacuity === 'VACUOUS') reasons.push(R.VACUOUS);
-    else if (mut.declared === 0) reasons.push(R.VACUOUS);
+    else if (mut.declared === 0 && vacuity !== 'CLEAN') reasons.push(R.VACUOUS);
 
     // S7 — surviving mutants.
     if (mut.survived != null && mut.survived > 0) reasons.push(R.MUTANTS_SURVIVED);
