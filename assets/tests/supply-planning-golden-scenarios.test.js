@@ -202,6 +202,28 @@ var SCENARIO_INVENTORY = [
 // ---------------------------------------------------------------------------
 // EXECUTABLE golden scenarios — Canonical LITERAL expected values only (no in-test recomputation).
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// S8-R48-R — OWNERSHIP ACCOUNTING (operator-approved Option A, frozen).
+//
+// The canonical inventory is and stays FORTY. What changes here is only the ACCOUNTING: this suite is the
+// Allocation Runtime acceptance, and §40.17 froze #34 OUT of the Allocation Runtime contract - it is a
+// downstream Request-Order / PO / UI-state / persistence acceptance owned by §37. Measuring a
+// calculation suite against a denominator that includes a scenario it is forbidden to execute produced a
+// permanent `NOT COMPLETE` that described the scope, not the coverage.
+//
+// So the denominator is now APPLICABLE scenarios, and the exclusion is declared rather than implied: #34 is
+// named by ID, carries its owner, and is asserted to be present in the inventory, absent from the executed
+// set, and accounted for in the total. It is NOT deleted and NOT marked executed. Nothing about §37 is
+// weakened - the downstream acceptance is reported SEPARATELY and remains open on its own evidence.
+// ---------------------------------------------------------------------------
+var DOWNSTREAM_EXCLUSIONS = [
+  { id: 34,
+    owner: '§37 Downstream Request Order / PO / UI / Persistence E2E Acceptance',
+    ownerSection: '§37',
+    exclusionAuthority: 'SUPPLY_PLANNING_CALCULATION_RULES.md §40.17 (frozen)' }
+];
+var EXCLUDED_IDS = DOWNSTREAM_EXCLUSIONS.map(function (e) { return e.id; });
+function isDownstreamExcluded(id) { return EXCLUDED_IDS.indexOf(id) !== -1; }
 var GOLDEN_SCENARIOS = [
   // ---- B4-R8 promotion: #12 / #13 / #14 executed via the REAL B4 Minimal Pure Runtime chain. Expected values are
   //      canonical LITERALS (never recomputed from Runtime output). Gap literals: demand 1000 − stock 300 −
@@ -797,12 +819,59 @@ eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEM
    'implementation-pending count = 1 (only #34 — downstream Request-Order/PO/UI-state/persistence, §37)');
 eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'CANONICAL-BLOCKED' || s.canonicalStatus !== 'FROZEN'; }).length, 0,
    'canonical-blocked count = 0 (every scenario canonicalStatus = FROZEN)');
+// ---- S8-R48-R — ownership accounting, asserted rather than asserted-about. --------------------
+console.log('\n== §33 Golden Baseline — ownership accounting (Allocation Runtime vs downstream) ==');
+var CANONICAL_TOTAL = SCENARIO_INVENTORY.length;
+var APPLICABLE_SCENARIOS = SCENARIO_INVENTORY.filter(function (x) { return !isDownstreamExcluded(x.id); });
+var ALLOCATION_APPLICABLE = APPLICABLE_SCENARIOS.length;
+var DOWNSTREAM_EXCLUDED = EXCLUDED_IDS.length;
+var applicableIds = APPLICABLE_SCENARIOS.map(function (x) { return x.id; }).sort(function (a, b) { return a - b; });
+var executedIds = GOLDEN_SCENARIOS.map(function (x) { return x.id; }).sort(function (a, b) { return a - b; });
+eq(CANONICAL_TOTAL, 40, 'OA1 canonical inventory total = 40 (unchanged — nothing is deleted from §33)');
+eq(ALLOCATION_APPLICABLE, 39, 'OA2 Allocation Runtime APPLICABLE scenarios = 39');
+eq(DOWNSTREAM_EXCLUDED, 1, 'OA3 downstream-owned exclusions = 1');
+eq(ALLOCATION_APPLICABLE + DOWNSTREAM_EXCLUDED, CANONICAL_TOTAL,
+   'OA4 applicable + excluded === canonical total — every scenario is accounted for exactly once');
+// #34 by ID and owner, never by array position.
+var EX34 = DOWNSTREAM_EXCLUSIONS.filter(function (e) { return e.id === 34; })[0] || null;
+assert(!!EX34, 'OA5 the excluded scenario is identified by ID 34 explicitly');
+assert(!!EX34 && EX34.ownerSection === '§37' && /§37/.test(EX34.owner) && !!EX34.exclusionAuthority,
+   'OA6 #34 carries its downstream owner (§37) and the frozen exclusion authority (§40.17)');
+var INV34 = SCENARIO_INVENTORY.filter(function (x) { return x.id === 34; })[0] || null;
+assert(!!INV34, 'OA7 #34 is STILL in the canonical inventory — excluded from scope, not removed from §33');
+assert(!!INV34 && INV34.executionStatus === 'IMPLEMENTATION_PENDING',
+   'OA8 and is NOT marked executed by this suite');
+assert(executedIds.indexOf(34) === -1, 'OA9 #34 is absent from the executed set');
+// Every applicable scenario actually ran - the denominator cannot be met by shrinking it.
+eq(executedIds.join(','), applicableIds.join(','),
+   'OA10 executed set === applicable set, exactly (no applicable scenario missing, none extra)');
+// No unclassified scenario: every inventory ID is either applicable or a declared exclusion.
+var unclassified = SCENARIO_INVENTORY.filter(function (x) {
+  return applicableIds.indexOf(x.id) === -1 && !isDownstreamExcluded(x.id);
+}).map(function (x) { return x.id; });
+eq(unclassified, [], 'OA11 no unclassified scenario — each ID is applicable or declared-excluded');
+// No duplicate IDs anywhere, including inside the exclusion table.
+(function () {
+  var seen = {}, dup = [];
+  SCENARIO_INVENTORY.forEach(function (x) { if (seen[x.id]) dup.push(x.id); seen[x.id] = 1; });
+  var es = {}; EXCLUDED_IDS.forEach(function (i) { if (es[i]) dup.push(i); es[i] = 1; });
+  eq(dup, [], 'OA12 no duplicate scenario ID in the inventory or the exclusion table');
+})();
+// Each declared exclusion must correspond to a real canonical scenario.
+eq(EXCLUDED_IDS.filter(function (i) {
+  return !SCENARIO_INVENTORY.some(function (x) { return x.id === i; });
+}), [], 'OA13 every declared exclusion names a scenario that exists in the canonical inventory');
 
 // ---- Execute the executable golden scenarios (each real, no skip/todo/only) ----
+// S8-R48-R — RAN_IDS records what the loop ACTUALLY executed. Membership in GOLDEN_SCENARIOS is a
+// claim about a list; this is the evidence. OA14 below compares the two, so a scenario that is listed and
+// never reached cannot be counted toward 39/39.
+var RAN_IDS = [];
 GOLDEN_SCENARIOS.forEach(function (sc) {
   console.log('\n== Golden #' + sc.id + ' — ' + sc.title + ' (' + sc.sourceSection + ') ==');
   var frozen = sc.input ? JSON.stringify(sc.input) : null;
   sc.run();
+  RAN_IDS.push(sc.id);
   if (sc.input) eq(JSON.stringify(sc.input), frozen, '#' + sc.id + ' scenario input object not mutated');
 });
 
@@ -823,18 +892,65 @@ eq(C.calculateShippingAndResidual({ calculatedGap: 300, eligibleSourceAvailable:
 var executedCount = GOLDEN_SCENARIOS.length;
 var pendingCount = SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length;
 console.log('\n§33 GOLDEN BASELINE:');
-console.log(executedCount + '/40 scenarios EXECUTED_EXISTING_CORE and PASSED');
-console.log(pendingCount + '/40 scenarios IMPLEMENTATION_PENDING');
-console.log('0/40 scenarios reported as CANONICAL-BLOCKED');
+console.log(executedCount + '/' + ALLOCATION_APPLICABLE + ' APPLICABLE scenarios EXECUTED_EXISTING_CORE and PASSED');
+console.log(pendingCount + '/' + CANONICAL_TOTAL + ' canonical scenarios downstream-owned (not executed here)');
+console.log('0/' + CANONICAL_TOTAL + ' scenarios reported as CANONICAL-BLOCKED');
+console.log('');
+console.log('Canonical inventory: ' + CANONICAL_TOTAL);
+console.log('Allocation Runtime applicable: ' + ALLOCATION_APPLICABLE);
+console.log('Allocation Runtime executed: ' + executedCount);
+console.log('Downstream-owned exclusions: ' + DOWNSTREAM_EXCLUDED);
+DOWNSTREAM_EXCLUSIONS.forEach(function (e) {
+  console.log('Excluded scenario: #' + e.id);
+  console.log('Downstream owner: ' + e.ownerSection);
+  console.log('Downstream owner (full): ' + e.owner);
+  console.log('Exclusion authority: ' + e.exclusionAuthority);
+});
 console.log('');
 console.log('Scenario inventory count = ' + SCENARIO_INVENTORY.length);
 console.log('Executed scenario count = ' + executedCount);
 console.log('Pending implementation count = ' + pendingCount);
 console.log('Assertion count = ' + pass);
 console.log('');
+// FAIL CLOSED. The completion label is a CONCLUSION from the gates above, never a banner printed
+// regardless: if one applicable scenario goes missing, is duplicated, becomes unclassified, or #34 is
+// quietly reclassified, every one of these conjuncts is false and the suite says INCOMPLETE and exits 1.
+// EXECUTION, NOT MEMBERSHIP. Proven after the loop, because before it there is nothing to prove.
+var ranIds = RAN_IDS.slice().sort(function (a, b) { return a - b; });
+eq(ranIds.join(','), applicableIds.join(','),
+   'OA14 every applicable scenario ACTUALLY RAN — being in the list is not the same as being executed');
+// Evaluated when it is PRINTED, never cached: a value computed earlier would still read `fail === 0`
+// for a failure recorded after it was taken, and would print COMPLETE over a failing run.
+function allocationRuntimeComplete() {
+  return (fail === 0)
+  && CANONICAL_TOTAL === 40
+  && ALLOCATION_APPLICABLE === 39
+  && DOWNSTREAM_EXCLUDED === 1
+  && (ALLOCATION_APPLICABLE + DOWNSTREAM_EXCLUDED === CANONICAL_TOTAL)
+  && executedIds.join(',') === applicableIds.join(',')
+  && executedIds.length === ALLOCATION_APPLICABLE
+  && executedIds.indexOf(34) === -1
+  && !!EX34 && EX34.ownerSection === '§37' && !!EX34.exclusionAuthority
+  && !!INV34 && INV34.executionStatus === 'IMPLEMENTATION_PENDING'
+  && unclassified.length === 0
+  && ranIds.join(',') === applicableIds.join(',')
+  && ranIds.length === ALLOCATION_APPLICABLE;
+}
 console.log('RESULT:');
-console.log('PHASE 2B GOLDEN BASELINE CHECKPOINT PASS');
-console.log('FULL 40-SCENARIO MATRIX NOT COMPLETE');
+if (allocationRuntimeComplete()) {
+  console.log('ALLOCATION_RUNTIME_COMPLETE');
+  console.log('Allocation Runtime scope: ' + ALLOCATION_APPLICABLE + '/' + ALLOCATION_APPLICABLE
+    + ' applicable scenarios executed and passed');
+  console.log('Canonical §33 inventory remains ' + CANONICAL_TOTAL + ', with '
+    + DOWNSTREAM_EXCLUDED + ' downstream-owned exclusion(s) tracked under §37.');
+  console.log('§37 downstream E2E acceptance is reported SEPARATELY and is NOT claimed here.');
+} else {
+  console.log('ALLOCATION_RUNTIME_INCOMPLETE');
+  fail++;
+}
 
+console.log('');
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('passed ' + pass + '  failed ' + fail);
 if (fail) { console.error('\n' + fail + ' assertion(s) FAILED\n'); process.exit(1); }
 process.exit(0);
