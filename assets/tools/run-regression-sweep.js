@@ -113,14 +113,24 @@ if (require.main === module) {
         var EV = require(path.join(__dirname, 'sweep-evidence.js'));
         var head = '';
         try { head = cp.execSync('git rev-parse HEAD', { cwd: ROOT, encoding: 'utf8' }).trim(); } catch (e) {}
-        var res = EV.writeEvidence({
+        // --quarantine diverts a secret-bearing batch OUT of the repository rather than losing it.
+        // The sweep is authorized once; the scan can only run after it. See sweep-evidence.js.
+        var w = EV.writeEvidenceQuarantined({
             root: ev,
+            quarantineRoot: arg('--quarantine'),
             runId: arg('--run-id') || ('run-' + new Date().toISOString().replace(/[:.]/g, '-')),
             records: ru.records,
             gitCommit: head,
             collectorHash: EV.sha256(fs.readFileSync(path.join(TESTS_DIR, '_suite-result-collector.js')))
         });
-        console.log('evidence: ' + res.dir);
+        console.log('evidence: ' + w.result.dir);
+        if (w.quarantined) {
+            console.log('SECRET_SCAN_FAILED — evidence QUARANTINED outside the repository, not committable.');
+            w.findings.forEach(function (f) {
+                console.log('  ' + f.suite + ': ' + f.hits.map(function (h) { return h.pattern + '×' + h.count; }).join(', '));
+            });
+            process.exitCode = 1;
+        }
     }
     if (ru.not_clean > 0 || ru.worktree_integrity !== 'INTACT') process.exitCode = 1;
 }

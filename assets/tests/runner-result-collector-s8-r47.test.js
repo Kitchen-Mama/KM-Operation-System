@@ -224,6 +224,76 @@ ok(C.report(RU).indexOf('NOT_CLEAN 3') !== -1, 'D3 the human report states the n
 ok(C.report(RU).indexOf('silent-death') !== -1, 'D4 ... and names every not-clean suite');
 
 // =============================================================================================
+// §F — THE TERMINAL-WINDOW BOUNDARY ITSELF
+// =============================================================================================
+// The window is the riskiest part of this parser: everything inside it is treated as result and
+// everything outside it does not exist. §E proved the dialects; this proves the EDGE. The window
+// keeps the last 15 non-blank, non-result lines, so "inside" and "outside" are exact and testable
+// rather than approximate.
+console.log('\n§F — TERMINAL-WINDOW BOUNDARY');
+
+var SUMM = 'PASS  33 passed, 0 failed, 5 mutants, 0 survived, vacuity clean';
+function filler(n) { var a = []; for (var i = 0; i < n; i++) a.push('-- diagnostic ' + i + ' --'); return a.join('\n'); }
+
+// (1) + (2) — the boundary is EXACT, and falls closed one line past it.
+var ATEDGE = C.classify({ name: 'edge', exitCode: 0, stdout: 'ok a\n' + SUMM + '\n' + filler(14) });
+eq([ATEDGE.passed_assertions, ATEDGE.verdict], [33, 'CLEAN'], 'F1 a summary 15th-from-last is INSIDE the window');
+var PASTEDGE = C.classify({ name: 'past', exitCode: 0, stdout: 'ok a\n' + SUMM + '\n' + filler(15) });
+eq(PASTEDGE.passed_assertions, null, 'F2 ... and 16th-from-last is OUTSIDE it — no number is borrowed');
+has(PASTEDGE, 'MISSING_SUMMARY', 'F2a ... which is reported, not guessed');
+
+// (3) — an assertion LABEL may quote anything, including a summary. This suite's own labels do.
+var LABELS = C.classify({ name: 'labels', exitCode: 0, stdout:
+    'ok   X13 killed — "✗ 3 FAILED, 18 passed" read in the wrong order\n'
+  + 'ok   X11 killed — an incomplete scenario matrix allowed to pass\n' + SUMM });
+eq([LABELS.passed_assertions, LABELS.verdict], [33, 'CLEAN'], 'F3 a summary quoted in an assertion label is narration, not result');
+eq(LABELS.reason_codes, [], 'F3a ... and raises neither AMBIGUOUS nor INCOMPLETE');
+
+// (4) — prose carrying pass/fail numbers in no dialect at all is simply not a summary.
+var PROSENUM = C.classify({ name: 'prosenum', exitCode: 0, stdout:
+    'note: the R47-D baseline reported 499 clean and 6 failing suites\n' + SUMM });
+eq([PROSENUM.passed_assertions, PROSENUM.verdict], [33, 'CLEAN'], 'F4 prose numbers in no dialect are ignored');
+
+// (5) — prose that DOES match a dialect is the honest limit of this parser. It is not silently
+// accepted and it does not win: it makes the evidence unusable, which is the fail-closed answer.
+var PROSEDIALECT = C.classify({ name: 'prosed', exitCode: 0, stdout:
+    'in R47-D the sweep logged 499 passed, 6 failed\n' + SUMM });
+has(PROSEDIALECT, 'AMBIGUOUS_SUMMARY', 'F5 prose matching a dialect is AMBIGUOUS, never silently accepted');
+ok(PROSEDIALECT.passed_assertions !== 499, 'F5a ... and the prose count never becomes the suite total');
+
+// (6) + (7) — trailing noise below the summary must not displace it.
+eq(C.classify({ name: 'sep', exitCode: 0, stdout: SUMM + '\n' + '='.repeat(60) + '\n' + '-'.repeat(60) }).passed_assertions,
+    33, 'F6 trailing separator lines do not displace the summary');
+eq(C.classify({ name: 'diag', exitCode: 0, stdout: SUMM + '\ncleaning temp dir\ndone in 1.2s' }).passed_assertions,
+    33, 'F7 trailing harmless diagnostics do not displace it either');
+
+// (8) + (9) — the two refusals.
+has(C.classify({ name: 'none', exitCode: 0, stdout: 'ok a\nok b\n' + filler(3) }), 'MISSING_SUMMARY',
+    'F8 output with no summary in its terminal region reports MISSING_SUMMARY');
+has(C.classify({ name: 'inc', exitCode: 0, stdout: SUMM + '\nFULL 40-SCENARIO MATRIX NOT COMPLETE' }), 'INCOMPLETE',
+    'F9 an incomplete matrix below a clean summary is still INCOMPLETE');
+
+// (10) — MUTATION COUNTS IN UNRELATED PROSE. Found by this round's boundary probe: parseMutants
+// still scanned the whole transcript and took the LAST mutant-bearing line, so narration printed
+// BELOW the summary outranked it. Each of these three was a NOT_CLEAN suite reading CLEAN.
+var HIDDEN = C.classify({ name: 'hidden', exitCode: 0, stdout:
+    'ok a\nPASS  33 passed, 0 failed, 4 mutants, 2 survived\n'
+  + 'note: 6 mutants were reviewed, 0 survived the review' });
+eq([HIDDEN.mutant_count, HIDDEN.survived_mutants], [4, 2], 'F10 trailing prose cannot overwrite the summary mutation score');
+has(HIDDEN, 'MUTANTS_SURVIVED', 'F10a ... so real survivors stay visible');
+var RESCUED = C.classify({ name: 'rescued', exitCode: 0, stdout:
+    'ok a\nPASS  33 passed, 0 failed, 0 mutants, 0 survived\nnote: mutants caught 12  survived 0' });
+has(RESCUED, 'VACUOUS', 'F11 ... nor rescue a vacuous run with a borrowed score');
+var BYLABEL = C.classify({ name: 'bylabel', exitCode: 0, stdout:
+    'PASS  33 passed, 0 failed, 4 mutants, 2 survived\nok   X9 all mutants killed 6/6' });
+has(BYLABEL, 'MUTANTS_SURVIVED', 'F12 ... and an assertion LABEL below the summary cannot do it either');
+
+// The split dialect this precedence must NOT break: the score on its own line (C8e).
+eq([C.classify({ name: 'split', exitCode: 0, stdout: '20 passed, 0 failed\nmutations: 13 caught, 0 missed' }).mutant_count,
+    C.classify({ name: 'split', exitCode: 0, stdout: '20 passed, 0 failed\nmutations: 13 caught, 0 missed' }).survived_mutants],
+    [13, 0], 'F13 a score on its OWN line is still read when the summary carries none');
+
+// =============================================================================================
 // §X — MUTANTS AGAINST THE COLLECTOR ITSELF
 // =============================================================================================
 console.log('\n§X — COLLECTOR MUTANTS');
@@ -339,7 +409,30 @@ mutant('"✗ 3 FAILED, 18 passed" read in the wrong order',
     'out.push({ passed: Number(fm[1]), failed: Number(fm[2]), line: line.trim(), source: \'counts\' }); return;',
     function (M) { return M.classify({ name: 'x', exitCode: 1, stdout: '✗ 3 FAILED, 18 passed' }).passed_assertions === 3; });
 
-ok(mutants >= 13, 'X14 the mutant set is non-empty (' + mutants + ' mutants) — not vacuous');
+// X15 — restore the whole-transcript scan for mutant evidence (the S8-R48-G defect).
+// PROBED THROUGH THE SPLIT DIALECT DELIBERATELY. In the common shape the summary line carries the
+// score itself, so X16's precedence rule also blocks this mutant and it survives — masked by a
+// second defence rather than absent. Here the score sits on its OWN line, precedence does not
+// apply, and the scope restriction is the only thing standing between a 2-survivor suite and CLEAN.
+mutant('mutant evidence read from the whole transcript — a LABEL outranks the score',
+    'return terminalRegion(text).filter(function (l) {', 'return String(text).split(/\\r?\\n/).filter(function (l) {',
+    function (M) {
+        return M.classify({ name: 'x', exitCode: 0,
+            stdout: '20 passed, 0 failed\nmutations: 2 caught, 2 missed\nok   X9 all mutants killed 6/6'
+        }).verdict === 'CLEAN';
+    });
+
+// X16 — remove the summary-line precedence, so trailing prose hides real survivors again.
+mutant('summary-line precedence removed — trailing prose hides surviving mutants',
+    'function carriesMutantInfo(line) { return !!line && MUTANT_WORDS.test(line); }',
+    'function carriesMutantInfo(line) { return false; }',
+    function (M) {
+        return M.classify({ name: 'x', exitCode: 0,
+            stdout: 'ok a\nPASS  33 passed, 0 failed, 4 mutants, 2 survived\nnote: 6 mutants were reviewed, 0 survived the review'
+        }).verdict === 'CLEAN';
+    });
+
+ok(mutants >= 13, 'X' + (mutants + 1) + ' the mutant set is non-empty (' + mutants + ' mutants) — not vacuous');
 
 console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed, '
     + mutants + ' mutants, ' + survived + ' survived, ' + (mutants >= 13 ? 'vacuity clean' : 'VACUOUS'));

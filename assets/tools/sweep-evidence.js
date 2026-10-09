@@ -143,6 +143,33 @@ function writeEvidence(opts) {
     return { dir: dir, manifest: manifest };
 }
 
+/**
+ * S8-R48-G — THE SWEEP IS EXPENSIVE AND THE SCAN RUNS AFTERWARDS.
+ *
+ * `writeEvidence` refuses the whole batch on any secret, which is right: nothing sensitive may
+ * enter the repository. But the scan can only run once the output exists, and by then the sweep has
+ * already been spent -- so a single hit would destroy the bytes of a run that is authorized once.
+ * Ten suites in this registry carry Apps Script /exec URLs in their SOURCE, so this is a live risk,
+ * not a hypothetical one.
+ *
+ * On a refusal the bytes are therefore written to a QUARANTINE root instead -- outside the
+ * repository, never committed, never scrubbed -- and the findings are returned so the offending
+ * suites can be named. The repository path still refuses, unconditionally. This preserves the
+ * evidence for inspection; it does not make it committable.
+ */
+function writeEvidenceQuarantined(opts) {
+    try {
+        return { ok: true, quarantined: false, findings: [], result: writeEvidence(opts) };
+    } catch (e) {
+        if (!e.findings || !opts.quarantineRoot) throw e;   // only a SECRET_SCAN_FAILED diverts
+        var alt = {};
+        Object.keys(opts).forEach(function (k) { alt[k] = opts[k]; });
+        alt.root = opts.quarantineRoot;
+        alt.allowSecrets = true;
+        return { ok: false, quarantined: true, findings: e.findings, result: writeEvidence(alt) };
+    }
+}
+
 function readEvidence(dir) {
     var mp = path.join(dir, 'manifest.json');
     if (!fs.existsSync(mp)) throw new Error('evidence manifest missing: ' + mp);
@@ -191,6 +218,7 @@ function replay(dir, collector) {
 
 module.exports = {
     SCHEMA_VERSION: SCHEMA_VERSION, scanSecrets: scanSecrets, sha256: sha256, safeName: safeName,
-    registryHash: registryHash, writeEvidence: writeEvidence, readEvidence: readEvidence,
+    registryHash: registryHash, writeEvidence: writeEvidence,
+    writeEvidenceQuarantined: writeEvidenceQuarantined, readEvidence: readEvidence,
     verifyIntegrity: verifyIntegrity, replay: replay, SECRET_PATTERNS: SECRET_PATTERNS
 };

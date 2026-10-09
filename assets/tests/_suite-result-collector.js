@@ -141,15 +141,43 @@ function parseTerminalSuccess(text) {
 // VACUOUS, hence NOT_CLEAN -- thirteen clean suites accused that way. It is the same whole-text
 // mistake already fixed for the vacuity verdict, which had read a section heading as a result, so
 // the scope restriction is applied here too rather than patched case by case.
+// S8-R48-G — AND THE SAME RESTRICTION, APPLIED HERE TOO.
+//
+// The scope fix above was made for parseSummaries and for the vacuity heading, but this function
+// kept scanning the WHOLE transcript and taking the LAST mutant-bearing line. That is a false-CLEAN
+// generator, not merely a miscount, and the boundary probe found three shapes of it:
+//
+//   `4 mutants, 2 survived` + a later `6 mutants ... 0 survived the review`  -> CLEAN. Survivors hidden.
+//   `0 mutants, 0 survived` + a later `mutants caught 12  survived 0`        -> CLEAN. Vacuity hidden.
+//   a summary, then `ok   X9 all mutants killed 6/6`                         -> CLEAN. A LABEL did it.
+//
+// In each case a NOT_CLEAN suite reads CLEAN because narration printed after the summary outranked
+// the summary. So the window and the result-line exclusion apply here as well -- this NARROWS the
+// search, it never widens it.
+var MUTANT_WORDS = /vacuit|mutant|mutation|surviv|missed/i;
+
 function summaryLines(text) {
-    return String(text).split(/\r?\n/).filter(function (l) {
-        return /vacuit|mutant|mutation|surviv|missed/i.test(l) || SUMMARY_FORMS.some(function (re) { return re.test(l); });
+    return terminalRegion(text).filter(function (l) {
+        return MUTANT_WORDS.test(l) || SUMMARY_FORMS.some(function (re) { return re.test(l); });
     });
 }
 
-function parseMutants(text) {
-    var cand = summaryLines(text);
-    var t = cand.length ? cand[cand.length - 1] : '';
+// PRECEDENCE: THE SUMMARY LINE'S OWN SCORE WINS.
+// "Mutant counts live on the summary line" was always the stated rule, but nothing enforced it --
+// any mutant-bearing line could outrank it, and the last one did. When the accepted summary carries
+// mutant or vacuity information, that is the score. Other lines are consulted ONLY when it carries
+// none, which is a real dialect: `20 passed, 0 failed` on one line and `mutations: 13 caught,
+// 0 missed` on the next (C8e).
+function carriesMutantInfo(line) { return !!line && MUTANT_WORDS.test(line); }
+
+function parseMutants(text, preferLine) {
+    var t;
+    if (carriesMutantInfo(preferLine)) {
+        t = preferLine;
+    } else {
+        var cand = summaryLines(text);
+        t = cand.length ? cand[cand.length - 1] : '';
+    }
     var declared = null, survived = null;
     var m;
 
@@ -180,7 +208,11 @@ function parseMutants(text) {
 // TOKEN CHECK, AND IT IS NOT VACUOUS" — as a verdict, and reported a 147-assertion suite with a
 // perfect mutation score as NOT_CLEAN. A detector that cries wolf gets ignored, which is how a
 // baseline rots. Prose is not a verdict; only the line that also carries the summary is.
-function parseVacuity(text) {
+function parseVacuity(text, preferLine) {
+    if (carriesMutantInfo(preferLine)) {
+        if (/vacuity\s+clean/i.test(preferLine)) return 'CLEAN';
+        if (/\bVACUOUS\b/.test(preferLine)) return 'VACUOUS';
+    }
     var candidates = summaryLines(text);
     for (var i = candidates.length - 1; i >= 0; i--) {
         if (/vacuity\s+clean/i.test(candidates[i])) return 'CLEAN';
@@ -201,8 +233,6 @@ function classify(run) {
 
     var failLines = lines.filter(function (l) { return FAIL_LINE.test(l); });
     var summaries = parseSummaries(text);
-    var mut = parseMutants(text);
-    var vacuity = parseVacuity(text);
 
     var reasons = [];
 
@@ -228,6 +258,12 @@ function classify(run) {
     var phraseSummaries = summaries.length ? [] : parseTerminalSuccess(text);
     var authoritative = summaries.length ? summaries[summaries.length - 1]
         : (phraseSummaries.length ? phraseSummaries[phraseSummaries.length - 1] : null);
+
+    // S8-R48-G — the mutation score and the vacuity verdict are read AFTER the summary is settled,
+    // so the accepted summary's own line can outrank narration printed below it.
+    var mut = parseMutants(text, authoritative && authoritative.line);
+    var vacuity = parseVacuity(text, authoritative && authoritative.line);
+
     if (!authoritative) {
         reasons.push(R.MISSING_SUMMARY);
     } else {

@@ -68,6 +68,22 @@ would look complete.
 
 `secret_scan: "CLEAN"` in a manifest means the scan ran and found nothing, not that it was skipped.
 
+### Quarantine
+
+The scan can only run once the sweep has produced output, and a full sweep is authorized one run at
+a time. A refusal that also destroyed the bytes would cost the entire run — and ten suites in this
+registry carry Apps Script `/exec` URLs in their source, so the risk is live.
+
+```
+node assets/tools/run-regression-sweep.js --evidence docs/evidence/s8-r48-sweep \
+     --quarantine <a path OUTSIDE the repository> --run-id <id>
+```
+
+On a hit the batch is written to the quarantine root instead — preserved verbatim, never scrubbed,
+never committed — the offending suites are named, and the run exits nonzero. **The repository path
+still refuses unconditionally**; quarantine preserves evidence for inspection, it does not make it
+committable. Without `--quarantine` the refusal is exactly as before: nothing is written anywhere.
+
 ## Reproducibility limits — read this before trusting a replay
 
 - A replay reproduces **classification**, not execution. It proves what the collector concludes from

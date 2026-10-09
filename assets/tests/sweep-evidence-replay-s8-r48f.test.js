@@ -159,6 +159,33 @@ if (fs.existsSync(EV_DIR)) {
     ok(false, 'E0 the committed evidence fixture is missing');
 }
 
+// =============================================================================================
+console.log('\n§G — QUARANTINE (S8-R48-G)');
+// =============================================================================================
+// The scan can only run once the sweep has produced output, and the sweep is authorized once. A
+// refusal that also destroys the bytes would cost the whole run, so a secret-bearing batch is
+// diverted OUT of the repository instead. The repository path still refuses, unconditionally.
+var QROOT = path.join(TMP, 'quarantine');
+
+var gClean = EV.writeEvidenceQuarantined({ root: ROOT, runId: 'run-g-clean', records: RECORDS, quarantineRoot: QROOT });
+eq([gClean.ok, gClean.quarantined], [true, false], 'G1 a clean batch is written normally');
+ok(gClean.result.dir.indexOf(QROOT) === -1, 'G1a ... to the repository path, not the quarantine');
+
+var gLeak = EV.writeEvidenceQuarantined({ root: ROOT, runId: 'run-g-leak', records: leaky, quarantineRoot: QROOT });
+eq([gLeak.ok, gLeak.quarantined], [false, true], 'G2 a secret-bearing batch is diverted, not written');
+ok(!fs.existsSync(path.join(ROOT, 'run-g-leak')), 'G2a ... and NOTHING reaches the repository path');
+ok(gLeak.result.dir.indexOf(QROOT) === 0, 'G2b ... the bytes land under the quarantine root');
+ok(gLeak.findings.length >= 1 && gLeak.findings[0].suite === 'f-leaky', 'G2c ... and the offending suite is named');
+eq(gLeak.result.manifest.secret_scan, 'FINDINGS_PRESENT', 'G2d ... with the manifest recording the scan did fire');
+
+var qv = EV.verifyIntegrity(gLeak.result.dir);
+eq([qv.ok, qv.problems.length], [true, 0], 'G3 quarantined evidence is intact — preserved, not scrubbed');
+
+// Without a quarantine root the behaviour is exactly as before: refuse outright.
+throws(function () { EV.writeEvidenceQuarantined({ root: ROOT, runId: 'run-g-noq', records: leaky }); },
+    /SECRET_SCAN_FAILED/, 'G4 with no quarantine root the refusal is unchanged');
+ok(!fs.existsSync(path.join(ROOT, 'run-g-noq')), 'G4a ... and still leaves nothing on disk');
+
 rmrf(TMP);
 
 console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed'
