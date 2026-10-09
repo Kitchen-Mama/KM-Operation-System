@@ -48,16 +48,32 @@ official R48-G baseline was computed with. Nothing about the collector changed i
 Not repaired here: this task does not authorize repairing newly discovered failures. Raw evidence is
 preserved at `r48n-full/raw/s7-r5-supporting-mainline-final-integration.{out,err}.txt`.
 
-The failing assertion is G1, at `assets/tests/s7-r5-supporting-mainline-final-integration.test.js:496`:
+> **CORRECTED 2026-10-09 by S8-R48-O / S8-R48-P.** The diagnosis first recorded here — that G1's open
+> interval was the defect, and that it should be bounded to `S7_END` — was **WRONG and is SUPERSEDED**.
+> The measured counts, evidence hashes, provenance and the recorded failure above and below are unaffected;
+> only the root cause and the proposed repair change. Repaired in `c10f795` (S8-R48-P1).
 
-    var s7Changed = changedBetween(S7_BASE, 'HEAD');      // line 494 - OPEN at one end
-    var s7Only    = changedBetween(S7_BASE, S7_END);      // line 495 - correctly bounded
+**Root cause: the MATCHER, not the interval.**
+
+    var s7Changed = changedBetween(S7_BASE, 'HEAD');   // STANDING interval - deliberate, see 3cb5231
     eq(s7Changed.filter(/forecast/i), [], 'G1 … no file whose path names forecast changed in ANY S7 round');
 
-G1 intends to assert that the S7 rounds changed no forecast file. It measures an interval that is open at
-one end, so it actually asserts that no forecast-named path has changed at any time since — a claim that
-grows with every later round. The file already computes the correctly bounded interval on the line above
-and uses the open one.
+`/forecast/i` over every changed path also matches `docs/evidence/…/raw/forecast-missing-means-zero-…`
+— a captured **transcript** of a suite, named after the suite. A transcript of a test about forecast is not
+the forecast product, so R48-G committing its own evidence was enough to make a true invariant report false.
+All twelve matching paths at HEAD are under `docs/evidence/`; **zero are forecast source.**
+
+**The open interval is deliberate and must stay open.** `3cb5231 test(s8-r4b-2d): the fourth interval pinned
+at one end` audited this exact bug class, bounded **G3**, and explicitly left **G1 and G2** reading HEAD:
+
+> "G1 and G2 are deliberately LEFT reading HEAD. What they assert is a standing invariant — forecast is
+> deferred, and the S5/S6 … owners are not S7's to touch — so against HEAD they are strictly stronger, not
+> accidentally true."
+
+Bounding G1 would have converted a live guarantee into a claim about a frozen range that can never change
+again, and left `G1a`/`G1b` guarding these files' **existence** forever while nothing guarded their
+**content**. G2 was never at risk from the same collision: its needles carry a `.gs` extension and cannot
+match a transcript name.
 
 **There is no product defect.** On `S7_BASE..S7_END` — the interval the guard's own sentence describes —
 zero forecast files changed, so the claim G1 defends is still true. The six paths it caught are all under
@@ -96,6 +112,7 @@ FAILING suite carries three of them.
 
 ## Open
 
-- `s7-r5-supporting-mainline-final-integration` G1 — the interval, diagnosed above, unrepaired by design.
+- `s7-r5-supporting-mainline-final-integration` G1 — **CLOSED** in `c10f795` (S8-R48-P1) by replacing the
+  substring matcher with a source-aware path classifier. The standing HEAD interval is unchanged.
 - R46 Production Functional Acceptance remains OPEN.
 - 90-day allocator and Admin Marketplace Priority remain NOT ACTIVATED.
