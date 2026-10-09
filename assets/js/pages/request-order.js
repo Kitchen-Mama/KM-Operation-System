@@ -4311,6 +4311,33 @@ window._roSendPlanningCycle_ = _roSendPlanningCycle_;
 
 // The orchestration's error surface. Every branch names the stage, states the write posture truthfully, and
 // gives the ONE correct next action. A timeout is never presented as a zero-write and never invites a retry.
+// S8-R49-E — one DB-sourced value, made safe for the sink it is about to enter.
+//
+// WHICH INJECTION ACTUALLY MATTERS HERE. These values come from the database and are rendered into alert(),
+// which is a TEXT sink: a tag is harmless there, but a newline or a control character is NOT — it forges extra
+// lines and can make an attacker-chosen string look like part of the system's own message. So the control
+// characters go, and the value is length-capped so one long cell cannot push the guidance off the dialog.
+// The HTML sink on this path is _roSetSendState_, which is the only innerHTML writer and already escapes
+// through _roEsc2_; both boundaries are covered, each by the defence its own sink needs.
+function _roConflictText_(v, max) {
+  // Built with a character scan rather than a regex literal ON PURPOSE. The class this needs to strip includes
+  // U+2028 / U+2029, and those are LINE TERMINATORS in JavaScript source: writing them literally inside a
+  // /[...]/ ends the literal and the file stops parsing. A scan states the same rule and cannot be broken by
+  // the characters it is about.
+  var raw = String(v == null ? '' : v);
+  var out = '', pendingSpace = false;
+  for (var i = 0; i < raw.length; i++) {
+    var c = raw.charCodeAt(i);
+    if (c <= 31 || (c >= 127 && c <= 159) || c === 8232 || c === 8233) { pendingSpace = (out !== ''); continue; }
+    if (pendingSpace) { out += ' '; pendingSpace = false; }
+    out += raw.charAt(i);
+  }
+  out = out.trim();
+  if (!out) return '';
+  max = max || 60;
+  return out.length > max ? (out.slice(0, max - 1) + String.fromCharCode(8230)) : out;
+}
+
 function _roSendOrchestrationErrorMessage_(res, indeterminate) {
   var e = (res && res.error) || {};
   var det = e.details || {};
@@ -4343,6 +4370,39 @@ function _roSendOrchestrationErrorMessage_(res, indeterminate) {
   if (code === 'REQUEST_ORDER_OUTPUT_UNPROVEN' || code === 'ALLOCATION_TRANSITION_FAILED') {
     return 'Send Request 未完成 — ' + code + '\n\n' + String(e.message || '') +
       '\n\nRun the interrupted-Send reconciliation before any retry.\n\n▸ Technical: ' + code;
+  }
+  // S8-R49-E — §14 carton-configuration refusal. The server (R49-D) blocks the WHOLE Send when any line carries
+  // a positive quantity and no usable units_per_carton, and it names every offending line in details.conflicts.
+  // Without this branch the operator got the summary sentence and had to go and find the SKUs themselves.
+  //
+  // Only the fields an operator needs to FIX it are rendered. request_allocation_draft_id, natural_key and
+  // units_per_carton_effective are deliberately left out: they identify internal rows, not the thing to correct.
+  if (code === 'MISSING_UNITS_PER_CARTON') {
+    var rawConflicts = Array.isArray(det.conflicts) ? det.conflicts : [];
+    var usable = rawConflicts.filter(function (c) { return c && typeof c === 'object'; });
+    var shown = usable.slice(0, 10);
+    var listed = shown.map(function (c) {
+      var sku = _roConflictText_(c.sku, 40) || '(unnamed SKU)';
+      var scope = [c.company, c.country, c.marketplace]
+        .map(function (x) { return _roConflictText_(x, 24); })
+        .filter(function (x) { return x !== ''; }).join(' / ');
+      var bucket = _roConflictText_(c.request_bucket, 8) || '—';
+      var hasQty = !(c.order_qty === null || c.order_qty === undefined || c.order_qty === '');
+      var qty = hasQty ? _roConflictText_(c.order_qty, 16) : '—';
+      var raw = _roConflictText_(c.units_per_carton_raw, 24);
+      return '  · ' + sku + (scope ? '  [' + scope + ']' : '') + ' — ' + bucket + ' qty ' + qty +
+        ', units_per_carton ' + (raw === '' ? '(blank)' : '"' + raw + '"');
+    }).join('\n');
+    var omitted = usable.length - shown.length;
+    var body = listed
+      ? (listed + (omitted > 0 ? ('\n  … and ' + omitted + ' more line(s)') : ''))
+      : '  (the server did not return the affected lines — open Request Order Draft to find the SKU with no carton size)';
+    return 'Send Request 已停止 — 缺少每箱數量 units_per_carton（未寫入任何資料）。\n\n' +
+      String(e.message || 'One or more lines have no usable units_per_carton.') + '\n\n' + body + '\n\n' +
+      'Set a positive units_per_carton on each SKU in SKU Details, then Send again.\n' +
+      'A PARTIAL-carton quantity is allowed and is NOT what blocked this Send — what blocks it is a missing, ' +
+      'zero, negative or non-numeric carton SIZE (§14).\n' +
+      'Nothing was written and no lifecycle status changed.';
   }
   if (code === 'DEPLOYMENT_CONTRACT_MISMATCH') {
     return String(e.message || 'The deployed Apps Script is out of date.') +
