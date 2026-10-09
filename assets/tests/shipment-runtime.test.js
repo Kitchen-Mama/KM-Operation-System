@@ -2,8 +2,8 @@
 // derivations: shipment-grain KPI flags, current-position priority (§E.3), node-status classification,
 // route-segment class, event dedupe, and the SHP-202607-001 fixture. Run: node assets/tests/shipment-runtime.test.js
 
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
 
 function low(v){ return String(v==null?'':v).trim().toLowerCase(); }
 function validCoord(lat,lng){ return typeof lat==='number'&&typeof lng==='number'&&lat>=-90&&lat<=90&&lng>=-180&&lng<=180&&!(lat===0&&lng===0); }
@@ -81,5 +81,6 @@ eq(routeNodes.filter(function(n){return nodeStatusClass(n.status)==='planned';})
 eq(events.length, 3, 'fixture: timeline shows 3 actual events only (no planned events fabricated)');
 eq(nodeStatusClass(routeNodes[2].status), 'current', 'fixture: node 3 (Pacific Ocean) is current');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

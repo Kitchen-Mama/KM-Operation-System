@@ -6,8 +6,8 @@
 
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
 
 // ---- mirrors of the shipped request-order.js helpers ----
 function marketplaceKey(item) {
@@ -145,5 +145,6 @@ eq(wmt.map(function (r) { return r.marketplaceId; }), ['MKT_US_WMT'], 'B3.8: dis
 // B3.9 — blank-country snapshot cannot wildcard (covered by the source guard above + strict scoping)
 eq(/if \(country && _roUpper\(r\.country \|\| ''\) !== _roUpper\(country\)\) return;/.test(js), true, 'B3.9: blank-country snapshot excluded (no wildcard) in siteStock');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

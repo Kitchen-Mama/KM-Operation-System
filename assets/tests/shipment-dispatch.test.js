@@ -3,8 +3,8 @@
 // resolution, node-status assignment, factory-stock deduction planner, cumulative offset dates, and the
 // both-or-neither coordinate guard. Run: node assets/tests/shipment-dispatch.test.js
 
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
 function low(v){ return String(v==null?'':v).trim().toLowerCase(); }
 function truthy(v){ var s=low(v); return s==='true'||s==='1'||s==='yes'||s==='y'; }
 
@@ -80,5 +80,6 @@ eq(coordGuard(33.7,''), ['',''], 'coord guard: lat present, lng blank → both b
 eq(coordGuard(33.7,-118.2), [33.7,-118.2], 'coord guard: both present → kept');
 eq(coordGuard('',''), ['',''], 'coord guard: both blank → blank');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

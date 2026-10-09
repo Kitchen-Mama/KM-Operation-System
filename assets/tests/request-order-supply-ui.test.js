@@ -6,8 +6,8 @@
 
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
 
 // ---- mirrors of the RETAINED request-order.js helpers ----
 function cartonBreak(orderQty, box) {
@@ -168,5 +168,6 @@ eq(ffBuilder.length > 0, true, 'B2: Forward Forecast matrix builder located');
 eq(/_roTargetPct\(item, mo\)/.test(ffBuilder), true, 'B2: Base FC column applies Target %');
 eq(/ev\.qty > 0/.test(ffBuilder), true, 'B2: Special FC shows the raw event qty (never × Target%)');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

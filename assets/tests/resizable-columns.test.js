@@ -7,8 +7,8 @@ var fs = require('fs');
 var path = require('path');
 var R = require(path.join(__dirname, '..', 'js', 'utils', 'resizable-columns.js'));
 
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
 
 var COLS = [
   { key: 'sku', min: 90, max: 260, def: 120 },
@@ -91,5 +91,6 @@ eq(/group: 'promotion-risk'/.test(crJs), true, 'Part E: isolated storage group p
 eq(/id="cr-table-scroll-header"/.test(crHtml), true, 'Part E: scroll header carries the id the adapter needs to out-specify base widths');
 eq(/_initCrColumnResize\(\)/.test(crJs), true, 'Part E: resize init invoked once on mount (header static → no duplicate handles)');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

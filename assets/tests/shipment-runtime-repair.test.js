@@ -2,8 +2,8 @@
 // operation-system-db-api.js (resilient filters, _geoNum coord parsing incl. numeric-strings & 0-lat,
 // diagnostics) and global-logistics-map.js (ref filtering, cache gating). Run: node assets/tests/shipment-runtime-repair.test.js
 
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
 
 // _geoNum mirror (adapter): numeric-string ok, blank/NaN/out-of-range → null; 0 kept.
 function geoNum(v, kind) { if (v === '' || v == null) return null; var n = parseFloat(v); if (!isFinite(n)) return null; if (kind === 'lat' && (n < -90 || n > 90)) return null; if (kind === 'lng' && (n < -180 || n > 180)) return null; return n; }
@@ -91,5 +91,6 @@ eq(Math.abs(c1.lat - 33.9) < 0.5 && Math.abs(c1.lng - (-118.22)) < 0.5, true, 'c
 var c2 = centroid([[23.02, 113.75], [33.75, -118.2]]);
 eq(c2.lat > 20 && c2.lat < 70 && !(c2.lat === 0 && c2.lng === 0), true, 'centroid: trans-Pacific CN+US pair yields a sensible northern focus (not 0,0)');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);
