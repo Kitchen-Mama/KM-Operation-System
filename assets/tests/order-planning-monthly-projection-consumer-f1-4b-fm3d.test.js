@@ -19,6 +19,31 @@ function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass+
 function section(n) { console.log('\n== ' + n + ' =='); }
 function slice(m1, m2) { var a = JS.indexOf(m1), b = JS.indexOf(m2); if (a < 0 || b < 0) throw new Error('markers not found: ' + m1); return JS.slice(a, b); }
 
+// S8-R48-L1 — structural, fail-closed, and spelling-agnostic.
+function fnOf(src, name) {
+  var at = src.indexOf('function ' + name + '(');
+  if (at === -1) throw new Error('FAIL-CLOSED: fn not found: ' + name);
+  if (src.indexOf('function ' + name + '(', at + 1) !== -1) throw new Error('FAIL-CLOSED: ambiguous fn: ' + name);
+  var depth = 0, started = false;
+  for (var i = at; i < src.length; i++) {
+    var ch = src[i];
+    if (ch === '{') { depth++; started = true; }
+    else if (ch === '}') { depth--; if (started && depth === 0) return src.slice(at, i + 1); }
+  }
+  throw new Error('FAIL-CLOSED: unbalanced fn: ' + name);
+}
+function paramsOf(fnText) {
+  var m = /^function\s+[A-Za-z0-9_$]+\s*\(([^)]*)\)/.exec(fnText);
+  if (!m) throw new Error('FAIL-CLOSED: no signature');
+  return m[1].split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+}
+/** Does `body` call `callee` with the consumer's OWN parameters, at the given positions? */
+function delegatesWithOwnParams(body, callee, params, picks) {
+  var args = picks.map(function (i) { return params[i]; });
+  if (args.some(function (a) { return !a; })) return false;
+  return new RegExp(callee + '\\s*\\(\\s*' + args.join('\\s*,\\s*') + '\\s*\\)').test(body);
+}
+
 var OPRECO = slice('// __OPRECO_START__', '// __OPRECO_END__');
 
 // ---- host-page stubs (a recording DOM so the canonical cell patch can be asserted) ----------------
@@ -138,7 +163,43 @@ section('R/S/P end-to-end load — ONE request, patch applied, no writes, projec
   ok(/\['T1', 'T2', 'T3', 'T4'\][\s\S]{0,400}data-ro-gap-tier/.test(JS), 'U2 Demand Summary maps T1–T4');
   ok(/data-ro-suggested-tier="' \+ t \+ '">' \+ _opRecoFmtQty/.test(JS) || /data-ro-suggested-tier[\s\S]{0,80}_opRecoFmtQty/.test(JS), 'F2 Suggested cell renders canonical suggestedOrderQty via the formatter (no page math)');
   ok(/Order Allocation \(T1–T3/.test(JS) && /var allocRows = \['T1', 'T2', 'T3'\]/.test(JS), 'V Order Allocation stays T1–T3 actionable (no writable T4 added)');
-  ok(/_roEffectiveOrderQty\(item, i, e\);\s*\/\/ Order Qty default UNCHANGED/.test(JS), 'K/W manual Order Qty default + Send Request path UNCHANGED (frozen write path)');
+  // ---- K/W — the frozen manual Order Qty default, asserted by BEHAVIOUR and SHAPE -----------------
+  // S8-R48-L1 — this pinned the literal `_roEffectiveOrderQty(item, i, e);   // Order Qty default
+  // UNCHANGED` — one inline call site, its local parameter SPELLINGS, and its trailing comment. All
+  // three moved in F1-4B-FM6-R4E3-PRE: the inline call was extracted into two named consumers
+  // (_roRowOrderQtyDisplay_ / _roSendOrderQty_) and the locals became (item, idx, edit). The claim
+  // the assertion was making — the manual default and the Send path are unchanged — remained true
+  // the whole time; the function's BODY is byte-identical to its original form. Only the spelling
+  // broke, which is the one thing that does not matter.
+  //
+  // So the claim is now checked where it lives: the behaviour of the function, and the SHAPE of the
+  // consumers' delegation — read from each consumer's OWN signature, so renaming a local moves the
+  // assertion with it instead of breaking it.
+  var EFF_FN = fnOf(JS, '_roEffectiveOrderQty');
+  var EFF_P = paramsOf(EFF_FN);
+  ok(EFF_P.length === 3, 'K/W1 _roEffectiveOrderQty still takes (item, index, edit) — three positional inputs');
+
+  // BEHAVIOUR: a manual edit wins; otherwise the tier suggestion; a persisted 0 is a real decision.
+  var effStub = new Function('_roTierSuggested',
+    EFF_FN + '; return _roEffectiveOrderQty;')(function (item, idx) { return idx === 'T9' ? null : 42; });
+  ok(effStub(ITEM, 'T1', { orderQty: 7 }) === 7, 'K/W2 a manual edit is the default');
+  ok(effStub(ITEM, 'T1', { orderQty: 0 }) === 0, 'K/W2a a manual ZERO is a real decision, not a blank');
+  ok(effStub(ITEM, 'T1', { orderQty: '' }) === 42, 'K/W2b a blank edit falls through to the tier suggestion');
+  ok(effStub(ITEM, 'T1', null) === 42, 'K/W2c no edit → the tier suggestion');
+  ok(effStub(ITEM, 'T9', null) === null, 'K/W2d no suggestion → null, never a fabricated quantity');
+
+  // SHAPE: both consumers delegate, passing their own (item, index, edit) through positionally.
+  [['_roRowOrderQtyDisplay_', [0, 1, 3]], ['_roSendOrderQty_', [0, 1, 3]]].forEach(function (c) {
+    var body = fnOf(JS, c[0]);
+    var p = paramsOf(body);
+    ok(delegatesWithOwnParams(body, '_roEffectiveOrderQty', p, c[1]),
+      'K/W3 ' + c[0] + ' falls back to _roEffectiveOrderQty with its own (' + c[1].map(function (i) { return p[i]; }).join(', ') + ')');
+    // FAIL CLOSED: the canonical-draft guard must come BEFORE the fallback, or a SKU with a
+    // persisted draft can assert a recomputed quantity — the live 400-against-360 defect.
+    ok(body.indexOf('_roHasCanonicalDraft_') !== -1
+      && body.indexOf('_roHasCanonicalDraft_') < body.indexOf('_roEffectiveOrderQty'),
+      'K/W4 ' + c[0] + ' guards the fallback with _roHasCanonicalDraft_ FIRST (no ephemeral quantity)');
+  });
 
   // FM3d canonical mapping region contains NO page-side gap/carton/suggested arithmetic
   var region = JS.slice(JS.indexOf('function _opRecoPrimaryProjection()'), JS.indexOf('function _opRecoSubsectionHtml'));
@@ -155,7 +216,71 @@ section('R/S/P end-to-end load — ONE request, patch applied, no writes, projec
   ok(_opRecoSubsectionHtml(ITEM) === '', 'T workspace OFF → diagnostics omitted (legacy panel preserved)');
   ok(/if \(!recoOn\) return '<tr><td>' \+ t \+ ' · ' \+ mo\.label/.test(JS), 'T2 legacy demand-only Demand Summary row preserved on the OFF path');
 
+  // ================================================================================================
+  section('negative mutants — the consumer wiring must be able to fail');
+  // The assertion these replace could only fail by being out-spelled, which is how it failed while
+  // the contract held. Each mutant edits the page source in memory and re-runs the check it breaks.
+  var mutants = 0, survived = 0;
+  function mutant(label, probe) {
+    mutants++;
+    var detected = false, crashed = null;
+    try { detected = probe(); } catch (e) { crashed = e; }
+    if (crashed) { survived++; fail++; console.error('FAIL M' + mutants + ' CRASHED (not a kill) — ' + label + ' — ' + crashed.message); return; }
+    if (!detected) { survived++; fail++; console.error('FAIL M' + mutants + ' SURVIVED — ' + label); }
+    else { pass++; console.log('ok   M' + mutants + ' killed — ' + label); }
+  }
+  function delegationHolds(src, name) {
+    var b = fnOf(src, name);
+    return delegatesWithOwnParams(b, '_roEffectiveOrderQty', paramsOf(b), [0, 1, 3]);
+  }
+  function guardHolds(src, name) {
+    var b = fnOf(src, name);
+    return b.indexOf('_roHasCanonicalDraft_') !== -1
+      && b.indexOf('_roHasCanonicalDraft_') < b.indexOf('_roEffectiveOrderQty');
+  }
+  function swapIn(name, find, repl) {
+    var b = fnOf(JS, name);
+    if (b.indexOf(find) === -1) throw new Error('FAIL-CLOSED: mutation anchor absent in ' + name);
+    return JS.replace(b, b.replace(find, repl));
+  }
+  function effWith(mutateFn) {
+    var f = mutateFn(fnOf(JS, '_roEffectiveOrderQty'));
+    return new Function('_roTierSuggested', f + '; return _roEffectiveOrderQty;')(function () { return 42; });
+  }
+
+  mutant('the Send consumer stops calling _roEffectiveOrderQty', function () {
+    return !delegationHolds(swapIn('_roSendOrderQty_', 'return _roEffectiveOrderQty(item, idx, edit);', 'return null;'), '_roSendOrderQty_');
+  });
+  mutant('the display consumer stops calling _roEffectiveOrderQty', function () {
+    return !delegationHolds(swapIn('_roRowOrderQtyDisplay_', 'return _roEffectiveOrderQty(item, idx, edit);', 'return null;'), '_roRowOrderQtyDisplay_');
+  });
+  mutant('scope propagation broken — the tier index is not passed through', function () {
+    return !delegationHolds(swapIn('_roSendOrderQty_', '_roEffectiveOrderQty(item, idx, edit)', "_roEffectiveOrderQty(item, 'T1', edit)"), '_roSendOrderQty_');
+  });
+  mutant('the canonical-draft guard is bypassed — an ephemeral qty can be asserted again', function () {
+    return !guardHolds(swapIn('_roSendOrderQty_', 'if (_roHasCanonicalDraft_(item)) return null;', ''), '_roSendOrderQty_');
+  });
+  mutant('the consumed projection field is changed', function () {
+    var anchor = 'monthlyProjection: Array.isArray(L.monthlyProjection)';
+    if (JS.indexOf(anchor) === -1) throw new Error('FAIL-CLOSED: projection anchor absent');
+    return !/monthlyProjection: Array\.isArray\(L\.monthlyProjection\)/.test(
+      JS.replace(anchor, 'monthlyProjection: Array.isArray(L.monthlyProjectionX)'));
+  });
+  mutant('the default ladder is inverted — a tier suggestion outranks a manual edit', function () {
+    return effWith(function (f) { return f.replace("if (edit && edit.orderQty != null && edit.orderQty !== '') return Number(edit.orderQty);", ''); })(ITEM, 'T1', { orderQty: 7 }) !== 7;
+  });
+  mutant('a persisted manual ZERO is swallowed as a blank', function () {
+    return effWith(function (f) { return f.replace("edit.orderQty != null && edit.orderQty !== ''", 'edit.orderQty'); })(ITEM, 'T1', { orderQty: 0 }) !== 0;
+  });
+  mutant('(inverted) locals renamed with NO behaviour change — the suite must STILL pass', function () {
+    // The exact failure this round repaired: (item, i, e) → (item, idx, edit) broke a correct page.
+    var b = fnOf(JS, '_roSendOrderQty_');
+    var src = JS.replace(b, b.replace(/\bidx\b/g, 'tierIx').replace(/\bedit\b/g, 'userEdit'));
+    return delegationHolds(src, '_roSendOrderQty_') && guardHolds(src, '_roSendOrderQty_');
+  });
+
   console.log('\n----------------------------------------');
-  console.log('OP MONTHLY PROJECTION CONSUMER (F1-4B-FM3d): ' + pass + ' passed, ' + fail + ' failed');
+  console.log('OP MONTHLY PROJECTION CONSUMER (F1-4B-FM3d): ' + pass + ' passed, ' + fail + ' failed, '
+    + mutants + ' mutants, ' + survived + ' survived, ' + (mutants >= 8 ? 'vacuity clean' : 'VACUOUS'));
   if (fail > 0) { process.exitCode = 1; }
 })();
