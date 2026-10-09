@@ -168,6 +168,80 @@ eq(ffBuilder.length > 0, true, 'B2: Forward Forecast matrix builder located');
 eq(/_roTargetPct\(item, mo\)/.test(ffBuilder), true, 'B2: Base FC column applies Target %');
 eq(/ev\.qty > 0/.test(ffBuilder), true, 'B2: Special FC shows the raw event qty (never × Target%)');
 
+// =============================================================================================
+// S8-R49-A — THE SHIPPED VALIDATOR, EXECUTED. NOT THE MIRROR.
+//
+// Everything above runs against MIRRORS of the request-order.js helpers, and this file has said so in
+// its own header from the start. A mirror proves the mirror. R48-S recorded that as the standing gap:
+// the Send/partial-carton verdict was never taken from production bytes.
+//
+// request-order.js cannot be require()d — it is a 5799-line browser PAGE script with no
+// module.exports and 311 document/window references, and loading it throws
+// `ReferenceError: window is not defined` on the first top-level statement. SV1 pins that, so the
+// reason for the mirror stays documented rather than folklore.
+//
+// But the validator itself is PURE: no DOM, no page state, deterministic. So it is read out of the
+// shipped file by brace-matched extraction — the same technique the .gs suites already use — and
+// executed directly. No production change, no export seam, no refactor.
+// =============================================================================================
+var _roSrc = fs.readFileSync(path.join(__dirname, '..', 'js/pages/request-order.js'), 'utf8');
+function extractShipped(name) {
+  var i = _roSrc.indexOf('function ' + name + '(');
+  if (i < 0) throw new Error('FAIL-CLOSED: shipped function not found: ' + name);
+  if (_roSrc.indexOf('function ' + name + '(', i + 1) !== -1) {
+    throw new Error('FAIL-CLOSED: more than one definition of ' + name);
+  }
+  var j = _roSrc.indexOf('{', i), d = 0;
+  for (; j < _roSrc.length; j++) {
+    var c = _roSrc[j];
+    if (c === '{') { d++; } else if (c === '}') { d--; if (d === 0) { return _roSrc.slice(i, j + 1); } }
+  }
+  throw new Error('FAIL-CLOSED: unbalanced braces in ' + name);
+}
+var _roCartonBreakSrc = extractShipped('_roCartonBreak');
+var shippedCartonBreak = new Function(_roCartonBreakSrc + '; return _roCartonBreak;')();
+
+(function () {
+  var blocked = null;
+  try { require('../js/pages/request-order.js'); }
+  catch (e) { blocked = e; }
+  eq(!!blocked && /window|document/.test(String(blocked.message)), true,
+     'SV1 the page module cannot be require()d — it throws on a browser global, which is WHY a mirror existed');
+})();
+eq(/document\.|window\./.test(_roCartonBreakSrc), false,
+   'SV2 the shipped validator itself is DOM-free, so executing it needs no shim and no seam');
+
+// §37: the user quantity is independent of the §14 full-carton CEILING. 137 at 40 is 3 full + 17 loose.
+var sv137 = shippedCartonBreak(137, 40);
+eq([sv137.isPartial, sv137.full, sv137.loose], [true, 3, 17],
+   'SV3 SHIPPED: 137 at upc 40 is a partial carton — 3 full boxes and 17 loose');
+eq(sv137.isValid, true,
+   'SV4 SHIPPED: a partial carton is VALID — §37 Send is NOT blocked by a partial carton');
+eq(shippedCartonBreak(160, 40).isPartial, false,
+   'SV5 SHIPPED: an exact carton multiple is not flagged partial');
+eq(shippedCartonBreak(-5, 40).isValid, false,
+   'SV6 SHIPPED: a negative quantity is still blocking');
+eq(shippedCartonBreak('', 40).isNumeric, false,
+   'SV7 SHIPPED: a blank quantity is not numeric and is not valid');
+// A missing units_per_carton is NOT this function's gate. §14 blocks the system Suggested and Send
+// elsewhere; here the breakdown simply reports that it cannot split, and must not invent a partial.
+eq([shippedCartonBreak(137, 0).boxUnknown, shippedCartonBreak(137, 0).isValid,
+    shippedCartonBreak(137, 0).isPartial], [true, true, false],
+   'SV8 SHIPPED: unknown carton size reports boxUnknown and claims no split — the §14 Send block is a '
+   + 'separate gate, not this one');
+
+// THE MIRROR IS NOW ANCHORED. Every case the suite above asserts against its own copy is replayed
+// through the shipped bytes, so the copy can no longer drift away from production in silence.
+(function () {
+  var cases = [[100, 12], [137, 40], [160, 40], [0, 40], [39, 40], [40, 40], [1, 1], [137, 0], [-5, 40]];
+  var drift = cases.filter(function (c) {
+    var m = cartonBreak(c[0], c[1]), p = shippedCartonBreak(c[0], c[1]);
+    return m.isNumeric !== p.isNumeric || m.isValid !== p.isValid || m.isPartial !== p.isPartial;
+  }).map(function (c) { return c.join('@'); });
+  eq(drift, [],
+     'SV9 the MIRROR in this file agrees with the shipped validator on every case — isNumeric, isValid '
+     + 'and isPartial, across nine inputs including the §37 partial carton');
+})();
 if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
 console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

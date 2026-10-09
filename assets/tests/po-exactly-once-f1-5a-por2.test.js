@@ -127,6 +127,160 @@ console.log('\n== E factory / supplier canonical ==');
   ok(poRows(ssC).every(function (r) { return r[sc] === 'SUP1'; }), 'E supplier_id carried from the Request Order');
 })();
 
+// =============================================================================
+// S8-R49-A — §37 PARTIAL CARTON, DRIVEN THROUGH THE REAL HANDLERS.
+//
+// 137 units at 40 per carton: three full boxes and 17 loose. §37 says the user quantity is
+// independent of the system's full-carton CEILING (§14) and is carried to the Purchase Order
+// WITHOUT being rounded back up — so 137 must never become 160 at any stage.
+//
+// Both stages execute the SHIPPED functions extracted from 13_procurement_handlers.gs:
+// handleUpdateRequestOrderLineQty_ for the approval decision and handleCreatePurchaseOrderFromRequest_
+// for the conversion. Nothing here re-implements their arithmetic; a copy of the logic would only
+// prove the copy.
+// =============================================================================
+eval(extractFn(GS13, 'procurementNum_'));
+eval(extractFn(GS13, 'procurementCompanyQty_'));
+eval(extractFn(GS13, 'procurementSourcePriority_'));
+eval(extractFn(GS13, 'procurementSiteFieldsByCompany_'));
+eval(extractFn(GS13, 'procurementRecalcRequestTotals_'));
+eval(extractFn(GS13, 'handleUpdateRequestOrderLineQty_'));
+
+var PC_UPC = 40;                 // units per carton
+var PC_QTY = 137;                // what the user actually asked for: 3 full cartons + 17 loose
+var PC_CEILED = 160;             // what a full-carton re-round would have produced — must never appear
+var PC_CARTONS = 4;              // PHYSICAL boxes: ceil(137/40). The box count ceilings; the QUANTITY does not.
+var PC_NOTE = 'partial-carton override: 137 = 3 x 40 + 17 loose';
+
+// The line sheet carries the full decision-layer column set so note / company split / schedule are
+// observable. `withCarton` omits carton_qty entirely, which is how the conversion's COMPUTED branch
+// (ceil) is reached rather than its COPY branch — both are real production paths and both are tested.
+function buildPartialDb(o) {
+  o = o || {};
+  var ro = makeSheet('request_orders', ['request_order_id', 'request_status', 'company', 'supplier_id',
+    'supplier_name', 'warehouse_id', 'factory_id', 'currency', 'total_sku', 'total_qty', 'total_cartons',
+    'estimated_amount', 'updated_by', 'updated_at']);
+  ro.appendRow(['RO1', o.status || 'draft', 'KM', 'SUP1', 'Supplier One', 'WH1', '', 'USD', '', '', '', '', '', '']);
+  var cols = ['request_order_line_id', 'request_order_id', 'sku', 'company', 'request_bucket', 'request_month',
+    'line_status', 'requested_qty', 'approved_qty', 'units_per_carton'];
+  if (o.withCarton !== false) cols.push('carton_qty');
+  cols = cols.concat(['unit_cost', 'estimated_amount', 'currency', 'purchase_order_line_id', 'series',
+    'recommended_qty', 'note', 'km_qty', 'resus_qty', 'restw_qty', 'updated_at']);
+  var rol = makeSheet('request_order_lines', cols);
+  var row = {};
+  cols.forEach(function (c) { row[c] = ''; });
+  row.request_order_line_id = 'ROL1'; row.request_order_id = 'RO1'; row.sku = 'S1'; row.company = 'KM';
+  row.request_bucket = 'T1'; row.request_month = '2026-09'; row.line_status = 'approved';
+  row.requested_qty = PC_CEILED;          // the system's full-carton suggestion, deliberately 160
+  row.approved_qty = PC_CEILED;           // before the user's decision
+  row.units_per_carton = PC_UPC; row.unit_cost = 2; row.currency = 'USD';
+  row.recommended_qty = PC_CEILED; row.km_qty = PC_CEILED; row.resus_qty = 0; row.restw_qty = 0;
+  if (o.withCarton !== false) row.carton_qty = PC_CEILED / PC_UPC;
+  rol.appendRow(cols.map(function (c) { return row[c]; }));
+  var po = makeSheet('purchase_orders', ['purchase_order_id', 'po_no', 'purchase_order_no', 'request_order_id',
+    'request_bucket', 'order_status', 'company', 'supplier_id', 'factory_id', 'currency', 'total_sku',
+    'total_qty', 'total_cartons', 'total_amount', 'subtotal_amount', 'warehouse_id', 'supplier_name',
+    'created_by', 'created_at', 'updated_by', 'updated_at', 'note']);
+  var pol = makeSheet('purchase_order_lines', ['purchase_order_line_id', 'purchase_order_id',
+    'request_order_line_id', 'request_order_id', 'request_bucket', 'sku', 'ordered_qty', 'approved_qty',
+    'requested_qty', 'recommended_qty', 'company', 'currency', 'line_status', 'carton_qty',
+    'units_per_carton', 'note']);
+  var wh = makeSheet('warehouses', ['warehouse_id', 'factory_id']); wh.appendRow(['WH1', 'FAC-CN-1']);
+  var rols = makeSheet('request_order_line_sources', ['request_order_line_source_id', 'request_order_line_id',
+    'request_order_id', 'sku', 'company', 'request_bucket', 'request_month', 'approved_qty', 'source_type']);
+  return makeSS({ request_orders: ro, request_order_lines: rol, purchase_orders: po,
+    purchase_order_lines: pol, warehouses: wh, request_order_line_sources: rols });
+}
+function roLineCell(ss, name) {
+  var sh = ss.getSheetByName('request_order_lines'), rows = sh._rows();
+  return rows[1][rows[0].indexOf(name)];
+}
+function setRoStatus(ss, st) {
+  var sh = ss.getSheetByName('request_orders'), rows = sh._rows();
+  sh.getRange(2, rows[0].indexOf('request_status') + 1).setValue(st);
+}
+
+console.log('\n== S8-R49-A §37 partial carton — approval decision (real handler) ==');
+var ssPC = buildPartialDb();
+CURRENT_SS = ssPC;
+var pcApproval = handleUpdateRequestOrderLineQty_({
+  lines: [{ request_order_line_id: 'ROL1', approved_qty: PC_QTY, note: PC_NOTE }], actor: 'tester'
+});
+ok(pcApproval && pcApproval.success && pcApproval.data.updated === 1,
+   'PC1 the shipped approval handler accepted a partial-carton decision (137 at upc 40)');
+eq(Number(roLineCell(ssPC, 'approved_qty')), PC_QTY,
+   'PC2 approved_qty is EXACTLY 137 — the user quantity is not re-rounded to a full carton');
+ok(Number(roLineCell(ssPC, 'approved_qty')) !== PC_CEILED,
+   'PC3 and it is specifically NOT 160, which is what a carton CEILING would have produced');
+eq(Number(roLineCell(ssPC, 'carton_qty')), PC_CARTONS,
+   'PC4 carton_qty = 4 — the PHYSICAL box count ceilings (ceil(137/40)); the quantity does not');
+eq(String(roLineCell(ssPC, 'note')), PC_NOTE,
+   'PC5 the override note is persisted verbatim on the request line (§37 existing-note contract)');
+eq([Number(roLineCell(ssPC, 'km_qty')), Number(roLineCell(ssPC, 'resus_qty')), Number(roLineCell(ssPC, 'restw_qty'))],
+   [PC_QTY, 0, 0],
+   'PC6 company ownership is preserved — the KM line carries 137, the other companies carry 0');
+eq(Number(roLineCell(ssPC, 'recommended_qty')), PC_CEILED,
+   'PC7 the system recommendation snapshot (160) is PRESERVED beside the override, not overwritten by it');
+
+console.log('\n== S8-R49-A §37 partial carton — PO conversion (real handler) ==');
+setRoStatus(ssPC, 'approved');
+var pcConv = run(ssPC);
+ok(pcConv && pcConv.success && pcConv.data.po_count === 1, 'PC8 the approved request converts to one PO');
+var pcLines = polRows(ssPC);
+eq(pcLines.length, 1, 'PC9 exactly one PO line');
+function polCell(ss, name) { return pcLines[0][idx(ss, 'purchase_order_lines', name)]; }
+eq(Number(polCell(ssPC, 'ordered_qty')), PC_QTY,
+   'PC10 PO ordered_qty is EXACTLY 137 — conversion carries the approved quantity, never a re-ceiling');
+eq(Number(polCell(ssPC, 'approved_qty')), PC_QTY, 'PC11 PO approved_qty is 137');
+eq(Number(polCell(ssPC, 'carton_qty')), PC_CARTONS, 'PC12 PO carton_qty = 4 physical boxes');
+eq(Number(polCell(ssPC, 'units_per_carton')), PC_UPC, 'PC13 units_per_carton 40 carried as the conversion snapshot');
+eq(String(polCell(ssPC, 'company')), 'KM', 'PC14 company identity survives the conversion');
+eq(String(polCell(ssPC, 'note')), PC_NOTE, 'PC15 the override note survives RO line → PO line');
+eq(Number(polCell(ssPC, 'recommended_qty')), PC_CEILED,
+   'PC16 the 160 recommendation travels as a DISPLAY snapshot and is not the ordered quantity');
+ok(Number(polCell(ssPC, 'ordered_qty')) !== Number(polCell(ssPC, 'recommended_qty')),
+   'PC17 ordered_qty and recommended_qty are different numbers here — so PC10 cannot pass by them being equal');
+(function () {
+  var oc = idx(ssPC, 'purchase_order_lines', 'ordered_qty');
+  var cc = idx(ssPC, 'purchase_order_lines', 'carton_qty');
+  var any160 = pcLines.some(function (r) { return Number(r[oc]) === PC_CEILED || Number(r[cc]) === PC_CEILED; });
+  ok(!any160, 'PC18 160 appears nowhere in the PO quantities — no stage silently restored the full carton');
+})();
+
+console.log('\n== S8-R49-A §37 partial carton — computed-carton branch + idempotency ==');
+(function () {
+  // With no carton_qty column on the request line the conversion COMPUTES it instead of copying.
+  var ss2 = buildPartialDb({ withCarton: false });
+  CURRENT_SS = ss2;
+  handleUpdateRequestOrderLineQty_({ lines: [{ request_order_line_id: 'ROL1', approved_qty: PC_QTY }], actor: 't' });
+  setRoStatus(ss2, 'approved');
+  var res = run(ss2);
+  ok(res.success, 'PC19 conversion succeeds with no persisted carton_qty to copy');
+  var rows2 = polRows(ss2);
+  eq(Number(rows2[0][idx(ss2, 'purchase_order_lines', 'ordered_qty')]), PC_QTY,
+     'PC20 ordered_qty is still 137 on the computed branch');
+  eq(Number(rows2[0][idx(ss2, 'purchase_order_lines', 'carton_qty')]), PC_CARTONS,
+     'PC21 carton_qty is COMPUTED as ceil(137/40) = 4, matching the copied branch');
+})();
+(function () {
+  // Retry must not create a second PO or a second line for the same partial-carton decision.
+  CURRENT_SS = ssPC;
+  var before = polRows(ssPC).length, poBefore = poRows(ssPC).length;
+  var again = run(ssPC);
+  ok(again && again.success, 'PC22 a repeated conversion of the same request still succeeds');
+  eq([polRows(ssPC).length, poRows(ssPC).length], [before, poBefore],
+     'PC23 and creates no duplicate PO or PO line — idempotency still holds for a partial carton');
+  eq(Number(polCell(ssPC, 'ordered_qty')), PC_QTY, 'PC24 the quantity is unchanged by the retry');
+})();
+(function () {
+  // §37 says the override uses EXISTING fields and adds no DB column, so the partial-carton FLAG is not
+  // stored anywhere - it is DERIVED. This proves it is still derivable from the Purchase Order line alone,
+  // which is what makes the no-new-column contract workable downstream: both operands survive conversion.
+  var q = Number(polCell(ssPC, 'ordered_qty')), upc = Number(polCell(ssPC, 'units_per_carton'));
+  eq([q % upc !== 0, q % upc], [true, 17],
+     'PC25 the partial-carton override is DERIVABLE from the PO line itself (137 mod 40 = 17) — no stored',
+     'flag needed, and none invented');
+})();
 console.log('\n== F/G/H/J double-click / two-tab / lost-response → idempotent reuse ==');
 (function () {
   var ss = buildDb({ lines: [{ sku: 'S1', bucket: 'T1', requested: 800, upc: 40 }, { sku: 'S2', bucket: 'T2', requested: 300, upc: 30 }] });
