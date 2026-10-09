@@ -4779,12 +4779,38 @@ DB_WRITES                        0
 DB_DELETES                       0
 FRONTEND_DEPLOY_REQUIRED         YES — but as a SEPARATE release, published AFTER this one is synced
 CACHE_TOKEN_ROTATION_REQUIRED    NO for this release; YES for the frontend half
-APPS_SCRIPT_DEPLOYMENT_PERFORMED NO
-FRONTEND_PUBLICATION_PERFORMED   NO
+APPS_SCRIPT_DEPLOYMENT_PERFORMED YES — 42_, 63_ and R45’s pending 60_ synced; new version published
+FRONTEND_PUBLICATION_PERFORMED   YES — after the UTF-8 ledger repair (3fae8a6) unblocked Pages
 GIT_PUSH_REQUIRED                YES — USER-owned, after review
 ```
 
-**STATUS: PREPARED, NOT SYNCED, NOT DEPLOYED.** Acceptance is one Production read of a scope holding at
-least one Forecast-Driven SKU with sales history: `horizonBasis.avgSalesPerDay` must be a number and
-`horizonBasis.source` must name the §22 rung, while `horizons[].demandQty` for both modes is unchanged
-against the pre-R46 values.
+**STATUS: SYNCED AND PUBLISHED · IDENTITY ACCEPTED · FUNCTIONAL ACCEPTANCE OPEN.**
+
+Live Production `system.health` (GET, read-only, `read_only: true`, `db_writes: 0`) reports
+`deployment_release` = `build_id` = R46, `deployment_uniformity_verdict` = UNIFORM, `mixed_deployment`
+= false, 63_ = R46, 01_ router = R41, `router_ready` = `db_reachable` = `schema_ready` = true,
+`missing_actions` = []. **60_ `SIR_BUILD_VERSION_` reads R45 with `matches_expected` = true, and that
+is correct, not a gap:** a module stamp records the round the file last changed, never the release, and
+60_ did not change in R46. It also settles R45’s pending 60_ sync, which this probe is the first
+evidence for.
+
+Frontend published and verified by direct fetch: `index.html` and `app.js` HTTP 200 carrying the R46
+cache token, `inventory-replenishment.js` HTTP 200 with `_irRecoHasCanonicalBasis_` PRESENT and the
+superseded `_irRecoHasSalesDrivenBasis_` ABSENT — so the repaint fix is the code actually being served,
+not merely the code committed. Publication had been blocked since 6b9735e by invalid UTF-8 in THIS file,
+introduced by a latin1 write in 4065ba3 and repaired in 3fae8a6; Pages recovered on the next build.
+
+Smoke (user-observed): Site Inventory loads, site switching works, FC Summary loads, no JavaScript
+exceptions observed.
+
+**WHAT IS NOT ACCEPTED.** The release identity is proven; the BEHAVIOUR this release exists for is not.
+Still OPEN, and deliberately not recorded as PASS: Forecast-Driven normalized Avg. Sales UI behaviour,
+Sales-Driven normalized Avg. Sales UI behaviour, and planning demand / suggested-quantity parity. The
+original acceptance condition stands unmet — one Production read of a scope holding at least one
+Forecast-Driven SKU with sales history, where `horizonBasis.avgSalesPerDay` is a number and
+`horizonBasis.source` names the §22 rung, while `horizons[].demandQty` for both modes is unchanged
+against the pre-R46 values. Unconnected Marketplace acceptance is DEFERRED_S8_FINAL. The 90-day shared
+3PL allocator and Administration Priority are NOT activated.
+
+`missing_actions` = [] is **self-referential** (`missing_actions_is_self_referential: true`) and is NOT
+an independent complete action census: a deployment predating an action cannot report it missing.

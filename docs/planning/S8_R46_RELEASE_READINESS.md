@@ -300,10 +300,10 @@ data repair. This is the property that makes the release low-risk.
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Render integrity — `data-leaf-span` | LANDED-UNRELEASED |
-| 2 | Stale Notice removal | LANDED-UNRELEASED |
-| 3 | Marketplace registry refresh | LANDED-UNRELEASED |
-| 4 | Avg Sales front/back parity | LANDED-UNRELEASED — **both halves ready, awaiting §11–13** |
+| 1 | Render integrity — `data-leaf-span` | **RELEASED** — R46 published and served |
+| 2 | Stale Notice removal | **RELEASED** — R46 published and served |
+| 3 | Marketplace registry refresh | **RELEASED** — R46 published and served |
+| 4 | Avg Sales front/back parity | **RELEASED — FUNCTIONAL ACCEPTANCE OPEN.** Both halves are deployed and served (`_irRecoHasCanonicalBasis_` present in Production), but neither planning model has been behaviourally verified. NOT DONE. |
 | 5 | Marketplace CREATE default priority | WITHHELD — own cut + Rank allocator |
 | 6 | Priority census and activation | OPEN — production read; R5-E |
 | 7 | Administration ordering interface | OPEN — greenfield; D-16 unowned |
@@ -321,7 +321,7 @@ data repair. This is the property that makes the release low-risk.
 | 19 | First Search transport timeout | OPEN |
 | 20 | Lazy-loading performance | OPEN |
 | 21 | FC Summary stability | OPEN |
-| 22 | Regression / deployment acceptance | ACTIVE — R45 + R46 both pending sync |
+| 22 | Regression / deployment acceptance | **ACTIVE** — R45 + R46 both SYNCED (60_ reports R45 with `matches_expected` = true). Deployment identity ACCEPTED; functional acceptance OPEN |
 | 23 | `showSection is not defined` | OPEN |
 | 24 | `DIAGNOSTIC_REQUEST_BODY_LOSS` | OPEN |
 | 25 | COLD_BOOT_LATENCY / ASSET_503 debt | OPEN |
@@ -330,6 +330,7 @@ data repair. This is the property that makes the release low-risk.
 | **28** | **Vacuous-test detection** | **OPEN** — M12 was vacuous, not failing; only two suites self-report vacuity |
 | **29** | **Full baseline attribution** | **OPEN** — true not-clean count is 17, not 6 |
 | **30** | **Resolver repeats 4 table materialisations per SKU** | **OPEN** — ~240 ms / 120-SKU scope; hoist is a separate refactor |
+| **31** | **UTF-8 / encoding integrity of tracked documents** | **OPEN — R47 scope.** A latin1 write in `4065ba3` put invalid UTF-8 in the release ledger and silently broke GitHub Pages for two builds. No gate existed to catch it |
 
 ## 16. NEXT_ATOMIC_TASK
 
@@ -342,7 +343,58 @@ is the smallest feature-bearing alternative and remains unblocked.
 
 ---
 
-### STOP GATE HONOURED
+### STOP GATE HONOURED (historical — superseded by §17)
 
 No Git push. No merge. No Apps Script sync. No deployment. No Production DB write.
-**Awaiting user execution and Production evidence.**
+**Awaiting user execution and Production evidence.** — The user has since executed the release and
+returned that evidence; it is recorded in §17.
+
+---
+
+## 17. RELEASE CLOSURE — PRODUCTION EVIDENCE RECEIVED (S8-R46 CLOSURE R1)
+
+### 17.1 Blockers now CLOSED
+
+| Blocker | Status | Evidence |
+|---|---|---|
+| GitHub Pages publication | **CLOSED** | Recovered after the UTF-8 ledger repair `3fae8a6`. `index.html`, `app.js`, `inventory-replenishment.js` all HTTP 200 |
+| Frontend serves R46 | **CLOSED** | R46 cache token present in `index.html` and `app.js` |
+| Repaint fix actually served | **CLOSED** | `_irRecoHasCanonicalBasis_` PRESENT, superseded `_irRecoHasSalesDrivenBasis_` ABSENT — the served code, not merely the committed code |
+| Apps Script sync (42_, 63_) | **CLOSED** | live `system.health`: 63_ = R46, release = R46 |
+| R45 pending 60_ sync | **CLOSED** | 60_ `SIR_BUILD_VERSION_` = R45 with `matches_expected` = true |
+| Deployment identity / uniformity | **CLOSED** | `deployment_uniformity_verdict` = UNIFORM, `mixed_deployment` = false, 01_ router = R41 |
+| Backend reachability | **CLOSED** | `router_ready` = `db_reachable` = `schema_ready` = true, `missing_actions` = [], served by doGet/GET, `read_only` = true, `db_writes` = 0 |
+
+**One caveat recorded against that last row.** `missing_actions = []` is **self-referential** (`missing_actions_is_self_referential: true`): a deployment that predates an action cannot report it
+missing. It is **not** an independent complete action census and is not treated as one here.
+
+### 17.2 Production smoke (user-observed)
+
+Site Inventory loads · site switching works · FC Summary loads · no JavaScript exceptions observed.
+
+This is a **reachability and stability** smoke. It exercises no Avg Sales arithmetic, so it closes no
+functional acceptance item below.
+
+### 17.3 Acceptance still OPEN — none of this is PASS
+
+| Item | Status |
+|---|---|
+| Forecast-Driven normalized Avg. Sales UI behaviour | **OPEN** — not independently verified |
+| Sales-Driven normalized Avg. Sales UI behaviour | **OPEN** — not independently verified |
+| Planning demand / suggested-quantity parity | **OPEN — NOT VERIFIED** |
+| Unconnected Marketplace acceptance | **DEFERRED_S8_FINAL** |
+| 90-day shared 3PL allocator | **NOT ACTIVATED** |
+| Administration Priority | **NOT ACTIVATED** |
+
+**R46 Production Acceptance therefore remains OPEN.** The release identity is proven; the behaviour the
+release exists for is not. The original acceptance condition is unchanged and still unmet: one Production
+read of a scope holding at least one Forecast-Driven SKU with sales history, where
+`horizonBasis.avgSalesPerDay` is a number and `horizonBasis.source` names the §22 rung, while
+`horizons[].demandQty` for both modes is unchanged against pre-R46 values.
+
+### 17.4 Regression baseline — UNCHANGED
+
+The 17-suite not-clean baseline in §8 stands exactly as recorded, with its categories intact: **6** FAIL-line
+suites (the frozen `BASELINE_FAILURE_SET`), **11** silent nonzero exits, union **17**, and the inverse case
+(`s2-r4b-shipping-history-and-fc-warm-race`, FAIL line with exit 0). Nothing in this closure round touched a
+test, a stamp or a cache token, so no number in §8 moves.
