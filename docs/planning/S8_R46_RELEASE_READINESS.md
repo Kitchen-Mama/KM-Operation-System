@@ -325,12 +325,13 @@ data repair. This is the property that makes the release low-risk.
 | 23 | `showSection is not defined` | OPEN |
 | 24 | `DIAGNOSTIC_REQUEST_BODY_LOSS` | OPEN |
 | 25 | COLD_BOOT_LATENCY / ASSET_503 debt | OPEN |
-| **26** | **Ten silently dead suites** (F1A harness dependency) | **OPEN — explicit future repair, untouched this round** |
-| **27** | **Exit-code-aware regression harness** | **OPEN** — driver captures exit codes; the detector is still FAIL-line-based |
-| **28** | **Vacuous-test detection** | **OPEN** — M12 was vacuous, not failing; only two suites self-report vacuity |
-| **29** | **Full baseline attribution** | **OPEN** — true not-clean count is 17, not 6 |
+| **26** | **Ten silently dead suites** (F1A harness dependency) | **CLOSED** — R47-A `85dc6f3`; 678 assertions recovered, 10/10 exit 0 |
+| **27** | **Exit-code-aware regression harness** | **CLOSED** — R47-B `6043882` + driver `3185154`; verdict is the union of 7 signals |
+| **28** | **Vacuous-test detection** | **PARTIAL** — the collector detects vacuity and 0 suites now report it, but **306 of 626 carry no mutation coverage at all**, so the exposure is larger than the signal |
+| **29** | **Full baseline attribution** | **CLOSED** — R47-D sweep: 626 suites → 499 clean, **6 failing** (the frozen six, unchanged), 121 passing-but-unverifiable. See `S8_R47_D_BASELINE_CLOSURE.md` |
 | **30** | **Resolver repeats 4 table materialisations per SKU** | **OPEN** — ~240 ms / 120-SKU scope; hoist is a separate refactor |
-| **31** | **UTF-8 / encoding integrity of tracked documents** | **OPEN — R47 scope.** A latin1 write in `4065ba3` put invalid UTF-8 in the release ledger and silently broke GitHub Pages for two builds. No gate existed to catch it |
+| **31** | **UTF-8 / encoding integrity of tracked documents** | **CLOSED** — R47-E `c4c2c43`, in the sweep registry and PASS. A latin1 write in `4065ba3` put invalid UTF-8 in the release ledger and silently broke GitHub Pages for two builds. No gate existed to catch it |
+| **32** | **Structural test debt measured by R47-D** | **OPEN** — 108 high-risk `{0,N}` extraction windows (the defect that silently broke live-readback and sales-velocity), 121 suites emitting no parseable summary, 306 with no mutation coverage. Census only; nothing modified |
 
 ## 16. NEXT_ATOMIC_TASK
 
