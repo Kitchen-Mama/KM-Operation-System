@@ -1,0 +1,16 @@
+
+== A. PURE evaluator — count-once arithmetic + conservation (Phase 12 #1-#6) ==
+
+== B. PURE evaluator — factory warehouse authority fail-closed (Phase 12 E/F) ==
+
+== C. PURE evaluator — invalid qty + idempotency decision (Phase 12 J/K/L) ==
+
+== D. SHARED core — increment + baseline creation + movement (Phase 12 A/B/D/S) ==
+
+== E. SHARED core — two-factory isolation + conservation (Phase 12 Q/R) ==
+
+== F. SHARED core — negative fail-closed + atomic rollback (Phase 12 G/H/I, #7) ==
+
+== G. SOURCE — atomic lock + journal rollback + lineage + isolation (Phase 5/18) ==
+
+All F1-7N-FA-3B0-PRE PO-receive handoff assertions passed (76 assertions).

@@ -1,0 +1,20 @@
+
+-- A  the directory the tool reads ------------------------------------------------------------
+
+-- B  the string-literal dependency, which is how a trigger is bound --------------------------
+
+-- C  what the audit found, as findings a later round will act on -----------------------------
+
+-- D  the document records what the tool cannot -----------------------------------------------
+
+-- E  mutants ---------------------------------------------------------------------------------
+  ok       M1  string-literal references are no longer dependencies (caught)
+  ok       M2  reachability follows code edges only (caught)
+  ok       M3  a trigger owner is classified as required runtime instead of ambiguous (caught)
+  ok       M4  indented declarations count as top-level globals (caught)
+  ok       M5  line comments are scanned for identifiers (caught)
+  ok       M6  the generated bundle is no longer recognised as generated (caught)
+    6 mutants, 0 survived
+
+================================================================
+APPS-SCRIPT-RUNTIME-SLIM-R1 LOAD SURFACE:  62 passed, 0 failed, 6 mutants, 0 survived

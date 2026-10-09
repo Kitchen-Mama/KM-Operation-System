@@ -1,0 +1,277 @@
+
+== §A — PRECONDITIONS AND RELEASE IDENTITY ==
+ok   A1  the accepted A2-R4 baseline is a known owner stamp
+ok   A2  the A3 owner stamp is registered in the release order
+ok   A2a and no round before A3 is the newest
+ok   A3  and the current cache token is ordered at or after A3's own
+ok   A3a as well as at or after the accepted A2-R4 token
+ok   A4  index.html carries the CURRENT token on every versioned asset (55 refs)
+ok   A4a and no asset is still pinned to the superseded A3 token
+ok   A5  and no reference is left on the old one
+
+== §B — CARRIER ELIGIBILITY, RESOLVED BY EXECUTION (TW勝一 → Amazon) ==
+ok   B1  an empty catalogue is NO_RATE_CARDS_AT_ALL
+ok   B2  an inactive row is ALL_RATE_CARDS_INACTIVE_OR_OUT_OF_WINDOW
+ok   B3  an expired effective window is the same cause, and is NOT reported as a missing row
+ok   B4  a WRONG SOURCE COUNTRY is NO_RATE_CARD_MATCHES_THIS_ROUTE
+ok   B5  a wrong marketplace is the same, and the gate says which axis
+ok   B6  a matching card with a BLANK service is its OWN cause — a row exists but names no method
+ok   B7  and one good row resolves it
+ok   B8  each rejecting axis is counted separately
+ok   B9  a card naming a destination WAREHOUSE does not reject a MARKETPLACE route — the route does not constrain that axis
+ok   B9a but it DOES reject a different warehouse destination, and says so
+ok   B10 the proposed row carries the ROUTE's own origin
+ok   B10a and the route's own marketplace
+ok   B10b and a marketplace destination proposes NO warehouse code
+ok   B10c and the row it proposes is an ACTIVE one
+ok   B10d and it states that nothing was written
+ok   B10e it is a CONFIGURATION code, never a transport failure
+ok   B11 §B.8 a card for ANOTHER origin is never borrowed for this route
+ok   B12 and a service is offered under its own name — sea_express is never widened to sea
+ok   B13 §B.7 the Method picker is NOT empty — one eligible method
+ok   B13a while the lead-time table answers nothing, so Expected Arrival is blank
+ok   B13b and with a row it answers 30 days — so "no method" and "no ETA" are provably separate failures
+ok   B14 the page distinguishes an UNMAPPED service from a MAPPED service with no lead-time row
+ok   B14a and never averages a neighbouring service into an answer
+ok   B15 §B.10 the empty state names the configuration reason instead of one unactionable sentence
+ok   B15a and an empty configuration is still never rendered as a read failure
+
+== §C — THE READ-ONLY CENSUS ==
+ok   C1  the census never names setValue in code
+ok   C2  the census never names appendRow in code
+ok   C3  the census never names deleteRow in code
+ok   C4  the census never names clearContent in code
+ok   C5  the census never names setValues in code
+ok   C6  the census never names insertSheet in code
+ok   C7  the census never names getScriptLock in code
+ok   C8  the census never names PropertiesService in code
+ok   C9  the census never names UrlFetchApp in code
+ok   C10  the census never names MailApp in code
+ok   C11  the census never names DriveApp in code
+ok   C12 every sheet goes through the read-only facade
+ok   C13 exactly ONE entry point
+ok   C14 it states its own zero-write, zero-repair, zero-master-data result
+ok   C15.1  it reports the class ACTIVE_COMPLETE
+ok   C15.2  it reports the class ACTIVE_INCOMPLETE
+ok   C15.3  it reports the class LEGITIMATE_EXPLICIT_ADD_ROUTE
+ok   C15.4  it reports the class CANCELLED_HISTORICAL
+ok   C15.5  it reports the class EDIT_REPLACEMENT_CANDIDATE
+ok   C15.6  it reports the class ORPHAN_HEADER
+ok   C15.7  it reports the class UNKNOWN
+ok   C16 §C.4 it refuses to attribute a row by a shared K2/K4 shape
+ok   C17 the only stored provenance evidence is named
+ok   C18 §C.5 it prints the EXACT eligible draft ids
+ok   C19 §C.2 cancelled rows are kept as evidence
+ok   C20 §C.1 nothing in its code repairs or restores
+ok   C21 §B.9 it modifies no master data
+
+== §D — THE SUBMIT CALL CHAIN, LOCATED AND THEN EXECUTED ==
+ok   D1  §D.1 exactly ONE router branch routes the canonical Submit action
+ok   D1a to its single named handler
+ok   D2  §D.2 the handler is defined exactly once, in 16_
+ok   D3  §D.3 and it is a REQUIRED action in the deployment contract
+ok   D3a the browser adapter names the same action
+ok   D4  §D.1 it is issued as an HTTP POST
+ok   D5  §D.4/§D.6 16_ derives the lines and DELEGATES the write to the single shipping_plans authority
+ok   D5a and 16_ never appends a shipping plan row itself
+ok   D6  §D.5 the grouping function has exactly ONE owner
+ok   D7  §D.8 the whole submit is ScriptLock-serialized before the core is entered
+ok   D7a and a contended submit is a typed refusal, never a blind retry
+ok   D8  §D the whole chain runs end to end: draft -> plan -> line -> transition
+ok   D8a one shipping_plans row and one shipping_plan_lines row
+ok   D8b §D.9 exactly the consumed draft transitions
+ok   D8c §D the operator's 800 is carried verbatim into the committed line
+ok   D9  §D.7 the plan and line ids are generated server-side under their own prefixes
+ok   D9a and the execution key is stored on the header as the idempotency anchor
+ok   D10 §D the committed plan is a DRAFT — Submit does not approve anything
+ok   D11 §G.3 the draft is submitted and stamped with who submitted it
+ok   D11a and when
+ok   D11b and the note names the plan and the execution key, so the transition is traceable
+ok   D12 §D.10 the server re-reads the committed lines and verifies them field by field
+ok   D12a against the frozen quantity
+
+== §E — ELIGIBILITY AND EXCLUSION, ON THE REAL PREFLIGHT ==
+ok   E1  a persisted, active, complete, in-scope, quantity-bearing route is eligible
+ok   E2  §E a route with no persisted LINE id is not persisted, and BLOCKS
+ok   E2a nor is one with no persisted HEADER id
+ok   E3  §E a terminal (submitted/cancelled/expired) draft is EXCLUDED, never carried
+ok   E4  §E a cancelled line is excluded
+ok   E5  §E a zero quantity is excluded — zero is not a shipment
+ok   E6  §E another station's route is excluded from a single-station submit
+ok   E7  §E a zero-line header is excluded and counted
+ok   E8  §E a route with no destination BLOCKS
+ok   E9  §E a duplicate stored identity BLOCKS
+ok   E10 §E a panel that is not READY BLOCKS
+ok   E11.1  an unresolved saveFailed BLOCKS
+ok   E11.2  an unresolved inFlightWrites BLOCKS
+ok   E11.3  an unresolved dirtyAfterWrite BLOCKS
+ok   E11.4  an unresolved pendingWrites BLOCKS
+ok   E11.5  an unresolved pendingCancels BLOCKS
+ok   E12 BEFORE — Submit PROCEEDED, carrying one route and 800 of the 1300 units on screen
+ok   E12a the missing 500 appeared only as a silent exclusion count
+ok   E13 AFTER — the whole Submit stops before any request
+ok   E13a and no candidate set is built at all
+ok   E13b §E the blocking route is named by SKU
+ok   E13c and the CAUSE is named — no rate card covers the lane, which the operator cannot fix on this screen
+ok   E13d §E and by route
+ok   E14 a Method the operator simply has not chosen is a DIFFERENT reason from one that does not exist
+ok   E14a and every missing field is listed, because "incomplete" alone tells nobody what to do
+ok   E15 §E the silent ROUTE_INCOMPLETE exclusion is gone, not merely renamed
+ok   E15a and a confirmation carrying one is structurally refused
+ok   E16 §E a blocked verdict can never produce a confirmation
+
+== §F — PHYSICAL GROUPING, ON THE REAL PLAN WRITER ==
+ok   F1  §F.2 two Add Route drafts on one physical route commit successfully
+ok   F2  §F.2 ONE shipping plan, TWO shipping plan lines
+ok   F3  §F.7 quantity is conserved EXACTLY: 300 + 500 = 800
+ok   F3a and neither line was merged into the other
+ok   F4  §F.6 the first line traces to its own allocation header AND line
+ok   F4a and the second to its own — the lineage of both survives the consolidation
+ok   F5  §F.5 both lines belong to the one plan
+ok   F5a and BOTH drafts transition
+ok   F6  §J.4 a different METHOD is a different plan
+ok   F6a and the quantity is still exactly 800
+ok   F7  §J.5 a different DESTINATION is a different plan
+ok   F7a and the quantity is still exactly 800
+ok   F8  a different SOURCE WAREHOUSE is a different plan
+ok   F8a and the quantity is still exactly 800
+ok   F9  a different LAST MILE is a different plan
+ok   F9a and the quantity is still exactly 800
+ok   F10 §J.6 a WAREHOUSE destination commits with its code for display and its id for identity
+ok   F10a and a MARKETPLACE destination commits as the route's own marketplace, with no warehouse id
+ok   F11 §F.4 allocation_draft_id is NOT part of the physical grouping key
+ok   F11a and neither shipping_plans nor shipping_plan_lines carries an allocation-draft column (§F.9 — no schema change for draft identity)
+ok   P1  §I.2 the page's plan-group key is byte-identical to 11_'s for row 1
+ok   P2  §I.2 the page's plan-group key is byte-identical to 11_'s for row 2
+ok   P3  §I.2 the page's plan-group key is byte-identical to 11_'s for row 3
+ok   P4  §I.2 the page's plan-group key is byte-identical to 11_'s for row 4
+ok   P5  §I.2 the page's plan-group key is byte-identical to 11_'s for row 5
+ok   P6  §I.2 five routes over four distinct physical groups are counted as FOUR plans, not five
+ok   P7  §I.3 and the confirmation carries that count
+ok   P7a alongside the quantity it is about to commit
+ok   P8  §I.2 and the REAL writer commits exactly four plans over five lines — the promise the dialog made
+ok   P8a with the total quantity the dialog promised
+
+== §G — ATOMICITY, REPLAY AND LIFECYCLE, ON THE REAL WRITER ==
+ok   G1.1  §G.2 a cancelled draft is refused with zero writes
+ok   G1.1a named DRAFT_CANCELLED
+ok   G1.1b and NO sheet was mutated at all
+ok   G1.2  §G.2 an expired draft is refused with zero writes
+ok   G1.2a named DRAFT_EXPIRED_SUPERSEDED_BY_NEWER_AI_PLAN
+ok   G1.2b and NO sheet was mutated at all
+ok   G1.3  §G.2 a route with no destination is refused with zero writes
+ok   G1.3a named ROUTE_INCOMPLETE
+ok   G1.3b and NO sheet was mutated at all
+ok   G1.4  §G.2 a route with BOTH destinations is refused with zero writes
+ok   G1.4a named ROUTE_INCOMPLETE
+ok   G1.4b and NO sheet was mutated at all
+ok   G2  §G.2/§J.7 ONE invalid route among valid ones writes NOTHING for ANY of them
+ok   G3  §G.5 the first submit commits
+ok   G3a and the replay succeeds rather than erroring
+ok   G3b reporting the EXISTING plan as reused
+ok   G4  §G.5/§J.12 after the replay there is still exactly ONE plan and ONE line
+ok   G4a and the draft is reported as already submitted, not re-transitioned
+ok   G5  §G.5 a NEW execution key over an already-submitted draft is a CONFLICT with zero writes
+ok   G5a and no second plan exists
+ok   G6  §G.5 the same key over a DIFFERENT payload is refused by fingerprint, with zero writes
+ok   G6a and the existing plan is untouched
+ok   G7  §G.4 the durable rollback journal is written BEFORE the first business mutation
+ok   G7a and a successful commit leaves no journal behind
+ok   G8  §G.4 and the journal carries the drafts this execution will transition, with their before-state
+ok   G9  §G.3 the draft is marked submitted only AFTER the plan writer returns a durable commit
+ok   G9a and a failed commit returns before the transition is ever reached
+ok   G10 §G.7 a cancelled draft is never revived by a replay
+ok   G10a and nothing was written to bring it back
+
+== §H — WHAT SUBMIT DOES TO INVENTORY. MEASURED, NOT ASSUMED. ==
+ok   H1  §H a successful Submit mutates EXACTLY three tables: the two plan tables and the draft header
+ok   H1a it does not even touch the allocation draft LINES — the transition is a header fact
+ok   H1b the sheets it asked this world for are the four plan/draft tables plus three read-only reference maps
+ok   H1c and NONE of them is an inventory, stock, movement, on-the-way or reservation table
+ok   H2.1  §H the plan writer never names factory_inventory
+ok   H2.2  §H the plan writer never names stock_movements
+ok   H2.3  §H the plan writer never names inventory_movements
+ok   H2.4  §H the plan writer never names on_the_way
+ok   H2.5  §H the plan writer never names overseas_inventory
+ok   H2.6  §H the plan writer never names raw_inventory
+ok   H2.7  §H the plan writer never names factory_stock
+ok   H2.8  §H the plan writer never names reservations
+ok   H2.9  §H the plan writer never names stock_reservation
+ok   H3.1  §H nor does the submit core
+ok   H3.2  §H nor does the submit core
+ok   H3.3  §H nor does the submit core
+ok   H3.4  §H nor does the submit core
+ok   H3.5  §H nor does the submit core
+ok   H4  §H the frozen boundary is stated at the authority: Shipping Plan -> Shipment is a LATER approval
+ok   H5  §H the committed plan is a DRAFT, so nothing downstream of approval has happened
+ok   H5a and its batch is open, not closed out
+ok   H6  §H CONCLUSION — Submit creates plan records and transitions drafts; it moves NO stock
+
+== §I — THE UI GATES ==
+ok   I1  §I ONE preflight decides, and Submit calls it
+ok   I1a and a blocked verdict returns BEFORE any request
+ok   I2  §I.3 no identity is minted until the operator has confirmed
+ok   I2a and Cancel sends nothing
+ok   I3.1  §I.3 the dialogue states scope.company
+ok   I3.2  §I.3 the dialogue states routeCount
+ok   I3.3  §I.3 the dialogue states skuCount
+ok   I3.4  §I.3 the dialogue states totalQty
+ok   I3.5  §I.3 the dialogue states planGroupCount
+ok   I4  §I.2 and it names the resulting PLAN GROUP COUNT, which it never did before
+ok   I5  §I.4 the button is disabled while an Execution Plan is a shell or a named failure
+ok   I6  §I.4 and while a save is in flight
+ok   I7  §I.4/§J.16 a deployment that cannot submit fails CLOSED with a typed reason
+ok   I7a and an ineligible deployment never reaches the request
+ok   I8  §I.5/§J.11 a second click SHARES the in-flight promise — one command, never a second mutation
+ok   I9  §I.6 and the button is disabled for the duration
+ok   I10 §I.5 the execution key has exactly ONE generator, so two clicks cannot mint two keys
+ok   I11 §I.8 the Working Draft is cleared ONLY on a confirmed success
+ok   I12 §I.7 a failure surfaces the typed code and keeps the draft
+ok   I13 §E the incomplete-route block is RENDERED, and names the master-data cause separately
+ok   I13a and states that nothing was written
+
+== §J — THE REQUIRED SIMULATIONS ==
+ok   J1  one complete draft -> one plan, one line
+ok   J2  three SKUs on one physical route -> ONE plan, THREE lines
+ok   J2a §J.15 600 in, 600 committed
+ok   J9  a cancelled line is excluded from the plan
+ok   J9a and its 900 units are NOT in the committed total
+ok   J10 an orphan active header blocks the batch
+ok   J10a named NO_LINES
+ok   J10b with zero writes anywhere
+ok   J14 §G.4 a draft transition that cannot be read back FAILS the submit
+ok   J14a under a POSTCHECK_FAILED code
+ok   J14b and the committed plan is rolled back rather than orphaned
+ok   J14c so no plan survives without a submitted draft
+ok   J14d and no line survives either (reverse-FK, inserted-only)
+ok   J16 §J.16 the deployment/eligibility gate is passed BEFORE the request is issued
+ok   J17 §J.17 TW->Amazon without an eligible Method is a NAMED block
+ok   J17a with no candidate set, so no request can be built from it
+
+== §K — MUTATIONS. Each is applied to shipped source and must be caught. ==
+ok   K1  a cancelled draft included in the candidate set (caught)
+ok   K2  an incomplete route allowed through instead of blocking (caught)
+ok   K3  a dirty (unsaved) route ignored (caught)
+ok   K4  allocation_draft_id added to the PHYSICAL grouping key (caught)
+ok   K5  two tickets consolidated into one line, lineage lost (caught)
+ok   K6  a quantity dropped or doubled on the way into the committed plan (caught)
+ok   K7  the draft marked submitted BEFORE the plan is committed (caught)
+ok   K8  a partial plan survives a line-write failure (caught)
+ok   K9  a replay creates a duplicate plan (caught)
+ok   K10 a lost response creates a duplicate on retry (caught)
+ok   K11 a double click sends two commands (caught)
+ok   K12 a deployment mismatch still submits (caught)
+ok   K13 a zero-line header passes validation (caught)
+ok   K14 an unrelated station included in the batch (caught)
+ok   K15 stock deducted at the wrong lifecycle stage (caught)
+ok   K16 the plan-group count silently claims one plan for everything (caught)
+
+== §L — WHAT THIS ROUND DID NOT TOUCH ==
+ok   L1  §F.9 11_ declares exactly the build its deployment manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34)
+ok   L2  §F.4 and allocation_draft_id is still absent from the physical grouping key
+ok   L3  16_ carries a stamp at or after the round before A3 — A3 itself churned nothing
+ok   L4  A2-R4's permanent diagnostic owner is still the manifest entry
+
+---
+249 passed, 0 failed
+mutations: 16 caught, 0 missed

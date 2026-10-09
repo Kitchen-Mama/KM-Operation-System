@@ -1,0 +1,17 @@
+
+== A. reproduce HEADER_MISSING [shipping_plan_lines] against the LIVE schema ==
+
+== A. spelling vs the two candidate names (marketplace / marketplace_seperate / marketplace_separate) ==
+
+== A. shipping_plans PASSES while only shipping_plan_lines fails (isolated failure) ==
+
+== B. Submit writer is FAIL-CLOSED — both sheets validate up-front BEFORE any append (no orphan header) ==
+
+== B. valid schema → exactly one plan + N lines (control) ==
+
+== B. idempotency is CLOSED + F1-7N-FA-4B compatibility cutover: ONE writer authority, wrapper delegates ==
+
+== B. downstream transfer untouched at Submit stage ==
+
+----------------------------------------
+R6E SHIPPING PLAN SCHEMA + WRITE-BOUNDARY (F1-7N-FA-3C-R6E-P0): 19 passed, 0 failed

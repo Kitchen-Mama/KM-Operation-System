@@ -1,0 +1,19 @@
+
+== MARKETPLACE — additive qualifiedEvents (Outcome A: facts already exist in KMQI candidateResults) ==
+
+== MARKETPLACE — non-usable candidates are NOT exposed as usable events ==
+
+== MARKETPLACE — PARTIAL / UNAVAILABLE preserved ==
+
+== MARKETPLACE — count-once (identical lineage not duplicated) ==
+
+== N. scalar recommendation result end-to-end unchanged + qualifiedEvents surfaced on the line ==
+
+== KMQI direct — qualifiedEvents keys are exactly the canonical event contract ==
+
+== WAREHOUSE — Outcome B was a bounded HALT here; RESOLVED by F1-4B-FM3c-1b (per-shipment ETA now preserved) ==
+
+== Non-goals — no wiring / no formula change in this round ==
+
+----------------------------------------
+QUALIFIED INCOMING EVENT EXPOSURE (F1-4B-FM3c-1): 23 passed, 0 failed

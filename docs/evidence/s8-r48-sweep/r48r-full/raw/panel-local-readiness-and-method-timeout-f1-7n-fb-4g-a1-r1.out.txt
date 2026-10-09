@@ -1,0 +1,131 @@
+
+== §3 / §11.1–§11.3 — EACH PANEL ON ITS OWN CLOCK ==
+ok   A1  §11.1 recommendation ready at 40 ms is VISIBLE at 40 ms — not 60 000
+ok   A2  and the Execution Plan settles on its own clock, at its own timeout
+ok   A3  §3 the Execution Plan states a NAMED timeout — not an empty plan and not a permanent skeleton
+ok   A4  each panel rendered exactly once
+ok   A5  59 960 ms of avoidable wait removed from the Recommendation Summary
+ok   B1  §11.2 recommendation slow, execution fast — the Execution Plan does NOT wait for it
+ok   B2  still one render each
+ok   C1  §11.3 both succeed, each at its own ready time
+ok   C2  §11.3 one render and one frame per panel — no half-built paint followed by a correction
+ok   C3  §9 recommendationReadyAt / executionReadyAt each + one frame, in every ordering
+
+== §5 — THE SCOPE, MEASURED LAYER BY LAYER ==
+ok   S1  at mount the selected marketplace_id cannot be resolved — the read model is empty
+ok   S2  once it lands the live scope IS {ResUS, US, Amazon} — the selectors were never wrong
+ok   S3  §5 and _irRecoScopeRequest now returns it — the stale mount-time cache is no longer preferred
+ok   S4  §5 the PRE shape returns null even with US/Amazon selected — this is the exact cause of the message
+ok   S5  and a null scope is the ONLY thing that produces INVALID_SCOPE
+ok   S6  REQUEST_TIMEOUT stays REQUEST_TIMEOUT
+ok   S7  a backend refusal stays a refusal
+ok   S8  a stale answer stays stale
+ok   S9  §11.5 a scope with no stored rows is TERMINAL no-data
+ok   S10 an unresolvable scope is INVALID_SCOPE
+ok   S11 §11.7 NO transport or backend failure is ever reported as "Select a valid Country / Marketplace"
+ok   S12 and the failures keep their distinct kinds rather than collapsing into one sentence
+ok   S13 §5 and the typed error is CARRIED, never discarded
+ok   S14 §11.4 the verdict is invariant to every quantity — a stored 0 cannot make it EMPTY
+ok   S15 and a stored 0 survives the value path as 0
+
+== §6 — THE DUPLICATE WORKSPACE READ, AND THE TIMEOUT IT CAUSED ==
+ok   T1  the two carrier tables are INCLUDE-gated on the SAME workspace action the page already calls
+ok   T2  and that action is a FULL-SET passthrough of 21 tables — the page's most expensive read
+ok   T3  §6 the read Search waits on no longer asks for carrier reference data at all
+ok   T3a and the catalogue read names its two tables, so it can never again be a full-set read
+ok   T3a and the PRIMARY read is the caller that asks for it
+ok   T4  and the post-write readback deliberately does NOT ask — a readback reconciles a write, not reference data
+ok   T5  the 60 000 ms bound is the shared transport read timeout — the owner, located
+ok   T6  §6 and it was NOT simply made longer — the page raises no timeout anywhere
+ok   T7  §6 adopt() seeds the catalogue from the workspace payload — ZERO requests, and requestCount stays 0
+ok   T7a and the adopted cards are the ones the picker then resolves against
+ok   T9  adoption is gated on the read having ACTUALLY requested the include — an empty payload is never adopted as a catalogue
+ok   T9a and adopt(null) refuses rather than installing an empty catalogue
+
+== §6 / §11.10–§11.13 — TIMEOUT, THEN RETRY ==
+ok   X1  §11.10 a catalogue timeout is a TERMINAL, typed Execution error
+ok   X2  §11.11 Retry Methods goes through the registry's own single retry
+ok   X3  §11.12 it does NOT re-read the workspace and does NOT re-read the Recommendation
+ok   X4  §11.13 and it schedules nothing and never re-enters itself — one request per click
+ok   X5  §7 it rebuilds no route and rewrites no panel — only the Method options and the ETAs are refreshed in place
+ok   X6  and the Recommendation retry touches nothing in the Execution Plan
+
+== §7 — THE OPERATOR'S SECOND ROUTE IS NOT THIS ROUND'S TO TOUCH ==
+ok   P1  §7 a panel that already holds routes is NEVER rebuilt — both routes survive, and nothing is re-seeded
+ok   P1a and that guard is explicit, not incidental
+ok   P2  a panel that holds nothing yet IS built — exactly once
+ok   P3  §11.21 a catalogue repaint keeps the persisted service AND the operator's own chosen method
+ok   P4  §11.18/§11.19 both routes survive with their quantities — Total stays 1600, nothing is merged
+ok   P5  §7 no per-sku de-duplication rule exists on this path — two legitimate routes stay two
+ok   P6  §7 and none was introduced anywhere on the page
+
+== §4 / §11.8, §11.15–§11.17 — GENERATIONS ==
+ok   G1  §11.16 a response for the previous SKU is refused
+ok   G1a and only the row actually open is painted
+ok   G2  §11.17 an answer from a station the user has left is refused
+ok   G3  §11.8 an answer from a previous SEARCH is refused
+ok   G4  §4 and an answer from a previous expanded-row generation is refused
+ok   G4a none of them painted anything
+ok   G5  §11.15 after a collapse a late response has no generation to land in — the row does not re-open
+ok   G5a and a reveal already scheduled is dropped if the row closes before its frame runs
+ok   G6  §4 the expanded-row generation is bumped by every collapse and carried on every report
+ok   G6a and the search generation travels with it
+
+== §1 / §8 — THE PANELS ARE NOT COUPLED, AND NOTHING ELSE IS DELAYED ==
+ok   D1  §1 the Recommendation's readiness reads NOTHING about hydration, warehouses, the catalogue, lead times or the plan
+ok   D1a and its pump cannot consult the Execution gate — it holds no reference to it
+ok   D1b nor the Execution pump the Recommendation gate
+ok   D2  §4 the joint cross-panel gate is GONE — there is no API left that requires two panels to be ready
+ok   D2a a panel gate has no notion of a partner at all
+ok   D3  §8 the two panels are SEPARATE reveal containers, each with its own state
+ok   D3a each shows its own content-shaped skeleton immediately
+ok   D3b §8 and the pending Execution Plan shows no select, no input, no "Loading methods…" and no fabricated 0 total
+ok   D4  §8 Sales Trend is behind neither barrier
+ok   D4a Stock / Forecast / Upcoming Event / Monthly Achievement are outside both containers
+ok   D5  §11.23 Submit Plan is disabled while the Execution Plan is a shell OR a named failure
+ok   D5a and a RECOMMENDATION failure does not disable it — Submit has never read the Recommendation Summary
+
+== §9 — NO TIMER, NO POLL, NO SEQUENTIAL AWAIT, NO EXTRA ROUND TRIP ==
+ok   N1  §9 no timer, no interval, no polling loop
+ok   N2  §9 and no sequential await — the two panels are never chained
+ok   N3  the reveal is scheduled on a render frame
+ok   N4  §9 nothing in either barrier issues a request of its own
+ok   N6  §11.24 DB_WRITES = 0 — no reveal and no retry path can reach a writer
+
+== §10 / §12 — INVARIANTS AND DEPLOYMENT IDENTITY ==
+ok   V1  §10 the destination XOR authority is untouched
+ok   V2  §10 sea / sea_express are still distinct
+ok   V3  §10 the ETA and method persistence carriers are untouched
+ok   V4  §12 no Apps Script file mentions A1-R1 — that round joined no sync set
+ok   V5  §12 no Apps Script file mentions this round — nothing joins the sync set
+ok   V6  the application refs rotated together (55 on r46-avgsales-20261008)
+ok   V6a and it is at or after the round that changed these files
+ok   V6b §12 the published A1 token is fully retired
+ok   V7  §12 the stylesheet is at or after the A1-R1 token in its OWN family (irrestinglayout-20261008)
+ok   V7a1 and index.html serves exactly that token
+ok   V7a and the families are not crossed
+ok   V8  §12 method-registry.js changed this round, so ITS own token family rotated too
+ok   V8b and the series has not moved behind it (current: fc1be3r4a2r1r6r4-method-registry-20260905)
+ok   V8c and index.html serves exactly that token
+ok   V8a and its previous token is retired
+
+== MUTATIONS — each applied for real, each caught ==
+ok   M1  the cross-panel barrier is re-created (a panel waits for its partner) (caught)
+ok   M2  the Recommendation is made to wait for the Execution Plan (caught)
+ok   M3  a timeout is mis-reported as an invalid scope (caught)
+ok   M4  the generation guard is removed (a stale response paints) (caught)
+ok   M5  the Execution Plan renders before its catalogue settles (caught)
+ok   M6  Retry Methods reloads the whole workspace (caught)
+ok   M7  Retry schedules another Retry (a loop) (caught)
+ok   M8  Retry rebuilds the panel and destroys the user-added route (caught)
+ok   M9  a catalogue repaint overwrites the method the operator chose (caught)
+ok   M10 a cache hit issues a request anyway (caught)
+ok   T8  §11.14 a later ensureLoaded on an adopted scope is a CACHE HIT — still zero
+ok   X7  a failed catalogue keeps the REAL code
+ok   X8  §11.13 and a failed scope does NOT retry itself — no automatic loop
+ok   X9  §11.11 an EXPLICIT retry issues exactly ONE further request
+ok   X9a and a second click issues exactly one more — never a burst
+ok   N5  §9 scope single-flight is intact — twenty concurrent expands share ONE request
+
+PASSED: 108 passed, 0 failed
+mutations: 10 caught, 0 missed

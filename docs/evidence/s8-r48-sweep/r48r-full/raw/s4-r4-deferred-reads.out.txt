@@ -1,0 +1,190 @@
+
+-- A. CLASSIFICATION — what the mount still reads, and what it no longer does --------------------
+
+  ok   A1  Promotion Risk Tracker: the mount reads exactly its critical tables
+  ok   A1a Promotion Risk Tracker: marketplaces is NOT read at mount
+  ok   A1a Promotion Risk Tracker: sku_details is NOT read at mount
+  ok   A1a Promotion Risk Tracker: campaigns is NOT read at mount
+  ok   A1a Promotion Risk Tracker: campaign_sku_lines is NOT read at mount
+  ok   A1b Promotion Risk Tracker: fewer initial requests than before the round
+  ok   A1c Promotion Risk Tracker: no more sequential rounds than before
+  ok   A2  Factory Inventory: the mount reads exactly its critical tables
+  ok   A2a Factory Inventory: factory_stock_movements is NOT read at mount
+  ok   A2b Factory Inventory: fewer initial requests than before the round
+  ok   A2c Factory Inventory: no more sequential rounds than before
+  ok   A3  Carrier Rate Card: the mount reads exactly its critical tables
+  ok   A3a Carrier Rate Card: carrier_lead_times is NOT read at mount
+  ok   A3b Carrier Rate Card: fewer initial requests than before the round
+  ok   A3c Carrier Rate Card: no more sequential rounds than before
+  ok   A4  six initial requests across the three pilots, down from twelve
+  ok   A4a and twelve is what the same instrument measured before the change
+  ok   A4b four sequential rounds, down from seven
+  ok   A5  Promotion Risk opens on ONE read
+  ok   A5a in ONE round, down from three
+  ok   A5b and the evidence records WHY it could never have shown a row on that screen
+
+-- B. FIRST CONSUMER — one read, and only when asked ---------------------------------------------
+
+  ok   B1  Promotion Risk Tracker: nothing the deferred data feeds is built at mount
+  ok   B1a Promotion Risk Tracker: the interaction reads exactly the deferred tables
+  ok   B1b Promotion Risk Tracker: ONE dependency read
+  ok   B1c Promotion Risk Tracker: using it again reads nothing
+  ok   B1d Promotion Risk Tracker: and the feature is still populated on that second use
+  ok   B2  Factory Inventory: nothing the deferred data feeds is built at mount
+  ok   B2a Factory Inventory: the interaction reads exactly the deferred tables
+  ok   B2b Factory Inventory: ONE dependency read
+  ok   B2c Factory Inventory: using it again reads nothing
+  ok   B2d Factory Inventory: and the feature is still populated on that second use
+  ok   B3  Carrier Rate Card: nothing the deferred data feeds is built at mount
+  ok   B3a Carrier Rate Card: the interaction reads exactly the deferred tables
+  ok   B3b Carrier Rate Card: ONE dependency read
+  ok   B3c Carrier Rate Card: using it again reads nothing
+  ok   B3d Carrier Rate Card: and the feature is still populated on that second use
+  ok   B4  the single-flight is one shared promise, not a flag that a second caller can race
+  ok   B4a and dispatches are counted, so "read once" is measurable rather than assumed
+  ok   B5.1  Promotion Risk Tracker: firing the interaction twice costs one read
+  ok   B5.1a Promotion Risk Tracker: and the helper dispatched twice in the whole scenario, not three times
+  ok   B5.2  Factory Inventory: firing the interaction twice costs one read
+  ok   B5.2a Factory Inventory: and the helper dispatched twice in the whole scenario, not three times
+  ok   B5.3  Carrier Rate Card: firing the interaction twice costs one read
+  ok   B5.3a Carrier Rate Card: and the helper dispatched twice in the whole scenario, not three times
+
+-- C. FIRST USEFUL UI — §11, in the form that is observable --------------------------------------
+
+  ok   C1  Promotion Risk Tracker: the same first useful UI as before the deferral
+  ok   C1a Promotion Risk Tracker: and the same primary content
+  ok   C1b Promotion Risk Tracker: FIRST_USEFUL_UI_CAN_RENDER_WITHOUT_DEFERRED_DATA
+  ok   C1c Promotion Risk Tracker: a refused secondary read leaves the primary UI alone
+  ok   C1d Promotion Risk Tracker: and so does a re-read after invalidation
+  ok   C2  Factory Inventory: the same first useful UI as before the deferral
+  ok   C2a Factory Inventory: and the same primary content
+  ok   C2b Factory Inventory: FIRST_USEFUL_UI_CAN_RENDER_WITHOUT_DEFERRED_DATA
+  ok   C2c Factory Inventory: a refused secondary read leaves the primary UI alone
+  ok   C2d Factory Inventory: and so does a re-read after invalidation
+  ok   C3  Carrier Rate Card: the same first useful UI as before the deferral
+  ok   C3a Carrier Rate Card: and the same primary content
+  ok   C3b Carrier Rate Card: FIRST_USEFUL_UI_CAN_RENDER_WITHOUT_DEFERRED_DATA
+  ok   C3c Carrier Rate Card: a refused secondary read leaves the primary UI alone
+  ok   C3d Carrier Rate Card: and so does a re-read after invalidation
+
+-- D. FAILURE — scoped, visible, not empty, and one read on Retry --------------------------------
+
+  ok   D1  Promotion Risk Tracker: the refusal is on screen, exactly once
+  ok   D1a Promotion Risk Tracker: the route is still the one the user opened
+  ok   D1b Promotion Risk Tracker: FALSE_EMPTY is not what happened — the page still has its content
+  ok   D1c Promotion Risk Tracker: Retry is exactly one canonical read, the same one
+  ok   D1d Promotion Risk Tracker: and it clears when the read succeeds
+  ok   D1e Promotion Risk Tracker: the secondary feature is populated after recovery
+  ok   D2  Factory Inventory: the refusal is on screen, exactly once
+  ok   D2a Factory Inventory: the route is still the one the user opened
+  ok   D2b Factory Inventory: FALSE_EMPTY is not what happened — the page still has its content
+  ok   D2c Factory Inventory: Retry is exactly one canonical read, the same one
+  ok   D2d Factory Inventory: and it clears when the read succeeds
+  ok   D2e Factory Inventory: the secondary feature is populated after recovery
+  ok   D3  Carrier Rate Card: the refusal is on screen, exactly once
+  ok   D3a Carrier Rate Card: the route is still the one the user opened
+  ok   D3b Carrier Rate Card: FALSE_EMPTY is not what happened — the page still has its content
+  ok   D3c Carrier Rate Card: Retry is exactly one canonical read, the same one
+  ok   D3d Carrier Rate Card: and it clears when the read succeeds
+  ok   D3e Carrier Rate Card: the secondary feature is populated after recovery
+  ok   D4  Promotion Risk names the refusal
+  ok   D4a and says what is still usable
+  ok   D4b Factory Inventory names the refusal
+  ok   D4c and says what is still usable
+  ok   D4d Carrier Rate Card names the refusal
+  ok   D4e and says what is still usable
+  ok   D4f each refusal carries a Retry
+  ok   D5  a refused read does not re-dispatch on the next render — the alternative is a request storm
+  ok   D5a and ensure() resolves rather than rejecting, so a forgotten .catch cannot take the page down
+
+-- E. STALENESS — an answer for a page the user has left -----------------------------------------
+
+  ok   E1  Promotion Risk Tracker: the late answer did not bring the route back
+  ok   E1a Promotion Risk Tracker: one visible section throughout
+  ok   E1b Promotion Risk Tracker: and one mounted section
+  ok   E1c Promotion Risk Tracker: returning costs nothing — the model survived
+  ok   E1d Promotion Risk Tracker: and the primary content is there
+  ok   E2  Factory Inventory: the late answer did not bring the route back
+  ok   E2a Factory Inventory: one visible section throughout
+  ok   E2b Factory Inventory: and one mounted section
+  ok   E2c Factory Inventory: returning costs nothing — the model survived
+  ok   E2d Factory Inventory: and the primary content is there
+  ok   E3  Carrier Rate Card: the late answer did not bring the route back
+  ok   E3a Carrier Rate Card: one visible section throughout
+  ok   E3b Carrier Rate Card: and one mounted section
+  ok   E3c Carrier Rate Card: returning costs nothing — the model survived
+  ok   E3d Carrier Rate Card: and the primary content is there
+  ok   E4  the helper refuses an answer from an older epoch rather than letting it land
+  ok   E4a Carrier Rate Card also guards on the row set the answer was asked for
+  ok   E4b Promotion Risk guards on the scope token
+  ok   E4c Factory Inventory guards on the read generation
+
+-- F. INVALIDATION — no TTL, and a write does not leave a stale model behind ---------------------
+
+  ok   F1  Promotion Risk Tracker: READY after the first use
+  ok   F1a Promotion Risk Tracker: back to NOT_LOADED when invalidated
+  ok   F1b Promotion Risk Tracker: exactly one re-read, not zero and not two
+  ok   F1c Promotion Risk Tracker: and zero again after that
+  ok   F1d Promotion Risk Tracker: two dependency reads in the whole scenario
+  ok   F2  Factory Inventory: READY after the first use
+  ok   F2a Factory Inventory: back to NOT_LOADED when invalidated
+  ok   F2b Factory Inventory: exactly one re-read, not zero and not two
+  ok   F2c Factory Inventory: and zero again after that
+  ok   F2d Factory Inventory: two dependency reads in the whole scenario
+  ok   F3  Carrier Rate Card: READY after the first use
+  ok   F3a Carrier Rate Card: back to NOT_LOADED when invalidated
+  ok   F3b Carrier Rate Card: exactly one re-read, not zero and not two
+  ok   F3c Carrier Rate Card: and zero again after that
+  ok   F3d Carrier Rate Card: two dependency reads in the whole scenario
+  ok   F4  there is no clock in the helper — validity is ownership, not age
+  ok   F4a a factory write invalidates the movement model it may have changed
+  ok   F4b and re-reads it outright when the Movement Log is the thing on screen
+  ok   F4c the Carrier page states why its write cannot make the deferred model stale
+  ok   F4d and Promotion Risk has no DB write at all — its promotions are a local overlay
+
+-- G. REGRESSION — S4-R2's lifecycle and this release's cache identity ---------------------------
+
+  ok   G1  Promotion Risk Tracker: LISTENER_DRIFT = 0 across repeated entries
+  ok   G1a Promotion Risk Tracker: nothing left open on leave
+  ok   G1b Promotion Risk Tracker: warm re-entry reads nothing
+  ok   G1c Promotion Risk Tracker: and neither does returning with the secondary loaded
+  ok   G1d Promotion Risk Tracker: the deferred model survived the trip too
+  ok   G1e Promotion Risk Tracker: a rapid A->B->A reads nothing and mounts once
+  ok   G1f Promotion Risk Tracker: exactly one mounted section after it
+  ok   G2  Factory Inventory: LISTENER_DRIFT = 0 across repeated entries
+  ok   G2a Factory Inventory: nothing left open on leave
+  ok   G2b Factory Inventory: warm re-entry reads nothing
+  ok   G2c Factory Inventory: and neither does returning with the secondary loaded
+  ok   G2d Factory Inventory: the deferred model survived the trip too
+  ok   G2e Factory Inventory: a rapid A->B->A reads nothing and mounts once
+  ok   G2f Factory Inventory: exactly one mounted section after it
+  ok   G3  Carrier Rate Card: LISTENER_DRIFT = 0 across repeated entries
+  ok   G3a Carrier Rate Card: nothing left open on leave
+  ok   G3b Carrier Rate Card: warm re-entry reads nothing
+  ok   G3c Carrier Rate Card: and neither does returning with the secondary loaded
+  ok   G3d Carrier Rate Card: the deferred model survived the trip too
+  ok   G3e Carrier Rate Card: a rapid A->B->A reads nothing and mounts once
+  ok   G3f Carrier Rate Card: exactly one mounted section after it
+  ok   G4  the round records that its first drift reading was the instrument, not a regression
+  ok   G5  deferred-read.js is loaded by index.html under the current application token
+  ok   G5a and the whole application family rotated together
+  ok   G5b it runs before the first page that asks it anything
+
+-- H. MUTATION — each defence broken on purpose --------------------------------------------------
+
+  ok   H1 the deferred tables go back on the mount read KILLED
+  ok   H1b Factory Inventory reads the movement log at mount again KILLED
+  ok   H2 the READY state no longer short-circuits KILLED
+  ok   H3 two callers during one read get two reads KILLED
+  ok   H4 the refusal is rendered as an empty result KILLED
+  ok   H5 a refused secondary read wipes the primary table KILLED
+  ok   H6 an answer from a superseded epoch is committed KILLED
+  ok   H7 a failed scope read falls back to the legacy option list KILLED
+  ok   H8 opening the Movement Log no longer triggers its read KILLED
+
+  mutants: 9 killed, 0 survived, 0 harness errors
+  ok   H  every planted defect was caught
+
+====================================================================================================
+S4-R4 DEFERRED READS: 160 passed, 0 failed
+====================================================================================================

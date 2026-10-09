@@ -1,0 +1,39 @@
+
+== Objective A — shape-agnostic edit-result classifier (LEGACY + LIVE FLAT) ==
+
+== Objective A — ALL THREE tiers persist independently through the REAL rendered note handlers (FLAT path) ==
+
+== Objective A — blank clears ONLY the selected tier ==
+
+== Objective A/B — the LIVE stale-token cascade (v3 stuck, notes empty) is CLOSED ==
+
+== Objective A — Saved requires a CONFIRMED response; committed-unverified is NOT a clean Saved ==
+
+== Objective B — hydrated token reuse: no redundant pre-write token fetch when a token is already cached ==
+
+== Objective A12 — concurrent same-draft edits serialize with a refreshed token ==
+
+== Objective A — carton is backend-derived (frontend never authors carton_qty) ==
+
+== Objective D — Gap + Suggested share ONE authority (structurally atomic) ==
+
+== Objective A — zero Draft-Line dependency ==
+
+== Objective C — REAL lifecycle.js mount/unmount across 3 navigation cycles restores rows ==
+[KM] Lifecycle manager initialized
+[Lifecycle] Registered: request-order-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+[Lifecycle] Mounted: request-order-section
+[Lifecycle] Unmounted: request-order-section
+
+== Objective C — source: real mount wiring + IDLE-as-loading guard ==
+
+== Objective F — Inventory/Cargo AI Plan (WEEKLY_SHIPPING) parity: no equivalent defect ==
+  parity matrix: SHARED = DB-first hydrate-on-mount, lifecycle re-init, async seq/token guards, fail-closed errors, no false connect-DB, manual-only popup.
+  parity matrix: DOMAIN-SPECIFIC = per-route line upsert (not per-tier decision write); envelope .success (not status==COMPLETED); Note field local-only by design.
+
+----------------------------------------
+R6B2 ALL-TIER NOTE + FLAT RESULT + REMOUNT + PARITY (F1-7N-FA-3C-R6B2): 51 passed, 0 failed

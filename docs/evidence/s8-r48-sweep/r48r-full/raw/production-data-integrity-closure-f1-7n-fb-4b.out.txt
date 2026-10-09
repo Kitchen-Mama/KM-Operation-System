@@ -1,0 +1,180 @@
+
+== 1/3. Add Route after a successful save — and the same PK can never appear twice ==
+ok   1. two routes for the SAME sku+window under one K2 header resolve to the SAME canonical line id
+ok   1. and it is the deterministic K2 shape (SADL-K2-2D79B761)
+ok   1. a batch containing both is REFUSED before any write
+ok   1. with exactly one conflict reported
+ok   1. naming BOTH quantities, so neither is silently lost
+ok   1. and the canonical id they collide on
+ok   1. two different SKUs are not a conflict
+ok   1. a different window IS a different line
+ok   1. a soft-cancel is exempt
+ok   3. the keyed core refuses to append onto an existing primary key
+ok   3. the keyed core looks the CANONICAL id up BEFORE considering an insert
+ok   3. the atomic core refuses to append onto an existing primary key
+ok   3. the atomic core looks the CANONICAL id up BEFORE considering an insert
+ok   3. every incoming line gets a canonical identity
+ok   3. an explicit id naming a different logical line fails closed
+ok   3. an INSERT always uses the canonical id
+ok   3. identity compares sku+site_sku+window_code
+ok   3. quantity is CONTENT, not identity — an edit is not a different line
+ok   3. a different SKU is a different line
+
+== 2/5. Retry after failure converges, and leaves no partial duplicate ==
+ok   2. read-after-write REFUSES the corrupted state (a count check never could)
+ok   2. the duplicate primary key is detected
+ok   2. with the exact physical row count
+ok   2. and reported by name
+ok   2. one row at the right quantity verifies clean
+ok   2. a converged retry has NO duplicate primary key
+ok   4. an exact quantity mismatch is caught
+ok   4. a line nobody authorised is caught
+ok   4. a missing line is caught
+ok   4. rows belonging to another draft are not counted
+ok   4. a soft-cancelled row is not an unexpected line
+ok   5. the writer runs the verification after the write
+ok   5. and reports a typed failure
+ok   5. the response carries the ids ACTUALLY persisted
+ok   5. the page adopts the persisted ids on success, scoped by header AND group key
+ok   5. and adoption is SCOPED to one header, so a route never adopts the id of another route
+ok   5. and its own generated id is now marked LOCAL, not a durable identity
+ok   5. re-stamping the DOM attribute the next collect reads
+ok   5. and the draft model
+ok   5. the batch refusal declares zero_write
+ok   5. and runs BEFORE the first append
+
+== 6. ETA 2026-08-31 stays 2026-08-31 across DB / API / card / input ==
+ok   6. the raw cell really does serialize to the reported UTC string
+ok   6. the canonical normalizer projects it as the intended calendar date
+ok   6. and so does the workspace projection
+ok   6. raw.eta is date-only — the field the client view-model is built from
+ok   6. raw.etd too
+ok   6. a TIMESTAMP keeps its time instead of being flattened or UTC-shifted
+ok   6. non-Date cells pass through untouched
+ok   6. including numbers, byte-identical
+ok   6. NO UTC ISO timestamp survives serialization
+ok   6. and it matches the page’s date-input test, so the input is populated
+ok   6. 23:59 local does not roll forward
+ok   6. midnight local does not roll back
+ok   6. shipMapShipment_ passes the row through the normalizer
+ok   6. the normalizer never calls toISOString
+ok   6. and never formats in UTC
+ok   6. eta is declared date-only
+ok   6. the ETA writer still appends no shipment event
+ok   6. and still proves the status did not change
+ok   6. the status cell is never written
+ok   6. the page displays the value the SERVER returned
+ok   6. and refreshes the card + panel + input from the server read
+
+== 7. an unresolved PO template names its candidates and rejections ==
+ok   7. no template rows at all → CONFIGURATION_REQUIRED
+ok   7. and says exactly that
+ok   7. with the exact row a fix would need
+ok   7. naming related_entity_type
+ok   7. as a PROPOSAL — no row is written
+ok   7. and no arbitrary fallback is introduced
+ok   7. a populated-but-mismatched factory_id EXCLUDES the row
+ok   7. and the EXACT gate is named
+ok   7. with both values
+ok   7. the row is still counted as PO-shaped, so the operator knows one exists
+ok   7. an inactive row names BOTH status gates
+ok   7. a closed effective window is named
+ok   7. a correctly scoped active row RESOLVES
+ok   7. a blank template dimension is a wildcard
+ok   7. two matching rows is a RUNTIME_DEFECT, not a configuration gap
+ok   7. both blocking reasons still exist
+ok   7. the explainer writes nothing
+ok   7. and dgsSelectPoTemplate_ remains the ONLY selection authority, unchanged
+
+== 8/9/10. Recommendation vs Order Qty authority ==
+ok   8. the PERSISTED order_qty is displayed, not the fresh recommendation
+ok   8. and it is what Send asserts
+ok   9. a NON-user-edited persisted quantity is equally authoritative
+ok   9. Send asserts the persisted value
+ok   10. a drafted SKU with no persisted tier row displays NOTHING (never 400 against a DB 360)
+ok   10. and asserts NOTHING — so a fresh AI Plan cannot fail its own quantity barrier
+ok   10. a blank persisted quantity is not asserted from an ephemeral value
+ok   10. a persisted ZERO displays as 0
+ok   10. and is preserved, not overwritten by a recommendation
+ok   10. a SKU with NO canonical draft still uses the manual effective value
+ok   10. an in-flight user edit wins on display
+ok   10. display and Send agree by construction
+ok   8. the audit classifies the CO1150-N state as an AUTHORITY_CONFLICT
+ok   8. naming both divergences
+ok   8. and reports the §E.3 refresh contract as violated
+ok   8. a healthy user-edited row is CONSISTENT even though the recommendation differs
+ok   8. with the refresh contract satisfied
+ok   8. persisted_order_qty is marked BINDING
+ok   8. and recommendation is marked advisory
+ok   8. an unreadable user_edit flag is NULL, never silently false
+
+== 11. gap ceiling — the frozen authority is REPORTED, not silently rewritten ==
+ok   11. ceil(5276/40)*40 = 5280 — the live CO1100-R T3 Suggested
+ok   11. the audit reports the excess over gap explicitly
+ok   11. and the FLOOR alternative
+ok   11. and the capped-at-gap alternative
+ok   11. citing the frozen spec section that owns the rule
+ok   11. and stating that the conflict is a decision, not a bug
+ok   11. §F.6 field present: raw_gap
+ok   11. §F.6 field present: allocatable_supply
+ok   11. §F.6 field present: pre_carton_qty
+ok   11. §F.6 field present: units_per_carton
+ok   11. §F.6 field present: rounding_mode
+ok   11. §F.6 field present: final_recommended_qty
+ok   11. §F.6 field present: excess_over_gap
+ok   11. the SHIPPING path never exceeds the gap
+ok   11. citing the shipping section
+ok   11. calculateSuggestedOrderQty STILL uses CEILING — the frozen rule was NOT silently rewritten
+ok   11. and the shipping FLOOR is unchanged
+ok   11. the frozen spec still says CEILING
+ok   11. and the spec header owns BOTH rules deliberately
+ok   11. the audit module computes no recommendation of its own
+
+== 12. nothing in this round writes, deletes or migrates ==
+ok   12. the audit module touches no fetch(
+ok   12. the audit module touches no XMLHttpRequest
+ok   12. the audit module touches no localStorage
+ok   12. the audit module touches no sessionStorage
+ok   12. the audit module touches no document.
+ok   12. and is deterministic (Math.random)
+ok   12. and is deterministic (Date.now)
+ok   12. and is deterministic (new Date()
+ok   12. the duplicate DIAGNOSTIC contains no deleteRow
+ok   12. the duplicate DIAGNOSTIC contains no setValue
+ok   12. the duplicate DIAGNOSTIC contains no appendRow
+ok   12. the duplicate DIAGNOSTIC contains no LockService
+ok   12. and declares rows_deleted: 0
+ok   12. the repair is a proposal
+ok   12. the cleanup tool defaults to DRY_RUN
+ok   12. it returns unless the mode is exactly COMMIT
+ok   12. a COMMIT also needs a live confirmation checksum
+ok   12. and journals every row BEFORE deleting it
+ok   12. no email / Demo touch in FB-4B source 0 (MailApp)
+ok   12. no email / Demo touch in FB-4B source 0 (GmailApp)
+ok   12. no email / Demo touch in FB-4B source 0 (sendEmail)
+ok   12. no email / Demo touch in FB-4B source 0 (DEMO4A_)
+ok   12. no email / Demo touch in FB-4B source 0 (TEMP_demo_)
+ok   12. no email / Demo touch in FB-4B source 1 (MailApp)
+ok   12. no email / Demo touch in FB-4B source 1 (GmailApp)
+ok   12. no email / Demo touch in FB-4B source 1 (sendEmail)
+ok   12. no email / Demo touch in FB-4B source 1 (DEMO4A_)
+ok   12. no email / Demo touch in FB-4B source 1 (TEMP_demo_)
+ok   12. no email / Demo touch in FB-4B source 2 (MailApp)
+ok   12. no email / Demo touch in FB-4B source 2 (GmailApp)
+ok   12. no email / Demo touch in FB-4B source 2 (sendEmail)
+ok   12. no email / Demo touch in FB-4B source 2 (DEMO4A_)
+ok   12. no email / Demo touch in FB-4B source 2 (TEMP_demo_)
+ok   12. no email / Demo touch in FB-4B source 3 (MailApp)
+ok   12. no email / Demo touch in FB-4B source 3 (GmailApp)
+ok   12. no email / Demo touch in FB-4B source 3 (sendEmail)
+ok   12. no email / Demo touch in FB-4B source 3 (DEMO4A_)
+ok   12. no email / Demo touch in FB-4B source 3 (TEMP_demo_)
+ok   12. no email / Demo touch in FB-4B source 4 (MailApp)
+ok   12. no email / Demo touch in FB-4B source 4 (GmailApp)
+ok   12. no email / Demo touch in FB-4B source 4 (sendEmail)
+ok   12. no email / Demo touch in FB-4B source 4 (DEMO4A_)
+ok   12. no email / Demo touch in FB-4B source 4 (TEMP_demo_)
+
+----------------------------------------
+ALL PASS  (162 assertions)
+----------------------------------------

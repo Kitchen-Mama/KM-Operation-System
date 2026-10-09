@@ -1,0 +1,41 @@
+ok   A 600/0 → remaining 600
+ok   A quantityOriginal keeps full shipped 600
+ok   B 600/300 → remaining 300 (not 600, not 0)
+ok   B quantityReceived surfaced = 300
+ok   C 600/600 → remaining 0
+ok   blank received → remaining 600
+ok   null received → remaining 600
+ok   received>shipped → remaining clamped to 0
+ok   received>shipped → RECEIVED_EXCEEDS_SHIPPED review flag
+ok   proc A 600/0 → 600
+ok   proc B 600/300 → 300
+ok   proc C 600/600 → 0
+ok   proc blank received → 600
+ok   proc received>shipped → 0 (never negative)
+ok   proc negative received → treated 0 → 600
+ok   proc legacy qty 500 − 200 → 300
+ok   proc no received column → full shipped
+ok   E ETA +10 → 0-18 bucket
+ok   F ETA +25 → 19-30 bucket ONLY
+ok   G ETA +40 → 31-45 bucket ONLY
+ok   H ETA +60 → 45+ bucket
+ok   boundary 18 → 0-18
+ok   boundary 19 → 19-30
+ok   boundary 45 → 31-45
+ok   boundary 46 → 45+
+ok   overdue (ETA<today) → separate overdue state by default
+ok   overdue fold option → earliest bucket
+ok   aggregate: each remaining lands in exactly one bucket
+ok   J partial 600/300 remaining 300 → 19-30 only
+ok   I fully received → 0 in bucket
+ok   remaining mirror 600/300 → 300
+ok   remaining mirror 600/600 → 0
+ok   remaining mirror over-receipt → 0
+ok   candidate builder never reads wh_on_the_way_qty (code, not comments)
+ok   source projection never reads wh_on_the_way_qty as incoming (code, not comments)
+ok   procurement incoming = shipment-derived remaining, not overseas snapshot on_the_way
+ok   canonical line owner threads shipment_received_qty; projection delegates to it
+ok   bundle regenerated: candidate remaining authority present in 90_ generated bundle
+ok   CLOSED set unchanged: received excluded, partially_received still active
+
+39 passed, 0 failed

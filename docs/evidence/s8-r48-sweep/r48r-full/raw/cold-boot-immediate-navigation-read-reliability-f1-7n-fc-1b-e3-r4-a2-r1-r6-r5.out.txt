@@ -1,0 +1,161 @@
+
+== §0 — invariants this round must not move ==
+ok   A1  the AI Plan DB generation flag is still declared false
+ok   A2  the activation allowlist still holds exactly one entry
+ok   A3  and that entry is a complete four-axis scope with no wildcard
+ok   A4  R6-R5 is a registered owner stamp
+ok   A5  no index.html asset is left behind on an older app token
+ok   A6  the arbiter is served with a cache token
+ok   A6a and loads BEFORE the page that arbitrates through it
+ok   A6a1 and no route-owned asset is left behind on an older app token
+ok   A6b and before app.js, which declares the first dependency
+ok   A6c app.js is served on the CURRENT application token, whichever round last set it
+ok   A7  the arbiter contains no write of any kind
+ok   A7a and issues no request itself — it only orders other people's
+ok   A7b pure core: no DOM
+
+== §2 — the timeline the previous telemetry could not produce ==
+ok   B1  BEFORE: four requests are open at once during a cold boot
+ok   B2  every request records a DISPATCH and a SETTLE time — not just a duration
+ok   B2a and how many requests were already open when it was dispatched
+ok   B3  and the primary read is measured overlapping all three boot reads
+ok   B3a dispatched within the first 200ms of the boot — before anything it competes with has settled
+ok   B3b not one request had the connection to itself
+ok   B4  BEFORE + immediate navigation + a serialized backend TIMES OUT — the reported defect
+ok   B4a and 6480ms of its 60s budget was spent QUEUED, not executing
+ok   B4b while its own execution was well inside the bound
+ok   B5  BEFORE + a few seconds of waiting SUCCEEDS — the reported workaround
+ok   B5a because waiting is nothing more than letting the queue drain (1200ms vs 6480ms)
+ok   B6  identical server execution in both cases — only the dispatch context differed
+
+== §4 — event-driven arbitration replaces timing luck ==
+ok   C1  AFTER + immediate navigation SUCCEEDS on the same backend that timed out before
+ok   C1a with ZERO queue wait — the whole budget is its own execution
+ok   C2  peak concurrency falls from 4 to 2
+ok   C2a which is the contention reduction §9 asks to be demonstrated
+ok   C3  exactly ONE primary request is dispatched
+ok   C4  the read waits for the registry to SETTLE (6600ms), not for a fixed delay
+ok   C4a on a backend that answers sooner the read goes sooner — proof it is an event and not a timer
+ok   C5  delayed navigation gets the same zero-queue dispatch
+ok   C5a and the same single request
+ok   C5b immediate and delayed navigation produce the SAME client elapsed — the wait bought nothing
+
+   cold_boot_immediate_navigation   BEFORE: peak=4 dispatch=120 client=60000 server=55000 queue=6480 before_ready=null ready=null
+   cold_boot_immediate_navigation   AFTER : peak=2 dispatch=6600 client=55000 server=55000 queue=0 before_ready=3 ready=61600
+   delayed_navigation               BEFORE: peak=3 client=56200 queue=1200 ready=68200
+   delayed_navigation               AFTER : peak=1 client=55000 queue=0 ready=68200
+ok   C6  an identical Search pressed during bootstrap issues NO second read
+ok   C6a and still resolves successfully
+ok   C7  unmount/remount during the read issues NO second read either
+ok   C8  gapJob.status.get is dispatched only AFTER the primary read has settled — off the critical path
+ok   C8a so it never overlaps the read the table is waiting for
+ok   C8b whereas BEFORE it did — which is what changed
+ok   C9  and it still RUNS — deferring a status poll is not the same as abandoning it
+ok   C10 a dependency that NEVER settles releases the read at the cap (8120ms) instead of hanging
+ok   C10a and the read still succeeds — a soft dependency cannot become a hard outage
+
+== §4/§6 — the arbiter contract, exercised directly ==
+ok   D1  a dependency nobody declared is UNKNOWN — waiting for a request that was never made is how a boot hangs
+ok   D1a so it does not block
+ok   D2  neither lane runs while a declared dependency is still pending
+ok   D2a and when it settles, the critical lane goes first and the deferred lane after
+ok   D3  a FAILED dependency releases its waiters — it does not become a hard outage
+ok   D4  two consumers of one key produce ONE call
+ok   D4a and both receive the same answer
+ok   D5  a genuinely different key is NOT shared
+ok   D6  a session starts at generation 1
+ok   D6a a result that outlived its generation is DELIVERED and MARKED stale — the caller decides, with the fact
+ok   D6b and accepts() names which generation is current
+ok   D7  the arbiter reports its own state, including the ledger of what it ordered and why
+
+== §4 — the page wires the arbiter where the measurement says it matters ==
+ok   E1  the mount records navigation intent IMMEDIATELY, before the markup fetch it awaits
+ok   E1a — literally before it, so "preparing" can be rendered from the first frame
+ok   E2  the primary read goes through the critical lane
+ok   E2a on the measured-minimum dependency set
+ok   E2b and NOT on capabilities — measured to buy nothing at concurrency 1 and to cost ~4s above it
+ok   E3  app.js still DECLARES the capability read, so the arbiter can report it
+ok   E3a and settles it on BOTH outcomes
+ok   E4  the registry read declares itself
+ok   E4a and settles on the success path AND the catch — a dependency that can hang is a boot that can hang
+ok   E4b declared only where a request is actually about to be issued, never on an early return
+ok   E5  the gap-job status poll runs in the DEFERRED lane
+ok   E5a and still runs — it is deferred, not removed
+ok   E6  the critical key carries NO scope — because the request carries none, so keying on it would prevent the sharing §4 requires
+ok   E7  a QUIET revalidation is not arbitrated as a critical read
+ok   E7a — that is exactly what makes it non-critical
+
+== §7 — four states, and a timeout is never an empty dataset ==
+ok   F1  the loading state distinguishes PREPARING from READING
+ok   F1a and says so in words a person can act on
+ok   F2  the timeout state is preserved verbatim
+ok   F2a including the sentence that stops it being read as empty data
+ok   F2b with an explicit Retry
+ok   F3  LOADING and ERROR are separate branches — a failure can never render the pre-search or empty sentence
+ok   F3a LOADING / ERROR / READY / PRE_SEARCH all exist as distinct states
+ok   F4  both the success AND the failure path of Search compare their own sequence first
+ok   F4a so a late success cannot overwrite a newer scope
+ok   F5  and the apply itself refuses to run for a superseded sequence
+ok   F6  a genuinely different applied scope advances the generation
+ok   F7  Retry is an explicit user action, not an automatic loop
+ok   F7a and a REQUEST_TIMEOUT is NOT auto-retryable — the bound already elapsed
+ok   F7b retries are capped at one by construction, so no code path can loop
+
+== §3 — server evidence, so the next live run can answer the reach question ==
+ok   G1  the router stamps its entry
+ok   G1a on both doGet and doPost
+ok   G1b and exposes it in a shape a handler can embed
+ok   G2  including the router-to-handler gap — the one number that separates queueing from slow execution
+ok   G3  the workspace handler carries that evidence into its meta
+ok   G3a with its own named stages
+ok   G3b spreadsheet open, table reads and serialization each bounded
+ok   G3c and the exit, so the interval can be closed against the client clock
+ok   G4  and it STATES that no lock is taken — "we did not look" and "there is no lock" are different answers
+ok   G5  no CacheService or PropertiesService is introduced — execution logs and response correlation only
+ok   G5a and the handler writes no sheet row
+ok   G6  the page keeps the server stages and entry evidence on its last-read meta
+ok   G6a and the transport records them on the sample, beside the client-side timings
+
+== §5 — the per-table analysis, and why the split is not taken ==
+ok   H1  all twenty-one tables of the primary read are classified
+ok   H1a every one is either initial or detail-only
+ok   H2  four are DETAIL-ONLY — nothing in the initial table reads them
+ok   H2a and they are exactly the Execution-Plan and carrier tables
+ok   H3  each records whether it could be scope-filtered before serialization
+ok   H3a and at least ten could be — the largest reduction a future round has available
+ok   H4  the split is NOT taken this round
+ok   H4a because the measured cause is contention and no split may rest on an unmeasured one
+ok   H5  the carrier catalogue is named as route/carrier-only, which is why deferring it needs care not haste
+
+== §10 — the R6-R4 behaviour this round must not disturb ==
+ok   I1  the Last Mile column is still rendered
+ok   I1a with its heading
+ok   I2  the seven-track grid is intact
+ok   I3  the registry still attaches the transit last mile on both branches
+ok   I4  the arrival still resolves through the shared profile selection
+ok   I5  the save-target freeze diagnostic is untouched
+ok   I6  the 920/520/400 reconciliation is untouched
+ok   I7  this round adds no sheet mutation anywhere
+ok   I7a and calls no Submit
+ok   I7b and never sets the flag true
+
+== MUTATION PROBES — each breaks a semantic guard, none a spelling ==
+ok   M1  the deferred lane releasing while a critical read is still open (caught)
+ok   M2  the critical lane losing its single-flight, so a Search adds a second read (caught)
+ok   M3  a FAILED dependency blocking its waiters for ever (caught)
+ok   M4  the dependency wait losing its cap, so one hung read hangs the page (caught)
+ok   M5  an UNKNOWN dependency treated as pending (caught)
+ok   M6  the timeline reporting overlap from durations instead of intervals (caught)
+ok   M7  the in-flight counter never closing, so every later dispatch overreports concurrency (caught)
+ok   M8  resetMetrics zeroing the live in-flight count and driving it negative (caught)
+ok   M9  the critical key carrying a scope the request does not have (caught)
+ok   M10 a stale-generation result being DROPPED, which would make a Search during bootstrap fail (caught)
+ok   M11 the gap-job poll going back onto the critical path (caught)
+ok   M12 the timeout being rendered as an empty dataset (caught)
+ok   M13 the server dropping the router-to-handler gap (caught)
+ok   M14 the preparing state claiming a search is running when none is dispatched (caught)
+
+---------------------------------------------------------------
+passed 131  failed 0
+mutants caught 14 of 14
+---------------------------------------------------------------

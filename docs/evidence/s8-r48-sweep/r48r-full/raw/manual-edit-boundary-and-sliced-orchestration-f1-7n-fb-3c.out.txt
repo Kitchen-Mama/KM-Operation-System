@@ -1,0 +1,45 @@
+
+== 1. an AI default materializes the canonical draft (unchanged path, canonical identity) ==
+
+== 2. a user 0 -> positive edit CREATES the canonical Flat-V2 draft on save ==
+
+== 3. a user edit of an EXISTING quantity wins over the AI value, and the read-back is the authority ==
+
+== 4. a positive -> 0 edit persists 0 and EXCLUDES that tier from the Send ==
+
+== 5. no new RAD-M identity is ever minted ==
+
+== 6. a failed save blocks the Send ==
+
+== 7. the preview checksum equals the confirmed checksum, and the plan is journaled ==
+
+== 8. drift between preview and confirmation BLOCKS execution ==
+
+== 9. every server slice finishes below the client timeout budget ==
+
+== 10. same-key concurrent continuation ==
+
+== 11. overlapping executions with DIFFERENT keys cannot both own the workset ==
+
+== 12. the lease is ATOMIC, and an expired lease can be taken over ==
+
+== 13. a browser reload can resume from the journal ==
+
+== 14. exact line quantity + lineage read-back (§G) ==
+
+== 15. an output mismatch BLOCKS the submitted transition ==
+
+== 16. the header total equals the verified line sum ==
+
+== 17. station-scoped Shipping Plan exact quantity verification (§I) ==
+
+== 18. no second writer ==
+
+== 19. no local / sessionStorage business success ==
+
+== 20. no Demo mutation, no email ==
+
+== 21. §H current-run authority, §C reconciliation, and no test-only escape hatch ==
+
+----------------------------------------
+ALL PASS  (377 assertions)

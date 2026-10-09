@@ -1,0 +1,17 @@
+
+== §B1 — scrollbar gutter reserved at the fixed COLUMN BOTTOM (not a per-row margin) → no next-SKU drift ==
+
+== §U1/U2/U3 — collapsed rows stay height-equal fixed⇄scroll; expand affects ONLY SKU A; collapse restores ==
+
+== §B2/§U4 — Recommendation Summary copies Monthly Achievement vertical CARD/TABLE geometry ==
+
+== §B3/§U7/§U8/§U9 — four top-row cards share ONE 150px baseline; content top-aligned; no giant whitespace ==
+
+== §U5/§U6 — fixed 4-row summary schema + cell-only patch preserved ==
+
+== §U10/§U11/§U12 — horizontal scroll, gutter, active-row full width preserved ==
+
+== §U13 — UI-only: this phase changes NO backend/formula/API behavior ==
+
+----------------------------------------
+INVENTORY EXPANDED CLOSURE (F1-4B-FM5-R4UI-R5H): 23 passed, 0 failed

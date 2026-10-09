@@ -1,0 +1,19 @@
+
+== §1/§2 weekly-only SKU: 0 daily rows + a weekly row → READY via the weekly_7d rung (reconciles with the UI) ==
+
+== §1 genuinely no basis stays BLOCKED (no daily AND no weekly) ==
+
+== §1 daily path unchanged: ≥3 normal daily days → normalized_30d (weekly not consulted) ==
+
+== §1 ambiguous channel still fails closed (rule unchanged) ==
+
+== §1 the reader routes channel from daily-else-weekly (source structure) ==
+
+== §3 normal UI shows a user-safe note (no raw internal codes) ==
+
+== §7 active blue highlight paints every logical-row cell (full width under horizontal scroll) ==
+
+== §9 header logo +15% (aspect ratio preserved) ==
+
+----------------------------------------
+R5A SALES WEEKLY-FALLBACK + UI (F1-4B-FM5-R4UI-R5A): 15 passed, 0 failed

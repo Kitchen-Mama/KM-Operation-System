@@ -1,0 +1,67 @@
+
+== A — THE GATE MOVED OFF THE RESOLVER CALL (42_ source contract) ==
+ok   A1  the MARKETPLACE branch calls recoWsResolveSalesRate_ exactly once  (got 1, want 1)
+ok   A2  and that call is NO LONGER inside the sales_driven branch — the gate that caused the defect is gone
+ok   A3  it stands alone, so it runs for EVERY SKU in both Planning Models
+
+== B — THE §22 ENGINE, EXECUTED (task fixture A) ==
+ok   B1  28 normal days @10 + Campaign @100 + Event @200 → 10, not 16.33  (got 10, want 10)
+ok   B2  and exactly 28 days were counted — both activity days excluded  (got 28, want 28)
+ok   B3  the source names the normalized rung  (got "normalized_30d", want "normalized_30d")
+ok   B4  28 of 30 is a healthy sample, so no warning  (got "", want "")
+ok   B5  no Planning Model token reaches the resolver call — the rate is mode-blind by construction
+ok   B6  and the exclusion is load-bearing — without the activity records the same sales give 19.333333333333332
+
+== C — ZERO, MISSING, LOW SAMPLE, FALLBACK ==
+ok   C1  thirty confirmed zero-sales days are a REAL zero  (got 0, want 0)
+ok   C2  ...counted as thirty observations, not as missing data  (got 30, want 30)
+ok   C3  two dates with NO row at all are missing — 28 observations, never 30  (got 28, want 28)
+ok   C4  ...and a missing date is not a zero, so the rate is unmoved  (got 10, want 10)
+ok   C5  four normal days is a low sample  (got 4, want 4)
+ok   C6  ...and it carries the low-sample warning (low_sample_warning)
+ok   C7  under three normal days the canonical fallback rung is taken  (got "weekly_7d", want "weekly_7d")
+ok   C8  ...weekly_7d ÷ 7 = 100  (got 100, want 100)
+ok   C9  ...and it is LABELLED, never a silent substitution
+
+== D — ISOLATION ==
+ok   D1  rows belonging to another COMPANY do not feed this scope's rate (source=weekly_7d)
+ok   D2  rows belonging to another MARKETPLACE do not feed it either (source=weekly_7d)
+
+== E — THE FIVE DIAGNOSTICS TRAVEL, AND ARE NOT INVENTED ==
+ok   E1  the §22 owner already returns avgSalesPerDay — 42_ forwards it rather than inventing it
+ok   E2  the §22 owner already returns source — 42_ forwards it rather than inventing it
+ok   E3  the §22 owner already returns warning — 42_ forwards it rather than inventing it
+ok   E4  the §22 owner already returns normalDayCount — 42_ forwards it rather than inventing it
+ok   E5  the §22 owner already returns excludedDates — 42_ forwards it rather than inventing it
+ok   E6  horizonBasis forwards all four quality fields verbatim from the owner
+ok   E7  ...and the rate itself, with an unresolved basis staying NULL — never a fabricated 0
+ok   E8  the page already carries excludedDates through to the row (landed S8-R2)
+
+== F — PLANNING DEMAND IS UNTOUCHED ==
+ok   F1  salesRate and salesReason are STILL assigned only under sales_driven
+ok   F2  ...and nowhere else — a Forecast-Driven SKU never acquires a planning basis
+ok   F3  recoWsBuildHorizons_ still receives (planModel, salesRate) — byte-identical planning inputs
+ok   F4  and KMHP is still handed a rate ONLY under sales_driven, so forecast demand cannot shift
+ok   F5  the sales_driven fail-closed horizon guard is intact
+ok   F6  ...and because salesReason stays null for forecast_driven, a Forecast-Driven horizon failure can never be mislabelled SALES_BASIS_UNAVAILABLE
+ok   F7  no Target Rule token appears anywhere in the changed region — Target behaviour is untouched
+
+== G — R46 RELEASE GOVERNANCE ==
+ok   G1  63_ declares R46 — the manifest is where a release is cut  (got "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46", want "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46")
+ok   G2  ...and 63_'s own module stamp moved, because 63_ itself changed  (got "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46", want "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46")
+ok   G3  60_ STAYS at R45 — it did not change in R46, and marching it would claim a round it had no part in  (got "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45", want "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45")
+ok   G4  R46 is ordered strictly after R45 in the append-only stamp list
+ok   G5  42_ declares no build symbol — it is a STAMPLESS owner, copied and stamped by nobody
+ok   G6  R46 has a ledger entry
+ok   G7  ...which records that nobody has deployed it
+ok   G8  ...and names R45's still-pending 60_ in the paste set, because it has never been synced
+
+== X — MUTANTS ==
+ok   X  MUTANT CAUGHT — X1 the resolver call is put back inside the sales_driven branch
+ok   X  MUTANT CAUGHT — X2 horizonBasis goes back to publishing the rate only for sales_driven
+ok   X  MUTANT CAUGHT — X3 salesRate leaks out of its branch and becomes a forecast planning basis
+ok   X  MUTANT CAUGHT — X4 an unresolved basis is published as 0 instead of null
+ok   X  MUTANT CAUGHT — X5 60_ is marched to R46 although it did not change
+ok   X  MUTANT CAUGHT — X6 the §22 exclusion is removed and the activity days re-enter the average
+
+PASS  49 passed, 0 failed

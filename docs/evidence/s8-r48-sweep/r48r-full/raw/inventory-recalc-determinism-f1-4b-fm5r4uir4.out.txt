@@ -1,0 +1,13 @@
+
+== §5 J — READY + deterministic recalc (Sales-Driven, valid basis, present-empty contamination) ==
+
+== §5 K — TABLE PRESENT + 0 rows is NOT unavailable (present-empty contamination → still READY) ==
+
+== §5 L — contamination source ABSENT does NOT turn READY into BLOCKED (the R3a defect, now fixed) ==
+
+== R5 §4 — Sales-Driven SKU with a valid Site Stock but NO regular forecast → READY (horizon opening decoupled) ==
+
+== §5 batch response is a COMPACT summary (no per-SKU payload) — §8 ==
+
+----------------------------------------
+INVENTORY RECALC DETERMINISM (F1-4B-FM5-R4UI-R4): 15 passed, 0 failed

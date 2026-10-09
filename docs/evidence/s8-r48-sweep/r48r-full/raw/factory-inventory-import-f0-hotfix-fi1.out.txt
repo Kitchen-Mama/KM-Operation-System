@@ -1,0 +1,17 @@
+
+== A. PURE evaluator — SET semantics + classification ==
+
+== B. PURE evaluator — authority + field validation (each blocks the batch) ==
+
+== C. PURE evaluator — duplicates + atomic batch ==
+
+== D. frontend CSV parse ==
+
+== E. server handler safety + wiring (source scan) ==
+
+== F. router + adapter (thin routing; decoupled ack / targeted readback) ==
+
+== G. page + HTML (SET wording, button placement, double-click, no cross-module writes) ==
+
+----------------------------------------
+FACTORY INVENTORY IMPORT (F0-HOTFIX-FI1): 58 passed, 0 failed

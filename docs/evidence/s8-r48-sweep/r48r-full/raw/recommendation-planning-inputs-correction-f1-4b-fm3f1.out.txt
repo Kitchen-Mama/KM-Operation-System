@@ -1,0 +1,17 @@
+
+== A · Site Stock opening = available + fc_transfer + fc_processing (customer_order + unfulfillable excluded) ==
+
+== D · current-month remaining demand consumed BEFORE T1 (Aug 8–31 = 24 × 100 = 2400) ==
+
+== E · Target% (default 100 here) + corrected T1 business gap ==
+
+== E · Target% ≠ 100 changes T1 adjusted demand (via canonical owner, not page math) ==
+
+== F · Special-event FC (100%, prep month, once) enters the demand ==
+
+== horizons consume the SAME corrected inputs (Site Stock opening + adjusted FC) ==
+
+== request-count / write-safety / demand owner (no page-side formula) ==
+
+----------------------------------------
+PLANNING-INPUT CORRECTION (F1-4B-FM3f-1): 20 passed, 0 failed

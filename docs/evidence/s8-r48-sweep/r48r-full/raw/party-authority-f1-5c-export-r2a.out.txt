@@ -1,0 +1,74 @@
+
+== A/B/C shipment.company -> correct legal entity ==
+ok   A KM shipment resolves KM legal entity
+ok   B ResTW shipment resolves ResTW legal entity
+ok   C ResUS shipment resolves ResUS legal entity
+ok   company match is case-insensitive
+
+== §5 seller-of-record = shipment company legal entity (Phase 1) ==
+ok   §5 seller-of-record identity == shipper identity
+
+== D shared factory does NOT change shipper (structural — resolver takes no factory input) ==
+ok   D same-factory shipments for KM vs ResTW resolve different shippers (company-driven, not factory)
+
+== E missing legal entity -> fail closed ==
+ok   E unconfigured company -> SHIPPER_LEGAL_ENTITY_NOT_CONFIGURED
+ok   blank company -> SHIPPER_LEGAL_ENTITY_NOT_CONFIGURED
+ok   two active KM entities -> SHIPPER_LEGAL_ENTITY_AMBIGUOUS
+ok   inactive legal entity is not selected
+
+== §2 effective window ==
+ok   in-window entity selected
+ok   before effective_from -> not configured
+
+== F destination warehouse -> exactly one logistics location -> address ==
+ok   F destination resolves to one location
+ok   F recipient name from location_name
+ok   F state_or_region from subdivision_code
+ok   F postal from location
+
+== G warehouse_code collision must NOT override warehouse_id identity ==
+ok   G identity is warehouse_id, not warehouse_code
+
+== H missing location / I ambiguous ==
+ok   H no matching active location -> DESTINATION_LOCATION_NOT_CONFIGURED
+ok   blank destination_warehouse_id -> DESTINATION_LOCATION_NOT_CONFIGURED
+ok   I two active locations -> DESTINATION_LOCATION_AMBIGUOUS
+ok   retired + inactive excluded -> single active resolves
+
+== J platform (FBA) destination uses the SAME resolver (no destination_type branch) ==
+ok   J FBA and 3PL destinations both resolve through the one warehouse_id chain
+ok   J destination resolver does not branch on destination/warehouse/location type
+
+== K legal importer required but unsupported -> fail closed ==
+ok   K separate legal importer -> LEGAL_IMPORTER_AUTHORITY_GAP
+ok   K Phase-1 consignee never fabricates a legal importer (null)
+
+== L / §9 FACTORY IS NOT SHIPPER — source guards ==
+ok   L shipper resolver references NO factory/warehouse/destination/marketplace/sku/carrier
+ok   shipper resolver keys on shipment.company only
+ok   company legal-entity resolver keys on company only (no location/factory)
+
+== §13 governance: sheet creation is USER-owned migration; runtime stays validate-only ==
+ok   §13 handler NEVER invokes a migration twin (matches production-safety INIT.4)
+ok   §13 handler does not open/create a spreadsheet itself (no runtime auto-create)
+ok   §13 router exposes NO party/company-entity action (authority closure is not runtime-reachable)
+ok   runtime read is validate-only (prodRequireSheet_) — fail closed until the USER creates + seeds the sheet
+ok   logistics_locations read is validate-only existence (columns owned by the Map master)
+
+== §2 minimum legal-entity contract present in the new owner ==
+ok   company_legal_entities owns company
+ok   company_legal_entities owns legal_name
+ok   company_legal_entities owns display_name
+ok   company_legal_entities owns country
+ok   company_legal_entities owns address_line_1
+ok   company_legal_entities owns city
+ok   company_legal_entities owns state_or_region
+ok   company_legal_entities owns postal_code
+ok   company_legal_entities owns tax_or_business_id
+ok   company_legal_entities owns is_active
+ok   company_legal_entities owns effective_from
+ok   company_legal_entities owns effective_to
+
+----------------------------------------
+PARTY AUTHORITY (F1-5C-EXPORT-R2A): 45 passed, 0 failed

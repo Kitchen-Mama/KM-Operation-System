@@ -1,0 +1,19 @@
+
+== §6 D — the legacy runtime function is GONE ==
+
+== §6 C — the two canonical trigger targets remain (unchanged) ==
+
+== §6 A/B — active registry: canonical keys present, legacy key absent ==
+
+== §6 E — a live legacy trigger is DELETABLE / swept on Save & Apply ==
+
+== §6 F — the legacy handler can NEVER be created ==
+
+== §6 G — legacy stored config migrates to Weekly Inventory + can never reactivate the legacy handler ==
+
+== §6 H/I/J — canonical product isolation + Monthly day 10 preserved ==
+
+== §6 K/L — prerequisite gates + no second engine/scheduler/persister ==
+
+----------------------------------------
+AUTOMATION LEGACY WEEKLY CLEANUP (F1-6B-R1): 26 passed, 0 failed

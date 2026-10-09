@@ -1,0 +1,41 @@
+
+== H. Factory acceptance case (120/20 current/reserved, New Available = 75) ==
+  ✓ qty = -25 (got -25, expected -25)
+  ✓ after_reserved_stock = 20 (unchanged) (got 20, expected 20)
+  ✓ after_current_stock = 95 (got 95, expected 95)
+  ✓ after_available = 75 (got 75, expected 75)
+  ✓ invariant after_current - after_reserved === new_available (got true, expected true)
+
+== H. Overseas acceptance case (available 300, New Available = 340) ==
+  ✓ wh_quantity = +40 (got 40, expected 40)
+  ✓ wh_quantity_before = 300 (got 300, expected 300)
+  ✓ wh_quantity_after = 340 (got 340, expected 340)
+  ✓ reserved unchanged (got 50, expected 50)
+  ✓ physical unchanged (got 400, expected 400)
+
+== Increase / decrease available (Factory) ==
+  ✓ increase: +30 (got 30, expected 30)
+  ✓ decrease: -30 (got -30, expected -30)
+  ✓ reserved 40 preserved: after_current = 90 + 40 (got 130, expected 130)
+
+== Validation: negative / same / non-integer rejected ==
+  ✓ negative new_available rejected
+  ✓ new === current (100) no-op rejected
+  ✓ non-integer new_available rejected
+  ✓ overseas negative rejected
+  ✓ overseas new === current no-op rejected
+
+== Note requirement (contract) ==
+  ✓ empty note rejected (got false, expected false)
+  ✓ whitespace-only note rejected (got false, expected false)
+  ✓ real note accepted (got true, expected true)
+
+== Signed display helper (+N / -N) ==
+  ✓ +40 (got "+40", expected "+40")
+  ✓ -25 (got "-25", expected "-25")
+  ✓ 0 (got "0", expected "0")
+
+passed 24  failed 0
+
+All inventory-adjustment assertions passed.
+

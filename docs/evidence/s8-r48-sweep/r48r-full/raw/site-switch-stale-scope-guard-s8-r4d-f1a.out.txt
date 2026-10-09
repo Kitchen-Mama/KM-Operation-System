@@ -1,0 +1,55 @@
+
+-- A: one scope identity --
+ok   A1  applied scope key is country + marketplaceId
+ok   A2  US and CA produce different keys
+ok   A3  never searched -> empty key
+ok   A4  a result with NO stamp is REFUSED (fail closed)
+ok   A5  a null state is refused
+ok   A6  a matching stamp is accepted
+
+-- B: fixture 1 — US completes, operator switches to CA --
+ok   B1  under US, the US canonical rate IS used
+ok   B2  under US, the US suggested qty IS used
+ok   B3  under CA with US state loaded -> NO canonical rate  [AVG_SALES_STALE_SCOPE]
+ok   B4  under CA with US state loaded -> Suggested Qty is PENDING, not 900  [SUGGESTED_QTY_STALE_SCOPE]
+ok   B5  and the velocity re-render does NOT fire on a foreign result - the scope guard is checked BEFORE the basis, so R46 publishing a rate for both Planning Models cannot weaken it
+ok   B6  reco lines read as NOT LOADED (null), never another site's lines
+
+-- C: fixture 2 — slow US response lands after CA is active --
+ok   C1  CA result under CA commits
+ok   C2  a late US result does NOT commit under CA  [LATE_RESPONSE_WRONG_SCOPE_COMMIT]
+ok   C3  nor does its suggested qty
+
+-- D: fixture 3 — rapid switching, only the final scope may commit --
+ok   D1  under JP only the JP result commits; CA and EU are refused
+
+-- E: fixtures 6 & 7 — lazy Suggested Qty across a scope change --
+ok   E1  old-scope lazy completion is DISCARDED (fixture 6)
+ok   E2  current-scope lazy completion COMMITS (fixture 7)
+ok   E3  a refused result yields NO value — never 0
+ok   E4  and is PENDING, not NONE (nothing is known yet)
+ok   E5  LOADING is still PENDING (behaviour unchanged)
+
+-- F: fixture 8 — a future async field inherits the same guard --
+ok   F1  a future On-the-Way state stamped for US passes under US
+ok   F2  and is refused under CA
+ok   F3  the predicate is exported, so F2 cannot quietly invent a second one
+
+-- G: the contracts this round must not move --
+ok   G1  `applied` is still assigned in exactly one place (_irApplySearch_)
+ok   G2  the Search sequence guard is intact (fixture 4: bootstrap cannot overwrite a manual Search)
+ok   G3  the recommendation sequence guard is intact
+ok   G4  the materialized-gap sequence guard is intact
+ok   G5  a failed Search sets ERROR and never assigns `applied` (fixture 5)
+ok   G6  the explicit-Search gate is unchanged — the table still renders APPLIED and a selector change only marks stale
+ok   G7  IR_FIRST_LAYER_TABLES_ still present
+ok   G8  the first-layer request is unchanged — 13 tables, no new mandatory read
+ok   G9  the Submit declared-demand path is NOT guarded — refusing there would suppress a server conflict check
+
+-- H: mutants --
+ok   H1 Avg Sales guard removed — CAUGHT
+ok   H2 Suggested Qty guard removed — CAUGHT
+ok   H3 guard compares a result to itself — CAUGHT
+ok   H4 unstamped state accepted — CAUGHT
+
+ALL PASS  |  passed 37  failed 0

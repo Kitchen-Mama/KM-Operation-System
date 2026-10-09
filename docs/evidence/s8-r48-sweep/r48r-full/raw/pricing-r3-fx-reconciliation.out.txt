@@ -1,0 +1,329 @@
+
+== A · §2 THE FX OWNER AND THE FROZEN DIRECTION ==
+ok   A1  pricing_list owns fx_rate — the applied rate lives on the row it was applied to
+ok   A1  pricing_list owns fx_rate_date — the applied rate lives on the row it was applied to
+ok   A2  and the mapping spec says there is no separate FX table, so this reuses the owner rather than inventing one
+ok   A3  the direction is stated in the source: LOCAL = BASE x FX_RATE
+ok   A4  USD 29.99 at 1.35 converts UP to CAD 40.49 — multiplied, never divided
+ok   A4b a rate above 1 always produces a LARGER local number; the reciprocal would produce 22.21
+ok   A5  the pair key is directional — one rate never answers both ways
+ok   A5b a USD>CAD rate does not answer a CAD>USD row, even though both currencies are known
+ok   A6  the module stamp is reported on every answer
+
+== B · §1 THE SCHEMA AUDIT — R3 invents nothing ==
+ok   B1  pricing_list already carries base_currency
+ok   B1b and 04_ has written it since row creation: base_currency
+ok   B1  pricing_list already carries base_regular_price
+ok   B1b and 04_ has written it since row creation: base_regular_price
+ok   B1  pricing_list already carries base_minimum_price
+ok   B1b and 04_ has written it since row creation: base_minimum_price
+ok   B1  pricing_list already carries base_msrp
+ok   B1b and 04_ has written it since row creation: base_msrp
+ok   B1  pricing_list already carries currency
+ok   B1b and 04_ has written it since row creation: currency
+ok   B1  pricing_list already carries fx_rate
+ok   B1b and 04_ has written it since row creation: fx_rate
+ok   B1  pricing_list already carries fx_rate_date
+ok   B1b and 04_ has written it since row creation: fx_rate_date
+ok   B1  pricing_list already carries auto_regular_price
+ok   B1b and 04_ has written it since row creation: auto_regular_price
+ok   B1  pricing_list already carries auto_minimum_price
+ok   B1b and 04_ has written it since row creation: auto_minimum_price
+ok   B1  pricing_list already carries auto_msrp
+ok   B1b and 04_ has written it since row creation: auto_msrp
+ok   B1  pricing_list already carries regular_price
+ok   B1b and 04_ has written it since row creation: regular_price
+ok   B1  pricing_list already carries minimum_price
+ok   B1b and 04_ has written it since row creation: minimum_price
+ok   B1  pricing_list already carries msrp
+ok   B1b and 04_ has written it since row creation: msrp
+ok   B2  every column the reconciliation validates is part of the canonical header — none is new
+ok   B3  the header length is unchanged from PRICING-R2 — R3 added no column
+ok   B4  03_ (the sku_details editor) still has no base_* price column — none was invented for R3 either
+
+== C · §3 RATE INGESTION — an input with provenance, never a constant ==
+ok   C1  the only per-currency constant in the file is a DECIMAL COUNT (0 or 2), never a rate
+ok   C2  no outbound fetch — this file never goes looking for a rate
+ok   C3  a well-formed rate table indexes by directional pair
+ok   C3b and carries its source
+ok   C3c and its as-of date
+ok   C4  no rates at all is refused — it never falls back to a previous run
+ok   C5  a rate with no named source is refused
+ok   C6  a rate with no as-of date is refused — a stale rate must be visible as stale
+ok   C7  a rate that is not a number is refused
+ok   C8  a zero rate is refused — it would convert every price to nothing
+ok   C9  USD to USD at anything but 1 is refused — it would silently reprice a domestic site
+ok   C10 one pair supplied twice is refused — both cannot be the rate for this run
+ok   C10b and a refused table indexes NOTHING, so a partial table can never be applied
+ok   C11 a run with no run_date is refused
+ok   C11b and wrote nothing
+ok   C12 the refusal hands back the rate-input TEMPLATE — the pairs this table actually needs
+ok   C12b with the rate left blank for the operator to fill
+ok   C13 a same-currency row appears in NO rate template
+
+== D · §4 CURRENCY MAPPING ==
+ok   D1  72_ declares pricing_list.currency the currency authority — R3 reuses that, it does not re-decide it
+ok   D1b and nothing in the executable source reads `country` to pick a currency
+ok   D2  base currency equal to local currency resolves to rate 1
+ok   D2b flagged as an identity, so the census can count it separately
+ok   D2c with no supplied source — nothing was looked up
+ok   D3  CHF is outside the frozen precision contract
+ok   D4  a CHF row is refused
+ok   D4b as UNSUPPORTED_CURRENCY
+ok   D4c and plans NO cell — there is no half-converted row
+ok   D5  a row with no currency is skipped
+ok   D6  a row with no base currency is skipped
+ok   D7  a row whose pair was not supplied is skipped
+ok   D7b naming the pair the operator must supply
+
+== E · §5 THE CONVERSION — independent per field, and missing never becomes zero ==
+ok   E1  a row with one absent base price still converts
+ok   E2  regular converts
+ok   E3  msrp converts
+ok   E4  and the ABSENT minimum produces NO auto value — not 0, and not a write
+ok   E4b reported as BASE_MISSING rather than converted
+ok   E4c the conversion of a missing base is null
+ok   E5  blank base -> null
+ok   E5b NA base -> null
+ok   E5c and NA is distinguishable from blank
+ok   E6  a REAL zero base converts to a real zero — 0 is a price
+ok   E6b and is present, unlike a blank
+ok   E7  a typo is invalid, not a price
+ok   E8  a negative base is refused
+ok   E9  one invalid base does not fail the row
+ok   E9b that field is skipped with a reason
+ok   E9c and the other fields convert normally
+ok   E9d
+ok   E10 an absent base leaves an EXISTING auto value alone rather than erasing it
+ok   E10b so the live price that field serves is not deleted by an empty cell
+ok   E10c and the file records that this was decided rather than overlooked
+
+== F · §6 PRECISION — reused, deterministic, and never a price point ==
+ok   F1  JPY stores 0 decimals
+ok   F1b CAD stores 2
+ok   F2  FX_RAW_VALUE is the unrounded product
+ok   F3  FX_ROUNDED_VALUE is the raw value at JPY precision — a whole yen
+ok   F3b and stores no decimal at all
+ok   F4  CAD rounds to 2 decimals
+ok   F4b storing no more than the currency can hold
+ok   F5  the rounding owner is pricingRoundFx_
+ok   F5b and rounding is not scattered — at most three Math.round in the whole file
+ok   F6  the stored value is deterministic
+ok   F7  converted values are not forced to .99 / .95 — this is arithmetic, not price optimization
+ok   F7b and no psychological price point appears in the executable source
+
+== G · §7 THE NON-REGRESSION GATE — auto may move, an owned or unclaimed price may not ==
+ok   G1  auto_regular_price IS refreshed although the field is manual — it is the system REFERENCE
+ok   G2  and regular_price is NOT planned — 34.99 stands exactly as the operator left it
+ok   G3  minimum auto converts
+ok   G3b and the minimum OVERRIDE is not written — it is blank, so the row resolves through auto
+ok   G4  msrp auto converts
+ok   G4b nor the msrp override
+ok   G4c FX_WRITES_MANUAL_OVERRIDE_COUNT = 0 — measured over the whole planned row, not field by field
+ok   G5  a manual Regular does not lock Minimum or MSRP — their resolved prices follow the new auto
+ok   G5a while the manual Regular does not follow, because an override is exactly what stops it
+ok   G6  a row with an UNKNOWN flag still gets its auto REFERENCE refreshed
+ok   G7  and its effective price is NOT touched — nobody has said the system owns it
+ok   G7b the authority is reported as UNKNOWN, not resolved
+ok   G8  no ownership flag is written: regular_price_is_manual
+ok   G8b not even over a blank one: regular_price_is_manual
+ok   G8  no ownership flag is written: minimum_price_is_manual
+ok   G8b not even over a blank one: minimum_price_is_manual
+ok   G8  no ownership flag is written: msrp_is_manual
+ok   G8b not even over a blank one: msrp_is_manual
+ok   G9  pricingWriteFlag_ is not called anywhere in the reconciliation — the flags are read-only to FX
+ok   G9b and the legacy row-level column is not written either
+ok   G10 the pre-write audit finds no violation on a clean plan
+ok   G10b and regular_price is not even among the columns to be written
+
+== H · §8 THE CANONICAL EFFECTIVE RESOLVER — one rule, two runtimes ==
+ok   H1.0 server resolver: flag="TRUE" stored=34.99
+ok   H1.1 server resolver: flag="FALSE" stored=40.49
+ok   H1.2 server resolver: flag="" stored=34.99
+ok   H1.3 server resolver: flag="" stored=""
+ok   H1.4 server resolver: flag="TRUE" stored=""
+ok   H1.5 server resolver: flag="FALSE" stored=""
+ok   H1.6 server resolver: flag="FALSE" stored=0
+ok   H1.7 server resolver: flag="" stored=0
+ok   H2.0 browser and server agree on AUTHORITY
+ok   H2b.0 browser and server RESOLVE to the same price
+ok   H2c.0 and the browser still reports the raw override separately
+ok   H2.1 browser and server agree on AUTHORITY
+ok   H2b.1 browser and server RESOLVE to the same price
+ok   H2c.1 and the browser still reports the raw override separately
+ok   H2.2 browser and server agree on AUTHORITY
+ok   H2b.2 browser and server RESOLVE to the same price
+ok   H2c.2 and the browser still reports the raw override separately
+ok   H2.3 browser and server agree on AUTHORITY
+ok   H2b.3 browser and server RESOLVE to the same price
+ok   H2c.3 and the browser still reports the raw override separately
+ok   H2.4 browser and server agree on AUTHORITY
+ok   H2b.4 browser and server RESOLVE to the same price
+ok   H2c.4 and the browser still reports the raw override separately
+ok   H2.5 browser and server agree on AUTHORITY
+ok   H2b.5 browser and server RESOLVE to the same price
+ok   H2c.5 and the browser still reports the raw override separately
+ok   H2.6 browser and server agree on AUTHORITY
+ok   H2b.6 browser and server RESOLVE to the same price
+ok   H2c.6 and the browser still reports the raw override separately
+ok   H2.7 browser and server agree on AUTHORITY
+ok   H2b.7 browser and server RESOLVE to the same price
+ok   H2c.7 and the browser still reports the raw override separately
+ok   H3  the browser module states the rule it is implementing
+ok   H4  writable_by_fx is gone — FX writes no override, so nothing is writable by it
+ok   H4a and the file says where it went, so the stamp is not a silent deletion
+ok   H4b the authority is still REPORTED in all three states — the editor shows it; nothing decides on it
+
+== I · §11 THE DRY RUN — the census, and zero writes proven by executing ==
+ok   I1  the dry run succeeds
+ok   I1b and reports itself as a dry run
+ok   I2  ZERO physical writes to pricing_list
+ok   I2b ZERO rows in the change log
+ok   I3  PRICING_ROWS_TOTAL
+ok   I4  SAME_CURRENCY_ROWS
+ok   I5  FX_CONVERTIBLE_ROWS
+ok   I6  UNSUPPORTED_CURRENCY_ROWS
+ok   I7  MISSING_FX_RATE_ROWS
+ok   I8  DUPLICATE_IDENTITY_ROWS
+ok   I9  UNKNOWN_AUTHORITY_ROWS counts every row with any blank flag, skipped ones included
+ok   I10 MANUAL_REGULAR_PRESERVED
+ok   I11 manual_fields_overwritten = 0
+ok   I12 BASE_REGULAR_PRESENT counts every row, including skipped ones
+ok   I12b BASE_MINIMUM_PRESENT
+ok   I13 the second row of a duplicated identity is skipped
+ok   I13b naming the row it collides with
+ok   I14 the real run succeeds
+ok   I15 and its census is identical to the dry run that preceded it
+ok   I16 manual_fields_overwritten = 0 on the real run too
+ok   I17 the manual regular price is still 34.99 after the run
+ok   I18 while its auto REFERENCE was refreshed to 40.49
+ok   I19 and its flag is untouched
+ok   I20 the LEGACY row keeps its price — an unknown owner is not the system
+ok   I21 with its auto reference refreshed
+ok   I22 and its flag still blank — nothing was classified
+ok   I23 the minimum OVERRIDE is left exactly as it was found
+ok   I23a while its auto reference moved to the new rate
+ok   I24 the CHF row was not converted at all
+ok   I24b and got no rate stamped on it
+ok   I25 the same-currency row recorded rate 1
+ok   I26 omitting dry_run gives a DRY RUN
+ok   I26b which wrote nothing
+ok   I27 a pricing_list without the ownership flags refuses
+ok   I27b with the production-safety token
+ok   I27c having written nothing
+
+== J · §13 THE AUDIT — typed, provenanced, and silent about what did not change ==
+ok   J1  the run succeeds
+ok   J2  exactly one log row: the auto value that moved. Nothing followed it into a cell.
+ok   J3  the auto value that was ALREADY correct produced NO log row — an unchanged cell is not a change
+ok   J4  every row is typed AUTO_FX_REFRESH — the token PRICING-R2 froze, reused rather than renamed
+ok   J4b and it is in the frozen vocabulary
+ok   J5  the log carries the RUN DATE
+ok   J5b the CURRENCY PAIR
+ok   J5c the RATE
+ok   J5d and the SOURCE
+ok   J6  with the old value
+ok   J6b and the new one
+ok   J7  and who ran it
+ok   J8  a run that moves nothing writes no log rows
+
+== K · §14 PERFORMANCE — physical calls scale with COLUMNS, not with SKUs ==
+ok   K1.1  N=1: ZERO per-cell writes
+ok   K2.1  N=1: the sheet is read ONCE, never once per row
+ok   K3.1  N=1: the whole audit is ONE range write
+ok   K1.50  N=50: ZERO per-cell writes
+ok   K2.50  N=50: the sheet is read ONCE, never once per row
+ok   K3.50  N=50: the whole audit is ONE range write
+ok   K1.100  N=100: ZERO per-cell writes
+ok   K2.100  N=100: the sheet is read ONCE, never once per row
+ok   K3.100  N=100: the whole audit is ONE range write
+ok   K1.500  N=500: ZERO per-cell writes
+ok   K2.500  N=500: the sheet is read ONCE, never once per row
+ok   K3.500  N=500: the whole audit is ONE range write
+ok   K4  500 rows cost exactly as many range writes as 1 row — the cost is bounded by COLUMNS
+ok   K4b and that constant is small
+ok   K5  and all 500 rows were actually written
+ok   K6  including the last one, converted correctly
+ok   K7  the row guard is a runaway guard, not a batch size
+
+== L · §9/§10 CONSUMERS AND THE SCREEN — unchanged, and proven as a negative ==
+ok   L1  58_ FC Summary workspace does not read auto_* — no consumer gained a fallback
+ok   L1b 58_ FC Summary workspace does not read an ownership flag — ownership never sits between a reader and a price
+ok   L1  20_ campaign write handlers does not read auto_* — no consumer gained a fallback
+ok   L1b 20_ campaign write handlers does not read an ownership flag — ownership never sits between a reader and a price
+ok   L1  03_ master data handlers does not read auto_* — no consumer gained a fallback
+ok   L1b 03_ master data handlers does not read an ownership flag — ownership never sits between a reader and a price
+ok   L1c 04_ no longer seeds fx_rate = 1 unconditionally — PRICING-R4E closed that at the creator
+ok   L1c1 a cross-currency row is created with no rate at all, rather than with an invented one
+ok   L1c2 and the importer still performs NO conversion — there is no second FX implementation in it
+ok   L1d and R3 itself still did not touch the creator — R4E did
+ok   L1e 72_ contains no effective-to-auto fallback expression — nobody reinvented manual || auto
+ok   L1e 58_ contains no effective-to-auto fallback expression — nobody reinvented manual || auto
+ok   L1e 20_ contains no effective-to-auto fallback expression — nobody reinvented manual || auto
+ok   L1e 04_ contains no effective-to-auto fallback expression — nobody reinvented manual || auto
+ok   L1e 03_ contains no effective-to-auto fallback expression — nobody reinvented manual || auto
+ok   L2  72_ projects the RESOLVED price, and the resolution is done by the canonical server resolver
+ok   L2a by CALLING it — there is no second copy of the rule in the read owner
+ok   L2b and it publishes all three layers separately, so no consumer has to guess which one it holds
+ok   L2b and 72_ was not touched by this round at all
+ok   L3  the screen shows Currency, FX Rate and FX Date
+ok   L3b and names Regular Price
+ok   L3b and names Minimum Price
+ok   L3b and names MSRP
+ok   L4  with a distinct state for an unclaimed field
+ok   L5  and the browser was not changed by this round — §8 reuses R2's rule verbatim
+
+== M · THE WIRING ==
+ok   M1  the router calls the FX handler exactly once
+ok   M1b and it is not in the GET read table
+ok   M1c the action is named in the router
+ok   M2  the handler lives in 73_, the existing write owner
+ok   M2b and nowhere else — pricing_list keeps ONE writer
+ok   M3  pricing.fxReconcile is NOT in SYS_REQUIRED_ACTIONS_ — no page depends on a reconciliation
+ok   M3a it is routed and handled all the same
+ok   M3b and 63_ records why it is absent, so a later round does not "fix" it by adding it
+ok   M4  73_ manifest row expects R22 or later
+ok   M4  01_ manifest row expects R22 or later
+ok   M4  63_ manifest row expects R22 or later
+ok   M5  73_ declares R22 or later
+ok   M5b 73_ declares exactly what the manifest expects
+ok   M5  01_ declares R22 or later
+ok   M5b 01_ declares exactly what the manifest expects
+ok   M5  63_ declares R22 or later
+ok   M5b 63_ declares exactly what the manifest expects
+ok   M6  the release is R22 or later
+ok   M7  the action contract is at or above the version a ROUTE addition raised it to
+ok   M7a because the route it was raised for is still routed
+ok   M8  pricing.fxReconcile is still absent from SYS_REQUIRED_ACTIONS_ — no PAGE depends on a reconciliation
+ok   M8b and the file records WHY, next to the number it explains
+ok   M9  the client pin AGREES with the deployed contract — neither side drifts alone
+ok   M9a and both are at or above the version this round moved them to
+ok   M9b the client refuses a deployment older than its pin — so Apps Script syncs FIRST, frontend SECOND
+ok   M9c and there is still no browser CALLER for the reconciliation — it is an operator action
+ok   M9d while the file does explain in prose why its pin moved without a new call
+ok   M10 R22 is still in the owner-stamp order — append-only, never rewritten
+ok   M10a and everything after it was APPENDED, so the order still ends at or beyond R22
+ok   M10b and sorts after R21
+ok   M10c appearing exactly once
+ok   M11 the mapping spec documents the FX change type
+ok   M11b and records this round
+
+== N · MUTANTS ==
+ok   N1  the FX direction is inverted (BASE / RATE instead of BASE x RATE) (caught)
+ok   N2  the FX run writes the manual override column again (caught)
+ok   N3  the auto fallback is gated on the ownership flag again (caught)
+ok   N4  a missing base price converts to 0 instead of nothing (caught)
+ok   N5  the converted value is stored at the wrong currency precision (caught)
+ok   N6  an unsupported currency is converted instead of refused (caught)
+ok   N7  a same-currency pair accepts a rate other than 1 (caught)
+ok   N8  the rate lookup ignores direction, so a CAD>USD rate answers a USD>CAD row (caught)
+ok   N9  the FX run writes an ownership flag (caught)
+ok   N10 the pre-write manual-overwrite audit is disabled (caught)
+ok   N11 dry_run is no longer the default (caught)
+ok   N12 run_date defaults instead of being required (caught)
+ok   N13 a rate with no source is accepted (caught)
+ok   N14 an unchanged auto value is logged as a change (caught)
+ok   N15 the reconciliation writes cell by cell instead of by column (caught)
+ok   N16 a duplicate marketplace_sku_id is reconciled instead of skipped (caught)
+
+283 passed / 0 failed   ·   16 mutants, 0 survived

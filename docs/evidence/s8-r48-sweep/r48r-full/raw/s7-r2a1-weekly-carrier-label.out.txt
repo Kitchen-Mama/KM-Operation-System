@@ -1,0 +1,55 @@
+ok   S1  the carrier label expression was located in the shipped page source
+ok   S2  the workspace normalizer carrier pair was located in the shipped page source
+
+== A  THE DATA WAS ALREADY THERE — 40_ resolves the name, server-side, against the real master ==
+ok   A1  40_ declares the carriers master a BASE table of the Weekly read
+ok   A1a and indexes it by carrier_id — the join key is the identity, not a label
+ok   A1b and emits carrier { id, name }, with an empty name when the master has no row for that id
+ok   A2  40_ reads carrier_name in exactly one place — the join it already had. BACKEND_RUNTIME_CHANGED = NO
+
+== B  THE FOUR STATES — and B/C never collapse into D ==
+ok   B1  A: id + name → the NAME is primary, the id stays beside it as canonical identity
+ok   B2  B: id + blank name → the ID, truthfully. Unresolved is not absent
+ok   B3  C: id and no name field at all (a LEGACY-source record) → the ID. That path has no master join, and it lands in the same branch rather than in a special case of its own
+ok   B4  D: no carrier id → the existing no-carrier presentation, unchanged
+ok   B4a and a record with neither field reads the same way
+ok   B5  a name of nothing but spaces is not a name — it falls to the id, not to a blank label
+ok   B5a and a blank id is no carrier, whatever text arrived beside it
+ok   B6  WEEKLY_PLAN_RAW_ID_ONLY_WHEN_NAME_AVAILABLE_COUNT = 0 across every case where a name exists
+ok   B7  two plans with two carriers get two labels — the expression is pure and holds no state
+
+== C  THE NAME IS CARRIED — which is the entire defect, in one line ==
+ok   C1  the workspace normalizer now keeps BOTH halves of the pair 40_ served
+ok   C1a an unresolved carrier keeps its id and an empty name — which B2 renders as the id
+ok   C1b a plan with no carrier normalizes to the no-carrier pair
+ok   C2  the id expression is byte-for-byte what it was — the identity did not move
+
+== D  ONE RESOLVER, NO NEW LOOKUP, NO NEW REQUEST ==
+ok   D1  CARRIER_DISPLAY_RESOLVER_COUNT_POST = 1 — this round defined no second carrier presentation resolver
+ok   D1a and the one that exists is still the R2A resolver in the adapter, unchanged by this round
+ok   D2  NEW_CARRIER_LOOKUP = NO — the Weekly page names no carrier master, index or collection
+ok   D2a and calls no carrier resolver: the join it would re-run already happened in 40_
+ok   D3  the page still makes exactly ONE workspace request — ADDITIONAL_REQUEST_COUNT = 0
+ok   D3a with the include set it already had — no carrier projection was added to the request
+ok   D3b PER_ROW_CARRIER_REQUEST_COUNT = 0 and DUPLICATE_CARRIER_FETCH_COUNT = 0 — the page issues no transport of its own at all, so a per-row carrier fetch has nowhere to live
+
+== E  NOTHING ELSE MOVED — selection, rate, payload, persistence ==
+ok   E1  carrierName appears TWICE in the page — produced once, consumed once, and nowhere near a payload
+ok   E1a and the persisted column name appears nowhere — CARRIER_NAME_PERSISTENCE_REQUIRED = NO, still
+ok   E2  the page builds no carrier field into any request payload — WRITE_PAYLOAD_CHANGED = NO
+ok   E2a and touches no rate identity — RATE_SELECTION_CHANGED = NO
+ok   E3  the pre-existing prototype cost widget is exactly where it was — CARRIER_SELECTION_CHANGED = NO
+ok   E4  the legacy plan normalizer still yields carrierId from carrier_id, unchanged
+
+== F  MUTANTS — every claim above must be able to fail ==
+ok   MUTANT CAUGHT — F1 would catch the name being dropped again in the normalizer
+ok   MUTANT CAUGHT — F2 would catch a blank name collapsing into the no-carrier dash
+ok   MUTANT CAUGHT — F3 would catch the id being dropped from the resolved label
+ok   MUTANT CAUGHT — F4 would catch the label reverting to the raw id
+ok   MUTANT CAUGHT — F5 would catch a carrier lookup being introduced into the page
+ok   MUTANT CAUGHT — F6 would catch a second resolver being defined in the page
+ok   MUTANT CAUGHT — F7 would catch carrierName reaching a write payload
+ok   MUTANT CAUGHT — F8 would catch a second workspace request being added
+ok   MUTANT CAUGHT — F9 would catch 40_ losing the server-side join this round depends on
+
+PASSED  41 passed / 0 failed   mutants 9, survived 0

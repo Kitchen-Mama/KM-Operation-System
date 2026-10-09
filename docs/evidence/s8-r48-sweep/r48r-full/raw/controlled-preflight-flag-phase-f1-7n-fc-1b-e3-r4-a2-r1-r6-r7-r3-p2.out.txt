@@ -1,0 +1,204 @@
+
+== A — two legal phases, and the SAME verdict in each ==
+ok   A1  flag false + exact allowlist is READY_NO_ACTION
+ok   A1a in phase PRE_ACTIVATION
+ok   A1b with no predicate failed
+ok   A1c the flag read strictly false, through the server's own reader
+ok   A2  flag TRUE + exact allowlist is ALSO READY_NO_ACTION — the run step 8 of the runbook requires
+ok   A2a in phase POST_ACTIVATION
+ok   A2b with no predicate failed
+ok   A2c and the flag read strictly true
+ok   A3  PRE_ACTIVATION runs 34 predicates
+ok   A3a POST_ACTIVATION runs 42 — eight MORE, because that is the phase where a write is possible
+ok   A3b the phase with the open window is the stricter one, never the more permissive
+ok   A4  PRE names the flag it read
+ok   A4-x and declares the authorization external to itself
+ok   A4-y naming no authorizer, because it is not one
+ok   A4-z and points at the census that DOES hold that gate
+ok   A4a  POST names the flag it read
+ok   A4b and declares the authorization external to itself
+ok   A4c naming no authorizer, because it is not one
+ok   A4d and points at the census that DOES hold that gate
+ok   A5  the legacy flag.value field still reports the reading
+ok   A5a and now carries the phase beside it
+ok   A5b the note no longer claims false is the only correct posture
+ok   A6a flag_effective_is_an_observable_boolean is asserted, in both phases
+ok   A6b flag_phase_is_one_of_the_two_declared_phases is asserted, in both phases
+ok   A6c this_preflight_is_not_an_authorization_source is asserted, in both phases
+ok   A6d no_wildcard_or_partial_allowlist_entry is asserted, in both phases
+ok   A7  PRE_ACTIVATION still asserts the flag is off — the phase label is checked, not just printed
+ok   A7a and POST_ACTIVATION asserts it is on
+ok   A8  and the contradictory predicate is gone, not merely passing
+
+== B — a flag we cannot read is not a flag in a known position ==
+ok   B1  an ABSENT flag reader STOPS
+ok   B1a and reports the reader missing
+ok   B1b under its own code
+ok   B1c naming what an operator has to fix
+ok   B2  a reader that THREW
+ok   B2  a reader that THREW — phase UNOBSERVABLE
+ok   B2  a reader that THREW — and it says so
+ok   B2  a reader that THREW — under both named predicates
+ok   B2  a reader that THREW — reporting what it actually got
+ok   B2a under its own code
+ok   B3  a reader answering null
+ok   B3  a reader answering null — phase UNOBSERVABLE
+ok   B3  a reader answering null — and it says so
+ok   B3  a reader answering null — under both named predicates
+ok   B3  a reader answering null — reporting what it actually got
+ok   B4  a reader answering undefined
+ok   B4  a reader answering undefined — phase UNOBSERVABLE
+ok   B4  a reader answering undefined — and it says so
+ok   B4  a reader answering undefined — under both named predicates
+ok   B5  a reader answering the STRING "false"
+ok   B5  a reader answering the STRING "false" — phase UNOBSERVABLE
+ok   B5  a reader answering the STRING "false" — and it says so
+ok   B5  a reader answering the STRING "false" — under both named predicates
+ok   B5  a reader answering the STRING "false" — reporting what it actually got
+ok   B5a under its own code
+ok   B5b and says why a truthy non-boolean is refused rather than coerced
+ok   B6  a reader answering 1
+ok   B6  a reader answering 1 — phase UNOBSERVABLE
+ok   B6  a reader answering 1 — and it says so
+ok   B6  a reader answering 1 — under both named predicates
+ok   B6  a reader answering 1 — reporting what it actually got
+ok   B7  a reader answering 0
+ok   B7  a reader answering 0 — phase UNOBSERVABLE
+ok   B7  a reader answering 0 — and it says so
+ok   B7  a reader answering 0 — under both named predicates
+ok   B7  a reader answering 0 — reporting what it actually got
+ok   B8  a reader answering an object
+ok   B8  a reader answering an object — phase UNOBSERVABLE
+ok   B8  a reader answering an object — and it says so
+ok   B8  a reader answering an object — under both named predicates
+
+== C — the allowlist, in both phases ==
+ok   C1  an EMPTY allowlist STOPS
+ok   C1a by count
+ok   C2  a WIDENED allowlist STOPS
+ok   C2a by count
+ok   C3  an ALL_SITES wildcard STOPS
+ok   C3a as a wildcard, by name
+ok   C4  a BLANK axis STOPS
+ok   C4a a blank is a wildcard
+ok   C5  a DIFFERENT single scope STOPS
+ok   C5a because it is not this scope
+ok   C6  empty STOPS after the flip too
+ok   C6  empty — under the POST_ACTIVATION exactness claim
+ok   C6a widened STOPS after the flip too
+ok   C6a widened — under the POST_ACTIVATION exactness claim
+ok   C6b wildcard STOPS after the flip too
+ok   C6b wildcard — under the POST_ACTIVATION exactness claim
+ok   C7  and the exact one-entry allowlist is accepted
+ok   C7a reported as exactly the frozen scope
+
+== D — the authorization gate did NOT move here ==
+ok   D1  the activation manifest still STOPS on a flag that is already true
+ok   D1a on exactly that predicate and no other — the preflight it calls is now happy, and the gate holds anyway
+ok   D1b having observed the flag as true
+ok   D2  and it still authorizes from a flag that is false
+ok   D2a with its full predicate set intact
+ok   D3  and a census whose preflight phase claims are gutted still cannot authorize with the flag on
+ok   D3a because the gate is somewhere else entirely
+
+== E — POST_ACTIVATION pins every number the authorization rested on ==
+ok   E1a POST_ACTIVATION asserts post_activation_flag_effective_is_true
+ok   E1a-pre and PRE_ACTIVATION does not — the phase decides
+ok   E1b POST_ACTIVATION asserts post_activation_allowlist_is_exactly_the_frozen_scope
+ok   E1b-pre and PRE_ACTIVATION does not — the phase decides
+ok   E1c POST_ACTIVATION asserts post_activation_production_outcome_is_no_action
+ok   E1c-pre and PRE_ACTIVATION does not — the phase decides
+ok   E1d POST_ACTIVATION asserts post_activation_production_code_is_no_replenishment_required
+ok   E1d-pre and PRE_ACTIVATION does not — the phase decides
+ok   E1e POST_ACTIVATION asserts post_activation_production_would_not_write
+ok   E1e-pre and PRE_ACTIVATION does not — the phase decides
+ok   E1f POST_ACTIVATION asserts post_activation_writer_would_not_be_reached
+ok   E1f-pre and PRE_ACTIVATION does not — the phase decides
+ok   E1g POST_ACTIVATION asserts post_activation_recommended_qty_is_zero
+ok   E1g-pre and PRE_ACTIVATION does not — the phase decides
+ok   E1h POST_ACTIVATION asserts post_activation_qualifying_active_planned_qty_is_520
+ok   E1h-pre and PRE_ACTIVATION does not — the phase decides
+ok   E1i POST_ACTIVATION asserts post_activation_residual_qty_is_zero
+ok   E1i-pre and PRE_ACTIVATION does not — the phase decides
+ok   E2  a production REFUSAL STOPS in PRE_ACTIVATION
+ok   E2a by name
+ok   E3  and STOPS in POST_ACTIVATION
+ok   E3a naming the phase's own claim as well
+ok   E4  a NONZERO recommendation after the flip STOPS — nobody authorized a run that writes
+ok   E4a because the residual moved
+ok   E4b and production would no longer answer no-action
+ok   E4c the same world reads as PRE_ACTIVATION with the flag off
+ok   E4d and none of the POST_ACTIVATION claims is charged against it
+ok   E5  AI_PLAN_NO_ACTION beside would_write true STOPS
+ok   E5a on exactly one predicate — the contradiction is isolated, not buried in a pile
+ok   E5b while the outcome field still says no-action, which is the whole point
+
+== F — the bounded proof places its own verdict ==
+ok   F1  the PRE proof is within the cap (1972 bytes)
+ok   F2  and carries the phase
+ok   F3  and the effective flag
+ok   F4  and that it was observable
+ok   F5  and that the authorization is external
+ok   F6  and the allowlist exactness
+ok   F7  marked complete
+ok   F1a  the POST proof is within the cap (1972 bytes)
+ok   F2a  and carries the phase
+ok   F3a  and the effective flag
+ok   F4a  and that it was observable
+ok   F5a  and that the authorization is external
+ok   F6a  and the allowlist exactness
+ok   F7a  marked complete
+ok   F8  and an unreadable flag reaches the proof as UNOBSERVABLE rather than as a blank
+ok   F8a beside the STOP it caused
+ok   F9  flag_phase is declared evidence, not a decoration
+
+== G — nothing wrote, nothing was flipped, nothing was deployed ==
+ok   G1a PRE: db_writes 0, writer_calls 0, and four more zeros
+ok   G1a-m and zero cells touched, measured on the sheets
+ok   G1b POST: db_writes 0, writer_calls 0, and four more zeros
+ok   G1b-m and zero cells touched, measured on the sheets
+ok   G1c unobservable: db_writes 0, writer_calls 0, and four more zeros
+ok   G1c-m and zero cells touched, measured on the sheets
+ok   G1d blocked: db_writes 0, writer_calls 0, and four more zeros
+ok   G1d-m and zero cells touched, measured on the sheets
+ok   G1e nonzero post: db_writes 0, writer_calls 0, and four more zeros
+ok   G1e-m and zero cells touched, measured on the sheets
+ok   G1f would_write: db_writes 0, writer_calls 0, and four more zeros
+ok   G1f-m and zero cells touched, measured on the sheets
+ok   G1g manifest flag on: db_writes 0, writer_calls 0, and four more zeros
+ok   G1g-m and zero cells touched, measured on the sheets
+ok   G1h manifest flag off: db_writes 0, writer_calls 0, and four more zeros
+ok   G1h-m and zero cells touched, measured on the sheets
+ok   G2  61_ was untouched by THIS round and is not behind it
+ok   G2a the deployment release did not move for THIS diagnostic patch, and is not behind it
+ok   G2b which is why this round is not in the release order either
+ok   G3  00_config.gs still holds the flag at false
+ok   G4  the phase reader writes nothing, sets no flag and calls no generation
+ok   G4a it reads the server's own gate rather than restating a default
+
+== H — the frozen baseline survives the sync, and the paste instructions are not stale ==
+ok   H1  the repo copy of R6R7_NO_ACTION_BEFORE_ is still unfrozen, as a repo copy must be
+ok   H1a with every live field null rather than somebody's captured activation
+ok   H2  so a fresh repo copy answers BASELINE_NOT_FROZEN — the check the operator runs after the sync
+ok   H2a while a frozen one answers AWAITING_ACTIVATION, which is the proof the freeze is intact
+ok   H3  the minimal-paste document names the constant to protect
+ok   H3a and says not to re-paste the whole file
+ok   H3b and names the verification the operator runs afterwards
+ok   H4  the document declares 10 machine-checkable anchors
+ok   H4a and every one of them is present in the census verbatim — the instructions cannot go stale silently
+ok   H5  the runbook names both phases
+ok   H5a and points at the minimal-paste document
+
+== N — mutants ==
+ok   N1 the hard-coded flag=false precondition restored (caught)
+ok   N2 a LENIENT flag read, so a truthy non-boolean becomes POST_ACTIVATION (caught)
+ok   N3 UNOBSERVABLE accepted as a legal phase (caught)
+ok   N4 the census appointing itself the authorization source (caught)
+ok   N5 the POST_ACTIVATION production block skipped, so a residual walks through the open window (caught)
+ok   N6 POST_ACTIVATION allowlist exactness dropped, so a widened list passes after the flip (caught)
+ok   N7 the phase dropped from the bounded proof (caught)
+ok   N8 the phase claim printed but never checked (caught)
+ok   N9 the wildcard allowlist check removed from the preflight (caught)
+ok   N10 the activation manifest relaxed along with the preflight (caught)
+
+passed 184  failed 0  |  mutants caught 10  survived 0

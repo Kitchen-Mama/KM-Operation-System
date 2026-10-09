@@ -1,0 +1,29 @@
+
+== Fixture A — 3-SKU scope job: START → CONTINUE → DONE (create/reuse mixed) ==
+
+== Fixture B — forced multi-continuation (maxSkus=2): cursor advances, resumes, no duplicate ==
+
+== Fixture C — interruption between continuations resumes at the next SKU (no reprocess) ==
+
+== Fixture D — a second CONTINUE holding no lease sees a live lease → BUSY, does not process ==
+
+== Fixture E — manual-edit SKU records REGENERATE_NEEDS_CONFIRMATION, never auto-confirmed, others continue ==
+
+== Fixture F — BLOCKED_CONFLICT on one SKU is truthful; A/C persist, job DONE ==
+
+== Fixture G — gap generation changed mid-job → fail closed (no mixed generations) ==
+
+== Fixture H — 93-SKU scope: state fits, multiple continuations, eventually DONE ==
+
+== §4 — state-size gate: a scope too large for one Script Property fails closed at START ==
+
+== START guards — empty scope + gap-not-ready fail closed; CANCEL is terminal + preserves ==
+
+== Fixture I — scope read-back classifies PERSISTED / NO_DRAFT / BLOCKED_CONFLICT; SKU→T1/T2/T3 sorted ==
+
+== Fixture J — enumeration = READY gap rows only, SKU ASC; recommended verbatim; no factory/formula ==
+
+== D/§19/§21/§23 — no triggers/scheduler, no allocation/formula/second-persister, router + no frontend change ==
+
+----------------------------------------
+REQUEST ORDER DRAFT JOB (F1-4B-FM6-R4E2-B2): 52 passed, 0 failed

@@ -1,0 +1,11 @@
+
+== PRE_SEARCH gate (centralized in renderRequestOrderTable) ==
+
+== state + transitions ==
+
+== centralized gate ⇒ async callbacks cannot expose rows before Search ==
+
+== fb30b20 scoped Category counts preserved + no authority/transport change ==
+
+---------------------------------------------
+PASS 19  FAIL 0

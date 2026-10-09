@@ -1,0 +1,66 @@
+
+== A/B single & multi-SKU Shipping Detail ==
+ok   A single-SKU SD renders
+ok   B multi-SKU SD renders 2 lines
+
+== C/D single- & multi-PO lineage (never collapsed) ==
+ok   C single-PO line -> 1 allocation
+ok   D multi-PO line -> 2 allocations (not collapsed)
+ok   D both PO numbers + quantities preserved
+ok   D header PO numbers distinct list
+
+== E/F physical qty = snapshot shipment_qty (not PO ordered/completed) ==
+ok   E line physical qty = snapshot shipment_qty (800)
+ok   F renderer never reads PO ordered/completed/recommended/remaining qty
+
+== G/H GS1 barcode vs units_per_carton (distinct) ==
+ok   G gs1_code from snapshot
+ok   G gs1_type from snapshot
+ok   H units_per_carton (20) is a distinct field, not the GS1 barcode
+
+== I/J shipper & consignee from frozen snapshot ==
+ok   I shipper from snapshot header
+ok   I shipper address frozen
+ok   J consignee from snapshot header
+ok   J consignee address frozen
+
+== K/L factory != company (shared factory valid) ==
+ok   K factory frozen from snapshot
+ok   L KM vs ResTW share Factory A but keep distinct shippers (factory does not determine company)
+
+== M/N immutability: renderer is a pure fn of the snapshot; reads no live masters ==
+ok   M same snapshot -> identical output (deterministic; master edits cannot leak in)
+ok   N renderer/reader NEVER calls a master resolver
+ok   N reads NO live master/operational tables (snapshot only)
+ok   N reader consumes ONLY the 3 frozen snapshot tables
+
+== O/P no FIFO / no recommendation-gap-forecast recompute ==
+ok   O no FIFO ordering in renderer
+ok   P no gap/forecast/recommendation recompute
+
+== Q missing required snapshot field -> fail closed ==
+ok   Q blank required field -> FINAL_OUTPUT_REQUIRED_FIELD_GAP
+ok   Q reports the exact missing field
+
+== R/S/T readiness gating ==
+ok   R SD READY renders
+ok   S PL READY renders
+ok   SD BLOCKED fails closed
+ok   SD blocked returns exact reason
+ok   T customs BLOCKED does NOT block Shipping Detail / Packing List
+
+== U/V idempotent, lineage-tagged; persisted generated-doc HALTed ==
+ok   V model carries template_key (frozen convention)
+ok   V lineage -> shipment + snapshot + version
+ok   U/§9 R3A does NOT persist a generated document (idempotent read; persistence HALTed)
+
+== W no second engine; §9/§14 persisted document layer HALTed (not built) ==
+ok   W no migration twin invoked (no new document tables created)
+ok   W renderer does NOT create/write generated_documents / document_templates / document_template_fields
+ok   W no second aggregator / re-declared snapshot schema (reuses R2B authority)
+
+== router: one render action ==
+ok   renderShipmentDocument routed
+
+----------------------------------------
+SHIPMENT DOCUMENT RENDERER (F1-5C-EXPORT-R3A): 37 passed, 0 failed

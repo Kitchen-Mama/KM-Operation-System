@@ -1,0 +1,12 @@
+
+== BUG FIX — the 4 requestOrderDraft.job.* dispatches serialize through jsonResponse_ (CORS-readable) ==
+
+== CONTROL PARITY — the known-good gap-job START uses the SAME jsonResponse_ wrap ==
+
+== WHY THE WRAP MUST LIVE AT THE ROUTER — 48_ handlers return a RAW envelope (no ContentService) ==
+
+== NO DOUBLE-WRAP — 47_ generateFromGap/getActive wrap INTERNALLY, so the router must NOT re-wrap ==
+
+== GUARD — no requestOrderDraft.job.* dispatch returns the raw handler object (regression trap) ==
+
+✓ 21 passed

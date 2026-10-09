@@ -1,0 +1,174 @@
+
+== §A — THE ROUTE: this page reads through the shared transport, like every other page ==
+ok   A1  the accessor can state, at runtime, which door its reads go through
+ok   A2  and with no KM.transport present it says so rather than pretending
+ok   A3  the accessor resolves the shared transport from the page, not a copy of its own
+ok   A4  and dispatches its reads as kind:read, which is what bounds the retry to one
+ok   A5  the request envelope is built by the foundation, so one shape crosses the wire
+ok   A6  and the WHOLE envelope is what travels, not the inner payload (the SCOPE_INCOMPLETE lesson)
+ok   A7  the private POST shim has ZERO callers in the Product Strategy accessor
+ok   A7a while the shared transport is dispatched from it
+ok   A7b and the accessor opens no socket of its own either
+
+== §B — CLASSIFICATION: the sentences R10 §5 forbids, each asserted by name ==
+ok   B1  a 404 is a server that answered, and is never SOURCE_NOT_CONNECTED
+ok   B2  and so is a redirect target that 404s — the endpoint was reached, the hop was not
+ok   B3  the STATUS alone is enough; an unrecognised code cannot launder a 404 into offline
+ok   B4  a Google sign-in page is an authorisation fact, not a network one
+ok   B5  and it stays that even if the browser also thinks it is offline — the page ARRIVED
+ok   B6  HTML where JSON was expected is unreadable, not disconnected
+ok   B7  a timeout is a timeout and never NOT_AUTHORIZED
+ok   B7a including the write-indeterminate timeout, which is still a clock and not a permission
+ok   B8  a 403 is a permission fact even when the code is the generic transport one
+ok   B8a and so is a 401
+ok   B9  a failure with NO response at all, on an offline browser, is the one honest offline
+ok   B10 and online with no response is the only thing left that "no server answered" may describe
+ok   B11 a status that is known is never dropped in favour of the default
+ok   B12 an envelope for another action is a routing fault, not a missing network
+ok   B12a and so is a stale correlation id
+ok   B12b and so is an unprovable one
+ok   B13 and the VALIDATION path names it the same way the transport path does
+ok   B14 while a broken schema is unreadable — which is true, and is not "no server answered"
+ok   B15 site-universe STATES knows SOURCE_NOT_CONNECTED
+ok   B16 site-universe UX has wording for SOURCE_NOT_CONNECTED
+ok   B18 live-adapter UX has wording for SOURCE_NOT_CONNECTED
+ok   B15 site-universe STATES knows BROWSER_OFFLINE
+ok   B16 site-universe UX has wording for BROWSER_OFFLINE
+ok   B17 and BROWSER_OFFLINE is an explicit client-only refusal, not a fall-through to the default
+ok   B18 live-adapter UX has wording for BROWSER_OFFLINE
+ok   B15 site-universe STATES knows SOURCE_TIMED_OUT
+ok   B16 site-universe UX has wording for SOURCE_TIMED_OUT
+ok   B17 and SOURCE_TIMED_OUT is an explicit client-only refusal, not a fall-through to the default
+ok   B18 live-adapter UX has wording for SOURCE_TIMED_OUT
+ok   B15 site-universe STATES knows NOT_AUTHORIZED
+ok   B16 site-universe UX has wording for NOT_AUTHORIZED
+ok   B17 and NOT_AUTHORIZED is an explicit client-only refusal, not a fall-through to the default
+ok   B18 live-adapter UX has wording for NOT_AUTHORIZED
+ok   B15 site-universe STATES knows RESPONSE_NOT_READABLE
+ok   B16 site-universe UX has wording for RESPONSE_NOT_READABLE
+ok   B17 and RESPONSE_NOT_READABLE is an explicit client-only refusal, not a fall-through to the default
+ok   B18 live-adapter UX has wording for RESPONSE_NOT_READABLE
+ok   B15 site-universe STATES knows HTTP_NOT_FOUND
+ok   B16 site-universe UX has wording for HTTP_NOT_FOUND
+ok   B17 and HTTP_NOT_FOUND is an explicit client-only refusal, not a fall-through to the default
+ok   B18 live-adapter UX has wording for HTTP_NOT_FOUND
+ok   B15 site-universe STATES knows ACTION_MISMATCH
+ok   B16 site-universe UX has wording for ACTION_MISMATCH
+ok   B17 and ACTION_MISMATCH is an explicit client-only refusal, not a fall-through to the default
+ok   B18 live-adapter UX has wording for ACTION_MISMATCH
+ok   B17a and the fallback is deliberately NOT in that list — it is what an unlisted state becomes
+ok   B19 the 404 wording says something was reached and is empty
+ok   B20 and never says "not connected" about a server that answered
+ok   B21 and the mismatch wording does not blame the database or the network
+ok   B22 no endpoint, deployment id or redirect token appears in anything an operator is shown
+
+== §C — THE RETRY BOUND, asserted against the REAL transport over an injected network ==
+ok   C13 the policy refuses to auto-retry a write even for the one code reads recover from
+ok   C13a and allows it for a read, which is the whole of the R10 fix
+ok   C13b an authorisation refusal is never retried
+ok   C13c nor a 404 from the endpoint itself
+ok   C13d nor a timeout — the bound already elapsed, and asking again doubles the wait
+ok   C13e nor a business refusal, which would refuse identically a second time
+ok   C13f nor a request that was superseded — nobody is waiting for its answer any more
+ok   C15 a real workspace read is well under a thousand characters
+ok   C15a against a ceiling of at least six thousand — length was never the fault
+ok   C9  a sign-in page is NEVER retried — asking again cannot create a session
+ok   C9a and it is named as an access fact
+ok   C10 a 404 from the STABLE /exec itself is not retried — the address is wrong, not busy
+ok   C10a and it is distinguished from the redirect-target 404
+ok   C11 an answer to a DIFFERENT action is not retried — a repeat would be misrouted too
+ok   C11a and it is named as a mismatch
+ok   C12 a WRITE under the identical fault costs exactly one request — never replayed
+ok   C12a and a write is never downgraded to a GET to make it retryable
+ok   C14a and a caller that asks for none gets none — the bound clamps both ways
+ok   C1  a redirect target that 404s costs exactly TWO physical requests, never three
+ok   C2  and after the one recovery it reports failure rather than hiding it
+ok   C3  named as the redirect-target fault it is
+ok   C4  BOTH attempts were issued to the stable /exec and nothing else
+ok   C4a the failed redirect target is never requested again — it is not even stored
+ok   C5  each physical attempt carries a request id
+ok   C5a and the recovery gets a NEW one, so its answer is correlated to itself
+ok   C6  reads go out as GET, both times — the body rides in km_rid/km_body
+ok   C6a and say so on the wire, so the router can prove which door was used
+ok   C7  the bounded recovery is COUNTED, exactly once
+ok   C7a and counted once as a retry — the two counters agree
+ok   C8  a transient redirect 404 recovers on the second attempt
+ok   C8a and the caller is handed a success, not a failure it has to interpret
+ok   C14 a caller that asks for five retries still gets exactly one
+
+== §D — THE PRODUCTION-LIKE MATRIX, in a browser, with the faults injected under a REAL transport ==
+ok   D1  a 404 on the redirect target is reported as an address that answered and holds nothing
+ok   D1a and NOT as "no server answered" — the sentence R10 §5 forbids for exactly this case
+ok   D2  and it costs exactly two physical requests: the read and one recovery
+ok   D2a both GET — no POST that a 302 could strip the body from
+ok   D3  a Google sign-in page is reported as an account fact
+ok   D3a and never as offline — the page ARRIVED
+ok   D4  and it is asked ONCE: a repeat cannot create a session
+ok   D5  a generic HTML error page is reported as an unreadable answer
+ok   D5a and does not blame the database for a server that replied
+ok   D6  and is not retried — the same page would come back
+ok   D7  a failure with NO response at all is the one case "not connected" describes
+ok   D8  and it gets the one bounded recovery, because nothing was ever answered
+ok   D9  and so is a transport error
+ok   D10 with the same single recovery
+ok   D11 a clean site load issues the universe read and the workspace read
+ok   D11a and getClientCapabilities costs exactly ONE request — nothing retries when nothing failed
+ok   D11a and productPricing.siteUniverse.get costs exactly ONE request — nothing retries when nothing failed
+ok   D11a and productPricing.workspace.get costs exactly ONE request — nothing retries when nothing failed
+ok   D12 and the operator is shown no error state at all
+ok   D13 and the board is mounted, so the control row really did read
+ok   D14 fault row 0 cost at most two physical requests
+ok   D14 fault row 1 cost at most two physical requests
+ok   D14 fault row 2 cost at most two physical requests
+ok   D14 fault row 3 cost at most two physical requests
+ok   D14 fault row 4 cost at most two physical requests
+ok   D15 fault row 0 shows no endpoint, request id or redirect token
+ok   D15 fault row 1 shows no endpoint, request id or redirect token
+ok   D15 fault row 2 shows no endpoint, request id or redirect token
+ok   D15 fault row 3 shows no endpoint, request id or redirect token
+ok   D15 fault row 4 shows no endpoint, request id or redirect token
+
+== §E — THE RECOVERY DOES NOT FLICKER: loading, then data. Never an error in between. ==
+ok   E1  the recovery was sampled mid-flight as well as at rest
+ok   E2  NO error state is ever drawn while the recovery is outstanding
+ok   E3  and none at rest either — the second attempt answered
+ok   E4  the board is mounted from the RECOVERED read
+ok   E5  and it actually drew something
+ok   E6  the first attempt really did fail — this is a recovery, not a fault that missed
+ok   E7  and the whole sequence stays bounded — no retry loop
+ok   E7a and the capability read is one of the counted requests — it is on the shared transport now
+
+== §F — A RECOVERY FOR A SITE NOBODY IS ON MUST NOT LAND ==
+ok   F1  after switching to site B the board belongs to B and is mounted
+ok   F2  the failed recovery for site A does not paint its error over site B
+ok   F3  and the switch does not multiply requests — A bounded, then B
+ok   F4  site A really was outstanding when B was chosen
+ok   F5  and site B drew its own board rather than inheriting the board site A left
+
+== §G — NOTHING THIS ROUND TOUCHED MAY HAVE COST R8/R9 THEIR PROPERTIES ==
+ok   G1  leaving Product Strategy and coming back issues NO second workspace read
+ok   G2  and returning does not land the operator in a refusal
+ok   G3  a site switch is exactly two workspace reads — site A, then site B, and no third
+ok   G4  the Product Strategy accessor dispatches no write of any kind
+ok   G5  every dispatch it does make is declared a read
+
+== §Z — THE MUTANTS. R10 §10 asks for zero survivors and zero broken probes. ==
+ok   Z1  the recovery is sent to the redirect target that just 404d (caught)
+ok   Z2  the recovery reuses the first attempt request id (caught)
+ok   Z3  the retry ceiling is raised above one (caught)
+ok   Z4  reads stop retrying entirely — the R10 fix is removed (caught)
+ok   Z5  a write becomes automatically retryable (caught)
+ok   Z6  a sign-in page is retried (both of its guards removed) (caught)
+ok   Z7  reads are dispatched as POST again (caught)
+ok   Z8  a 404 is classified as SOURCE_NOT_CONNECTED (caught)
+ok   Z9  an auth page is classified as BROWSER_OFFLINE (caught)
+ok   Z10 a timeout is classified as NOT_AUTHORIZED (caught)
+ok   Z11 a known 404 status is dropped when the code is unfamiliar (caught)
+ok   Z12 a mismatched envelope is reported as a missing network (caught)
+ok   Z13 HTTP_NOT_FOUND is dropped from the site-universe refusal whitelist (caught)
+ok   Z14 the 404 wording is removed, so the page falls back to "No server answered" (caught)
+ok   Z15 an endpoint address leaks into operator-facing wording (caught)
+ok   Z16 the accessor goes back to the private POST shim (caught)
+ok   Z17 a superseded read is allowed to land on the site that replaced it (caught)
+
+passed 156  failed 0  |  mutants caught 17  survived 0

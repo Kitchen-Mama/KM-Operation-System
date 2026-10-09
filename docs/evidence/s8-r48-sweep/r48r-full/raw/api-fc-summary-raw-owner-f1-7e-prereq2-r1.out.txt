@@ -1,0 +1,13 @@
+
+== planning_cycle N+1..N+3 window (year crossing) ==
+
+== BEFORE == AFTER equivalence (basic + special) ==
+
+== Target% isolation (19/20) + special-event 100% ==
+
+== ZERO / EMPTY / ERROR + missing FC tables ==
+
+== source guards + no cutover ==
+
+----------------------------------------
+API FC SUMMARY RAW OWNER (F1-7E-PREREQ-2-R1): 40 passed, 0 failed

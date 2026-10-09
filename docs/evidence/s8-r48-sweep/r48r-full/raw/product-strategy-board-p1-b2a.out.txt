@@ -1,0 +1,278 @@
+
+=== SECTION A  THE PAGE STILL BOOTS, AND STILL CHECKS ITSELF ===
+ok   A1 the page boots with no exception
+     (the page reported self-test 242/242)
+ok   A2 and every one of its own DOM assertions still passes
+ok   A3 a chart is on screen to inspect
+
+=== SECTION B  THE BLACK DOT ===
+ok   B1 the 2px centre circle is no longer in the renderer
+ok   B2 there are marker plates to check
+ok   B3 no dot, diamond or box of any kind lands inside a product-image plate
+ok   B4 the datum still has a style, so it is still drawn
+ok   B5 and it was NOT simply made invisible
+ok   B6 every plotted product has one
+ok   B7 it is a line, not a circle
+ok   B8 and it is the first child of its group, so the plate paints over its middle
+ok   B9 products with no verified photograph get the neutral placeholder
+ok   B10 which says why, without naming a database column on the executive page
+ok   B11 promotion and proposal markers are still drawn
+
+=== SECTION C  READABILITY AND ZOOM ===
+ok   C1 the product image is 46-54px as the brief asks
+ok   C2 and square, so nothing is stretched
+ok   C3 the drawing uses the card width rather than a narrow fixed canvas
+ok   C4 a handful of products spreads across the width instead of bunching at the left
+ok   C5 the plot is centred — the empty space is shared, not parked on one side
+ok   C6 the product label is at least 12px
+ok   C7 the price sub-label is at least 11px
+ok   C8 and the axis ticks are too
+ok   C8a and the size the page actually drew is legible too
+ok   C9 a product column is reachable by keyboard
+ok   C10 and announces its prices
+ok   C11 focus opens the detail panel
+ok   C12 by the keyboard route
+ok   C13 and blur closes it
+ok   C14.0 Auto Fit shows no manual size buttons
+ok   C14.1 the zoom-fit control exists in Comfortable
+ok   C14.2 the zoom-1 control exists in Comfortable
+ok   C14.3 the zoom-1-25 control exists in Comfortable
+ok   C14.4 the zoom-1-5 control exists in Comfortable
+ok   C14.5 the zoom-reset control exists in Comfortable
+ok   C15 a chart that fits the card is painted across it
+ok   C16 AT 150% THE COORDINATE SYSTEM IS BYTE-IDENTICAL
+ok   C17 so every price sits at exactly the same coordinate
+ok   C18 and the axis has the same ticks
+ok   C19 what changed is the painted width, and only that
+ok   C20 125% likewise
+ok   C21 still the same prices
+ok   C22 the chart scrolls inside its own container
+ok   C23 and nothing zooms the page itself
+ok   C24 a layer was switched off
+ok   C25 Reset returns to a chart that fits
+ok   C25a and to Auto Fit, because Reset restores the whole view
+ok   C26 AND restores the layers — it is a view reset, not a second Fit
+ok   C27 print forces the chart back to Fit, whatever the room was using
+
+=== SECTION D  LAYERS, CLEAN AND DETAIL ===
+ok   D1.1 the images layer has a switch
+ok   D1.2 the msrp layer has a switch
+ok   D1.3 the floor layer has a switch
+ok   D1.4 the promo layer has a switch
+ok   D1.5 the scenario layer has a switch
+ok   D1.6 the steps layer has a switch
+ok   D2 "list price" appears in exactly ONE layer label
+ok   D3 and it says both words, because msrp IS the list price column
+ok   D4 there is no separate MSRP layer to disagree with it
+ok   D5 MSRP starts shown
+ok   D6 switching it off removes the caps
+ok   D7 AND the legend key — never one without the other
+ok   D8 and the band goes with it, because a band with one end is a line to nothing
+ok   D9 and no band element is left behind
+ok   D10 and both come back
+ok   D11 the floor layer switches independently
+ok   D12 without taking MSRP with it
+ok   D13 while the band needs both, so it is gone
+ok   D14 live promotions can be hidden
+ok   D15 with their key
+ok   D16 and so can the price gaps
+ok   D17 images off means no photograph is drawn
+ok   D18 while the price marker itself stays — it IS the price
+ok   D19 Clean View turns on
+ok   D20 Clean keeps the product images and the everyday price
+ok   D21 and drops the extra lines
+ok   D22 the shortcut SET the switches — it is not a third mode
+ok   D23 Detail brings them all back
+ok   D24 and the switches agree
+ok   D25 once a layer is edited the page stops claiming a preset
+ok   D26 the pipeline is unchanged by any of it — layers are a renderer concern only
+ok   D27 and the pipeline cannot even see the layer state
+
+=== SECTION E  THE SCENARIO FORM ===
+ok   E0a meeting mode starts collapsed
+ok   E0b with its form hidden
+ok   E0c while the badge stays visible, so an active scenario still shows
+ok   E0d and one click opens it
+ok   E1.1 the form never shows proposed_scenario_price
+ok   E1.2 the form never shows everyday_scenario_price
+ok   E1.3 the form never shows PERCENT
+ok   E1.4 the form never shows DELTA
+ok   E1.5 the form never shows ABSOLUTE
+ok   E2 the price fields are sentences
+ok   E3 and so are the adjustments
+ok   E4 the default is the proposed price, as the brief asks
+ok   E5 the current site is shown as read-only context
+ok   E6 with nothing in it to change — the site is chosen upstairs
+ok   E7.1 it names the company
+ok   E7.2 it names the country
+ok   E7.3 it names the marketplace
+ok   E7.4 it names the currency
+ok   E8 no Series is chosen by default
+ok   E9 and the empty option says so rather than saying All
+ok   E10 there is no All option at all
+ok   E11 the list is the analysable Series of THIS site and category
+ok   E12 Apply with no Series is refused, by name
+ok   E13 and nothing was applied
+ok   E14 an empty value is refused
+ok   E15 so is text
+ok   E16 and a negative PRICE
+ok   E17 and a figure far outside the board
+ok   E18 after five refusals the board is still untouched
+ok   E19 the number of affected listings is shown
+ok   E20 and it is the real count
+ok   E21 a good input is accepted
+ok   E22 the badge changes
+ok   E23 and the page says what was applied
+ok   E24 in the same words the form used
+ok   E25 affected products carry a consistent outline
+ok   E26 and the unsaved-scenario mark is in the banner
+ok   E27 the canonical position is drawn as a hollow marker
+ok   E28 with a connector, so the difference is a distance
+ok   E29 and a 20% cut really is drawn below the original
+ok   E30 with the everyday price chosen, "Set price" is absent — the mistake cannot be expressed
+ok   E31 only the two that preserve the ladder remain
+ok   E32 Undo removes the last change
+ok   E33 and the count follows it
+ok   E34 Undo stays available while there is history
+ok   E35.1 scResetSeries exists
+ok   E35.2 scResetSite exists
+ok   E35.3 scResetAll exists
+ok   E36.1 no localStorage anywhere in the prototype
+ok   E36.2 no sessionStorage anywhere in the prototype
+ok   E36.3 no indexedDB anywhere in the prototype
+ok   E36.4 no openDatabase anywhere in the prototype
+ok   E36.5 no document.cookie anywhere in the prototype
+ok   E36.6 no history.pushState anywhere in the prototype
+ok   E36.7 no location.hash anywhere in the prototype
+ok   E36.8 no location.search anywhere in the prototype
+ok   E36.9 no fetch( anywhere in the prototype
+ok   E36.10 no XMLHttpRequest anywhere in the prototype
+ok   E36.11 no navigator.sendBeacon anywhere in the prototype
+ok   E37 a scenario is active
+ok   E38 AND A RELOAD RESTORES THE CANONICAL VALUES
+ok   E39 with no scenario mark left over
+
+=== SECTION F  PROGRESSIVE DISCLOSURE ===
+ok   F1 every section heading carries the same `?`
+ok   F2 and nothing is expanded by default
+ok   F3.1 "canonical rows" is not permanently on screen
+ok   F3.2 "Scope order" is not permanently on screen
+ok   F3.3 "normalization" is not permanently on screen
+ok   F3.4 "IN_MEMORY_ONLY" is not permanently on screen
+ok   F3.5 "aggregation" is not permanently on screen
+ok   F4 the command bar has one
+ok   F5 closed to begin with
+ok   F6 clicking it opens a panel
+ok   F7 and says so to a reader
+ok   F8 the panel is announced, not merely painted
+ok   F9 THE DETAIL IS HERE — including the source column, which a person asked to see
+ok   F10 and the rule that goes with it
+ok   F10a and the membership source that used to be in the site icon
+ok   F11 opening another closes the first
+ok   F12 and the new one is marked open
+ok   F13 the same control closes it
+ok   F14 a click outside closes it
+ok   F15 open it once more
+ok   F16 and Escape closes it — no mouse required
+ok   F17 the control is a BUTTON, so Enter and Space already activate it
+ok   F18 with a label a screen reader can read
+ok   F19 pointing at the panel it owns
+ok   F20 and Escape on the control itself closes too
+
+=== SECTION G  THE OPERATION SYSTEM CONTRACT ===
+ok   G1 every Operation System token this page uses exists in base.css and the shim
+ok   G2 AND CARRIES THE SAME VALUE — the copy is held to the original
+ok   G3 and it is a real set, not a token or two
+ok   G3a THE PRODUCTION SHEET REDEFINES NONE OF THEM — index.html loads base.css, so a copy there was redefining each value to itself
+ok   G3b and the production sheet declares no :root block at all
+ok   G3c nor does the prototype shim — it is scoped to .psb-page
+ok   G3d which is the class the prototype body carries
+ok   G4 the controls are Operation System `.filter-group`s
+ok   G5 and More filters uses the shared `.kmf-trigger` popover primitive
+ok   G6 there is ONE command bar rather than a stack of tiers
+ok   G6a two rows: the ladder, then the context line
+ok   G6b and the ladder runs company -> country -> marketplace before category and series
+ok   G7 More filters starts closed — the panel is not in the DOM
+ok   G7a and says so
+ok   G9 and opens on request
+ok   G8.1 fThreshold lives inside the popover, not in the bar
+ok   G8.1a and not one of the standing fields in the ladder
+ok   G8.2 fInactive lives inside the popover, not in the bar
+ok   G8.2a and not one of the standing fields in the ladder
+ok   G9a the panel is absolutely positioned, so opening it moves nothing
+ok   G10 the scenario is a separate panel
+ok   G11 with no scope control mixed into it
+ok   G12 a chosen category is a fill, not an error colour
+
+=== SECTION H  DENSITY ===
+ok   H1 at least 8 countries
+ok   H2 at least 10 site identities
+ok   H3 at least 12 categories
+ok   H4 at least 15 series
+ok   H5 at least 40 products on one chart
+ok   H6 AND IT SAYS IT IS NOT DATABASE DATA
+ok   H7 every generated row is contract-shaped
+ok   H8 and every one of them is labelled generated, row by row
+ok   H9 and it is byte-identical on a re-run
+ok   H10 because there is no randomness in it
+ok   H11 44 products on one axis
+ok   H12 with 12 categories in the menu
+ok   H13 the command bar always uses the searchable menu shape
+ok   H13a so the bar holds ONE trigger, not a row that grows
+ok   H13b and the stress hook is absent on a normal load — §4.5
+ok   H14 developer mode can load the stress fixture
+ok   H14a twelve categories are the same searchable menu
+ok   H15 and the count is still shown
+ok   H17 behind one trigger
+ok   H18 which opens a menu
+ok   H19 with a search box
+ok   H20 searching narrows it
+ok   H21 to the right one
+ok   H22 and the count travels with the option
+ok   H23 a miss says nothing matched, rather than showing nothing
+ok   H24 the wide category is in the menu
+ok   H25 choosing closes the menu
+ok   H26 and the 44-product chart renders
+ok   H27 with 44 columns
+ok   H28 each column keeps the minimum width of its own density profile
+ok   H28a and forty-four products get the overview profile
+ok   H29 so the drawing grows and the CONTAINER scrolls
+ok   H30 no label is dropped onto a second row
+ok   H30a every one of the 44 labels shares a single baseline
+ok   H30b and the narrow ones are truncated rather than overlapped
+ok   H31 every product still has its marker
+
+=== SECTION J  WHAT ONLY A SCREENSHOT COULD SEE ===
+ok   J1 no top-level selector is declared twice in the stylesheet
+ok   J2 the stylesheet forces [hidden] to win against any class that sets display
+ok   J3.1 scenarioDrawer is driven by the hidden property
+ok   J3.2 scenarioBody is driven by the hidden property
+ok   J3.3 dqDetail is driven by the hidden property
+ok   J4 the legend has keys to check
+ok   J5 and every one of them has a swatch style
+ok   J6 a chart that fits the card is painted across it
+ok   J7 and does not need its natural width
+ok   the stress fixture loads through the developer hook
+ok   J8 forty-four products need far less room than they used to
+ok   J9 it does not fit, so it takes its natural width and the container scrolls
+ok   J9a and says which of the two it is
+ok   J10 and the coordinate system matches the box it declares
+ok   J11 with the overflow policy stated rather than discovered
+
+=== MUTANTS ===
+ok   N1 the black dot comes back, drawn last, at the centre of the photograph (caught)
+ok   N2 the dot is hidden instead of removed, so it is still in the tree (caught)
+ok   N3 zoom scales the viewBox, so a price moves when somebody enlarges the chart (caught)
+ok   N4 a hidden layer keeps its legend key, so the chart claims something it does not show (caught)
+ok   N5 the band survives with one cap hidden, so a line runs from a price to nothing (caught)
+ok   N6 the Series menu offers "All", so a change can reach further than anyone can see (caught)
+ok   N7 the internal field name reaches the screen (caught)
+ok   N8 Apply stops validating, so a blank or a typo half-applies (caught)
+ok   N9 the popovers stop closing on Escape (caught)
+ok   N10 the info control opens on hover only, so a keyboard cannot reach it (caught)
+ok   N11 the command bar asks for chips, so the category control grows until it pushes the chart off (caught)
+ok   N12 the plot stops being centred, so the slack collects on the right (caught)
+ok   N13 the image shrinks back to the size the review objected to (caught)
+ok   N14 the stress fixture claims to be database data (caught)
+
+PASS — passed 241, failed 0, mutants caught 14, survived 0

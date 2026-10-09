@@ -1,0 +1,35 @@
+
+-- A. THE STATIC LITERALS ARE GONE FROM THE MARKUP ------------------------------------------------
+
+-- B. THE SANDBOX — real page functions, one controlled canonical model ---------------------------
+
+-- C. §7.1-7.6 — THE CASCADE IS THE DATA ----------------------------------------------------------
+
+-- D. §7.7-7.9 — THE SCOPE DECIDES WHAT IS SENT ---------------------------------------------------
+
+-- E. §7.10-7.13 — COMPANY, AND WHAT "NO DATA" MEANS ----------------------------------------------
+
+-- F. §7.14-7.18 — THE MODAL AND THE WRITE --------------------------------------------------------
+
+-- G. §7.19-7.24 — TWELVE MONTHS, AND WHAT MUST NOT MOVE ------------------------------------------
+
+-- H. MUTANTS -------------------------------------------------------------------------------------
+ok   M1  a hardcoded Amazon <option> is restored to the Marketplace list (caught)
+ok   M2  a hardcoded Walmart <option> is restored (caught)
+ok   M3  country is omitted from the payload (caught)
+ok   M4  the first company is silently chosen from an ambiguous set (caught)
+ok   M5  changing an upstream selector no longer clears what is below it (caught)
+ok   M6  the rebuild stops emptying controls the scope has deactivated (caught)
+ok   M13  BOTH guards are removed, so the hidden SKU reaches the payload (caught)
+ok   M7  a blank company is accepted instead of refusing (caught)
+ok   M8  scope_id is built from the display label instead of the canonical value (caught)
+ok   M9  a refused read is converted into an empty option list (caught)
+ok   M10  a broad-cache fallback is restored behind the canonical rows (caught)
+ok   M11  the duplicate-click guard is removed (caught)
+ok   M12  the monthly fields are written positionally instead of by name (caught)
+
+-- I. VACUITY — every mutant must be vacuous-free, and the suite must be able to fail -------------
+
+====================================================================================================
+PASS  115 passed, 0 failed, 13 mutants, 0 survived, vacuity clean
+====================================================================================================

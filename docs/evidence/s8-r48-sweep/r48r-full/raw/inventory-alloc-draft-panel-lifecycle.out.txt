@@ -1,0 +1,11 @@
+
+== A. Panel host is the Inventory page root — NEVER document.body ==
+
+== B. Incomplete scope is not a persistence failure (§4) ==
+
+== C. Lifecycle cleanup + legacy migration + secondary CSS fail-safe (§3/§5/§6) ==
+
+== D. Execute the REAL panel-ownership helpers against a fake DOM ==
+
+----------------------------------------
+ALLOC-DRAFT PANEL LIFECYCLE GUARD (Round 4): 22 passed, 0 failed

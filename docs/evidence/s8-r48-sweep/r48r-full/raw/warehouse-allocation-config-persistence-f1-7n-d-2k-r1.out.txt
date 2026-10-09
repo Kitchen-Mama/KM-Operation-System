@@ -1,0 +1,35 @@
+
+== 1 Shopify config SAVE 30/70 (persists to the Script-Property blob, not a Sheet tab) ==
+
+== 2 reopen → hydrates 30/70 (getWarehouseAllocationConfig → _replenDarConfigToRuleRows → _replenDarCandidates) ==
+
+== 3 single warehouse → explicit 1/1 ==
+
+== 4 invalid totals blocked (config never written on a bad save) ==
+
+== 5 Walmart SELF lane uses config; the SAME frozen KMDA rule model validates + allocates the materialized rows ==
+
+== 6 Walmart PLATFORM lane ignores config — a scope with no saved self rows materializes to [] ==
+
+== 7 Amazon physical FBA FC never selected (rejected at SAVE → never persisted → never materialized) ==
+
+== 8 backend Weekly AI Plan reads the config HEADLESSLY (warehouseAllocationRuleRows_ via injected io; no browser) ==
+
+== 9 scheduled Weekly owner reads the SAME config (deterministic; identical bytes → identical rows) ==
+
+== 10 NO browser/localStorage dependency anywhere in the config persistence path ==
+
+== 11 NO second authority — the Sheet tab is retired; the config replaces the snapshot at the single read boundary ==
+
+== 12 NO Request Order / PO / shipment side effect (config owner + writer touch none) ==
+
+== 13 Monthly unchanged — the MARKETPLACE (Monthly Order) expander never consumes allocation rules ==
+
+== 14 count-once unchanged — KMDA largest-remainder conserves the demand qty exactly ==
+
+== R round-trip — save → serialize → parse → materialize is byte-stable ==
+
+== S wiring — router action + async modal + config materializer helper ==
+
+----------------------------------------
+WAREHOUSE ALLOCATION CONFIG PERSISTENCE (F1-7N-D-2k-R1): 35 passed, 0 failed

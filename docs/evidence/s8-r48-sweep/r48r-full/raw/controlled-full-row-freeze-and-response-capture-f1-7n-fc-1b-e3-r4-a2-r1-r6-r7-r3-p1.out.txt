@@ -1,0 +1,457 @@
+
+== A — the fingerprint covers every canonical column, in the authority's order ==
+ok   A1  the header authority is 36 columns
+ok   A1a and the line authority is 31
+ok   A2  the census reads 16_'s own constants as the column authority
+ok   A2a and never Object.keys — key order on a row read out of a sheet is an accident, not a contract
+ok   A2b nor does the snapshot builder
+ok   A3  a full-schema world is READY_TO_AUTHORIZE
+ok   A3a with no condition unmet
+ok   A4  the freeze records 36 and 31 columns
+ok   A4a and a schema version for each table
+ok   A4b the header version is one 16_ enumerates, not one this census invented
+ok   A4c and a fingerprint over the column NAMES, so a rename is a schema change
+ok   A5  route_a_header_snapshot names 36 canonical columns
+ok   A5-cov and covers all 36
+ok   A5-exc excluding none
+ok   A5a  route_a_line_snapshot names 31 canonical columns
+ok   A5a-cov and covers all 31
+ok   A5a-exc excluding none
+ok   A5b  route_b_header_snapshot names 36 canonical columns
+ok   A5b-cov and covers all 36
+ok   A5b-exc excluding none
+ok   A5c  route_b_line_snapshot names 31 canonical columns
+ok   A5c-cov and covers all 31
+ok   A5c-exc excluding none
+ok   A6a create_idempotency_key was outside the eighteen and is inside the full row
+ok   A6b formula_version was outside the eighteen and is inside the full row
+ok   A6c source_data_as_of was outside the eighteen and is inside the full row
+ok   A6d calculated_at was outside the eighteen and is inside the full row
+ok   A6e planning_cycle was outside the eighteen and is inside the full row
+ok   A6f submitted_at was outside the eighteen and is inside the full row
+ok   A6g cancel_reason was outside the eighteen and is inside the full row
+ok   A6h expired_by_run_id was outside the eighteen and is inside the full row
+ok   A6i recommended_source_warehouse_id was outside the eighteen and is inside the full row
+ok   A6j recommended_destination_warehouse_id was outside the eighteen and is inside the full row
+ok   A7a window_code likewise, on the line
+ok   A7b window_start_date likewise, on the line
+ok   A7c required_by_date likewise, on the line
+ok   A7d units_per_carton likewise, on the line
+ok   A7e expected_arrival likewise, on the line
+ok   A7f recommendation_flags likewise, on the line
+ok   A7g allocation_sequence likewise, on the line
+ok   A7h site_sku likewise, on the line
+ok   A8  route_a carries a header, a line and a combined fingerprint
+ok   A8-x and the two halves are distinct
+ok   A8a  route_b carries a header, a line and a combined fingerprint
+ok   A8b and the two halves are distinct
+ok   A9  the two routes are different rows
+ok   A10 the snapshot is deterministic
+ok   A10a a reordered column list is a different fingerprint
+ok   A10b and the forward one covered all 36
+ok   A11 a 30-column live sheet covers 30
+ok   A11a and names the six it could not cover
+ok   A11b under its own reason
+
+== B — a schema that moved is a STOP, because two schemas are two different tables ==
+ok   B1  a 37th header column
+ok   B1  a 37th header column — because header_schema_is_a_recognized_generation
+ok   B2  a header column removed
+ok   B2  a header column removed — because header_live_columns_equal_the_canonical_authority
+ok   B2a and the byte-identical claim refuses to be made over a narrower row
+ok   B2b the excluded column is named rather than quietly dropped
+ok   B3  two header columns swapped
+ok   B3  two header columns swapped — because header_schema_is_a_recognized_generation
+ok   B4  a line column removed
+ok   B4  a line column removed — because line_live_columns_equal_the_canonical_authority
+ok   B5  a line column renamed
+ok   B5  a line column renamed — because line_column_names_match_the_authority_byte_for_byte
+ok   B6  a header column that vanished after the freeze STOPS
+ok   B6a naming both the count and the names
+ok   B7  a renamed line column after the freeze STOPS
+ok   B7a under the line names predicate
+
+== C — a column the eighteen never covered moves, and the readback catches it ==
+ok   C1  create_idempotency_key on the header
+ok   C1  create_idempotency_key on the header — the full-row fingerprint moved
+ok   C1  create_idempotency_key on the header — and create_idempotency_key is named
+ok   C1a while the eighteen-field route view reported no change at all
+ok   C1b and the diff carries what it was, so a repair manifest has something to be built from
+ok   C2  formula_version on the header
+ok   C2  formula_version on the header — the full-row fingerprint moved
+ok   C2  formula_version on the header — and formula_version is named
+ok   C2a invisible to the eighteen
+ok   C3  source_data_as_of on the header
+ok   C3  source_data_as_of on the header — the full-row fingerprint moved
+ok   C3  source_data_as_of on the header — and source_data_as_of is named
+ok   C4  expected_arrival on the line
+ok   C4  expected_arrival on the line — the full-row fingerprint moved
+ok   C4  expected_arrival on the line — and expected_arrival is named
+ok   C4a invisible to the eighteen
+ok   C5  units_per_carton on the line
+ok   C5  units_per_carton on the line — the full-row fingerprint moved
+ok   C5  units_per_carton on the line — and units_per_carton is named
+ok   C6  recommendation_flags on the line
+ok   C6  recommendation_flags on the line — the full-row fingerprint moved
+ok   C6  recommendation_flags on the line — and recommendation_flags is named
+ok   C7  cancel_reason on Route B's header
+ok   C7  cancel_reason on Route B's header — the full-row fingerprint moved
+ok   C7  cancel_reason on Route B's header — and cancel_reason is named
+ok   C8  an untouched plan still CONFIRMS
+ok   C8a with an empty diff that was actually computed
+ok   C8b and counted
+ok   C8c 67 columns compared per route — 36 header plus 31 line
+
+== D — the same instant in two representations is not a change; a different instant is ==
+ok   D1  two Date objects for the same instant normalize identically
+ok   D1a through 41_'s cell normalizer, which reduces a Date to its epoch
+ok   D2  and a different instant is a different value
+ok   D2a updated_at is an instant, not a calendar day
+ok   D3  a business date is a DAY field, by 16_'s own list
+ok   D3a a day-grained date compares equal to a Date at that Taipei calendar day
+ok   D3b while a different day is still different
+ok   D4  a quantity is NUMERIC
+ok   D4a 320 and "320" are one value
+ok   D4b and so is 320.0
+ok   D4c 321 is not
+ok   D5  the normalizer delegates to the three project authorities
+ok   D5a and parses nothing itself — a second timestamp parser is the thing this forbids
+ok   D5b and the field classes come from 16_'s lists rather than a list typed here
+ok   D6  the manifest reports the normalizer authority as available
+ok   D6a with nothing missing
+ok   D6b and says in the record that it wrote none
+ok   D7  a Date frozen and a string read back for the SAME day is not a change
+ok   D7a and nothing is listed as moved
+ok   D8  a genuinely different day still STOPS
+
+== E — every id the scope can reach, at any status, and the relation between them ==
+ok   E1  the identity universe is freezable
+ok   E1a holding both headers, sorted
+ok   E1b and both lines
+ok   E1c with the header-to-line relation recorded
+ok   E1d counted by status AND provenance, not only by status
+ok   E1e and two fingerprints over the whole set
+ok   E2  a header created and immediately cancelled
+ok   E2  a header created and immediately cancelled — because no_header_id_appeared_at_any_status
+ok   E2a and the ACTIVE-row view saw nothing at all, which is the point
+ok   E2b the universe names the id for the repair manifest
+ok   E3  a header created and immediately expired
+ok   E3  a header created and immediately expired — because no_header_id_appeared_at_any_status
+ok   E4  a line created under an existing header
+ok   E4  a line created under an existing header — because no_line_id_appeared_at_any_status
+ok   E5  an existing header soft-deleted out of the scope
+ok   E5  an existing header soft-deleted out of the scope — because no_header_id_vanished
+ok   E6  an existing header flipped to cancelled
+ok   E6  an existing header flipped to cancelled — because no_status_or_provenance_moved_anywhere_in_the_scope
+ok   E7  a run id written onto an existing header
+ok   E7  a run id written onto an existing header — because no_status_or_provenance_moved_anywhere_in_the_scope
+ok   E8  a line reassigned to the other header
+ok   E8  a line reassigned to the other header — because the_header_to_line_relation_did_not_change
+ok   E9  a line that disappeared
+ok   E9  a line that disappeared — because no_line_id_vanished
+ok   E10 a terminal row frozen at both ends is history, not a change
+ok   E10a and it IS in the universe, counted
+
+== F — the reservation observation is a named state, never a null standing in for zero ==
+ok   F1  three observation states, named
+ok   F2  this database has no reservations table
+ok   F2a so the claim rests on 61_'s structural guarantee, and says which leg answered
+ok   F2b which is an acceptable answer
+ok   F2c with NO count invented for it
+ok   F3  an absent table with no server guarantee STOPS
+ok   F3a because nothing carries the claim
+ok   F3b and the authority is honestly NONE
+ok   F4  named
+ok   F4a and not acceptable
+ok   F4b with no count
+ok   F4c so the manifest STOPS
+ok   F5  readable when it exists
+ok   F5a and the authority is the rows themselves
+ok   F5b scoped to the four axes, so another marketplace's row is not counted as ours
+ok   F5c while the whole-table count is still reported
+ok   F5d and a readable table is fine to authorize against
+ok   F6  an unchanged reservations table CONFIRMS
+ok   F7  a new scoped reservation row STOPS
+ok   F7a by name
+ok   F8  a scoped row changed IN PLACE STOPS
+ok   F8a caught by the per-row fingerprint, which a count alone would have missed
+ok   F8b the count is unchanged, which is exactly why the count is not enough
+ok   F9  a table that existed at freeze time and is gone now STOPS
+ok   F9a by name
+ok   F10 the old nullable-count comparison is gone entirely
+ok   F11 and the bounded proof carries both the state and the authority
+
+== G — three objects, and none of them stands in for another ==
+ok   G1  all three present and agreeing CONFIRMS
+ok   G1a the expected decision is measured here and is NOT the actual response
+ok   G1b the actual response is NOT measured here
+ok   G1c it was supplied by a person
+ok   G1d the database is measured here
+ok   G1e and the reason a recomputed decision may not stand in is stated
+ok   G2  flag off, baseline frozen, database identical: AWAITING_ACTIVATION, not CONFIRMED
+ok   G2a and it is not a failure — nothing has happened yet
+ok   G2b the third object is simply absent
+ok   G2c under its own code rather than a generic STOP
+ok   G2d even though the expected decision is a perfect no-action
+ok   G3  flag on and no audit pasted: AWAITING_BROWSER_AUDIT
+ok   G3a naming what is missing
+ok   G3b and saying that unknown is not confirmed
+ok   G4  an audit pasted with no captured body has its own verdict
+ok   G4a and it says a timeline phase is not a response body
+ok   G5  the response says it wrote while the rows say it did not
+ok   G5  the response says it wrote while the rows say it did not — because the_actual_response_and_the_database_agree
+ok   G6  the response outcome differs from the expected decision
+ok   G6  the response outcome differs from the expected decision — because the_expected_decision_and_the_actual_response_agree
+ok   G7  the response code differs
+ok   G7  the response code differs — because the_actual_response_code_is_no_replenishment_required
+ok   G8  the response created a header
+ok   G8  the response created a header — because every_mutation_counter_in_the_actual_response_is_zero
+ok   G9  the response says the writer was reached
+ok   G9  the response says the writer was reached — because the_actual_response_says_the_writer_was_not_reached
+ok   G10 two generation requests
+ok   G10 two generation requests — because exactly_one_generation_request_was_made
+ok   G11 a route save rode along
+ok   G11 a route save rode along — because no_route_save_or_submit_or_reservation_request_rode_along
+ok   G12 a Submit rode along
+ok   G12 a Submit rode along — because no_route_save_or_submit_or_reservation_request_rode_along
+ok   G13 the capture never restored the original function
+ok   G13 the capture never restored the original function — because the_capture_restored_the_original_function
+ok   G14 a second generation call was made
+ok   G14 a second generation call was made — because no_second_generation_call_was_made
+ok   G15 the response carried a route
+ok   G15 the response carried a route — because the_actual_response_carries_no_route_and_no_group
+ok   G16 a perfect response beside a moved row is still a STOP
+ok   G16a and the disagreement between the two halves is named
+
+== K — R5-R1: the readback expected the OTHER correct class and refused a completed activation ==
+ok   K0  the frozen baseline is the R5-R1 one: 160 recommended, 520 already planned, 0 residual
+ok   K1  160 / 520 / 0 against a 160 / 520 / 0 baseline CONFIRMS — the false negative is gone
+ok   K1a with no predicate failed
+ok   K1b the class is resolved, and it names the recommendation_state it therefore requires
+ok   K1c resolved from the FROZEN BASELINE, not from the response being marked
+ok   K1d and cross-class fallback is refused by name
+ok   K1e every counter is reported UNDER ITS OWN NAME — the seventh never has to be traced again
+ok   K1f with none of them missing or non-zero
+ok   K2  a VALID_ZERO activation — 0 / 520 / 0 — still CONFIRMS unchanged
+ok   K2a resolved to the zero class, whose state contract is the VALUE and not the enum key
+ok   K2b and no class-B-only condition is asserted against it
+ok   K2c while the class-B run carries two conditions class A cannot state
+ok   K3.1 a FULLY_COVERED response reporting recommended 0 — the old expectation itself → STOP
+ok   K3.1a naming the_actual_response_quantities_match_the_frozen_baseline
+ok   K3.2 a FULLY_COVERED response reporting recommended 161 — one more than frozen → STOP
+ok   K3.2a naming the_actual_response_quantities_match_the_frozen_baseline
+ok   K3.3 a FULLY_COVERED response reporting recommended 159 → STOP
+ok   K3.3a naming the_actual_response_quantities_match_the_frozen_baseline
+ok   K3.4 a qualifying total that is not the frozen one → STOP
+ok   K3.4a naming the_actual_response_quantities_match_the_frozen_baseline
+ok   K3.5 a residual that is not zero → STOP
+ok   K3.5a naming the_actual_response_quantities_match_the_frozen_baseline
+ok   K3.6 a recommendation reported as a STRING rather than a number → STOP
+ok   K3.6a naming the_actual_response_quantities_match_the_frozen_baseline
+ok   K3.7 a plan that does not cover the recommendation → STOP
+ok   K3.7a naming the_fully_covered_response_plan_covers_the_whole_recommendation
+ok   K3a a numeric string is not the number — no coercion anywhere in the quantity gate
+ok   K4  a VALID_ZERO response against a FULLY_COVERED baseline is a STOP, never absorbed
+ok   K4a refused by BOTH class gates, so the reader is told which class was expected
+ok   K4b and the mirror case — FULLY_COVERED response, VALID_ZERO baseline — too
+ok   K4c an abbreviated recommendation_state is refused — the contract is the exact emitted value
+ok   K5.0.1 a frozen recommendation of null is BASELINE_NOT_FROZEN, caught before the class
+ok   K5.0.2 a frozen recommendation of '' is BASELINE_NOT_FROZEN, caught before the class
+ok   K5.1 a frozen recommendation that is negative → STOP
+ok   K5.1a naming the unresolved class rather than falling back to zero
+ok   K5.1b and no class is claimed
+ok   K5.2 a frozen recommendation that is a numeric string → STOP
+ok   K5.2a naming the unresolved class rather than falling back to zero
+ok   K5.2b and no class is claimed
+ok   K5.3 a frozen recommendation that is a boolean → STOP
+ok   K5.3a naming the unresolved class rather than falling back to zero
+ok   K5.3b and no class is claimed
+ok   K5.4 a frozen recommendation that is not finite → STOP
+ok   K5.4a naming the unresolved class rather than falling back to zero
+ok   K5.4b and no class is claimed
+ok   K5e a frozen baseline whose own residual is not zero is refused before the response is judged
+ok   K5f and two frozen authorities that disagree is its OWN failure, not a silent preference
+ok   K6.1 no_action_reason is on the REQUIRED list
+ok   K6.1a a null no_action_reason is an AWAITING state in both flag phases, never a STOP
+ok   K6.1b the evidence is incomplete and no_action_reason is NAMED as the reason
+ok   K6.1c and neither phase CONFIRMS
+ok   K6.2 recommendation_state is on the REQUIRED list
+ok   K6.2a a null recommendation_state is an AWAITING state in both flag phases, never a STOP
+ok   K6.2b the evidence is incomplete and recommendation_state is NAMED as the reason
+ok   K6.2c and neither phase CONFIRMS
+ok   K6.3 reservations is on the REQUIRED list
+ok   K6.3a a null reservations is an AWAITING state in both flag phases, never a STOP
+ok   K6.3b the evidence is incomplete and reservations is NAMED as the reason
+ok   K6.3c and neither phase CONFIRMS
+ok   K6.4 route_save_requests is on the REQUIRED list
+ok   K6.4a a null route_save_requests is an AWAITING state in both flag phases, never a STOP
+ok   K6.4b the evidence is incomplete and route_save_requests is NAMED as the reason
+ok   K6.4c and neither phase CONFIRMS
+ok   K6.5 submit_requests is on the REQUIRED list
+ok   K6.5a a null submit_requests is an AWAITING state in both flag phases, never a STOP
+ok   K6.5b the evidence is incomplete and submit_requests is NAMED as the reason
+ok   K6.5c and neither phase CONFIRMS
+ok   K6.6 reservation_requests is on the REQUIRED list
+ok   K6.6a a null reservation_requests is an AWAITING state in both flag phases, never a STOP
+ok   K6.6b the evidence is incomplete and reservation_requests is NAMED as the reason
+ok   K6.6c and neither phase CONFIRMS
+ok   K6d an omitted ride-along field no longer fails the VALUE gate — it fails completeness, by name
+ok   K6e no predicate fails at all: an incomplete paste is not a wrong answer
+ok   K6a.1 route_save_requests ABSENT is the same answer as null — nobody supplied a value
+ok   K6a.2 reservations ABSENT is the same answer as null — nobody supplied a value
+ok   K7.1 a non-zero reservations counter → STOP
+ok   K7.1a naming every_mutation_counter_in_the_actual_response_is_zero
+ok   K7.2 a non-zero reservations counter, named by the browser authority → STOP
+ok   K7.2a naming the_browser_response_reservations_counter_is_a_real_zero
+ok   K7.3 a route save that rode along → STOP
+ok   K7.3a naming no_route_save_or_submit_or_reservation_request_rode_along
+ok   K7.4 a Submit that rode along → STOP
+ok   K7.4a naming no_route_save_or_submit_or_reservation_request_rode_along
+ok   K7.5 a reservation request that rode along → STOP
+ok   K7.5a naming no_route_save_or_submit_or_reservation_request_rode_along
+ok   K7a the offending counter is reported BY NAME with its value
+ok   K8  the browser response counter is reported on its own
+ok   K8a under the constant it actually came from
+ok   K8b beside the DATABASE-observed state, which is a named state and not a number
+ok   K8c and the database authority names the table it read
+ok   K8d while reservation_writes is named as a THIRD, different counter, not a synonym for either
+
+== H — the capture snippet, executed against a double ==
+ok   H1  the capture installs
+ok   H1a and the function is wrapped
+ok   H1b with nothing captured yet
+ok   H2  the original was called exactly once — the capture adds no request
+ok   H2a with `this` preserved
+ok   H2b and the arguments forwarded byte-for-byte
+ok   H2c the payload object itself, not a copy the capture built
+ok   H3  the response body is captured
+ok   H3a with its outcome and code
+ok   H3b and the quantities
+ok   H3c every mutation counter
+ok   H3d routes, groups and the writer
+ok   H4  and NOTHING from the token, the headers or the payload came with it
+ok   H4a the capture is a whitelist, not a redaction
+ok   H5  the wrapper stays in place after the capture, so a second click can still be refused
+ok   H5a and says it is armed
+ok   H5b and does not yet claim to have restored anything
+ok   H5c release() puts the original function back
+ok   H5d and only then does restored become true
+ok   H6  the caller still receives the response unchanged
+ok   H7  a second call never reaches the original
+ok   H7a it is recorded as blocked
+ok   H7b and announced — a silent block would be as bad as a silent send
+ok   H7c the caller gets a rejected promise, not undefined
+ok   H8  a rejection captures no body
+ok   H8a and says it was rejected
+ok   H8b carrying the code
+ok   H8c and the wrapper stays armed — a failed call is the LAST moment to let a retry through
+ok   H8c2 until release() puts the original back
+ok   H8d while the rejection still reaches the caller
+ok   H9  a synchronous throw captures no body
+ok   H9a and is recorded as a throw
+ok   H9b and rethrown unchanged
+ok   H10 a pending call leaves the wrapper in place
+ok   H10a with exactly one timer armed
+ok   H10b which releases and restores the original when it fires, so nothing is left patched
+ok   H10c and records a timeout
+ok   H10d telling the operator not to retry
+ok   H11 a second install is refused
+ok   H11a under its own code
+
+== I — the merged audit, and the round trip a person actually performs ==
+ok   I1  baseline, capture, one click, audit: the audit confirms both halves
+ok   I1a one mutation REQUEST
+ok   I1b measured against the baseline, not from zero
+ok   I1c and a response body was captured
+ok   I1d with the original restored
+ok   I1e and the audit says the body was NOT inferred from the timeline
+ok   I1f the paste block carries no secret
+ok   I2  the browser audit's own paste block, pasted verbatim, produces a CONFIRMED readback
+ok   I2a with no predicate failed
+ok   I2b and the third object is present
+ok   I2c carrying the captured body
+ok   I3  the transport delta alone still looks clean
+ok   I3a but with no captured body the audit refuses — phase SUCCESS is not a response
+ok   I4  and the readback refuses on the same grounds
+ok   I5  two generation requests are counted as two
+ok   I5a and the audit STOPS
+ok   I5b with the second call recorded as blocked
+ok   I5c and the original still called only once
+ok   I6  a rejected call captures no body
+ok   I6a and says so
+ok   I7  an audit with no baseline refuses to compute a delta
+ok   I7a under its own code
+
+== J — the steps, the proofs and the record: a design round that wrote nothing ==
+ok   J1  the phases run prepare, authorize, activate, press, read, restore
+ok   J1a the response capture is installed BEFORE the click, in step 9
+ok   J1b and nothing before the authorization flips anything
+ok   J2  the manifest proof is within the cap (2176 bytes)
+ok   J2-o and precedes the export
+ok   J2-c marked complete
+ok   J2a  the readback proof is within the cap (2261 bytes)
+ok   J2b and precedes the export
+ok   J2c marked complete
+ok   J3a the proof carries no route_a_header_snapshot
+ok   J3b the proof carries no header_snapshot
+ok   J3c the proof carries no "fields"
+ok   J3d the proof carries no freeze_paste_block
+ok   J3e the proof carries no activation_steps
+ok   J3f the proof carries no capture_snippet
+ok   J3g the proof carries no audit_snippet
+ok   J3h the proof carries no relations
+ok   J4  the freeze block is emitted in 3 numbered chunk(s)
+ok   J4a naming where it goes
+ok   J4b and the chunks reassemble to the whole block
+ok   J4c byte for byte
+ok   J4d before the detailed export, which is the part that gets truncated
+ok   J5a the paste block carries header_schema_version
+ok   J5b the paste block carries route_a_header_snapshot
+ok   J5c the paste block carries route_b_line_snapshot
+ok   J5d the paste block carries identity_universe
+ok   J5e the paste block carries reservation_observation
+ok   J5f the paste block carries route_a_combined_full_fingerprint
+ok   J5x every field the readback requires is in the block a person pastes
+ok   J6  the manifest wrote nothing, by six counters
+ok   J6-m measured on the sheets
+ok   J6a  the readback wrote nothing, by six counters
+ok   J6a-m measured on the sheets
+ok   J6b  the awaiting wrote nothing, by six counters
+ok   J6b-m measured on the sheets
+ok   J7  61_ was untouched by THIS round and is not behind it
+ok   J7a the deployment release did not move for THIS diagnostic patch, and is not behind it
+ok   J7b which is why this round is not in the release order either
+ok   J8  the flag is still false in 00_config
+ok   J9  every function added this round is CENSUS_-prefixed, so none is invocable by accident
+ok   J9a and none of them writes, flips the flag or calls a generation
+ok   J10 the capture wraps the generation call
+ok   J10a and reaches into KM.DB exactly once
+ok   J10b touching no other write path
+ok   J10c and the audit snippet calls no API at all
+
+== N — mutants ==
+ok   N1 the fingerprint over a hand-picked subset instead of the full canonical row (caught)
+ok   N2 the snapshot built against the REQUIRED 30-column contract instead of the FULL 36 (caught)
+ok   N3 an excluded column tolerated while still calling the row byte-identical (caught)
+ok   N4 a schema that moved between the freeze and the readback ignored (caught)
+ok   N5 the identity universe filtered to ACTIVE rows, so a created-then-cancelled row is invisible (caught)
+ok   N6 the header-to-line relation dropped from the freeze (caught)
+ok   N7 an ABSENT reservation table accepted without the server guarantee (caught)
+ok   N8 the expected decision copied into the actual response (caught)
+ok   N9 supplied_by_operator meaning "the constant exists" rather than "the fields are filled in" (caught)
+ok   N10 a CONFIRMED allowed on an audit that captured no body (caught)
+ok   N11 an audit that reports the page restored without putting the original back (caught)
+ok   N12 the capture passing a second call through instead of blocking it (caught)
+ok   N13 the field diff computed only when the fingerprint disagrees (caught)
+ok   N14 a representation-only difference read as a business change (caught)
+ok   N15 the expected recommendation is hardcoded to zero again — the exact false negative (caught)
+ok   N16 the class is taken from the RESPONSE instead of the frozen baseline (caught)
+ok   N17 an unresolved class falls back to the zero class instead of refusing (caught)
+ok   N18 the quantity gate compares loosely, so a numeric STRING passes as the number (caught)
+ok   N19 the six fields leave the REQUIRED list again, so a null stands in a value gate (caught)
+ok   N20 `reservations` leaves the REQUIRED list, so the seventh counter is a null again (caught)
+ok   N21 the counter gate treats a missing or null counter as a zero (caught)
+ok   N22 the recommendation_state gate accepts the enum KEY as well as its value (caught)
+ok   N23 the class-B coverage condition is dropped, so a plan short of the recommendation passes (caught)
+
+passed 431  failed 0  |  mutants caught 23  survived 0

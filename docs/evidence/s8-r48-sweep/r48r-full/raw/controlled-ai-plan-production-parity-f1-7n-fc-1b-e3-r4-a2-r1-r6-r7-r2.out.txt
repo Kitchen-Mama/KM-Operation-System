@@ -1,0 +1,137 @@
+
+== A — the real call graph: which function printed which verdict ==
+ok   A1  the preflight is the entry point the operator runs
+ok   A2  and inside it, it calls RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R for the proposed routes
+ok   A3  which calls TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3 — the function that prints the STOP
+ok   A4  READY_NO_ACTION is assigned in exactly one place
+ok   A5  and only when the production path's own outcome is AI_PLAN_NO_ACTION
+ok   A6  the public door is action=weeklyAiPlan.generate -> handleGenerateWeeklyAiPlanDraft_
+ok   A6a and the page reaches it through KM.DB.generateWeeklyAiPlanDraft
+ok   A6b and the decision object names that same door end to end, not a paraphrase of it
+ok   A7  the valid-zero question is asked BEFORE the empty-scope refusal is returned
+ok   A8  and before the allocator is narrowed to the requested marketplace
+ok   A9  the writer's dependencies are not constructed anywhere on the path to that answer
+ok   A10 the declared gate order: flag, harvest, short circuit, refusal, allocator, writer
+ok   A10a the short circuit precedes the refusal
+ok   A10b and both precede the writer
+ok   A11 and in the handler itself the flag gate really does precede the harvest
+
+== B — the allocator projection is named, and no longer speaks for the generation ==
+ok   B1  no blocker claims the generation fails closed with REQUESTED_SCOPE_EMPTY
+ok   B1a the phrase survives exactly once
+ok   B1b and that once is the comment recording that it was withdrawn
+ok   B2  the projection declares what it is
+ok   B2a and that it is not the production generation authority
+ok   B2b naming where the production answer does live
+ok   B3  an empty allocation is reported as a projection finding
+ok   B3a as is a SKU with no allocated line
+ok   B3b and neither is pushed under the old name that read as a production refusal
+ok   B4  the parity block is initialised in the census's own object literal
+ok   B4a before any path that can return STOP
+ok   B4b and an unassembled parity is stamped with the stage it stopped at, once, where every exit passes
+ok   B4c together with the blockers known at that moment
+ok   B4d and the assembled block says so
+ok   B5  the preflight records the projection as NOT the production authority
+ok   B5a with its verdict scoped to itself
+ok   B5b the projection's STOP is reported rather than hidden
+ok   B5c and the preflight still answers READY_NO_ACTION, because a projection STOP is not a production refusal
+ok   B5d the projection's blockers are carried, not dropped — hiding them would be the other failure
+
+== C — one decision object: the census reports the handler's answer, it does not compute one ==
+ok   C1  the production path is obtained from 61_'s shared decision builder
+ok   C2  and no outcome or code is spelled in the census any more — there is nothing left to drift
+ok   C2a it does not reassemble the decision from the classifiers either
+ok   C3  the source and the door are copied from the decision, so a reader can check both
+ok   C4  a no-action's outcome and code come from the response the handler returns
+ok   C4a and a refusal's code comes from the refusal the handler returns
+ok   C4b the handler returns that same refusal builder, so the two cannot describe different codes
+ok   C5  a valid zero: the decision object carries the typed success, by name
+ok   C5a and it is the response's own outcome, not a copy of the words
+ok   C5b recommended 0, qualifying active planned 520, residual 0
+ok   C5c nothing would be written and the writer is not reached
+ok   C5d and the empty-scope refusal is bypassed by the valid zero
+ok   C5e resolving the decision touched no cell
+ok   C6  a missing recommendation still refuses, with the code the handler returns
+ok   C6a and nothing about it is netted to a number
+ok   C6b the bypass is not claimed for a row that states nothing
+ok   C6c a refusal does not write either
+ok   C7  a residual of 380 over the manual 520 would generate
+ok   C7a a generation has no refusal code
+ok   C7b and the manual plan is what it is netted against
+ok   C8  the historical field name still carries the same number
+
+== D — the export is the evidence ==
+ok   D1  the preflight prints an r6r7_export line
+ok   D1a which carries production_path — the field the live run had and never printed
+ok   D1b and parity
+ok   D2  with all twelve declared fields present
+ok   D2a and the parity object carries all four of its own
+ok   D2b the projection travels with it, labelled
+ok   D3  and the export declares itself complete
+ok   D4  the preflight declares which fields its verdict rests on
+ok   D4a and omitting one is a STOP with a named reason, not a quieter report
+
+== E — the live case, field for field ==
+ok   E1  wrapper verdict
+ok   E2  production outcome
+ok   E3  production code
+ok   E4  production reason
+ok   E5  recommended_qty
+ok   E6  qualifying_active_planned_qty
+ok   E7  residual_qty
+ok   E8  would_write
+ok   E9  writer_reached
+ok   E10 requested_scope_empty_is_bypassed_by_valid_zero
+ok   E11 parity.agree
+ok   E12 parity.production_would_write
+ok   E13 the parity reports the verdict that was actually reached
+ok   E13a and the outcome it was derived from
+ok   E14 the wrapper is not the more permissive of the two
+ok   E15 and the preflight itself wrote nothing, by five separate counters
+ok   E16 measured on the sheets rather than reported
+ok   E17 no predicate failed
+ok   E18 valid zero      -> READY_NO_ACTION / AI_PLAN_NO_ACTION
+ok   E19 missing         -> STOP / REFUSAL / REQUESTED_SCOPE_EMPTY
+ok   E20 residual 380    -> CONTROLLED_AI_PLAN_READY / WOULD_GENERATE
+ok   E21 and all three agree — a wrapper STOP over a production refusal is agreement, not a conflict
+
+== F — a scope we could not read is still not a scope that needs nothing ==
+ok   F1  PENDING refuses, and nothing about it becomes a zero
+ok   F1a and the preflight STOPS on it
+ok   F2  NONE refuses, and nothing about it becomes a zero
+ok   F2a and the preflight STOPS on it
+ok   F3  a missing row refuses, and nothing about it becomes a zero
+ok   F3a and the preflight STOPS on it
+ok   F4  a blank window refuses, and nothing about it becomes a zero
+ok   F4a and the preflight STOPS on it
+ok   F5  a snapshot overdue past the completion window refuses, and nothing about it becomes a zero
+ok   F5a and the preflight STOPS on it
+ok   F6  a duplicate row refuses, and nothing about it becomes a zero
+ok   F6a and the preflight STOPS on it
+ok   F7  a plan in another marketplace covers nothing here
+
+== G — mutants ==
+ok   G1 the wrapper reporting a success while the production path refuses (caught)
+ok   G2 an unassembled parity left undefined instead of stamped with its stage (caught)
+ok   G3 the export dropping production_path, as the live run did (caught)
+ok   G4 the export guard removed, so a verdict stands on evidence it never reported (caught)
+ok   G5 a valid zero falling through into the REQUESTED_SCOPE_EMPTY refusal (caught)
+ok   G6 a missing recommendation converted into a zero (caught)
+ok   G7 the writer reported as reached on a no-action (caught)
+ok   G8 the census mapping the outcome itself again (caught)
+ok   G9 the projection allowed to claim production authority (caught)
+ok   G10 the gate order rewritten so the refusal precedes the short circuit (caught)
+
+== H — release identity ==
+ok   H1  61_ moved, because 61_ changed, and is not behind this round
+ok   H2  the census moved, because it changed
+ok   H3  and the RELEASE moved: 61_ changed, so a new Web App deployment version is required
+ok   H4  63_ moved too, because 63_ changed
+ok   H5  and 63_'s manifest expects the build 61_ now carries
+ok   H5a including its own self-referential row
+ok   H6  this round is registered in the release order, with nothing older after it
+ok   H7  no browser file changed, so no cache token was minted — a rotated token would force a download that carries nothing new
+ok   H8  no R6-R7 entry point or helper reaches the atomic writer or any cell write
+ok   H8a and the shared decision never calls the allocator or the source-line builder
+
+passed 119  failed 0  |  mutants caught 10  survived 0

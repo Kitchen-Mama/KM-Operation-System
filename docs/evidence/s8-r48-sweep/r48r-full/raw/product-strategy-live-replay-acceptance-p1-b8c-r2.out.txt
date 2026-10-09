@@ -1,0 +1,323 @@
+
+===================================================================================
+PRODUCT STRATEGY — P1-B8C-R2  LIVE REPLAY · RENDER ACCEPTANCE · NO ACTIVATION
+===================================================================================
+
+=== SECTION A  §3 THE LOG WAS COMPLETE, AND THE REPORT IS BYTE-EXACT ===
+ok   A1  the run emitted thirty-five chunks
+ok   A1a and the manifest records thirty-five
+ok   A2  chunk_index runs 1..35 with no gap and no repeat
+ok   A2a and no index appears twice
+ok   A3  every chunk declares chunk_count=35
+ok   A3a every chunk declares the same full_report_fingerprint
+ok   A3b every chunk declares the same full_report_length
+ok   A3c the manifest names the declared fingerprint
+ok   A3d and the declared length
+ok   A4  thirty-four chunks are exactly the emitted slice width
+ok   A4a and the last is the remainder
+ok   A4b SO THE CHUNK LENGTHS SUM TO THE DECLARED LENGTH — the log was complete
+ok   A5  all thirty-five chunk digests are distinct
+ok   A5a and each is a real digest
+ok   A6  the export carries 7,621 CRLF pairs
+ok   A6a and not one bare LF survived
+ok   A6b two chunks lost their own trailing newline to the exporter
+ok   A6c two characters in 240,126
+ok   A6d and the manifest names which
+ok   A6e the reassembled report is byte-exact against the declared fingerprint
+ok   A6f and the spaces hypothesis produced a DIFFERENT fingerprint, which is how it was ruled out
+ok   A6g as did the un-restored export
+ok   A6h and the file records the §3.3 gap by name — as ruled out, not as unexamined
+ok   A7  the manifest declares the raw log is not here
+ok   A7a and .gitignore keeps it out, so it cannot be committed by accident
+ok   A7b a copy on disk is ignored rather than tracked
+
+=== SECTION B  §4 THE DERIVED CAPTURE: LIVE, REDUCED, AND HONEST ABOUT BEING A SAMPLE ===
+ok   B1  THE CAPTURE SAYS WHAT IT IS
+ok   B1a is_live_derived
+ok   B1b AND SAYS IT IS NOT A FIXTURE
+ok   B1c and that it is not the whole universe
+ok   B2  it names the run it came from
+ok   B2a by length
+ok   B2b and by chunk count
+ok   B2c and the build that produced it
+ok   B2d with the verdict
+ok   B3  the universe it was drawn from is 495 rows
+ok   B3a and sixty were kept
+ok   B3b leaving 435 omitted, stated
+ok   B4  sixty rows are present, counted
+ok   B4a sampled_rows_total <= 60
+ok   B4b sum(site.rows.length) === 60
+ok   B4c across ten sites
+ok   B4d all of which were examined
+ok   B4e whose universes sum to 495
+ok   B4f omitted = universe - sampled
+ok   B5  all sixty canonical identities are distinct
+ok   B5a and so are the bare marketplace_sku_ids
+ok   B5b NO SITE HOLDS A COPY OF THE WHOLE SAMPLE
+ok   B5c and every row is filed under the site it belongs to
+ok   B6  the largest site is keyed the way the replay harness looks it up
+ok   B6a its envelope counts the 27 sampled rows
+ok   B6b and carries 27 rows
+ok   B6c while the SITE really holds 101, recorded separately
+ok   B6d with the live envelope counts kept beside it
+ok   B6e pagination describes what was sent
+ok   B7  not one forbidden key carries a value anywhere in the capture
+ok   B7a nor any secret VALUE SHAPE under an innocent name
+ok   B7.1 no absolute URL in the capture file text
+ok   B7.2 no email in the capture file text
+ok   B7.3 no AKfyc exec id in the capture file text
+ok   B7.4 no google file id in the capture file text
+ok   B8  the image address is declared a substitute
+ok   B8a and the regional locators are declared null
+ok   B8b measured: not one regional object carries a locator
+ok   B8c and no row carries an absolute image URL
+
+=== SECTION C  §5 PRODUCTION LOADS NEITHER CAPTURE, AND NEITHER IS A PRODUCTION FIXTURE ===
+ok   C1.1 no root document loads _p1b8c-r2-live-derived
+ok   C1.2 no root document loads _p1b8c-r2-chunk-manifest
+ok   C1.3 no root document loads _p1b8c-capture
+ok   C1.4 no root document loads _p1b8c-replay
+ok   C2  and the capture declares it
+ok   C3  NOT ONE SHIPPED FILE MENTIONS THE LIVE CAPTURE
+ok   C4.1 no module on the render path branches on __TEST
+ok   C4.2 no module on the render path branches on isTest
+ok   C4.3 no module on the render path branches on IS_TEST
+ok   C4.4 no module on the render path branches on NODE_ENV
+ok   C4.5 no module on the render path branches on P1B8C
+ok   C4.6 no module on the render path branches on REPLAY
+ok   C4.7 no module on the render path branches on __replay
+ok   C4.8 no module on the render path branches on testMode
+ok   C4.9 no module on the render path branches on TEST_ONLY
+
+=== SECTION D  §5 THE PRODUCTION CHAIN, DRIVEN FROM THE SOCKET, FOR ALL TEN LIVE SITES ===
+ok   D1.1 KM|US|Shopify renders OK through the production chain
+ok   D1.2 KM|US|Target renders OK through the production chain
+ok   D1.3 KM|US|Walmart renders OK through the production chain
+ok   D1.4 ResTW|AU|Amazon renders OK through the production chain
+ok   D1.5 ResTW|CA|Amazon renders OK through the production chain
+ok   D1.6 ResTW|EU|Amazon renders OK through the production chain
+ok   D1.7 ResTW|JP|Amazon renders OK through the production chain
+ok   D1.8 ResTW|UK|Amazon renders OK through the production chain
+ok   D1.9 ResUS|US|Amazon renders OK through the production chain
+ok   D1.10 ResUS|US|Walmart renders OK through the production chain
+ok   D2  all ten live sites were replayed
+ok   D3pre SUPERSEDED (R10D): the page asks for no capability at all
+ok   D3  the universe is read first
+ok   D3a then one workspace read per site — eleven pricing requests
+ok   D3b and every one after the first is the workspace read
+ok   D3c the transport reports zero writes
+ok   D3d AND A WRITE-SHAPED CALL IS REFUSED BY THROWING — the zero is enforced, not declared
+ok   D4  the renderer filled the chart host
+ok   D4a and the command bar
+ok   D4b with the six production tabs
+ok   D4c and the crumb
+ok   D4d and the state host is EMPTY — no refusal was written over a board that rendered
+ok   D5  AN ENVELOPE WITH THE WRONG meta.action IS STILL REFUSED, on live data too
+ok   D5a and it is named as the routing fault it is, not as a missing network (R10 §5)
+
+=== SECTION E  §6 THE LIVE STATES, EACH FOUND IN THE DATA RATHER THAN ARRANGED ===
+ok   E1  the scope ladder carries all ten live sites
+ok   E1a over the whole 495-row universe
+ok   E2  three live companies
+ok   E2a six live countries
+ok   E2b four live marketplaces
+ok   E2c and every one is selectable with a real row count
+ok   E3.1 BOTH SIDES OF analysable exist in the live sample
+ok   E3.2 BOTH SIDES OF regular_price exist in the live sample
+ok   E3.3 BOTH SIDES OF minimum_price exist in the live sample
+ok   E3.4 BOTH SIDES OF msrp exist in the live sample
+ok   E3.5 BOTH SIDES OF promotion exist in the live sample
+ok   E3.6 BOTH SIDES OF product_image exist in the live sample
+ok   E3.7 BOTH SIDES OF regional exist in the live sample
+ok   E3.8 BOTH SIDES OF data_quality exist in the live sample
+ok   E4  the live sample spans many categories
+ok   E4a and six live currencies
+ok   E4b and more than twenty series
+ok   E5  NOT ONE LIVE ROW REACHES VERIFIED_DB_MAPPING — production holds no absolute image URL
+ok   E5a the rows with an image reference land in UNVERIFIED_SOURCE_REFERENCE
+ok   E5b and the rows with none land in IMAGE_SOURCE_MISSING
+ok   E5c and the capture file records it as a finding rather than leaving it to be discovered
+
+=== SECTION F  §6 THE SIX VIEWS, ON EVERY LIVE SITE, WITH NOTHING BROKEN IN THE TEXT ===
+ok   F1  the six views, in the registry order
+ok   F2  EVERY VIEW ON EVERY LIVE SITE RENDERED CONTENT — sixty renders
+ok   F3  and not one of them printed NaN, undefined or [object Object]
+ok   F4.1 overview reports its canonical route
+ok   F4.2 category reports its canonical route
+ok   F4.3 risk reports its canonical route
+ok   F4.4 quality reports its canonical route
+ok   F4.5 workspace reports its canonical route
+ok   F4.6 advanced reports its canonical route
+ok   F5  no live site was reported as anything but OK
+
+=== SECTION G  §6 THE ONE STATE PRODUCTION DOES NOT HAVE — FIXTURE COVERAGE, LABELLED ===
+ok   G1  the live run reported exactly one coverage gap
+ok   G1a by name
+ok   G1b on the status dimension
+ok   G1c and it is the non-active state
+ok   G2  measured: not one live row is anything but Active
+ok   G3  the fixture declares itself deterministic
+ok   G3a and not live
+ok   G3b the two captures cannot be confused by their own declarations
+ok   G4  THE DETERMINISTIC FIXTURE DOES HOLD NON-ACTIVE LISTINGS — the gap is really covered there
+ok   G4a and both captures carry rows, so the split is between two real bodies of evidence
+
+=== SECTION H  §7 THE BROWSER MEASUREMENTS, ASSERTED RATHER THAN LOOKED AT ===
+ok   H0  the live acceptance measurements exist
+ok   H0a and they were taken against the LIVE capture
+ok   H0b by module name
+ok   H1  all seven §7 viewports were measured
+ok   H2.1 1920x1080 rendered at exactly that size — not a clamped window
+ok   H2.1a and it was the live capture on screen
+ok   H2.1b with no boot error
+ok   H3.1 1920x1080 HAS NO PAGE-LEVEL HORIZONTAL OVERFLOW
+ok   H4.1 the Y axis is fully inside the chart at 1920x1080
+ok   H5.1 and so is the X lane at 1920x1080
+ok   H6.1 with real tick labels at 1920x1080
+ok   H7.1 AND THE BOARD HAS WIDTH — not a screenshot of a display:none subtree
+ok   H8.1 six sub-tabs at 1920x1080
+ok   H8.1a every one with its label visible
+ok   H9.1 and the staged section was still disabled while it was photographed
+ok   H2.2 1440x900 rendered at exactly that size — not a clamped window
+ok   H2.2a and it was the live capture on screen
+ok   H2.2b with no boot error
+ok   H3.2 1440x900 HAS NO PAGE-LEVEL HORIZONTAL OVERFLOW
+ok   H4.2 the Y axis is fully inside the chart at 1440x900
+ok   H5.2 and so is the X lane at 1440x900
+ok   H6.2 with real tick labels at 1440x900
+ok   H7.2 AND THE BOARD HAS WIDTH — not a screenshot of a display:none subtree
+ok   H8.2 six sub-tabs at 1440x900
+ok   H8.2a every one with its label visible
+ok   H9.2 and the staged section was still disabled while it was photographed
+ok   H2.3 1366x768 rendered at exactly that size — not a clamped window
+ok   H2.3a and it was the live capture on screen
+ok   H2.3b with no boot error
+ok   H3.3 1366x768 HAS NO PAGE-LEVEL HORIZONTAL OVERFLOW
+ok   H4.3 the Y axis is fully inside the chart at 1366x768
+ok   H5.3 and so is the X lane at 1366x768
+ok   H6.3 with real tick labels at 1366x768
+ok   H7.3 AND THE BOARD HAS WIDTH — not a screenshot of a display:none subtree
+ok   H8.3 six sub-tabs at 1366x768
+ok   H8.3a every one with its label visible
+ok   H9.3 and the staged section was still disabled while it was photographed
+ok   H2.4 1280x720 rendered at exactly that size — not a clamped window
+ok   H2.4a and it was the live capture on screen
+ok   H2.4b with no boot error
+ok   H3.4 1280x720 HAS NO PAGE-LEVEL HORIZONTAL OVERFLOW
+ok   H4.4 the Y axis is fully inside the chart at 1280x720
+ok   H5.4 and so is the X lane at 1280x720
+ok   H6.4 with real tick labels at 1280x720
+ok   H7.4 AND THE BOARD HAS WIDTH — not a screenshot of a display:none subtree
+ok   H8.4 six sub-tabs at 1280x720
+ok   H8.4a every one with its label visible
+ok   H9.4 and the staged section was still disabled while it was photographed
+ok   H2.5 1024x768 rendered at exactly that size — not a clamped window
+ok   H2.5a and it was the live capture on screen
+ok   H2.5b with no boot error
+ok   H3.5 1024x768 HAS NO PAGE-LEVEL HORIZONTAL OVERFLOW
+ok   H4.5 the Y axis is fully inside the chart at 1024x768
+ok   H5.5 and so is the X lane at 1024x768
+ok   H6.5 with real tick labels at 1024x768
+ok   H7.5 AND THE BOARD HAS WIDTH — not a screenshot of a display:none subtree
+ok   H8.5 six sub-tabs at 1024x768
+ok   H8.5a every one with its label visible
+ok   H9.5 and the staged section was still disabled while it was photographed
+ok   H2.6 768x1024 rendered at exactly that size — not a clamped window
+ok   H2.6a and it was the live capture on screen
+ok   H2.6b with no boot error
+ok   H3.6 768x1024 HAS NO PAGE-LEVEL HORIZONTAL OVERFLOW
+ok   H4.6 the Y axis is fully inside the chart at 768x1024
+ok   H5.6 and so is the X lane at 768x1024
+ok   H6.6 with real tick labels at 768x1024
+ok   H7.6 AND THE BOARD HAS WIDTH — not a screenshot of a display:none subtree
+ok   H8.6 six sub-tabs at 768x1024
+ok   H8.6a every one with its label visible
+ok   H9.6 and the staged section was still disabled while it was photographed
+ok   H2.7 390x844 rendered at exactly that size — not a clamped window
+ok   H2.7a and it was the live capture on screen
+ok   H2.7b with no boot error
+ok   H3.7 390x844 HAS NO PAGE-LEVEL HORIZONTAL OVERFLOW
+ok   H4.7 the Y axis is fully inside the chart at 390x844
+ok   H5.7 and so is the X lane at 390x844
+ok   H6.7 with real tick labels at 390x844
+ok   H7.7 AND THE BOARD HAS WIDTH — not a screenshot of a display:none subtree
+ok   H8.7 six sub-tabs at 390x844
+ok   H8.7a every one with its label visible
+ok   H9.7 and the staged section was still disabled while it was photographed
+ok   H10  at 390x844 the shell sidebar is still 240px — the known blocker
+ok   H10a leaving the content area under 200px
+ok   H10b and the PAGE still does not scroll horizontally
+ok   H10c and product-strategy-board.css does not touch the shell sidebar
+ok   H11.1 view overview was photographed
+ok   H11.1a and reported ready
+ok   H11.1b with no error
+ok   H11.2 view category was photographed
+ok   H11.2a and reported ready
+ok   H11.2b with no error
+ok   H11.3 view risk was photographed
+ok   H11.3a and reported ready
+ok   H11.3b with no error
+ok   H11.4 view quality was photographed
+ok   H11.4a and reported ready
+ok   H11.4b with no error
+ok   H11.5 view workspace was photographed
+ok   H11.5a and reported ready
+ok   H11.5b with no error
+ok   H11.6 view advanced was photographed
+ok   H11.6a and reported ready
+ok   H11.6b with no error
+ok   H12.1 state feature-disabled was photographed
+ok   H12.2 state not-authorized was photographed
+ok   H12.3 state timeout was photographed
+ok   H12.4 state non-json was photographed
+ok   H12.5 state source-unavailable was photographed
+ok   H12.6 state awaiting-site was photographed
+ok   H12.7 state empty-site was photographed
+ok   H13  the authorization refusal does not say "database disconnected"
+ok   H13a and the timeout does not say "permission"
+ok   H14  the evidence directory holds the screenshots
+ok   H14a and not one of them is an empty file
+ok   H14b with the print PDF beside them
+
+=== SECTION I  §8/§10 STYLE ISOLATION, AND NOTHING WAS ACTIVATED ===
+ok   I1  no bare .card/.panel/.grid/.nav/.main/.col selector
+ok   I1a and no :root token block of its own
+ok   I1b the prototype sidebar rules stay scoped under .psb-page
+ok   I2.1 this round did not touch 00_config.gs
+ok   I2.2 this round did not touch app.js
+ok   I2a the staged registry entry is found
+ok   I2a1 and it carries a literal boolean switch
+ok   I2a2 exactly one of them — two would be a registry whose answer depends on which one you read
+ok   I2b index.html still cannot switch to the section
+ok   I2c and renders no menu item for it
+ok   I2d the productPricing action table is still the two reads
+ok   I3  the staged nav still anchors above the Pricing Center menu id
+ok   I4  the whole replay issued zero write actions
+ok   I4a and every action it issued is one of the three reads this page may make
+
+=== SECTION J  MUTANTS ===
+ok   J1  a chunk goes missing — A2 and A4b (caught)
+ok   J2  a chunk is pasted twice — A2a and A5 (caught)
+ok   J3  one header disagrees with the rest — A3 (caught)
+ok   J3a  a header declares a different length — A3b (caught)
+ok   J4  the capture carries a sixty-first row — B4 (caught)
+ok   J4a  the cap is read as per-site — B4b would stop adding to sixty (caught)
+ok   J5  a row is duplicated across two sites — B5 (caught)
+ok   J6  THE REDACTION WALK IS SKIPPED — B7 stops finding the leak it should (caught)
+ok   J6a  a secret shape arrives under an innocent key — secretShapes, not leaks (caught)
+ok   J7  THE LIVE CAPTURE IS LABELLED A FIXTURE — B1/B1b (caught)
+ok   J8  THE DETERMINISTIC FIXTURE CLAIMS TO BE LIVE — G3 (caught)
+ok   J9  the missing state is claimed as live coverage — G1/G2 (caught)
+ok   J10  THE ACCESSOR IS BYPASSED — the same envelope stops being refused (caught)
+ok   J11  page-level overflow appears — H3 (caught)
+ok   J12  the Y axis is clipped — H4 (caught)
+ok   J13  the feature flag is opened — I2 (caught)
+ok   J14  navigation is rendered in index.html — I2c (caught)
+ok   J15  a second enabled switch appears in the staged entry — I2a2 (caught)
+ok   J16  a test-only branch enters the render path — C4 (caught)
+ok   J17  the capture stops declaring it is a sample — B1c/B6 (caught)
+ok   J18  the envelope reports the SITE count over the SAMPLE rows — B6a (caught)
+
+===================================================================================
+PASS — passed 274  failed 0  |  mutants caught 21  survived 0
+===================================================================================

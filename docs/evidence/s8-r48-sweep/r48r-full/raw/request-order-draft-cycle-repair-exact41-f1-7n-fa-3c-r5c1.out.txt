@@ -1,0 +1,21 @@
+
+== 1. exact 41-ID cohort + deterministic SHA-256 checksum ==
+
+== 8. DRY RUN on the fresh incident state → READY_TO_EXECUTE, ZERO writes ==
+
+== 2-7. every pre-execution safety gate HALTs (write nothing) ==
+
+== 9-13. EXECUTE repairs ONLY the 41 planning_cycle cells; full before/after invariants ==
+
+== 13(validate). VALIDATE (read-only) → REPAIR_VALIDATED on the repaired state ==
+
+== 14. idempotency — a second EXECUTE on the repaired state is zero-write ALREADY_REPAIRED ==
+
+== PARTIAL — a strict subset already repaired → PARTIAL_REPAIR_DETECTED, repairs only the remainder ==
+
+== ALREADY_REPAIRED — a fully-clean state needs no work ==
+
+== SOURCE — read-only entrypoints; the write boundary is planning_cycle only ==
+
+----------------------------------------
+R5C1 EXACT-41 CYCLE REPAIR (F1-7N-FA-3C-R5C1): 43 passed, 0 failed

@@ -1,0 +1,111 @@
+
+== A — the DTO whitelist: the field reaches the server, or the round does not exist ==
+ok   A1  SITE_SCOPE_DTO_PRESERVED = YES — the three fields survive the whitelist
+ok   A1a on the action that already existed — no new action
+ok   A1b beside the exposure-only `only` list
+ok   A2  and NOTHING else travels — sku and rowIndex are not scope, and a pass-through would give the whitelist away
+ok   A2a the three are normalised (String + trim) through the existing DTO convention
+ok   A3  INCOMPLETE_SCOPE_WIDENS_TO_GLOBAL = NO — a blank field is FORWARDED, so 60_ can refuse it by name
+ok   A3a and so is a MALFORMED one — a typeof gate here would silently issue the all-site read
+ok   A4  while a caller that asks for no scope sends none — the unscoped request is byte-for-byte what it was
+
+== B — the page asks for ONE site, and cannot ask for a seventh table to find out which ==
+ok   B1  the exposure request carries recentWindow, the exposure-only `only`, and the site
+ok   B2  EXPOSURE_REQUEST_SCOPE_FIELDS = company + country + marketplace
+ok   B2a and NOT marketplace_id — none of the six tables stores it, so scoping on it would cost a SEVENTH sheet
+ok   B2b CACHE_KEY_FIELDS still end in marketplace_id — a map key and a request identity may differ by design
+ok   B3  a site the master cannot name issues NO request and settles FAILED — never an unscoped read
+ok   B4  SEVENTH_TABLE_READ_COUNT = 0 — `marketplaces` is a FIRST-layer table and is not re-read here
+ok   B5  EXPOSURE_READ_TABLE_COUNT = 6
+
+== C — the closure: Site A gets Site A, and the merged header survives ==
+ok   C1  P  — only this site's plans
+ok   C2  PL — their lines, INCLUDING PL-A2 whose own marketplace is JP: the PLAN is the receiver authority
+ok   C3  SL — frozen lineage into A, plus the BLANK-lineage line whose header is A
+ok   C4  MULTI_HEADER_PRESERVED = YES — SH-MULTI is reached through its line, which a header filter would delete
+ok   C5  D  — this site's drafts, including the blank-company row the client itself admits
+ok   C6  DL — their lines, by allocation_draft_id
+ok   C7  and Site B reaches the SAME merged header through ITS line — one header, two sites, no double count
+ok   C7a with only B's lines inside it
+ok   C7b and only B's plans
+ok   C8  AMBIGUOUS_LINEAGE_FAIL_CLOSED = YES — a dangling plan-line id reaches NO site, not the header's
+ok   C9  while a BLANK lineage keeps the documented header fallback
+ok   C10 SITE_B_TO_A_ROW_LEAK_COUNT = 0
+ok   C11 SITE_A_TO_B_ROW_LEAK_COUNT = 0
+ok   C12 CROSS_SITE_ROW_LEAK_COUNT = 0 — the UNVISITED Site C appears in neither response
+ok   C12a and C is not simply empty — it has its own rows, which is what makes C12 evidence
+ok   C13 two sites that legitimately hold nothing return the SAME bytes — §8 forbids demanding unequal hashes
+ok   C13a and that answer is genuinely empty
+
+== D — fail closed, before a sheet is opened ==
+ok   D1  a COMPLETE scope on an exposure-only request is accepted
+ok   D1a and reads exactly the six — no seventh table
+ok   D1b meta echoes what was ASKED for
+ok   D1c and what was APPLIED, per table — a reduction nobody can see is indistinguishable from data loss
+ok   D1d the envelope carries the scoped rows
+ok   D2  an INCOMPLETE scope is REFUSED
+ok   D2a with a typed, classifiable code
+ok   D2b that names the missing field rather than hinting at it
+ok   D2c and the spreadsheet is never opened — a refusal costs zero sheet reads
+ok   D2d INCOMPLETE_SCOPE_WIDENS_TO_GLOBAL = NO — not one row of any site was read
+ok   D3  a scope on a NON-exposure request is refused, not ignored
+ok   D3a because ignoring a scope IS widening it
+ok   D4  and the pure builder refuses on its own — the fail-closed is in BOTH layers
+
+== E — what did NOT change ==
+ok   E1  an UNSCOPED `only` request is unchanged
+ok   E1a and still honours its table list
+ok   E1b reporting no scope, because it asked for none
+ok   E1c and so is the carrier-catalogue caller — the third of the three
+ok   E2  THREE shipped callers of the `only` contract
+ok   E2a the FIRST-LAYER request did NOT gain a scope merely because the exposure request did
+ok   E2a1 while the EXPOSURE request did — the two payloads are read separately, so neither stands in for the other
+ok   E2b nor did the carrier catalogue
+ok   E2c UNRELATED_CALLER_BEHAVIOR_DRIFT_COUNT = 0 — two unscoped callers, both unchanged
+ok   E3  FIRST_LAYER_TABLE_COUNT = 13
+ok   E3a and the two layers are still disjoint — no exposure table crept back into the first read
+ok   E3b the server's exposure family and the browser's are the SAME six — one list, two copies, checked
+ok   E4  CLIENT_SCOPE_DEFENSE = YES — the draft scope filter is retained verbatim
+ok   E4a and so is the lineage attribution the server closure was derived FROM
+ok   E4b which reads the PARENT PLAN, never the line's own marketplace — the same rule on both sides
+ok   E5  EXPOSURE_DEPENDENCY_IN_WRITE_PAYLOAD_COUNT = 0
+ok   E5z and every one of them was really located — a census over nothing is not a census
+ok   E5a and the approved-quantity authority does not know this round happened
+ok   E6.1 sirWsSiteScope_ writes nothing — WRITE_TABLE_COUNT = 0, SCHEMA_CHANGES = 0
+ok   E6.2 sirWsSiteScopeClosure_ writes nothing — WRITE_TABLE_COUNT = 0, SCHEMA_CHANGES = 0
+ok   E6.3 sirWsScopeApplicable_ writes nothing — WRITE_TABLE_COUNT = 0, SCHEMA_CHANGES = 0
+ok   E6.4 sirWorkspaceBuild_ writes nothing — WRITE_TABLE_COUNT = 0, SCHEMA_CHANGES = 0
+ok   E7  an UNSCOPED build still runs with nothing but its R4-era helpers in scope — the scope path is guarded, not called
+ok   E8  NEW_ACTION_REQUIRED = NO — the scope is an optional payload field on the existing action
+ok   E8a ACTION_CONTRACT_VERSION_CHANGE_REQUIRED = NO — 63_ bumps it when an ACTION is added or removed, and none was
+
+== F — mutants: every guard above is load-bearing ==
+ok   M1  the DTO drops siteScope again (the exact R4 defect, one field later) (caught)
+ok   M2  the DTO drops `company` from the scope (caught)
+ok   M3  the DTO drops `country` from the scope (caught)
+ok   M4  the DTO drops `marketplace` from the scope (caught)
+ok   M5  an incomplete scope widens to every site instead of refusing (caught)
+ok   M6  a simple header filter replaces the lineage closure (caught)
+ok   M7  the MULTI header is dropped by filtering shipments on their own marketplace (caught)
+ok   M8  shipping_plan_lines.marketplace becomes the scope authority (caught)
+ok   M9  a present-but-dangling lineage falls back to the header instead of failing closed (caught)
+ok   M10 a seventh table (marketplaces) is pulled into the exposure family (caught)
+ok   M11 a Site A row leaks into the Site B response (caught)
+ok   M12 the client secondary scope guard is removed (caught)
+ok   M13 a per-SKU request is introduced (the N+1 the cache exists to prevent) (caught)
+ok   M14 the site switch globally clears the cache (US -> CA -> US costs a second US read) (caught)
+ok   M15 the first layer re-adds the exposure tables (caught)
+ok   M16 the write payload begins depending on exposure state (caught)
+ok   M17 the scope applicability gate is removed, so a scope rides an unrelated `only` (caught)
+
+== G — vacuity: every mutation target exists exactly once in the shipped source ==
+ok   G1 km-api-foundation.js · buildInventoryReplenishmentRequestDTO — target present exactly once
+ok   G2 60_.gs · handleInventoryReplenishmentWorkspaceGet_ — target present exactly once
+ok   G3 60_.gs · sirWorkspaceBuild_ — target present exactly once
+ok   G4 60_.gs · sirWsSiteScopeClosure_ — target present exactly once
+ok   G5 60_.gs · sirWsSiteScopeClosure_ — target present exactly once
+ok   G6 inventory-replenishment.js · _shippingDraftLinesFor — target present exactly once
+ok   G7 inventory-replenishment.js · _irExposureSite_ — target present exactly once
+
+94 passed, 0 failed
+mutations: 17 caught, 0 missed

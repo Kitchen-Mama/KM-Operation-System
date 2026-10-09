@@ -1,0 +1,202 @@
+
+== §3 — THE MEASURED ROOT CAUSE ==
+ok   R1  §3.1 the route model holds its persisted line id, and the line payload carries it
+ok   R2  §3.2 a payload built without an intent carries none (it is never invented)
+ok   R2a §5 an UPDATE payload carries the entity id AND the version it expects
+ok   R2b §9 a CREATE payload names no existing entity and carries the create idempotency key
+ok   R2c an intent is taken only from an EXACT string, so a truthy accident cannot select an operation
+ok   R3  §3.4 changing Method changes the 10-dimension K2 key (it is a grouping signature)
+ok   R3a and marketplace-to-marketplace does NOT, because destination_marketplace is not one of the ten
+ok   R4  §2/§4 a dimension change no longer ERASES the route's immutable entity identities
+ok   R4a and no soft-cancel is queued — there is no "header it left"
+ok   R4b only the collision signature is refreshed
+ok   R5  §3.4 the server guard still COMPARES the stored id with the hash of its own fields
+ok   R5a §4 but a declared UPDATE is decided BEFORE that guard, so a legal edit is never called corruption
+ok   R6  §3.8 DEPLOYMENT_CONTRACT_MISMATCH means the DEPLOYMENT lacks the action — it is never a route verdict
+
+== §12.1–§12.7 / §8 — UPDATE AN EXISTING ROUTE: SAME IDS, ZERO NEW ROWS ==
+ok   U0  the first save of a + Add Route instance succeeds
+ok   U0a and it is declared a CREATE
+ok   U0b creating exactly ONE header and ONE line (§12.8)
+ok   U0c under canonical persisted identities
+ok   U1  §12.1 change To (marketplace -> marketplace) — saves
+ok   U1  §12.1 change To (marketplace -> marketplace) — declared an UPDATE of the same route
+ok   U1  §12.1 change To (marketplace -> marketplace) — row counts UNCHANGED (§12.18)
+ok   U1  §12.1 change To (marketplace -> marketplace) — the SAME entity identities (§12.19)
+ok   U2  §12.2 marketplace -> warehouse (the XOR flips in place) — saves
+ok   U2  §12.2 marketplace -> warehouse (the XOR flips in place) — declared an UPDATE of the same route
+ok   U2  §12.2 marketplace -> warehouse (the XOR flips in place) — row counts UNCHANGED (§12.18)
+ok   U2  §12.2 marketplace -> warehouse (the XOR flips in place) — the SAME entity identities (§12.19)
+ok   U3  §12.3 warehouse -> marketplace (the XOR flips back) — saves
+ok   U3  §12.3 warehouse -> marketplace (the XOR flips back) — declared an UPDATE of the same route
+ok   U3  §12.3 warehouse -> marketplace (the XOR flips back) — row counts UNCHANGED (§12.18)
+ok   U3  §12.3 warehouse -> marketplace (the XOR flips back) — the SAME entity identities (§12.19)
+ok   U4  §12.4 sea -> air — saves
+ok   U4  §12.4 sea -> air — declared an UPDATE of the same route
+ok   U4  §12.4 sea -> air — row counts UNCHANGED (§12.18)
+ok   U4  §12.4 sea -> air — the SAME entity identities (§12.19)
+ok   U5  §12.5 air -> sea_express — saves
+ok   U5  §12.5 air -> sea_express — declared an UPDATE of the same route
+ok   U5  §12.5 air -> sea_express — row counts UNCHANGED (§12.18)
+ok   U5  §12.5 air -> sea_express — the SAME entity identities (§12.19)
+ok   U6  §12.6 change From — saves
+ok   U6  §12.6 change From — declared an UPDATE of the same route
+ok   U6  §12.6 change From — row counts UNCHANGED (§12.18)
+ok   U6  §12.6 change From — the SAME entity identities (§12.19)
+ok   U7  §12.7 change Qty only — saves
+ok   U7  §12.7 change Qty only — declared an UPDATE of the same route
+ok   U7  §12.7 change Qty only — row counts UNCHANGED (§12.18)
+ok   U7  §12.7 change Qty only — the SAME entity identities (§12.19)
+ok   U7a the quantity edit landed on that one line
+ok   U7b and its FK still names the same header (§12.19)
+ok   U8  every edited dimension is stored on the SAME header row
+ok   U9  §5 draft_version advanced with the updates (11111111)
+ok   U10 §4 the entity id no longer hashes to its own fields — EXPECTED, and not corruption
+
+== §12.8–§12.9 / ADDENDUM §3 — ADD ROUTE CREATES ITS OWN INSTANCE, AND ONLY THAT ==
+ok   A1  two routes are two headers and two lines
+ok   A2  ADDENDUM §1 the third route saves on its own
+ok   A2a as a CREATE of the instance that was added
+ok   A3  §12.8 exactly ONE new header and ONE new line
+ok   A4  ADDENDUM §8 the new 120 exists and NEITHER existing 800 was rewritten
+ok   A4a (the two 800s were the state before the Add Route)
+ok   A5  §12.9 the second edit of a newly-created row is an UPDATE
+ok   A5a and creates nothing
+ok   A5b only its own quantity moved
+
+== §12.10–§12.11 / §6 / ADDENDUM §4 — REPLAY, AND THE COLLISION THAT MAKES IT SAFE ==
+ok   C0  one route stored
+ok   C1  §B.2 an identical route sent as a CREATE is no longer refused
+ok   C1a it becomes a SECOND ticket, which a second click must be
+ok   C1b with its own identity, never a reuse of the first
+ok   C1c and no natural-key collision verdict survives anywhere in the response
+ok   C2  §12.11 an UPDATE can be replayed
+ok   C2a adding no row
+ok   C2b and keeping the same line identity
+ok   C3  §B.2 an UPDATE onto a shape another ticket already holds is allowed
+ok   C3a and it is still the SAME ticket - no re-key, no new票
+ok   C3b nothing was created and nothing was merged
+ok   C3c no collision verdict is returned
+
+== §12.12–§12.16 — EVERY REFUSAL IS A ZERO WRITE ==
+ok   Z1  §12.13 a stale draft_version is a zero write
+ok   Z1a the table is untouched
+ok   Z2  §12.15 a wrong-scope id is a zero write
+ok   Z2a the table is untouched
+ok   Z3  §12.14 a terminal header is a zero write
+ok   Z4  §12.18 an UPDATE whose row is missing is REFUSED — it never falls back to CREATE
+ok   Z4a and creates nothing
+ok   Z5  §2 a route write with NO declared intent is refused, zero write
+ok   Z6  §2 UPDATE with no id is contradictory
+ok   Z7  §2 CREATE naming an existing id is contradictory
+ok   Z8  §4/ADDENDUM §4 an explicit Add Route may NEVER carry adoption authority
+ok   Z9  §12 every refusal above left the tables exactly as they were
+
+== ADDENDUM §4 — AN ADD ROUTE NEVER ADOPTS A ZERO-LINE LEGACY HEADER ==
+ok   G0  the zero-line legacy header is in place
+ok   G1  ADDENDUM §1 this is exactly the header shape whose adoption produced LEGACY_ROUTE_RECONCILIATION_REQUIRED
+ok   G2  ADDENDUM §4 the Add Route now SUCCEEDS instead of trying to adopt it
+ok   G2a creating its OWN new header beside the legacy one
+ok   G2b and it is NOT the legacy header (SADH-K2-EBE512DE)
+ok   G3  ADDENDUM §8 the legacy header was NOT adopted and NOT modified
+ok   G4  ADDENDUM §5 and no line was placed under it
+
+== ADDENDUM §3/§7 — EVENT SCOPE: ONE UI EVENT SENDS ONE ROUTE ==
+ok   E1  ADDENDUM §3 the collect marks only the instances whose persistable signature actually changed
+ok   E2  §6 every DOM row carries a stable route instance id, minted once
+ok   E3  ADDENDUM §3 the writer sends only the touched instances, never the whole SKU
+ok   E4  §7 and a multi-line header edit is blocked before any request
+ok   E5  ADDENDUM §3 two routes with identical persistable fields have the same signature (not re-sent)
+ok   E5a and a real edit changes it
+ok   E5b while a display-only relabel does NOT — a re-render is not an edit
+ok   E6  §6 every reported outcome names the route INSTANCE and the intent it was issued under
+ok   E6a and the writer attaches those instance ids to the persisted AND the failed outcome
+ok   E7  a group carrying two different stored ids is refused rather than resolved by picking one
+
+== §7 / §12.17 — A MULTI-LINE HEADER IS DISCLOSED OR BLOCKED, NEVER SILENTLY RE-ROUTED ==
+ok   M1  §7 the block DISCLOSES how many SKUs and which lines a header-level edit would move
+ok   M1a under a named code
+ok   M1b and says the intended operation is a separate one, rather than improvising a split (§7)
+ok   M2  §7 a header-level edit on a header ANOTHER SKU shares is BLOCKED
+ok   M2a naming the SKU the operator cannot see
+ok   M2b and the line it would have moved
+ok   M3  §7 a header with only this line is edited normally — no false block
+
+== §11 — THE A2 / A2-R1 SUBMIT PREFLIGHT RESTS ON THE CORRECTED RULES ==
+ok   S1  §11 Submit does not trigger a Save (A2-R1 §3), and reaches no writer at all
+ok   S2  §11 one preflight decides before any request
+ok   S3  §11 the submitted selection is the preflight candidate set
+ok   S4  §11 the confirmation is built from the persisted candidate and is REQUIRED, never skipped
+ok   S5  §11 and the execution key is minted only after it
+ok   S6  §11 a persisted, updated route IS a candidate
+ok   S7  §11 an unsaved route blocks the WHOLE Submit
+ok   S7a and the clean 800 beside it is not submitted alone
+ok   S7b no confirmation can be built from it
+ok   S8  §11 a contested stored identity yields zero request
+
+== §10 / ADDENDUM §5 — THE READ-ONLY CENSUS ==
+ok   T1  §10 exactly ONE entry point
+ok   T1a taking no parameters
+ok   T2  ADDENDUM §5 it censuses SADH-K2-E7AF9242
+ok   T2  ADDENDUM §5 it censuses SADH-K2-179FBB0E
+ok   T2  ADDENDUM §5 it censuses SADH-K2-C3E2031A
+ok   T2  ADDENDUM §5 it censuses SAD-C787D1B1-D
+ok   T2  ADDENDUM §5 it censuses SAD-27976058-2
+ok   T2a and every CO1100-R line
+ok   T3  §10 the census cannot setValue — the symbol is absent
+ok   T3  §10 the census cannot appendRow — the symbol is absent
+ok   T3  §10 the census cannot deleteRow — the symbol is absent
+ok   T3  §10 the census cannot setValues — the symbol is absent
+ok   T3  §10 the census cannot getScriptLock — the symbol is absent
+ok   T3  §10 the census cannot PropertiesService — the symbol is absent
+ok   T3  §10 the census cannot DriveApp — the symbol is absent
+ok   T3  §10 the census cannot MailApp — the symbol is absent
+ok   T3  §10 the census cannot GmailApp — the symbol is absent
+ok   T3  §10 the census cannot clearContent — the symbol is absent
+ok   T3  §10 the census cannot insertSheet — the symbol is absent
+ok   T3  §10 the census cannot getUuid — the symbol is absent
+ok   T4  §10 every sheet is wrapped in a façade exposing ONLY getDataRange().getValues()
+ok   T5  §10 a missing production authority prints AUTHORITY_NOT_LOADED / BLOCKED rather than guessing
+ok   T6  §10 and what it cannot determine is printed UNKNOWN
+ok   T7  §12.21 it declares DB_WRITES=0
+ok   T8  ADDENDUM §5 it answers the 120 and 800 questions from cells
+ok   T8a and whether a line sits under a zero-line legacy header
+ok   T9  §4 it REPORTS an id that no longer hashes to its fields without calling it corruption
+ok   T10 §10 and authorises no repair
+
+== §13 — DEPLOYMENT ==
+ok   D1  §13 the 16_ owner stamp is at or after A2-R2
+ok   D2  §13 and the health manifest expects exactly what the source declares
+ok   D2a and the manifest carries exactly ONE entry for this symbol
+ok   D3  §13 and it is at or after A2
+ok   D4  §13 the application cache token is at or after this round
+ok   D4a and the co-deployed set rotated TOGETHER (55 refs on r46-avgsales-20261008)
+ok   D4b and the previous token is fully retired
+ok   D4c ordered after it in the append-only series
+ok   D5  §13 no bundled module changed, so BUNDLE_REBUILD_REQUIRED stays NO
+
+== MUTATIONS — each applied for real, each caught ==
+ok   X1  §12 the intent is dropped from the payload builder (caught)
+ok   X2  §2 an UPDATE that finds no row falls back to CREATE (caught)
+ok   X3  §4 an UPDATE re-mints the header id from the natural key (caught)
+ok   X4  §4 an UPDATE re-mints the line id (caught)
+ok   X5  §B.2 a shared route shape is detected but never reported (caught)
+ok   X6  §5 a stale draft_version is written anyway (caught)
+ok   X7  §7 a multi-line header is updated silently (caught)
+ok   X8  ADDENDUM §4 an Add Route adopts a zero-line legacy header (caught)
+ok   X9  ADDENDUM §3 a single-row event re-sends the whole route group (caught)
+ok   X10 ADDENDUM §3 the touched set is marked for every row, not only the changed ones (caught)
+ok   X11 §6 outcomes are correlated by array position instead of route instance (caught)
+ok   X12 §2/§4 a route edit ERASES the route's entity identity again (caught)
+ok   X13 §12.18 an UPDATE appends a line instead of updating it (caught)
+ok   X14 §12.9 a second edit of a newly-created row CREATEs again (caught)
+ok   X15 §12.16 an unknown line id appends NO second physical row
+ok   X15a the header keeps its own line identity - the unknown id is not adopted as a new one
+ok   X15b and the foreign id is nowhere in the table
+ok   X15c because the natural-key fallback is SCOPED BY draftId - it can never reach the line of another header
+ok   X15d §12.16 a line id naming a row of a DIFFERENT natural key is refused
+ok   X15e with LINE_IDENTITY_CONFLICT
+ok   X15f and the table is byte-identical - zero write
+ok   X16 §11 Submit is allowed to save a dirty route again (caught)
+
+PASSED: 176 passed, 0 failed, mutations 15 caught / 0 missed

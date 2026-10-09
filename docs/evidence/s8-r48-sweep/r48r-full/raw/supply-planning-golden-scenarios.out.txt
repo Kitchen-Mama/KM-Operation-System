@@ -1,0 +1,314 @@
+
+== §33 Golden Baseline — inventory integrity ==
+ok   inventory count = 40 (one-to-one)
+ok   inventory IDs are exactly 1..40, unique (no dup / no missing)
+ok   executed scenarios are EXACTLY [1..33,35..40] (all except #34) in both inventory and the runnable set (⇒ executed count = 39)
+ok   implementation-pending count = 1 (only #34 — downstream Request-Order/PO/UI-state/persistence, §37)
+ok   canonical-blocked count = 0 (every scenario canonicalStatus = FROZEN)
+
+== §33 Golden Baseline — ownership accounting (Allocation Runtime vs downstream) ==
+ok   OA1 canonical inventory total = 40 (unchanged — nothing is deleted from §33)
+ok   OA2 Allocation Runtime APPLICABLE scenarios = 39
+ok   OA3 downstream-owned exclusions = 1
+ok   OA4 applicable + excluded === canonical total — every scenario is accounted for exactly once
+ok   OA5 the excluded scenario is identified by ID 34 explicitly
+ok   OA6 #34 carries its downstream owner (§37) and the frozen exclusion authority (§40.17)
+ok   OA7 #34 is STILL in the canonical inventory — excluded from scope, not removed from §33
+ok   OA8 and is NOT marked executed by this suite
+ok   OA9 #34 is absent from the executed set
+ok   OA10 executed set === applicable set, exactly (no applicable scenario missing, none extra)
+ok   OA11 no unclassified scenario — each ID is applicable or declared-excluded
+ok   OA12 no duplicate scenario ID in the inventory or the exclusion table
+ok   OA13 every declared exclusion names a scenario that exists in the canonical inventory
+
+== Golden #12 — Draft incoming not counted (§33 #12 · §2E) ==
+ok   #12 draft candidate qualificationState = EXCLUDED
+ok   #12 Gate 4 TABLE_STATUS_QUALIFIED = FAIL
+ok   #12 Gate 8 NOT_EXCLUDED_LIFECYCLE_STATE = FAIL
+ok   #12 timelyQualifiedIncoming = 0
+ok   #12 calculatedGap = 600 (canonical literal; draft does not reduce Gap)
+ok   #12 draft 200 remains visible in excluded breakdown
+ok   #12 input fixture not mutated
+
+== Golden #13 — On-time incoming covers demand (§33 #13 · §10.1) ==
+ok   #13 candidate qualificationState = QUALIFIED
+ok   #13 all ten B4-R6 gates = PASS
+ok   #13 timelyQualifiedIncoming = 200
+ok   #13 qualifiedIncomingQuantity = 200
+ok   #13 externalObservedQuantity = 200 visible separately
+ok   #13 external adapter contribution = 0
+ok   #13 LINKED_EXTERNAL_EVIDENCE_PRESENT is informational only
+ok   #13 calculatedGap = 400 (canonical literal; incoming counted once)
+ok   #13 Shipment counted once, not 400 (Gap not reduced twice to 200)
+ok   #13 input fixture not mutated
+
+== Golden #14 — Late incoming visible not covering (§33 #14 · §10.1) ==
+ok   #14 candidate qualificationState = LATE_RISK
+ok   #14 Gate 5 ETA_RESOLVED = PASS
+ok   #14 Gate 6 ETA_ON_OR_BEFORE_REQUIRED_BY = FAIL
+ok   #14 timelyQualifiedIncoming = 0
+ok   #14 lateRiskQuantity = 200
+ok   #14 qualifiedIncomingQuantity = 0
+ok   #14 calculatedGap = 600 (canonical literal; late does not reduce Gap)
+ok   #14 ETA_AFTER_REQUIRED_BY remains visible
+ok   #14 input fixture not mutated
+
+== Golden #23 — Shipment carton FLOOR (never exceeds available) (§33 #23 · §31/§2C.1) ==
+ok   #23 Raw Shippable = MIN(300,279) = 279
+ok   #23 Recommended = FLOOR(279/40)×40 = 240
+ok   #23 invariant: shipment ≤ eligible raw quantity
+ok   #23 invariant: FLOOR result is a carton multiple
+
+== Golden #24 — Order carton CEILING (covers full need) (§33 #24 · §14/§31) ==
+ok   #24 CEILING(300/40)×40 = 320
+ok   #24 CEILING(60/40)×40 = 80
+ok   #24 invariant: order covers need AND is a carton multiple
+
+== Golden #25 — Source remainder → residual uses recommended shipment (not Gap−RawSource) (§33 #25 · §31 worked example) ==
+ok   #25 ship 240
+ok   #25 residual = 300 − 240 = 60 (recommended, not raw)
+ok   #25 FORBIDDEN Gap−RawSource (=21) never produced
+ok   #25 order from residual 60 → 80
+
+== Golden #18 — Factory Stock = 0 but Production Required > 0 (§33 #18 · §31) ==
+ok   #18 source 0 → ship 0, production surfaced = full gap 300
+ok   #18 invariant: production required is surfaced (>0)
+
+== Golden #20 — Cross-company same-SKU/same-tier timely reallocation (surplus consumed once) (§33 #20 · §12/§32) ==
+ok   #20 KM: MIN(1000,1200,1200) = 1000
+ok   #20 donor surplus after KM = 200 (consumed once)
+ok   #20 ResTW: MIN(500,200,200) = 200
+ok   #20 Net Order Need = Σ remaining shortage = 0 + 300 = 300 (matches §12 literal)
+ok   #20 invariant: reallocation ≤ receiver shortage
+ok   #20 invariant: reallocation ≤ donor surplus
+ok   #20 scenario input object not mutated
+
+== Golden #26 — Preparation Date crosses month (event demand in month of Start − 30d) (§33 #26 · §10) ==
+ok   #26 2026-01-15 − 30d = 2025-12-16 (crosses year/month)
+ok   #26 event demand month = 2025-12 (exact date wins)
+ok   #26 leap-year boundary: 2028-03-30 − 30d = 2028-02-29
+
+== Golden #31 — Missing units_per_carton → Suggested Order = Calculation Blocked (no default) (§33 #31 · §14/§34) ==
+ok   #31 missing UPC → blocked (throws; no fabricated qty)
+ok   #31 UPC 0 → blocked (no default 1/12)
+ok   #31 shipment carton also blocked on invalid UPC
+
+== Golden #1 — Platform × Sales-Driven, no event — Need uses normalized Avg Sales basis (§33 #1 · §22/§29E) ==
+ok   #1 no-contamination stays on the normalized ladder (source=normalized_30d)
+ok   #1 ≥7 normal days → no warning
+ok   #1 normal_day_count = 10 (all rows, zero excluded)
+ok   #1 avg = (10×5)/10 = 5 (normalized basis)
+ok   #1 no contamination ⇒ zero excluded dates
+ok   #1 Sales-Driven Need = normalized_avg(5)×18 − 20 − 10 = 60 (uses the normalized basis)
+
+== Golden #2 — Sales-Driven, event pollutes weekly sales — event days excluded from run-rate (§33 #2 · §22.2) ==
+ok   #2 the 3 event selling dates are excluded
+ok   #2 run-rate uses the 7 NORMAL days (event days removed)
+ok   #2 avg = 5 (the 100-unit event spikes are NOT counted → no double event uplift in the run-rate)
+ok   #2 source=normalized_30d
+
+== Golden #3 — Normal days ≥7 → normalized_30d, no warning (§33 #3 · §22.3) ==
+ok   #3 normal_day_count = 8
+ok   #3 ≥7 → normalized_30d
+ok   #3 ≥7 → blank warning
+ok   #3 avg = (8×4)/8 = 4
+
+== Golden #4 — Normal days 3–6 → normalized_30d + low_sample_warning (§33 #4 · §22.3) ==
+ok   #4 normal_day_count = 5 (in 3–6 band)
+ok   #4 3–6 → normalized_30d (NOT weekly_7d)
+ok   #4 3–6 → low_sample_warning
+ok   #4 avg = (5×6)/5 = 6 (actual denominator)
+
+== Golden #5 — Normal days <3 → weekly_7d + insufficient_normal_days (§33 #5 · §22.3) ==
+ok   #5 normal_day_count = 2 (<3)
+ok   #5 <3 → weekly_7d fallback
+ok   #5 <3 → insufficient_normal_days
+ok   #5 avg = sales_units_7d(70) ÷ 7 = 10 (weekly fallback value)
+
+== Golden #6 — Platform × Forecast-Driven + Target Rule + Special Event (§33 #6 · §2D/§29F/§29G) ==
+ok   #6 targetRuleSource = sku (SKU rule highest priority)
+ok   #6 targetRulePercent = 50
+ok   #6 adjustedForecastMonth1 = 620 × 50% = 310
+ok   #6 adjustedForecastMonth2 = 560 × 50% = 280
+ok   #6 adjustedRegularForecast = 310 + 280 = 590
+ok   #6 calendar-day counts = [31, 28]
+ok   #6 forecastDailyDemand = 590 ÷ 59 = 10
+ok   #6 safetyDemand = 10 × 30 = 300
+ok   #6 specialEventDemand remains 200 (added once at 100%, not target-adjusted)
+ok   #6 totalForecastDrivenDemand = 590 + 300 + 200 = 1090
+ok   #6 forecastDrivenRemainingNeed = MAX(1090 − 300 − 200 − 100, 0) = 490
+ok   #6 committed-supply 0 → Remaining Need 590 (Approved/Committed deducted exactly once)
+ok   #6 input object unchanged
+
+== Golden #35 — 90-day window contains a joined Campaign — those dates excluded (§33 #35 · §22.2) ==
+ok   #35 the 3 campaign selling dates the SKU joined are excluded
+ok   #35 sampling continues over the remaining 7 normal days
+ok   #35 source=normalized_30d
+
+== Golden #36 — Continue sampling past the campaign gap (walk back within 90d) (§33 #36 · §22.2) ==
+ok   #36 8 normal days collected by walking earlier past the 4-day campaign gap
+ok   #36 the 4 campaign dates are excluded
+ok   #36 selection skips the campaign gap yet includes earlier normal days (walk-back, still within 90d)
+
+== Golden #37 — Another SKU NOT in that campaign — target SKU not polluted (§33 #37 · §22.2) ==
+ok   #37 a campaign the target SKU did NOT join excludes none of its days (per-SKU participation)
+ok   #37 all 6 of SKU A rows remain normal days
+ok   #37 avg reflects only SKU A's rows (=5), never SKU B's
+
+== Golden #38 — Campaign & Special Event overlap same date — excluded once (§33 #38 · §22.2) ==
+ok   #38 the doubly-covered date appears in the exclusion set exactly ONCE
+ok   #38 only one day removed (no double removal / double count)
+
+== Golden #39 — <30 normal days inside 90 days → divide by ACTUAL count (never fixed 30) (§33 #39 · §22.3) ==
+ok   #39 normal_day_count = 12 (all available; not padded to 30)
+ok   #39 avg = (12×5)/12 = 5 — actual denominator 12 (dividing by a fixed 30 would give 2)
+ok   #39 ≥7 → normalized_30d
+
+== Golden #40 — Confirmed zero-sales normal day vs missing day (§33 #40 · §22) ==
+ok   #40 confirmed zero-sales day COUNTS (3 rows incl the 0); the missing 03-26 is NOT counted
+ok   #40 avg = (6+0+6)/3 = 4 (zero in denominator; missing NOT auto-zeroed — that would give 12/4=3)
+ok   #40 the missing date never appears as an eligible day
+
+== Golden #28 — T4 visible, no allocation/payload (§33 #28 · §27/§27A) ==
+ok   #28 Engine B T4 display-only: visible=true, allocationEligible=false, payloadEligible=false (monthDelta=4)
+
+== Golden #33 — Engine A bucket boundary sweep (§33 #33 · §26/§27A) ==
+ok   #33 daysOut 2025-12-31 → -1
+ok   #33 Engine A bucket 2025-12-31 → 0–18d
+ok   #33 daysOut 2026-01-01 → 0
+ok   #33 Engine A bucket 2026-01-01 → 0–18d
+ok   #33 daysOut 2026-01-19 → 18
+ok   #33 Engine A bucket 2026-01-19 → 0–18d
+ok   #33 daysOut 2026-01-20 → 19
+ok   #33 Engine A bucket 2026-01-20 → 19–30d
+ok   #33 daysOut 2026-01-31 → 30
+ok   #33 Engine A bucket 2026-01-31 → 19–30d
+ok   #33 daysOut 2026-02-01 → 31
+ok   #33 Engine A bucket 2026-02-01 → 31–45d
+ok   #33 daysOut 2026-02-15 → 45
+ok   #33 Engine A bucket 2026-02-15 → 31–45d
+ok   #33 daysOut 2026-02-16 → 46
+ok   #33 Engine A bucket 2026-02-16 → 46–90d
+ok   #33 daysOut 2026-04-01 → 90
+ok   #33 Engine A bucket 2026-04-01 → 46–90d
+ok   #33 daysOut 2026-04-02 → 91
+ok   #33 Engine A bucket 2026-04-02 → >90d
+ok   #33 >90d Engine A visible = true
+ok   #33 >90d Engine A allocationEligible = false
+
+== Golden #21 — Different SKUs cannot reallocate (Same-Master-SKU gate) (§33 #21 · §32A) ==
+ok   #21 different Master SKU → eligible=false (tier ordering true, identity gate false)
+ok   #21 input object unchanged (pure predicate)
+
+== Golden #22 — Later surplus cannot cover earlier shortage (Engine B tier ordering) (§33 #22 · §32A) ==
+ok   #22 later donor (T3) → earlier receiver (T1) → ineligible (later cannot cover earlier)
+ok   #22 earlier donor (T1) → later receiver (T3) → eligible (earlier/same-tier may cover same/later)
+ok   #22 both controlled inputs unchanged (pure predicate)
+
+== Golden #29 — Missing / stale snapshot → MISSING_SNAPSHOT / STALE_SNAPSHOT (never 0) (§33 #29 · §34A) ==
+ok   #29 missing snapshot → MISSING_SNAPSHOT, calculation blocked (never 0)
+ok   #29 stale snapshot (10>7) → STALE_SNAPSHOT, warn-and-proceed (never 0)
+
+== Golden #30 — Missing Forecast (forecast-driven SKU) → MISSING_FORECAST (never 0) (§33 #30 · §34A) ==
+ok   #30 forecast-driven + forecast missing → MISSING_FORECAST, calculation blocked (never 0)
+
+== Golden #15 — Delivered-not-received (never becomes Current Stock) (§33 #15 · §30) ==
+ok   #15 one physical pool
+ok   #15 delivered-not-received bucket = 100
+ok   #15 delivered does NOT become Current Stock
+ok   #15 delivered contributes as supply once (100), non-current-stock
+
+== Golden #16 — Receipt posted (received/current, no duplicate supply) (§33 #16 · §30) ==
+ok   #16 received-not-reflected = 100
+ok   #16 receipt-posted lineage counted once (100)
+ok   #16 posted current-stock counted once (100)
+
+== Golden #17 — Same supply lifecycle counted once (never 200/300) (§33 #17 · §30) ==
+ok   #17 single-bucket lineage = 100 (count once)
+ok   #17 same lineage in two buckets → blocked
+ok   #17 reason = SUPPLY_LINEAGE_CONFLICT
+ok   #17 conflict blocks rather than counting 200/300
+
+== Golden #27 — Multiple Special Events same month (stable event-ID count-once) (§33 #27 · §10/§29E) ==
+ok   #27 two distinct events remain two entries
+ok   #27 distinct events summed (500)
+ok   #27 duplicate copy of one event counts once (300)
+ok   #27 same eventId conflicting qty → blocked
+ok   #27 event conflict contributes 0
+
+== Golden #32 — One Master SKU, many Marketplaces (physical pool counted once) (§33 #32 · §23) ==
+ok   #32 one physical pool (marketplace excluded from identity)
+ok   #32 physical pool counted once (1000, not 3000)
+ok   #32 conflicting snapshots → PHYSICAL_POOL_QTY_CONFLICT
+ok   #32 conflicting pool contributes 0 (not summed/picked)
+
+== Golden #7 — Overseas NORMAL_ALLOCATION (weighted after survival) (§33 #7 · §20/§24) ==
+ok   #7 mode NORMAL_ALLOCATION
+ok   #7 A survival+weighted = 600 (capped)
+ok   #7 B absorbs cap overflow = 400
+ok   #7 pool fully used
+ok   #7 demand conservation
+ok   #7 supply conservation
+
+== Golden #8 — Overseas PROTECTED_REALLOCATION (18-day floor preserved) (§33 #8 · §20/§24) ==
+ok   #8 mode PROTECTED_REALLOCATION
+ok   #8 low-weight receiver B reaches its 18-day floor 200 (pure-weight would starve it)
+ok   #8 donor A never drops below its own survival floor 100
+ok   #8 pool conserved
+ok   #8 protection reason present
+
+== Golden #9 — Overseas SHORTAGE_ALLOCATION (deterministic largest-remainder) (§33 #9 · §24.5–24.7) ==
+ok   #9 mode SHORTAGE_ALLOCATION
+ok   #9 higher-priority A weighted share 100
+ok   #9 lower-priority B weighted share 50 (not dropped)
+ok   #9 no lost or duplicated units (Σ = pool 150)
+
+== Golden #10 — FBA Current Stock vs 3PL reserve separation (§33 #10 · §24.9) ==
+ok   #10 THREE_PL receiver draws only THREE_PL (records preserve source type)
+ok   #10 FBA pool untouched (never merged into THREE_PL)
+ok   #10 no quantity double count (supply conservation)
+
+== Golden #11 — Platform site participates in 3PL reserve (§33 #11 · §24.9) ==
+ok   #11 platform receiver receives a THREE_PL reserve allocation
+ok   #11 reserve source stays THREE_PL (FBA not reclassified/merged)
+ok   #11 reserve reason THREE_PL_REPLENISHMENT_RESERVE
+
+== Golden #19 — Factory quantity allocated once (deterministic FIFO) (§33 #19 · §35) ==
+ok   #19 earliest Required-By (KM) consumes first = 80
+ok   #19 later Required-By (ResearchUS) gets remainder = 20
+ok   #19 each factory unit allocated exactly once (Σ = pool 100)
+ok   #19 demand conservation
+ok   #19 factory FIFO reason
+
+== Cross-scenario invariants ==
+ok   all executable outputs finite
+ok   all non-negative-domain outputs ≥ 0
+ok   determinism: repeated execution returns identical result
+
+§33 GOLDEN BASELINE:
+39/39 APPLICABLE scenarios EXECUTED_EXISTING_CORE and PASSED
+1/40 canonical scenarios downstream-owned (not executed here)
+0/40 scenarios reported as CANONICAL-BLOCKED
+
+Canonical inventory: 40
+Allocation Runtime applicable: 39
+Allocation Runtime executed: 39
+Downstream-owned exclusions: 1
+Excluded scenario: #34
+Downstream owner: §37
+Downstream owner (full): §37 Downstream Request Order / PO / UI / Persistence E2E Acceptance
+Exclusion authority: SUPPLY_PLANNING_CALCULATION_RULES.md §40.17 (frozen)
+
+Scenario inventory count = 40
+Executed scenario count = 39
+Pending implementation count = 1
+Assertion count = 202
+
+ok   OA14 every applicable scenario ACTUALLY RAN — being in the list is not the same as being executed
+RESULT:
+ALLOCATION_RUNTIME_COMPLETE
+Allocation Runtime scope: 39/39 applicable scenarios executed and passed
+Canonical §33 inventory remains 40, with 1 downstream-owned exclusion(s) tracked under §37.
+§37 downstream E2E acceptance is reported SEPARATELY and is NOT claimed here.
+
+passed 203  failed 0

@@ -1,0 +1,204 @@
+
+=== §A  THE CHAIN: accessor -> pricing adapter -> live adapter -> contract -> selectors ===
+  ok   A1 a READY response yields the analysable state
+  ok   A2 and every row of that site
+  ok   A3 every adapted row satisfies all 23 contract fields, field for field
+  ok   A4 and there were rows to check
+  ok   A5 the selectors consume them without a shim
+  ok   A6 all 44 are eligible on their own site
+  ok   A7 and membership is still marketplace_skus, not the price table
+  ok   A8 every identity is MSKU:<marketplace_sku_id>
+  ok   A9 and not one fixture-form identity survives
+
+=== §B  THE MEASURED UNIVERSE (P1-B3 live evidence, FP0d88b7eb) ===
+  ok   B1 495 marketplace_skus rows
+  ok   B2 10 sites
+  ok   B3 13 categories
+  ok   B4 43 series
+  ok   B5 6 currencies
+  ok   B6 every marketplace_skus row is active, as measured
+  ok   B7 zero duplicate marketplace identities
+  ok   B8 more than the three categories the old UI could hold
+  ok   B9 and blank/unknown lands in Unmapped / Needs Review rather than being merged away
+  ok   B10 no site sells in two currencies
+
+=== §C  THE 61 MISSING REGIONAL DETAILS: counted, named, and NOT plotted ===
+  ok   C1 all 61 are ELIGIBLE — membership is marketplace_skus, and a missing Regional Detail does not un-list a SKU
+  ok   C2 and NOT ONE of them is chartable
+  ok   C3 all 61 appear in the Data Quality ledger
+  ok   C4 stated as data: regional presence never decided membership
+  ok   C5 and names each one by its live identity
+  ok   C6 and the other nine sites have none — the gap is one site, not a spread
+  ok   C7 as the live log recorded
+
+=== §D  A MISSING PRICE IS NOT A ZERO ===
+  ok   D1 nulls do not make a response unreadable
+  ok   D2 a missing regular_price stays null
+  ok   D3 a missing minimum_price stays null
+  ok   D4 a missing msrp stays null
+  ok   D5 and not one of them became 0 — a zero is a price, and a free product is a finding
+  ok   D6 the no-price row is in the ledger
+  ok   D7 and it is not plotted, while the other two are
+  ok   D8 cents(null) is null
+  ok   D9 while cents(0) is 0 — the two are different facts
+
+=== §E  SIX CURRENCIES, NEVER POOLED ===
+  ok   E1 two currencies produce at least two panels, never one
+  ok   E2 and each panel names its currency
+  ok   E3 no panel holds two currencies
+  ok   E4 the contract names the refusal rather than leaving it to a renderer
+  ok   E5 two sites share one currency
+  ok   E6 and not one non-US row is eligible on the US site
+  ok   E7 MX rows offered to the US site are all excluded, USD or not
+  ok   E8 every one of them named NOT_LISTED_ON_THIS_SITE
+  ok   E9 stated as data on the universe itself
+
+=== §F  THE SOURCE-STATE MATRIX: exactly one state yields rows ===
+  ok   F1 four servable states, frozen by P1-B3
+  ok   F2 and the fifth is the client's alone
+  ok   F3.1 SOURCE_EMPTY is carried through, not translated
+  ok   F4.1 and it yields ZERO rows even though rows arrived
+  ok   F5.1 and forbids analysis
+  ok   F6.1 with no fixture in its place
+  ok   F3.2 SOURCE_PARTIALLY_READABLE is carried through, not translated
+  ok   F4.2 and it yields ZERO rows even though rows arrived
+  ok   F5.2 and forbids analysis
+  ok   F6.2 with no fixture in its place
+  ok   F3.3 STOP_DATA_INTEGRITY is carried through, not translated
+  ok   F4.3 and it yields ZERO rows even though rows arrived
+  ok   F5.3 and forbids analysis
+  ok   F6.3 with no fixture in its place
+  ok   F7 partially-readable stops rather than degrading
+  ok   F8 while an empty source is information — it was read, and it is empty
+  ok   F9 a server-sent client-only state is not believed
+  ok   F10 and yields nothing
+  ok   F11 a response with no sourceState is not SOURCE_EMPTY
+  ok   F12 an unfrozen state is a shape problem
+  ok   F13 and stops
+  ok   F14 across the whole matrix, exactly ONE state permits analysis
+
+=== §G  FAIL CLOSED: the capability, and a shape this build never read ===
+  ok   G1 a disabled feature is its own state
+  ok   G2 with no rows
+  ok   G3 and it did not connect
+  ok   G4.1 contract version 1 stops
+  ok   G5.1 and draws nothing
+  ok   G4.2 contract version 3 stops
+  ok   G5.2 and draws nothing
+  ok   G4.3 contract version 99 stops
+  ok   G5.3 and draws nothing
+  ok   G6 version 2 is the one this build reads
+  ok   G7 as the adapter declares
+  ok   G8 a shape problem outranks a source state read out of that shape
+  ok   G9 a row missing a required field is a refusal, not a blank column
+  ok   G10 and nothing is drawn from it
+  ok   G11 and the refusal names the field
+
+=== §H  NO FIXTURE FALLBACK ANYWHERE ON THE PRODUCTION PATH ===
+  ok   H1.1 the live adapter does not name PSB_PREVIEW
+  ok   H1.2 the live adapter does not name PreviewProductStrategyDataAdapter
+  ok   H1.3 the live adapter does not name StressProductStrategyDataAdapter
+  ok   H1.4 the live adapter does not name preview-fixture
+  ok   H2.1 nor does the production page
+  ok   H2.2 nor does the production page
+  ok   H2.3 nor does the production page
+  ok   H2.4 nor does the production page
+  ok   H3 and the production partial loads no fixture script
+  ok   H4 provenance: fixture_fallback false
+  ok   H5 provenance: preview_fallback false
+  ok   H6 and live prices say where they came from
+  ok   H7 the contract states it too
+  ok   H8 and so does the page
+  ok   H9 no non-OK state produced a single row
+
+=== §I  THE STRESS FIXTURE IS UNREACHABLE FROM PRODUCTION ===
+  ok   I1 the production page has no developer-mode hook
+  ok   I2 nor does the live adapter
+  ok   I3 and the partial offers no stress control
+  ok   I4.1 the page never reads location.search
+  ok   I5.1 and neither does the live adapter
+  ok   I4.2 the page never reads URLSearchParams
+  ok   I5.2 and neither does the live adapter
+  ok   I4.3 the page never reads location.href
+  ok   I5.3 and neither does the live adapter
+  ok   I4.4 the page never reads window.location
+  ok   I5.4 and neither does the live adapter
+  ok   I6 the release installs the board — the controller is loaded and a mount point exists
+  ok   I6a and nothing in index.html can show it: there is no menu item
+  ok   I7 app.js declares the section in the staged registry with a literal boolean switch
+  ok   I7a and in BOTH section maps — the lifecycle one that mounts it and the display one that reveals it
+  ok   I7b with the registry consulted BEFORE either map is read, so no map entry bypasses the switch
+  ok   I8 which the page states as its own contract
+  ok   I8a and it states the other half too — installed is not activated
+
+=== §J  THE SCENARIO STAYS IN MEMORY, AND THE PAGE WRITES NOTHING ===
+  ok   J1.1 neither production file touches localStorage
+  ok   J1.2 neither production file touches sessionStorage
+  ok   J1.3 neither production file touches indexedDB
+  ok   J1.4 neither production file touches document.cookie
+  ok   J2.1 nor XMLHttpRequest
+  ok   J2.2 nor navigator.sendBeacon
+  ok   J2.3 nor google.script.run
+  ok   J3 the live adapter exposes one asynchronous entry point
+  ok   J4 but never touches the transport — the accessor owns the wire
+  ok   J5 stated as contract
+  ok   J6 and so is the URL rule
+
+=== §K  THE PROMOTION: one copy of every rule, and production owns it ===
+  ok   K1.1 assets/js/product-strategy/psb-data-contract.js exists
+  ok   K1.2 assets/js/product-strategy/psb-selectors.js exists
+  ok   K1.3 assets/js/product-strategy/psb-chart-layout.js exists
+  ok   K1.4 assets/js/product-strategy/psb-board-ui.js exists
+  ok   K1.5 assets/js/product-strategy/km-product-strategy-live-adapter.js exists
+  ok   K2.1 and no copy of data-contract.js is left in the prototype
+  ok   K2.2 and no copy of selectors.js is left in the prototype
+  ok   K2.3 and no copy of chart-layout.js is left in the prototype
+  ok   K2.4 and no copy of prototype.js is left in the prototype
+  ok   K2.5 and no copy of prototype.css is left in the prototype
+  ok   K3 the prototype owns exactly two files, and production must have neither
+  ok   K3a the shim is scoped to .psb-page rather than :root
+  ok   K3b and says so where somebody about to link it from index.html would read it
+  ok   K4 the live adapter fills the seam the contract reserved, rather than adding a second one
+  ok   K5 and the reserved stub itself stays disabled — it is a definition, not a second adapter
+  ok   K6 the board accepts an injected adapter
+  ok   K7 and can defer its own boot for a host that must fetch first
+
+=== §L  THE PRODUCTION PAGE: four steps, and no fifth ===
+  ok   L1 a complete scope is complete
+  ok   L2.1 two of three is not a narrower question
+  ok   L2.2 two of three is not a narrower question
+  ok   L2.3 two of three is not a narrower question
+  ok   L2.4 two of three is not a narrower question
+
+=== §M  `scratchpad/dryrun/wrapper.gs` — the on-sight audit (§9) ===
+  ok   M1 no wrapper.gs exists anywhere in the repository
+  ok   M2 and nothing in the repository references the dry-run wrapper by name
+  ok   M3 the removal tool it wrapped is named here only as a string, never called
+
+=== §N  MUTANTS — the paths where being wrong is worst ===
+  ok   N1 a partially-readable source is allowed to draw what it did see (caught)
+  ok   N2 an integrity stop still yields rows (caught)
+  ok   N3 a schema version this build never read is adapted anyway (caught)
+  ok   N4 a missing sourceState is read as an empty source (caught)
+  ok   N5 a state nobody froze is believed (caught)
+  ok   N6 the row shape check is skipped, so a renamed field becomes a blank column (caught)
+  ok   N7 may_analyse is true wherever rows happen to exist (caught)
+  ok   N8 provenance claims live prices for a refused read (caught)
+  ok   N9 the source state is re-derived from the row count instead of read (caught)
+  ok   N10 the schema check runs AFTER the source state, so a bad shape reports a source verdict (caught)
+  ok   N12 an incomplete scope is sent anyway and the server is asked to refuse it (caught)
+  ok   L3 a disabled capability is answered without a request
+  ok   L4 and NO request was sent — the mirror is asked first
+  ok   L5 nothing is mounted
+  ok   L6 an incomplete scope stops before the wire
+  ok   L7 and still no request — the scope is checked locally
+  ok   L8 the site universe has a named read owner
+  ok   L8a and the recorded gap is closed
+  ok   L9 and it is the SAME Product Pricing owner — not a second marketplace_skus authority
+  ok   L9a the universe is read before the workspace, never the other way round
+  ok   L9b and the universe is never reverse-engineered from a site-scoped answer
+  ok   N11 the page asks the server before it asks the capability mirror (caught)
+
+====================================================================================================
+passed 160  failed 0  |  mutants caught 12  survived 0
+====================================================================================================

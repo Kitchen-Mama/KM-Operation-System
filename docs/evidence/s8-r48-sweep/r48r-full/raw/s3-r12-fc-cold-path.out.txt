@@ -1,0 +1,92 @@
+
+=== A — §2 THE TWO LISTS, WHICH IS WHERE THE WHOLE DIFFERENCE LIVES ===
+  ok   A1  the Regular path still declares two tables
+  ok   A2  the Special path declares no table R12 did not — a CLOSED SET, members may leave, none may join
+  ok   A2a and fc_special_events is gone by name, not merely reordered
+  ok   A2b and it is not vacuously empty — the builder still declares what it genuinely reads on open
+  ok   A3  Regular is contained in Special — a Special load always satisfies Regular
+  ok   A4  the events slice declares exactly fcSpecialEvents
+
+=== B — THE SOURCE GUARD, EXECUTED AGAINST ITS FOUR DEPENDENCIES ===
+  ok   B1  event path + missing key -> the source IS missing
+  ok   B1a and the EVENTS slice is what gets fetched
+  ok   B2  a model that already holds the key is not missing
+  ok   B2a and NOTHING is fetched — the warm path stays at zero requests
+  ok   B3  the Regular path does not need the events slice
+  ok   B3a and does not fetch it
+  ok   B4  legacy mode: not missing, because there is no model
+  ok   B4a and no slice is fetched in legacy mode
+  ok   B5  an event open settles the tables, the Base FC slice and the events slice
+  ok   B5a a Regular open settles the tables and Base FC only
+  ok   B5b warm model -> only the table latch runs, and it is itself latched
+  ok   B6  the three run under one Promise.all rather than in sequence
+
+=== C — §3/§4 WHAT DOMINATES, AND WHAT WAS RULED OUT ===
+  ok   C1  the whole six-table set normalizes in well under a second at large scale
+  ok   C1a and the cost scales with volume, as expected
+  ok   C2  so CLIENT_NORMALIZATION is excluded by measurement, and the reads are named instead
+  ok   C3  two of the six tables are fetched cold and their getters are never called
+  ok   C3a while campaigns IS read at open, so it stays
+  ok   C3b and the events rows ARE read at open — which is why they were re-homed, not dropped
+  ok   C3c and the evidence records that removing them is a DEFERRAL, hence operator territory
+  ok   C4  the scoped read pool is two lanes
+  ok   C4a so six tables were three sequential rounds on a true cold open
+
+=== D — §12 PRE -> POST, AND §7 THE WARM SEAL ===
+  ok   D1  PRE: the Special cold path read fc_special_events as a full table
+  ok   D1a POST: it does not
+  ok   D1b POST: the scoped events slice is read instead
+  ok   D2  the existing-event picker does NOT report "could not be read"
+  ok   D2a it is not disabled
+  ok   D2b and no unavailability note is shown
+  ok   D2c and it is byte-for-byte what it was before the change
+  ok   D3  SPECIAL_WARM_REQUEST_COUNT = 0
+  ok   D3a REGULAR_WARM_REQUEST_COUNT = 0
+  ok   D4  the Regular cold path issues exactly what it did before
+  ok   D4a in the same number of rounds
+  ok   D5  no duplicate request on the Special cold path
+  ok   D5a nor on the Regular one
+  ok   D6  the Special request COUNT is unchanged — this round traded a scan for a scoped read
+  ok   D6a and so is the round count
+
+=== E — §8 THE SKU REGIONAL TIMEOUT: THE CAUSE IS NOT REPRODUCIBLE, THE RECOVERY IS SEALED ===
+  ok   E1  SKU_REGIONAL_TIMEOUT_REPRODUCED = NO, stated rather than implied
+  ok   E1a with the reason it cannot be, not an apology
+  ok   E2  exactly one read was stalled past its budget
+  ok   E2a the page shows a Retry rather than waiting for ever
+  ok   E2b and NAMES the failure
+  ok   E2c including the budget it exceeded
+  ok   E3  PERMANENT_LOADING_COUNT = 0 — no skeleton is left on screen
+  ok   E3a and no request is left open, so the timeout settled its own registry row
+  ok   E3b nothing stale was committed in place of the answer
+  ok   E4  Retry issues exactly ONE read — not a replay storm
+  ok   E4a and it recovers: the master list renders
+  ok   E4b with no skeleton left behind
+  ok   E4c and nothing still open afterwards
+
+=== F — THE INSTRUMENT, AND THE TWO FAULTS THAT WOULD HAVE HIDDEN THIS ROUND ===
+  ok   F1  the fixture answers one key set per slice
+  ok   F1a and says why, because the old fixture hid this round entirely
+  ok   F2  both harness faults are recorded, not quietly fixed
+  ok   F2a including the one that made _fcEnsureEventSource_ unobservable
+  ok   F3  the runner can stall one named read past its budget
+  ok   F4  and counts broad-cache getter calls, which is how C3 was established
+  ok   F5  and derives READ ROUNDS from sent/settled marks
+  ok   F6  the §11 variant is marked measured-and-reverted
+  ok   F6a and explicitly not shipped
+  ok   F6b it measured at ONE round against the shipped two
+  ok   F6c and fewer requests, which is the number the proposal carries
+  ok   F6d the §11 variant left this round as a DECISION for the operator, not as shipped code
+
+=== J — MUTANTS ===
+  ok   J1 the event-path check is removed KILLED
+  ok   J2 the already-loaded check is removed KILLED
+  ok   J3 the workspace-mode check is removed KILLED
+  ok   J4 the Base FC slice is fetched instead of the events slice KILLED
+  ok   J5 the events source is not awaited with the others KILLED
+  ok   J6 the broad table is restored to the list KILLED
+  mutants: 6 killed, 0 survived, 0 harness errors
+  ok   J   every planted defect was caught
+
+PASS  68 passed, 0 failed
+SPECIAL_COLD_ROOT_CAUSE = READ VOLUME AND READ ROUNDS, NOT CLIENT WORK · BROAD fc_special_events REMOVED · WARM = 0 REQUESTS · CRITICAL_SECONDARY_LAZY = OPERATOR DECISION

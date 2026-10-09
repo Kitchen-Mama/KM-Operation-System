@@ -1,0 +1,45 @@
+
+-- C1: HTML — every fc-dropdown panel replaced by a shared-component mount --
+ok   C1: mount present — company
+ok   C1: mount present — marketplace
+ok   C1: mount present — country
+ok   C1: mount present — category
+ok   C1: mount present — series
+ok   C1: mount present — event
+ok   C2: old fc-dropdown trigger/panel/checkbox DOM removed from HTML
+ok   C3: Year <select> + SKU free-text unchanged (not migrated)
+
+-- C4: single owner — KM.ui.multiFilter, array state, no old checkbox owners --
+ok   C4: filters created via KM.ui.multiFilter.create
+ok   C5: multi-value array state for all six dimensions
+ok   C6: positive-inclusion semantics (emptyMeansAll:false — none = show nothing)
+ok   C7: old toggleFcAll / updateFcFilter / updateFcFilterText owners removed
+ok   C8: old _rebuildFcPanel owner removed
+ok   C9: getFcFilters reads the shared-component state (not DOM checkboxes)
+ok   C10: onChange writes selection into the single state
+ok   C11: state re-synced after setOptions prunes invalid selections
+
+-- C12: NON-CASCADING preserved — each dimension = full distinct set from the dataset --
+ok   C12: non-cascading design documented in source
+ok   C13: no faceted-cascade recompute functions defined (re-introduced)
+ok   C14: _fcSyncFilterOptions builds option universes once per load
+ok   C15: the option universe goes through one resolver, not six spellings
+ok   C15a: which prefers the server-derived complete set and falls back to distinct() over the rows
+ok   C15b: Company options = full distinct set of the dataset (not narrowed by other filters)
+ok   C15c: and the facet is never intersected with the current selection — that would be cascading
+
+-- C16..: EXECUTABLE predicate — filterFcRegular positive-inclusion OR/AND/none --
+ok   C16: all dimensions fully selected → all rows
+ok   C17: empty company selection → show nothing (none = none, NOT all)
+ok   C18: Company OR-set [ResTW] only
+ok   C19: Company AND Country (cross-filter AND)
+ok   C20: Country OR-set within a single company
+ok   C21: SKU contains ANDs with the dimension filters
+ok   C22: year filter excludes non-matching year
+
+-- C23: EXECUTABLE predicate — filterFcEvent uses events list membership --
+ok   C23: both events selected → both rows
+ok   C24: Event OR-set [BFCM] only
+ok   C25: empty event selection → show nothing
+
+ALL PASS (33 assertions)

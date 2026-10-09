@@ -1,0 +1,139 @@
+
+== A. THE DECISION, FROZEN IN PART VI ==
+ok   A0 PART VI exists in the mainline contract
+ok   A0a and it follows PART V rather than replacing it
+ok   FROZEN D_S6_IMPORT_AVAILABLE_SEMANTIC = GROSS          STATUS = FROZEN  — the operator decision
+ok   FROZEN IMPORT_AVAILABLE_FORMULA = S - R
+ok   FROZEN IMPORT_WRITES_RESERVED = NO
+ok   FROZEN ALLOCATABLE_OVERSEAS_QTY = wh_available_stock        (NOT available - reserved)
+ok   FROZEN SOURCE_AVAILABLE_SEMANTIC = gross, source-reported, BEFORE KM reservation
+ok   FROZEN CANONICAL_AVAILABLE_SEMANTIC = operational, AFTER KM reservation has moved units out of it
+ok   FROZEN KM_RESERVATION_AUTHORITY_COUNT = 1          OWNER = the S6-R4B reservation lifecycle
+ok   FROZEN IMPORTER_IS_RESERVATION_OWNER = NO
+ok   FROZEN RECEIVING_IS_RESERVATION_OWNER = NO
+ok   FROZEN EXTERNAL_SOURCE_IS_RESERVATION_OWNER = NO
+ok   FROZEN IMPORT_TEMPLATE_DECISION = A — REMOVE `reserved_stock` FROM THE SHIPPED TEMPLATE
+ok   FROZEN TEMPLATE_REMOVAL_IS_SUFFICIENT = NO
+ok   FROZEN EXISTING_TOKEN_REUSED = NO   (surveyed; no equivalent)
+ok   FROZEN BUSINESS_DECISION_BEYOND_GROSS_REQUIRED = NO
+ok   FROZEN S6_IMPORT_SEMANTIC_FREEZE = YES
+ok   FROZEN UNRESOLVED_IMPORT_DECISION_COUNT = 0
+ok   FROZEN OPEN_S6_BLOCKERS = NONE
+ok   FROZEN S6_R4_RUNTIME_IMPLEMENTATION_AUTHORIZED = YES
+ok   FROZEN BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
+ok   A1 PART VI states in prose that GROSS is NOT wh_physical_stock
+ok   A2 and no token in PART VI moves the availability authority onto physical
+ok   A3 the frozen arithmetic names physical only to say it is untouched
+ok   A4 §34's original OPEN gate line is still present — history is not rewritten
+ok   A5 and it carries a pointer to the round that resolved it
+ok   A6 §39's NO is annotated as superseded rather than edited to YES
+ok   A7 §34's three-option table is intact, so the decision can still be audited against its alternatives
+ok   A8 PART VI declares a real token set
+ok   A9 no token contradicts an earlier, un-annotated declaration
+ok   A9a and with the supersession annotations removed it DOES fire — the exemption is doing work
+
+== B. THE REFERENCE MODEL — built from §41/§43/§44/§45 and nothing else ==
+ok   A(§11) new row, source 100 -> available 100 / reserved 0
+ok   B(§11) existing 100/0, source 100 -> 100/0 (S - 0 is the SAME rule, not a special case)
+ok   C(§11) existing 70/30, source 100 -> 70/30 — GROSS: the source figure COUNTS the reserved units
+ok   D(§11) reserved OMITTED -> 70/30; missing NEVER means zero
+ok   E(§11) reserved BLANK -> 70/30; blank must NOT become 100/0
+ok   F(§11) reserved EXPLICITLY 0 -> 70/30; an import saying zero does not erase a KM reservation
+ok   G(§11) existing 0/100, source 100 -> 0/100; S - R = 0 is allowed, and nothing is allocatable
+ok   H(§11) existing 70/30, source 20 -> REFUSED, and NOT ONE FIELD of the canonical row moved
+ok   H1 no negative available was written
+ok   H2 reserved was not silently reduced to fit
+ok   H3 available was not silently clamped to 0
+ok   H4 physical was not invented or adjusted to balance the books
+ok   I(§11) the same import repeated three times is idempotent — no drift
+ok   I1 because the import ASSIGNS S - R rather than adjusting the stored value
+ok   J(§11) reserve -> import -> release returns exactly to 100/0
+ok   J1 and the import moved no units in or out of the system
+ok   K(§11) reserve -> import -> dispatch leaves 70/0; dispatch consumes from reserved only
+ok   K1 and the system lost exactly the dispatched quantity — no more, no less
+ok   K2 physical took no part in any of it (§31/§41)
+
+== C. THE PAYLOAD'S reserved IS NOT READ AT ALL ==
+ok   C1 five different reserved payloads produce ONE outcome — the field is ignored, not preferred
+ok   C2 and the model never mentions payload.reserved, so there is no path by which it could be read
+ok   C3 a NEW row does not inherit a source-reported reserved — KM would own a reservation it never made
+
+== D. THE GUARD IS ORDERED BEFORE THE SUBTRACTION ==
+ok   D1 the refusal is positioned before every subtraction in the model
+ok   D2 and no clamp expression exists to be reached
+ok   D3 a max(0, S - R) model ACCEPTS the contradiction and writes 0 available; the frozen model refuses it
+ok   D4 and the contract states the clamp is unreachable
+ok   D5 naming the guard, not the floor, as the frozen thing
+
+== E. SCHEMA GATE — the decision asks for a meaning, not a column ==
+ok   FROZEN NEW_TABLE_REQUIRED = NO        SCHEMA_EXTENSION_REQUIRED = NO
+ok   FROZEN DB_MIGRATION_REQUIRED = NO     NEW_COLUMNS_REQUIRED = NONE
+ok   FROZEN BACKFILL_REQUIRED = NO         TABLES_AFFECTED = NONE
+ok   FROZEN DB_CHANGE_DECISION_REQUIRED = NO
+ok   FROZEN COLUMN_RENAME_IN_THIS_ROUND = NO
+ok   E1 and BACKFILL = NO is REASONED: with R = 0 everywhere, S - R === S and no historical row is mis-stated
+
+== F. LIVE — the SHIPPED server importer. R4B LANDED; these record the REPAIR. ==
+ok   F1 [R4B] the importer now stores S - R: 70/30 survives a refresh reporting 100. Before R4B this assertion read [true, 100, 0] — the reservation erased, with success:true and no warning.
+ok   F2 [R4B] the §45 contradiction is REFUSED and the row is untouched. Before R4B this read [20, 0] — 20 written over a 30-unit reservation with no error at all.
+ok   F2a and the refusal carries the token §45 froze
+ok   F3 [R4B] the server now keeps PRESENCE — a blank or absent quantity writes nothing. Before R4B the collapse site read `if (sv === '') { qtyVals[f] = 0; continue; }` and all three intents were one.
+ok   F4 [R4B] and wh_reserved_stock has LEFT the writable set entirely
+ok   F5 [R4B] the unconditional four-field write is GONE from the UPDATE branch
+ok   F5a replaced by a presence-gated write of three fields, with the GROSS subtraction on available
+ok   F6 [R4B] and the refusal token now exists in the handler — R4B paid what it owed
+
+== G. LIVE — the SHIPPED client and template. R4B LANDED; these record the REPAIR. ==
+ok   G1 [R4B] reserved_stock is no longer materialised onto the payload
+ok   G2 [R4B] an absent column and a blank cell are now OMITTED rather than sent as 0, so the distinction reaches the server at all. Before R4B both took the `qtyObj[f] = 0` path.
+ok   G3 [R4B] the shipped template no longer offers a reserved_stock column
+ok   G4 [R4B] and "Blank = 0." is gone from every column comment, replaced by what the server does
+ok   G5 PART VI removes the column from the template
+ok   G6 and rewrites the blank comment
+ok   G7 and states that removal alone does not close the hazard — an operator-built file may still carry the column
+ok   G8 naming the reason: the client matches headers, so the template does not bound what a file can contain
+
+== H. OWNERSHIP AND THE AUTHORIZATION BOUNDARY ==
+ok   FROZEN IMPORTER_CLIENT_NORMALIZATION_OWNER = assets/js/pages/overseas-stock.js
+ok   FROZEN IMPORTER_SERVER_WRITE_OWNER = 05_overseas_inventory_handlers.gs
+ok   FROZEN SECOND_RESERVATION_LIFECYCLE = NONE
+ok   FROZEN SECOND_AVAILABILITY_CALCULATION_PATH = NONE
+ok   FROZEN RECOMMENDATION_RESERVES_INVENTORY = NO
+ok   FROZEN SCHEDULED_CALCULATION_RESERVES_INVENTORY = NO
+ok   FROZEN AUTO_CREATE_SHIPMENT = NO   AUTO_SUBMIT_SHIPPING_PLAN = NO
+ok   FROZEN REQUEST_ORDER_TOUCHED = NO  PO_TOUCHED = NO
+ok   FROZEN S5_S6_AUTHORITY_SEPARATION = INTACT
+ok   H1 the named client owner exists
+ok   H2 the named server owner exists
+ok   H3 and R3A's count of two protection owners still stands
+ok   H4 the server importer carries no R3B implementation — this is a decision round
+ok   H5 nor does the client — R4B implements, R3B decides
+
+== I. VOCABULARY ==
+ok   FROZEN NEW_TOKENS_ADDED = 1
+ok   FROZEN NAMING_CONVENTION_SOURCE = 05_'s own IMPORT_* row/scope refusal prefix
+ok   I1 the IMPORT_* convention the new token follows is real and lives in the same file
+ok   I2 the survey that rejected the existing tokens is recorded, not merely claimed
+ok   I3 and exactly one new token is named
+ok   I4 the refusal is row-level so one bad SKU cannot fail a whole refresh
+
+== J. MUTANTS — one per §11 hazard ==
+ok   MUTANT CAUGHT — missing -> 0 collapse (the canonical reserved is replaced by an absent payload field)
+ok   MUTANT CAUGHT — blank -> 0 collapse
+ok   MUTANT CAUGHT — reserved OVERWRITTEN from the payload
+ok   MUTANT CAUGHT — source available copied directly, without subtracting the canonical reserved
+ok   MUTANT CAUGHT — double subtraction — the STORED available is adjusted instead of being set from S
+ok   MUTANT CAUGHT — conflict silently clamped instead of refused
+ok   MUTANT CAUGHT — physical enters the arithmetic
+ok   MUTANT CAUGHT — the refusal mutates the row before returning
+ok   MUTANT CAUGHT — the new-row case gets its own rule and inherits the source reserved
+
+== SUMMARY ==
+
+D_S6_IMPORT_AVAILABLE_SEMANTIC = GROSS   S6_IMPORT_SEMANTIC_FREEZE = YES
+IMPORT_AVAILABLE_FORMULA = S - R   IMPORT_WRITES_RESERVED = NO   GUARD_BEFORE_SUBTRACTION = YES
+NEW_TABLE_REQUIRED = NO   NEW_COLUMNS_REQUIRED = NONE   BACKFILL_REQUIRED = NO
+RUNTIME_IMPLEMENTED = NONE   PRODUCTION_ROWS_WRITTEN = 0
+SECTIONS F AND G PIN TODAY'S DEFECT AND MUST BREAK WHEN R4B LANDS
+
+109 passed, 0 failed, 9 mutants (0 survived)

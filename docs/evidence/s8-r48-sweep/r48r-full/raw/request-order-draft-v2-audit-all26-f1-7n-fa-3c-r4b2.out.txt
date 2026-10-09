@@ -1,0 +1,15 @@
+
+== public entrypoint + read-only forbidden-write surface ==
+
+== coverage: all 26 rows exactly once, ids verbatim, no missing/duplicate ==
+
+== deterministic cycle classification per class ==
+
+== status mapping (D1) + risk + unresolved partition ==
+
+== tier months are informational only (labeled non-authority) ==
+
+== dry-run now fail-closes under the R4C frozen authority (synthetic ids ≠ authorized cohort) ==
+
+----------------------------------------
+R4B2 ALL-26 READ-ONLY DIAGNOSTIC (F1-7N-FA-3C-R4B2): 23 passed, 0 failed

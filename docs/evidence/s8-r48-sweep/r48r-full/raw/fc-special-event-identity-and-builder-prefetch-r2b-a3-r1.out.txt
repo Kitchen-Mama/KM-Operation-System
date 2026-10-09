@@ -1,0 +1,34 @@
+
+-- A. IDENTITY — the window decides, the name does not ------------------------------------------------
+
+-- B. THE EVENT VERSION TOKEN — two implementations, one value ----------------------------------------
+
+-- C. ID PRESERVATION, ZERO-WRITE, DUPLICATE AND STALE — against the real handlers --------------------
+
+-- D. THE PAGE — rehydration, and a persisted zero that stays zero ------------------------------------
+
+-- E. THE WRITE PAYLOAD — what the page actually sends ------------------------------------------------
+
+-- F. BUILDER PREREQUISITES — per path, one flight, no duplicate --------------------------------------
+
+-- G. NON-REGRESSION ----------------------------------------------------------------------------------
+
+-- H. MUTANTS — each fault put back, each caught by an observable outcome -----------------------------
+  caught: M1  campaign_name becomes identity again
+  caught: M2  the event window is dropped from identity
+  caught: M3  an update loses campaign_sku_line_id
+  caught: M4  an unchanged event is written anyway
+  caught: M5  the duplicate guard is removed (a versionless save becomes an update)
+  caught: M6  the stale-version check is removed
+  caught: M7  the campaign version gate is removed
+  caught: M8  the window columns are put INTO the event token
+  caught: M9  the Builder loads its prerequisites at page mount
+  caught: M10 selecting one path fetches BOTH
+  caught: M11 Next issues a second request instead of reusing the flight
+  caught: M12 a stale prefetch answer is accepted for the current scope
+
+-- I. VACUITY — every mutant predicate must be FALSE on the unmutated tree ----------------------------
+
+====================================================================================================
+PASS  135 passed, 0 failed, 12 mutants, 0 survived
+====================================================================================================

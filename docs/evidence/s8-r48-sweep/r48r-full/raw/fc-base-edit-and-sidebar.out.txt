@@ -1,0 +1,16 @@
+
+== §18 — value rules (pure fcValidateMonthRaw) ==
+
+== §18 — canonical row identity (pure fcRowIdentityKey) ==
+
+== §18 — batch delta payload (pure fcBuildRegularWriteRows) ==
+
+== §18 — edit-mode wiring (source-level over the REAL functions) ==
+
+== §12 — scope discipline: only Regular changed; Event/Target/New/Import intact ==
+
+== §17 — sidebar visual hierarchy (source-level over layout.css) ==
+
+== §3/§17 — navigation + interaction preserved (no route/logic change) ==
+
+All FC base-edit + sidebar hotfix assertions passed (47 assertions).

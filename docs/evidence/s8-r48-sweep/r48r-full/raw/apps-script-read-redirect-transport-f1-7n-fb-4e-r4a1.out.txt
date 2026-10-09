@@ -1,0 +1,52 @@
+
+§1A — THE PRE-FIX SHAPES, EXECUTED FROM COMMIT 47c5e8b
+
+§1B — THE SAME READS ON THE CURRENT CLIENT
+
+§2 — ENDPOINT AUTHORITY
+
+§3 — URL SIZE PER READ ACTION, MEASURED AS DISPATCHED
+
+§5 — WRITES ARE UNCHANGED
+
+§6 — REDIRECT-TARGET 404 vs BUSINESS 404
+
+§7 — CORRELATION ACROSS RECOVERY AND COALESCING
+
+§8 — FIRST LOAD, PER PAGE
+
+§4 — THE SHARED READ BOUNDARY AND THE READ TABLE
+
+§9 — CONTRACT AND DEPLOYMENT SURFACE
+
+  METHOD / REDIRECT MATRIX
+  shape                                         method  redirect finalHost         status  handler recvd payload   corr outcome                         
+  browser navigation GET                        GET     302      USERCONTENT_ECHO  200     yes     GET   survived  -    JSON success=true               
+  fetch GET (system.health)                     GET     302      USERCONTENT_ECHO  200     yes     GET   survived  -    DEPLOYMENT_CONTRACT_OK          
+  PRE fetch POST (system.health)                POST    302      USERCONTENT_ECHO  404     no      -     LOST      -    HTTP_TRANSPORT_ERROR            
+  PRE fetch POST (skuDetails) -> doGet          POST    302      USERCONTENT_ECHO  200     yes     GET   LOST      yes  REQUEST_METHOD_DOWNGRADED       
+  fetch GET (skuDetails) [edge POST_ECHO_404]   GET     302      USERCONTENT_ECHO  200     yes     -     survived  yes  OK                              
+  direct GET to an expired echo target          GET     none     USERCONTENT_ECHO  404     no      -     n/a       -    HTTP 404                        
+  fetch GET (skuDetails) [edge POST_DOWNGRADE]  GET     302      USERCONTENT_ECHO  200     yes     -     survived  yes  OK                              
+  20x consecutive GET read                      GET     302      USERCONTENT_ECHO  200     yes     -     survived  -    20/20 success                   
+
+  FIRST-LOAD PER PAGE (cold, one mount each)
+  page                        action                                verb  reqs  outcome               corr   writes
+  FC Summary                  fcSummary.workspace.get               G     1     OK                    MATCH  0
+  SKU Details                 skuDetails.workspace.get              G     1     OK                    MATCH  0
+  Purchase Order Workspace    purchaseOrder.workspace.get           G     1     OK                    MATCH  0
+  Request Order Draft         requestOrder.workspace.get            G     1     OK                    MATCH  0
+  Site Inventory              inventoryReplenishment.workspace.get  G     1     OK                    MATCH  0
+  Overseas Inventory          overseasStock.workspace.get           G     1     OK                    MATCH  0
+  Automation Schedule         automationSchedule.get                G     1     OK                    n/a    0
+
+  GET URL SIZE PER READ ACTION (limit 6000 chars, browser/Google practical cap ~8000)
+  action                                  payload   url     headroom
+  system.health                           310       667     5333 chars
+  skuDetails.workspace.get                165       448     5552 chars
+  overseasStock.workspace.get             168       454     5546 chars
+  inventoryReplenishment.workspace.get    131       400     5600 chars
+  inventoryReplenishmentGap.get           143       421     5579 chars
+  weeklyShipping.workspace.get (WIDEST)   521       1022    4978 chars
+
+422 passed, 0 failed

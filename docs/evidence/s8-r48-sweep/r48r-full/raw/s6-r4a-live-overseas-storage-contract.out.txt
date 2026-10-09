@@ -1,0 +1,84 @@
+
+== A. the live header is canonical — the header-ambiguity block is RESOLVED ==
+ok   A1 live header carries canonical wh_physical_stock
+ok   A2 live header carries canonical wh_available_stock
+ok   A3 live header carries canonical wh_reserved_stock
+ok   A4 live header carries canonical wh_damaged_stock
+ok   A5 live header carries canonical wh_on_the_way_qty
+ok   A6 and NO legacy-spelled quantity column is present — LEGACY_FIELDS_PRESENT = NO
+ok   A7 identity is overseas_inventory_id, not legacy snapshot_id — corroborates the header is current
+ok   A8 43_ reads wh_available_stock unfallbacked and the live header HAS it — CURRENT_PRODUCTION_DEFECT = NO
+
+== B. wh_physical_stock: the writer census — this is what proves LIVE_STORAGE_OUTCOME = B ==
+ok   B1 WH_PHYSICAL_WRITER_COUNT = 0 — no shipped handler writes it
+ok   B2 WH_PHYSICAL_IMPORTER_WRITE_COUNT = 0 — absent from the importer's writable qtyFields
+ok   B3 and absent from required-header validation — the importer never even asks whether it exists
+ok   B4 create branch fills every unknown column with '' — the blank live column is produced HERE
+ok   B5 and the receipt poster creates rows with no physical column in EITHER namespace
+ok   B6 05_ READS it once, to stamp the movement row
+ok   B7 and writes the SAME value to before AND after — the ledger never observes a physical change
+ok   B8 the client normalizer defaults it to 0 — an unmaintained column is indistinguishable from zero stock
+ok   B9 overseas-outbound.js projects a current_stock decrement from physicalStock — against a blank column
+ok   B10 — but that page is Preview Mode and posts nothing, so no production row is affected today
+
+== C. available is STORED and source-reported — nothing derives it, which is why Option A is coherent ==
+ok   C1 wh_available_stock IS in the importer's writable set — KM can maintain it
+ok   C2 both 05_ write entry points are POST router actions — operator-triggered, never automatic
+ok   C3 and 31_ posts the receipt delta — the third and last write owner
+ok   C4 WH_AVAILABLE_STOCK_SEMANTIC = source-reported — no statement anywhere derives it from physical
+ok   C5 and 05_ says so in its own words — the rule R4 needs is already the shipped rule
+
+== D. THE HAZARD — the importer zeroes wh_reserved_stock, and R4 cannot land until it does not ==
+ok   D1 wh_reserved_stock is in qtyFields — the importer OVERWRITES it on every update
+ok   D2 [R4B] a blank or absent cell now writes NOTHING — presence is kept, so it does mean "leave this column alone"
+ok   D3 [R4B] and the update branch writes only the fields the payload carried, three of them, with the GROSS subtraction on available. Until R4B it wrote all four unconditionally on every existing row
+ok   D4 => a CSV refresh without a reserved column wipes KM reservations. Close this WITH the reserve.
+ok   D5 [R4B] RESERVED_FIELD_MAINTAINED = YES, by 05_ alone — Receiving still claims no reservation, so the bucket has exactly one owner rather than none
+
+== E. no automated sync — the Option-A overwrite fear is manual, not scheduled ==
+ok   E1 the automation registry declares 5 handler-bound jobs
+ok   E2 WH_AVAILABLE_EXTERNAL_SYNC_OWNER = NONE — no scheduled job is an overseas importer
+ok   E3 and no trigger-creating file so much as names overseas_inventory_snapshot
+
+== F. the movement ledger can represent reserve/release; it cannot represent a physical consume ==
+ok   F1 the movements header carries from_stock_type
+ok   F2 the movements header carries to_stock_type
+ok   F3 the movements header carries wh_before_reserved_stock
+ok   F4 the movements header carries wh_after_reserved_stock
+ok   F5 the movements header carries wh_before_available_stock
+ok   F6 the movements header carries wh_after_available_stock
+ok   F7 the movements header carries reference_type
+ok   F8 the movements header carries reference_id
+ok   F9 it even carries the physical before/after pair — the LEDGER is not the missing piece
+ok   F10 the ledger has the physical columns and no physical balance — that is the whole of outcome B
+
+== G. the record: what was frozen, what live evidence contests, what stays put ==
+ok   G1 CONTESTED token still stands unamended: OVERSEAS_CURRENT_STOCK_FIELD = wh_physical_stock
+ok   G2 CONFIRMED by live evidence: OVERSEAS_AVAILABLE_STOCK_FIELD = wh_available_stock
+ok   G3 CONFIRMED by live evidence: OVERSEAS_RESERVED_IS_SUBTRACTED_FROM_AVAILABLE = NO
+ok   G4 CONFIRMED by live evidence: OVERSEAS_RESERVE_CONSUMES_PHYSICAL_STOCK = NO
+ok   G5 CONFIRMED by live evidence: R4_MUST_LAND_AS_ONE_CHANGE = YES
+ok   G6 the evidence record states LIVE_STORAGE_OUTCOME = B
+ok   G7 the evidence record states S6_R4_HEADER_GATE_RESOLVED = NO
+ok   G8 the evidence record states RUNTIME_IMPLEMENTATION_AUTHORIZED = NO
+ok   G9 the evidence record states OBSERVED_RELATIONSHIP = NOT_ESTABLISHED
+ok   G10 the evidence record states NEW_COLUMNS_REQUIRED = NONE
+ok   G11 the evidence record states DB_MIGRATION_REQUIRED = NO
+ok   G12 and carries a three-option decision board with a named recommendation (Option A)
+
+== H. safety — this round changed no behaviour ==
+ok   H1 [R4B] the overseas reserve / consume writer landed, in the round authorized to add it
+ok   H2 the legacy fallback is still in place — provably removable now, deliberately NOT removed here
+ok   H3 and 54_'s fallback read is untouched
+
+=====================================================
+S6-R4A LIVE OVERSEAS STORAGE CONTRACT — 56 passed / 0 failed
+CANONICAL_WH_FIELDS_PRESENT = YES   LEGACY_FIELDS_PRESENT = NO
+WH_PHYSICAL_WRITER_COUNT = 0   PHYSICAL_FIELD_MAINTAINED = NO
+WH_AVAILABLE_STOCK_SEMANTIC = SOURCE_REPORTED   OBSERVED_RELATIONSHIP = NOT_ESTABLISHED
+43_OVERSEAS_READ_COMPATIBLE_WITH_LIVE_HEADER = YES   CURRENT_PRODUCTION_DEFECT = NO
+LIVE_STORAGE_OUTCOME = B   BLOCKING_CONDITION_COUNT = 1
+S6_R4_HEADER_GATE_RESOLVED = NO   RUNTIME_IMPLEMENTATION_AUTHORIZED = NO
+NEW_COLUMNS_REQUIRED = NONE   DB_MIGRATION_REQUIRED = NO
+PRODUCTION_ROWS_WRITTEN = 0   BEHAVIOR_CHANGED = NO
+=====================================================

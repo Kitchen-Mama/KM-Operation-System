@@ -1,0 +1,197 @@
+
+== §C — THE ROOT CAUSE, MEASURED. The read has no scope, and never had one. ==
+ok   C1  the primary read touches TWENTY-ONE whole tables
+ok   C2  naming a company/country/marketplace/sku reads the SAME tables...
+ok   C2a ...and returns the SAME row count — the payload has no scope parameter
+ok   C2b which here is over 100 000 rows for one page load (101319)
+ok   C3  and 60_ never reads a scope field off the payload — this is not a bug in one caller, it is the contract
+ok   C4  the 60 000 ms read bound the failure message quotes is the transport default
+
+== §B/§C — the CLIENT, executed. Blank scope costs nothing; a complete scope costs the same read. ==
+ok   B0a the page declares its first-layer table list
+ok   B0b the page declares its exposure table list
+ok   B0  the page declares its dispatch-owner vocabulary
+ok   B0  the page declares its dispatch-owner vocabulary
+ok   B0  the page declares its dispatch-owner vocabulary
+ok   B0  the page declares its dispatch-owner vocabulary
+ok   B0  the page declares its dispatch-owner vocabulary
+ok   I10 a late FIRST response cannot overwrite a newer read (monotonic read sequence, checked on resolve)
+ok   I11 a scope changed while a request is pending discards the old result
+ok   I11a and a stale FAILURE cannot overwrite a newer Search either
+ok   I7a repeated clicks share the in-flight read (single-flight)
+ok   I12 no stale cache is ever presented as fresh — the error path drops the model, fail-closed
+
+== §D — the blank selectors were an ARTIFACT of the failure, and are no longer painted as one ==
+ok   D1z the bootstrap has a read-failure branch to inspect
+ok   D1  a FAILED bootstrap read now shows the remembered scope it had already validated
+ok   D1a and reports ERROR rather than leaving the page claiming it is pre-search under a red line
+ok   D1b painted through the gate that offers a Retry
+ok   D1c after failing closed, so no broad cache can be substituted
+ok   D1d and in that ORDER — fail closed first, then paint
+ok   D1e the scope is SHOWN but never APPLIED, and a failed read never becomes a remembered one
+ok   D2  the pre-search state is the exact neutral sentence, not an error
+ok   D2a and it carries no Retry — there is nothing to retry before a scope is chosen
+ok   D2b only the ERROR branch is an alert
+ok   D3  with no remembered scope the mount asks ONLY for the slim scope registry
+ok   D3z there is a first-use path to isolate
+ok   D3a with NO remembered scope the mount issues zero inventory workspace reads
+ok   D3b a RESTORED scope does revalidate — quietly, so a failure leaves the painted result exactly where it is
+ok   D3c and that quiet read cannot overwrite a real Search that superseded it
+ok   D4  there is no ALL_SITES fallback anywhere in the page
+
+== §C/§D — THE FIX: a per-key recent window, and it changes no rendered number ==
+ok   W1  exactly the two tables that grow without limit are windowed
+ok   W1a the daily window (14) is at least the 7 dates salesTrend7d reads
+ok   W1b the weekly window (4) is at least the 1 week avgSalesPerDay reads
+ok   W1c and the window is PER SCOPE KEY, not an absolute date cut
+ok   W2  the daily snapshot loses 95% of its rows
+ok   W2a the weekly snapshot loses 90%
+ok   W3  salesTrend7d is IDENTICAL across all 13 probed scopes (incl. a stale site, the EU roll-up, the UK/GB alias)
+ok   W3a avgSalesPerDay is IDENTICAL across all 13
+ok   W4  a row that cannot be placed in time is ALWAYS kept — dropping what we cannot order is a guess
+ok   W4a a Date-typed cell is placed in time correctly (Sheets returns real Dates for date columns)
+ok   W4b a site whose data stopped six months ago KEEPS its own last dates — an absolute cut would have emptied it
+ok   W5  a caller that does NOT ask gets no projection and today's payload exactly
+ok   W5a a caller that DOES ask is told what was dropped, per table
+ok   W6  the page asks for it on the primary read
+ok   W6a and so does the lazy carrier fallback, which pays for the same tables
+
+== §E — THE EXECUTION DEMAND SNAPSHOT. The screen and the plan now read ONE row. ==
+ok   E0  the SCREEN reads d90_suggested_qty...
+ok   E0a ...which 43_ MATERIALIZES into inventory_replenishment_gap
+ok   E0b while 42_ never reads that table at all — it RECOMPUTES, which is the divergence this closes
+ok   E0c and 61_ calls 42_, so the AI Plan was on the recomputing side
+ok   E1  a READY row for THIS planning date is accepted
+ok   E1a and THE QUANTITY IS THE SNAPSHOT'S (520), not the live workspace's (999) — the whole point
+ok   E1b the lineage names the source table...
+ok   E1c ...and the source reason
+ok   E1d.1 lineage carries company
+ok   E1d.2 lineage carries country
+ok   E1d.3 lineage carries marketplace
+ok   E1d.4 lineage carries sku
+ok   E1d.5 lineage carries planning_cycle
+ok   E1d.6 lineage carries calculation_status
+ok   E1d.7 lineage carries calculation_date
+ok   E1d.8 lineage carries calculated_at
+ok   E1d.9 lineage carries updated_at
+ok   E2  a MISSING table blocks — it never reads as "every site needs nothing"
+ok   E2a a missing required header blocks, and names the column
+ok   E3  no row for this site blocks
+ok   E4  a snapshot whose only row is BLOCKED is not a complete snapshot
+ok   E4a a blank status is refused at the SITE, not treated as an incomplete run
+ok   E4b and inside a complete run, a BLOCKED SITE is still refused on its own
+ok   E5  a snapshot from another PLANNING CYCLE blocks (this is what the old STALE check was reaching for)
+ok   E5a a row with no lineage at all blocks — provenance is not optional
+ok   E6  two rows for one site is a CONFLICT, never last-one-wins
+ok   E7  a blank quantity for a window this site has blocks — blank is not zero HERE (it is a gap, not a forecast month)
+ok   E7a a negative quantity blocks
+ok   E8  a client expectation that AGREES proceeds
+ok   E8a a client expectation that DISAGREES is a conflict...
+ok   E8b ...naming BOTH numbers, choosing neither
+ok   E8c a non-numeric expectation blocks rather than being ignored
+ok   E9  an all-zero READY snapshot RESOLVES to zero — it is an answer, and it feeds §G
+ok   E10 the client expectation is built from the MATERIALIZED rows the cells render
+ok   E10a and never from the DOM — the screen is not a source of truth
+ok   E10b only a READY row has a declarable expectation
+ok   E10c and it rides on the generate payload
+ok   E11 the lineage travels with the quantity into the horizon rows
+ok   E12 §E.11 Submit never reads the raw forecast, so it cannot recompute a frozen quantity
+
+== §G — a scope with nothing to replenish is an ANSWER, and it cannot swallow a real error ==
+ok   G1  every basis 0 AND every canonical gap 0 -> a typed SUCCESS
+ok   G1a with both totals reported, so the claim is checkable
+ok   G2  positive canonical demand with an unresolvable weight is STILL AN ERROR — the case §G names
+ok   G3  a positive basis is not a no-demand group
+ok   G4  an UNRESOLVED basis is unknown, and unknown is never zero
+ok   G4a a STRING "0" is not a resolved number
+ok   G5  a site the harvest could not read is not a site that needs nothing
+ok   G6  a DIFFERENT blocking issue is never absorbed
+ok   G7  an unreadable canonical quantity blocks
+ok   G8  no receivers is a different answer, handled elsewhere
+ok   G9  the verdict matches on the ENGINE code, because KMWHA maps FIVE different faults to SUGGESTED_QTY_UNRESOLVED
+ok   G9a and there really are five of them
+ok   G10 the success envelope is typed NO_REPLENISHMENT_REQUIRED
+ok   G10a with 0 requested, 0 allocated, 0 routes
+ok   G10b no empty header, no empty line, zero writes
+ok   G10c and it speaks the page's existing zero-result vocabulary
+ok   G11 the page distinguishes it from "no eligible route found"...
+ok   G11a ...with §G's exact neutral sentence as the opening clause
+ok   G11b reported as ok, not warn and not red
+ok   G11c and it states the three quantities - recommended, already planned, residual
+ok   G11d and it names FULLY_COVERED_BY_ACTIVE_PLAN separately, because "demand is 0" is false for it
+
+== §J — the AI Plan boundary this round must not have moved ==
+ok   J16 the production AI Plan flag is still FALSE
+ok   J15 the forecast rollover migration is not called from any runtime path
+ok   J15a and its runner is still DRY_RUN = true
+ok   J13 the R3-R1 forecast normalization is still the basis authority
+ok   J13a a missing forecast year is still zero
+ok   J14 and a forecast read TIMEOUT still blocks
+ok   J17.1 weeklyAiPlanCanonicalDemand_ performs NO write
+ok   J17.2 weeklyAiPlanAcceptCanonicalDemand_ performs NO write
+ok   J17.3 weeklyAiPlanNoDemandVerdict_ performs NO write
+ok   J17.4 weeklyAiPlanExpectedDemand_ performs NO write
+ok   J17.5 and the projection is pure — it reads rows and returns rows
+
+== §A — deployment identity ==
+ok   A1  61_ declares exactly the build its manifest entry expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5)
+ok   A1a and 63_ does the same (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   A1b 61_ is stamped at or after R4 (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5)
+ok   A1b1 and so is 63_ (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   A1c 60_ now DECLARES a build — a stale 60_ ignores recentWindow and only SILENTLY
+ok   A1d and it declares exactly what its manifest entry expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45)
+ok   A2  the bundle was rebuilt at the adapter's current version (f1-7n-fc-1b-e3-r4-readiness)
+ok   A2.1 the bundle carries the readiness mapping for CANONICAL_DEMAND_ROW_MISSING
+ok   A2.2 the bundle carries the readiness mapping for CANONICAL_DEMAND_NOT_READY
+ok   A2.3 the bundle carries the readiness mapping for CANONICAL_DEMAND_STALE
+ok   A2.4 the bundle carries the readiness mapping for CANONICAL_DEMAND_DUPLICATE_ROWS
+ok   A2.5 the bundle carries the readiness mapping for EXPECTED_DEMAND_CONFLICT
+
+== §K — release identity ==
+ok   K1  this round minted its own application token
+ok   K1a strictly after R3-R1's, which was PUBLISHED (origin/main carries 6c9594f)
+ok   K1b and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   K2  nothing is left behind on any superseded token
+ok   K3  the page carries it
+ok   K4  the stylesheet stays on its own family token: it did NOT change
+ok   K4a which is at or after R2's
+ok   K5  the owner stamp is recorded, after R3-R1's
+
+== MUTATIONS ==
+ok   I1  blank scope + Search -> ZERO inventory requests
+ok   I1a and it says which two are missing
+ok   I2  only Country selected -> ZERO inventory requests
+ok   I3  only Marketplace selected -> ZERO inventory requests
+ok   I4  complete scope + Search -> exactly ONE request
+ok   I4a and THE REQUEST STILL CARRIES NO SCOPE — this is the finding, not a leftover
+ok   I4b what it DOES carry is the recentWindow opt-in
+ok   I4b1 and the explicit THIRTEEN-table first layer, lifted from the page
+ok   I4b2 with NOT ONE of the six exposure tables among them
+ok   I8  a first-attempt timeout is a TYPED error state
+ok   I8a named REQUEST_TIMEOUT, not a generic failure
+ok   I8b and NOTHING is retained — a failed read never becomes a stale result
+ok   N1  the recent window is applied WITHOUT the caller asking (silently changes every other caller) (caught)
+ok   N2  the daily window is cut BELOW the seven days salesTrend7d reads (caught)
+ok   N3  a row with no readable period is DROPPED instead of kept (caught)
+ok   N4  the window becomes an ABSOLUTE date cut instead of per-key (empties every stale site) (caught)
+ok   N5  the failed bootstrap goes back to hiding the scope it had validated (caught)
+ok   N6  Search stops validating the scope, so a blank Search issues a request (caught)
+ok   N7  the read-sequence guard is removed, so a late first response overwrites a newer one (caught)
+ok   N8  the error path RETAINS the read model, so a stale result is shown as fresh (caught)
+ok   N9  the canonical snapshot is bypassed and the LIVE recomputation allocates again (caught)
+ok   N10 a NOT-READY site is accepted as demand inside an otherwise complete run (caught)
+ok   N11 a snapshot from the WRONG RUN is adopted (the freshness authority bypassed) (caught)
+ok   N12 a client/server quantity mismatch is silently resolved in the client's favour (caught)
+ok   N13 a duplicate snapshot row becomes last-one-wins (caught)
+ok   N14 positive canonical demand is reported as a no-demand success (caught)
+ok   N15 an UNRESOLVED basis is accepted as a resolved zero (unknown becomes no-demand) (caught)
+ok   N16 the zero-total check is dropped, so a group with POSITIVE demand reports no-demand (caught)
+ok   N17 a MISSING gap table reads as an empty snapshot instead of blocking (caught)
+ok   N18 the AI Plan flag is turned on (caught)
+ok   N19 the page stops asking for the bounded payload (a cached page keeps timing out) (caught)
+ok   N20 an asset is left behind on a superseded token (caught)
+ok   N21 61_ ships at a build its manifest does not expect (caught)
+
+----------------------------------------
+FIRST-LOAD TIMEOUT + DEMAND SNAPSHOT FREEZE (F1-7N-FC-1B-E3-R4): 173 passed, 0 failed
+mutations: 21 caught, 0 missed

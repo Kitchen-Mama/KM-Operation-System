@@ -1,0 +1,33 @@
+
+== §B — ONE endpoint authority, and everything that is not the stable /exec URL is refused LOCALLY ==
+
+== §C — the request state machine, the typed vocabulary, and the retry POLICY ==
+
+== §A — the 404 HTML is FINGERPRINTED by source, not lumped into one code ==
+
+== §A/§C — the shipped db-api runner: the evidence is captured and the legacy alias is DERIVED ==
+
+== §N — THE EXACT REGRESSION FIXTURE: inventoryReplenishment.workspace.get, US / Amazon, applied Search ==
+
+== §N — the six distinct simulations, each landing on its OWN classification ==
+
+== §D — single-flight for SESSION-STABLE metadata only, and a rejection is EVICTED ==
+
+== §A — the getTable reader: bounded, text-first, and it no longer blind-parses an HTML body ==
+
+== §F — the seven states, and "尚未連接資料來源" can no longer mean "the API failed" ==
+
+== §G — the portable boundary, proved by ONE contract test over TWO adapters ==
+
+== §H — the deployment contract now has FOUR distinguishable faults ==
+
+== §H/§J14 — every changed transport-critical asset carries the NEW release token ==
+
+== §E — request counts and phase timings are MEASURED, not asserted in a comment ==
+
+== §I — safety: this round writes nothing, and leaks nothing ==
+
+== §D-CORRECTION — the bound is a BOUNDED-PRESSURE control, not reliance on server serialization ==
+
+----------------------------------------
+SHARED API TRANSPORT RELIABILITY (F1-7N-FB-4E): 372 passed, 0 failed

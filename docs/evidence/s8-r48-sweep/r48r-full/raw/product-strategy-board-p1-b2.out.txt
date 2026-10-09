@@ -1,0 +1,295 @@
+
+SECTION Z  THE SUITE READS WHAT IT THINKS IT READS
+ok   Z1 contract was read with normalized line endings
+ok   Z2 selectors was read with normalized line endings
+ok   Z3 fixture was read with normalized line endings
+ok   Z4 prototype was read with normalized line endings
+ok   Z5 index was read with normalized line endings
+ok   Z6 layout was read with normalized line endings
+ok   Z7 views was read with normalized line endings
+ok   Z8 css was read with normalized line endings
+ok   Z7 and a multi-line mutant anchor matches exactly once
+
+=== §A  THE ROOT CAUSE, MEASURED ===
+ok   A1 the categories on screen are string literals in preview-fixture.js
+ok   A2 and the fixture declares it is connected to no database
+ok   A3.1 no transport call anywhere: fetch(
+ok   A3.2 no transport call anywhere: XMLHttpRequest
+ok   A3.3 no transport call anywhere: WebSocket
+ok   A3.4 no transport call anywhere: EventSource
+ok   A3.5 no transport call anywhere: sendBeacon
+ok   A3.6 no transport call anywhere: google.script
+ok   A3.7 no transport call anywhere: KM.DB
+ok   A4 F.CATEGORIES (distinct category over every site) no longer exists
+ok   A5 and the adapter publishes no category list of its own
+ok   A6 and no renderer reads one
+ok   A7 two sites do not have the same number of categories
+ok   A8 DE is not offered a category it does not sell
+ok   A9 and the US is not offered the one only DE and UK sell
+ok   A10 while the sites that do sell it are offered it
+ok   A11 and the count is not three anywhere it is measured
+
+=== §B  SITE IDENTITY AND ELIGIBILITY ===
+ok   B1 three parts make a site
+ok   B2 an ALL is not a site
+ok   B3 a price axis is never shared, and it is published rather than promised
+ok   B4 including in the aggregate mode
+ok   B5 membership first, regional last, and the list is the contract
+ok   B6 no DE/UK-only SKU survives the US membership gate
+ok   B7 and its exclusion carries a reason, not a silence
+ok   B8 every surviving row is on the selected country
+ok   B9 and on the selected marketplace
+ok   B10 a USD price does not put a DE listing on the US site
+ok   B11 and the universe says so as data
+ok   B12 nor does the master table
+ok   B13 something is excluded by status, so the gate is demonstrated
+ok   B14 include_inactive returns it rather than the gate having deleted it
+ok   B15 and phasing_out is still on sale, so it is present by default
+ok   B16 the permitted set is those two
+ok   B17 a blank site status does not default to sellable
+ok   B18 and it is named
+ok   B19 and reported as Data Quality
+ok   B20 nor does a status outside the shipped vocabulary
+ok   B21 an array in source_status is refused by shape — this is what catches the adapter swap
+ok   B22 and the collision is documented where the reader will be
+
+=== §C  REGIONAL DETAIL: KEPT, REPORTED, AND OFF THE CHART ===
+ok   C1 a listing with no regional record is STILL in the universe
+ok   C2 and its state is named
+ok   C3 it is reported as Data Quality
+ok   C4 and it is kept off the price chart, with the reason attached
+ok   C5 so no chart row carries it
+ok   C6 THE POINT: absence of a regional row is not absence from the site
+ok   C7 and the rows that do have one carry the live shape
+ok   C8.1 regional carries regional_detail_id, as 72_ returns it
+ok   C8.2 regional carries site_sku, as 72_ returns it
+ok   C8.3 regional carries marketplace_product_id, as 72_ returns it
+ok   C8.4 regional carries product_url, as 72_ returns it
+ok   C8.5 regional carries packaging_regulation, as 72_ returns it
+ok   C8.6 regional carries language, as 72_ returns it
+ok   C9 one master sku is listed on more than one site
+ok   C10 and each listing has its own identity
+ok   C11 and its own site_sku, in its own shape
+ok   C12 the Amazon board shows no Walmart site_sku
+ok   C13 and the Walmart board shows its own
+
+=== §D  THE CATEGORY MENU ===
+ok   D1 no allowlist
+ok   D2 no maximum
+ok   D3 one authority, and it is the shipped column
+ok   D4 trim is the only normalization
+ok   D5 nothing is folded
+ok   D6 and a blank never becomes "Other"
+ok   D7 deterministic ascending order, never the source order
+ok   D8 two values differing only by case are KEPT AS TWO and reported
+ok   D9 the blank category is counted
+ok   D10 and it is absent from the menu rather than renamed
+ok   D11 while the SKU itself is KEPT
+ok   D12 and reported as Data Quality
+ok   D13 siteSkuCount is every eligible row of that category
+ok   D14 and analysable is the ones that can be plotted
+ok   D15 which are different numbers here, so the distinction is exercised
+ok   D16 picking a category does not collapse the category menu to it
+ok   D17 but the OTHER dimension does narrow it, so every option still leads to a row
+ok   D18 two new category values, two new menu entries
+ok   D19 and they are the ones that were added
+ok   D20 still sorted, so the new ones did not land at the end
+ok   D21 no alias is declared by default
+ok   D22 a declared alias resolves, case and spacing folded in the LOOKUP
+ok   D23 an undeclared value is returned unchanged, never nearest-matched
+ok   D24 and a blank is null, not a bucket
+
+=== §E  THE SCENARIO OVERLAY ===
+ok   E1 no scenario by default
+ok   E2 and the only storage there is is memory
+ok   E3 which is published as not surviving a reload
+ok   E4 the override is keyed by the SITE first
+ok   E5 then the series
+ok   E6 then the price field — the shape the brief specifies
+ok   E7 the same products are on the axis
+ok   E8 every one of them moved down
+ok   E9 AND THE LADDER IS STILL A LADDER — a series override is not one number for every rung
+ok   E10 every affected node is marked as simulated
+ok   E11 the canonical price is kept beside the simulated one
+ok   E12 with the mode recorded
+ok   E13 and the operator input kept
+ok   E14 and a visible label saying it is unsaved
+ok   E15 and its values named as simulated
+ok   E16 one number for a whole everyday ladder is refused by name
+ok   E17 and the refused edit stores nothing at all
+ok   E18 while a series-wide PROMOTION price is one number, and is allowed
+ok   E19 a series-wide promotion creates cannibalisation findings that were not there
+ok   E20 and the findings it caused say they are scenario-driven
+ok   E21 a US scenario does not touch the DE ladder
+ok   E22 nor the other marketplace of the same country
+ok   E23 and a Spatula scenario does not touch the Can Opener ladder
+ok   E24 no scenario without a site, because a price needs a currency
+ok   E25 and the aggregate splits into one axis per currency rather than pooling
+ok   E26 three overrides across two sites
+ok   E27 reset this Series removes exactly one
+ok   E28 and leaves the other series and the other site alone
+ok   E29 reset current site removes only this site
+ok   E30 reset all removes everything
+ok   E31 an unrecognised scope resets NOTHING — a typo must not clear the board
+ok   E32 and none of those four calls mutated the input
+ok   E33 the simulation did change the board
+ok   E34 and a reload restores exactly the canonical values
+ok   E35 with no override left behind
+ok   E36 a blank clears the override
+ok   E37 so does a zero price
+ok   E38 and so does a non-number
+ok   E39 an adjustment that lands at or below zero is not a price
+ok   E40 and a percentage of a price that does not exist is unanswerable, not zero
+ok   E41.1 no localStorage in any prototype source
+ok   E41.2 no sessionStorage in any prototype source
+ok   E41.3 no indexedDB in any prototype source
+ok   E41.4 no openDatabase in any prototype source
+ok   E41.5 no document.cookie in any prototype source
+ok   E41.6 no history.pushState in any prototype source
+ok   E41.7 no location.hash in any prototype source
+ok   E41.8 no location.search in any prototype source
+ok   E42.1 and the pipeline has no upsert
+ok   E42.2 and the pipeline has no submit
+ok   E42.3 and the pipeline has no save
+ok   E42.4 and the pipeline has no export
+ok   E42.5 and the pipeline has no Submit
+ok   E42.6 and the pipeline has no writeRow
+
+=== §F  THE PIPELINE IS ONE ORDER, IN ONE PLACE ===
+ok   F1 the stages, published in order
+ok   F2.1 groupNodes is a delegation, not a copy
+ok   F2.2 splitByCurrency is a delegation, not a copy
+ok   F2.3 analyse is a delegation, not a copy
+ok   F2.4 tierOf is a delegation, not a copy
+ok   F2.5 sellInterval is a delegation, not a copy
+ok   F2.6 priceSignature is a delegation, not a copy
+ok   F3 even the finding vocabulary comes from the pipeline
+ok   F4 and an absent pipeline is a broken build, not a reason to guess
+ok   F5 no panel contains two currencies
+ok   F6 and nothing was converted to make that true
+ok   F7 one axis per currency, published
+
+=== §G  EVERY DERIVED NUMBER IS RECOMPUTED, NOT HIDDEN ===
+ok   G1 the gap count follows the threshold
+ok   G2 and the eligible count follows the site
+ok   G3 canonical = on-site + excluded, with the status drop inside the excluded list
+ok   G4 chartable is never more than eligible
+
+=== §H  THE REAL PAGE, RENDERED AND DRIVEN HEADLESS ===
+ok   H1 the page boots with no exception
+     (the page reported self-test 242/242 across 242 of its own assertions)
+ok   H2 the page ran its own assertions, and there are still ~170 of them
+ok   H3 EVERY ONE OF THE PAGE'S OWN DOM ASSERTIONS PASSES
+ok   H4 and the badge a person sees reports the same total
+ok   H5 the site is the first ring on the page
+ok   H5a and the primary row is the first thing in the bar
+ok   H5b the site ladder is first, in company -> country -> marketplace order
+ok   H5c and Series is last — it narrows inside everything above it
+ok   H6 and it is never disabled — the site cannot be chosen after the thing it decides
+ok   H7 the page opens on a complete site identity, not on an aggregate
+ok   H8 the options on screen are exactly the pipeline's options for this site
+ok   H8a every option carries its listing count, which is part of choosing one
+ok   H8b and the menu is ordered busiest-first, not alphabetically
+ok   H9 and the number on screen is no longer three
+ok   H10 the menu is rebuilt from the new site
+ok   H11 and no longer offers a category DE does not sell
+ok   H12 the overview table has one row per category of the NEW site
+ok   H13 and no US site_sku is left anywhere on the page
+ok   H14 while what DE does sell is there
+ok   H15 going back restores the US menu exactly
+ok   H16 and the DE-only product does not linger
+ok   H17 the scenario panel is on the page
+ok   H18 and it is available on a complete site
+ok   H19 with nothing simulated to begin with
+ok   H20 the badge says the board is showing simulated values
+ok   H21 and the panel marks itself active
+ok   H22 and says on screen where the value lives
+ok   H22a without making a reader parse the contract name to find that out
+ok   H23 "Set price" is not offered for the everyday ladder — the flattening combination is absent
+ok   H24 while the two that preserve the ladder are
+ok   H25 reset all clears the board
+ok   H26 and the panel is no longer active
+ok   H27 the aggregate scope offers no scenario controls
+ok   H28 and says why on screen
+ok   H29 there is no Simulate button to press
+ok   H30.1 the page really has #banner (the shim cannot drift from it)
+ok   H30.2 the page really has #notice (the shim cannot drift from it)
+ok   H30.3 the page really has #shell (the shim cannot drift from it)
+ok   H30.4 the page really has #side (the shim cannot drift from it)
+ok   H30.5 the page really has #nav (the shim cannot drift from it)
+ok   H30.6 the page really has #btnRail (the shim cannot drift from it)
+ok   H30.7 the page really has #btnPresent (the shim cannot drift from it)
+ok   H30.8 the page really has #btnPrint (the shim cannot drift from it)
+ok   H30.9 the page really has #main (the shim cannot drift from it)
+ok   H30.10 the page really has #topbar (the shim cannot drift from it)
+ok   H30.11 the page really has #crumbs (the shim cannot drift from it)
+ok   H30.12 the page really has #stBadge (the shim cannot drift from it)
+ok   H30.13 the page really has #btnStDetail (the shim cannot drift from it)
+ok   H30.14 the page really has #scope (the shim cannot drift from it)
+ok   H30.15 the page really has #view (the shim cannot drift from it)
+ok   H30.16 the page really has #selftest (the shim cannot drift from it)
+ok   H30.17 the page really has #stList (the shim cannot drift from it)
+ok   H30.18 the page really has #printHint (the shim cannot drift from it)
+ok   H30.19 the page really has #tip (the shim cannot drift from it)
+ok   H31 five promoted production modules and one local fixture, in dependency order
+ok   H31a the contract, the engine, the selectors, the VIEW REGISTRY and the board are from production
+ok   H31b the ONLY file the prototype still owns is its fixture — everything else it shares
+ok   H31c and no local copy of a promoted module is loaded beside the promoted one
+ok   H32 two local stylesheets
+ok   H32a the token shim first
+ok   H32b the board sheet second
+ok   H32c and neither is remote
+ok   H33 and no remote host of any kind
+
+=== §I  THE DATA QUALITY LEDGER, AND WHAT A PRINTED PAGE SAYS ===
+ok   I1 the Data Quality page is reachable from the sidebar
+ok   I2 and it carries the site-eligibility diagnostic
+ok   I3 the ledger shows the canonical count
+ok   I4 what membership kept
+ok   I5 what the status gate kept
+ok   I6 what the board shows
+ok   I7 and what can actually be plotted
+ok   I8 which are different numbers here, so "listed but not plotted" is visible
+ok   I9 THE MISSING-MAPPING DIAGNOSTIC: the listing with no regional record is SEEN here
+ok   I10 and so is the one with no category
+ok   I11 while a bucket with nothing in it still reports its zero
+ok   I12 and the affected identity is named, not just counted
+ok   I13 with the rule that a blank category is not a bucket stated where it applies
+ok   I14 the same listing is on no price axis
+ok   I15 with no scenario there is no scenario mark to print
+ok   I16 and the page does not claim one
+ok   I17 a scenario puts an undismissable mark in the banner
+ok   I18 inside the banner, which prints on the first page
+ok   I19 and it opens with the word
+ok   I20 says what the numbers are not
+ok   I21 names the site they belong to
+ok   I22 and that they do not survive a reload
+ok   I23 and the page marks itself so the stylesheet can too
+ok   I24 while the original preview notice is unchanged and still first
+ok   I25 the stylesheet has a print block
+ok   I26 which explicitly keeps the scenario mark visible
+ok   I27 against its own hide-the-chrome rules
+ok   I28 while the controls themselves do not print — a printed input is not an input
+ok   I29 reset removes the mark
+ok   I30 and the body class with it
+
+=== MUTANTS ===
+ok   M1 membership stops consulting the country, so the US shows what the US does not sell (caught)
+ok   M2 the category menu is built before membership, so DE is offered what DE does not sell (caught)
+ok   M3 a missing regional record removes the listing instead of reporting it (caught)
+ok   M4 a missing regional record is plotted anyway, so an undescribed listing gets a coordinate (caught)
+ok   M5 an unreadable site status defaults to sellable (caught)
+ok   M6 the category menu folds case, so two business categories behave as one (caught)
+ok   M7 a blank category becomes a bucket instead of a reported gap (caught)
+ok   M8 the menu is ordered by whatever the source happened to return (caught)
+ok   M9 a cap is introduced, so a site with many categories silently shows some of them (caught)
+ok   M10 a series override becomes one number for every rung, flattening the ladder (caught)
+ok   M11 the scenario key drops the site, so one number reprices two currencies (caught)
+ok   M12 the canonical price is overwritten, so a reload has nothing to restore to (caught)
+ok   M13 an unrecognised reset scope clears everything (caught)
+ok   M14 an aggregate scope is allowed to hold a scenario (caught)
+ok   M15 a percentage of a non-existent price becomes zero rather than unanswerable (caught)
+ok   M16 setScenarioOverride mutates the object it was handed (caught)
+ok   M17 the site status is read from the field the LIVE response uses for something else (caught)
+
+PASS — passed 253, failed 0, mutants caught 17, survived 0

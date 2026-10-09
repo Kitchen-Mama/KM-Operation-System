@@ -1,0 +1,17 @@
+
+== A join receiverFact↔planningFact by demandRef; per-site lanes; grouped by SKU ==
+
+== B §7 demandWeight carried VERBATIM (0.7 / 0.3); survivalNeedQty = ceil(18×dailyDemand) ==
+
+== C fail-closed: KMAF not ready → refuse the whole batch (no partial universe) ==
+
+== D site included by KMAF but with no horizon shortage → no lane (not an error) ==
+
+== E end-to-end: KMWHA request → KMWRB batch → per-marketplace K3, shared pool once ==
+
+== F REAL KMAF §7 forecast-share basis: forecastShareQty 70/30 → demandWeight 0.7/0.3 ==
+
+== G determinism + single-owner surface ==
+
+----------------------------------------
+WEEKLY AI PLAN HARVEST ADAPTER (F1-7N-D-2b): 30 passed, 0 failed

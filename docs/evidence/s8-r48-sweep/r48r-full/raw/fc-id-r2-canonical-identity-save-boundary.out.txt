@@ -1,0 +1,101 @@
+
+== A. §14.A / §14.K — the healthy paths resolve their own canonical id ==
+ok   A1 healthy CA resolves READY_UNIQUE with the canonical id
+ok   A2 §14.K the existing healthy UK path is unchanged
+ok   A3 the string face still answers the id — R1/R1B's mechanism is untouched
+
+== B. §14.B / §14.C / §14.D — every unresolvable state is DISTINCT, and none of them is an id ==
+ok   B1 §14.B registry unread is UNREAD, not "empty"
+ok   B2 §14.C a failed read is READ_FAILED, not "unread"
+ok   B3 a registry that landed EMPTY is NO_MATCH over 0 rows
+ok   B4 §14.D a loaded registry with no CA row is NO_MATCH over the rows it does have
+ok   B5 all of them yield a blank id — which is exactly why the STATE had to exist
+
+== C. §14.E / §9 — duplicate canonical rows are AMBIGUOUS and are never guessed between ==
+ok   C1 two exact matches is AMBIGUOUS with NO id — not [0], not newest, not first
+ok   C2 and neither candidate leaks out as the answer
+ok   C3 a matching row carrying no id resolves nothing — a row is not an identity
+
+== D. §10 / §14.L / §14.M / §14.N — company and country isolation ==
+ok   D1 §14.N KM / US / Amazon resolves KM's own id
+ok   D2 and ResUS / US / Amazon resolves ResUS's — the shared platform name does not collide
+ok   D3 §14.L KM cannot adopt ResTW's CA identity — company isolation
+ok   D4 §14.M ResTW cannot adopt a US identity — country isolation
+ok   D5 a site with no company matches NOTHING — it does not match everything
+ok   D6 and neither does a site with no country
+ok   D7 nor one with no marketplace
+
+== E. §4 / §11 / §14.O — the SAVE boundary refuses before anything is dispatched ==
+ok   E1 the save calls the ONE identity owner
+ok   E2 §11 the gate is ABOVE _fcWriteBegin_ — no logical write is ever opened
+ok   E3 and above every write dispatch — IDENTITY_REFUSAL_WRITE_REQUEST_COUNT = 0
+ok   E4 a non-READY state returns outright — the outcome is CONFIRMED_NOT_STARTED, never a write failure
+ok   E5 and the id that travels into the payload is the one the gate verified, not a second lookup
+ok   E6 §5 the refusal writes no form value and enters no write state — FORM_STATE_SURVIVES = YES
+ok   E7 §13 and issues no read of its own — NEW_SAVE_TIME_REFERENCE_READS_ADDED = 0
+ok   E8 §5 the refusal never re-enters the save — SAVE_AUTOREPLAY_COUNT = 0
+ok   E9 §4 the unread refusal points at the existing Retry and states that nothing was written
+ok   E10 the ambiguity refusal states how many rows matched
+ok   E11 §4 the no-match refusal names the exact site triple
+ok   E12 and an EMPTY registry reads as a loading problem, not as a claim about this site
+
+== F. §8 — the mixed-freshness incident, end to end ==
+ok   F1 mixed freshness → UNREAD, no id
+ok   F2 the operator is sent to Retry, and no write is dispatched
+ok   F3 §8 after the reference read lands, the SAME site resolves MKT-RESTW-CA-AMAZON
+ok   F4 §14.H explicit Save then carries the canonical id
+
+== G. §6 / §7 — the server validates, never derives, and cannot erase a stored id ==
+ok   G1 §7 an ABSENT marketplace_id is allowed — this is the inline quantity edit, which claims no identity
+ok   G2 §13 and it costs ZERO registry reads — NEW_FULL_TABLE_READS_ADDED = 0 on that path
+ok   G3 §7 a PRESENT BLANK id is REFUSED — this is the erasure, and it is the whole reason the server half exists
+ok   G4 and the refusal says what it was about to do
+ok   G5 a canonical id whose triple agrees is accepted
+ok   G6 an id naming no registry row is refused
+ok   G7 §10 an id belonging to another company is refused — CROSS_COMPANY_ID_ADOPTION_COUNT = 0
+ok   G8 and one belonging to another country — CROSS_COUNTRY_ID_ADOPTION_COUNT = 0
+ok   G9 comparison is case-insensitive on both sides — the client sends a normalised key
+ok   G10 an id that CANNOT be verified is refused rather than trusted
+ok   G11 §6 the validator indexes no lookup result and builds no triple key — it checks a claim, never invents one
+ok   G11a the only registry access is BY THE CLAIMED ID — the direction that can verify but cannot derive
+ok   G12 and it writes nothing
+
+== H. §7 — create and edit parity, and the erasure that is now impossible ==
+ok   H1 §7 create and edit are one save function
+ok   H1a and the gate precedes BOTH payloads that carry the id — the campaign header and the event rows
+ok   H1b those two are the only places the id is written into a payload
+ok   H2 (world is healthy again for the checks below)
+ok   H3 §14.I/§14.J with the registry down, BOTH paths see a non-READY state and neither may proceed
+ok   H4 VALID_ID_CAN_BE_ERASED_BY_RUNTIME_FAILURE = NO — the second line of defence holds independently
+ok   H5 the UPDATE branch still writes every column the body CARRIES — which is why blank had to be refused
+
+== I. §13 / §14.P / §14.Q — nothing else moved ==
+ok   I1 §13 identity reads through the page's existing accessor — no new table read, no new owner
+ok   I2 and issues no network round of its own — NEW_NETWORK_ROUND_ADDED_TO_HEALTHY_SAVE = 0
+ok   I3 §14.P no recommendation / gap / forecast calculation was added to the identity path
+ok   I4.1 §14.Q 12_shipment_handlers.gs is untouched by marketplace identity — no S6 behaviour change
+ok   I4.2 §14.Q 21_factory_inventory_handlers.gs is untouched by marketplace identity — no S6 behaviour change
+ok   I4.3 §14.Q 11_shipping_plan_handlers.gs is untouched by marketplace identity — no S6 behaviour change
+ok   I5 §2 exactly two identity functions on the event path: the mapping and its string face
+ok   I6 and the string face DELEGATES — there is one filter, in one function
+
+== J. mutation ==
+ok   J1 the readiness guard is deleted (caught)
+ok   J2 `[0]` ambiguity selection comes back (caught)
+ok   J3 the save gate allows a blank id through (caught)
+ok   J4 company is dropped from the identity comparison (caught)
+ok   J5 country is dropped from the identity comparison (caught)
+ok   J6 Retry replays the Save (caught)
+ok   J7 the server accepts a blank marketplace_id again (caught)
+ok   J8 the server starts DERIVING an id from the triple (caught)
+
+=====================================================
+FC-ID-R2 CANONICAL IDENTITY SAVE BOUNDARY — 70 passed / 0 failed
+mutants: 8 caught / 8 planted
+CANONICAL_MARKETPLACE_ID_REQUIRED_FOR_SAVE = YES
+IDENTITY_LOOKUP_STATES = READY_UNIQUE | UNREAD | READ_FAILED | NO_MATCH | AMBIGUOUS
+NEW_STATE_MACHINE_CREATED = NO   BLANK_MARKETPLACE_ID_WRITE_COUNT = 0
+SERVER_VALIDATES_MARKETPLACE_ID = YES   SERVER_DERIVES_MARKETPLACE_ID = NO
+VALID_ID_CAN_BE_ERASED_BY_RUNTIME_FAILURE = NO   SAVE_AUTOREPLAY_COUNT = 0
+PRODUCTION_ROWS_WRITTEN = 0   PRODUCTION_BACKFILL_ROWS = 0   S6_BEHAVIOR_CHANGED = NO
+=====================================================

@@ -1,0 +1,21 @@
+
+== A · §4 — the three read outcomes are three different answers ==
+
+== B · §9 — the correctness matrix ==
+
+== C · §5 — Submit refuses a plan the database has not confirmed ==
+
+== D · the page seam — the shipped functions, against a stubbed DOM ==
+
+== E · §7 — the request that could only ever fail ==
+
+== F · driven mutants — every one injects a real fault ==
+
+mutants: 12 · survived: 0
+
+== G · §10 — bounded fatigue ==
+  S2R3_REQUEST_DRIFT=0 · S2R3_LISTENER_DRIFT=0 · S2R3_STATE_BLEED=0 · S2R3_PERMANENT_LOADING_COUNT=0 · STALE_COMMITS=0
+
+----------------------------------------
+S2-R3 DRAFT DB STATE UNKNOWN: 96 passed, 0 failed  ·  mutants 12, survived 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0

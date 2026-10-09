@@ -1,0 +1,22 @@
+
+== A. Weekly field mapping — mechanical camelCase → snake_case natural key ==
+
+== B. Weekly blocked / valid-zero mapping ==
+
+== C. Weekly structural-blocked line → unmappable metadata (never a Plan Builder line, never thrown) ==
+
+== D. Monthly field mapping — requestMonth/requestBucket → snake_case; sku in scope not line key ==
+
+== E. Monthly blocked / zero / multi-factory metadata ==
+
+== F. Run-level ownership — required, preserved, never generated ==
+
+== G. Value preservation — bridge performs NO calculation (exact equality) ==
+
+== H. Scope mismatch + duplicate mapped key → fail closed ==
+
+== I. Plan Builder compatibility — REAL buildRecommendation accepts bridged facts ==
+
+== J. Purity / determinism / error ==
+
+All Round 1O Recommendation Facts → Plan Builder Bridge assertions passed (60 assertions).

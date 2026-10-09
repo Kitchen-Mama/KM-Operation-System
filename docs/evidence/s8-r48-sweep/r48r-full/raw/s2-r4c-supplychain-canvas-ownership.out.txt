@@ -1,0 +1,111 @@
+
+====================================================================================================
+S2-R4C — SUPPLY CHAIN CANVAS OWNERSHIP RULING
+====================================================================================================
+
+-- A. THE MODEL — the evidence the ruling rests on ----------------------------------------------------
+ok   A1 the module contains no "KM.DB" — it reads no canonical source
+ok   A1 the module contains no "KM.api" — it reads no canonical source
+ok   A1 the module contains no "KM.transport" — it reads no canonical source
+ok   A1 the module contains no "getWorkspace" — it reads no canonical source
+ok   A1 the module contains no "getTable" — it reads no canonical source
+ok   A1 the module contains no "getOperationDb" — it reads no canonical source
+ok   A1 the module contains no "google.script" — it reads no canonical source
+ok   A1 the module contains no "fetch(" — it reads no canonical source
+ok   A1 the module contains no "XMLHttpRequest" — it reads no canonical source
+ok   A2 §5 no demo dataset is referenced, so there is no demo fallback to make unreachable
+ok   A3 §2 the spec puts SKU / replenishment association OUT OF SCOPE — the ruling is not new policy
+ok   A4 §2 ... along with ERP / WMS / marketplace integration
+ok   A5 §1 exactly ONE module names the canvas key — no other page can read it
+ok   A6 §5 four storage accesses in the module: the document read/write and the quarantine read/write
+ok   A7 the key is a named constant — two literals are two chances to disagree
+ok   A8 §1 the shipped partial carries no business-bound control
+
+-- B. THE RULING IS RECORDED WHERE BOTH AUDIENCES LOOK — §9 -------------------------------------------
+ok   B1 §9 the module states the ruling for whoever edits it next
+ok   B2 §9 ... and names the model
+ok   B3 §9 ... and states what it forbids: a business value is read per render, never persisted here
+ok   B4 §9 the S-series ledger row is answered in the document that already owns the subject
+ok   B5 §9 ... so the row is no longer carried forward as open
+
+-- C. THE STORED DOCUMENT IS A DRAWING — §4, §7 -------------------------------------------------------
+ok   C1 the four real item constructors ran
+ok   C2 §4 every stored item field is geometry, style or free text — CANVAS_UI_STATE_ALLOWED_FIELDS
+ok   C3 §4 no stored item field names a business fact
+ok   C4 §4 an arrow stores its two endpoints and its stroke — nothing else
+ok   C5 §3 an arrow is keyed by canvas node id — the drawing has no business identity to get wrong
+ok   C6 §7 the stored document has exactly four top-level keys
+ok   C7 §7 drawing four items and an arrow issued ZERO requests
+
+-- D. AN UNREADABLE DOCUMENT IS AN ABSENT ONE — §6 ----------------------------------------------------
+ok   D1.1 §6 a truncated write does not throw out of init()
+ok   D2.1 ... the canvas starts empty
+ok   D3.1 ... and init() still finished: the canvas is wired
+ok   D4.1 §6 ... and the unreadable value is preserved, not destroyed
+ok   D1.2 §6 a value that is not JSON does not throw out of init()
+ok   D2.2 ... the canvas starts empty
+ok   D3.2 ... and init() still finished: the canvas is wired
+ok   D4.2 §6 ... and the unreadable value is preserved, not destroyed
+ok   D1.3 §6 a null document does not throw out of init()
+ok   D2.3 ... the canvas starts empty
+ok   D3.3 ... and init() still finished: the canvas is wired
+ok   D4.3 §6 ... and the unreadable value is preserved, not destroyed
+ok   D1.4 §6 an array where the document belongs does not throw out of init()
+ok   D2.4 ... the canvas starts empty
+ok   D3.4 ... and init() still finished: the canvas is wired
+ok   D4.4 §6 ... and the unreadable value is preserved, not destroyed
+ok   D1.5 §6 a bare string does not throw out of init()
+ok   D2.5 ... the canvas starts empty
+ok   D3.5 ... and init() still finished: the canvas is wired
+ok   D4.5 §6 ... and the unreadable value is preserved, not destroyed
+ok   D5 a readable document still loads
+ok   D6 ... and nothing is quarantined
+ok   D7 §6 an existing quarantine is never overwritten
+ok   D8 §6 a document whose items are not a list does not throw
+ok   D9 ... both are coerced to empty
+ok   D10 §6 unreadable AND unwritable storage still mounts and still draws
+ok   D11 ... the canvas works for the session it cannot save
+ok   D12 §6 READ FAILURE != DEMO FALLBACK — there is no demo dataset in the module (A2)
+ok   D13 §6 READ FAILURE != EMPTY BUSINESS STATE — there is no business state to empty (A1, C2)
+
+-- E. LIFECYCLE — §8 ----------------------------------------------------------------------------------
+ok   E1 nothing is bound before the first mount
+ok   E1b ... and nothing has been requested — REQUEST_COUNT_PRE = 0
+ok   E2 §8 one mount binds exactly three document listeners
+ok   E3 ... one of each, all owned
+ok   E4 §8 the first open issued ONE request: the markup partial, and nothing else
+ok   E5 §8 ten items later, still three — LISTENER_DRIFT = 0
+ok   E6 §8 three more renders of ten items: still three
+ok   E7 §8 ... and no render issued a request — DUPLICATE_REQUEST_DRIFT = 0
+ok   E8 §8 unmount releases every document listener
+ok   E9 §8 re-entry rebinds exactly three — no stacking
+ok   E10 §8 re-entry re-fetched nothing: the markup is already present
+ok   E11 §8 four mounts in total, still three listeners
+ok   E12 §8 ... and the document survived the navigations intact
+ok   E13 §8 the canvas element is wired exactly once across four mounts
+ok   E14 §8 an unfinished slider drag is released on unmount — STATE_BLEED = 0
+ok   E15 §8 the module registers no interval — TIMER_DRIFT = 0
+ok   E16 §8 there is no loading state to get stuck in
+ok   E17 §8 no timer re-arms itself
+
+-- F. THE WRITE PATH — §7 -----------------------------------------------------------------------------
+ok   F1 §7 SUPPLYCHAIN_CANVAS_BUSINESS_WRITES = 0
+ok   F2 §7 every UI write lands in ONE key and no other
+ok   F3 §7 exactly one writer of the canvas document — WRITE_OWNER = CanvasController
+ok   F4 §7 twenty-eight UI-state write call sites, all presentation mutations
+
+-- G. MUTANTS — each returns TRUE when the defect is CAUGHT -------------------------------------------
+ok   G0  the unmutated baseline mounts, draws, and holds three listeners
+ok   G1  a slider binds its own document listeners again, so they stack per item per render (caught)
+ok   G2  the unmount stops releasing the document listeners, so they stack across navigations (caught)
+ok   G3  JSON.parse is unguarded again, so one truncated value bricks the page (caught)
+ok   G4  the unreadable document is dropped instead of quarantined, so the next edit destroys it (caught)
+ok   G5  the quarantine is overwritten on every failure, losing the copy nearest the fault (caught)
+ok   G6  a non-array items value is trusted, so the first render throws where the parse used to (caught)
+ok   G7  an unfinished slider drag survives the unmount and resumes on the next mount (caught)
+ok   G8  saveToStorage throws on a blocked store, so an edit takes the page down (caught)
+
+====================================================================================================
+S2-R4C SUPPLY CHAIN CANVAS OWNERSHIP — passed 88  failed 0  |  mutants caught 8  survived 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+====================================================================================================

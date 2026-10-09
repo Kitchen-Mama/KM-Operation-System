@@ -1,0 +1,36 @@
+
+== STEP 1 — doc headers EXACTLY match the implemented R2A code contract ==
+ok   code defines 22 canonical headers, got 22
+ok   doc lists 22 canonical headers, got 22
+ok   STEP 1 doc canonical headers === COMPANY_LEGAL_ENTITIES_HEADERS_ (no CONTRACT_CONFLICT)
+ok   PK is company_legal_entity_id
+ok   business key column is company
+
+== STEP 3 — migration snippet is safe/additive/authorized ==
+ok   migration fn named r2aCreateCompanyLegalEntitiesTable(backupReference)
+ok   migration FAILS if the table already exists
+ok   migration reuses prodMigrateCreateSheet_ (authorized owner)
+ok   migration builds KMSAFE auth DTO (old=[]/new=headers hash)
+ok   migration requires a backupReference
+ok   no existing-sheet mutation / column append (create-only)
+
+== STEP 4 — seed template: system values fixed, factual values blank ==
+ok   seed provides stable id CLE-KM
+ok   seed provides stable id CLE-RESTW
+ok   seed provides stable id CLE-RESUS
+ok   seed rows for KM / ResTW / ResUS
+ok   all 3 seed rows: is_active TRUE + open effective window
+ok   factual legal fields left blank for the USER (not fabricated)
+
+== STEP 5 — verification is read-only and returns the LIVE-READY token ==
+ok   verification fn r2aVerifyCompanyLegalEntities()
+ok   verification returns COMPANY_LEGAL_ENTITY_AUTHORITY_LIVE_READY
+ok   verification uses the R2A validate-only read + pure resolver
+ok   verification performs NO writes (read-only)
+ok   G/H/I lookup is company-only (no factory/warehouse/marketplace)
+
+== STEP 2 — grain principle stated (factory ⇎ company) ==
+ok   doc freezes factory ⇎ company independence
+
+----------------------------------------
+COMPANY LEGAL ENTITY LIVE CONTRACT (F1-5C-EXPORT-R2A-LIVE): 23 passed, 0 failed

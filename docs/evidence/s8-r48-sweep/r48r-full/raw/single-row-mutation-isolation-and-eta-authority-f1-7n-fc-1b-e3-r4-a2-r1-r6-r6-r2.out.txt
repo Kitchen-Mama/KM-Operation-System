@@ -1,0 +1,156 @@
+
+== §1/§2 — THE MUTATION PATH, AND WHETHER PRODUCTION SENT ONE REQUEST OR TWO ==
+ok   P1  the flush chains ONE atomic write per canonical group
+ok   P1a and says so: groups are written in sequence, so two groups are two requests separated by a round trip
+ok   P2  each group issues exactly one upsertShippingAllocationDraftAtomic
+ok   P2a carrying ONE header and that header's own lines — a request cannot span two headers
+ok   P3  ON THE RAW DOM VALUE, Route B compares as CHANGED — the diff that produced the second request
+ok   P3a because the lane filled its cell with the single eligible last mile
+ok   P3b while Route A carries the value a person chose
+
+== §3/§4 — TWO VISIBLE ROUTES, EDIT ONLY A ==
+ok   T1  ONE gesture on Route A marks exactly ONE route dirty
+ok   T2  and the write scope is that route alone
+ok   T3  EXACTLY ONE target request
+ok   T3a addressed at Route A's own header
+ok   T3b and Route A's own line
+ok   T4  ZERO Route B writes — the header the incident touched is addressed by nothing
+ok   T5  Route B still CARRIES the derived value — it is what that route would ship under
+ok   T5a and is recorded as not being its author, which is the whole difference
+ok   T6  §4 MEASURED: carrier hydration is what put a value on Route B, and on Route B only
+
+== §9 — THE STATES A ROUTE PASSES THROUGH ==
+ok   T7  a late carrier settle marks NOTHING dirty — hydration is not an edit
+ok   T7a so it issues zero requests
+ok   T7b even though the cell is now showing the derived value
+ok   T8  a one-profile lane still SHOWS parcel, and now reports that the row is not its author
+ok   T8a a two-profile lane still asks, and an unanswered question is not derived
+ok   T8b an operator's own choice is never derived
+ok   T8c and a value the method no longer runs is replaced for display, derived, and flagged invalidated
+ok   T8d the cell PUBLISHES it, so a collect reading the DOM can tell
+ok   T8e and does not, when the value is the row's own
+ok   T9  a collect with no operator edit marks nothing
+ok   T9a and an empty intent set is an empty write scope, not every row on screen
+ok   T9b the scope is the touched set, with no second branch to fall through to
+ok   T9c the empty-touched-set fallback is gone from the source
+ok   T10 five repaints and five collects mark nothing dirty
+ok   T10a the display is stable across them
+ok   T10b and DERIVED-NESS SURVIVES the repaint — the repaint feeds the choice the row's stored value, not the last derived one
+ok   T11 a remount marks nothing dirty — a rebuilt row is not an edited one
+ok   T11a and issues no request
+ok   T12 four rapid Search cycles produce zero dirty routes and zero requests
+ok   T13 one request
+ok   T13a carrying one route
+ok   T13b no header id is duplicated in the model
+ok   T13c and both rows are UPDATES of rows the database already holds — nothing mints a new header or line
+ok   T13d the plan still has exactly two rows
+ok   T14 an operator who DOES choose on Route B marks Route B dirty
+ok   T14a and the request is addressed at Route B — isolation is not paralysis
+ok   T15 a quantity edit on Route B marks it dirty for its OWN reason
+ok   T15a and the write carries the derived last mile, because that IS what the route ships under
+
+== §3 — SUCCESS, TIMEOUT AND ACK_UNKNOWN TOUCH ONLY THE MATCHING ROW ==
+ok   T16 confirmed success clears ONLY the instances that were persisted
+ok   T17 an indeterminate outcome holds exactly the routes it names
+ok   T18 a held route is removed from the write scope by its own instance id
+ok   T19 and the ONLY release names one instance
+ok   T19a which no edit path calls — an unrelated edit can neither release nor resend a held row
+ok   T20 a write that expires is classified as a WRITE timeout, never as a failure
+ok   T20a and an expired write is INDETERMINATE — the server may have committed after we stopped listening
+ok   T20b so it is never reported as a proven zero-write
+
+== §5 — THE MUTATION IS VISIBLE IN THE TIMELINE ==
+ok   M1  a fresh transport has recorded no mutation
+ok   M2  a write reported through recordExternal now APPEARS in the timeline
+ok   M2a and in the request timeline it was structurally absent from before
+ok   M3  named by its action
+ok   M3a and typed as a write
+ok   M3b carrying how many routes the payload held
+ok   M3c the header it addressed
+ok   M3d the lines it addressed
+ok   M3e and the FIELD NAMES it would set
+ok   M3f with the result
+ok   M3g and a correlation id
+ok   M4  it has an interval, which is what timeline() filters on
+ok   M4a reconstructed from the reported duration, clamped at the transport's own epoch: a request cannot have been dispatched before the module that is recording it existed
+ok   M4b AND LABELLED AS RECONSTRUCTED — inferring an interval from a duration is exactly what §2 forbids doing silently
+ok   M5  the incident's two writes would both be visible
+ok   M5a naming BOTH headers, which is the fact the operator could not obtain
+ok   M6  a read does not become a mutation
+ok   M6a but it is still in the timeline
+ok   M7  a write that took no measurable time is still a write in the timeline
+ok   M7a with a zero interval, which is a measurement rather than an absence
+ok   M7b while a sample carrying NO duration gets NO invented interval — a fabricated one is worse than none
+ok   M7c though it is still counted, so nothing is silently discarded
+ok   M7d and _kmReportSample_ ALWAYS supplies a duration, zero included
+ok   M8  the shape counts the routes
+ok   M8a names the header
+ok   M8b names the lines
+ok   M8c and lists the field NAMES
+ok   M9  the note's VALUE is nowhere in the sample
+ok   M9a nor is the quantity
+ok   M9b nor the last mile value — names answer the question, values do not
+ok   M10 a line with no persisted id is named "(new)" rather than omitted
+ok   M11 a null payload yields nulls, never an exception
+
+== §6 — ETA AUTHORITY ==
+ok   E1  expected_arrival is NOT sent by the line payload builder
+ok   E1a and shipped source says it is a BLOCKED DECISION, not an oversight
+ok   E2  naming the two inputs CARRIER_AND_ROUTE_SPEC §5B requires and the schema does not have
+ok   E2a and stating that the base date exists in no table, header or line
+ok   E3  a PERSISTED date, when one exists, is the authority
+ok   E3a and a route without one shows a COMPUTED figure
+ok   E4  the reason a stored date wins is that a later lead-time edit must not rewrite a commitment
+ok   E5  the displayed date is a REFERENCE figure computed from TODAY, so a reload moves it — by design, stated in source
+ok   E5a and that is precisely why it is not persisted
+ok   E6  a future round has to remove that guarantee deliberately rather than reintroduce a guess by accident
+ok   E7  and the frozen production capture records exactly that
+
+== §7/§8 — THE AFTER-STATE CENSUS AND THE REPAIR THAT IS NOT RUN ==
+ok   R1  neither entry point can setValue
+ok   R1  neither entry point can appendRow
+ok   R1  neither entry point can deleteRow
+ok   R1  neither entry point can clearContent
+ok   R1  neither entry point can getRange().setValue
+ok   R2  both declare read_only and zero writes
+ok   R3  the repair reports executed:false, and says it has no write path
+ok   R3a it never CALLS the writer — it only names the action it would use
+ok   R3b and its success verdict says DESIGNED, not DONE
+ok   R4  the compensating update is guarded by the CURRENT version (2), not by the pre-incident one
+ok   R4a it goes FORWARD to 3 — no decrement, no history rewrite
+ok   R5  and it names what it forbids, including touching Route A
+ok   R6  exactly ONE field may be restored
+ok   R6a and its target value is the frozen BEFORE, not a recomputed one
+ok   R7  the K4 key is DERIVED from the restored last mile rather than typed
+ok   R8  and expected_arrival is on the untouched list
+ok   R8a with the §6 audit's answer stated as the ETA treatment: do nothing
+ok   R9  any difference the incident did not measure REFUSES the repair rather than being carried along
+ok   R10 and only an empty preflight authorises anything
+ok   R11 a readback contract is stated, and it expects version 3
+ok   R12 Route A's AFTER is frozen too — as the thing that must NOT be repaired
+
+== §10 — MUTANTS ==
+ok   N1  the derived flag always false — every derived value becomes an operator decision again (caught)
+ok   N2  the signature reading the derived value instead of the persisted one (caught)
+ok   N3  the cell no longer publishing derived-ness, so the collector cannot tell (caught)
+ok   N4  the repaint feeding the control value back, so derived-ness evaporates on the second paint (caught)
+ok   N5  the empty-touched-set fallback restored (caught)
+ok   N6  the last-mile picker marking the METHOD dirty again (caught)
+ok   N7  an external sample given no interval, so mutations vanish from the timeline again (caught)
+ok   N8  the reconstructed interval passed off as observed (caught)
+ok   N9  the mutation shape carrying payload VALUES (caught)
+ok   N10 the repair executing instead of reporting (caught)
+ok   N11 the repair losing its version guard (caught)
+ok   N12 the ETA field reintroduced into the line payload (caught)
+
+== DEPLOYMENT ==
+ok   D1  R6-R6-R2 introduced a cache token of its own, after the round it superseded
+ok   D1a and index.html carries the CURRENT token on every reference — no half-updated deployment
+ok   D1b across all 55 script and style references in the co-deployed set
+ok   D2  the diagnostic declares R6-R6-R2 or a later round (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   D2a and the ledger still records the round this suite belongs to
+ok   D2b and whatever it declares is a well-formed stamp
+ok   D3  the frozen capture still names the build it was CAPTURED for — a stamp records an event, not the present
+ok   D4  16_ is untouched — this is a client-side isolation defect and the server contract did not move
+
+passed 136  failed 0  |  mutants caught 12  survived 0

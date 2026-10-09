@@ -1,0 +1,89 @@
+
+== A. the ten stages each exist, and each has one owner ==
+ok   A1 FORECAST/PROJECTION — KMTPP.projectTimePhasedSupply, the chronological balance owner
+ok   A2 and 42_ calls it exactly once — one projection entry, not one per branch
+ok   A3 GAP — 43_ materializes order_planning_gap
+ok   A4 through one row builder
+ok   A5 REALLOCATION — KMFSR §41, delegated to from 43_ rather than reimplemented there
+ok   A6 through one application point
+ok   A7 RESIDUAL — 42_ derives residualOrderNeedQty from KMTPP remainingGapQty
+ok   A8 and cartonizes it through the canonical owner exactly once
+ok   A9 RECOMMENDATION — KMREC
+ok   A10 carrying its frozen total authority
+ok   A11 READ MODEL + OPERATOR UI — request-order.js holds the DTO and renders it
+ok   A12 with handleRequestOrderAiPlan as the operator entry
+ok   A13 WRITE PLAN — KMRDV2P
+ok   A14 WRITE EXECUTION — rpoFlatLockedApply_
+ok   A15 REQUEST ORDER TRANSITION — 66_ delegating to 13_
+
+== B. no second calculation path, no second write path ==
+ok   B1 one flat planner
+ok   B2 one flat apply
+ok   B3 one eligibility owner
+ok   B4 one injected locked-apply dep serving generate / edit / submit / cancel
+ok   B5 the line-engine boundary still exists, in 23_ where it belongs
+ok   B6 SECOND_WRITE_PATH_COUNT = 0 — the flat orchestrator never calls it
+ok   B7 nor does the generation owner
+ok   B8 SECOND_CALCULATION_PATH_COUNT = 0 — 47_api_v1_recommendation_generation.gs derives no verdict of its own
+ok   B8 SECOND_CALCULATION_PATH_COUNT = 0 — 24_recommendation_orchestrator.gs derives no verdict of its own
+ok   B8 SECOND_CALCULATION_PATH_COUNT = 0 — 48_api_v1_request_order_draft_job.gs derives no verdict of its own
+ok   B8 SECOND_CALCULATION_PATH_COUNT = 0 — 66_api_v1_request_order_send.gs derives no verdict of its own
+ok   B8 SECOND_CALCULATION_PATH_COUNT = 0 — request-order.js derives no verdict of its own
+
+== C. quantity authorities stay distinct ==
+ok   C1 KMREC total = cartonize(13+13) once = 36
+ok   C2 per-tier stored suggestion = 48
+ok   C3 the two are DIFFERENT NUMBERS — which is why only one of them may be written
+ok   C4 TIER_WRITE_SOURCE = the per-tier stored suggestion
+ok   C5 KMREC_TOTAL_IS_TIER_WRITE_SOURCE = NO — 36 reached no column
+ok   C6 REALLOCATION_QTY_MERGED_INTO_ORDER_QTY = NO — there is no column to merge into
+ok   C7 nor any field equal to a reallocation + order sum
+ok   C8 SECOND_QUANTITY_AUTHORITY_COUNT = 0 — neither writer reads the display total
+ok   C9 SEND qty = tN_order_qty, the operator value — never recommended_qty
+ok   C10 and the system suggestion is not carried onto the candidate at all
+
+== D. the action/write matrix, end to end ==
+ok   D1 NEW_ORDER order-write eligible = true
+ok   D1 REALLOCATE_AND_NEW_ORDER order-write eligible = true
+ok   D1 REALLOCATE order-write eligible = false
+ok   D1 NO_ACTION order-write eligible = false
+ok   D1 MANUAL_REVIEW order-write eligible = false
+ok   D2 ACTION_WRITE_MATRIX_PASS — the matrix covers the KMREC enum exactly, no member unclassified
+ok   D3 the draft lifecycle vocabulary shares no member with the action enum
+ok   D4 and no column exists to persist one
+
+== E. operator authority, including the exception ==
+ok   E1 AUTO_OPERATOR_DECISION_COUNT = 0 — an unconfirmed decision produces no plan
+ok   E2 DUPLICATE_OPERATOR_DISPATCH = 0 — the second activation returns before dispatch
+ok   E3 the scheduled ORDER_PLANNING driver exists and is acknowledged
+ok   E4 and refresh SKIPS any tier the operator edited — the bound on what a schedule may move
+ok   E5 AUTO_CREATE_REQUEST_ORDER / PO = NO on the scheduled path
+
+== F. the Request Order transition cannot be bypassed ==
+ok   F1 Send builds a frozen workset and refuses a drifted one
+ok   F2 and 13_ mints the Request Order under a deterministic execution key
+ok   F3 RECOMMENDATION_BYPASSES_SEND_REQUEST = NO — supply-recommendation.js reaches no issuer
+ok   F3 RECOMMENDATION_BYPASSES_SEND_REQUEST = NO — supply-planning-request-draft-v2.js reaches no issuer
+ok   F3 RECOMMENDATION_BYPASSES_SEND_REQUEST = NO — supply-planning-request-draft-v2-persistence.js reaches no issuer
+ok   F4 DRAFT_DIRECTLY_BECOMES_PO = NO
+
+== G. shipping separation ==
+ok   G1 SHIPPING_TABLE_WRITE_COUNT = 0 — supply-recommendation.js names no shipping table
+ok   G1 SHIPPING_TABLE_WRITE_COUNT = 0 — supply-planning-request-draft-v2.js names no shipping table
+ok   G1 SHIPPING_TABLE_WRITE_COUNT = 0 — supply-planning-request-draft-v2-persistence.js names no shipping table
+ok   G2 no shipping token in the closed reason set
+ok   G3 AUTO_CREATE_SHIPMENT = NO — no shipping member in the action enum
+ok   G4 SHIPPING_REQUIRED_QTY_IS_PURCHASE_DEMAND = NO — no shipping quantity is read as order demand
+
+== H. mutation — the seal must be able to fail ==
+ok   H1 a second flat planner is introduced (caught)
+ok   H2 REALLOCATE becomes order-write eligible (caught)
+ok   H3 an action leaves the matrix unclassified (caught)
+ok   H4 the display total becomes the tier write source (caught)
+ok   H5 the Send candidate is driven by the system suggestion instead of the operator value (caught)
+ok   H6 operator confirmation stops being required for a decision (caught)
+ok   H7 a shipping member is added to the recommendation vocabulary (caught)
+
+== RESULT ==
+passed 69  failed 0  mutants killed 7/7
+SECOND_CALCULATION_PATH_COUNT = 0 · SECOND_WRITE_PATH_COUNT = 0 · SECOND_QUANTITY_AUTHORITY_COUNT = 0

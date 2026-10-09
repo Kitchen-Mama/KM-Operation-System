@@ -1,0 +1,10 @@
+
+§1 factory site allocation — the authorized source policy, executed
+
+§2 order planning draft readback — reader, DTO and writer now agree
+
+§3 AI Plan / Recalculate — every click produces a visible outcome
+
+§4 preserved R4B behaviour
+
+PASS  194 passed, 0 failed

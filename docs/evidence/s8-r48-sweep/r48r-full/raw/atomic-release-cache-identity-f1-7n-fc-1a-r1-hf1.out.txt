@@ -1,0 +1,91 @@
+
+== §A — THE CACHE IDENTITY: a token that was published cannot be reused, and the rule is derived ==
+ok   A1  HF1 minted its own application token
+ok   A1a and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   A1b HF1's token sits STRICTLY AFTER FC-1A's in the append-only series
+ok   A1c while FC-1A's token REMAINS in the series — history is never rewritten, or "at or after round X" changes meaning
+ok   A1d and both are application tokens, not map-series ones
+ok   A2  index.html carries ZERO production references to the published FC-1A token
+ok   A2a the application set is carried on ONE current token (55 refs on r46-avgsales-20261008)
+ok   A2b and nothing is left behind on a superseded application token — the set rotated together
+ok   A3  the feature is spoken by 3 browser files index.html loads (operation-system-db-api.js, shipping-plan.js, shipping-history.js)
+ok   A3a and EVERY one of them is served at the current application token
+ok   A4  shipping-plan.js — the file FC-1A rewrote and never rotated — is on the current token
+ok   A4a and no longer on donenotice-20260811, which predates the feature by three weeks
+ok   A4b while its STYLESHEET is untouched, because no CSS byte moved in this release
+ok   A5  every application asset carries an application token and every map asset a map-series token
+ok   A6  the release ledger RETAINS the FC-1A token as a series member (history, not a production reference)
+ok   A6a and still states, in its own words, the rule R1 broke
+ok   A6b and RECORDS this correction rather than quietly rotating the token
+ok   A6c marking the superseded reasoning in place instead of deleting it
+ok   A6d and R1's own planning document is corrected where it stated the opposite
+
+== §B — THE APPS SCRIPT MANIFEST: every owner stamp, and the one R1 changed without moving ==
+ok   B1  every one of the 31 manifest rows PARSED — a row this regex skipped would be a stamp nothing below ever compares
+ok   B1a and every one of them declares exactly the build its manifest entry expects
+ok   B2  22_ declares a build at or after FC-1A-R1 — the round that added its cancelled-shipment refusal (declares F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37)
+ok   B2a and the manifest expects EXACTLY what the file declares, so a 22_ left behind is DETECTABLE — the two are read from their own files, so they can only be edited together
+ok   B2b and the refusal that stamp is FOR is actually present in 22_
+ok   B3  deployed_action_contract_version is not below 11
+ok   B3a required_action_list_version is not below 12 (v14)
+ok   B3b transport_contract_version is UNCHANGED at 1 — no envelope field moved in this hotfix
+ok   B3c the client pin AGREES with the deployment, derived rather than restated
+ok   B3d and so does the transport pin
+ok   B3e the pin was never lowered to admit an older deployment (v18)
+
+== §C — cancelShipmentDraft EXISTS EXACTLY ONCE ON EVERY AXIS ==
+ok   C1  the router dispatches it exactly once
+ok   C2  exactly one handler defines it
+ok   C3  the required-action manifest registers it exactly once
+ok   C4  the browser adapter exposes it exactly once
+ok   C5  and a UI caller reaches it — an action with no caller is a deployed stage nobody can start
+ok   C6  and the router ADVERTISES it in the Supported list a rejection prints
+
+== §D — THE DEPLOYMENT, EXECUTED: the manifest values come off the wire, not out of a constant ==
+ok   D1  EXECUTED: deployed_action_contract_version is not below 11
+ok   D2  EXECUTED: required_action_list_version is not below 12
+ok   D3  EXECUTED: transport_contract_version = 1 (unmoved)
+ok   D4  EXECUTED: missing_actions = []
+ok   D5  EXECUTED: mixed_deployment = false
+ok   D5a EXECUTED: no owner file is stale
+ok   D5b EXECUTED: no required owner file is absent
+ok   D5c EXECUTED: the deployment probes exactly the 31 owners §B parsed statically
+ok   D6  EXECUTED: cancelShipmentDraft is present in the required-action answer
+ok   D6a EXECUTED: and it RESOLVES — its handler symbol exists in the deployment
+ok   D7  EXECUTED: the router reports a build at or after the R1 line
+ok   D8  EXECUTED: the uniformity verdict is UNIFORM — UNIFORM — every probed owner file declares the build its man
+ok   D8a the step-back release was resolved from the shared ledger
+ok   D9  EXECUTED: a 22_ left one release behind is NAMED as stale
+ok   D9a EXECUTED: and the deployment reports itself MIXED
+ok   D9b EXECUTED: with a verdict telling the operator to re-copy and republish
+ok   D10 EXECUTED: as R1 shipped it, a stale 22_ was INVISIBLE — this is what the fix buys
+ok   D10a EXECUTED: the report said mixed_deployment=false about a partial sync
+
+== §E — THE ALTERNATE DOOR STAYS SHUT ==
+ok   E1  updateShipment has both a cancel refusal and a status write
+ok   E1a and the refusal comes BEFORE the write, so nothing is persisted first
+ok   E2  and an unrecognised status is refused too — the allowlist fails closed, not open
+ok   E3  exactly one router call site reaches the cancel handler
+
+== §N — MUTATIONS: each defect this round repaired, reintroduced ==
+ok   N1  a published token restored in index.html (caught)
+ok   N2  shipping-plan.js returned to the 2026-08-11 token (caught)
+ok   N3  only some entry points rotated — shipping-history.js left behind (caught)
+ok   N4  the adapter left behind while the pages rotate (caught)
+ok   N5  the map token placed on an application asset (caught)
+ok   N6  the new token appended to the ledger but index.html never rotated (caught)
+ok   N7  history rewritten — FC-1A dropped from the series to force the count to zero (caught)
+ok   N8  22_ build stamp reverted to FC-1A (caught)
+ok   N9  the manifest expectation for 22_ reverted, so the stale file passes (caught)
+ok   N10 the cancelled-shipment refusal removed while the stamp still claims it (caught)
+ok   N11 the client pin lowered to admit a v10 deployment (caught)
+ok   N12 the transport contract moved by a cache-identity hotfix (caught)
+ok   N13 the router dispatch for cancelShipmentDraft removed (caught)
+ok   N14 the handler removed while the registry still requires it (caught)
+ok   N15 the browser adapter removed, leaving the UI calling nothing (caught)
+ok   N16 updateShipment allowed to write the cancelled status after all (caught)
+ok   N17 the refusal moved AFTER the status write, making it a log entry (caught)
+
+---
+75 passed, 0 failed
+mutations: 17 caught, 0 missed

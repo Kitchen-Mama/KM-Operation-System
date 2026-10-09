@@ -1,0 +1,25 @@
+ok   1: single distinct marketplace → actual
+ok   1: repeated single marketplace → actual
+ok   2: two distinct marketplaces → MULTI
+ok   2: no marketplace → blank
+ok   5: base freight = rate 2 × 100kg = 200
+ok   5: fuel = 200 × 15% = 30 (NOT a flat 15)
+ok   5: freight = base + fuel = 230
+ok   min_charge floors a low base (50 < 150 → 150)
+ok   carton charge = rate × cartons
+ok   volume charge = rate × cbm
+ok   shipment charge = flat rate once
+ok   6: customs fee = the per-shipment fee, once
+ok   6: combined plan → customs fee still charged once (× lines forbidden)
+ok   7: included_in_rate → duty 0 (never double-added)
+ok   8: excluded duty = 10 × 100 × 5% = 50 via series CO1100
+ok   8: excluded duty sums per series (50 + 20×50×8%=80 → 130)
+ok   8: sku with no series → contributes 0 (no fabricated duty)
+ok   8: blank import_duty_treatment → duty Not Applied (blank, never 0)
+ok   total = freight + customs_fee + duty (doc_fee NOT included)
+ok   estimated_unit_cost = total / total_qty
+ok   estimated_unit_cost blank when total_qty = 0 (never divide by zero)
+
+passed 21  failed 0
+
+ALL PASS

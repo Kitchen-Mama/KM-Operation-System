@@ -1,0 +1,120 @@
+
+== A. one owner, one vocabulary ==
+ok   A1 RECOMMENDATION_TYPE_ENUM is the frozen five (D-S5-9)
+ok   A1a the S5-R4 withhold is retired — the constant is null, so nothing can read a stale reason string
+ok   A2 the closed token set, in its frozen declaration order
+ok   A3 the derivation is exported from the canonical owner
+ok   A4 SHIPPING_ACTION_COUNT = 0 — no shipping member in either closed set
+ok   A5 the owner reads no shipping quantity, carrier or shipment at all
+ok   A6 SECOND_CALCULATION_PATH_COUNT = 0 — the derivation invokes no calculator or allocator
+
+== B. action semantics ==
+ok   B1 no actionable gap -> NO_ACTION
+ok   B2 positive residual -> NEW_ORDER
+ok   B3 not READY -> MANUAL_REVIEW
+ok   B4 READY but no units-per-carton -> MANUAL_REVIEW, never a fabricated quantity
+ok   B5 need only in T4 -> NO_ACTION
+ok   B6 a BLOCKED row carries nulls, not zeros
+
+== C. the combined action — both truths named, neither discarded ==
+ok   C1 reallocation + residual -> both are named
+ok   C2 and nothing is withheld any more
+ok   C3 reallocation that covered the need -> REALLOCATE alone
+ok   C4 order need with no reallocation evidence -> NEW_ORDER alone
+ok   C5 and carries the evidence for both halves
+ok   C6 a REALLOCATE row does NOT claim that no action is required
+ok   C6a while a genuinely idle row still does
+ok   C7 reallocation beside an UNKNOWN order quantity is MANUAL_REVIEW, never REALLOCATE
+ok   C8 every fixture yields a member of the closed enum — no null, no invented value
+
+== D. the coexistence is MEASURED from the live allocator, not assumed ==
+ok   D1 the live allocator returned the receiver
+ok   D2 receiver A took 30 IN and is STILL short 70 — both are true at once
+ok   D3 and the live allocator names that state itself — the multiplicity is canonical, not invented
+ok   D4 at the KMREC grain the row carries a positive order need AND reallocation evidence
+ok   D5 so the action names both
+ok   D6 the allocator fully covers the receiver and names that outcome itself
+ok   D7 which maps to REALLOCATE alone — derived from the live outcome, not from a hand-made row
+
+== E. purity and determinism ==
+ok   E1 ACTION_DETERMINISTIC = YES — three runs of every fixture agree
+ok   E2 ACTION_DERIVATION_MUTATES_STATE = NO — no input row was modified
+ok   E3 the exported pure derivation agrees with the decorated DTO
+ok   E4 a missing input yields no tokens rather than throwing
+ok   E5 and no action
+
+== F. reason tokens — evidence-gated, closed, deterministically ordered ==
+ok   F1 nothing actionable
+ok   F2 residual + order
+ok   F3 T4 only
+ok   F4 blocked
+ok   F5 residual that cannot be cartonized
+ok   F6 factory coverage netted, nothing left to order
+ok   F7 a MISSING snapshot operand yields null, not 0
+ok   F8 and therefore emits no factory token
+ok   F9 the 43_ identity MAX(0, initial - out + in) is applied verbatim
+ok   F10 CROSS_COMPANY_REALLOCATION is not in the closed set
+ok   F11 CROSS_COMPANY_REALLOCATION is not emitted anywhere in the owner
+ok   F10 OWN_SUPPLY_APPLIED is not in the closed set
+ok   F11 OWN_SUPPLY_APPLIED is not emitted anywhere in the owner
+ok   F10 OVERSEAS_SUPPLY_APPLIED is not in the closed set
+ok   F11 OVERSEAS_SUPPLY_APPLIED is not emitted anywhere in the owner
+ok   F10 COMMITTED_SUPPLY_APPLIED is not in the closed set
+ok   F11 COMMITTED_SUPPLY_APPLIED is not emitted anywhere in the owner
+ok   F12 reallocation_in evidence does NOT produce a cross-company claim
+ok   F13 TOKEN_ORDER_DETERMINISTIC = YES — emitted order follows the frozen declaration
+ok   F14 every emitted token is in the closed set
+
+== G. additive only — quantities, state and consumers untouched ==
+ok   G1 no quantity field is ASSIGNED anywhere in the derivation region
+ok   G1b (the region does read that field, so G1 is not vacuous)
+ok   G2 the decoration runs AFTER the quantity build, so it can only read what is already final
+ok   G3 the inventory DTO is unchanged — the slice is order-planning only
+ok   G5 NEW_ORDER_QTY stays KMREC's cartonize-once total
+ok   G5a REALLOCATION_QTY stays the §41 snapshot on the row
+ok   G6 COMBINED_QUANTITY_FIELD_CREATED = NO
+ok   G6a and no field happens to equal 30 + 70 — the sum exists nowhere in the DTO
+ok   G7 every file that reads the derived fields is a DECLARED consumer with a stated reason
+ok   G7a and the check is not vacuous — at least one declared consumer really does read them
+ok   G8 request-order.js reads the verdict but never derives it
+ok   G8 inventory-replenishment.js reads the verdict but never derives it
+ok   G8 supply-execution-handoff.js reads the verdict but never derives it
+ok   G8 47_api_v1_recommendation_generation.gs reads the verdict but never derives it
+ok   G4 ACTION_PERSISTED = NO / REASON_TOKENS_PERSISTED = NO — recommendation_action is in no storage header
+ok   G4 ACTION_PERSISTED = NO / REASON_TOKENS_PERSISTED = NO — recommendationAction is in no storage header
+ok   G4 ACTION_PERSISTED = NO / REASON_TOKENS_PERSISTED = NO — reason_tokens is in no storage header
+ok   G4 ACTION_PERSISTED = NO / REASON_TOKENS_PERSISTED = NO — reasonTokens is in no storage header
+
+== H. caller parity — every caller gets it from the owner, none derives its own ==
+ok   H1 the scheduled generateBatch path carries the action, combined member included
+ok   H2 and the reason tokens
+ok   H3 MANUAL_SCHEDULED_DERIVATION_DRIFT = 0 — both paths agree for the same row
+ok   H4 request-order.js does not derive the action itself
+ok   H4 inventory-replenishment.js does not derive the action itself
+ok   H4 47_api_v1_recommendation_generation.gs does not derive the action itself
+
+== I. Phase-1 boundary ==
+ok   I1 the owner creates no Request Order, PO, Shipment or Shipment Draft
+ok   I2 PRODUCTION_ROWS_WRITTEN = 0 — the owner performs no I/O of any kind
+
+== J. mutation ==
+ok   J1 the NO_ACTION branch is removed (caught)
+ok   J2 the NEW_ORDER branch is removed (caught)
+ok   J3 reallocation evidence is relabelled CROSS_COMPANY_REALLOCATION (caught)
+ok   J4 a withdrawn token is emitted without its evidence column (caught)
+ok   J5 a MISSING snapshot is treated as zero (caught)
+ok   J6 the derivation writes a quantity (caught)
+ok   J7 the emitted order stops following the frozen declaration (caught)
+ok   J8a the mixed branch collapses to REALLOCATE (caught)
+ok   J8b the mixed branch collapses to NEW_ORDER (caught)
+ok   J8c REALLOCATE starts requiring a positive order quantity (caught)
+ok   J8d an unknown order quantity falls through to NO_ACTION instead of failing closed (caught)
+ok   J8e the combined action suppresses NEW_ORDER_REQUIRED (caught)
+ok   J8f the combined action suppresses the reallocation evidence (caught)
+ok   J8g a MISSING reallocation snapshot is read as a reallocation (caught)
+ok   J9 a shipping action is introduced into the frozen enum (caught)
+ok   J10 the derivation runs BEFORE the quantity is final (caught)
+
+== RESULT ==
+passed 96  failed 0  mutants killed 16/16
+D_S5_9_ACTION_MULTIPLICITY = FROZEN — both actions named, no quantity merged

@@ -1,0 +1,70 @@
+
+== A. §1 — the canonical ids, and the disproof of R1's incident cause ==
+ok   A1 CA_CANONICAL_MARKETPLACE_ID = MKT-RESTW-CA-AMAZON
+ok   A2 UK_CANONICAL_MARKETPLACE_ID = MKT-RESTW-UK-AMAZON
+ok   A3 CA_MARKETPLACE_MASTER_MISSING = NO — the row exists, and is unique for the triple
+
+== B. SCENARIO 1 — healthy control ==
+ok   B1 CA offers one site option
+ok   B2 with the full canonical triple as its value
+ok   B3 RESOLVED_MARKETPLACE_ID = MKT-RESTW-CA-AMAZON — the control is healthy
+
+== C. SCENARIO 2 — reference read timed out, no Retry, continue anyway ==
+ok   C1 REGISTRY_STATE_AT_SAVE = ABSENT (unread, not empty)
+ok   C2 …so the registry accessor answers with nothing
+ok   C3 …while the forecast rows are CURRENT — mixed freshness
+ok   C4 CA_AMAZON_STILL_SELECTABLE = YES — sourced from fc_regular_forecast
+ok   C5 …and labelled exactly as the healthy option is
+ok   C6 PAYLOAD_MARKETPLACE_ID = "" — THE INCIDENT, with the master row present
+ok   C7 BLANK_ID_SAVE_REPRODUCED_WITH_EXISTING_MASTER_ROW = YES
+ok   C8 an EMPTY registry array reads as PRESENT — the page stays drawable
+ok   C9 …CA is still offered, from the forecast rows
+ok   C10 …and the id is still blank. The same defect, reached WITHOUT an unread slice.
+
+== D. SCENARIO 3 — the same timeout, then Retry ==
+ok   D1 before Retry: blank
+ok   D2 after Retry: MKT-RESTW-CA-AMAZON — Retry is the cure, and was skipped
+
+== E. SCENARIO 4 — second entry does NOT reload the registry ==
+ok   E1 the registry is NOT in the event prerequisite list — re-entry cannot reload it
+ok   E1a and the list the builder DOES declare is still the scope/datalist pair
+ok   E2 SECOND_ENTRY_REFRESHES_MARKETPLACES = NO — `marketplaces` is in NEITHER prerequisite list
+ok   E3 the registry lives in the BOOTSTRAP slice — a different loader from the builder prerequisites
+ok   E4 …and the forecast lives in its own slice, so the two fail independently
+ok   E5 Next gates on the prerequisite paths and the Base FC source…
+ok   E6 …and on NOTHING about the marketplaces registry
+ok   E7 NEXT_ALLOWED_AFTER_REFERENCE_TIMEOUT = YES — no gate in the chain requires registry readiness
+ok   E8 FAILED_REGISTRY_SURVIVES_SECOND_ENTRY = YES · MIXED_FRESHNESS_STATE_REACHABLE = YES · BLANK_MARKETPLACE_ID_REPRODUCED = YES
+
+== F. §3 — the lookup inputs, and whether company can go missing ==
+ok   F1 COMPANY_SOURCE = the option value's first component (company|country|marketplace)
+ok   F2 COMPANY_CAN_BE_MISSING_AT_SAVE = YES — a non-3-part value yields company: ""
+ok   F3 …yet every built option carries all three, so a blank company is not the incident path
+
+== G. §6 — the server cannot repair it ==
+ok   G1 SERVER_CAN_REPAIR_CLIENT_IDENTITY = NO — 14_ declares no id resolver
+ok   G1a and R2 makes the refusal explicit: a blank is rejected, and the registry is read BY THE CLAIMED ID only
+ok   G2 …and never validates marketplace_id
+ok   G3 …it writes whatever the body carries, including a blank
+
+== H. §9 — the backfill key, defined but NOT executed ==
+ok   H1 BACKFILL_KEY = company + country + marketplace, one-to-one against the registry
+ok   H2 no registry row → NO CANDIDATE, never a guess
+ok   H3 two matching rows → NO CANDIDATE. BACKFILL_ONE_TO_ONE_REQUIREMENT = YES
+
+== I. mutation ==
+ok   I1 the registry slice stops being independent of the forecast slice (caught)
+ok   I2 the picker stops falling back to fc_regular_forecast (caught)
+ok   I3 _fcHas_ treats an absent key as empty rather than unread (caught)
+ok   I4 the event prerequisite list gains the registry (caught)
+
+=====================================================
+FC-ID-R1B REGISTRY HYDRATION INCIDENT — 41 passed / 0 failed
+mutants: 4 caught / 4 planted
+CA_MARKETPLACE_MASTER_MISSING = NO   CA_CANONICAL_MARKETPLACE_ID = MKT-RESTW-CA-AMAZON
+FC_ID_R1_MECHANISM_PROVEN = YES   FC_ID_R1_INCIDENT_ROOT_CAUSE = NOT_PROVEN (superseded)
+PICKER_CAN_HAVE_SITE_WHILE_REGISTRY_MISSING = YES
+CURRENT_UI_ENFORCES_REGISTRY_READY = NO   HYDRATION_RACE_REACHABLE = YES
+BLANK_ID_SAVE_REPRODUCED_WITH_EXISTING_MASTER_ROW = YES
+SERVER_CAN_REPAIR_CLIENT_IDENTITY = NO   PRODUCTION_ROWS_WRITTEN = 0   S6_BEHAVIOR_CHANGED = NO
+=====================================================

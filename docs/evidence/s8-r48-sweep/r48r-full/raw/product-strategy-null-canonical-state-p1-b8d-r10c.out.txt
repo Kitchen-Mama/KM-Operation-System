@@ -1,0 +1,108 @@
+
+== §A — the state production actually starts in ==
+ok   A1  the board scripts load without a fixture boot
+ok   A2  the route seam exists before anything is mounted
+ok   A3  and the board is NOT mounted
+ok   A4  CANON is null in that state — the precondition the live crash needed
+
+== §B — a view click before the first load must not throw  (the R10B defect) ==
+ok   B1  showView(overview) does not throw before any canonical load
+ok   B2  showView(category) does not throw before any canonical load
+ok   B3  showView(risk) does not throw before any canonical load
+ok   B4  showView(quality) does not throw before any canonical load
+ok   B5  showView(workspace) does not throw before any canonical load
+ok   B6  showView(advanced) does not throw before any canonical load
+ok   B7  and all six in sequence, on one page, throw nothing
+ok   B8  the board is still not mounted afterwards
+ok   B9  and nothing was drawn — no empty board stands in for the refusal
+
+== §C — NOT_LOADED, LOADED_EMPTY and LOADED_WITH_DATA are three different answers ==
+ok   C1  NOT_LOADED: categoryValues() is null, not an empty list
+ok   C2  NOT_LOADED: categoryOptionRows() is null
+ok   C3  NOT_LOADED: firstCategory() is null
+ok   C4  a canonical load that found nothing still mounts
+ok   C5  LOADED_EMPTY: CANON exists
+ok   C6  LOADED_EMPTY: categoryValues() is an EMPTY LIST, not null
+ok   C7  LOADED_EMPTY: categoryOptionRows() is a real options model, not null
+ok   C8  LOADED_EMPTY: firstCategory() is null — nothing to pick
+ok   C9  the ordinary case still mounts on its fixture
+ok   C10 LOADED_WITH_DATA: categoryValues() is a non-empty list
+ok   C11 LOADED_WITH_DATA: firstCategory() is its first real category
+ok   C12 null and [] are not the same answer and are never interchanged
+
+== §D — the caller census: why three guards are the whole fix ==
+ok   D1  every read of CANON.rows in the shipped renderer is accounted for
+ok   D2  categoryValues owns the guard
+ok   D3  categoryOptionRows owns the guard
+ok   D4  firstCategory tolerates a null answer without dereferencing it
+ok   D5  no fabricated canonical stands in for a missing one
+ok   D6  no TypeError is caught and dropped
+ok   D7  render() still refuses to draw while unmounted — the guard the other callers sit behind
+ok   D8  and render() rebuilds CANON before any view function runs
+
+== §E — lifecycle: unmounted, superseded, and recovered ==
+ok   E1  a mounted board is mounted
+ok   E2  and unmount takes it down
+ok   E3  a view change after unmount does not throw
+ok   E4  and does not bring the board back
+ok   E5  a refused page stays NOT_LOADED — a view click does not invent a canonical load
+ok   E6  and the same page can still mount when the data arrives
+ok   E7  recovery builds CANON
+ok   E8  and the category machinery works normally afterwards
+ok   E9  the recovered board is mounted
+ok   E10 six refused view clicks do not poison a later mount
+ok   E11 and it mounts
+
+== §Z — the mutants. Zero survivors. ==
+ok   Z1  the categoryValues guard is removed (caught)
+ok   Z2  the guard answers [] instead of null, so NOT_LOADED reads as LOADED_EMPTY (caught)
+ok   Z3  the categoryOptionRows guard is removed (caught)
+ok   Z4  firstCategory dereferences a null answer (caught)
+ok   Z5  selectView derives a model before anything is loaded (caught)
+ok   Z6  render() draws while unmounted, putting an empty board over the refusal (caught)
+ok   Z7  the NOT_LOADED path reloads, dispatching a read with no adapter (caught)
+ok   Z8  reload() stops assigning CANON, so recovery never leaves NOT_LOADED (caught)
+ok   Z9  a loaded-but-empty site is reported as not loaded (caught)
+ok   Z10 unmount() leaves the board live, so an unmounted page keeps drawing (caught)
+ok   Z11 the guard keys on the mounted FLAG instead of the canonical DATA (caught)
+ok   Z12 only the category view is protected and the other five still throw (caught)
+
+== §F — real Chrome: the six views clicked in every state that has no canonical data ==
+ok   F1  capability refused — no null-canonical TypeError
+ok   F1  capability refused — no uncaught error of any kind
+ok   F1  capability refused — all six views were exercised
+ok   F1  capability refused — the clicks went through one path, not a mixture
+ok   F2  every read fails — no null-canonical TypeError
+ok   F2  every read fails — no uncaught error of any kind
+ok   F2  every read fails — all six views were exercised
+ok   F2  every read fails — the clicks went through one path, not a mixture
+ok   F3  only the capability read fails — no null-canonical TypeError
+ok   F3  only the capability read fails — no uncaught error of any kind
+ok   F3  only the capability read fails — all six views were exercised
+ok   F3  only the capability read fails — the clicks went through one path, not a mixture
+ok   F4  a read still outstanding under the clicks — no null-canonical TypeError
+ok   F4  a read still outstanding under the clicks — no uncaught error of any kind
+ok   F4  a read still outstanding under the clicks — all six views were exercised
+ok   F4  a read still outstanding under the clicks — the clicks went through one path, not a mixture
+ok   F5  a slow read and an offline browser — no null-canonical TypeError
+ok   F5  a slow read and an offline browser — no uncaught error of any kind
+ok   F5  a slow read and an offline browser — all six views were exercised
+ok   F5  a slow read and an offline browser — the clicks went through one path, not a mixture
+ok   F6  a genuinely offline browser — no null-canonical TypeError
+ok   F6  a genuinely offline browser — no uncaught error of any kind
+ok   F6  a genuinely offline browser — all six views were exercised
+ok   F6  a genuinely offline browser — the clicks went through one path, not a mixture
+ok   F7  a site that has no listings — no null-canonical TypeError
+ok   F7  a site that has no listings — no uncaught error of any kind
+ok   F7  a site that has no listings — all six views were exercised
+ok   F7  a site that has no listings — the clicks went through one path, not a mixture
+ok   F8  a site that has no categories — no null-canonical TypeError
+ok   F8  a site that has no categories — no uncaught error of any kind
+ok   F8  a site that has no categories — all six views were exercised
+ok   F8  a site that has no categories — the clicks went through one path, not a mixture
+ok   F9  nothing wrong at all (the control) — no null-canonical TypeError
+ok   F9  nothing wrong at all (the control) — no uncaught error of any kind
+ok   F9  nothing wrong at all (the control) — all six views were exercised
+ok   F9  nothing wrong at all (the control) — the clicks went through one path, not a mixture
+
+passed 92  failed 0  |  mutants caught 12  survived 0

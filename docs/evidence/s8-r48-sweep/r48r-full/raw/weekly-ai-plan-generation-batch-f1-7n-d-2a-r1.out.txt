@@ -1,0 +1,13 @@
+
+== A shared overseas pool rationed ONCE across marketplaces -> per-marketplace K3 drafts ==
+
+== B multi-SKU: one marketplace K3 draft aggregates lines across SKUs ==
+
+== C per-marketplace conflict isolation (one BLOCKED_CONFLICT does not corrupt the other) ==
+
+== D–F fail-closed: NO persistence on bad input ==
+
+== G determinism + single-owner surface + provenance ==
+
+----------------------------------------
+WEEKLY AI PLAN GENERATION BATCH (F1-7N-D-2a): 35 passed, 0 failed

@@ -1,0 +1,117 @@
+
+== A — the line exists, parses, and is the shape that was agreed ==
+ok   A1  the preflight emits [E3-CENSUS] r6r7_proof
+ok   A2  and it parses as one complete JSON object
+ok   A2a a full round trip, so nothing in it was cut
+ok   A3  with exactly the declared keys, in the declared order
+ok   A4  current_run: the four fields that say WHICH evaluation this is
+ok   A5  recommendation: the state and the three quantities
+ok   A6  production_path: ten fields, and no envelope
+ok   A7  parity: the five the acceptance is read from
+ok   A8  legacy_projection: what it is and that it does not speak for production
+ok   A9  manual_routes: six scalars, never the snapshots
+ok   A10.1 the proof carries no production_response
+ok   A10.2 the proof carries no production_refusal
+ok   A10.3 the proof carries no per_scope
+ok   A10.4 the proof carries no planned_rows
+ok   A10.5 the proof carries no planned_excluded
+ok   A10.6 the proof carries no manual_route_snapshots
+ok   A10.7 the proof carries no expected_ai_identities
+ok   A10.8 the proof carries no harvest
+ok   A10.9 the proof carries no warehousesById
+ok   A10.10 the proof carries no rate_cards
+ok   A10.11 the proof carries no carrier_authorities
+ok   A10.12 the proof carries no blockers
+ok   A10.13 the proof carries no authority
+ok   A10.14 the proof carries no predicates
+ok   A10.15 the proof carries no disputed_value_provenance
+
+== B — bounded, on every shape the preflight can answer with ==
+ok   B1  the declared cap
+ok   B2  the live proof is within it (1972 bytes)
+ok   B3  and the meta line reports the real size
+ok   B3a naming the contract, so a stale census is visible from one line
+ok   B4.1 a refusal still fits (1998 bytes)
+ok   B4.1a and still parses
+ok   B4.2 a residual still fits (1949 bytes)
+ok   B4.2a and still parses
+ok   B4.3 a stale snapshot still fits (1958 bytes)
+ok   B4.3a and still parses
+
+== C — it is printed before the detailed export, with nothing unbounded between ==
+ok   C1  both lines are present — the detailed export is kept, not replaced
+ok   C2  and the proof comes first, because Apps Script truncates the tail
+ok   C3  with only the bounded meta line between them
+ok   C4  and nothing unbounded before it
+ok   C5  which is a source-level ordering, not an accident of this fixture
+ok   C6  the proof guard runs before the summary line
+ok   C6a and so does the export guard
+
+== D — the live case, in the line that survives ==
+ok   D1  verdict
+ok   D2  34 predicates, none failed — R6-R7-R3-P2 replaced one flag precondition with five phase claims
+ok   D3  export complete
+ok   D4  proof complete
+ok   D5  production outcome
+ok   D6  production code
+ok   D7  production reason
+ok   D8  recommended 0 / planned 520 / residual 0
+ok   D9  would_write false, writer_reached false
+ok   D10 the empty-scope refusal is bypassed by the valid zero
+ok   D11 parity
+ok   D12 the projection does not speak for production
+ok   D13 two manual rows totalling 520
+ok   D14 at the versions section 0 records
+ok   D15 the run this was measured against
+ok   D16 and the build it was measured on is at or after the one this patch was written against
+ok   D17 six counters, all zero
+ok   D18 measured on the sheets, not reported
+
+== E — the proof's own completeness guard ==
+ok   E1  a missing parity STOPS
+ok   E1a proof_complete false
+ok   E1b and proof_missing names it
+ok   E1c and the proof itself says so — an incomplete proof must be legible in the line that survives
+ok   E2  a production path with no outcome STOPS
+ok   E2a and proof_missing names it
+ok   E3  a projection claiming production authority STOPS
+ok   E3a and proof_missing names it
+ok   E4  READY_NO_ACTION beside production_would_write true STOPS
+ok   E4a naming the contradiction rather than a missing field
+ok   E4b and the kept line does not read as an acceptance
+ok   E5  and none of that fires on the clean world
+
+== F — the suppression is announced, counted, and reversible ==
+ok   F1  three nested diagnostics ran quietly
+ok   F2.1 RUN_R6R7_RECOMMENDATION_AUTHORITY_CENSUS is named, so the log says WHAT was held back
+ok   F2.2 RUN_R6R2_ROUTE_PROVENANCE is named, so the log says WHAT was held back
+ok   F2.3 RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R is named, so the log says WHAT was held back
+ok   F3  each says how many lines, so the suppression is a measured fact and not a claim
+ok   F4  and how to get every one of them back
+ok   F5  the mute is restored on the way out, so it cannot leak into the next call
+ok   F5a and an error inside a quiet block is re-thrown, never swallowed with the log
+ok   F6  the detailed export still carries everything R6-R7-R2 put in it
+ok   F6a including the unbounded data the proof deliberately leaves out
+ok   F6b and it repeats the proof's own completeness, for a reader who has both
+
+== G — a diagnostic patch, and nothing else ==
+ok   G1  61_ was untouched by THIS patch and is not behind the build it was measured on
+ok   G2  the deployment release did not move for THIS patch, and has not fallen behind since
+ok   G3  nor has 63_
+ok   G4  the census reports a build at or after the one it is diagnosing
+ok   G5  and no part of this patch reached the production module
+ok   G6  nothing added here can reach a writer or a cell write
+
+== N — mutants ==
+ok   N1 the proof emitted AFTER the detailed export, where truncation reaches it (caught)
+ok   N2 an unbounded field admitted into the proof (caught)
+ok   N3 the byte cap raised past what a Logger line survives (caught)
+ok   N4 the parity check dropped from the proof guard (caught)
+ok   N5 the production-outcome check dropped from the proof guard (caught)
+ok   N6 the legacy-authority check dropped from the proof guard (caught)
+ok   N7 a would-write run reported as READY_NO_ACTION (caught)
+ok   N8 a mutation counter reported as zero without being zero (caught)
+ok   N9 the nested suppression made silent (caught)
+ok   N10 the mute left on, so the proof itself is swallowed (caught)
+
+passed 99  failed 0  |  mutants caught 10  survived 0

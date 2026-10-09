@@ -1,0 +1,23 @@
+
+== A/F · normal + all four windows populated → FROZEN 4-column primary ==
+
+== 5 · NO technical columns in the primary surface ==
+
+== Containment · every wide table sits inside an overflow-x wrapper ==
+
+== B · very large quantities render verbatim, right-aligned nowrap (scroll, not card-widen) ==
+
+== C · long Note/Reason wraps inside its own container ==
+
+== D · MARKETPLACE_STOCK_MISSING → blocked, contained, no fabricated table ==
+
+== E · HORIZONS_NOT_AVAILABLE → na container, contained ==
+
+== G · Diagnostics holds the technical detail, each wide table in a scroll container ==
+
+== H · long API error stays inside the contained result surface ==
+
+== CSS · containment rules present (no outer overflow; internal wrap/scroll) ==
+
+----------------------------------------
+OUTLOOK CONTAINMENT (F1-4B-FM6): 33 passed, 0 failed

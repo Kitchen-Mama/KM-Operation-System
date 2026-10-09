@@ -1,0 +1,14 @@
+
+== A. readiness (§34A reuse — missing never becomes zero) ==
+
+== B. identity resolution (deterministic; ambiguity BLOCKS, never first/latest) ==
+
+== C. demand-ledger projection (real §39 builder; missing≠zero; count-once) ==
+
+== D. current-stock supply-ledger projection (real §39 builder; CURRENT_STOCK) ==
+
+== E. incoming-candidate adaptation (B4-R3/R4 reuse) ==
+
+== F. determinism + validation ==
+
+All Round 1J Source-Facts (clean slice) assertions passed (37 assertions).

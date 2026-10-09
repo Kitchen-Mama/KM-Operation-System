@@ -1,0 +1,20 @@
+
+== source guard — the REAL refactored helpers are extracted (not stubs) ==
+
+== §14 — exact Spreadsheet-ID gate on every domain ensure helper (fail-closed, no fallback) ==
+
+== §15 — missing Canonical Sheet → SCHEMA_NOT_PROVISIONED (never insertSheet) ==
+
+== §16 — invalid Header → deterministic token, ZERO mutation, byte-identical ==
+
+== §16 — validate-only column guards never append a missing column ==
+
+== §17 — authorized data-row write range still works (row >= 2) ==
+
+== §18 — migration-only twins require a valid authorization DTO (unreachable-from-runtime capability) ==
+
+== §9 — Amazon exact destination-id gate (proven-separate database) ==
+
+== §20/§21 — router + global-init: helpers/adapter never auto-migrate on load; Amazon runner is gated ==
+
+All Production Safety Round S0.5 active-runtime integration assertions passed (85 assertions).

@@ -1,0 +1,145 @@
+
+== A · §C — THE METHOD, TRACED END TO END BY EXECUTION ==
+ok   A1  §C.1 the hydrated model is STILL the canonical `sea` — nothing rewrote it
+ok   A2  §C.1 and it still carries 800
+ok   A3  §G.1 the legacy snapshot is carried VERBATIM…
+ok   A4  §G.1 …and is NOT promoted to a marketplace destination
+ok   A5  §E H4 first load: To stays blank, confirmation required
+ok   A6  §C.2 the option VALUE is carriers' shipping_method, verbatim
+ok   A7  §C.2 the LABEL is shipping_method_label — display metadata only
+ok   A8  §C.2 and the registry says so itself
+ok   A9  §C.3 exact spelling: sea selects 普船海卡
+ok   A10 §C.6 CASED spelling: sea STILL selects 普船海卡 (the exact-text comparison is gone)
+ok   A11 §C.6 …and without the shared identity test it does NOT — that was defect (2)
+ok   A12 §C.4 the FIRST paint of an expanded row, before the catalogue lands: no option can hold the value
+
+== B · §C.4 — THE REBUILD, WHICH IS WHERE THE PERSISTED METHOD DIED ==
+ok   B1  §C.4 catalogue arrives LATE → the rebuild recovers the persisted service from the row
+ok   B2  §C.4 and 普船海卡 is SELECTED — the reported symptom is closed
+ok   B3  §C.6 the option was always present; only the selection was missing
+ok   B4  §C.4 WITHOUT the row attribute the persisted service is unrecoverable — that WAS the defect
+ok   B5  §C.4 a user who CLEARED the method keeps it cleared — the model does not overrule an edit
+ok   B6  §C.4 and a user's chosen method wins over the persisted one
+ok   B7  §C.4 the method select is addressed by data-field
+ok   B8  §C.4 the row carries its persisted service
+ok   B9  §C.4 and a user edit is reported as a user edit
+
+== C · §C.5 — THE CANONICAL-TO-LABEL OWNERSHIP, STATED HONESTLY ==
+ok   C1  §C.5 the client service table is a BYTE-IDENTICAL mirror of 69_ RIC_SERVICE_LABELS_
+ok   C2  §C.5 and so is the canonical service list
+ok   C3  §C.5 canonical identity: sea
+ok   C4  §C.5 case is not identity
+ok   C5  §C.5 a display spelling resolves to its canonical service
+ok   C6  §C.5 美森海卡 is EXPRESS ocean — never sea
+ok   C7  §C.5 空運 → air
+ok   C8  §C.5 an unrecognised spelling returns NOTHING — never a neighbour
+ok   C9  §C.5 the canonical→LABEL owner is carrier_rate_cards.shipping_method_label — no source hardcodes 普船海卡
+ok   C10 §C.5 nor 空派 — the picker shows whatever label the operator maintains
+ok   C11 §C no existing method label spelling was REMOVED by this round
+ok   C12 §C the page lead-time label table is unchanged
+
+== D · §D/§E — DESTINATION XOR, IN THE ONE PLACE A ROUTE BECOMES HEADER FIELDS ==
+ok   D1  §D marketplace: destination_warehouse_id is BLANK
+ok   D2  §D marketplace: warehouse code snapshot is BLANK
+ok   D3  §D marketplace: destination_marketplace carries the trimmed value
+ok   D4  §D warehouse: the real warehouse_id
+ok   D5  §D warehouse: the warehouse CODE snapshot
+ok   D6  §D warehouse: destination_marketplace is BLANK
+ok   D7  §D/§C a route claiming BOTH is AMBIGUOUS — nothing "wins"
+ok   D7a §C so it is not complete and no request is issued
+ok   D7b §C and neither side is silently dropped — the contradiction survives to be refused, not hidden
+ok   D7c §C an EXPLICIT Amazon transition is one-sided by construction — the clearing still works
+ok   D8  §D/§G the display name "Amazon" can no longer reach the warehouse-code column
+ok   D9  §D nor can a display name reach the SOURCE code column
+ok   D10 §D no destination_type column is written — the type is derived from the XOR
+ok   D11 §D and the header schema still has no destination_type column
+ok   D12 §D the code snapshots are NOT group dimensions — correcting them re-keys nothing
+ok   D13 §D proven: changing the snapshot moves no key, so it moves no id
+ok   E1  §E the marketplace option resolves from its own TOKEN, not from the page scope
+ok   E2  §E and a different page scope cannot change which marketplace the token names
+ok   E3  §E a warehouse option keeps its real warehouse identity
+ok   E4  §E a warehouse option publishes its CODE
+ok   E5  §E the warehouse option carries its code…
+ok   E6  §E …and the Amazon logical option carries NONE, by construction
+ok   E7  §E H4 first load: NOTHING is preselected
+ok   E8  §E an EXPLICITLY chosen Amazon token does select Amazon
+ok   E9  §E and a warehouse selection reloads selected
+
+== F · §F — EXPLICIT ADOPTION, AGAINST THE SHIPPED WRITER AND AN IN-MEMORY SHEET ==
+ok   F0  the frozen 35-column header schema is what the simulation writes into
+ok   F1  the shipped writer clears on an EXPLICIT BLANK and preserves only on an OMITTED field
+ok   F2  and all eight route fields are in that list, including the destination code snapshot
+ok   F3  §F stored header id UNCHANGED
+ok   F4  §F line id UNCHANGED
+ok   F5  §F service still sea
+ok   F6  §F planned_qty still 800
+ok   F7  §F destination_marketplace = Amazon
+ok   F8  §F recommended_destination_warehouse_id = ''
+ok   F9  §F/§G.3 the legacy Amazon warehouse snapshot is CLEARED — the whole point of the round
+ok   F10 §F no second header
+ok   F11 §F no second line
+ok   F12 §F the source is untouched
+ok   F13 §F replay is idempotent — the second save changes nothing
+ok   F14 §F and re-keys nothing
+ok   F15 §F destination_marketplace IS in the header fingerprint, so the adoption is not a silent no-op
+ok   F16 §F and so is the snapshot column
+ok   F17 §F the snapshot alone is OPTIONAL_PRESERVE — clearing it needs a real change beside it, and Amazon is one
+ok   F18 §F warehouse save: the real warehouse id
+ok   F19 §F/§G.4 and the snapshot becomes ITS code
+ok   F20 §F with destination_marketplace blank
+ok   F21 §F after reload the To picker selects the SAME warehouse
+
+== G · §G — THE LEGACY SNAPSHOT POLICY, AND THE ZERO-WRITE RULES ==
+ok   G1  §G.1 hydration reads the legacy value…
+ok   G2  §G.1 …and never promotes it
+ok   G3  §G.1 the destination resolver reads the id/marketplace columns ONLY — it never sees a snapshot
+ok   G4  §G.2 page load hydrates…
+ok   G5  §G.2/§J.19 …and writes NOTHING, so it cannot clear the legacy value either
+ok   G6  §G.3 explicit Amazon + confirm CLEARS it
+ok   G7  §G.4 explicit warehouse UPDATES it
+ok   G8  §G.5 a declined confirmation returns before any request is issued
+ok   G9  §G.5 and with no confirm available the answer is NO, never an assumed yes
+ok   G10 §G.5 the confirmation itself issues no request
+
+== G2 · THE SERVER GAP THAT MADE THE MISUSE NECESSARY ==
+ok   X1  the page's action routes to handleUpsertShippingAllocationDraft_…
+ok   X2  …which is sadUpsertDraftHeaderCore_ — NOT the atomic writer B6 worked on
+ok   X3  and that is the call the shipped save path makes
+ok   X4  the UPDATE path now carries destination_marketplace
+ok   X5  and so does the INSERT path
+ok   X6  a supplied marketplace with NO column is REFUSED, not silently dropped
+ok   X7  and that refusal declares a zero write
+ok   X8  a stored MARKETPLACE destination is route-complete — with no snapshot anywhere
+ok   X9  and so is a stored WAREHOUSE destination
+ok   X10 a header whose ONLY "destination" is a code snapshot is INCOMPLETE — the gate never widened
+
+== H · DEPLOYMENT IDENTITY ==
+ok   H1  action contract is at or after 10 (this round added no router action)
+ok   H2  required-action-list is at or after 9
+ok   H3  transport contract still 1
+ok   H4  the 16_ owner stamp is at or after A0-R1 — this round changed the server, deliberately
+ok   H5  and 63_'s manifest expects what the SOURCE declares, so a half-synced deployment is detectable
+ok   H5b the allocation owner stamp is DECLARED in exactly one Apps Script file
+ok   H5c and EXPECTED in exactly one other — those two are the sync set, derived from the source, not from a diff
+ok   H6  the release order has not moved behind A0
+ok   H7  the page carries the current token
+ok   H8  and so does inventory-compat.js — it changed this round
+ok   H9  the co-deployed references moved together (63 refs on r46-avgsales-20261008)
+
+== I · MUTATIONS — every one verified by actually applying it ==
+ok   M1  a renderer that never emits selected is detected (caught)
+ok   M2  using the label as the canonical value is detected (caught)
+ok   M3  a sea → sea_express fallback is detected (caught)
+ok   M4  auto-promoting the legacy Amazon snapshot is detected (caught)
+ok   M5  writing a marketplace into the warehouse-code column is detected (caught)
+ok   M6  allowing BOTH destination identities is detected (caught)
+ok   M7  adoption creating a second header is detected (caught)
+ok   M8  adoption rewriting the stored id is detected (caught)
+ok   M9  a cancel that still writes is detected (caught)
+ok   M10 losing a warehouse selection on reload is detected (caught)
+ok   M11 a rebuild that reads only the DOM is detected (caught)
+ok   M12 an unknown service selecting the first option is detected (caught)
+ok   M13 a header writer that drops destination_marketplace is detected (caught)
+ok   M13a no route-field list in the header writer omits destination_marketplace
+
+PASSED — 125 passed, 0 failed, mutations 13 caught / 0 missed

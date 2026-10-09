@@ -1,0 +1,105 @@
+
+== A. STAGE 1 SENDS THE EXACT CANONICAL ACTION, AND IT SURVIVES THE ENVELOPE ==
+ok   A1. stage 1 issues exactly ONE request
+ok   A2. stage 1 is a POST — a write is never dispatched as a GET
+ok   A3. the action is in the QUERY STRING, where a method downgrade cannot remove it
+ok   A4. km_via=post, so the router can say a POST was downgraded rather than report an anonymous parameter
+ok   A5. a correlation id travels with it
+ok   A6. the action is ALSO still in the body — doPost is unaffected
+ok   A7. the payload travels in the BODY, never in the query
+ok   A8. no write payload is placed in the query string
+ok   A9. the accessor still returns json.data unchanged
+
+== B. THE LIVE FAILURE IS NOW TYPED AND PROVEN ZERO-WRITE, NOT ANONYMOUS PROSE ==
+ok   B1. a downgraded write still fails — the envelope fix names the fault, it does not pretend success
+ok   B2. the operator is no longer handed the router prose verbatim
+ok   B3. the message is recognised by the canonical authority as a PROVEN zero write
+ok   B4. exactly ONE retry — a proven zero write is retried at most once, never in a loop
+ok   B5. the anonymous doGet answer is still a failure
+ok   B6. even the anonymous answer is classified zero-write — the operator is not sent to reconcile a row that does not exist
+
+== C. NO GENERIC FALLBACK, NO SECOND WRITER ==
+ok   C1. the accessor opens NO socket of its own — every byte goes through the canonical transport
+ok   C2. no getOperationDb fallback
+ok   C3. no getTable fallback
+ok   C4. no write is converted to a GET
+ok   C5. with no shared transport the accessor FAILS CLOSED
+ok   C6. and does NOT fall back to the raw fetch that caused the incident
+ok   C7. and says so, so the outcome is not unknown
+
+== D. ALL THREE SAVE-CHAIN STAGES, PLUS THE OTHER TWO SPECIAL EVENT WRITERS ==
+ok   D1. upsertCampaign issues exactly one request
+ok   D2. upsertCampaign carries its canonical action in the query
+ok   D3. upsertCampaign carries it in the body too
+ok   D4. upsertCampaign opens no socket of its own
+ok   D5. upsertCampaignSkuLines issues exactly one request
+ok   D6. upsertCampaignSkuLines carries its canonical action in the query
+ok   D7. upsertCampaignSkuLines carries it in the body too
+ok   D8. upsertCampaignSkuLines opens no socket of its own
+ok   D9. upsertFcSpecialEvent issues exactly one request
+ok   D10. upsertFcSpecialEvent carries its canonical action in the query
+ok   D11. upsertFcSpecialEvent carries it in the body too
+ok   D12. upsertFcSpecialEvent opens no socket of its own
+ok   D13. importFcSpecialEventsBatch issues exactly one request
+ok   D14. importFcSpecialEventsBatch carries its canonical action in the query
+ok   D15. importFcSpecialEventsBatch carries it in the body too
+ok   D16. importFcSpecialEventsBatch opens no socket of its own
+ok   D17. deleteFcSpecialEvent issues exactly one request
+ok   D18. deleteFcSpecialEvent carries its canonical action in the query
+ok   D19. deleteFcSpecialEvent carries it in the body too
+ok   D20. deleteFcSpecialEvent opens no socket of its own
+
+== E. THE ROUTER RESOLVES ALL THREE STAGES TO THEIR OWN HANDLER (repository truth) ==
+ok   E1. router routes upsertCampaign -> handleUpsertCampaign_
+ok   E1a. handleUpsertCampaign_ exists in its owning module
+ok   E2. router routes upsertCampaignSkuLines -> handleUpsertCampaignSkuLines_
+ok   E2a. handleUpsertCampaignSkuLines_ exists in its owning module
+ok   E3. router routes upsertFcSpecialEvent -> handleUpsertFcSpecialEvent_
+ok   E3a. handleUpsertFcSpecialEvent_ exists in its owning module
+ok   E1b. upsertCampaign is NOT in the GET read table
+ok   E2b. upsertCampaignSkuLines is NOT in the GET read table
+ok   E3b. upsertFcSpecialEvent is NOT in the GET read table
+
+== F. THE A3-R1 GUARDS ARE UNTOUCHED ==
+ok   F1. HEADER_IDENTITY_KEY is unchanged
+ok   F2.0 DUPLICATE_CAMPAIGN_IDENTITY still refused server-side
+ok   F2.1 STALE_CAMPAIGN_VERSION still refused server-side
+ok   F2.2 CAMPAIGN_NOT_FOUND still refused server-side
+ok   F2.3 CAMPAIGN_IDENTITY_MISMATCH still refused server-side
+ok   F3.0 STALE_SPECIAL_EVENT_VERSION still refused server-side
+ok   F3.1 SPECIAL_EVENT_NOT_FOUND still refused server-side
+ok   F4. the unchanged short-circuit survives in both modules
+ok   F5.0 STALE_CAMPAIGN_VERSION is still a proven zero write
+ok   F5.1 CAMPAIGN_NOT_FOUND is still a proven zero write
+ok   F5.2 CAMPAIGN_IDENTITY_MISMATCH is still a proven zero write
+ok   F5.3 DUPLICATE_CAMPAIGN_IDENTITY is still a proven zero write
+ok   F5.4 CAMPAIGN_LOCK_TIMEOUT is still a proven zero write
+ok   F5.5 STALE_SPECIAL_EVENT_VERSION is still a proven zero write
+ok   F5.6 SPECIAL_EVENT_NOT_FOUND is still a proven zero write
+ok   F6. a SERVER BUSINESS REFUSAL is dispatched once and never replayed
+ok   F7. and its canonical token reaches the page unchanged
+
+== G. AN UNKNOWN OUTCOME IS NEVER REPLAYED ==
+ok   G1. an UNKNOWN outcome is dispatched exactly once — never retried
+ok   G2. and is reported as a failure the caller must reconcile
+ok   G3. and is NOT claimed to be a zero write
+ok   G4. a repeated save resolves to the SAME campaign_id
+ok   G5. and both report unchanged — a double click cannot duplicate
+ok   G6. two clicks are two requests (no hidden coalescing claimed)
+
+== H. MUTANTS ==
+ok   M1 action removed from the canonical dispatch (caught)
+ok   M2 stage-1 action changed (caught)
+ok   M3 write dispatched as a read (caught)
+ok   M4 raw-fetch fallback reinstated (caught)
+ok   M5 blind retry after an unknown outcome (caught)
+ok   M6 retry loop unbounded (caught)
+ok   M7 zero-write proof dropped at the throw boundary (caught)
+ok   M8 business refusal replayed (caught)
+ok   M9 write payload moved into the query (caught)
+
+== I. VACUITY — the harness can fail ==
+ok   I1. the probe observes a real dispatch (so an empty observation would have failed)
+ok   I2. and the query comparison discriminates
+
+85 passed, 0 failed, 9 mutants, 0 survived

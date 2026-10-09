@@ -1,0 +1,31 @@
+ok   A 600/0 +10 → d0_18 600
+ok   B 600/300 +10 → d0_18 300 (not 600)
+ok   C fully received → all buckets 0
+ok   D +25 → d19_30 300 only
+ok   E +40 → d31_45 only
+ok   F +60 → d45_plus only
+ok   G overdue → 300
+ok   H terminal received → 0 incoming
+ok   H terminal completed → 0 incoming
+ok   H terminal closed → 0 incoming
+ok   H terminal cancelled → 0 incoming
+ok   H terminal delivered → 0 incoming
+ok   I partially_received → remaining 350 appears
+ok   J two shipments → 18=300, 45=200
+ok   K different marketplace does not attribute to amazon_us receiver
+ok   K attributes to its own canonical receiver
+ok   L merged MULTI shipment not attributed to a specific-marketplace receiver
+ok   L MULTI kept under multi key (conserved, not split)
+ok   O receiver card total = Σ remaining (300 + 200)
+ok   cloud path reads real getShipments + getShipmentLines
+ok   exposure index builder builds the receiver projection
+ok   cloud path consumes exactly that projection
+ok   cloud row sources card buckets from the real projection (no more within18days: 0)
+ok   an unread shipment family is never laundered into a zero bucket
+ok   and the projection itself is NULL until READY — never {}, which would make every lookup miss and every row zero
+ok   cloud path no longer hard-codes within18days: 0
+ok   projection owner never reads wh_on_the_way_*
+ok   card render has Overdue + 45+ rows sourced from real fields
+ok   N projection never reads FC Share (no live-share rewrite of dispatched shipment)
+
+29 passed, 0 failed

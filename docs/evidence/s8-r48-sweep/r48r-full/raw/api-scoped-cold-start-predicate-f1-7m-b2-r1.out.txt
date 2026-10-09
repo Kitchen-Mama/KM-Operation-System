@@ -1,0 +1,15 @@
+
+== §2 shared helper KM.DB.isScopedReadEligible — CONFIGURATION fact, NOT cache-load fact ==
+
+== §0/§3 all 6 scoped-active predicates route through the shared helper (cold cloud → ACTIVE) ==
+
+== §5/§6 cold canonical init takes the SCOPED branch BEFORE any legacy loadOperationDb ==
+
+== §7 Overseas cold first-open requests the 4 canonical tables (no Movement-specific hardening) ==
+
+== §8/§4 B4/B5 post-write bounded readback contracts preserved (2 mutable tables + merge) ==
+
+== §5 F1-7L zero-prime invariants preserved ==
+
+---------------------------------------------
+PASS 78  FAIL 0

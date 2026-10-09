@@ -1,0 +1,15 @@
+
+== save (debounced target) — ADD mode persists non-empty fields; skips empty; edit mode never saves ==
+
+== load / restore — valid draft round-trips; asRec seeds the existing control builders ==
+
+== I — corrupt / version-mismatch cache is ignored + cleared (modal always opens clean) ==
+
+== clear + collect/any helpers ==
+
+== source contract — clear ONLY on confirmed Create success; preserve on cancel/close/fail ==
+
+== source contract — restore wiring + explicit Clear Draft + no DB/API from drafting ==
+
+----------------------------------------
+SKU ADD DRAFT CACHE (F1-SKU-DETAILS-DRAFT-R1): 21 passed, 0 failed

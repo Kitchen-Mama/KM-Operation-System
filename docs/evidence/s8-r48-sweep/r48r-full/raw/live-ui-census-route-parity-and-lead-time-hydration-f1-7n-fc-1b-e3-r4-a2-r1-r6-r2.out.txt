@@ -1,0 +1,195 @@
+
+== §0 — preflight invariants this round must not move ==
+ok   A1 the AI Plan DB generation flag is still declared false
+ok   A2 the activation allowlist still holds exactly one entry
+ok   A3 that entry is a complete four-axis scope, unwidened
+ok   A4 R6-R2 is a registered owner stamp
+ok   A5 the application token is at R6-R2's or later
+ok   A6 no index.html asset is left behind on an older app token
+
+== §2 — the census predicate had no satisfier, and KMARC is now the one owner ==
+ok   B1 16_ SAD_STATUSES_ contains draft and cancelled and does NOT contain `active`
+ok   B2 the writer coerces any unrecognised status to `draft`, so `active` can never be persisted
+ok   B3 the server states its ACTIVE set more than once — which is why it needed one owner
+ok   B4 KMARC.ACTIVE_STATUSES is byte-identical to the server ACTIVE literal
+ok   B5 KMARC names the three terminal statuses
+ok   B6 KMARC reproduces the screen total of 520 from the persisted rows
+ok   B7 both persisted manual routes are included
+ok   B8 the superseded `status === active` predicate matches NEITHER row — the census 0 was a constant
+ok   B9 the AMZLG&S route stores a BLANK destination_marketplace
+ok   B10 and it still counts — scope is decided by the STATION marketplace, never by the destination
+ok   B11 a blank company on the ROW is refused by name
+ok   B12 a blank company on the SCOPE is refused by name
+ok   B13 another company is refused by name
+ok   B14 a blank country on the row is refused by name
+ok   B15 a blank marketplace on the row is refused by name
+ok   B16 a cancelled route is excluded
+ok   B17 an EXPIRED route is excluded — 16_ says it is not part of any active set
+ok   B18 a submitted route is excluded
+ok   B19 an unrecognised status is REPORTED, never silently admitted
+ok   B20 a site_confirmed route stays visible — the server treats it as active
+ok   B21 a cancelled LINE adds nothing to the total
+ok   B22 a blank planned_qty falls back to recommended, not to zero
+ok   B23 an explicit planned zero is a decision and wins over the recommendation
+ok   B24 the page hydrate consumes KMARC
+ok   B25 the census consumes KMARC
+ok   B26 the unsatisfiable census predicate is gone from the code (not merely commented)
+ok   B27 a missing authority is a REFUSAL with a named code, not a fallback to a second copy of the rule
+ok   B28 the §2 provenance runner exists
+ok   B29.1 the required result block reports ui_current_plan_total
+ok   B29.2 the required result block reports census_current_plan_total
+ok   B29.3 the required result block reports totals_agree
+ok   B29.4 the required result block reports included_route_ids
+ok   B29.5 the required result block reports excluded_route_ids_with_reason
+ok   B29.6 the required result block reports source_of_520
+ok   B30 the provenance runner declares zero writes and no writer
+ok   B31 and constructs no mutation of any kind
+
+== §3 — the catalogue was settled EMPTY, and that is why the lane had no methods ==
+ok   C1 60_ gates carrier_lead_times behind include.carrierPlanning
+ok   C2 and skips an include-gated table the caller did not ask for
+ok   C3 the primary workspace read still does NOT request the carrier include (R4-A1 §D is preserved)
+ok   C4 adoption no longer keys on the caller intent flag
+ok   C5 it keys on the request AND the response contents
+ok   C6 and "the response contents" means a NON-EMPTY table, not a present key
+ok   C7 a primary read without the include comes back with NO carrier table at all
+ok   C8 adopting it installs ZERO lead times
+ok   C9 and the lane resolves EMPTY_CONFIGURATION
+ok   C10 reporting that carrier_lead_times has no row for the lane — the exact live sentence
+ok   C11 and the lazy load never ran, because adoption reported success
+ok   C12 the new gate refuses to adopt that payload
+
+== §3 (cont.) — what the lane answers once the catalogue actually arrives ==
+ok   C13 the lazy load installs the real rows
+ok   C14 exactly ONE catalogue request — no duplicate workspace read
+ok   C15 the CN -> US lane is READY
+ok   C16 sourced from the transit authority
+ok   C17 three methods, none of which required a rate card
+ok   C18 and there are no rate cards at all on this lane
+ok   C19 pricing is reported unavailable, not the method
+ok   C20 carrier selection stays deferred
+ok   C21 four DISTINCT service profiles on the lane
+ok   C22 the fold takes the SLOWEST max across carriers (45 vs 52 -> 52)
+ok   C23 and the FASTEST min (28 vs 30 -> 28)
+ok   C24 and the SLOWEST avg, which is never used as an arrival
+ok   C25 both carriers travel as provenance only
+ok   C26 the domestic lane answers only with its own row
+ok   C27 and that row never appears on the CN -> US lane
+
+== §4 — route identity and last-mile distinctions ==
+ok   D1 `sea` offers two last miles and both are carried
+ok   D2 which is reported as a real ambiguity
+ok   D3 and is NOT resolved by taking the first
+ok   D4 `air` offers one, so there is nothing to choose
+ok   D5 and that one is carried rather than dropped
+ok   D6 sea_express keeps its own last mile
+ok   D7 sea+truck and sea+parcel have different transit times, which is why merging them loses information
+ok   D8 sea_express is its own identity and is never folded into sea
+ok   D9 a blank max_days is null, never 0
+ok   D10 so it can never present itself as the fastest service on the lane
+
+== §3/§7 — the page-side pipeline, ETA and late hydration ==
+ok   E1 the §3 boundary trace exists
+ok   E2.1 it reports cached_lead_time_rows
+ok   E2.2 it reports cached_rate_card_rows
+ok   E2.3 it reports rejection_histogram
+ok   E2.4 it reports service_profiles
+ok   E2.5 it reports resolution_status
+ok   E2.6 it reports final_options
+ok   E2.7 it reports registry_request_count
+ok   E3 and it issues no request of its own
+ok   E4 the rejection histogram names the axis that eliminated each row
+ok   E5 the transport boundary is recorded where the read settles
+ok   E6 recording BOTH the server row count and the count that survived normalization
+ok   E7 the arrival folds on the SLOWEST max across carriers
+ok   E8 the lane matches on ORIGIN as well as destination
+ok   E9 and declares its basis
+ok   E10 avg_days is carried for display and is never the arrival
+ok   E11 a blank max_days fails CLOSED — no date is guessed
+ok   E12 and says which kind of absence it was
+ok   E13 the 7-day buffer is never added to a displayed transit
+ok   E14 the station-wide settle repaints the Method select
+ok   E15 and now also repaints the Expected Arrival — which it did not, so a hydrated row kept saying "Lead time unavailable"
+ok   E16 the repaint introduces no read
+ok   E17 and it still honours a PERSISTED snapshot over a freshly computed one
+ok   E18 writing nothing — it calls no persistence API
+ok   E19 three concurrent loads share ONE request (coalescing preserved)
+
+== §5 — recommendation and current plan are reconciled, never conflated ==
+ok   F1 the three quantities are separate fields
+ok   F2 an excess is reported when the plan exceeds the recommendation
+ok   F3 and the difference never goes negative
+ok   F4 the live arithmetic is 920 - 520 = 400
+ok   F5 both sides name their own supply
+ok   F6 the route origin is read from the warehouse identity, never from a display label
+ok   F7 and whether the two are the same supply is stated rather than assumed
+ok   F8 when they differ, the strip still warns — compactly, and only when they differ
+ok   F8a and the detail it stands for is reachable, not deleted
+ok   F9 and it emits no application vocabulary, so it cannot describe the saved routes as this run output
+ok   F10 each side of the tooltip names its OWN supply — neither borrows the other's
+ok   F11 the reconciliation constructs no writer
+ok   F12 and nothing acts on its numbers to change a route
+
+== §6 — the selector rejection reasons are typed ==
+ok   G1 the typed classifier exists
+ok   G2.1 it can answer NO_MATERIALIZED_GAP_ROW_FOR_SCOPE
+ok   G2.2 it can answer NO_GAP_ROW_FOR_SKU
+ok   G2.3 it can answer SUGGESTED_QUANTITY_ZERO_NO_ROW_EXPECTED
+ok   G2.4 it can answer SNAPSHOT_DATE_BLANK
+ok   G2.5 it can answer SNAPSHOT_DATE_UNREADABLE
+ok   G2.6 it can answer MIXED_SNAPSHOT_DATES
+ok   G2.7 it can answer SNAPSHOT_LINEAGE_MISMATCH
+ok   G3 absence is decided BEFORE consistency — "no rows" is never reported as "mixed dates"
+ok   G4 the runner keeps a typed histogram
+ok   G5 alongside the original predicate histogram, which stays comparable with earlier runs
+ok   G6 every token is glossed in the output
+ok   G7 the BOOLEAN gate is byte-identical — accuracy of the explanation, not a relaxed rule
+ok   G8 all fifteen predicates are still required
+ok   G9 and the selector may still return no candidate
+
+== §9/§11 — release contract ==
+ok   H1 KMARC is in MODULE_ORDER
+ok   H2 and registered under KMARC
+ok   H3 the browser loads it on the current application token
+ok   H4 and loads it BEFORE the page that consumes it
+ok   H5 the registry token this round shipped is still in the ledger
+ok   H5a and index.html serves the CURRENT registry token
+ok   H6 the deployment release stamp is bumped for a sync-visible backend change, and never moves backwards
+ok   H7 R6-R2 did not touch 60_ — the lead-time DTO transport was proven present, so it moved that stamp not at all
+ok   H8 the census build stamp is at R6-R2's or later
+ok   H9 the committed bundle is exactly what the tool produces
+ok   H10 the bundle carries 60 modules
+ok   H11 and KMARC is a global in it, so the census can consume it
+
+== MUTATION PROBES — each breaks a semantic guard, none a spelling ==
+ok   M1  admitting `active` back into KMARC changes nothing, so the census 0 is proven to be a constant (caught)
+ok   M2  making a blank row-company a wildcard admits another company's route (caught)
+ok   M3  scoping on destination_marketplace drops the warehouse-destination route (caught)
+ok   M4  treating `expired` as active puts a read-only row back in the plan (caught)
+ok   M5  adopting on caller intent installs an empty catalogue as a settled one (caught)
+ok   M6  adopting on key-presence rather than row-count is the same defect in a new spelling (caught)
+ok   M7  requiring a rate card re-couples price to existence (caught)
+ok   M8  making marketplace a lead-time join key empties the lane (caught)
+ok   M9  dropping the origin clause lets a US->US row answer a CN->US route (caught)
+ok   M10 folding on min instead of max makes the service look faster than any carrier runs it (caught)
+ok   M11 folding on the FASTEST max hides the slowest operator (caught)
+ok   M12 coercing a blank max_days makes an arrival of today (caught)
+ok   M13 flattening the last mile merges two services with different transit times (caught)
+ok   M14 resolving an ambiguous last mile by taking the first chooses for the operator (caught)
+ok   M15 dropping the ETA repaint from the station-wide settle strands a hydrated row (caught)
+ok   M16 reporting "no gap row" as "stale snapshot" sends the reader to the wrong table (caught)
+ok   M17 counting a cancelled LINE inflates the plan total (caught)
+ok   M18 subtracting across different supply sources invents a shippable difference (caught)
+
+== SAFETY — nothing in this round writes ==
+ok   S1 the flag is not flipped anywhere
+ok   S2 the trace cannot Submit
+ok   S3 the census writes to no carrier master table
+ok   S4a it declares zero reservation writes
+ok   S4b and constructs no reservation or cell write
+ok   S5 the live census read both carrier authorities successfully — the browser, not the server, was empty
+
+---------------------------------------------------------------
+passed 168  failed 0
+mutants caught 18 of 18
+---------------------------------------------------------------

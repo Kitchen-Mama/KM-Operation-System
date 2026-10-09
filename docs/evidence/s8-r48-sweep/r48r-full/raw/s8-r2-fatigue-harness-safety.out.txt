@@ -1,0 +1,349 @@
+
+== A. THE PROTECTED PRODUCTION DATA SET IS FROZEN, AND THE WRITE GATE REFUSES IT ==
+ok   A1  §1 names sku_details → PROTECTED_MASTER
+ok   A1  §1 names sku_regional_details → PROTECTED_MASTER
+ok   A1  §1 names marketplaces → PROTECTED_MASTER
+ok   A1  §1 names pricing_list → PROTECTED_MASTER
+ok   A1  §1 names fc_regular_forecast → PROTECTED_MASTER
+ok   A1  §1 names fc_special_events → PROTECTED_MASTER
+ok   A1  §1 names campaigns → PROTECTED_MASTER
+ok   A1  §1 names campaign_sku_lines → PROTECTED_MASTER
+ok   A1  §1 names warehouses → PROTECTED_MASTER
+ok   A1  §1 names marketplace_skus → PROTECTED_MASTER
+ok   A1  §1 names tax_rate_components → PROTECTED_MASTER
+ok   A1  §1 names tax_referral_rates → PROTECTED_MASTER
+ok   A2  also protected: amazon_inventory_snapshot
+ok   A2  also protected: amazon_daily_sales_snapshot
+ok   A2  also protected: amazon_weekly_sales_snapshot
+ok   A2  also protected: company_legal_entities
+ok   A2  also protected: carriers
+ok   A2  also protected: carrier_rate_cards
+ok   A2  also protected: carrier_lead_times
+ok   A2  also protected: document_templates
+ok   A2  also protected: document_template_fields
+ok   A2  also protected: pricing_change_log
+ok   A2  also protected: fc_target_rules
+ok   A2  also protected: shipment_route_templates
+ok   A2  also protected: shipment_route_template_nodes
+ok   A2  also protected: logistics_locations
+ok   A2  also protected: import_sync_runs
+ok   A2  also protected: import_sync_issues
+ok   A2  also protected: replenishment_demand_allocation_rules
+ok   A3  write refused for sku_details
+ok   A3  write refused for sku_regional_details
+ok   A3  write refused for marketplaces
+ok   A3  write refused for pricing_list
+ok   A3  write refused for fc_regular_forecast
+ok   A3  write refused for fc_special_events
+ok   A3  write refused for campaigns
+ok   A3  write refused for campaign_sku_lines
+ok   A3  write refused for warehouses
+ok   A3  write refused for marketplace_skus
+ok   A3  write refused for tax_rate_components
+ok   A3  write refused for tax_referral_rates
+ok   A4  and delete is refused for a protected table
+ok   A5  protected policy is NEVER_TOUCH (write/delete), read is unconstrained
+ok   A6  29 protected tables
+ok   A7  58 physical tables registered in total
+
+== B. AN UNREGISTERED TABLE IS A STOP — FAIL CLOSED, NOT FAIL OPEN ==
+ok   B1  unknown → UNAUTHORIZED_UNKNOWN
+ok   B2  blank → UNAUTHORIZED_UNKNOWN
+ok   B3  and its write is refused with a STOP
+ok   B4  the refusal points at the approval gate rather than dead-ending
+ok   B5  and its delete is refused
+
+== C. INVENTORY IS REBUILDABLE — AUTHORIZED, BUT ONLY THROUGH CANONICAL RUNTIME OWNERS ==
+ok   C1  factory_stock → REBUILDABLE_OPERATIONAL_STATE
+ok   C2  factory_stock policy = RECONCILE (never deleted, never cell-restored)
+ok   C3  factory_stock write authorized via RUNTIME_OWNER
+ok   C4  factory_stock direct harness write refused
+ok   C5  factory_stock delete refused — the canonical row is never removed
+ok   C6  factory_stock no direct cell write
+ok   C1  overseas_inventory_snapshot → REBUILDABLE_OPERATIONAL_STATE
+ok   C2  overseas_inventory_snapshot policy = RECONCILE (never deleted, never cell-restored)
+ok   C3  overseas_inventory_snapshot write authorized via RUNTIME_OWNER
+ok   C4  overseas_inventory_snapshot direct harness write refused
+ok   C5  overseas_inventory_snapshot delete refused — the canonical row is never removed
+ok   C6  overseas_inventory_snapshot no direct cell write
+ok   C7  there is no table in the registry the harness may poke a cell in
+ok   C8  §2 recovery model frozen
+ok   C9  an inventory touch with no warehouse identity is refused
+ok   C10 a complete inventory touch is recorded with before/after evidence
+
+== D. THE MOVEMENT LEDGERS ARE PERMANENT ==
+ok   D1  MOVEMENT_DELETE_ALLOWED = false
+ok   D2  factory_stock_movements policy = RETAIN
+ok   D3  factory_stock_movements delete refused by policy
+ok   D2  overseas_inventory_movements policy = RETAIN
+ok   D3  overseas_inventory_movements delete refused by policy
+ok   D2  factory_stock_override_audit policy = RETAIN
+ok   D3  factory_stock_override_audit delete refused by policy
+ok   D4  no movement ledger is a DELETE step in SAFE_CLEANUP_ORDER
+ok   D5  nor is either inventory balance table
+ok   D6  reservation release is ordered BEFORE the shipment row is deleted (orphaned reservations are unrecoverable)
+ok   D7  and inventory reconciliation comes after every transaction row is gone
+
+== E. GAP WRITE FATIGUE IS EXCLUDED — AND THE FINDING SAYS WHY ==
+ok   E1  inventory_replenishment_gap → READ_ONLY_DERIVED
+ok   E2  inventory_replenishment_gap write refused
+ok   E1  order_planning_gap → READ_ONLY_DERIVED
+ok   E2  order_planning_gap write refused
+ok   E3  §6.3 canonical rebuild IS supported
+ok   E4  §6.2 the rebuild owner is named
+ok   E5  §6.4 the scope modes are the real ones
+ok   E6  §6.6 completeness is provable
+ok   E7  and the proof is the job state, not a promise
+ok   E8  §6.1 21 canonical inputs
+ok   E9  8 of those 21 are themselves mutated by mainline fatigue
+ok   E10 §6 GAP_WRITE_FATIGUE_SAFE = NO
+ok   E11 four named blockers, not a vague reservation
+ok   E12 and each blocker is a distinct, checkable condition
+ok   E13 no fatigue_run_id column is introduced anywhere in the registry
+ok   E14 the gap step in SAFE_CLEANUP_ORDER is SKIP, not DELETE
+
+== F. THE CENSUS IS READ-ONLY BY CONSTRUCTION ==
+ok   F1  census contains no setValue
+ok   F1  census contains no setValues
+ok   F1  census contains no appendRow
+ok   F1  census contains no insertSheet
+ok   F1  census contains no deleteRow
+ok   F1  census contains no clearContent
+ok   F1  census contains no clearContents
+ok   F1  census contains no LockService
+ok   F1  census contains no DriveApp
+ok   F1  census contains no setProperty
+ok   F1  census contains no deleteProperty
+ok   F1  census contains no UrlFetchApp
+ok   F2  it reads ONE bounded column at a time
+ok   F3  and never getDataRange — the unbounded read it exists to avoid
+ok   F4  examples are bounded
+ok   F4a the census identity columns are EXACTLY KMS8RUN.LINEAGE_FIELDS — nothing unmeasured, nothing extra
+ok   F4b and the census actor columns cover every field guard G2 reads
+ok   F4c deliberately a SUPERSET — created_by is client-asserted, so the actor string could sit in any *_by column
+ok   F4d and one lineage-type column, the §15 marker
+ok   F4e no free-text column is read: note
+ok   F4e no free-text column is read: plan_name
+ok   F4e no free-text column is read: error_summary
+ok   F4e no free-text column is read: rejected_reason
+ok   F4e no free-text column is read: rejected_comment
+ok   F4e no free-text column is read: closure_reason
+ok   F4e no free-text column is read: raw_status
+ok   F4e no free-text column is read: file_name
+ok   F4e no free-text column is read: km_po_no
+ok   F4e no free-text column is read: booking_no
+ok   F4e no free-text column is read: container_no
+ok   F4e no free-text column is read: bl_no
+ok   F4e no free-text column is read: invoice_no
+ok   F4e no free-text column is read: tracking_number
+ok   F4e no free-text column is read: master_tracking_number
+ok   F4e no free-text column is read: cancel_reason
+ok   F4f and the report declares free_text_headers: 0
+ok   F4g S8_FATIGUE_TEST does NOT begin with S8T — a prefix-only census would have missed an actor collision
+ok   F4h so the actor is censused by EXACT match as a second token
+ok   F4i and the lineage-type marker likewise
+ok   F5  an incomplete slice is visibly incomplete and says where to resume
+ok   F6  a zero from an incomplete census is explicitly NOT reported as clean
+ok   F7  the census is NOT in the deployed apps-script set
+ok   F8  the deployed set is still 77 .gs files
+ok   F9  the census table list is EXACTLY the KMS8CLASS registry
+
+== G. CLEANUP CANDIDATES COME FROM THE MANIFEST AND FROM NOTHING ELSE ==
+ok   G1  a well-formed run produces a dry-run plan
+ok   G2  the plan is a DRY RUN
+ok   G3  exactly the 2 rows the manifest recorded
+ok   G4  and RO-GHOST is not among them even though it is in the world
+ok   G5  the plan says it deleted nothing
+ok   G6  it carries a confirmation checksum
+ok   G7  a different candidate set produces a different checksum
+ok   G8  an already-absent manifest row is skipped, not a refusal
+ok   G9  a non-test actor on a manifest row refuses the plan
+ok   G10 and the refusal abandons the ENTIRE plan, not just that row
+ok   G11 because a partial cleanup reports the same thing as a complete one
+ok   G12 a FAILED_RETAINED run cannot be cleaned
+ok   G13 and the reason is recorded, not assumed
+ok   G14 an out-of-window created_at refuses a manifest row (G6 corroborates)
+ok   G15 a missing created_at is NOT a refusal — time never decides
+
+== H. PREFIX-ONLY AND TIME-ONLY SELECTION ARE UNREACHABLE ==
+ok   H1  selectByPrefix always throws
+ok   H2  selectByTime always throws
+ok   H3  execute always throws
+ok   H4  DESTRUCTIVE_EXECUTOR_IMPLEMENTED = false
+ok   H5  CLEANUP_DEFAULT_EXECUTE = false
+ok   H6  CLEANUP_REQUIRES_DRY_RUN = true
+ok   H7  planCandidates takes a manifest, not a query
+ok   H8  and its only candidate source is manifestIds
+ok   H9  RO-GHOST is the one leak
+ok   H10 classified for INVESTIGATION
+ok   H11 RO-OTHER is attributed to its own run, not to this one
+ok   H12 and the action is explicitly not deletion
+ok   H13 an empty execution context is refused
+ok   H14 and all four execution guards fire
+ok   H15 a complete context passes all four
+ok   H16 a table that changed since the dry run is refused
+ok   H17 more candidates than the run recorded creating is refused
+
+== I. CROSS-RUN ISOLATION ==
+ok   I1  run A's plan does not contain run B's row
+ok   I2  and forcing it through evaluateRowGuards is refused
+ok   I3  on TWO independent grounds — lineage and manifest membership
+ok   I4  a child of run B does not inherit run A
+ok   I5  a child of run A's own parent DOES inherit (vacuity check)
+ok   I6  two candidate parents aborts rather than picking one
+ok   I7  run B's movement does not resolve to run A
+ok   I8  and it is correctly attributed to run B
+ok   I9  two runs on the same business dimensions CONFLICT and must not overlap
+ok   I10 and the reason names the deterministic id and the REUSE it would cause
+ok   I11 different SKUs do not conflict (vacuity check)
+ok   I12 a row whose lineage resolves but which the run never recorded is still NOT adoptable
+
+== J. THE §5 APPROVAL GATE ==
+ok   J1  an approval request is a STOP
+ok   J2  and an incomplete one is flagged
+ok   J3  naming every field §5 requires
+ok   J4  a complete request validates
+ok   J5  and it carries the current classification
+ok   J6  filling in the form does not itself widen the surface
+ok   J7  all seven §5 triggers
+ok   J8  an invented trigger is incomplete
+
+== K. R2 ADDED NO ROUTER ACTION, NO SCHEMA CHANGE, NO DEPLOYED FILE ==
+ok   K1  the router contains no S8T
+ok   K1  the router contains no S8_FATIGUE
+ok   K1  the router contains no fatigue
+ok   K1  the router contains no cleanup.execute
+ok   K1  the router contains no testData
+ok   K2  no S8 file was added to the deployed apps-script set
+ok   K3  index.html does not load the fatigue harness
+ok   K4  no shipped module references the fatigue harness
+ok   K5  s8-data-classification.js contains no writeFileSync
+ok   K5  s8-data-classification.js contains no appendFileSync
+ok   K5  s8-data-classification.js contains no UrlFetchApp
+ok   K5  s8-data-classification.js contains no SpreadsheetApp
+ok   K5  s8-data-classification.js contains no DriveApp
+ok   K5  s8-data-classification.js contains no fetch(
+ok   K5  s8-run-identity.js contains no writeFileSync
+ok   K5  s8-run-identity.js contains no appendFileSync
+ok   K5  s8-run-identity.js contains no UrlFetchApp
+ok   K5  s8-run-identity.js contains no SpreadsheetApp
+ok   K5  s8-run-identity.js contains no DriveApp
+ok   K5  s8-run-identity.js contains no fetch(
+ok   K5  s8-cleanup-planner.js contains no writeFileSync
+ok   K5  s8-cleanup-planner.js contains no appendFileSync
+ok   K5  s8-cleanup-planner.js contains no UrlFetchApp
+ok   K5  s8-cleanup-planner.js contains no SpreadsheetApp
+ok   K5  s8-cleanup-planner.js contains no DriveApp
+ok   K5  s8-cleanup-planner.js contains no fetch(
+ok   K6  the guard count is 10 (6 per-row + 4 per-execution)
+ok   K7  §14 T4 is capped at 2 concurrent (one global ScriptLock)
+ok   K8  §14 T2 = 20 cycles
+
+== L. RUN IDENTITY — THE FORMAT IS DERIVED, NOT CHOSEN ==
+ok   L1  canonical form
+ok   L2  accepts YYYYMMDD too
+ok   L3  compact form
+ok   L4  15 chars — one under the 16-char limit at 21_:857
+ok   L5  and it round-trips
+ok   L6  it fits the factory import batch id
+ok   L7  and satisfies the LIVE pattern at 21_:857 verbatim
+ok   L8  the underscore form is REJECTED by that pattern — which is why hyphens are canonical
+ok   L9  the run id regex is strict
+ok   L10 the serial is bounded
+ok   L11 scoped ids carry the run id
+ok   L12 one actor value
+ok   L12a note is not a lineage carrier
+ok   L12b a row carrying the run id ONLY in note does not resolve
+ok   L12c source_ref_id resolves DIRECT
+ok   L12c create_idempotency_key resolves DIRECT
+ok   L12c request_allocation_draft_id resolves DIRECT
+ok   L12c submit_batch_id resolves DIRECT
+ok   L12c external_shipment_id resolves DIRECT
+ok   L12c reference_id resolves DIRECT
+ok   L13 a foreign namespace cannot open a manifest
+ok   L14 a fresh manifest validates
+ok   L15 a manifest with a foreign actor does not
+
+== M. MUTATION — BREAK EACH GUARD AND REQUIRE THE SUITE TO NOTICE ==
+ok   MUTANT CAUGHT — the write gate defaulting to allow instead of failing closed
+ok   MUTANT CAUGHT — the protected-master refusal being dropped
+ok   MUTANT CAUGHT — the direct-cell-write bar being lifted
+ok   MUTANT CAUGHT — the movement ledger becoming a delete candidate
+ok   MUTANT CAUGHT — the gap tables being reclassified as writable
+ok   MUTANT CAUGHT — GAP_WRITE_FATIGUE_SAFE being flipped to true without removing a blocker
+ok   MUTANT CAUGHT — cleanup selecting by prefix instead of by manifest
+ok   MUTANT CAUGHT — the manifest-membership guard G4 being removed
+ok   MUTANT CAUGHT — a guard refusal skipping the row instead of abandoning the plan
+ok   MUTANT CAUGHT — the row guards being ORed instead of ANDed
+ok   MUTANT CAUGHT — selectByPrefix quietly returning a list instead of throwing
+ok   MUTANT CAUGHT — the destructive executor being implemented
+ok   MUTANT CAUGHT — COMMIT mode no longer being required
+ok   MUTANT CAUGHT — the rollback journal no longer being required before deletion
+ok   MUTANT CAUGHT — reservation release being ordered AFTER the shipment delete
+ok   MUTANT CAUGHT — ambiguous parent lineage being resolved by picking the first
+ok   MUTANT CAUGHT — the actor check being dropped from DIRECT lineage
+ok   MUTANT CAUGHT — FAILED_RETAINED becoming cleanup-eligible
+ok   MUTANT CAUGHT — the dimension-overlap rule being disabled
+ok   MUTANT CAUGHT — canAdopt accepting a row absent from the manifest
+ok   MUTANT CAUGHT — an unrecorded inventory touch being accepted silently
+ok   MUTANT CAUGHT — a lineage carrier being added that the census does not scan
+ok   MUTANT CAUGHT — a lineage carrier being removed while the census still reads its column
+ok   MUTANT CAUGHT — the actor identity being renamed to something the census prefix WOULD have caught
+
+== N. VACUITY — the unmutated tree really does behave as the mutants assume ==
+ok   N1  the real write gate really does refuse an unknown table
+ok   N2  the real delete gate really does refuse a movement ledger
+ok   N3  the real planner really does produce exactly the manifest rows
+ok   N4  the real overlap rule really does fire
+ok   N5  the real eligibility check really does refuse FAILED_RETAINED
+
+== O. S8-R2 CLOSEOUT + S8-R3A PREFLIGHT — the live census, the 43 extra tabs, and the read surface ==
+ok   O1  LIVE_S8T_COLLISION_COUNT = 0
+ok   O2  zero on all THREE tokens, not just the prefix
+ok   O3  CENSUS_COMPLETE = true — a partial slice would not have approved the namespace
+ok   O4  S8T_NAMESPACE_APPROVED
+ok   O5  57 scanned + 1 absent accounts for all 58 registered tables
+ok   O6  the one absent tab is the legacy one whose storage was retired to Script Properties (50_)
+ok   O7  and it stays registered and PROTECTED_MASTER despite being physically absent
+ok   O8  43 extra live tabs recorded
+ok   O9  with no duplicates
+ok   O10 and none of them is in the registry — recording is not registering
+ok   O11 every one of the 43 classifies UNAUTHORIZED_UNKNOWN / NEVER_TOUCH
+ok   O12 and every one of them refuses a write
+ok   O13 and refuses a delete
+ok   O14 the AUTHORIZED surface is unchanged — still 58 registered
+ok   O15 and still 27 writable
+ok   O16 classify() can now tell "observed live, never audited" from "never heard of it" — different next steps
+ok   O17 two unregistered tables are read by shipped Phase-1 surfaces
+ok   O18 both are among the 43 the operator observed — so neither is a surprise tab
+ok   O19 supplier_price_list is REQUIRED by its owner, so the surface fails closed without it
+ok   O20 and 51_ really does declare it without optional:true
+ok   O21 while 60_ really does declare amazon_inventory_health_snapshot optional
+ok   O22 gapJob.status.get can persist a terminal STALLED state
+ok   O23 and can re-arm a continuation — which is a trigger CREATE, not just a property write
+ok   O24 the re-arm really does schedule a continuation
+ok   O25 and the continuation worker reaches the gap materialization slice — so a READ can reach a gap WRITE
+ok   O26 and those tables are unwritable under the S8 boundary — hence STOP, not a footnote
+ok   O27 40_weekly_workspace holds no write primitive at all
+ok   O27 42_recommendation_workspace holds no write primitive at all
+ok   O27 50_purchase_order_workspace holds no write primitive at all
+ok   O27 51_request_order_workspace holds no write primitive at all
+ok   O27 52_open_po_remaining_owner holds no write primitive at all
+ok   O27 53_fc_summary_raw_owner holds no write primitive at all
+ok   O27 54_raw_inventory_owner holds no write primitive at all
+ok   O27 55_lead_time_owner holds no write primitive at all
+ok   O27 57_shipment_workspace holds no write primitive at all
+ok   O27 58_fc_summary_workspace holds no write primitive at all
+ok   O27 59_sku_details_workspace holds no write primitive at all
+ok   O27 60_inventory_replenishment_workspace holds no write primitive at all
+ok   O27 64_scope_registry holds no write primitive at all
+ok   O27 70_overseas_stock_workspace holds no write primitive at all
+ok   O27 72_product_pricing_workspace holds no write primitive at all
+ok   O28 S8-R3 would read 44 distinct physical tables
+ok   O29 18 of the 44 are write-authorized in principle — so R3 read-only rests on the preflight, not the registry
+ok   O29a and the registry hard-refuses a write to the other 26 regardless of what any preflight says
+ok   O30 and exactly 2 of the 44 are unregistered — the §7 declaration
+
+====================================================================================================
+PASS  315 passed, 0 failed, 24 mutants, 0 survived
+====================================================================================================

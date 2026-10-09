@@ -1,0 +1,17 @@
+
+== A. valid row (status ok, currency null) → NO helper text, compact, aligned ==
+
+== B. error row → inline error below SKU, row flagged, aria-invalid set ==
+
+== C. clearing the error restores the compact aligned state ==
+
+== D. empty SKU → no text, not an error ==
+
+== E. source scans — info/debug text removed, error-only ==
+
+== F. CSS keeps inputs aligned (empty slot collapses; cells top-aligned) ==
+
+== G. all five inputs share the pc-input control class + Supplier Phase-1 preserved ==
+
+----------------------------------------
+RO DRAFT LINE ALIGNMENT (F1-S3-UI): 28 passed, 0 failed

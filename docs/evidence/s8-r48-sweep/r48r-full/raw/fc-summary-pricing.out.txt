@@ -1,0 +1,18 @@
+
+== A. Currency comes from the SAME pricing_list row (per site) ==
+
+== B. Scope switch CA→US re-resolves (no cached CAD price/label) ==
+
+== C. Same SKU, different country, different price — no first-match ==
+
+== D. Missing pricing row → fail-closed (null, never 0, no cross-country substitute) ==
+
+== E. Deal Price rounding unchanged; uses the Regular currency precision ==
+
+== F. Source-scan — single shared resolver, no duplicate lookup ==
+
+== G. Persistence — price_units snapshot from the same pricing_list currency ==
+
+== H. Missing fail-closed + currency UI wiring (source-scan) ==
+
+All FC Summary pricing/currency assertions passed (27 assertions).

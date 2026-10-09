@@ -1,0 +1,219 @@
+
+== A. §A — THE LEDGER IS PROVISIONED BY MIGRATION AND REQUIRED BY THE RUNTIME. NO LAZY CREATE. ==
+ok   A0  fcWriteEnsureSheet_ IS prodRequireSheet_ …
+ok   A0a … which THROWS SCHEMA_NOT_PROVISIONED on an absent sheet — R5 described a create that could not happen
+ok   A0b and contains no insertSheet at all (RULE S0-3 moved creation behind a migration DTO)
+ok   A1  §A.4 71_ contains NO ensure-sheet, NO insertSheet and NO migration-create path
+ok   A1a and neither does 11_
+ok   A1b what replaced it is a REQUIREMENT, named as one
+ok   A2  §A.1 an absent ledger refuses the transition with the named code and zero_write
+ok   A2a the plan is STILL A DRAFT — the status did not move
+ok   A2b and not one cell of shipping_plans was written
+ok   A2c nothing was inserted: the runtime created no sheet
+ok   A2d the ledger still does not exist
+ok   A2e and the refusal says WHY, so an operator knows what to provision
+ok   A2f stating the exact situation: a person confirmed, and it could not be recorded
+ok   A3  §A.1 a 24-column ledger is refused …
+ok   A3a … naming the missing column
+ok   A3b with the plan still a Draft
+ok   A3c and no row written into the partial ledger
+ok   A4  §A.1 a reordered ledger is refused — the write is positional
+ok   A4a with the plan still a Draft
+ok   A5  an EXTRA trailing column is accepted — additive growth is allowed, reordering is not
+ok   A5a and the row is written
+ok   A6  a provisioned ledger admits the confirmation
+ok   A6a and the audit is reported as PERSISTED because the row was read back by its own identity
+ok   A7  §A.3 execute defaults to FALSE and the default run writes nothing
+ok   A7a the table is still absent and nothing was inserted
+ok   A8  §A.3 the DRY RUN writes 0 and plans a create
+ok   A8a reporting the EXPECTED headers, read from the runtime authority
+ok   A8b and the existing state (absent)
+ok   A8c with missing / extra / order_matches all reported
+ok   A8d and an operation-specific confirmation checksum
+ok   A9  §A.3 a blank reviewed checksum refuses the commit and writes nothing
+ok   A10 a checksum that does not match the live state authorises nothing
+ok   A10a and the table is still absent
+ok   A11 §A.3 with the reviewed checksum and execute:true the create is committed and VERIFIED
+ok   A11a the ledger carries exactly the 25 columns in order
+ok   A11b and ZERO data rows — the create populates nothing
+ok   A11c through a complete migration authorization DTO
+ok   A11d and the create goes through RULE S0-3, never a bare insertSheet
+ok   A11e §A.3 exactly ONE sheet was written — no other table moved
+ok   A12 §A.3 an already-exact ledger is NO_ACTION, not a second write
+ok   A12a the plan is still a Draft and still over-committed, so it still gets the challenge
+ok   A13 and after the migration the SAME confirmation that was refused is accepted
+ok   A14 §A.3 a foreign header is refused — this file never reorders or appends on an existing sheet
+ok   A14a and the migration contains no rename, drop, reorder or row delete of ANY table
+ok   A15 §A.3 the validator is read-only and reports that the runtime would NOT accept an absent ledger
+ok   A15a with a rollback statement that says both what it undoes and what deleting a USED ledger costs
+ok   A15b and READY after the migration
+ok   A16 §A.4/§F the shipped migration carries a BLANK reviewed checksum — it refuses to write until a human edits it
+ok   A16a and execute is only ever true when explicitly passed
+ok   A16b §A.3 the 71_ validator answers with the RUNTIME predicate, so verdict and behaviour cannot disagree
+
+== B. §B — ONE TRANSACTION, AND A ROLLBACK THAT IS READ BACK ==
+ok   B0  the journal entry is the SAME {kind,sheet,row,col,prev} shape 21_ already replays for 12_ and 13_
+ok   B0a as read from 21_ itself — this is not a new mechanism, it is the one that exists
+ok   B0b what is ADDED is verification: 21_ swallows its replay errors and this one reports them
+ok   B1  §B.1 the status write fails → the transaction is rolled back and VERIFIED
+ok   B1a the status is unchanged
+ok   B1b ZERO audit rows — the ledger was never reached
+ok   B1c and no reservation or stock cell was touched
+ok   B1d with nothing left unverified
+ok   B2  §B.2 the audit append fails → the STATUS is rolled back
+ok   B2a the plan is a Draft again — R5 would have left it in Pending Approval with no audit
+ok   B2b and every other cell the transition had written is back to blank
+ok   B2c with no audit row
+ok   B2d and the CAUSE is reported, not hidden
+ok   B3  §B.3 a CONFIRMED override writes to factory_stock zero times — there is no reservation participant
+ok   B3a fac_current_stock and fac_reserved_stock are byte-unchanged by an accepted overage
+ok   B3b and the transition core names no reservation write at all
+ok   B4  §B.4 the note write fails → every preceding mutation is rolled back
+ok   B4a the status is back
+ok   B4b and the AUDIT ROW THAT WAS ALREADY APPENDED IS GONE
+ok   B4c deleted, not merely absent — the rollback really issued the delete
+ok   B4d and reports the one row it removed
+ok   B5  §B.5 a rollback that cannot be verified is reported as INDETERMINATE
+ok   B5a it does NOT claim zero_write, it declares itself indeterminate, and it says retrying is not safe
+ok   B5b naming the exact cell it could not restore
+ok   B5c and telling the operator what to read before doing anything else
+ok   B6  the first confirmation is accepted and writes one audit row
+ok   B6a §B.6 the SAME confirmation replayed is refused, and the ledger still holds exactly one row
+ok   B6b and the append itself is idempotent by row identity — a second call writes nothing
+ok   B6c so the ledger cannot acquire a duplicate row
+ok   B7  §B.7 a stale fingerprint is refused …
+ok   B7a … with not a single write to ANY table
+ok   B8  the Shipment Draft creation is OUTSIDE the transaction — an approval is kept even when the draft fails (§D)
+ok   B8a and the GATE still runs before the transaction opens, so a refusal never enters it
+
+== C. §C — THE CORRECTED SYNC SET, MEASURED FROM THE TREE ==
+ok   C0  the round baseline is DERIVED from the commit that introduced this stamp
+ok   C0-i and the roundS OWN COMMIT is derived the same way, so the range has both ends
+ok   C0-i1 and 63_ at that commit declares THIS release, which is what makes it this roundS end
+ok   C0a and it is a STRICT ancestor of HEAD, not HEAD itself
+ok   C0b and 63_ at that baseline declares the PREVIOUS release, which is what makes it the right baseline
+ok   C1  §C every file in the R5-R1 Apps Script sync set is present in the measured change set
+ok   C1-0 and NO production runtime file outside that set has changed since the baseline
+ok   C1a.1 R6R7_NO_ACTION_BEFORE_ is extractable from both trees
+ok   C1a.1a R6R7_NO_ACTION_BEFORE_ is BYTE-IDENTICAL to the round baseline
+ok   C1a.2 R6R7_SET_BEFORE_ is extractable from both trees
+ok   C1a.2a R6R7_SET_BEFORE_ is BYTE-IDENTICAL to the round baseline
+ok   C1a.3 R6R7_MANUAL_ROUTES_ is extractable from both trees
+ok   C1a.3a R6R7_MANUAL_ROUTES_ is BYTE-IDENTICAL to the round baseline
+ok   C1a.4 R6R7_ACTUAL_BROWSER_RESPONSE_ is extractable from both trees
+ok   C1a.4a R6R7_ACTUAL_BROWSER_RESPONSE_ is BYTE-IDENTICAL to the round baseline
+ok   C1b the activation pin equalled the deployed build in the commit this round shipped
+ok   C2  §C 90_ did NOT change — no pure module moved, so BUNDLE_REBUILD is NOT required this round
+ok   C3  §F 00_config.gs is untouched
+ok   C4  §C NO browser file changed, so no cache token rotates and the frontend need not be republished
+ok   C5  §C the action contract stays at 12 on BOTH sides — no action was added or removed
+ok   C6  §C SYS_DEPLOYMENT_RELEASE_ moved, so a NEW Web App deployment version IS required
+ok   C7  the three modules that changed declare this round …
+ok   C7a … and the two that did not, do NOT — a stamp is not a release
+ok   C7b while the RELEASE is at or after every module it ships
+ok   C8  and this round's stamp is registered and legally shaped
+ok   C8a with every later release ordered after it, never before
+ok   C9  §C all three changed modules have a manifest row …
+ok   C9a … and every one of those rows expects this round
+ok   C10 the provisioning tool has NO deployment-manifest row — it is not synced as runtime
+ok   C10a matching the ONLY precedent for a migration tool in that folder
+ok   C10c while the one that DOES have a row lives in the runtime folder — the precedent is the folder
+ok   C10b and the refusal itself names the file and both functions to run
+ok   C11 §C a half-synced project refuses the transition instead of running it unguarded
+
+== D. §D — THE TEMP INVENTORY, EVERY ROW BACKED BY A MEASUREMENT ==
+ok   D0  every classification is one of the five §D categories
+ok   D1.1 TEMP_migrate_request_order_draft_v2.gs is present and classifiable
+ok   D1.2 TEMP_demo_shipping_shipment_map_seed_v2.gs is present and classifiable
+ok   D1.3 TEMP_migrate_shipping_allocation_ai_lifecycle.gs is present and classifiable
+ok   D1.4 TEMP_migrate_create_idempotency_key_a2_r3.gs is present and classifiable
+ok   D1.5 TEMP_FC1AR1_RESERVATION_RECONCILIATION.gs is present and classifiable
+ok   D1.6 TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs is present and classifiable
+ok   D1.7 TEMP_FC_FORECAST_YEAR_ROLLOVER_CENSUS_FC1B_E3_R2.gs is present and classifiable
+ok   D1.8 TEMP_FC_REGULAR_FORECAST_YEAR_ROLLOVER_2027.gs is present and classifiable
+ok   D1.9 TEMP_FC1A_COMPACT_READINESS_CENSUS.gs is present and classifiable
+ok   D1.10 TEMP_RUN_E3_CENSUS_ONCE.gs is NOT in the repo → UNKNOWN_NEEDS_EVIDENCE
+ok   D1.11 未命名.gs is NOT in the repo → UNKNOWN_NEEDS_EVIDENCE
+ok   D2  the numbered runtime set is enumerated
+ok   D2a §D.1 no numbered runtime module CALLS any TEMP entry point
+ok   D3  §D.2 no ScriptApp trigger names a TEMP handler
+ok   D4  the diagnostic-status action is a REQUIRED routed action …
+ok   D4a … and its handler lives in 66_, so removing the TEMP file cannot break the deployment contract
+ok   D4b the TEMP file holds only editor wrappers — the ownership move is real, not documented
+ok   D5.1 the census owns RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT — required on the R5 deployment, so it is KEEP
+ok   D5.2 the census owns RUN_R6R7_CONTROLLED_NO_ACTION_READBACK — required on the R5 deployment, so it is KEEP
+ok   D5.3 the census owns RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST — required on the R5 deployment, so it is KEEP
+ok   D5.4 the reservation reconciliation is the only check on fac_reserved_stock, which this guard SUBTRACTS → KEEP
+ok   D5.5 the readiness census owns the approved-without-shipment count this round's boundary rests on → KEEP
+ok   D6  §D.5 TEMP_migrate_request_order_draft_v2 mints the controlled authority and calls the real generator
+ok   D6a so exactly one file carries an EXTRACT_TO_FORMAL_MODULE finding
+ok   D6b and 61_ does NOT mint it — the capability really does live only in the TEMP file
+ok   D7  §D.6 TEMP files ARE read from disk by live suites
+ok   D7a including the one classified SAFE_TO_REMOVE_NOW — which is therefore safe to remove from the PROJECT, not the repo
+ok   D8  §D.6 the completed lifecycle migration is manifest-OPTIONAL, so removing it breaks no contract
+
+== F. THE EDITOR ENTRY POINTS — the census exists, is top-level, and writes nothing ==
+ok   F1.1 RUN_R6R7_R5_FACTORY_STOCK_GUARD_CENSUS is declared exactly once in 71_
+ok   F1.1a and it is TOP-LEVEL and argument-free, so the Run selector can offer it
+ok   F1.2 RUN_R6R7_R5_FACTORY_STOCK_GUARD_SCHEMA_VALIDATE is declared exactly once in 71_
+ok   F1.2a and it is TOP-LEVEL and argument-free, so the Run selector can offer it
+ok   F2  no other runtime module defines it — no shadowing in the one shared global scope
+ok   F2.1 nor does any file in apps-script-diagnostics
+ok   F2.2 nor does any file in apps-script-migrations
+ok   F3  the census is in the TAIL of 71_ (line 792 of 820) — a short paste loses it first
+ok   F4  the census closure inside 71_ is walked
+ok   F4a §3 NOT ONE function the census can reach names a write API, a lock or a property write
+ok   F4b and the same holds for the schema validator beside it
+ok   F4c and gapReadObjects_ — the one sheet reader it calls — writes nothing either
+ok   F4d while the pool arithmetic it delegates to cannot touch a spreadsheet at all
+ok   F5  §3 the census attempted ZERO writes — measured, not scanned
+ok   F5.0 and it completed, so the zero above is a full run rather than an early death
+ok   F5a and it reports writes: 0
+ok   F5b having read a complete database
+ok   F5c stamped with the deployed build, so the answer names the code that produced it
+ok   F5d and it states which seven tables it read
+ok   F6  exactly one pool is over-committed …
+ok   F6a … and it is named by pool key, WAREHOUSE and SKU — the identifiers a review needs
+ok   F6b with the full arithmetic, and a NEGATIVE headroom reported rather than clamped to zero
+ok   F6c the manual draft is counted and labelled MANUAL, so nobody reads it as the AI's
+ok   F6d §4 the two companies' plans are SUMMED (500 + 400), never filtered to the requesting company
+ok   F6e two physical factory pools stay two pools …
+ok   F6f … keyed by warehouse and SKU
+ok   F6g and the untouched pool keeps its own headroom — the shortfall does not leak across warehouses
+ok   F6h the non-factory warehouse is examined, EXCLUDED, and the exclusion is counted
+ok   F6i the plan already transferred to a shipment is released BY NAME, so its units are not double-counted
+ok   F7  the census carries the override-audit schema readiness, and asks the RUNTIME
+ok   F7a declared dry_run
+ok   F7b and states that the pure guard module is loaded
+ok   F8  §4 an unreadable factory_stock is reported as a FAILED read, with the reason
+ok   F8a and pools_already_over_committed is ABSENT, never an empty list that reads as "nothing is wrong"
+ok   F8b nor is a pool count invented for a census that counted nothing
+ok   F8c and the failure path writes nothing either
+ok   F8d still reporting writes: 0
+ok   F9  71_ documents its own entry point at the definition, which is where an operator can find it
+ok   F9a and 71_ offers the selector exactly TWO entry points — the pair a runbook must name together
+
+== E. MUTANTS — §E ==
+neg  E1 the runtime lazily creates the audit table again — caught
+neg  E2 the gate stops requiring the ledger, so the status moves and the audit cannot be written — caught
+neg  E3 a missing schema is absorbed instead of throwing, leaving pending_approval with no audit — caught
+neg  E4 the audit append is not journalled, so a later failure leaves the row behind — caught
+neg  E5 the status cells are not journalled, so an audit failure leaves pending_approval standing — caught
+neg  E6 a rollback failure is reported as a clean zero-write refusal — caught
+neg  E7 the rollback stops verifying, so an unrestored cell passes as restored — caught
+neg  E8 the append loses its idempotency guard, so a replayed confirmation writes a duplicate row — caught
+neg  E9 the commit stops being read back, so a write that never landed reports success — caught
+neg  E10 the frontend pin drifts below the deployed action contract — caught
+neg  E11 a TEMP entry point becomes reachable from the numbered runtime — caught
+neg  E12 the migration writes without a reviewed checksum — caught
+neg  E13 the migration stops re-checking under the lock, so a reviewed plan authorises a moved state — caught
+neg  E14 the ledger requirement accepts a reordered header, so the row is filed under the wrong columns — caught
+neg  E15 the census filters the pool by the requesting company, hiding a cross-company overcommit — caught
+neg  E16 the per-pool arithmetic is collapsed to one SKU total across every factory warehouse — caught
+neg  E17 the census writes — writes: 0 becomes a literal nobody checked — caught
+neg  E18 an unreadable database is reported as a census with nothing over-committed — caught
+
+----------------------------------------------------------------------------------------------------------------
+OVERRIDE AUDIT PROVISIONING + TRANSACTION ROLLBACK (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1):
+passed 184  failed 0  |  mutants caught 18  survived 0
+----------------------------------------------------------------------------------------------------------------

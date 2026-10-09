@@ -1,0 +1,204 @@
+
+== §2 — THE SCHEDULE TOPOLOGY, read from the code that owns it ==
+ok   T1  the automation timezone authority is Asia/Taipei
+ok   T1a and the calc context uses the fixed +8 offset (Taiwan has no DST)
+ok   T2  the Inventory Gap materialization is a declared automation
+ok   T2a DAILY at 13:30 Asia/Taipei
+ok   T2b with a named handler
+ok   T3  its prerequisite source import runs first, at 12:30
+ok   T4  43_ is the stage that WRITES the snapshot table
+ok   T5  10:41 is BEFORE 13:30 — at that hour today's chain has not started
+ok   T6  §6 the table carries NO run_id column, so "which run wrote this" is not readable off a row
+ok   T6a and 43_ upserts row by row — there is no atomic publication, which is what PARTIAL_SNAPSHOT_BLOCKED exists for
+
+== §3 — THE FRESHNESS AUTHORITY, executed ==
+ok   S1  §12.1 the LIVE case: 10:41, latest snapshot 2026-09-03
+ok   S1a the previous complete run is ACCEPTED, not stale
+ok   S1b and the reason names the schedule, not an age
+ok   S2  §12.2 while the run is due/in flight, the last COMPLETE run is still the authority
+ok   S3  §12.3 once today completes, today is selected
+ok   S4  §12.4 past the completion window with nothing for today, it BLOCKS
+ok   S4a — and the SAME snapshot that was accepted at 10:41 is now refused
+ok   S5  §12.5 a job that FAILED today blocks, even before the scheduled hour
+ok   S5a but YESTERDAY's failure is not today's — it does not block
+ok   S6  §12.6 two calculation dates in one scope is a run caught mid-write
+ok   S6a and being pre-schedule does NOT rescue it — consistency is checked before the clock
+ok   S8  §12.8 a snapshot from another planning cycle blocks
+ok   S8a a FUTURE-dated snapshot is wrong, not fresh
+ok   S8b  on the 1st, the previous day complete snapshot is still the authority INSIDE the refresh window
+ok   S8b1 and it is accepted
+ok   S8c  and before the run is due it is current, not stale - nothing newer exists
+ok   S8d  the YEAR rollover is the same day of the same rule, and was failing too
+ok   S8e  and a leap February rolls over on its 29th
+ok   S8f  past the overdue hour the SAME row is refused - and now with the truthful code, not a lineage one
+ok   S8f1 and it is not accepted
+ok   S8g  two days back across the boundary is still a foreign lineage, at any hour
+ok   S8h  and a whole month back is refused even pre-schedule, where no other rule would catch it
+ok   S8i  planning an EXPLICIT past cycle still refuses yesterday - the exemption is for the current cycle only
+ok   S8j  and the verdict SAYS it took the rollover branch, so this is visible in a diagnostic
+ok   S8j1 while an ordinary day never takes it - there is no mismatch to exempt
+ok   S8j2 and is accepted by the schedule rules alone
+ok   S9  §12.9 nothing at any date blocks
+ok   S9a a snapshot whose only row is BLOCKED is not a complete one
+ok   S7  §12.7 13:29 Asia/Taipei is still pre-schedule...
+ok   S7a ...and 13:30 is not
+ok   S7b 00:30 Taipei is 2026-09-04 there and 16:30 the previous day in UTC — the business day is the one used
+ok   S10 a missing clock is refused — this module never reads one
+ok   S10a and there is no clock read anywhere in it, so a browser clock cannot become a planning authority
+ok   S11 and an unresolved schedule is refused rather than assumed
+ok   S12 there is no age tolerance in the module — the schedule is the whole rule
+ok   S12a the SAME date is accepted at one hour and refused at another — an age rule could not do that
+
+== §4 — THE PRODUCTION GATE, executed against the live evidence ==
+ok   P1  §12.37 10:41 becomes CURRENT_PRE_SCHEDULE in PRODUCTION code
+ok   P1a §12.38 the accepted snapshot is 2026-09-03
+ok   P1b and the schedule came from the deployment's own config
+ok   P1c resolved to 13:30
+ok   P2  the site is ACCEPTED — where R4 answered CANONICAL_DEMAND_STALE
+ok   P2a with the SNAPSHOT quantity (520), not the live 999
+ok   P3  the lineage carries WHY that run was current...
+ok   P3a ...and which run it was
+ok   P3b agreeing with the row
+ok   P4  CANONICAL_DEMAND_STALE no longer exists in 61_
+ok   P4a and the today-comparison it was built on is gone with it
+ok   P5  mixed dates still block in production code
+ok   P6  overdue still blocks
+ok   P7  a foreign cycle still blocks
+ok   P8  nothing still blocks
+
+== §9 — THE SINGLE-SCOPE ACTIVATION GUARD ==
+ok   G0  §12.21 the flag is FALSE this round
+ok   G1  the allowlist names exactly one scope
+ok   G1a and that scope carries all four axes, none of them blank
+ok   G2  §12.23 the exact scope is enabled
+ok   G3.1 §12.22 refused: another sku
+ok   G3.2 §12.22 refused: another marketplace
+ok   G3.3 §12.22 refused: another country
+ok   G3.4 §12.22 refused: another company
+ok   G3.5 §12.22 refused: a sku PREFIXED by an enabled one
+ok   G3.6 §12.22 refused: a case-folded near-match
+ok   G4.1 §12.24 ALL_SITES / empty can never be enabled
+ok   G4.2 §12.24 ALL_SITES / empty can never be enabled
+ok   G4.3 §12.24 ALL_SITES / empty can never be enabled
+ok   G4.4 §12.24 ALL_SITES / empty can never be enabled
+ok   G5  §12.25 the guard reads NOTHING from a request — it is server config, and a payload cannot widen it
+ok   G5a and it matches EXACTLY — no prefix, no wildcard, no partial
+ok   G6  61_ refuses a run with nothing allowlisted...
+ok   G6a ...reporting zero writes
+ok   G6b and the gate is inside the FLAG-TRUE branch — it is the second condition, not a replacement for the first
+ok   G7  a deployment MISSING the guard refuses to generate rather than running unguarded
+ok   G8  the harvest is NOT gated — a census, a dry run and a readiness report still see every scope
+ok   G8a nor is the snapshot read
+
+== §7 — CAPABILITY IS NEGOTIATION, NOT A GATE ==
+ok   C1  §12.14 the bootstrap fires it WITHOUT awaiting — the page is never gated on it
+ok   C1a there is no await anywhere on that call
+ok   C2  a failure applies FAIL-SAFE defaults
+ok   C3  §12.17 a LATE answer is compared against what is already applied
+ok   C3a and a late FAILURE is discarded when a newer backend answer is already applied
+ok   C3b the asymmetry is explicit: a newer success always wins, a failure only fills a vacuum
+ok   C4  §12.18 an answer that spans a DEPLOYMENT CHANGE is discarded, not applied to the new build
+ok   C4a and the deployment identity is published where it is established
+ok   C4b an UNKNOWN identity is null, so it never compares equal to a known one
+ok   C5  §12.19 no blind retry was added
+ok   C5a and no timeout was raised
+ok   C6  §12.16 a redirect URL is never promoted to authority
+ok   C6a the googleusercontent echo host is recognised and rejected
+ok   C7  §12.20 the user_content_key is redacted in diagnostics
+ok   C8  §12.15 a non-/exec endpoint is refused LOCALLY, before any request
+ok   C9  the inventory read does not consult capabilities — a capability failure cannot block it
+
+== §6/§13 — the bundle, and the duplicate global that was emitted silently ==
+ok   B1  the freshness module declares a version on this line (f1-7n-fc-1b-e3-r4-a2-r1-r1-snapshot-freshness)
+ok   B1a and still exposes the freshness verdict
+ok   B1a and the bundle was rebuilt at exactly it
+ok   B2  it is exposed as KMSNF...
+ok   B2a ...and KMSF still belongs to supply-planning-source-facts, which it has owned all along
+ok   B2b declared exactly ONCE
+ok   B3  the builder now REFUSES a duplicate global — this round emitted one and nothing objected
+ok   B3a and the check it performs does catch one
+
+== §5 — THE CENSUS: schedule in the headline, and it never STOPs merely for being early ==
+ok   E1.1 the headline prints server_business_time
+ok   E1.2 the headline prints gap_schedule
+ok   E1.3 the headline prints gap_job_state
+ok   E1.4 the headline prints planning_cycle
+ok   E1.5 the headline prints read_only
+ok   E1.6 the headline prints flag_effective
+ok   E1.7 the headline prints activation_allowlist
+ok   E1.8 the headline prints scope_in_allowlist
+ok   E1.9 the headline prints db_writes
+ok   E1.10 the headline prints writer_constructed
+ok   E2.1 and the result reports freshness_state
+ok   E2.2 and the result reports accepted_snapshot_date
+ok   E2.3 and the result reports accepted_snapshot_run
+ok   E2.4 and the result reports snapshot_distinct_dates
+ok   E2.5 and the result reports forecast_normalization
+ok   E3  the headline is printed BEFORE any read
+ok   E4  and it still stops before harvest on an altered scope
+ok   E5  §12.41 the wrapper writes nothing
+ok   E6  the census reads the SAME freshness authority production uses — no second rule set
+
+== §1 — the forecast contract, unchanged ==
+ok   F1.1 §12.10-12 DEFAULT_ZERO_MISSING_YEAR still resolves to 0
+ok   F1.2 §12.10-12 DEFAULT_ZERO_BLANK_MONTH still resolves to 0
+ok   F1.3 §12.10-12 EXPLICIT_ZERO still resolves to 0
+ok   F2.1 §12.13 REQUEST_TIMEOUT still BLOCKS
+ok   F2.2 §12.13 TRANSPORT_FAILURE still BLOCKS
+ok   F2.3 §12.13 TABLE_MISSING still BLOCKS
+ok   F2.4 §12.13 REQUIRED_HEADER_MISSING still BLOCKS
+ok   F2.5 §12.13 SCOPE_IDENTITY_INCOMPLETE still BLOCKS
+ok   F2.6 §12.13 INVALID_NUMERIC_VALUE still BLOCKS
+ok   F2.7 §12.13 DUPLICATE_CONFLICTING_ROWS still BLOCKS
+ok   F2.8 §12.13 READ_OUTCOME_UNKNOWN still BLOCKS
+ok   F3  and 61_ still reads the forecast through it
+
+== §A — deployment identity ==
+ok   A1.1 61_api_v1_weekly_ai_plan.gs declares exactly what its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5)
+ok   A1.2 63_api_v1_system_health.gs declares exactly what its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   A1.3 00_config.gs declares exactly what its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11)
+ok   A2  61_ moved this round, because its freshness rule changed
+ok   A2a and the shared stamp validator accepts the stamp
+
+== §K — release identity ==
+ok   K1  this round's application token is registered in the shared ledger
+ok   K1b and no later round has been left behind it
+ok   K1a strictly after R4-A1's, which was PUBLISHED (origin/main carries 6266169)
+ok   K2  nothing is left behind on a superseded token
+ok   K3  the db-api carries it — a cached copy still lets a late failure overwrite a later success
+ok   K4  the owner stamp is recorded, after R4-A1's
+
+== §H — the boundary this round must not have crossed ==
+ok   H1  the AI Plan flag is still FALSE
+ok   H2  §12.10 the rollover runner is still DRY_RUN
+ok   H3.1 weeklyAiPlanCanonicalDemand_ writes nothing
+ok   H3.2 weeklyAiPlanGapSchedule_ writes nothing
+ok   H3.3 weeklyAiPlanGapJobState_ writes nothing
+ok   H4  and the freshness module is pure
+ok   H5  no manual refresh was introduced — being early is not something to fix by starting the job
+
+== MUTATIONS ==
+ok   N1  date equality becomes the freshness rule again (the R4 defect) (caught)
+ok   N2  the pre-schedule window is removed, so yesterday is rejected all morning (caught)
+ok   N3  a MIXED snapshot is accepted (caught)
+ok   N4  a PARTIAL run is adopted because the consistency check runs AFTER the clock (caught)
+ok   N5  today's FAILED run no longer blocks the previous snapshot (caught)
+ok   N6  the overdue window is removed, so a failed day silently keeps yesterday forever (caught)
+ok   N7  the module reads its own clock instead of being given one (caught)
+ok   N8  a stale-lineage snapshot from another cycle is accepted (caught)
+ok   N8a the month-rollover exemption is widened into a plain previous-day tolerance (caught)
+ok   N8b the month-rollover exemption is removed, so the 1st of the month refuses a healthy snapshot (caught)
+ok   N9  the scope allowlist can be widened from a request (caught)
+ok   N10 ALL_SITES becomes reachable through the allowlist (caught)
+ok   N11 the writer gate is removed, so flag=true writes every scope (caught)
+ok   N12 a deployment MISSING the guard generates unguarded instead of refusing (caught)
+ok   N13 a late capability failure overwrites a later success again (caught)
+ok   N14 a capability answer spanning a deployment change is applied to the new build (caught)
+ok   N15 the AI Plan flag is turned on (caught)
+ok   N16 the rollover migration is armed (caught)
+ok   N17 the census loses the schedule from its headline (caught)
+ok   N18 an asset is left behind on a superseded token (caught)
+
+----------------------------------------
+SCHEDULE-AWARE SNAPSHOT + SCOPE GUARD (F1-7N-FC-1B-E3-R4-A2-R1): 176 passed, 0 failed
+mutations: 20 caught, 0 missed

@@ -1,0 +1,75 @@
+
+== A — THE FILE IS THE INJECTED UNIVERSE, EXACTLY ==
+ok   A1  one header row and one row per injected SKU — nothing else
+ok   A2  the 24-column header is byte-for-byte unchanged
+ok   A3  a full row serialises exactly, quoting and "" escaping included
+ok   A4  a sparse row still emits all 24 fields, empty where absent
+ok   A5  row order follows the injected array, unsorted
+ok   A6  the UTF-8 BOM is still written
+ok   A7  and the MIME type is unchanged
+ok   A8  the filename rule is unchanged
+ok   A9  exactly one Blob, one object URL, one click, one revoke
+ok   A10 THE BROAD CACHE WAS NEVER TOUCHED — not once, not as a fallback
+ok   A11 and no broad-cache row reached the file
+ok   A12 the return type is still undefined, as its caller expects
+
+== B — EMPTY IS AN ANSWER; UNAVAILABLE IS NOT ==
+ok   B1  a positively empty universe writes the header row and nothing else
+ok   B2  and it is a real download
+ok   B3  with no consolation read of the broad cache
+ok   B4  and no demo row from the old mock fallback
+ok   B5  every non-array universe refuses: no Blob, no URL, no click, no cache read
+
+== C — ONE READINESS RULE, OWNED BY THE PAGE, SHARED BY BOTH PATHS ==
+ok   C1  workspace active with no read model → unavailable, NOT an empty universe
+ok   C2  a positively loaded-empty read model → an empty universe, which is an answer
+ok   C3  a loaded read model → its rows
+ok   C4  kill-switch mode → exactly what the page itself renders
+ok   C5  the page hands over a stable snapshot, not the live model array
+ok   C6  the handler refuses an unavailable universe and says so, without calling the exporter
+ok   C7  and the message is about the export, honestly
+ok   C8  a ready page exports once, silently
+ok   C9  and the universe is what it passes — the export takes no source of its own
+ok   C10 a refused export succeeds once the read lands — no reload needed
+ok   C11 the page has exactly one export call site
+ok   C12 and it passes the universe
+ok   C13 import and export read readiness through the SAME helper, not two approximations
+ok   C14 and that predicate is written once for the renderer and once for the templates — nowhere else
+
+== D — NOTHING ELSE MOVED ==
+ok   D1  the export body names no KM.DB accessor at all
+ok   D2  nor the mock-array fallback that followed it
+ok   D3  and it issues no request of its own — no second workspace read, no transport
+ok   D4  the export is read-only — it makes no write call
+ok   D5  the export is still exported under the same name
+ok   D6  the shared grouping helper is untouched — sku-handbook still calls it as before
+ok   D7  neither the injected array nor its rows were mutated
+ok   D8  a repeated export produces identical bytes, with no carried-over rows
+ok   D9  and one click per invocation, never two
+ok   D10 three different broad caches, one identical file — the cache is not a source
+ok   D11 an empty universe does not fall through to the demo arrays
+
+== E — THE IMAGE SURFACE IS FROZEN BY DIGEST ==
+ok   E1  every frozen image slice is present
+ok   E1a the image-override WRITER is absent from the source, not just from this list
+ok   E1b and neither image function reads a browser override — sku_details.image_url is the owner
+ok   E2  the image surface matches the sealed digest
+ok   E3  and its byte count
+
+== F — DRIVEN MUTANTS (each must change an OBSERVED artifact) ==
+ok   M1  the export broad-cache getter is restored (caught)
+ok   M2  an unavailable universe becomes an empty one (caught)
+ok   M3  the injected rows are ignored (caught)
+ok   M4  broad-cache rows are merged into the file (caught)
+ok   M5  a download is generated after the refusal (caught)
+ok   M6  a CSV header is changed (caught)
+ok   M7  row order is reversed (caught)
+ok   M8  the export issues a second workspace read (caught)
+ok   M9  import and export are split onto different readiness rules (caught)
+ok   M10 the export mutates the array it was handed (caught)
+ok   M11 one image-resolver byte is altered (caught)
+ok   M12 the demo-array fallback chain is restored (caught)
+
+====================================================================================================
+SKU STATUS EXPORT UNIVERSE (S2-R2-R2) — passed 59  failed 0  |  mutants caught 12  survived 0
+====================================================================================================

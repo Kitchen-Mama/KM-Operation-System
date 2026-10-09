@@ -1,0 +1,569 @@
+
+== 1. a placeholder TEMP planning cycle writes nothing and ANSWERS the question ==
+ok   1. the recommendation is the cycle with the most ACTIVE persisted drafts
+ok   1. active cycles are reported, most-active first
+ok   1. per-cycle persisted / active / terminal counts are exact
+ok   1. the LATEST calculated_at is reported as the calculation evidence
+ok   1. and the latest source_data_as_of alongside it
+ok   1. a blank-cycle row is reported rather than silently dropped
+ok   1. but a blank cycle is NEVER recommended — it is not a valid YYYY-MM
+ok   1. an empty table recommends NOTHING rather than inventing a cycle
+ok   1. and says why
+ok   1. one active cycle resolves automatically — NO source edit required
+ok   1. and the source is the PERSISTED active allocation drafts
+ok   1. naming the website authority it mirrors
+ok   1. with no override in play
+ok   1. two active cycles BLOCK rather than choosing
+ok   1. and every candidate is reported
+ok   1. by name
+ok   1. stating that nothing was written
+ok   1. and it does not offer to pick the busiest — that would target a run nobody meant
+ok   1. no active draft BLOCKS rather than inventing a cycle
+ok   1. with no resolution source claimed
+ok   1. an empty table resolves to nothing
+ok   1. the resolver consults NO clock — a calendar cycle is not a persisted authority
+ok   1. an explicit override breaks a would-be ambiguity
+ok   1. and reports the override as the source
+ok   1. reporting that the override cycle does carry rows
+ok   1. an override to a cycle with NO rows is flagged
+ok   1. loudly, so an empty workset is not mistaken for a broken probe
+ok   1. a malformed override is refused, not parsed
+ok   1. a leftover placeholder is treated as "no override", not as a value
+ok   1. the resolution path performs no propSet (fn 0)
+ok   1. the resolution path performs no propDelete (fn 0)
+ok   1. the resolution path performs no withCasLock (fn 0)
+ok   1. the resolution path performs no LockService (fn 0)
+ok   1. the resolution path performs no appendRow (fn 0)
+ok   1. the resolution path performs no setValue (fn 0)
+ok   1. the resolution path performs no createRequestOrderDraft (fn 0)
+ok   1. the resolution path performs no submitAllocationDrafts (fn 0)
+ok   1. the resolution path performs no handleRequestOrderSendOrchestrate_ (fn 0)
+ok   1. the resolution path performs no propSet (fn 1)
+ok   1. the resolution path performs no propDelete (fn 1)
+ok   1. the resolution path performs no withCasLock (fn 1)
+ok   1. the resolution path performs no LockService (fn 1)
+ok   1. the resolution path performs no appendRow (fn 1)
+ok   1. the resolution path performs no setValue (fn 1)
+ok   1. the resolution path performs no createRequestOrderDraft (fn 1)
+ok   1. the resolution path performs no submitAllocationDrafts (fn 1)
+ok   1. the resolution path performs no handleRequestOrderSendOrchestrate_ (fn 1)
+ok   1. the resolution path performs no propSet (fn 2)
+ok   1. the resolution path performs no propDelete (fn 2)
+ok   1. the resolution path performs no withCasLock (fn 2)
+ok   1. the resolution path performs no LockService (fn 2)
+ok   1. the resolution path performs no appendRow (fn 2)
+ok   1. the resolution path performs no setValue (fn 2)
+ok   1. the resolution path performs no createRequestOrderDraft (fn 2)
+ok   1. the resolution path performs no submitAllocationDrafts (fn 2)
+ok   1. the resolution path performs no handleRequestOrderSendOrchestrate_ (fn 2)
+ok   1. the resolution path performs no propSet (fn 3)
+ok   1. the resolution path performs no propDelete (fn 3)
+ok   1. the resolution path performs no withCasLock (fn 3)
+ok   1. the resolution path performs no LockService (fn 3)
+ok   1. the resolution path performs no appendRow (fn 3)
+ok   1. the resolution path performs no setValue (fn 3)
+ok   1. the resolution path performs no createRequestOrderDraft (fn 3)
+ok   1. the resolution path performs no submitAllocationDrafts (fn 3)
+ok   1. the resolution path performs no handleRequestOrderSendOrchestrate_ (fn 3)
+
+== 2. production Send still requires an explicit exact cycle ==
+ok   2. the workset read fails closed without a cycle
+ok   2. the orchestration fails closed without a cycle
+ok   2. the production path never consults the census to supply a cycle (fn 0)
+ok   2. nor the resolver reader (fn 0)
+ok   2. and never reads a recommendation (fn 0)
+ok   2. the production path never consults the census to supply a cycle (fn 1)
+ok   2. nor the resolver reader (fn 1)
+ok   2. and never reads a recommendation (fn 1)
+ok   2. the builder itself refuses a blank cycle
+ok   2. and the builder never reads a TEMP diagnostic constant
+ok   2. production never calls the automatic resolver — a diagnostic convenience is not a production default (fn 0)
+ok   2. production never calls the automatic resolver — a diagnostic convenience is not a production default (fn 1)
+ok   2. production never calls the automatic resolver — a diagnostic convenience is not a production default (fn 2)
+
+== 3. the exact Execution Plan conflict is CLASSIFIED, not generic ==
+ok   3. changing a K2 grouping dimension changes the deterministic id — that is the drift mechanism
+ok   3. a K2 row that regenerates its own id is CANONICAL
+ok   3. a K2 row that no longer regenerates its own id is K2 (drifted)
+ok   3. a generic id with a COMPLETE persisted route is K3
+ok   3. a generic id with an INCOMPLETE persisted route is LEGACY
+ok   3. a row with no id is UNEXPECTED
+ok   3. and the LEGACY detail NAMES the marketplace-logical cause instead of saying "incomplete route"
+ok   3. exactly one business dimension conflicts
+ok   3. and it is NAMED (not "the hashes differ")
+ok   3. with both values reported
+ok   3. an agreeing row reports no conflicting field
+ok   3. a stale hydrated id from ANOTHER cycle is named by its cycle field
+ok   3. a K2 id is masked to its class prefix + tail
+ok   3. the mask is shorter than the id it stands for
+ok   3. the hash is stable across calls
+ok   3. and distinguishes two different ids
+ok   3. an absent id is reported as absent, never as a fake mask
+ok   3. a legacy id embedding business text is NOT echoed
+ok   3. the diagnostic hash is the SAME arithmetic the K2 id uses, so a suffix can be eyeballed
+ok   3. the submit stamp is parsed into plan ids + execution key
+ok   3. an unrelated note yields NO plan evidence
+ok   3. a "(reused)" stamp claims no plan id
+ok   3. a warehouse resolves by CODE
+ok   3. and by NAME
+ok   3. and by ID
+ok   3. name matching is case-insensitive
+ok   3. a name shared by two warehouses is AMBIGUOUS, never resolved to the first match
+ok   3. and yields no id at all
+ok   3. with a note telling the operator what to supply
+ok   3. an unmatched token matches nothing
+ok   3. and a blank token is reported as not supplied
+ok   3. the diagnostic is routed on POST
+ok   3. and reachable from the API client
+ok   3. the UI renders the typed reason code on the FACE of the error
+ok   3. and above the collapsed technical disclosure, not inside it
+ok   3. and names the blocking record when the server supplies one
+
+== 4. no migration or overwrite happens automatically ==
+ok   4. the READ-ONLY diagnostics contain no appendRow
+ok   4. the READ-ONLY diagnostics contain no setValue
+ok   4. the READ-ONLY diagnostics contain no setValues
+ok   4. the READ-ONLY diagnostics contain no insertSheet
+ok   4. the READ-ONLY diagnostics contain no deleteRow
+ok   4. the READ-ONLY diagnostics contain no deleteSheet
+ok   4. the READ-ONLY diagnostics contain no procurementEnsureSheet_
+ok   4. the READ-ONLY diagnostics contain no LockService
+ok   4. the READ-ONLY diagnostics contain no DriveApp
+ok   4. the READ-ONLY diagnostics contain no MailApp
+ok   4. the READ-ONLY diagnostics contain no GmailApp
+ok   4. the READ-ONLY diagnostics contain no sendEmail
+ok   4. the READ-ONLY diagnostics contain no handleUpsertShippingAllocationDraft_
+ok   4. the READ-ONLY diagnostics contain no sadUpsertDraftHeaderCore_
+ok   4. the READ-ONLY diagnostics contain no handleCancelShippingAllocationDraft_
+ok   4. the READ-ONLY diagnostics contain no setProperty
+ok   4. the cleanup tool defaults to DRY_RUN
+ok   4. and returns before any delete unless the mode is exactly COMMIT
+ok   4. a COMMIT also requires a confirmation checksum recomputed LIVE
+ok   4. and only byte-identical duplicate groups are ever touched
+ok   4. the rollback journal is written BEFORE the first delete
+ok   4. every refusal states that nothing was deleted
+ok   4. and declares rows_migrated / rows_deleted = 0
+ok   4. and says so in its own zero-write statement
+ok   4. every disposition requires user authorization (USER_MIGRATION_REQUIRED)
+ok   4. and is not performed here (USER_MIGRATION_REQUIRED)
+ok   4. and is idempotent (USER_MIGRATION_REQUIRED)
+ok   4. every disposition requires user authorization (MIGRATE_LEGACY_HEADER_TO_CANONICAL_IDENTITY)
+ok   4. and is not performed here (MIGRATE_LEGACY_HEADER_TO_CANONICAL_IDENTITY)
+ok   4. and is idempotent (MIGRATE_LEGACY_HEADER_TO_CANONICAL_IDENTITY)
+ok   4. the reconcile guard writes nothing (fn 0)
+ok   4. the reconcile guard writes nothing (fn 1)
+ok   4. the writer NEVER rewrites a stored allocation_draft_id — the stale id is kept, not re-keyed
+ok   4. the migration plan is recorded as NOT EXECUTED
+ok   4. and states the FK and quantity effects it refuses to have
+ok   4. the legacy header is soft-cancelled and preserved, never deleted
+
+== 5. a canonical, semantically identical draft UPDATES IN PLACE ==
+ok   5. a row whose id matches its own group passes
+ok   5. with the self-hash basis
+ok   5. a row drifted by the writer’s OWN permitted route edit is accepted
+ok   5. and named a stale CREATE-time id, not an impostor
+ok   5. even though the stored id no longer hashes to itself
+ok   5. a row for a DIFFERENT group is still refused
+ok   5. on the GROUP KEY, not on a hash coincidence
+ok   5. with no request group to compare, the old conservative answer stands
+ok   5. and says why
+ok   5. a contested group is a BLOCKED_CONFLICT, never a silent second header
+ok   5. and the rival header is named
+ok   5. with an operator message that says so
+ok   5. an uncontested group updates in place
+ok   5. the manual save core passes the request header
+ok   5. and so does the atomic core (the AI-Plan path)
+
+== 6. a migration-required conflict stays UNSAVED ==
+ok   6. the K2 branch is entered only for a K2-shaped id
+ok   6. the generic / legacy rule is UNCHANGED — a legacy row is never adopted by the runtime
+ok   6. and the diagnostic answers USER_MIGRATION_REQUIRED
+ok   6. stating that nothing is written
+ok   6. the refusal states zero rows written
+ok   6. and returns the typed status plus the blocking row id
+ok   6. a submitted draft offers no edit disposition
+ok   6. and the writer refuses a terminal row up front
+
+== 7. Submit stays blocked while any route is unsaved ==
+ok   7. the save error states that Submit is blocked
+ok   7. an unsaved route is tracked, and cleared only on a proven save
+ok   7. the unsaved mark is cleared only after BOTH writes acknowledge
+ok   7. and never before the persistence acknowledgement
+
+== 8. the ETA page uses the correct shipment identity ==
+ok   8. the page sends vm.shipmentId
+ok   8. and never external_shipment_id or shipment_no
+ok   8. vm.shipmentId is normalized from the INTERNAL shipments.shipment_id
+ok   8. the handler matches on the shipment_id column
+ok   8. and never READS an external_shipment_id / shipment_no column or field
+ok   8. a not-found answer TELLS the caller which identity it expects
+ok   8. Update Position sends the SAME identity — the identity was never the ETA defect
+
+== 9. date-only parsing is timezone deterministic ==
+ok   9. a date-only string round-trips unchanged
+ok   9. a datetime string yields its calendar date
+ok   9. blank stays blank
+ok   9. null stays blank
+ok   9. an unparseable string yields BLANK, never a guessed date
+ok   9. a locale-formatted string is NOT parsed (no browser-locale guessing)
+ok   9. a Sheets Date CELL normalizes to the intended calendar date
+ok   9. (and String(Date) would NOT have — that is the bug)
+ok   9. midnight local does not shift back a day
+ok   9. and 23:59 local does not shift forward a day
+ok   9. an invalid Date yields blank
+ok   9. the normalizer never formats in UTC
+ok   9. it uses the single named script-timezone authority
+ok   9. and never toISOString / toLocale
+ok   9. the shipment workspace delegates to the SAME normalizer
+ok   9. and eta/etd are projected through it
+ok   9. the page sends the RAW date-input value
+ok   9. and never constructs a Date or an ISO string that could shift the day
+
+== 10. the ETA write touches exactly one shipments row ==
+ok   10. zero matches is a typed not-found
+ok   10. more than one match REFUSES rather than taking the first
+ok   10. exactly one row is addressed
+ok   10. and the success envelope states it
+ok   10. exactly three cells are written
+ok   10. and they are eta + updated_at + updated_by only
+ok   10. exactly one sheet is opened, and it is shipments
+
+== 11. read-after-write is mandatory ==
+ok   11. the write is flushed
+ok   11. the cell is READ BACK after the flush
+ok   11. and normalized through the canonical rule
+ok   11. an unreadable read-back is ETA_WRITE_NOT_ACKNOWLEDGED
+ok   11. a mismatched read-back is ETA_READBACK_MISMATCH
+ok   11. success is claimed only AFTER the read-back
+ok   11. and the envelope records it
+ok   11. a mismatch tells the operator not to retry blindly
+
+== 12. the persisted date equals the intended date ==
+ok   12. the response returns the PERSISTED value
+ok   12. and never echoes the input as if it were proof
+ok   12. the intended value is reported alongside it
+ok   12. the page displays the value the SERVER returned
+ok   12. with a visible, explicit success state
+ok   12. and refreshes from the server workspace value
+ok   12. the proven outcome survives the post-write re-render
+ok   12. stored cell -> normalized == validated intent
+
+== 13. an invalid or blank ETA is zero-write ==
+ok   13. blank is invalid
+ok   13. an impossible calendar day is invalid
+ok   13. an impossible month is invalid
+ok   13. a non-ISO format is invalid (no parse-guessing)
+ok   13. the ETA gate runs BEFORE the lock is taken
+ok   13. and so does the identity gate
+ok   13. an invalid ETA never even opens the sheet
+ok   13. and the refusal declares zero_write
+ok   13. the page refuses a malformed date locally and says nothing was sent
+
+== 14. no status or current-position change ==
+ok   14. the status cell is never written
+ok   14. status is read before and after and PROVEN unchanged
+ok   14. current position is declared unchanged
+ok   14. the ETA writer contains no shipment_routes
+ok   14. the ETA writer contains no shipment_received_qty
+ok   14. the ETA writer contains no shipPromoteOnProgress_
+ok   14. the ETA writer contains no shipRouteResolveMove_
+ok   14. and the page would WARN if the server ever reported otherwise
+
+== 15. no unrelated route or event mutation ==
+ok   15. the ETA writer never reaches shipAppendLifecycleEvent_
+ok   15. the ETA writer never reaches SHIP_EVENT_HEADERS_
+ok   15. the ETA writer never reaches shipReceiptEventSourceId_
+ok   15. and reports zero events appended
+ok   15. the canonical event enum is departed_origin / route_node_reached / received
+ok   15. no ETA event type was invented
+ok   15. and the record cites the canonical enum as the authority
+
+== 16. Update Position still appends exactly one idempotent event ==
+ok   16. the position path still appends route_node_reached
+ok   16. keyed by the deterministic source_event_id
+ok   16. only on a REAL forward advance
+ok   16. the source id is deterministic
+ok   16. a replay of the same move appends NOTHING (idempotent)
+ok   16. a genuinely new node does append
+ok   16. an empty source id never appends
+ok   16. first movement beyond origin still promotes shipped -> in_transit
+ok   16. an idempotent replay still promotes nothing
+ok   16. and it never re-promotes
+ok   16. the ETA button never calls the route advance API
+ok   16. and never moves the map marker itself
+
+== 17. an ETA failure envelope reaches the UI intact ==
+ok   17. the ETA write is bounded by the canonical client write timeout
+ok   17. an abort is typed INDETERMINATE, not "failed"
+ok   17. the FULL backend envelope is returned without throwing
+ok   17. and a business failure never throws
+ok   17. the page shows NOT SAVED plus the typed code
+ok   17. at the ETA control itself, not in the Receiving section
+ok   17. the ETA path no longer reports through the receipt message node
+ok   17. exactly one success message exists
+ok   17. and it is only reachable inside the success branch
+ok   17. an indeterminate timeout RECONCILES the persisted ETA
+ok   17. and says so when the write had in fact landed
+ok   17. reconciliation is a READ through the existing bounded workspace
+ok   17. and never re-issues the write
+ok   17. it reports whether the persisted ETA already equals the intended one
+
+== 18. no Demo mutation and no email anywhere in this round ==
+ok   18. no email / Demo touch in FB-4A source 0 (MailApp)
+ok   18. no email / Demo touch in FB-4A source 0 (GmailApp)
+ok   18. no email / Demo touch in FB-4A source 0 (sendEmail)
+ok   18. no email / Demo touch in FB-4A source 0 (TEMP_demo_)
+ok   18. no email / Demo touch in FB-4A source 0 (DEMO_SEED)
+ok   18. no email / Demo touch in FB-4A source 0 (DEMO4A_)
+ok   18. no email / Demo touch in FB-4A source 1 (MailApp)
+ok   18. no email / Demo touch in FB-4A source 1 (GmailApp)
+ok   18. no email / Demo touch in FB-4A source 1 (sendEmail)
+ok   18. no email / Demo touch in FB-4A source 1 (TEMP_demo_)
+ok   18. no email / Demo touch in FB-4A source 1 (DEMO_SEED)
+ok   18. no email / Demo touch in FB-4A source 1 (DEMO4A_)
+ok   18. no email / Demo touch in FB-4A source 2 (MailApp)
+ok   18. no email / Demo touch in FB-4A source 2 (GmailApp)
+ok   18. no email / Demo touch in FB-4A source 2 (sendEmail)
+ok   18. no email / Demo touch in FB-4A source 2 (TEMP_demo_)
+ok   18. no email / Demo touch in FB-4A source 2 (DEMO_SEED)
+ok   18. no email / Demo touch in FB-4A source 2 (DEMO4A_)
+ok   18. no email / Demo touch in FB-4A source 3 (MailApp)
+ok   18. no email / Demo touch in FB-4A source 3 (GmailApp)
+ok   18. no email / Demo touch in FB-4A source 3 (sendEmail)
+ok   18. no email / Demo touch in FB-4A source 3 (TEMP_demo_)
+ok   18. no email / Demo touch in FB-4A source 3 (DEMO_SEED)
+ok   18. no email / Demo touch in FB-4A source 3 (DEMO4A_)
+ok   18. no email / Demo touch in FB-4A source 4 (MailApp)
+ok   18. no email / Demo touch in FB-4A source 4 (GmailApp)
+ok   18. no email / Demo touch in FB-4A source 4 (sendEmail)
+ok   18. no email / Demo touch in FB-4A source 4 (TEMP_demo_)
+ok   18. no email / Demo touch in FB-4A source 4 (DEMO_SEED)
+ok   18. no email / Demo touch in FB-4A source 4 (DEMO4A_)
+ok   18. the Demo seed carries no FB-4A marker — it was not touched
+ok   18. no test-only escape hatch in source 0 (process.env)
+ok   18. no test-only escape hatch in source 0 (NODE_ENV)
+ok   18. no test-only escape hatch in source 0 (__TEST__)
+ok   18. no test-only escape hatch in source 0 (skipVerification)
+ok   18. no test-only escape hatch in source 0 (bypassVerification)
+ok   18. no test-only escape hatch in source 0 (forceSuccess)
+ok   18. no test-only escape hatch in source 1 (process.env)
+ok   18. no test-only escape hatch in source 1 (NODE_ENV)
+ok   18. no test-only escape hatch in source 1 (__TEST__)
+ok   18. no test-only escape hatch in source 1 (skipVerification)
+ok   18. no test-only escape hatch in source 1 (bypassVerification)
+ok   18. no test-only escape hatch in source 1 (forceSuccess)
+ok   18. no test-only escape hatch in source 2 (process.env)
+ok   18. no test-only escape hatch in source 2 (NODE_ENV)
+ok   18. no test-only escape hatch in source 2 (__TEST__)
+ok   18. no test-only escape hatch in source 2 (skipVerification)
+ok   18. no test-only escape hatch in source 2 (bypassVerification)
+ok   18. no test-only escape hatch in source 2 (forceSuccess)
+ok   18. no test-only escape hatch in source 3 (process.env)
+ok   18. no test-only escape hatch in source 3 (NODE_ENV)
+ok   18. no test-only escape hatch in source 3 (__TEST__)
+ok   18. no test-only escape hatch in source 3 (skipVerification)
+ok   18. no test-only escape hatch in source 3 (bypassVerification)
+ok   18. no test-only escape hatch in source 3 (forceSuccess)
+
+== 19. deployment identity, the deferred map requirement, and the recorded baseline ==
+ok   19. SYS_BUILD_VERSION_ names a current build (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   19. the manifest declares an expected build for the Send owner (F1-7N-FB-4E-R4B-R3)
+ok   19. and the Send owner declares exactly that, so a partial sync is visible
+ok   19. the action-contract version advanced because a router action was added (v18)
+ok   19. and the frontend pins exactly it, so a stale deployment is named DEPLOYMENT_CONTRACT_MISMATCH
+ok   19. the new action is in the required-action list
+ok   19. the boundary requirement is recorded in the owning map spec
+ok   19. it scopes: vector country boundary layer
+ok   19. it scopes: ISO labels
+ok   19. it scopes: Scale-aware label visibility
+ok   19. it scopes: Island label points
+ok   19. it scopes: Collision suppression
+ok   19. it scopes: No coordinate jitter
+ok   19. it scopes: No route/event geometry change
+ok   19. it scopes: Licence / provenance
+ok   19. it scopes: high-resolution globe material
+ok   19. and records the audit: no reusable boundary asset exists
+ok   19. with the existing asset’s provenance stated
+ok   19. the audited asset is the vendored land outline
+ok   19. and NO boundary dataset was added this round
+ok   19. the known regression baseline is named in this file, so an unexplained new failure is visible
+ok   19. the record claims no live evidence
+ok   19. and states that nothing was migrated
+
+== 20. ADDENDUM — diagnostic ownership, single definition, and a provable deployment ==
+ok   20. the Demo seed contains NO TEMP_ROSEND
+ok   20. the Demo seed contains NO TEMP_REQUEST_ORDER_SEND
+ok   20. the Demo seed contains NO ROSEND
+ok   20. the Demo seed contains NO rosResolveCurrentPlanningCycle_
+ok   20. the Demo seed contains NO rosPlanningCycleCensus_
+ok   20. and carries no FB-4A marker at all — it was not touched
+ok   20. TEMP_document_diagnostics.gs contains no TEMP_ROSEND either (it never owned them)
+ok   20. TEMP_document_diagnostics.gs contains no TEMP_REQUEST_ORDER_SEND either (it never owned them)
+ok   20. exactly ONE definition of TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE across the whole project
+ok   20. and it is in the single owner file (TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE)
+ok   20. exactly ONE definition of TEMP_REQUEST_ORDER_SEND_PREVIEW across the whole project
+ok   20. and it is in the single owner file (TEMP_REQUEST_ORDER_SEND_PREVIEW)
+ok   20. exactly ONE definition of TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS across the whole project
+ok   20. and it is in the single owner file (TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS)
+ok   20. exactly ONE definition of ROSEND_PLANNING_CYCLE_OVERRIDE_ across the whole project
+ok   20. and it is in the single owner file (ROSEND_PLANNING_CYCLE_OVERRIDE_)
+ok   20. exactly ONE definition of ROSEND_TIER_SCOPE_ across the whole project
+ok   20. and it is in the single owner file (ROSEND_TIER_SCOPE_)
+ok   20. exactly ONE definition of ROSEND_DIAG_OWNER_FILE_ across the whole project
+ok   20. and it is in the single owner file (ROSEND_DIAG_OWNER_FILE_)
+ok   20. exactly ONE definition of rosendStatusReport_ across the whole project
+ok   20. and it is in the single owner file (rosendStatusReport_)
+ok   20. exactly ONE definition of rosendResolve_ across the whole project
+ok   20. and it is in the single owner file (rosendResolve_)
+ok   20. exactly ONE definition of handleRequestOrderSendDiagnosticStatus_ across the whole project
+ok   20. and it is in the single owner file (handleRequestOrderSendDiagnosticStatus_)
+ok   20. §J.7 no TEMP file defines handleRequestOrderSendDiagnosticStatus_
+ok   20. §J.7 no TEMP file defines rosendStatusReport_
+ok   20. §J.7 no TEMP file defines rosendResolve_
+ok   20. §J.7 no TEMP file defines ROSEND_PLANNING_CYCLE_OVERRIDE_
+ok   20. §J.7 no TEMP file defines ROSEND_TIER_SCOPE_
+ok   20. §J.7 no TEMP file defines ROSEND_DIAG_OWNER_FILE_
+ok   20. the old TEMP_ROSEND_PLANNING_CYCLE_ constant no longer exists anywhere
+ok   20. and 66_ (the production Send owner) defines no TEMP diagnostic symbol
+ok   20. the diagnostic owner never touches PropertiesService
+ok   20. the diagnostic owner never touches getProperty
+ok   20. the diagnostic owner never touches setProperty
+ok   20. the diagnostic owner never touches deleteProperty
+ok   20. the diagnostic owner never touches getScriptProperties
+ok   20. the diagnostic owner never touches getUserProperties
+ok   20. and the status report SAYS a Script Property is inert, so the mistake is not made twice
+ok   20. the diagnostics delegate resolution to the production authority in 66_
+ok   20. and never re-implement the table read themselves
+ok   20. wrapper 0 resolves through the shared resolver
+ok   20. wrapper 0 RETURNS on a blocked resolution — it never reads a workset
+ok   20. wrapper 1 resolves through the shared resolver
+ok   20. wrapper 1 RETURNS on a blocked resolution — it never reads a workset
+ok   20. the diagnostic owner contains no appendRow
+ok   20. the diagnostic owner contains no setValue
+ok   20. the diagnostic owner contains no setValues
+ok   20. the diagnostic owner contains no insertSheet
+ok   20. the diagnostic owner contains no deleteRow
+ok   20. the diagnostic owner contains no deleteSheet
+ok   20. the diagnostic owner contains no procurementEnsureSheet_
+ok   20. the diagnostic owner contains no LockService
+ok   20. the diagnostic owner contains no DriveApp
+ok   20. the diagnostic owner contains no MailApp
+ok   20. the diagnostic owner contains no GmailApp
+ok   20. the diagnostic owner contains no sendEmail
+ok   20. the diagnostic owner contains no DEMO4A_
+ok   20. the diagnostic owner contains no TEMP_demo_
+ok   20. the preview wrapper is pinned to preview
+ok   20. and no editor wrapper can execute a Send
+ok   20. every blocked path prints the zero-write counters (§G)
+ok   20. the §G status report includes resolved_planning_cycle
+ok   20. the §G status report includes resolution_source
+ok   20. the §G status report includes candidate_cycles
+ok   20. the §G status report includes build_id
+ok   20. the §G status report includes deployed_action_contract_version
+ok   20. the §G status report includes owner_file
+ok   20. the §G status report includes owner_build_version
+ok   20. the §G status report includes DB_WRITES
+ok   20. the §G status report includes DRIVE_WRITES
+ok   20. the §G status report includes STATUS_TRANSITIONS
+ok   20. every manifest symbol has a real declared-value lookup (SYS_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (PRW_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (FCSWS_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (CONFIG_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (WAP_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (SIR_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (OSW_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (PPW_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (ROS_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (FSG_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (ADI_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (EPC_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (SAD_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (RIC_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (SP_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (FSTX_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (OVERSEAS_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (SHIPMENT_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (PROC_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (FCREG_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (FCW_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (CAMPAIGN_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (KM_BUNDLE_CONTENT_HASH_)
+ok   20. every manifest symbol has a real declared-value lookup (CSD_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (RTR_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (RECGEN_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (APL_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (SKD_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (ROSEND_DIAG_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (AIPL_BUILD_VERSION_)
+ok   20. every manifest symbol has a real declared-value lookup (TEMP_AIMIG_BUILD_VERSION_)
+ok   20. the manifest expectation for 63_api_v1_system_health.gs matches what the file declares
+ok   20. the manifest expectation for 73_api_v1_pricing_write.gs matches what the file declares
+ok   20. the manifest expectation for 58_api_v1_fc_summary_workspace.gs matches what the file declares
+ok   20. the manifest expectation for 00_config.gs matches what the file declares
+ok   20. the manifest expectation for 61_api_v1_weekly_ai_plan.gs matches what the file declares
+ok   20. the manifest expectation for 60_api_v1_inventory_replenishment_workspace.gs matches what the file declares
+ok   20. the manifest expectation for 70_api_v1_overseas_stock_workspace.gs matches what the file declares
+ok   20. the manifest expectation for 72_api_v1_product_pricing_workspace.gs matches what the file declares
+ok   20. the manifest expectation for 66_api_v1_request_order_send.gs matches what the file declares
+ok   20. the manifest expectation for 71_api_v1_factory_stock_guard.gs matches what the file declares
+ok   20. the manifest expectation for 67_api_v1_allocation_draft_identity.gs matches what the file declares
+ok   20. the manifest expectation for 68_api_v1_execution_plan_conflict_diagnostic.gs matches what the file declares
+ok   20. the manifest expectation for 16_shipping_allocation_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 69_api_v1_route_identity_contract.gs matches what the file declares
+ok   20. the manifest expectation for 11_shipping_plan_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 21_factory_inventory_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 05_overseas_inventory_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 12_shipment_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 13_procurement_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 04_marketplace_forecast_import.gs matches what the file declares
+ok   20. the manifest expectation for 14_fc_write_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 20_campaign_write_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 90_generated_supply_planning_bundle.gs matches what the file declares
+ok   20. the manifest expectation for 22_shipment_dispatch_handlers.gs matches what the file declares
+ok   20. the manifest expectation for 01_router.gs matches what the file declares
+ok   20. the manifest expectation for 47_api_v1_recommendation_generation.gs matches what the file declares
+ok   20. the manifest expectation for 56_api_v1_ai_plan_first_layer.gs matches what the file declares
+ok   20. the manifest expectation for 59_api_v1_sku_details_workspace.gs matches what the file declares
+ok   20. the manifest expectation for 66_api_v1_request_order_send.gs matches what the file declares
+ok   20. the manifest expectation for 69_api_v1_ai_plan_lifecycle.gs matches what the file declares
+ok   20. the manifest expectation for TEMP_migrate_shipping_allocation_ai_lifecycle.gs matches what the file declares
+ok   20. at least one owner legitimately declares an OLDER build than this round
+ok   20. and it is still treated as current
+ok   20. a fully synced project is UNIFORM
+ok   20. and says so
+ok   20. a 66_ left a round behind is detected as a MIXED deployment
+ok   20. naming the exact file and what it declares
+ok   20. with a verdict the operator can act on
+ok   20. a file that was never copied is detected too
+ok   20. and exactly one module is named
+ok   20. §J.4 no TEMP file is a REQUIRED deployment owner
+ok   20. §J.6 the remaining TEMP owner TEMP_migrate_shipping_allocation_ai_lifecycle.gs is declared optional
+ok   20. §J.6 at least one owner is declared optional
+ok   20. §J.4 with every optional TEMP owner REMOVED the deployment is still UNIFORM
+ok   20. and their absence is reported as a fact, not a fault
+ok   20. health accepts the caller’s explicit action + symbol list
+ok   20. and reports an action the deployment has never heard of as such
+ok   20. stating plainly why it is not self-referential
+ok   20. both are in the health payload
+ok   20. a partial sync makes the deployment NOT ok
+ok   20. the frontend pins the exact actions AND symbols it needs
+ok   20. including system.requestOrderSendDiagnosticStatus
+ok   20. including system.executionPlanConflictDiagnostic
+ok   20. including shipment.eta.update
+ok   20. and the symbol sadK2ReconcileDecision_, which proves its owner file was copied
+ok   20. and the symbol shipEtaDateOnly_, which proves its owner file was copied
+ok   20. and the symbol shipWsDateOnly_, which proves its owner file was copied
+ok   20. and the symbol rosResolveCurrentPlanningCycle_, which proves its owner file was copied
+ok   20. and the symbol ROSEND_DIAG_OWNER_FILE_, which proves its owner file was copied
+ok   20. the client SENDS the probe list rather than trusting missing_actions
+ok   20. and has a distinct verdict for a partial sync
+ok   20. a deployment too old to answer the probe is itself conclusive
+ok   20. the too-old check runs before the uniformity check
+ok   20. the §G status action is routed
+ok   20. and is in the required-action list
+ok   20. the action contract advanced again because an action was added (v18)
+ok   20. and the frontend pins exactly it
+
+----------------------------------------
+ALL PASS  (525 assertions)
+----------------------------------------

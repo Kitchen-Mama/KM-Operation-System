@@ -1,0 +1,15 @@
+
+== Amazon marketplaces → ASIN REQUIRED (A1–A3) ==
+
+== Non-Amazon marketplaces → ASIN OPTIONAL (N1–N3) ==
+
+== Submit validation is Amazon-gated by the SAME owner (A2/A3 blocked · N1–N3 pass) ==
+
+== UI required indicator shares the SAME owner + updates on marketplace switch (S1/S2/S4) ==
+
+== Do NOT clear the ASIN value on switch (S3); no fabricated placeholder; no schema change (S5/S6) ==
+
+== HTML — the label carries a stable id for the rule to toggle ==
+
+----------------------------------------
+ADD SKU · ASIN AMAZON-ONLY RULE: 27 passed, 0 failed

@@ -1,0 +1,31 @@
+
+== A. KMSF lifecycle entry additively preserves the canonical shipment ETA (granularity-loss point resolved) ==
+
+== B. source-projection supplyRow carries the preserved ETA (semantics otherwise unchanged) ==
+
+== C. production-source read-only result surfaces warehouseQualifiedEvents + ETA-bearing supplySourceEntries ==
+
+== D. ETA authority = the shipment ETA — never a derived date (required-by / source-as-of) ==
+
+== N–S. warehouse qualifiedEvents owner — surfaced from existing facts, exact contract ==
+
+== T–K. conservation — events are EVIDENCE over existing supply, not additional supply ==
+
+== U–V. no duplicate events + permutation invariance (deterministic sort) ==
+
+== W–Z. multi-warehouse isolation + split conservation ==
+
+== AB. missing ETA — never fabricated; row still counted in the aggregate, but not a dated event ==
+
+== AC. late incoming — bucket + aggregate unchanged; preserved ETA equals source ETA ==
+
+== AD. external/CURRENT_STOCK never surfaced as usable warehouse events ==
+
+== AE. valid explicit zero quantity — row valid, ETA preserved ==
+
+== L. no shipments → no fabricated events; additive owner does not disturb current stock ==
+
+== AF–AH. clockless / non-mutating / JSON-safe ==
+
+----------------------------------------
+WAREHOUSE INCOMING ETA PRESERVATION (F1-4B-FM3c-1b): 40 passed, 0 failed

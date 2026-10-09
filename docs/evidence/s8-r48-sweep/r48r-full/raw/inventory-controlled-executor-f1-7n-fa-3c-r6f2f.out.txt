@@ -1,0 +1,15 @@
+
+== B — ordered pre-write gate evaluator (exhaustive typed refusals) ==
+
+== B — runtime: flag-false controlled path proceeds past GATE 0; flag-enabled refuses; zero writes ==
+
+== D — ALREADY_COMMITTED: the exact frozen 1+5 state present → no regenerate/mutate (retry-safe) ==
+
+== A/C/D/F — executor source contracts (real engine, token-only payload, single call, readback) ==
+
+== G — REUSE verifier: separate entrypoint; requires committed state; 0/0 REUSE ==
+
+== regression — no flag flip; flag gate is first in both entrypoints ==
+
+----------------------------------------
+R6F2F CONTROLLED EXECUTOR: 53 passed, 0 failed

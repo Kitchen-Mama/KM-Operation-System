@@ -1,0 +1,19 @@
+
+== A. Owned eligibility predicates (§23.6/§24.9 pool · §35/§40 factory) ==
+
+== B. Weekly single receiver — derives facts by invoking frozen owners ==
+
+== C. Multi-receiver demand-weight SHARE (§7/§24.5) ==
+
+== D. Caller-owned seams fail closed with structured issues (never fake default) ==
+
+== E. Forecast-driven dailyDemand invokes §2D owner; valid-zero preserved ==
+
+== F. Determinism (permutation-invariant, input not mutated) ==
+
+== G. Monthly — factory eligibility + required-by seam ==
+
+== H. END-TO-END reachability — producer facts consumed by the REAL resolver chain ==
+
+----------------------------------------
+ALLOCATION-FACT PRODUCER (F1-5-A): 36 passed, 0 failed

@@ -1,0 +1,26 @@
+
+== A1/A2 — a successful START flows to PENDING → poll → DONE (never ui.failed) ==
+
+== B1–B4 — a named START failure is surfaced VERBATIM (alert lastError + [GapJob] START_ERROR diagnostic) ==
+
+== D1–D3 — failed START returns the UI to idle; Cancel hidden (page contract) ==
+
+== E1/E2 — the START write is issued EXACTLY ONCE (no automatic retry on failure) ==
+
+== F1–F3 — router dispatches the three gap-job actions to the exact handler functions (parity, no dup owner) ==
+
+== G1/G2 — configured continuation-handler names EXACTLY match the top-level Apps Script functions ==
+
+== DB API — the gap-family STRUCTURED envelope (errors[]) is read, not the legacy singular error string ==
+
+== shared START contract + version ==
+[GapJob] START run=R-INV 0/5 PENDING
+[GapJob] START run=R-OP 0/3 PENDING
+[GapJob] PROGRESS 2/5 RUNNING
+[GapJob] CLIENT_TERMINAL 3/3 DONE
+[GapJob] CLIENT_TERMINAL 5/5 DONE
+[GapJob] COMPLETED 3/3 DONE
+[GapJob] COMPLETED 5/5 DONE
+
+----------------------------------------
+GAP JOB START ERROR (F1-4B-FM5-R4J-LIVE7): 40 passed, 0 failed

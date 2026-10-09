@@ -1,0 +1,85 @@
+
+== A — §15.A TWO FACTORIES HOLD THE SKU; THE SHIPMENT DECLARES ONE ==
+ok   A0  Factory A stands at the stated 100 current / 80 reserved
+ok   A1  the declared source classifies as FACTORY
+ok   A1a and its supply is A's OWN current stock — not A + B, which would be 600
+ok   A1b stated as current stock, because factory availability is derived
+ok   A2  and declaring B answers B — the function is scoped to the warehouse it is given
+ok   A3  Factory A gave the 80 it was asked for and its hold is spent
+ok   A3a FACTORY_CROSS_WAREHOUSE_CONSUME_COUNT = 0 — Factory B is untouched
+
+== B — §15.B THE DECLARED SOURCE CANNOT FULFIL, AND ANOTHER WAREHOUSE CAN ==
+ok   B1  the declared source cannot cover 80
+ok   B1a and the shortfall is reported against A alone, not against A + B
+ok   B2  Factory B is not consulted and not touched
+ok   B3  refused with a typed code
+ok   B3a stating that nothing was written
+ok   B3b and telling the operator another warehouse was deliberately not used
+ok   B3c with the per-SKU shortfall carried in the answer
+
+== C/D — §15.C/D THE OVERSEAS SOURCE ==
+ok   C1  the reserve left 70/30 — a transfer between two stored cells
+ok   C2  the declared 3PL source classifies as OVERSEAS
+ok   C2a and its supply is THE HOLD THIS SHIPMENT OWNS — 30, not the 70 available
+ok   C2b stated as such
+ok   C2c resolved against the overseas snapshot, never factory_stock
+ok   C3  dispatch leaves 70/0 — available is not deducted a second time
+ok   C3a CROSS_DOMAIN_CONSUME_COUNT = 0 — factory stock is untouched
+ok   D1  FACTORY_ROW_REQUIRED_FOR_OVERSEAS_DISPATCH = NO — supply answers 30 with an entirely empty factory_stock table
+ok   D1a and there genuinely is no factory row
+ok   D2  and the consume succeeds through the overseas owner
+ok   D2a leaving 70/0
+
+== E/F/G — §15.E/F/G THE SOURCE THAT CANNOT BE TRUSTED ==
+ok   E1  an unknown warehouse resolves to no record
+ok   E2  the handler resolves whether the declared warehouse is known
+ok   E2a and reports it, so an operator can tell a typo from an empty warehouse
+ok   E2b but does NOT refuse on it — that gate would be stricter than the one that creates the shipment
+ok   E2c the unknown source is refused by sufficiency, which is truthful and names the quantities
+ok   E3  and a BLANK declared source is its own refusal, not a search over everything
+ok   F1  a contradictory row is resolved by the ONE canonical classifier (factory flag first), and the dispatcher adopts whatever it says
+ok   F1a which is 12_'s — the same function the reservation path uses, so the two cannot disagree
+ok   F1b and 22_ no longer reaches past it to the raw classifier
+ok   G1  a hold at ANOTHER warehouse is not supply at the declared one — RESERVATION_DISPATCH_SOURCE_MISMATCH cannot produce a successful dispatch
+ok   G1a and the other warehouse keeps its hold, untouched
+
+== H/I — §15.H/I REPLAY AND THE HAPPY PATH ==
+ok   H1  DOUBLE_DISPATCH_EFFECT_COUNT = 0 — the second consume moved nothing
+ok   H1a and said so with a typed answer
+ok   H1b a replay finds no supply at the declared source, so it cannot reach another one either
+ok   H2  CROSS_WAREHOUSE_REPLAY_EFFECT_COUNT = 0 — factory untouched throughout
+ok   I1  reserve raises reserved only
+ok   I1a and supply is still CURRENT, not current − reserved — asking for the latter would refuse a shipment the size of its own reservation
+ok   I2  and dispatch leaves 70/0
+
+== J — §8/§10/§12 WHAT THIS ROUND DID NOT DO ==
+ok   J1  SOURCE_SUBSTITUTION_IMPLEMENTED = NO — the declared-source block orders nothing
+ok   J1a 22_ contains exactly ONE sort
+ok   J1a1 and it orders route nodes by sequence — no warehouse is ordered anywhere in this file
+ok   J1b the only warehouse named anywhere in the block is the DECLARED one
+ok   J1b1 and nothing reaches for another warehouse by any name
+ok   J1b2 the single fallback is the half-sync degrade to the FACTORY tables, for the SAME warehouse
+ok   J2  SHIPPING_QTY_AUTHORITY_CHANGED = NO — the dispatcher writes no quantity authority
+ok   J2a it plans exactly the shipment quantity it was given
+ok   J3  no Ordering execution entered the dispatch path
+ok   J3a and no Phase-2 lead-time orchestration
+ok   J4  the movement row is written against the planned warehouse, which is now always the declared one
+ok   J4a SHIPMENT_MOVEMENT_SOURCE_DRIFT_COUNT = 0 — there is only one warehouse in play
+
+== M — MUTATIONS ==
+ok   MUTANT CAUGHT — M1 the warehouse predicate is removed, so supply is summed across every warehouse
+ok   MUTANT CAUGHT — M2 selection reverts to SKU-only — the deduct plan stops naming the declared warehouse
+ok   MUTANT CAUGHT — M3 a fallback to the first warehouse by warehouse_id is reintroduced
+ok   MUTANT CAUGHT — M4 Factory B is used when the declared Factory A is insufficient
+ok   MUTANT CAUGHT — M5 overseas dispatch requires a factory_stock row again
+ok   MUTANT CAUGHT — M6 the domain is classified AFTER the stock row is selected
+ok   MUTANT CAUGHT — M7 the shipment source warehouse is ignored and a literal is used
+ok   MUTANT CAUGHT — M8 a reservation/source mismatch is accepted — overseas supply reads AVAILABLE, not the hold
+ok   MUTANT CAUGHT — M9 a cross-domain consume is allowed — the overseas branch falls through to the factory one
+ok   MUTANT CAUGHT — M10 an unknown declared warehouse stops being refused
+ok   MUTANT CAUGHT — M11 the factory supply rule becomes current − reserved, refusing a shipment its own reservation
+
+----------------------------------------------------------------------------------------------------
+S6-R8A DECLARED-SOURCE DISPATCH: 66 passed, 0 failed  ·  mutants 11, survived 0
+diagnostic invariants: PRODUCTION_ROWS_WRITTEN=0 · NETWORK_CALLS=0 · DEPLOYMENTS=0
+----------------------------------------------------------------------------------------------------

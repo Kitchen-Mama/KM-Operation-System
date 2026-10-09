@@ -1,0 +1,19 @@
+
+== A/F1. same physical route+cycle, different marketplaces → ONE group (MULTI header, real marketplace per line) ==
+
+== F3/F4/F5/F6. physically-incompatible attributes → SEPARATE groups ==
+
+== F7. every grouping dimension is bound into spfp-1 ==
+
+== F8/F9. idempotency: exact retry REUSED; grouping change re-classified by execution key + fingerprint ==
+
+== F10/F11/B. marketplace physical/logical accessor ==
+
+== C/E/F12-F15. TRUTHFUL downstream lineage classification via the preflight core ==
+
+== D/E. Flow A submit-schema readiness is SEPARATE from downstream consolidation readiness ==
+
+== F16. Flow A Submit path writes no Shipment / link / allocation / PO rows ==
+
+----------------------------------------
+F1-7N-FA-4B2 GROUPING + LINEAGE TRUTH: 51 passed, 0 failed

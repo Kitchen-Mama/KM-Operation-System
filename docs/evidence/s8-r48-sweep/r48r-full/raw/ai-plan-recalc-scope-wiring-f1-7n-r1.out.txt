@@ -1,0 +1,13 @@
+
+== SINGLE CANONICAL SOURCE — the shared slim scope registry, with no broad-cache fallback ==
+
+== open() paints from the shared registry — zero requests when it is already loaded ==
+
+== AI Plan vs Recalculate — distinct workflows (distinct labels + distinct terminal handlers) ==
+
+== HALT boundary — AI Plan writes NO allocation draft (AI_PLAN_ALLOCATION_AUTHORITY_NOT_DEFINED preserved) ==
+
+== reference owner unchanged (BEFORE==AFTER universe) + cache token bumped ==
+
+----------------------------------------
+AI PLAN / RECALC SCOPE WIRING (F1-7N): 29 passed, 0 failed

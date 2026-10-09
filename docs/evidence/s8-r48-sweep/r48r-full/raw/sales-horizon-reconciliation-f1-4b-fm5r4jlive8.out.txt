@@ -1,0 +1,17 @@
+
+== §1/§8 — Sales D90 = canonical avgSalesPerDay × 90 elapsed days; gap reconciles to ~4173 ==
+
+== §2/§3 — Target% and regular FC are EXCLUDED from the Sales-Driven base ==
+
+== §4/§5 — Factory + Overseas/3PL are EXCLUDED from the Inventory horizon opening (Site Stock only) ==
+
+== §6 — qualified incoming within the horizon is counted ONCE ==
+
+== §7/A4 — DoS uses a SEPARATE weekly rate owner → SALES_DOS_HORIZON_AUTHORITY_DIVERGENCE (documented, not silently equal) ==
+
+== A2 — the new READ-ONLY reconciliation diagnostic surfaces the canonical inputs (no formula/schema change) ==
+
+== §9/A5 — stored gap row is READ latest; no page-side recalculation ==
+
+----------------------------------------
+SALES HORIZON RECONCILIATION (F1-4B-FM5-R4J-LIVE8 PART A): 22 passed, 0 failed

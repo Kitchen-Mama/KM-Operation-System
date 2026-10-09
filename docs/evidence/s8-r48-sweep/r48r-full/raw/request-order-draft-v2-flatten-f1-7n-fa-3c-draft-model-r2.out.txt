@@ -1,0 +1,28 @@
+
+== schema — exactly 53 columns, canonical order, tN_status naming ==
+
+== 01 one Draft row per SKU scope · 16 deterministic ID · 17 planning_cycle YYYY-MM ==
+
+== 02 fixed T1/T2/T3 fields · 03 no T4 · 06 recommended snapshot · 08 carton derive ==
+
+== 04 all-zero AI → no persist · 05 manual all-zero allowed ==
+
+== 26 no request_allocation_line_id anywhere · 18/19 Send explosion, zero skipped, no line id ==
+
+== 09 per-tier edit · 10 recommended never rewritten by edit ==
+
+== 10 submit · 11 partial submit · 12 full submit · 15 submitted terminal · zero-qty never forced ==
+
+== 08/28 header status vocab + derivation are pure/deterministic ==
+
+== 13 untouched-tier refresh · 14 edited-tier protection · 15 submitted protection · created_at immutable ==
+
+== 23/regenerate — version bump, edited protected unless confirmed, submitted terminal ==
+
+== 22 migration safe · 23 duplicate-tier review · 24 orphan · 25 legacy RAD · T4 review ==
+
+== migration flatten mapping + BLOCKED_CONFLICT + summary ==
+
+== 20/21/34/35 formal model contract — Send lines carry only VALUE fields (grain unchanged) ==
+
+✓ 95 passed

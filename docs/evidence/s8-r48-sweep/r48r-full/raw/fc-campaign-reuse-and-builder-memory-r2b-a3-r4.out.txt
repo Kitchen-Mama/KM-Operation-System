@@ -1,0 +1,154 @@
+
+== A. CAMPAIGN SERVER CONTRACT — resolve, or update under the version gate ==
+ok   A1  a genuinely new window creates a campaign
+ok   A1a created = true
+ok   A1b and exactly one write happened
+ok   A2  an existing window + identical header + NO version SUCCEEDS (the operator's case)
+ok   A2a and resolves the SAME campaign_id
+ok   A3  created=false updated=false unchanged=true reused=true
+ok   A3a DB writes = 0
+ok   A3b the stored row is byte-identical — updated_at did not advance
+ok   A3c and the CURRENT server version is returned for stage 2 to use
+ok   A4  a REAL header mutation with no version still REFUSES
+ok   A4a with the same typed token as before
+ok   A4b and writes nothing
+ok   A4c the row is untouched
+ok   A4d and the detail says WHY it is a mutation
+ok   A5  a real mutation with a STALE version still refuses
+ok   A5a typed
+ok   A5b zero write
+ok   A6  a real mutation with a FRESH version succeeds
+ok   A6a and writes exactly once
+ok   A6b with the new value stored
+ok   A7  a DIFFERENT window does not reuse the wrong campaign
+ok   A7a it creates its own
+ok   A7b under a different campaign_id
+ok   A7c and both windows now exist
+ok   A8  the same window resolves by WINDOW, not by name
+ok   A9  a different promotion type in the same window is a different campaign
+
+== B. EXISTING CAMPAIGN + NEW SKU, END TO END (the operator scenario) ==
+ok   B1  stage 1 resolves the existing BFCM header
+ok   B2  reusing the same campaign_id for the new SKU
+ok   B3  CAMPAIGN_COUNT_DELTA = 0 — a new SKU adds no header
+ok   B4  and stage 1 wrote nothing at all
+ok   B5  stage 2 receives both the id and the current version it needs
+
+== C. TYPED WRITE ERRORS — a write refusal never wears a read failure's label ==
+ok   C0  the canonical code registry is present
+ok   C1  the handlers emit a census-able set of typed refusals
+ok   C2.0 CAMPAIGN_IDENTITY_MISMATCH is registered as a canonical code
+ok   C2.1 CAMPAIGN_LOCK_TIMEOUT is registered as a canonical code
+ok   C2.2 CAMPAIGN_NOT_FOUND is registered as a canonical code
+ok   C2.3 CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH is registered as a canonical code
+ok   C2.4 CAMPAIGN_SKU_LINE_LOCK_TIMEOUT is registered as a canonical code
+ok   C2.5 CAMPAIGN_SKU_LINE_REGISTRY_UNREADABLE is registered as a canonical code
+ok   C2.6 DUPLICATE_CAMPAIGN_IDENTITY is registered as a canonical code
+ok   C2.7 DUPLICATE_SPECIAL_EVENT_IDENTITY is registered as a canonical code
+ok   C2.8 DUPLICATE_TARGET_RULE_IDENTITY is registered as a canonical code
+ok   C2.9 SPECIAL_EVENT_NOT_FOUND is registered as a canonical code
+ok   C2.10 STALE_CAMPAIGN_VERSION is registered as a canonical code
+ok   C2.11 STALE_SPECIAL_EVENT_VERSION is registered as a canonical code
+ok   C2.12 STALE_TARGET_RULE_VERSION is registered as a canonical code
+ok   C2.13 TARGET_RULE_IDENTITY_INCOMPLETE is registered as a canonical code
+ok   C2.14 TARGET_RULE_IDENTITY_MISMATCH is registered as a canonical code
+ok   C2.15 TARGET_RULE_LOCK_TIMEOUT is registered as a canonical code
+ok   C2.16 TARGET_RULE_NOT_FOUND is registered as a canonical code
+ok   C2.17 TARGET_RULE_SCOPE_ID_INVALID is registered as a canonical code
+ok   C2.18 TARGET_RULE_SCOPE_ID_MISMATCH is registered as a canonical code
+ok   C2.19 TARGET_RULE_SCOPE_TYPE_INVALID is registered as a canonical code
+ok   C2.20 TARGET_RULE_VERSION_REQUIRED is registered as a canonical code
+ok   C3  a bare typed refusal extracts its own code
+ok   C4  and still does with the zero-write marker A3-R2 appends
+ok   C5  an UNREGISTERED message still returns nothing — the fallback stays honest, it is not guessed at
+ok   C6  the READ_FAILED fallback still exists for genuine read failures
+
+== D. BASE FC AT BUILD TIME ==
+ok   D0  the single event-month Base FC owner exists
+ok   D1  Build RESOLVES Base FC instead of only inheriting a previous row
+ok   D2  and it delegates to the EXISTING canonical fc_regular_forecast reader — no second formula
+ok   D3  using the same event-month derivation the SAVE uses
+ok   D4  a Regular FC of 4200 for the event month resolves exactly
+ok   D5  a stored ZERO stays 0 — it is a value, not a missing row
+ok   D6  a genuinely blank month is null → "No Base FC"
+ok   D7  and so is an absent row
+ok   D8  a December window reads December, not November — the month is scoped
+ok   D9  and the YEAR is scoped — 2027 rows do not answer a 2026 event
+ok   D10 and the SITE is scoped — a CA row does not answer a US event
+
+== E. SCOPED PREREQUISITE INVALIDATION ==
+ok   E0  the reset now receives the write scope
+ok   E1  a TARGET RULE save keeps BOTH builder paths warm (the operator's case)
+ok   E2  and so does the object form the rule path actually passes
+ok   E3  a REGULAR write cools neither path — it holds no prerequisite
+ok   E3a  because the forecast table is not a prerequisite of the Regular path any more
+ok   E4  an EVENTS write cools NEITHER path — neither holds a table it changes
+ok   E4a  but it DOES cool the campaigns table, which is where that dependency now lives
+ok   E4b  because campaigns is no longer a prerequisite of the Special path
+ok   E5  an UNKNOWN scope clears everything — not knowing is never answered by staying warm
+ok   E6  and so is an unrecognised slice
+ok   E7  affected paths are derived from _FC_PREREQ_TABLES_ — no second list of what a path holds
+
+== F. WARM NEXT ISSUES NO REQUEST, AND SHOWS NO LOADING ==
+ok   F1  a warm path opens the builder directly — before any busy state is set
+ok   F2  and the Loading state is set AFTER that early return, so a warm Next never shows it
+ok   F3  cold Regular needs a load
+ok   F4  warm Regular needs none — 0 logical requests
+ok   F5  and the OTHER path is judged separately
+ok   F6  and the loader itself short-circuits a warm path without a request
+
+== G. TARGET RULE SAVE FEEDBACK — AND WHAT IT IS ALLOWED TO SAY ==
+ok   G1  the button says Saving… while the write is in flight
+ok   G2  and is disabled — by the write OR by an invalid form, which are now two separate reasons
+ok   G3  the original label is captured FROM THE BUTTON — no second copy of the word to drift
+ok   G4  and restored on the way back up
+ok   G4a the VALIDITY setter cannot write the busy label — this is the A3-R4 defect, closed at the source
+ok   G4b and the BUSY setter is the only one that can
+ok   G5  the single-flight latch that makes a duplicate write impossible is kept
+ok   G6  modal open / invalid: closed, but the label still reads Save and nothing claims to be busy
+ok   G6a valid and idle: Save, open
+ok   G6b in flight: Saving… + disabled + aria-busy
+ok   G7  restored to the ORIGINAL label even after a repeated in-flight call
+ok   G7a a failure returns it to IDLE — the label, but not a validity it never checked
+
+== H. SELECTOR RETRY IS HEALTHY RECOVERY (no change, asserted so it stays true) ==
+ok   H1  _fcSliceFetch_ is single-flight
+ok   H2  Retry asks which slices failed
+ok   H3  and re-requests ONLY those — an unrelated slice is not re-fetched
+ok   H4  one request per failed slice, not two
+
+== I. A3-R2 / A3-R3 CONTRACTS PRESERVED ==
+ok   I1  upsertCampaign still uses the canonical write transport
+ok   I2  upsertCampaignSkuLines still uses the canonical write transport
+ok   I3  upsertFcSpecialEvent still uses the canonical write transport
+ok   I4  one evidence-gated transport retry only
+ok   I5  no raw fetch regression
+ok   I6  the A3-R3 year binding survives
+ok   I7  HEADER_IDENTITY_KEY unchanged
+ok   I8  the special-event stale guard is untouched
+ok   I9  the release is at or after R16, the round this campaign-reuse contract shipped in
+ok   I10 and 20_ — the file this contract changed — is stamped at or after R16
+ok   I11 while 14_ carries a KNOWN release stamp
+ok   I11b and never one AHEAD of the declared release — a stamp cannot outrun the release that ships it
+
+== J. MUTANTS ==
+ok   M1 version gate moved back in front of the reuse comparison (caught)
+ok   M2 header mutation allowed without a version (caught)
+ok   M3 reuse writes the row anyway (caught)
+ok   M4 Base FC lookup removed from Build (caught)
+ok   M5 a valid Base FC of zero turned into null (caught)
+ok   M6 a typed campaign code removed from the registry (caught)
+ok   M7 both prerequisite paths cleared after every write (caught)
+ok   M8 an AFFECTED path kept warm (caught)
+ok   M9 Saving… state removed (caught)
+ok   M9a Saving… shown whenever the control is disabled (the A3-R4 live defect) (caught)
+ok   M10 warm Next always shows Loading (caught)
+ok   M11 campaign existence treated as event duplicate (caught)
+
+== K. VACUITY — the unfaulted tree really does behave as the mutants assume ==
+ok   K1  reuse really does succeed with zero writes, so M1/M3/M11 can fail
+ok   K2  and a real mutation really is refused, so M2 can fail
+
+====================================================================================================
+PASS  128 passed, 0 failed, 12 mutants, 0 survived
+====================================================================================================

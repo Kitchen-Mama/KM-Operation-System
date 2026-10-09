@@ -1,0 +1,189 @@
+
+== §3 — THE SUBMIT CALL CHAIN, LOCATED IN THE SHIPPED SOURCES ==
+ok   C1  the button calls submitReplenishmentPlans()
+ok   C2  Submit does NOT flush, save or wait for a write
+ok   C2a §3 and it reaches NO writer at all - the only thing it may do about a pending write is refuse
+ok   C3  then ONE preflight decides (§6)
+ok   C4  the payload selection IS the preflight candidate set
+ok   C4a and the route collector remains as a subset cross-check that fails closed on disagreement
+ok   C5  a read-after-write quantity verification runs before committing
+ok   C6  §7 a CONFIRMATION is required before the request
+ok   C7  and only then the canonical submit issues the request
+ok   C8  which calls the action submitAllocationDraftsToShippingPlans
+ok   C9  the API layer sends exactly that action name
+ok   C10 the router dispatches it
+ok   C11 the health manifest names its handler
+ok   C12 and the handler calls the ONE core
+ok   C13 that core is defined exactly once
+ok   C14 the plan/line writer is 11_'s single shipping_plans authority
+ok   C15 the draft lifecycle transition happens in the core, AFTER the durable plan commit
+ok   C16 the disabled-state owner is A1-R1's panel readiness
+
+== §13.1–§13.4 / §5 — THE CANDIDATE SET (the live H1/H2/H3/H4 shape) ==
+ok   D1  §13.1 a clean persisted H4 passes the preflight
+ok   D2  §13.13 exactly ONE persisted draft id is selected
+ok   D3  §13.1/§13.12 proposed qty is 800 — the UNSAVED second route is NOT counted
+ok   D4  §4 an unsaved route BLOCKS THE WHOLE Submit
+ok   D4a §4 and the clean 800 beside it is NOT proposed on its own
+ok   D4b §5 no confirmation can be built from a blocked verdict
+ok   D4c §5 and "unsaved route excluded" is never reported as an exclusion, because it is a block
+ok   D5  §7 the confirmation totals come from the PERSISTED set
+ok   D5a and it declares that only saved data is submitted
+ok   D5b and it carries the read-back verdict verbatim
+ok   D5c an inconclusive read is reported as inconclusive, never as a verification that happened
+ok   D6  §13.4 the out-of-scope H3 header is NOT in the payload
+ok   D6a and the exclusion is named
+ok   D6b so its 220 units cannot leak into the total
+ok   D7  §13.2 the zero-line H1/H2 headers are not in the client payload — they own no route to contribute
+ok   D7a and when the count is known it is DISCLOSED in the confirmation (§7)
+ok   D8  §5 a terminal-lifecycle route yields no candidate
+ok   D9  §13.20 a cancelled line contributes no quantity
+ok   D10 §5 a zero-quantity route is excluded and named
+
+== §6 / §13.6–§13.9 — THE UNSAVED / DIRTY GUARD ==
+ok   U1  §13.6 an edit not yet written → UNSAVED_EXECUTION_PLAN_CHANGES
+ok   U1a and the route AND its reason are named
+ok   U1b no confirmation can be built, so no request can follow
+ok   U2  §13.8 a write still in the air → EXECUTION_PLAN_SAVE_IN_PROGRESS
+ok   U2a and the route AND its reason are named
+ok   U2b no confirmation can be built, so no request can follow
+ok   U3  §6 an edit that landed during a write → EXECUTION_PLAN_SAVE_IN_PROGRESS
+ok   U3a and the route AND its reason are named
+ok   U3b no confirmation can be built, so no request can follow
+ok   U4  §6 a delete not yet persisted → UNSAVED_EXECUTION_PLAN_CHANGES
+ok   U4a and the route AND its reason are named
+ok   U4b no confirmation can be built, so no request can follow
+ok   U5  §13.8 a save that failed → EXECUTION_PLAN_SAVE_FAILED
+ok   U5a and the route AND its reason are named
+ok   U5b no confirmation can be built, so no request can follow
+ok   U6  §13.9 an Execution panel still loading blocks Submit
+ok   U6a and so does one showing a named failure
+ok   U6b a READY panel does not block
+ok   U7  §13.5 a planned quantity with no saved destination blocks Submit
+ok   U8  §13.20 a duplicate stored identity blocks Submit
+ok   U9  §6 the dirty verdict is not a DOM-versus-DB count comparison
+ok   U9a it is derived from six NAMED state sources, gathered in one owner
+ok   U10 §6 and the preflight NEVER saves on the operator's behalf
+ok   U11 the snapshot gathers _draftDbTimers into the one owner
+ok   U11 the snapshot gathers _draftDbInFlight into the one owner
+ok   U11 the snapshot gathers _draftDbDirty into the one owner
+ok   U11 the snapshot gathers _pendingDraftCancels into the one owner
+ok   U11 the snapshot gathers _irUnsavedSkus_ into the one owner
+ok   U11a and the Execution panel readiness with them
+ok   U12 §2 "persisted" is the presence of the STORED identities the server re-reads, not of a DOM row
+
+== §7 / §13.10–§13.11 — THE CONFIRMATION ==
+ok   F1  §7 the dialog reads the PERSISTED proposal, never the DOM
+ok   F2  §7 it states explicitly that only saved data is submitted
+ok   F3  §7 scope, route count, totals, destination, method and exclusions are all shown
+ok   F4  §7 the submit_batch_id / execution key is minted ONLY AFTER the confirmation
+ok   F4a and the request is issued only after it too
+ok   F5  §13.10 Cancel returns immediately — zero requests, and nothing minted or persisted
+ok   F5a §5 and a confirmation that cannot be built BLOCKS the submit instead of being skipped
+ok   F5b §5/§6 the confirmation is built only AFTER the persisted read-back has run
+
+== §8 — SERVER VALIDATION, ON THE REAL CORE OVER IN-MEMORY SHEETS ==
+ok   S1  §8.1 H4 alone is COMPLETE and reaches the plan proposal
+ok   S1a with the operator's 800 carried verbatim
+ok   S1b and exactly that draft transitions
+ok   S2  §8.2 a zero-line header smuggled in fails the WHOLE batch with zero writes
+ok   S2a named NO_LINES
+ok   S2b §8.10 no partial submit — the writer was never reached
+ok   S3  §8.3 H3 smuggled in from another station is refused by the server, zero writes
+ok   S3a and the plan writer was never reached
+ok   S4  §8.4 a missing destination is refused with ROUTE_INCOMPLETE
+ok   S4a zero write
+ok   S5  §8.5 a BOTH destination is refused (ROUTE_DESTINATION_AMBIGUOUS via the canonical identity)
+ok   S5a zero write
+ok   S6  §8.6 a cancelled draft is immutable — refused, zero write
+ok   S6  §8.6 a expired draft is immutable — refused, zero write
+ok   S7  §8.7 a cancelled line contributes nothing — the header then has no lines at all
+ok   S7a zero write
+ok   S8  §8.8 an orphan line (FK naming another header) never counts toward this one
+ok   S9  §8.9 a duplicate line identity is refused
+ok   S9a zero write
+ok   S10 §8.11 a stale selector is a NAMED refusal, not a write to whichever station the ids carried
+ok   S11 §8.12 a hand-crafted payload of only zero-line headers is refused with zero writes
+
+== §9 / §10 — THE PROPOSED MAPPING, AND WHAT IT CONSERVES ==
+ok   M1  §9 company/country/marketplace come from the persisted HEADER
+ok   M2  §9 the source identity is the header's id, displayed by its stored code
+ok   M3  §9 the destination is the ROUTE's canonical marketplace — not the scope, not a snapshot
+ok   M4  §9 sku / site_sku / planned qty / units-per-carton pass through the LINE verbatim
+ok   M5  §13.18 the service is carried verbatim — sea is never widened to sea_express
+ok   M6  §9 lineage names the exact allocation header AND line — no invented lineage field
+ok   M7  §9 no UI-calculated ETA is passed off as a persisted one
+ok   M8  §10 quantity conservation: 800 in, 800 proposed, difference 0, one matched line
+ok   M9  §9 the station's marketplace is NEVER used as the route destination (scope Walmart, destination Amazon)
+ok   M10 §9 a warehouse-code SNAPSHOT is never an identity — the row is refused instead of mapped
+ok   M11 §9 a physical warehouse destination is unchanged — code for display, id for identity
+ok   M12 §9 H4's proposed plan natural key — identical to what the previous mapping produced, so nothing re-keys
+
+== §11 / §13.14–§13.16, §13.21 — IDEMPOTENCY, DOUBLE CLICK, REPLAY ==
+ok   I1  §13.14 a second click SHARES the in-flight promise — one request, never a second mutation
+ok   I1a and the button is disabled for the duration
+ok   I2  §11 the submit execution key has exactly ONE generator
+ok   I3  §13.15 a replay under the SAME execution key creates NO second plan and NO second line
+ok   I3a and reports the draft as already submitted
+ok   I4  §11 a NEW key over an already-submitted draft is a CONFLICT — no double submit
+ok   I5  §13.21 first attempt CREATES; a retry after a lost response REUSES and writes nothing
+ok   I6  §13.22 a confirmed terminal result clears the Working Draft + execution key
+ok   I6a and success never re-sends or reloads the page
+ok   I7  §11 a partial/in-progress response triggers a READ-BACK, never a client-side guess of success
+ok   I8  §8.10 a downstream plan-write failure leaves every draft UNSUBMITTED — zero status transitions
+ok   I8a and names them
+
+== §12 — SUCCESS LIFECYCLE (proposal only; no live transition) ==
+ok   L1  the draft status becomes `submitted` — an existing lifecycle value
+ok   L2  submitted_by / submitted_at are stamped from the request and the server clock
+ok   L3  and an audit note naming the plan and the execution key is appended
+ok   L4  §12 the transition happens ONLY AFTER the durable plan commit
+ok   L5  §12 a failed post-check restores the draft cells AND rolls back the inserted plan rows
+ok   L6  §12 the client drops the Working Draft and navigates to the plan — no second submit
+
+== §4 — THE READ-ONLY CENSUS HELPER ==
+ok   T1  §4 exactly ONE public entry point, and it takes no parameters
+ok   T2  §4 no mutator appears anywhere in it
+ok   T2a and no ensure/create helper is reachable from it
+ok   T3  §4 it takes no lock, writes no property, creates no file and sends no mail
+ok   T4  §4 it never calls the real Submit action or any core that writes
+ok   T5  §4 every sheet is read through ONE façade that offers getDataRange().getValues() and nothing else
+ok   T6  §4 the footer carries every required zero
+ok   T7  §4 it REQUIRES the production gates and carries no copy of them
+ok   T8  §4 what it cannot safely judge prints BLOCKED rather than a guess
+ok   T9  §4 ids are masked in the output
+ok   T10 §4 it reads the four tables the census needs, each justified in its header
+ok   T10a and deliberately reads nothing that would let it re-derive a quantity
+
+== §1 / §14 / §15 — WHAT THIS ROUND DID NOT TOUCH, AND ITS DEPLOYMENT IDENTITY ==
+ok   V1  action contract is at or after 10 (A2 added no router action)
+ok   V2  required-action-list is at or after 9
+ok   V3  transport contract still 1
+ok   V4  §10 the destination XOR authority is untouched
+ok   V5  §10 sea / sea_express are still distinct
+ok   V6  §15 the 16_ owner stamp is at or after A2 — this round changed the server, deliberately
+ok   V6a and 63_'s manifest expects what the SOURCE declares, so a half-synced deployment is detectable
+ok   V7  §15 the derived Apps Script sync set includes 16_shipping_allocation_handlers.gs
+ok   V7  §15 the derived Apps Script sync set includes 63_api_v1_system_health.gs
+ok   V7a and it is derived from the source rather than hand-listed (3 files)
+ok   V8  the application refs rotated together (55 on r46-avgsales-20261008)
+ok   V8a and it is after the published A1-R1 token
+ok   V8b which is fully retired
+ok   V9  §14 nothing in the submit path deletes H1/H2 or edits H3/H4
+
+== MUTATIONS — each applied for real, each caught ==
+ok   X0  with the dirty source defeated, step 4 STILL refuses the unpersisted route
+ok   X1  the submitted selection reverts to the route collector, which applies none of the candidate rules (caught)
+ok   X2  the dirty guard is removed (caught)
+ok   X3  only the clean route is submitted and the dirty one beside it is silently dropped (caught)
+ok   X4  the confirmation totals are read from the DOM instead of the persisted proposal (caught)
+ok   X5  the double-click single-flight latch is released (caught)
+ok   X6  a replay CREATES a second plan instead of reusing (caught)
+ok   X7  a partial write is allowed (one bad header does not fail the batch) (caught)
+ok   X8  the server station scope filter is removed (caught)
+ok   X9  the warehouse snapshot becomes a destination again (caught)
+ok   X10 the proposed quantity is recomputed instead of carried (caught)
+
+PASSED: 163 passed, 0 failed
+mutations: 10 caught, 0 missed
+diagnostic invariants: DB_WRITES=0 · STATUS_TRANSITIONS=0 · SHIPPING_PLANS_CREATED=0 · SHIPPING_PLAN_LINES_CREATED=0

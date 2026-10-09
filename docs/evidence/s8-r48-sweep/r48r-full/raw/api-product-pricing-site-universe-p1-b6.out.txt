@@ -1,0 +1,206 @@
+=== PRODUCT-STRATEGY-P1-B6 — productPricing.siteUniverse.get ===
+
+--- §A  495 MEMBERSHIP ROWS BECOME TEN SITES ---
+  ok   A1 the fixture is the measured 495 membership rows
+  ok   A2 a complete read is READY
+  ok   A3 and resolves to exactly ten sites
+  ok   A4 ONE table is read, and it is the membership table — not pricing_list, not sku_details
+  ok   A5 every membership row is accounted for in exactly one site
+  ok   A6 the authority is published, not assumed
+
+--- §B  THE TEN IDENTITIES, VERBATIM ---
+  ok   B1 the ten canonical identities, exactly
+  ok   B2 `KM` is NOT rewritten to `Kitchen Mama`
+  ok   B3 and `EU` survives as itself
+  ok   B4 `EU` is NOT split into member countries — that would invent sites nobody sells on
+  ok   B5 three companies, deterministically ordered
+  ok   B6 KM sells in one country
+  ok   B7 ResTW in five
+  ok   B8 ResUS in one
+  ok   B9 and KM/US has three marketplaces — none of them Amazon
+  ok   B10 ResUS/US has two
+  ok   B11 the ordering is deterministic
+
+--- §C  NARROWING, AND ONE OPTION IS A FACT ---
+  ok   C1 the client adapts a READY universe
+  ok   C2 three companies offered
+  ok   C3 countries narrow to the company
+  ok   C4 and a different company offers a different list
+  ok   C5 marketplaces narrow to company AND country
+  ok   C6 the same country under a different company offers a different list
+  ok   C7 and the two are NOT the same list
+  ok   C8 KM has one country, so it is resolved rather than offered
+  ok   C9 and reported as CONTEXT — a dropdown with one item cannot do anything
+  ok   C10 named as auto-resolved, not silently chosen
+  ok   C11 but the scope is not complete — three marketplaces remain a real choice
+  ok   C12 ResTW/JP has one marketplace, so it resolves
+  ok   C13 and that completes the scope
+  ok   C14 Target is not offered under ResUS/US, so it is dropped
+  ok   C15 and the cleared tier is NAMED, not silently blanked
+  ok   C16 leaving the scope incomplete rather than wrong
+  ok   C17 an invalid country clears the marketplace under it too
+  ok   C18 both are named
+  ok   C19 an impossible marketplace does not rewrite the country that offered the list
+  ok   C20 one option is resolved; the FIRST OF SEVERAL never is
+
+--- §D  BLANK, DUPLICATE, AND UNKNOWN ---
+  ok   D1 blank identities do not stop the read
+  ok   D2 and do not invent an eleventh site
+  ok   D3 three rows had a blank identity tier
+  ok   D4 counted per tier
+  ok   D5 and NOT ONE blank option is offered — a blank choice cannot be answered
+  ok   D6 a blank listing id is counted separately
+  ok   D7 a duplicate marketplace_sku_id STOPS
+  ok   D8 and publishes no sites at all
+  ok   D9 not even the nine that were fine
+  ok   D10 named
+  ok   D11 a trailing space is trimmed, so it is the SAME site and not an ambiguity
+  ok   D12 still ten
+  ok   D13 but a DIFFERENT spelling that case-folds together is an ambiguous identity
+  ok   D14 named
+  ok   D15 unknown statuses are counted
+  ok   D16 and attributed to their site
+  ok   D17 without being counted as active
+  ok   D18 with the reason named
+  ok   D19 a site with only discontinued listings is not selectable BY DEFAULT
+  ok   D20 but IS reachable with include_inactive — which is a real request, so it is not hidden
+  ok   D21 reason named
+  ok   D22 and it is still published — status is a filter, not membership
+
+--- §E  MISSING, UNREADABLE, EMPTY, CAPPED ---
+  ok   E1 a MISSING table is not an empty one — empty is the one answer a caller acts on by moving on
+  ok   E2 named
+  ok   E3 with no sites
+  ok   E4 the database WAS opened, which is why this is not NOT_CONNECTED
+  ok   E5 a missing COLUMN fails the same way
+  ok   E6 a table that was fully read and holds nothing IS empty — and only then
+  ok   E7 with no sites and no demo site in their place
+  ok   E8 an empty universe NEVER falls back to a default list
+  ok   E9 a capped read does not claim a whole universe
+  ok   E10 and says so as data
+  ok   E11 named
+  ok   E12 with no menu, because a partial menu is indistinguishable from a short one
+
+--- §F  THE FLAG, BEFORE THE DOOR ---
+  ok   F1 flag=false refuses with FEATURE_DISABLED
+  ok   F2 and PROVEN: the spreadsheet was never opened and no table was read
+  ok   F3 meta says dbOpened false
+  ok   F4 and tablesRead 0
+  ok   F5 sourceState is NULL — nothing was measured, which is not the same as measuring nothing
+  ok   F6 with no sites
+
+--- §G  WHAT THE ENDPOINT WILL NOT PUBLISH ---
+  ok   G1.1 the response carries no regular_price field
+  ok   G1.2 the response carries no minimum_price field
+  ok   G1.3 the response carries no msrp field
+  ok   G1.4 the response carries no currency field
+  ok   G1.5 the response carries no image_url field
+  ok   G1.6 the response carries no product_url field
+  ok   G1.7 the response carries no spreadsheetId field
+  ok   G1.8 the response carries no spreadsheet_id field
+  ok   G1.9 the response carries no marketplace_sku_id field
+  ok   G1.10 the response carries no master_sku field
+  ok   G1.11 the response carries no normalizedRows field
+  ok   G1a the schema fingerprint DOES name the table's columns — that is evidence, not data
+  ok   G1b while not one SITE record carries a listing id
+  ok   G2 and the refusal list is published as data
+  ok   G3 what it DOES publish is a short, stated list
+  ok   G4 the builder exists
+  ok   G5 and the site-universe builder never reads a currency column
+  ok   G6 nor a regional one — a missing Regional Detail must not un-list a site
+  ok   G7 nor pricing_list — it is not a membership owner
+  ok   G8 nor sku_details
+
+--- §H  THE SERVER NEVER SENDS THE CLIENT-ONLY STATE ---
+  ok   H0 (checked by behaviour below)
+  ok   H1 across every reachable server path, SOURCE_NOT_CONNECTED is never emitted
+  ok   H2 the states it CAN emit are exactly the four servable ones plus an unmeasured null
+  ok   H3 the accessor rejects a server-sent client-only state
+  ok   H4 by name
+  ok   H5 and the universe module is the second wall
+  ok   H6 naming it
+
+--- §I  THE CLIENT FLOW: ORDER, SINGLE FLIGHT, STALENESS ---
+
+--- §J  NO FIXTURE, AND NO WRITER ANYWHERE ON THIS PATH ---
+  ok   J1.1 the universe module names no fixture
+  ok   J2.1 the universe module writes no storage
+  ok   J3.1 the universe module reads no URL parameter
+  ok   J1.2 the page controller names no fixture
+  ok   J2.2 the page controller writes no storage
+  ok   J3.2 the page controller reads no URL parameter
+  ok   J1.3 the accessor names no fixture
+  ok   J2.3 the accessor writes no storage
+  ok   J3.3 the accessor reads no URL parameter
+  ok   J4 there is no hard-coded site list
+  ok   J5 and no fixture fallback
+  ok   J6 the universe is never reverse-engineered from a site-scoped answer
+  ok   J7.1 the readback contains no setValue
+  ok   J7.2 the readback contains no setValues
+  ok   J7.3 the readback contains no appendRow
+  ok   J7.4 the readback contains no insertSheet
+  ok   J7.5 the readback contains no deleteRow
+  ok   J7.6 the readback contains no deleteColumn
+  ok   J7.7 the readback contains no clearContent
+  ok   J7.8 the readback contains no createSheet
+  ok   J7.9 the readback contains no CacheService
+  ok   J7.10 the readback contains no PropertiesService
+  ok   J7.11 the readback contains no DriveApp
+  ok   J8.1 nor does the endpoint path — no setValue
+  ok   J8.2 nor does the endpoint path — no setValues
+  ok   J8.3 nor does the endpoint path — no appendRow
+  ok   J8.4 nor does the endpoint path — no insertSheet
+  ok   J8.5 nor does the endpoint path — no deleteRow
+  ok   J8.6 nor does the endpoint path — no deleteColumn
+  ok   J8.7 nor does the endpoint path — no clearContent
+  ok   J8.8 nor does the endpoint path — no createSheet
+  ok   J8.9 nor does the endpoint path — no CacheService
+  ok   J8.10 nor does the endpoint path — no PropertiesService
+  ok   J8.11 nor does the endpoint path — no DriveApp
+  ok   J9 the readback entry point takes NO parameters
+  ok   J10 and hands its tables to the SHIPPED pure builder rather than computing its own answer
+  ok   J11 using the same fail-closed read helper as the endpoint
+  ok   J12 and it never assigns the flag — the refusal is the proof, so flipping it would destroy it
+
+--- §K  THE ROUTE, AND THE VERSION PINS ---
+  ok   K1 the action is in the GET read table
+  ok   K2 and dispatches to the SAME handler on doPost — one contract, not two
+  ok   K3 the deployed action contract moved when this round added a router ACTION, and has never gone back (v18)
+  ok   K4 and the client pin moves WITH it, so an un-synced deployment fails closed BY VERSION
+  ok   K5 the accessor names the same action
+  ok   K6 ONE accessor module owns both actions
+  ok   K7 and still never touches google.script.run
+
+--- §L  MUTANTS ---
+  ok   M1 the flag is checked after the table is read, so a disabled feature touches the database (caught)
+  ok   M2 a blank company becomes an offered option (caught)
+  ok   M3 a duplicate listing id is downgraded to a warning and the menu is published anyway (caught)
+  ok   M4 a capped read is published as the whole universe (caught)
+  ok   M5 an unreadable table is reported as an empty one (caught)
+  ok   M6 an unknown status is counted as active (caught)
+  ok   M7 selectability is decided by row count instead of by the default status gate (caught)
+  ok   M8 the identity comparison stops case-folding, so one site becomes two (caught)
+  ok   M9 the ordering stops being deterministic (caught)
+  ok   M10 the endpoint starts publishing a currency, which invites a menu keyed on it (caught)
+  ok   M11 an invalid downstream value is kept instead of cleared (caught)
+  ok   M12 the FIRST of several options is auto-selected, not only a lone one (caught)
+  ok   I1 THE FIRST REQUEST IS THE UNIVERSE — the workspace read is not called on load
+  ok   I2 and the page waits for a choice
+  ok   I3 zero workspace requests so far
+  ok   I4 a company alone is not a scope, and costs no request
+  ok   I5 still waiting
+  ok   I6 ResTW/JP resolves its single marketplace, completing the scope — THEN the read happens
+  ok   I7 exactly one
+  ok   I8 the superseded response is DROPPED, not merged
+  ok   I9 and counted
+  ok   I10 the current scope is the newer choice
+  ok   I11 two requests were made
+  ok   I12 a site switch is detected
+  ok   I13 two sites differing only by country are NOT the same site
+  ok   I14 a disabled capability is its own state
+  ok   I15 and NOTHING reached the wire — not the universe, not the workspace
+  ok   I16 requests_made = 0
+
+====================================================================================================
+passed 165  failed 0  |  mutants caught 12  survived 0
+====================================================================================================

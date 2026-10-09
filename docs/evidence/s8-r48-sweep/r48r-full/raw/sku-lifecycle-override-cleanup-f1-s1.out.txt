@@ -1,0 +1,14 @@
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+
+== A. one-time purge of the stale lifecycle override ==
+
+== B. lifecycle comes ONLY from sku_details.lifecycle — stale override ignored even if present ==
+
+== C. grouping + status badge share the sku_details source ==
+
+== D. image + imported-SKU override authority RETIRED (S2-R4A) — ignored, not deleted ==
+
+== E. source scans — lifecycle authority removed (F1-S1); image/data authority removed (S2-R4A) ==
+
+----------------------------------------
+SKU LIFECYCLE OVERRIDE CLEANUP (F1-S1): 25 passed, 0 failed

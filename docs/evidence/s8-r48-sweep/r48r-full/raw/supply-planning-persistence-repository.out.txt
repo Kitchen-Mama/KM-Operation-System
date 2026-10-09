@@ -1,0 +1,22 @@
+
+== A. schema / additive headers ==
+
+== B. Active Draft lookup ==
+
+== C. snapshot loading ==
+
+== D. run journal + stage persistence ==
+
+== E. expected token ==
+
+== F. shipping natural-key upsert ==
+
+== G. procurement natural-key upsert (delete+replace migration) ==
+
+== H. stage execution + partial-write recovery ==
+
+== I. purity / serialization / validation ==
+
+== J. regression — no mutation of terminal rows, no hard delete ==
+
+All Round 1D Recommendation Persistence Repository assertions passed (74 assertions).

@@ -1,0 +1,13 @@
+
+== 1-4 VERIFY existing Factory picker authority (unchanged, canonical) ==
+
+== 5 selector reuses the Overseas modal select pattern (ovs-form-group > label + select) ==
+
+== 6/7 CSS box parity — factory .ovs-form-group select now mirrors Overseas EXACTLY ==
+
+== 8 full-width layout preserved (ovs-form-group flex fills the row) ==
+
+== 9/10/11 behavior + validation + Overseas unchanged (UI-only round) ==
+
+----------------------------------------
+FACTORY IMPORT SELECT VISUAL PARITY (F1-7N-R1): 25 passed, 0 failed

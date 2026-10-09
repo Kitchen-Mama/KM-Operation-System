@@ -1,0 +1,221 @@
+
+== §A — THE CENSUS. What this page is allowed to dispatch, measured and not described. ==
+ok   A1  the Product Strategy accessor names system.health ZERO times outside comments
+ok   A2  and the page controller names it zero times
+ok   A3  there is no capability ACTION constant left to dispatch
+ok   A4  and none is exported — a caller cannot reach one through this module
+ok   A5  no health fallback survives anywhere in the executable text of either file
+ok   A6  the workspace action is unchanged
+ok   A7  the universe action is unchanged
+ok   A8  the module declares exactly TWO actions — the capability is not one of them
+ok   A9  there is exactly ONE KM.transport.request call site in the whole accessor
+ok   A10 the private POST shim has zero callers in the accessor
+ok   A11 and zero in the controller
+ok   A12 neither file opens a socket of its own
+ok   A13 neither contains a second retry or recovery loop
+ok   A14 and neither sets a timeout of its own
+ok   A15 (placeholder kept out of the write census — see A16)
+ok   A16 the accessor declares no write of any kind
+ok   A17 the controller still has a capability step
+ok   A18 and it no longer calls refreshCapability to produce one
+ok   A19 it waits on the boot arbiter instead — a read already in flight, not a new one
+ok   A20 index.html contains no inline setCapability
+ok   A21 nor an inline system.health
+
+== §B — THE SERVER. One added field, one authority, no spreadsheet, no write. ==
+ok   B1  handleGetClientCapabilities_ exists in 03_master_data_handlers.gs
+ok   B2  and it now publishes product_strategy_enabled
+ok   B3  PRODUCT_STRATEGY_ENABLED_ is assigned in exactly ONE place in the whole config
+ok   B4  and its only accessor is the strict identity `=== true`
+ok   B5  the field resolves from that accessor, guarded, and fails closed to false
+ok   B6  it is not wrapped in Boolean()
+ok   B7  nor coerced with !!
+ok   B8  and it is not hard-coded either way
+ok   B9  no second Product Strategy flag was introduced anywhere in the routed sources
+ok   B10.1 the pre-existing field capabilitiesVersion is still published
+ok   B10.2 the pre-existing field requestOrderDraftV2FlatCutover is still published
+ok   B10.3 the pre-existing field requestOrderSiteConfirmRequired is still published
+ok   B10.4 the pre-existing field inventoryAiPlanDbGenerationEnabled is still published
+ok   B11 the response envelope is unchanged — success + data, through jsonResponse_
+ok   B12 the handler opens no spreadsheet
+ok   B13 it writes nothing
+ok   B14 it takes no lock
+ok   B15 it uses no cache
+ok   B16 and it builds no second property-backed authority
+ok   B17 and it does not reach for system.health to answer
+ok   B18 handleSystemHealth_ still exists in 63_
+ok   B19 and system.health is still routed on BOTH verbs — other callers are untouched
+ok   B20 as is getClientCapabilities, which is the read this round moved onto
+ok   B21 63_ still reports the flag too — two independent observations of one fact, as 00_ documents
+
+== §C — THE PRODUCTION CALLER CHAIN. In shipped bytes, not in a harness. ==
+ok   C1  app.js calls KM.DB.applyClientCapabilities at boot
+ok   C2  from the DOMContentLoaded bootstrap, which is the application start
+ok   C3  that name resolves to _kmApplyClientCapabilities_ in the shipped db api
+ok   C4  which reads getClientCapabilities
+ok   C5  applies it through the ONE shared apply path
+ok   C6  and hands the SAME answer to the Product Strategy mirror
+ok   C7  the shared apply path is the foundation's own, unchanged in shape
+ok   C8  the Product Strategy glue sits between the shared apply and the sequence write
+ok   C9  and it issues NO request of its own — it consumes the answer that was already read
+ok   C10 nor does it hand the mirror a value of its own invention
+ok   C11.1 the guard `issuedIdentity !== nowIdentity` is evaluated BEFORE the mirror is written
+ok   C11.2 the guard `_kmCapAppliedSeq_ > mySeq` is evaluated BEFORE the mirror is written
+ok   C12 and the mirror is written after the shared apply, from the same answer
+
+== §D — THE STATE MACHINE, DRIVEN. Every input §10 names, and what it must produce. ==
+ok   D1  a module nobody has spoken to is PENDING, not disabled
+ok   D2  and it is not enabled
+ok   D3  and it blames no transport for a question nobody asked
+ok   D4.1 the literal true → SERVER_TRUE
+ok   D4.1 the literal true → enabled true
+ok   D4.1 the literal true → failure null
+ok   D4.2 the literal false → SERVER_FALSE
+ok   D4.2 the literal false → enabled false
+ok   D4.2 the literal false → failure null
+ok   D4.3 the field missing → FIELD_ABSENT
+ok   D4.3 the field missing → enabled false
+ok   D4.3 the field missing → failure null
+ok   D4.4 an explicit null → FIELD_ABSENT
+ok   D4.4 an explicit null → enabled false
+ok   D4.4 an explicit null → failure null
+ok   D4.5 the string "true" → FIELD_ABSENT
+ok   D4.5 the string "true" → enabled false
+ok   D4.5 the string "true" → failure null
+ok   D4.6 the number 1 → FIELD_ABSENT
+ok   D4.6 the number 1 → enabled false
+ok   D4.6 the number 1 → failure null
+ok   D4.7 a sign-in page → FAILED
+ok   D4.7 a sign-in page → enabled false
+ok   D4.7 a sign-in page → failure "NOT_AUTHORIZED"
+ok   D4.8 a 401 → FAILED
+ok   D4.8 a 401 → enabled false
+ok   D4.8 a 401 → failure "NOT_AUTHORIZED"
+ok   D4.9 generic HTML → FAILED
+ok   D4.9 generic HTML → enabled false
+ok   D4.9 generic HTML → failure "RESPONSE_NOT_READABLE"
+ok   D4.10 an echo 404 → FAILED
+ok   D4.10 an echo 404 → enabled false
+ok   D4.10 an echo 404 → failure "HTTP_NOT_FOUND"
+ok   D4.11 a timeout → FAILED
+ok   D4.11 a timeout → enabled false
+ok   D4.11 a timeout → failure "SOURCE_TIMED_OUT"
+ok   D4.12 nothing at all → FAILED
+ok   D4.12 nothing at all → enabled false
+ok   D4.12 nothing at all → failure "SOURCE_NOT_CONNECTED"
+ok   D4.13 no payload and no reason → FAILED
+ok   D4.13 no payload and no reason → enabled false
+ok   D4.13 no payload and no reason → failure "SOURCE_NOT_CONNECTED"
+ok   D5  a server that answered `false` refuses with FEATURE_DISABLED
+ok   D6  a server that said nothing does NOT — that would invent a decision
+ok   D7  and a sign-in page is reported as an authorization fact
+ok   D8  the universe read refuses the same way on `false`
+ok   D9  and not on a missing field
+ok   D10 and carries the fault when there was one
+ok   D11 refreshCapability answers from what is already known
+ok   D12 and dispatches nothing, even when forced
+
+== §N — THE NODE SEAM IS NOT A SECOND ACTIVATION PATH. Controls, not assurances. ==
+ok   N1  a scenario that declares no server answer yields NO payload — nothing to inject
+ok   N2.1 the seam + the production setter: the default (server says yes) -> enabled true
+ok   N2.2 the seam + the production setter: capability: false -> enabled false
+ok   N2.3 the seam + the production setter: an omitted field -> enabled false
+ok   N2.4 the seam + the production setter: the number 1 -> enabled false
+ok   N2.5 the seam + the production setter: the string "true" -> enabled false
+ok   N2.6 the seam + the production setter: an explicit null -> enabled false
+ok   N8.1 the seam payload still carries requestOrderDraftV2FlatCutover
+ok   N8.2 the seam payload still carries requestOrderSiteConfirmRequired
+ok   N8.3 the seam payload still carries inventoryAiPlanDbGenerationEnabled
+ok   N9  the shared harness never calls the setter with a hard-coded true
+ok   N10 and writes no hard-coded true into any capability payload it builds
+
+== §E — THE WHOLE CHAIN, IN A BROWSER, UNDER EACH INPUT §10 NAMES ==
+ok   E1  the capability costs exactly ONE request for the whole page life
+ok   E2  and system.health is never dispatched — the seventeen-sheet census is gone
+ok   E3  the site universe is read once
+ok   E4  the workspace is read once
+ok   E5  and the board mounts
+ok   E6  every physical request in the page life was a GET — non-GET = 0
+ok   E7  a server that answers `false` IS reported as FEATURE_DISABLED
+ok   E8  and NO site-universe read is issued
+ok   E9  nor a workspace read
+ok   E10 the capability was still asked exactly once
+ok   E11 a missing field is NOT reported as a switched-off feature
+ok   E12 it is reported as an answer that carried no value
+ok   E13 and it fails CLOSED — no universe read
+ok   E14 and no workspace read
+ok   E15 a `1` is not a decision either
+ok   E16 and it enables nothing
+ok   E17 nor does the string "true"
+ok   E18 a sign-in page is not a disabled feature
+ok   E19 it is reported as the authorization fact it is
+ok   E20 and it is asked ONCE — a second ask cannot create a session
+ok   E21 a generic error page is not a disabled feature either
+ok   E22 it is reported as unreadable
+ok   E23 an offline browser is not told the feature is off
+ok   E24 it is told it is offline
+ok   E25 and no business read leaves the browser
+ok   E26 a bootstrap that 404s once and then answers never shows FEATURE_DISABLED
+ok   E27 the board mounts — the recovery carried the whole page life
+ok   E28 the capability cost exactly two physical requests: the read and ONE recovery
+ok   E29 every one of them a GET
+ok   E30a the request log and the physical counter agree — one instrument, not two
+ok   E30 route away and back: the capability was requested exactly ONCE for the whole journey
+ok   E31 and system.health was never requested at all
+ok   E32 while the business reads did happen — the journey was real
+ok   E33 with no uncaught error anywhere in it
+ok   E34 the R10C three-state page still raises no uncaught error
+ok   E35 and no null-canonical TypeError — count 0
+ok   E36.1 the true run produced no application console error
+ok   E36.2 the false run produced no application console error
+ok   E36.3 the absent run produced no application console error
+ok   E36.4 the auth run produced no application console error
+ok   E36.5 the offline run produced no application console error
+ok   E37.1 the false run mounted no board
+ok   E37.2 the absent run mounted no board
+ok   E37.3 the auth run mounted no board
+ok   E38 across 9 method-measured browser runs: non-GET = 0
+ok   E39 every action dispatched across every run is one of the three allowed reads
+ok   E40.1 the true run performed exactly ONE capability bootstrap
+ok   E40.2 the false run performed exactly ONE capability bootstrap
+ok   E40.3 the absent run performed exactly ONE capability bootstrap
+ok   E40.4 the one run performed exactly ONE capability bootstrap
+ok   E40.5 the string run performed exactly ONE capability bootstrap
+ok   E40.6 the leave-return run performed exactly ONE capability bootstrap
+ok   E40.7 the no-categories run performed exactly ONE capability bootstrap
+
+== §Z — THE MUTANTS. Each edits a real shipped file, runs the check meant to catch it, and puts it back. ==
+ok   Z1  the added field deleted (caught)
+ok   Z2  a SECOND Product Strategy flag introduced (caught)
+ok   Z3  the field wrapped in Boolean() (caught)
+ok   Z4  the strict identity replaced by a truthy coercion (caught)
+ok   Z5  the field hard-coded true (caught)
+ok   Z6  the field hard-coded false (caught)
+ok   Z7  an EXISTING capability field deleted (caught)
+ok   Z8  the response envelope broken (data flattened away) (caught)
+ok   Z9  the capability handler made to open a spreadsheet (caught)
+ok   Z10 the capability handler made to write (caught)
+ok   Z11 the capability handler given a LockService (caught)
+ok   Z12 the capability handler given a CacheService (caught)
+ok   Z13 system.health un-routed on one verb (caught)
+ok   Z14 getClientCapabilities un-routed on one verb (caught)
+ok   Z15 the production setter call removed from the bootstrap (caught)
+ok   Z16 the setter moved ABOVE the supersede guards (caught)
+ok   Z17 the glue fed a value of its own invention (caught)
+ok   Z18 the glue made to issue a SECOND request (caught)
+ok   Z19 the failure reason dropped, so a fault becomes a missing field (caught)
+ok   Z20 FIELD_ABSENT collapsed into SERVER_FALSE (caught)
+ok   Z21 the literal-true rule relaxed to == (caught)
+ok   Z22 the mirror hard-coded true (caught)
+ok   Z23 PENDING removed — a fresh module claims to have been told (caught)
+ok   Z24 system.health re-introduced into the accessor (caught)
+ok   Z25 refreshCapability made to dispatch again (caught)
+ok   Z26 a second retry loop added to the accessor (caught)
+ok   Z27 the transport bound overridden in the accessor (caught)
+ok   Z28 the controller reports PENDING as FEATURE_DISABLED (caught)
+ok   Z29 the controller reports a missing field as FEATURE_DISABLED (caught)
+ok   Z30 the controller reports a transport fault as FEATURE_DISABLED (caught)
+ok   Z31 an inline setCapability added to index.html (caught)
+ok   Z32 the harness raises the mirror itself, as it did before R4 (caught)
+
+passed 205  failed 0  |  mutants caught 32  survived 0

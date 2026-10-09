@@ -1,0 +1,384 @@
+=== PRODUCT-STRATEGY-P1-B3 — production readback · universe census · adapter freeze ===
+
+=== SECTION A  §2 THE PACKAGE IS READ-ONLY, PROVED BY CALL GRAPH AND NOT BY ITS OWN COMMENTS ===
+ok   A1.1 72_api_v1_product_pricing_workspace.gs calls no writer method
+ok   A1.2 TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs calls no writer method
+ok   A2  the round's own diff is MEASURED from git, not remembered
+ok   A2a and not one added line calls a writer method in 01_router, 63_ or the adapter
+ok   A2b nor getOperationDb
+ok   A2c nor a lock, a cache or a properties store
+ok   A2d nor fetch, mail, Drive or a trigger
+ok   A3  72_ calls exactly six functions it does not define
+ok   A3.1 the resolver body was located in 73_, so what follows measures something
+ok   A3.2 pricingResolveEffective_ calls no writer method
+ok   A3.3 nor does it open a spreadsheet, take a lock, touch a store or reach the network
+ok   A3.4 and it does not read a sheet either — it is handed a row and answers about that row
+ok   A3a and exactly one Google service method: openById
+ok   A4  the readback calls only the shipped read path and the shared safety helpers
+ok   A4a and one Google service method, the same one
+ok   A5.1 prodAssertDbTarget_ is present in 29_
+ok   A5.1a and calls no writer
+ok   A5.2 prodExpectedDbId_ is present in 29_
+ok   A5.2a and calls no writer
+ok   A5.3 prodRequireSheet_ is present in 29_
+ok   A5.3a and calls no writer
+ok   A5.4 prodRequireColumns_ is present in 29_
+ok   A5.4a and calls no writer
+ok   A5.5 prodSchemaError_ is present in 29_
+ok   A5.5a and calls no writer
+ok   A5.6 prodSafetyBundle_ is present in 29_
+ok   A5.6a and calls no writer
+ok   A5b.1 prodMigrateCreateSheet_ exists
+ok   A5b.1a and it IS a writer — so the scope of A5 is real
+ok   A5b.1b gated on a Migration authorization
+ok   A5b.1c and 72_ never calls it
+ok   A5b.1d nor does the readback
+ok   A5b.2 prodMigrateAppendColumns_ exists
+ok   A5b.2a and it IS a writer — so the scope of A5 is real
+ok   A5b.2b gated on a Migration authorization
+ok   A5b.2c and 72_ never calls it
+ok   A5b.2d nor does the readback
+ok   A6  72_ has no "get sheet or create it" idiom
+ok   A6a a missing sheet is a typed refusal
+ok   A6b and nothing in either file provisions one
+ok   A7  neither file stores business data in Cache or Properties
+ok   A8.1 neither file can reach handleWeeklyAiPlanGenerate
+ok   A8.2 neither file can reach handleShippingPlanSubmit
+ok   A8.3 neither file can reach GapMaterialization
+ok   A8.4 neither file can reach backfill
+ok   A8.5 neither file can reach handleGenerate
+ok   A8.6 neither file can reach materializeGap
+ok   A9.1 factory_stock is not a table either file reads
+ok   A9.2 allocation_draft is not a table either file reads
+ok   A9.3 shipping_plans is not a table either file reads
+ok   A9.4 shipping_plan_lines is not a table either file reads
+ok   A9.5 shipments is not a table either file reads
+ok   A9.6 shipment_lines is not a table either file reads
+ok   A10  the flag gate is evaluated BEFORE the spreadsheet is opened
+ok   A10a and the refusal it emits says FEATURE_DISABLED with no database opened
+ok   A10b through the ONE resolver — not a copy of the constant, not a payload field
+ok   A10a the router dispatches the action to 72_ (so a partial sync is a named failure)
+ok   A10b the deployment declares an action contract at or after 14 — P1-B6 added productPricing.siteUniverse.get
+ok   A10c the adapter is loaded by exactly one root document — the Operation System shell
+ok   A10c1 and that document cannot switch to the section: no menu item, no call
+ok   A11  the readback is in no router table
+ok   A11a and defines no web entry point of its own
+ok   A11b exactly three RUN_ entry points exist, and all three are named here
+ok   A11b0 and the third one is in no router table either
+ok   A11b1 and the second one is in no router table either
+ok   A11b2 and takes no parameters, the same way
+ok   A11d the readback lives in assets/tools/apps-script-diagnostics/
+ok   A11e and not in the runtime-owner mirror
+ok   A11f alongside the other read-only censuses
+ok   A11c and it takes NO parameters — there is nothing for a caller to widen
+
+=== SECTION B  §3 THE READBACK RUNS, AND THE WRITER API IS NOT EVEN PRESENT ===
+ok   B0  the readback completes against a synthetic production DB
+ok   B1  read_only = true
+ok   B2  writes = 0
+ok   B3  writer_calls = 0
+ok   B3a and it says out loud that this one is DECLARED, proved by call graph elsewhere
+ok   B4  sheets_created = 0
+ok   B5  rows_modified = 0 — and this one is MEASURED
+ok   B5a and it says which of the two it is
+ok   B6  feature_flag = false
+ok   B7  the endpoint is named
+ok   B7a with the response-shape contract version
+ok   B7b and the handler build
+ok   B7c the readback declares the round it belongs to
+ok   B8  not one writer method appears in the recorded call log
+ok   B8a while the read methods it needs do
+ok   B9  the deployed action refuses while the flag is false
+ok   B9a and had not opened the spreadsheet when it did
+ok   B9b nor read a table
+ok   B9c and the readback did not inject a flag to get there
+ok   B9d a refusal measures no source state, so it reports null
+ok   B10  the report is emitted in chunks
+ok   B10a with a fingerprint of the whole
+ok   B10b and the total length, so a missing chunk is detectable
+ok   B11  a wrong target stops the readback
+ok   B11a with the safety token
+ok   B11b and no spreadsheet id is anywhere in the report
+ok   B11c nor in a successful one
+ok   B12.1 the price 12.99 is not in the report
+ok   B12.2 the price 10.49 is not in the report
+ok   B12.3 the price 24.99 is not in the report
+ok   B12.4 the price 15.99 is not in the report
+ok   B12.5 the price 2480 is not in the report
+ok   B12a nor an image URL
+ok   B12b nor a product URL
+
+=== SECTION C  §4 THE UNIVERSE IS MEASURED, AND ABSENT IS NOT EMPTY ===
+ok   C1  every source table is reported
+ok   C1.1 sku_details present and readable
+ok   C1.1a with a schema fingerprint
+ok   C1.1b and its header names
+ok   C1.2 marketplace_skus present and readable
+ok   C1.2a with a schema fingerprint
+ok   C1.2b and its header names
+ok   C1.3 sku_regional_details present and readable
+ok   C1.3a with a schema fingerprint
+ok   C1.3b and its header names
+ok   C1.4 pricing_list present and readable
+ok   C1.4a with a schema fingerprint
+ok   C1.4b and its header names
+ok   C2  a missing sheet reports present:false
+ok   C2a with a typed reason, not an empty array
+ok   C2b and the verdict is NOT a pass
+ok   C2c the next action names the repair
+ok   C2d and the evidence gap is recorded
+ok   C3  an empty sheet with a header row is present and readable
+ok   C3a with zero rows
+ok   C3b and the verdict is SOURCE_EMPTY, not partially readable
+ok   C3c naming what to populate
+ok   C4  every distinct RAW category value, unmerged and sorted
+ok   C4a with the blank rows counted apart
+ok   C4b and the distinct series
+ok   C4c with its own blank count
+ok   C5  three distinct company/country/marketplace identities
+ok   C5a the active count includes the identity-less row
+ok   C5b the inactive count
+ok   C5c the site row with no marketplace_sku_id is counted
+ok   C5d and there are no duplicate identities here
+ok   C6  the canonical identity is the four-part one
+ok   C6a the orphan Regional Detail is named
+ok   C6b no duplicate four-part identity
+ok   C7  pricing is keyed on marketplace_sku_id
+ok   C7a the orphan price row is named
+ok   C7b missing msrp rows are counted
+ok   C7c and msrp IS the list price — one band, two words
+ok   C7d currency coverage
+ok   C8  Company level
+ok   C8a Country level under KM
+ok   C8b Marketplace level under KM/US
+ok   C8c and the OTHER company on the same marketplace name is its own site
+ok   C9  the site pass was not capped here
+ok   C9a and every site was classified
+ok   C9b and a cap would be reported as a cap rather than counted as a pass
+ok   C10  there is no category allowlist
+ok   C10a and no maximum number of categories
+ok   C10b forty-three categories are all reported, with no code change
+
+=== SECTION D  §5 SITE ELIGIBILITY, THROUGH THE SHIPPED BUILDER ===
+ok   D0  the KM/US/Amazon site was classified
+ok   D1  all six classes are reported, a zero class included
+ok   D2  two site SKUs are chartable
+ok   D2a one is eligible with no Regional Detail
+ok   D2b one is excluded by status
+ok   D2c so the site universe is three, not four
+ok   D2d and only two may be plotted
+ok   D3  the missing Regional Detail is counted
+ok   D3a and eligibility is not chartability
+ok   D4  the category menu is this site's SURVIVING rows — the inactive SKU's category is not offered
+ok   D4a and every option leads to at least one row
+ok   D4b while an option whose only SKU is unplottable says so in its own count
+ok   D5  the CA site has one SKU, not the whole catalogue
+ok   D5a and its menu is only what it sells
+ok   D6  KMJ/JP/Amazon is its own universe
+ok   D6a in its own currency
+ok   D6b while the US site is USD
+ok   D7.1 no row returned for JP belongs to another site
+ok   D7.2 no row returned for CA belongs to another site
+ok   D7.3 no row returned for US belongs to another site
+ok   D8.1 JP is a single currency
+ok   D8.2 CA is a single currency
+ok   D8.3 US is a single currency
+ok   D8a and no site has pricing rows in two currencies
+ok   D9  all seven §5 proofs are answered
+ok   D9a and not one of them FAILED
+ok   D9b USD does not leak a non-US SKU into US
+ok   D9c and the proof had a population at risk, so PASS means something
+ok   D9d a master SKU does not imply every site
+ok   D9e no FX conversion is performed
+ok   D10  with no USD row outside the US, P1 reports NOT_PROVABLE rather than PASS
+ok   D10a and says why the evidence is absent
+ok   D10b which is recorded as an evidence gap
+
+=== SECTION E  §6 THE SIX ADAPTER SHAPE GAPS ===
+ok   E1  source_status carries the site STATUS after adapting
+ok   E1a and the live diagnostic array keeps its own name
+ok   E1b the live field is still there too
+ok   E1c so nothing downstream sees an array where a string belongs
+ok   E1d the RAW live row is refused by name — the collision is not hypothetical
+ok   E1e and the adapted row is accepted
+ok   E2  the effective campaign becomes official_deal_price
+ok   E2a and the dates survive
+ok   E2b while the ended one is kept as evidence with its reason
+ok   E2c and the raw campaigns array is not discarded
+ok   E2d after the end date there is no deal
+ok   E2e and the reason is the date, named
+ok   E2f two effective campaigns pick NEITHER
+ok   E2g and the ambiguity is reported
+ok   E2h with both candidates kept
+ok   E2i a non-ISO campaign period yields no deal
+ok   E2j and says exactly that, rather than comparing "1/3/2026" as a date
+ok   E2k without an asOf date nothing is declared effective
+ok   E2l and it says why
+ok   E3  variant_group comes from series
+ok   E3a and the source is named
+ok   E3b the adapter is the only place that maps it
+ok   E4  variant_name stays null — no colour is invented
+ok   E4a and the absence is Data Quality, not a blank filled in
+ok   E4b a blank series means no grouping
+ok   E4c reported as such
+ok   E4d the selectors label an ungrouped row with its master SKU
+ok   E4e and two series-less products stay TWO nodes rather than merging into one
+ok   E5  an absolute URL on the SKU's own row is verified
+ok   E5a0 a same-origin asset path IS verified — R3, and what production holds
+ok   E5a an opaque id is UNVERIFIED, not verified
+ok   E5a1 and an absolute url on an undeclared host is too
+ok   E5b and nothing at all is MISSING — three states, not two
+ok   E5c with no master row there is no row the URL came from, so the mapping is not established
+ok   E5d the selectors render an image ONLY on the verified state
+ok   E6  identity is MSKU:<marketplace_sku_id>
+ok   E6a and is composed from the id when the server omitted it
+ok   E6b the fixture identity form appears nowhere in the adapter
+ok   E6c a row with no id gets no invented identity
+ok   E6d and is reported
+ok   E7  no other file in assets/js/api maps the promotion fields
+ok   E7a and the contract says one adapter
+ok   E7b per-page conversion is refused
+ok   E8.1 the adapter never uses Date.now
+ok   E8.2 the adapter never uses new Date
+ok   E8.3 the adapter never uses localStorage
+ok   E8.4 the adapter never uses sessionStorage
+ok   E8.5 the adapter never uses fetch(
+ok   E8.6 the adapter never uses XMLHttpRequest
+ok   E8.7 the adapter never uses google.script.run
+ok   E8.8 the adapter never uses document.
+ok   E8a and the contract declares it
+ok   E8b the same response and the same date give byte-identical rows
+ok   E9.1 the adapter has no preview path
+ok   E9.2 the adapter has no fixture path
+ok   E9.3 the adapter has no PreviewProductStrategy path
+ok   E9.4 the adapter has no demo path
+ok   E9a and declares no fixture fallback
+ok   E9b which every adapted response repeats
+ok   E9c an empty scope adapts to zero rows
+
+=== SECTION F  §7 CATEGORY AND ALIAS — PROPOSED, NEVER APPLIED ===
+ok   F1  a case-only difference is reported as a CANDIDATE
+ok   F1a and nothing was merged
+ok   F1b both spellings remain distinct options
+ok   F2  the approval is recorded as an evidence gap an operator owns
+ok   F3  blank categories are counted rather than renamed
+ok   F3a exactly one row has no category
+ok   F3b and 72_ declares it does not invent an "Other" bucket
+ok   F4  the adapter does not case-fold a category either
+
+=== SECTION G  §8 THE CONTRACT, AND THE FIVE STATES ===
+ok   G1  the five states §8 requires
+ok   G1a and the four a server may send
+ok   G1b SOURCE_NOT_CONNECTED is the accessor's alone
+ok   G1c and the adapter holds the identical list
+ok   G2  integrity outranks everything
+ok   G2a a capped source outranks empty — a read that saw part of a table cannot call a scope empty
+ok   G2b zero rows from a complete read IS a measurement
+ok   G2c and rows are READY
+ok   G2d an absent count is not READY
+ok   G3  a real empty scope reports SOURCE_EMPTY
+ok   G3a with zero rows
+ok   G3b a failed read reports SOURCE_NOT_CONNECTED
+ok   G3c and the two are DIFFERENT states — an operator can tell "nothing here" from "no answer"
+ok   G3d as is a non-object answer
+ok   G4  a server answer claiming SOURCE_NOT_CONNECTED is reported as a breach
+ok   G5  a refused request reports sourceState null
+ok   G5a for exactly the reason the counts are null
+ok   G5b and the menus are withheld, not emptied
+ok   G5c which the adapter passes through unchanged
+ok   G6  the build reports READY for a populated scope
+ok   G6a and carries the read timestamp it was given
+ok   G6b saying what the timestamp IS
+ok   G6c source_modified_at is null
+ok   G6d and says exactly why it cannot be measured, rather than reporting a freshness nobody took
+ok   G6d2 without naming the API in a string, which is how a guard reads an absence as a presence
+ok   G6e the response-shape contract version
+ok   G6f with a fingerprint per table that was read
+ok   G6g each one a fingerprint of the HEADER NAMES
+ok   G6g2 which are NAMES, so a reader can see what the read actually saw
+ok   G6h dragging a column sideways does not change the fingerprint
+ok   G6i renaming one does
+ok   G6j and an empty table says EMPTY rather than hashing nothing
+ok   G7.1 the builder never uses Date.now
+ok   G7.2 the builder never uses new Date
+ok   G7.3 the builder never uses Math.random
+ok   G7.4 the builder never uses SpreadsheetApp
+ok   G7.5 the builder never uses Utilities.
+ok   G7.6 the builder never uses Session.
+ok   G7a and three runs with the same arguments are byte-identical
+ok   G8  two rows claiming one marketplace_sku_id is a STOP, not a row-level note
+ok   G8a and the code is named
+ok   G8b the stop set is the one membership-level code that MIS-ATTRIBUTES
+ok   G8b2 so a site with one identity-less row is READY, not stopped
+ok   G8b3 while the omission is still reported as a top-level finding
+ok   G8b4 and the row that could not be joined is still visible in the membership counts
+ok   G8c an ambiguous REGIONAL match on one row leaves the read READY — one row is not the universe
+ok   G8d while that row still carries the code and is not analysable
+ok   G8e — so the same code means "this row" in one place and "this read" in the other, by LEVEL
+ok   G9.1 response carries scope
+ok   G9.2 response carries filtersApplied
+ok   G9.3 response carries normalizedRows
+ok   G9.4 response carries filterOptions
+ok   G9.5 response carries sources
+ok   G9.6 response carries counts
+ok   G9.7 response carries capped
+ok   G9.8 response carries pagination
+ok   G9.9 response carries findings
+ok   G9.10 response carries refusals
+ok   G9.11 response carries analysis_permitted
+ok   G9.12 response carries membership
+ok   G9.13 response carries provenance
+ok   G9.14 response carries schema
+ok   G9.15 response carries sourceState
+ok   G9a and a refusal carries the same keys, so a caller has one shape
+ok   G9b the success and refusal shapes are identical key sets
+ok   G9c pagination declares its order
+ok   G9d and its cursor
+ok   G9e production declares no preview fallback
+ok   G9f and no FX conversion
+ok   G10  the accessor emits SOURCE_NOT_CONNECTED
+ok   G10a.1 the accessor has no PreviewProductStrategy
+ok   G10a.2 the accessor has no previewFixture
+ok   G10a.3 the accessor has no PREVIEW_FIXTURE
+ok   G10a.4 the accessor has no loadPreview
+ok   G10a.5 the accessor has no FIXTURE_ROWS
+ok   G10b and declares preview_fallback false
+
+=== SECTION H  §10 THE SELECTORS DIGEST THE ADAPTER, AND THE SCENARIO STAYS IN MEMORY ===
+ok   H1  four live rows adapt to four canonical rows
+ok   H2  the selectors accept them and the status gate excludes one
+ok   H2a for the right reason — NOT a shape complaint
+ok   H2b no row is refused for its SHAPE, which is the whole point of §6.1
+ok   H3  and each row's chart refusals are the live ones
+ok   H4  the verified image renders
+ok   H4a and so does a same-origin asset path — the R3 correction, at the seam
+ok   H4b while a reference with no verified mapping still draws the plate instead of a broken img
+ok   H5  the prototype makes no server call
+ok   H5a and no scenario is persisted anywhere
+ok   H5b the selectors label simulated values as in-memory
+ok   H5c and 72_ has no scenario concept at all — there is nothing to write to
+ok   H5d nor does it filter on price status
+ok   H6  the adapter is loaded by the shell and by nothing else
+ok   H6a the shell declares that section in the staged registry, with a literal boolean switch
+ok   H6a which the contract states in its own applies_to
+
+=== MUTANTS ===
+ok   M1 the source state stops outranking empty with a capped source, so a half-read scope reports EMPTY (caught)
+ok   M2 a row-level ambiguity is promoted to a whole-read STOP, so one bad join blanks the chart (caught)
+ok   M3 the schema fingerprint becomes order-dependent, so dragging a column cries wolf (caught)
+ok   M4 the builder reads the clock instead of taking it, and stops being pure (caught)
+ok   M5 the readback injects a flag so it can read through the gate (caught)
+ok   M6 an absent source table is read as an empty one, so a missing sheet looks like a quiet site (caught)
+ok   M7 the census merges category spellings that differ only by case (caught)
+ok   M8 the readback classifies eligibility itself instead of asking the shipped builder (caught)
+ok   M9 the adapter keeps the live array in source_status, so every row reads as bad data (caught)
+ok   M10 two effective campaigns are resolved by taking the first (caught)
+ok   M11 an unfetchable reference is called a verified image, and the chart paints a broken one (caught)
+ok   M12 a non-ISO campaign date is compared anyway, so a finished promotion looks live (caught)
+ok   M13 the adapter reads the clock, so "currently effective" depends on when the test runs (caught)
+ok   M14 the adapter invents a variant name from the product name (caught)
+ok   M15 the adapter overwrites the server state with SOURCE_NOT_CONNECTED (caught)
+ok   M16 a refusal is dressed up as an empty source (caught)
+ok   M17 the readback reports a source freshness it never measured (caught)
+
+passed 346  failed 0  |  mutants caught 17  survived 0

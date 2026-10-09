@@ -1,0 +1,44 @@
+
+== §A / §7 physical shipment qty owner = shipment_lines.shipment_qty ==
+ok   §A shipment_lines owns shipment_qty (physical shipment truth)
+ok   §7 shipment_lines does NOT carry customs/commercial fields (not the customs authority)
+ok   §7 shipments header does NOT carry HS/declared/barcode (customs authority lives elsewhere)
+
+== §B / §6 multi-PO lineage owner = shipment_line_allocations (14-col) ==
+ok   shipment_line_allocations is exactly 14 columns (live schema), got 14
+ok   §B allocations carries purchase_order_line_id (Shipment Line -> N PO Lines lineage)
+ok   §B allocations carries allocated_qty + allocation_status (executed = PO-consumption authority)
+ok   §B allocations carries sku (denormalized readback for output join)
+
+== §7 PO ordered/completed are NOT the physical shipment qty (distinct owners) ==
+ok   purchase_order_lines owns ordered/completed/shipped/remaining (PO ledger, not shipment physical qty)
+
+== §4 / §G barcode (real UPC) authority = sku_details.gs1_code/gs1_type (single owner) ==
+ok   §G sku_details owns gs1_code + gs1_type (canonical barcode)
+ok   sku_details owns units_per_carton (the overloaded "UPC" = units/carton, distinct from barcode)
+ok   §G barcode has ONE owner — not duplicated onto shipment schema
+ok   sku_details owns dimensions / weights / product name (physical/logistics master)
+
+== §15 / §H HS code + §14 / §I declared value/currency authority = tax_referral_rates ==
+ok   §H HS code owner = tax_referral_rates.hscode
+ok   §16 country-specific HS is deterministic (series + country_of_origin + duty_country key)
+ok   §I declared value + currency owner = tax_referral_rates (returned values, not lookup keys)
+ok   §4 sku_details does NOT own HS/declared (customs authority is separate — no split-brain)
+
+== §16 / §J existing snapshot = shipping_plan_lines.snapshot_* (PLANNING, upstream) ==
+ok   §J planning snapshot lives on shipping_plan_lines.snapshot_* (SKU Shipping Details display source)
+ok   execution snapshot copied onto shipment_lines (verbatim, never recalculated)
+
+== §K / §16-D binary file-renderer is confined to ONE sanctioned owner (R3C 37_) — no second engine ==
+ok   §K binary file-renderer confined to 37_ only (no second file engine); hits=
+ok   §12 router exposes NO document RENDERER/export action (Export Center absent)
+
+== §13 / §16-C party-authority owner (R1 gap CLOSED by R2A — exactly ONE owner) ==
+ok   §13 party authority DEFINED in exactly ONE canonical owner = 33_ (R2A); consumers may reference it; hits=33_party_authority_handlers.gs
+
+== §F factory is resolved from warehouse, never inferred from company (shared-factory rule) ==
+ok   §F factory resolved via procurementResolveFactoryId_(warehouse) — not derived from company
+ok   shipments header has no factory_id — origin is source_warehouse_id/ship_from (factory resolved, not stored on shipment)
+
+----------------------------------------
+FINAL-OUTPUT SEAM AUDIT (F1-5C-EXPORT-R1): 23 passed, 0 failed

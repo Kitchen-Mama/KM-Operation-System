@@ -1,0 +1,18 @@
+
+== A. the slim scope registry — EXECUTING the shipped pure core ==
+
+== B. the registry is SLIM — it carries none of the inventory payload ==
+
+== C. selector loading and inventory loading are INDEPENDENT (defect B1) ==
+
+== D. bounded transport — EXECUTING the shipped timeout helpers ==
+
+== E. the write batch collapses N post-write reconciles into one ==
+
+== F. Send Request — latched, progressive, always terminal (defect B4) ==
+
+== G. the read-only diagnostics ==
+
+== H. no parallel writers, no production local fallback ==
+
+ALL PASS  (294 assertions)

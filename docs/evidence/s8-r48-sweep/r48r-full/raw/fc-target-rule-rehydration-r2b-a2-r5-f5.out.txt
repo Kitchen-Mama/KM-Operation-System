@@ -1,0 +1,28 @@
+
+-- A. THE MODAL CAN SAY WHICH RULE IT IS EDITING ------------------------------------------------------
+
+-- B. THE VERSION TOKEN — two implementations, one value, on the real rows ----------------------------
+
+-- C. THE PAGE — classification, rehydration and dirty state ------------------------------------------
+
+-- D. THE SERVER — version gate, unchanged short-circuit, complete receipt ----------------------------
+
+-- E. MUTATION — each guard is load-bearing -----------------------------------------------------------
+  caught: M1  the existing row ignored — the modal always says New
+  caught: M2  the first duplicate silently selected
+  caught: M3  months reset to 100 on hydration
+  caught: M4  a stored 0 converted to 100
+  caught: M5  target_rule_id discarded from the payload
+  caught: M6  expected version omitted
+  caught: M7  a stale mismatch accepted
+  caught: M8  an unchanged row written anyway
+  caught: M9  the receipt withheld until the full refresh
+  caught: M10  a background failure revoking confirmed success
+  caught: M11  the identity switch retaining the previous rule's months
+  caught: M12  Apply-to-all flattening the months when cleared
+
+-- F. SCOPE — nothing outside this repair moved -------------------------------------------------------
+
+====================================================================================================
+PASS  82 passed, 0 failed, 12 mutants, 0 survived, vacuity clean
+====================================================================================================

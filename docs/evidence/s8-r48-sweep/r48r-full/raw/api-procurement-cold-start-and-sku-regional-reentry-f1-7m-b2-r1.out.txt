@@ -1,0 +1,7 @@
+
+== (A) Procurement cold-start gates now cache-independent ==
+
+== (B) SKU Regional same-session re-entry reuse + in-flight + invalidation ==
+
+---------------------------------------------
+PASS 40  FAIL 0

@@ -1,0 +1,49 @@
+
+=== A — THE AUDIT SET, RECONCILED. Order Planning is not a thirteenth page. ===
+  ok   A1  twelve distinct operational pages, not the thirteen S3-R2 projected
+  ok   A2  Order Planning is reached by showSection('request-order') — the same route as Request Order
+  ok   A2a so it is not carried as a separate page, and the count is 12 rather than 13
+  ok   A3  Shipping History / Shipment Overview is reached by its own function and is in the set
+  ok   A4  seven P0 and five P1
+
+=== B — WHAT WAS MEASURED, AND WHAT WAS NOT ===
+  ok   B1  eleven pages measured in BOTH a succeeding and a rejecting transport
+  ok   B2  and exactly one was not — named, not quietly dropped
+  ok   B3  the unmeasured page carries NO request counts — §3 forbids inventing zeroes for unexecuted scenarios
+  ok   B3a it carries a reproduction instead, and says plainly that the cause is not established
+  ok   B3b reproduced four times, so it is a finding rather than a flake
+  ok   B3c and it reproduces whether the transport resolves or rejects — so it is not a response-shape bug
+
+=== C — THE S3 CONTRACT, OVER EVERY MEASURED PAGE ===
+  ok   C1  DUPLICATE_REQUEST_COUNT = 0 — no page issues extra requests on rapid re-entry
+  ok   C2  leaving mid-flight dispatches nothing further on any page
+  ok   C3  LISTENER_DRIFT = 0 — no page nets a listener on window or document across a re-entry
+  ok   C4  TIMER_DRIFT = 0 — not one measured page installs a polling interval
+  ok   C5  UNBOUNDED_RETRY_COUNT = 0 — no page exceeds eight requests under total transport failure
+  ok   C5a the worst measured cold entry under sustained failure is 4 requests
+  ok   C6  every page that ISSUES a read reports the failure in words
+  ok   C6a and the exception issues no request — it refuses before the transport, which is fail-closed, not silent
+  ok   C6b it names that state on screen
+  ok   C7  ERROR_EMPTY_CONFLATION = 0 — no failed read is presented as an empty result
+  ok   C8  EMPTY is reachable on a successful read — so C7 is a real distinction, not an absence
+
+=== D — THE INSTRUMENT IS STILL CORRECT ===
+  ok   D1  listener drift is NET — adds minus removes, so a tidy page is not reported as a leaker
+  ok   D2  the classifier reads the WHOLE section — the 400-character window that showed only toolbars is gone
+  ok   D3  "empty" needs a phrase a results area prints, not the bare word that matched a toolbar
+  ok   D4  and every record carries raw text, so a surprising classification can be checked by eye
+  ok   D5  absolute http(s) requests are intercepted — no measurement was taken against production
+  ok   D5a and the stub is installed in <head>, before any application script can capture the real fetch
+  ok   D6  the generated page is deleted in a finally, so a crashed run cannot dirty the worktree
+  ok   D7  progress is streamed to stderr, so a killed run is still evidence
+
+=== E — S3-R2 IS NOT REGRESSED ===
+  ok   E1  S3-R2 holds — only the post-write readback drives the load region
+
+====================================================================================================
+S3-R3 RUNTIME LIFECYCLE AUDIT — passed 31  failed 0
+RUNTIME_PAGES_MEASURED = 11 / 12 · OPEN_P0_FINDINGS = 1 (shippingplan stall, cause NOT established)
+DUPLICATE_REQUEST_COUNT = 0 · LISTENER_DRIFT = 0 · TIMER_DRIFT = 0 · UNBOUNDED_RETRY = 0
+ERROR_EMPTY_CONFLATION = 0 · FIXES_SHIPPED = 0 (measurement round)
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · DEPLOYMENTS=0
+====================================================================================================

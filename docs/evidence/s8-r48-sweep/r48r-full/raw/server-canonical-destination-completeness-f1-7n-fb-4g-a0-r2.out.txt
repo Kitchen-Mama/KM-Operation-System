@@ -1,0 +1,128 @@
+
+== A · §B — THE FOUR CANONICAL STATES, AND ONLY FOUR ==
+ok   A1  warehouse id only → WAREHOUSE
+ok   A2  marketplace only → MARKETPLACE
+ok   A3  §H.7 BOTH → ROUTE_DESTINATION_AMBIGUOUS
+ok   A4  NEITHER → ROUTE_DESTINATION_MISSING
+ok   A5  §H.1 the snapshot alone is DESTINATION MISSING
+ok   A6  §C AMBIGUOUS is not resolved to either side — it is not ok
+ok   A7  §C no "marketplace wins", no "warehouse wins"
+ok   A8  §B a snapshot cannot turn a warehouse route into anything else
+ok   A9  §D `recommended_destination_warehouse_code_snapshot` is NOT a canonical destination
+ok   A10  §D `marketplace` is NOT a canonical destination
+ok   A11  §D `note` is NOT a canonical destination
+ok   A12  §D `destination` is NOT a canonical destination
+ok   A13  §D `destination_label` is NOT a canonical destination
+
+== B · §D — ONE AUTHORITY, PROVEN ACROSS EVERY SERVER PATH ==
+ok   B1  sadHeaderRouteIsComplete_ (WAREHOUSE)
+ok   B2  sadStoredHeaderRouteIsComplete_ agrees (WAREHOUSE)
+ok   B3  and so does ricDestinationIdentity_ (WAREHOUSE)
+ok   B4  sadHeaderRouteIsComplete_ (MARKETPLACE)
+ok   B5  sadStoredHeaderRouteIsComplete_ agrees (MARKETPLACE)
+ok   B6  and so does ricDestinationIdentity_ (MARKETPLACE)
+ok   B7  sadHeaderRouteIsComplete_ (BOTH)
+ok   B8  sadStoredHeaderRouteIsComplete_ agrees (BOTH)
+ok   B9  and so does ricDestinationIdentity_ (BOTH)
+ok   B10  sadHeaderRouteIsComplete_ (NEITHER)
+ok   B11  sadStoredHeaderRouteIsComplete_ agrees (NEITHER)
+ok   B12  and so does ricDestinationIdentity_ (NEITHER)
+ok   B13  sadHeaderRouteIsComplete_ (SNAPSHOT-ONLY)
+ok   B14  sadStoredHeaderRouteIsComplete_ agrees (SNAPSHOT-ONLY)
+ok   B15  and so does ricDestinationIdentity_ (SNAPSHOT-ONLY)
+ok   B16 the stored-row gate IS the header gate — not a second predicate that can disagree
+ok   B17 §G the snapshot fallback is GONE from 16_ entirely
+ok   B18 completeness asks the one owner, never `a || b`
+ok   B19 and the truthy fallback that let BOTH through is gone
+ok   B20  sadUpsertDraftHeaderCore_ routes through the shared predicate
+ok   B21  sadAtomicValidateBatch_ routes through the shared predicate
+ok   B22  sadResolveActiveDraftK2OrK3_ routes through the shared predicate
+ok   B23a and sadAtomicUpsertCore_ reaches it through that validator
+ok   B23b the two-call path counts a marketplace as route intent
+ok   B23c and so does the atomic path — a marketplace-only body no longer skips the gate
+ok   B23 sadSubmitToShippingPlansCore_ does too
+ok   B24 and the K4 resolver was already on the contract
+ok   B25 §D the inline fallback equals ricDestinationIdentity_ across all 48 shapes
+ok   B26 §D and the completeness verdict is identical with 69_ absent
+
+== C · §H.18 — THE CLIENT GATE AND THE SERVER GATE REACH THE SAME VERDICT ==
+ok   C1  §H.18 client destinationIdentity agrees with the server across all shapes
+ok   C2  §H.18 and so does the completeness verdict
+ok   C3  §H.8 the client REFUSES a BOTH route — no request is issued
+ok   C4  §H.2 and refuses a snapshot-only route
+ok   C5  the client `a || b` is gone
+ok   C6  it asks the one client owner
+ok   C7  and so does the page's own fallback copy
+
+== D · §C — EXPLICIT TYPED TRANSITIONS PRODUCE ONE-SIDED PAYLOADS BY CONSTRUCTION ==
+ok   D1  §C.2/§H.12 Warehouse → Amazon: a clean one-sided payload
+ok   D2  §C.2 and the writer receives something it accepts
+ok   D3  §C.3/§H.13 Amazon → Warehouse: a clean one-sided payload
+ok   D4  §C.3 and the writer accepts it too
+ok   D5  §C.1 an already-BOTH row is NOT collapsed — both values survive to be refused
+ok   D6  the collapse is gone from routeHeaderFields
+
+== E · §E/§F — H4: BEFORE, ADOPTION, AFTER ==
+ok   E1  §E H4 as stored today → ROUTE_DESTINATION_MISSING
+ok   E2  §E stored route complete = FALSE
+ok   E3  §E — and the snapshot still says Amazon, and is ignored
+ok   E4  §E/§H.3 a DIRECT server Submit of H4 is REFUSED
+ok   E5  §H.11 and so is a BOTH row
+ok   E6  §E that is the reason Submit records
+ok   E7  §H.11 and a validation failure declares a zero write
+ok   E8  §F/§H.14 header ID preserved
+ok   E9  §F line ID preserved
+ok   E10 §F service still sea
+ok   E11 §F/§H.14 qty still 800
+ok   E12 §F warehouse id blank
+ok   E13 §F/§H.15 legacy snapshot CLEARED
+ok   E14 §F destination_marketplace Amazon
+ok   E15 §F canonical destination type MARKETPLACE
+ok   E16 §F route complete = TRUE
+ok   E17 §F Submit continues into its OTHER validations
+ok   E18 §F reload selects Amazon
+ok   E19 §H.19 replay is idempotent — no duplicate, no re-key
+ok   E20 §F warehouse case: the real id
+ok   E21 §H.16 matching snapshot
+ok   E22 §F marketplace blank
+ok   E23 §F type WAREHOUSE
+ok   E24 §F complete = true
+
+== F · §H.4 — A SNAPSHOT CANNOT MINT A K4 IDENTITY ==
+ok   F1  the shipped K4 key builder loaded
+ok   F2  §H.4 the snapshot-only header mints NO destination identity in its K4 key
+ok   F3  §H.4 the ADOPTED header does — the difference is the canonical column, not the snapshot
+ok   F4  §H.4 so the two are different routes, as they must be
+ok   F5  K4 reads the one owner
+
+== G · §H.17/§H.20 — CANCEL, AND THE DEPLOYMENT CONTRACT ==
+ok   G1  §H.17 a declined confirmation returns before any request
+ok   G2  §H.17 and no confirm available means NO, never an assumed yes
+ok   G3  §H.17 the confirmation itself issues nothing
+ok   G4  §H.20 action contract is at or after 10 (A0-R2 added no router action)
+ok   G5  §H.20 required-action-list is at or after 9
+ok   G6  §H.20 transport contract still 1
+
+== H · DEPLOYMENT IDENTITY ==
+ok   H1  the 16_ owner stamp is at or after A0-R2 — this round changed the server, deliberately
+ok   H2  and the manifest expects what the SOURCE declares — never a number typed twice
+ok   H3  ONE file declares the allocation owner stamp and ONE expects it — still ONE sync set, ONE deployment
+ok   H4  the release order has not moved behind A0-R1
+ok   H5  inventory-compat.js carries it — its gate changed
+ok   H6  and so does the page — its gate changed too
+ok   H7  the co-deployed references moved together (63 refs on r46-avgsales-20261008)
+ok   H8  the owner-stamp order carries this round
+
+== I · MUTATIONS — every one verified by actually applying it ==
+ok   M1  the snapshot counting as a destination is detected (caught)
+ok   M2  "marketplace wins" is detected (caught)
+ok   M3  "warehouse wins" is detected (caught)
+ok   M4  BOTH reaching the writers is detected (caught)
+ok   M5  BOTH reaching Submit is detected (caught)
+ok   M6  a client/server disagreement is detected (caught)
+ok   M7  an atomic writer that disagrees with the gate is detected (caught)
+ok   M8  a transition that leaves the other side set is detected (caught)
+ok   M9  adoption rewriting the stored id is detected (caught)
+ok   M10 Submit bypassing the completeness gate is detected (caught)
+
+PASSED — 108 passed, 0 failed, mutations 10 caught / 0 missed

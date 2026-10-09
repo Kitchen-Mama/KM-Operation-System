@@ -1,0 +1,13 @@
+
+== 1-5 Factory: standalone buttons removed → More Options menu → existing handlers reused once ==
+
+== 6-9 Overseas: standalone buttons removed → More Options → existing handlers unchanged ==
+
+== 10-12 dropdown behavior: outside-click close · no duplicate listeners · no write on open ==
+
+== 13 Site Inventory More Options untouched ==
+
+== CSS parity (neutral #f1f5f9 / #334155 trigger) + cache tokens bumped ==
+
+----------------------------------------
+WAREHOUSE ACTIONS MORE OPTIONS (F1-7N-R1): 33 passed, 0 failed

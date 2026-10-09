@@ -1,0 +1,15 @@
+
+== A. Destination authority (D-F1-5B-1) — explicit + validated, never inferred ==
+
+== B. Demand driver (D-F1-5B-2) — Phase-1 FORECAST, no dynamic classification ==
+
+== C. Forecast anchor + share (D-F1-5B-3) — M+1..M+4 Regular FC only ==
+
+== D. Window / required-by — frozen window; §10 event owner invoked ==
+
+== E. Determinism / identity / dedupe / conflict ==
+
+== F. END-TO-END — context → F1-5-A (KMAF) → REAL allocator → REAL resolver ==
+
+----------------------------------------
+PLANNING CONTEXT RUNTIME (F1-5-BD): 39 passed, 0 failed

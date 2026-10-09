@@ -1,0 +1,18 @@
+
+== A. Raw table reader (fake SpreadsheetApp) — value preservation, fail-closed ==
+
+== B. Header / schema validation (fail-closed tokens) ==
+
+== C. Weekly production source → Plan Builder (read-only; recommendedQty 96) ==
+
+== D. Monthly production source → Plan Builder (CEILING 24; no order_qty authority) ==
+
+== E. Missing required source → fail closed (no fabricated draft) ==
+
+== F. Registry (structural only) + recommendationType routing ==
+
+== G. Purity / determinism ==
+
+== H. Boundary source-scans — no writes / orchestrator untouched / bundle integration ==
+
+All Round 1S-P1 Production Source Reader assertions passed (38 assertions).

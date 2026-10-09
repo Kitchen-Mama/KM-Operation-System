@@ -1,0 +1,40 @@
+ok   ref = shipment_line_id:cumulative
+ok   ref rounds cumulative
+ok   ref accepts string cumulative
+ok   eligible overseas → POST
+ok   blank destination → SKIP (platform/none, not error)
+ok   platform (not a warehouses row) → SKIP
+ok   factory destination → SKIP (never credit factory)
+ok   inactive → SKIP
+ok   no prior movement → lastPosted 0
+ok   one prior → 300
+ok   max cumulative for the line
+ok   other lines ignored
+ok   C: 0→300 posts +300
+ok   D: 300→500 posts +200 (not +500)
+ok   E: 500→600 posts +100
+ok   F: retry at 500 posts 0
+ok   G: ledger-present retry posts 0 (no double credit)
+ok   sum of ledger deltas = final cumulative (never cumulative-as-delta)
+ok   posting runs inside the receipt handler (one transaction)
+ok   receipt response returns the posting summary
+ok   reuses overseas snapshot + movements
+ok   no new table created
+ok   movement idempotency key: reference_type shipment_receipt + reference_id SL:cumulative
+ok   movement source_module = shipment_receipt
+ok   posts wh_available_stock (available bucket)
+ok   receipt never does on-the-way arithmetic (halted sub-slice)
+ok   no wh_on_the_way_qty increment/decrement
+ok   M: factory stock never touched by receipt
+ok   N: amazon_inventory_snapshot never mutated by receipt
+ok   platform/factory/blank destination → early return, no posting
+ok   H: missing row created with available=delta, defaults 0
+ok   row creation does not invent site_sku
+ok   destination via destination_warehouse_id (never joins by warehouse_code)
+ok   reuses existing canonical Overseas eligibility (no new warehouse-type model)
+ok   movement-append failure reverts balance → retry-safe
+ok   R1B contract intact: shipment_received_qty in SHIPMENT_LINES_HEADERS_
+ok   overseas movement ledger schema exists in 05_ (reused, not forked)
+ok   receipt action unchanged (posting folded into existing command)
+
+38 passed, 0 failed

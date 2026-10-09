@@ -1,0 +1,17 @@
+
+== A. setHomeShellVisible is the single owner, wired to both nav directions ==
+
+== B. layout.css makes `hidden` authoritative + drops the ineffective :empty rule ==
+
+== C. No appearance-masking hack (fix ownership, not paint) ==
+
+== D. Execute the REAL setHomeShellVisible against a fake DOM (hidden contract) ==
+
+== E. Legitimate banner is never collapsed (contract) ==
+
+== F. Single canonical header-offset owner — no duplicate top offset (Round 3, §4) ==
+
+== G. renderRecords guards its orphaned target (no throw) — §5 ==
+
+----------------------------------------
+UI NAV + LAYOUT HOTFIX GUARD (Rounds 2-3): 38 passed, 0 failed

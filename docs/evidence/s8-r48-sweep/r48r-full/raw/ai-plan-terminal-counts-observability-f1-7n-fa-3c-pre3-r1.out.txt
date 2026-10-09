@@ -1,0 +1,10 @@
+
+== MESSAGE — never a blanket success when 0 drafts created ==
+
+== DISPOSITION — DONE threads canonical counts through ==
+
+== SOURCE — DONE path builds the message from counts; no unconditional success toast ==
+
+== SOURCE — no math/transport/router surface touched by this slice ==
+
+✓ 20 passed

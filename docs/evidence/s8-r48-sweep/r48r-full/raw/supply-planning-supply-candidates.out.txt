@@ -1,0 +1,56 @@
+ok   module exports buildKmShipmentSupplyCandidate
+ok   1 deterministic supplyCandidateId
+ok   2 deterministic sourceRef
+ok   3 deterministic sourceLineRef
+ok   4 deterministic lineageKey (stable shipment-line key)
+ok   5 repeated calls produce identical candidate
+ok   6 mutable fields (status/eta/qty/dest/updated) do NOT affect id
+ok   7 canonical shipment_qty preferred (100 not 80)
+ok   8 canonical zero preserved
+ok   8b clean zero is NOT flagged invalid
+ok   9 blank canonical → legacy fallback
+ok   10 absent canonical → legacy fallback
+ok   11 malformed canonical → 0 (no legacy override)
+ok   11b malformed → INVALID_QUANTITY flag
+ok   12 negative canonical → 0
+ok   13 quantityRemaining = original (no receipt/cancel subtraction); never summed with legacy
+ok   14 canonical destination preferred
+ok   14b destinationIdentitySource token = canonical
+ok   15 legacy warehouse_id fallback
+ok   15b token = legacy fallback
+ok   16 conflict → canonical wins
+ok   17 missing destination represented structurally (null)
+ok   17b token = MISSING
+ok   18 string id "0" preserved
+ok   19 warehouse_code / display text NEVER used as identity
+ok   20 origin/source warehouse NEVER a destination fallback
+ok   21 authorityType = KM_CANONICAL
+ok   22 sourceType = KM_SHIPMENT_LINE
+ok   23 domain + stage fixed
+ok   24 raw status preserved (trimmed, case unchanged, NOT qualified)
+ok   25 NO qualification result keys exist
+ok   26 missing destination flag
+ok   27 missing ETA flag
+ok   28 missing status flag
+ok   29 deterministic flag order
+ok   30 no duplicate flags
+ok   31a null input → TypeError
+ok   31b array input → TypeError
+ok   31c primitive input → TypeError
+ok   32 missing shipment object → TypeError
+ok   33 array line object → TypeError
+ok   34a blank shipmentId → RangeError
+ok   34b non-string shipmentId → TypeError
+ok   35 blank shipmentLineId → RangeError
+ok   36 blank sku → RangeError
+ok   37 input object not mutated
+ok   38 nested shipment/line not mutated
+ok   39 output fresh per call (mutating one does not affect another)
+ok   40 reviewFlags array fresh per call
+ok   adapter: candidate id from real source row
+ok   adapter: B4-R1 shipment_qty primary (legacy 999 ignored)
+ok   adapter: B4-R2 canonical destination (not code/source/legacy)
+ok   adapter: lineage from source row
+ok   adapter: KM canonical authority
+
+All B4-R3 supply-candidate assertions passed (54 assertions).

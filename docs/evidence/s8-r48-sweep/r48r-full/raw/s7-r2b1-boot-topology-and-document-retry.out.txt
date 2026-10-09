@@ -1,0 +1,71 @@
+
+== A  THE BOOT TOPOLOGY GATE — what it now defends ==
+ok   A1  UNDECLARED_BOOT_SCRIPT_COUNT = 0
+ok   A1a no declared boot script has stopped loading
+ok   A1b BOOT_SCRIPT_SET_UNEXPECTED_CHANGE_COUNT = 0
+ok   A1c BOOT_ORDER_DRIFT_COUNT = 0
+ok   A1d NEW_ROUTE_SCRIPT_AT_BOOT_COUNT = 0
+ok   A1e the census and the shell agree on 67 boot scripts
+ok   A2  the aggregate historical byte floor no longer gates s4-r5
+ok   A2a and the gate now derives its claim from the boot topology
+ok   A2b BOOT_PAYLOAD_PERFORMANCE_DEBT_OWNER = S8, recorded in the gate itself
+ok   A3  A2_ROUTE_APPEND_GUARD is live, generalized from nine remembered names to the whole registry
+ok   A3a and that registry is 16 files, every one of which must stay off boot
+     BOOT_PAYLOAD_BYTES = 3975518   (pre-S4-R5 5488419)
+ok   A4  the boot payload is still below the pre-S4-R5 total — reported, not floored
+
+== B  THE RETRY PATH, EXECUTED — one transport double, two surfaces ==
+ok   B1  the shipped retry handler and its refresh registry load and run outside a browser
+ok   B8  a retry missing either half of its target is NOT SENT — no 'shipment' default to fall back on
+
+== C  THE BUTTON THE PANEL ACTUALLY RENDERS ==
+ok   C1  the PO panel renders Retry with the PO entity TYPE and the PO id, in that order
+ok   C1a and never with the id in the type slot
+ok   C2  and the Shipment panel renders its own type and id
+ok   C2a RETRY_DOCUMENT_ID_SOURCE — no document id is sent: document.retry is ENTITY-scoped by contract
+ok   C3  with no entity_type on the model, the ROW names its own entity — RETRY_ENTITY_TYPE_SOURCE = DTO
+ok   C3a and with neither, NO button is offered rather than one aimed at a guess
+ok   C4  PO_ / SHIPMENT_DOCUMENT_REDISCOVERY_SUPPORTED unchanged — both reads still ask for the projection
+ok   C4a multiple documents still render separately and keep their types
+ok   C4b the renderer still reaches no adapter and no transport — mount stays write-free, PER_DOCUMENT_RENDER_REQUEST_COUNT = 0
+ok   C5  RETRY_CREATES_SECOND_LOGICAL_DOCUMENT_COUNT = 0 — the backend reuses a READY row, unchanged
+ok   C5a DOCUMENT_AUTORETRY_COUNT = 0 — one call site, inside the click handler
+
+== D  MUTANTS — the corrected gate still catches what S4 cared about ==
+ok   MUTANT CAUGHT — D1 §4A — a ROUTE script appended to boot
+ok   MUTANT CAUGHT — D2 §4B — an UNDECLARED boot script added
+ok   MUTANT CAUGHT — D3 §4C — an expected boot script removed
+ok   MUTANT CAUGHT — D4 §4D — boot ORDER changed, which the old sorted comparison could not see
+ok   MUTANT CAUGHT — D5 §4E — the whole pre-S4-R5 eager boot shape restored
+ok   MUTANT CAUGHT — D6 §4A2 — a route script swapped IN for an approved one (set size unchanged)
+ok   D7 §4F — adding 4 KB to an already-approved boot owner changes NO topology claim. That is the whole correction: the gate defends architecture, not spelling or historical size
+ok   D7a and the payload is still measured, so the growth is visible — it is simply not a functional failure
+
+== E  MUTANTS — the retry repair ==
+ok   MUTANT CAUGHT — E1 §19 — entityType replaced by entityId at the call site
+ok   MUTANT CAUGHT — E2 §19 — entityId replaced by the document id
+ok   MUTANT CAUGHT — E4 §19 — the double-click guard removed, so one click sends two requests
+ok   MUTANT CAUGHT — E6 §19 — an UNKNOWN outcome auto-replayed
+ok   MUTANT CAUGHT — E7 §19 — the renderer gains a per-row network call
+ok   MUTANT CAUGHT — E8 §19 — the old byte-floor seal restored to the gate
+ok   MUTANT CAUGHT — E9 §19 — a route script appended to boot while the gate fails to notice
+ok   B2  PO_RETRY_ENTITY_TYPE_CORRECT / PO_RETRY_ENTITY_ID_CORRECT — exactly one request, correctly addressed
+ok   B2a PO_RETRY_REFRESH_OWNER_CORRECT — the PO bounded readback ran
+ok   B2b PO_RETRY_SHIPMENT_WORKSPACE_REQUEST_COUNT = 0 — the wrong workspace is never touched
+ok   B2c RETRY_REQUEST_COUNT_PER_CLICK = 1
+ok   B3  SHIPMENT_RETRY_ENTITY_TYPE_CORRECT / SHIPMENT_RETRY_ENTITY_ID_CORRECT
+ok   B3a SHIPMENT_RETRY_REFRESH_OWNER_CORRECT — and the PO readback never runs for a shipment
+ok   B5  DOCUMENT_RETRY_FALSE_SUCCESS_COUNT = 0 — a refused retry refreshes nothing
+ok   B5a and the button says so
+ok   B5b carrying the backend reason, not a guess
+ok   B5c DOCUMENT_RETRY_AUTOREPLAY_COUNT = 0 — it is not resent
+ok   B6  an UNKNOWN outcome refreshes nothing and implies nothing
+ok   B6a and says so rather than resetting to a button that reads "nothing happened"
+ok   B6b and is never auto-replayed
+ok   B7  a surface with no registered refresh triggers no foreign re-read
+ok   B7a and the operator is told the retry landed and the screen is stale
+ok   MUTANT CAUGHT — E3 §19 — PO retry refreshes the SHIPMENT workspace
+ok   MUTANT CAUGHT — E5 §19 — a failed retry refreshes anyway, implying success
+ok   B4  a double click sends ONE request — the button disables itself before the call
+
+PASSED  58 passed / 0 failed   mutants 15, survived 0

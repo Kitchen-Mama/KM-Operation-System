@@ -1,0 +1,47 @@
+
+== A. the picker is wider than the registry — that is the defect ==
+ok   A1 CA offers exactly one Marketplace option
+ok   A2 its value is the full site identity company|country|marketplace
+ok   A3 and it is LABELLED "Amazon" — indistinguishable from a registry-backed option
+ok   A4 yet the registry contains no CA row at all — the option came from fc_regular_forecast
+ok   A5 UK offers both registry sites, kept distinct by company
+
+== B. the id resolver consults the registry ALONE ==
+ok   B1 CASE A — CA / Amazon resolves to BLANK, which is what gets written
+ok   B2 CASE B — UK / Amazon resolves normally. The control holds.
+ok   B3 UK / KM Amazon resolves to its OWN id — company is part of the lookup
+ok   B4 FIRST_BOUNDARY_WHERE_CA_MARKETPLACE_ID_IS_LOST = _evtResolveMarketplaceId (selectable, unresolvable)
+
+== C. the operator's hypothesis, tested and DISPROVED ==
+ok   C1 the display name "KM Amazon" maps to the canonical key "Amazon" — the names DO share a key
+ok   C2 …and they still resolve to two DIFFERENT ids, because company disambiguates them
+ok   C3 AMAZON_KM_AMAZON_COLLISION = NO — duplicate-style display naming is NOT the cause
+ok   C4 add the missing registry row and CA resolves normally — the code path is not CA-specific
+ok   C5 fixture restored
+ok   C6 a company mismatch against an existing country+marketplace row ALSO yields blank
+
+== D. nothing downstream repairs it — client sends blank, server writes blank ==
+ok   D1 CLIENT_SENDS_MARKETPLACE_ID = YES — always as a property, blank or not
+ok   D2 SERVER_DERIVES_MARKETPLACE_ID = NO — 14_ declares no id resolver
+ok   D2a and its validator indexes no lookup result — it verifies a claim rather than choosing a row
+ok   D2b the only registry access is BY THE CLAIMED ID — a direction that can verify but cannot derive
+ok   D3 the write copies whatever the body carries — a blank is written as a blank
+ok   D4 marketplace_id is a real column in the canonical header, not an accident
+ok   D5 BLANK_MARKETPLACE_ID_REACHABLE = YES — selected site absent from the registry, on both create and update
+ok   D6 the business-key fallback guards on `mkid &&`, so a blank degrades the key rather than mis-matching
+
+== E. mutation — each claim can actually fail ==
+ok   E1 the picker stops sourcing options from fc_regular_forecast (caught)
+ok   E2 the resolver stops filtering on company (caught)
+ok   E3 the resolver stops filtering on country (caught)
+ok   E4 the site option loses its company component (caught)
+
+=====================================================
+FC-ID-R1 SPECIAL EVENT marketplace_id — 27 passed / 0 failed
+mutants: 4 caught / 4 planted
+ROOT_CAUSE = A — marketplace master data missing for the selected site
+FIRST_BAD_BOUNDARY = _fcRegularSiteOptions offers a site _evtResolveMarketplaceId cannot resolve
+AMAZON_KM_AMAZON_COLLISION = NO   CLIENT_SENDS_MARKETPLACE_ID = YES (blank)
+SERVER_DERIVES_MARKETPLACE_ID = NO   BLANK_MARKETPLACE_ID_REACHABLE = YES
+PRODUCTION_ROWS_WRITTEN = 0   S6_BEHAVIOR_CHANGED = NO
+=====================================================

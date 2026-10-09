@@ -1,0 +1,142 @@
+
+== A — FRESH SESSION, NOTHING REMEMBERED (D-F: no remembered scope means no preload) ==
+ok   A0  the shipped page module loads (ok)
+
+== B — HARD REFRESH WITH A REMEMBERED SCOPE: THE PRELOAD RUNS, NOTHING IS COMMITTED ==
+
+== C — PRELOAD COMPLETED, THEN SEARCH: THE COMMIT COSTS ZERO FURTHER READS (§A.7) ==
+
+== D — SEARCH WHILE THE PRELOAD IS STILL IN FLIGHT (§A.8) ==
+
+== E — THE COALESCE IS REAL: the SHIPPED transport key, executed ==
+ok   E0  the shipped transport loads (ok)
+ok   E1  it exposes canonicalScope + scopedSingleFlight
+ok   E2  the shipped first-layer table list is readable from the page
+ok   E3  ... and is non-empty (13 tables)
+ok   E4  preload and Search produce the SAME shared key
+ok   E5  ... and a DIFFERENT payload does not collide with it
+
+== F — SAME-SESSION RE-ENTRY AFTER A CONFIRMED SEARCH (D-R: this one MAY restore) ==
+
+== G — CHANGING COUNTRY WITHOUT SEARCH NEVER COMMITS ANOTHER SITE (§A.10) ==
+
+== H — US -> CA -> EU -> JP BY SEARCH: the applied scope follows, and nothing lags ==
+
+== I — F1A IS INTACT: a late answer from an old scope is still refused ==
+
+== J — THE FAILURE BRANCH IS UNTOUCHED (it never applied a scope, and still does not) ==
+
+== K — THE BANNER HOST MOVED OUT OF THE GAP AND INTO THE TABLE CARD (§B.1) ==
+ok   K0  the host is created
+ok   K1  the host is a CHILD of #replen-detail-table, not a sibling in the gap  (got true, want true)
+ok   K2  ... so nothing dynamic sits between the category shell and the table  (got -1, want -1)
+ok   K3  and it sits AFTER the sticky header bar — outside the white curtain (R3 owns this position)  (got true, want true)
+ok   K4  the sticky header bar is still in the card beside it  (got true, want true)
+ok   K5  an empty host is display:none and reserves nothing  (got "none", want "none")
+ok   K6  the host is idempotent — one node, however many producers ask  (got true, want true)
+
+== L — FOUR PRODUCERS, ONE HOST: NO PRODUCER ERASES ANOTHER (§B.3) ==
+ok   L1  the unsaved-write warning SURVIVES a Country change
+ok   L2  and NO visible stale notice is rendered (Gate 1 = A1)  (got false, want false)
+ok   L3  the host holds the data-loss warning and nothing else — the stale pass did not touch it  (got ["replen-unsaved-banner"], want ["replen-unsaved-banner"])
+ok   L4  clearing the stale notice does not clear the warning
+ok   L5  and the stale notice itself is gone
+ok   L6  the host stays visible while any banner remains  (got "", want "")
+ok   L7  and hides itself only when it is genuinely empty  (got "none", want "none")
+ok   L8  repeated stale passes create nothing  (got 0, want 0)
+ok   L8a ... and leave the empty host hidden  (got "none", want "none")
+
+== M — THE INTEGRITY NOTICE MOVED WITH IT, AND THE RESTING GEOMETRY IS UNCHANGED ==
+ok   M1  the render-integrity notice is inserted INSIDE the table card (its position is R3's assertion)
+ok   M2  and nothing is inserted beside the table any more
+ok   M3  both gaps are still declared by a margin-bottom on the block above them
+ok   M4  and they are now declared IDENTICALLY — same token, same fallback (var(--space-lg, 1.5rem))  (got "var(--space-lg, 1.5rem)", want "var(--space-lg, 1.5rem)")
+ok   M5  the gap is the design token, not a literal
+ok   M6  the table adds no margin of its own
+ok   M7  no fixed-height workaround was introduced on the category shell
+ok   M8  the category rail reserves its scrollbar gutter, so category overflow cannot change its height
+ok   M9  ... while still scrolling horizontally rather than wrapping
+ok   M10 and it does so without a hard-coded height
+
+== N — STICKY BEHAVIOUR IS UNCHANGED (§B.6) ==
+ok   N1  the control panel is still sticky
+ok   N2  the category shell is still sticky
+ok   N3  the table header is still sticky
+ok   N4  and still pins below the toolbar PLUS the live category-rail height
+ok   N5  the rail height is still measured into its variable
+ok   N6  and re-measured on resize
+ok   D1  the preload is dispatched and still open  (got 1, want 1)
+ok   D2  ... genuinely unresolved
+ok   E6  TWO identical first-layer requests dispatched exactly ONE — they coalesced  (got 1, want 1)
+ok   E7  ... and the second received the first's promise
+ok   A1  no remembered scope: the registry alone  (got "REGISTRY_ONLY", want "REGISTRY_ONLY")
+ok   A2  and ZERO first-layer reads — D-F, unchanged  (got 0, want 0)
+ok   A3  nothing is applied  (got null, want null)
+ok   A4  the page is PRE_SEARCH  (got "PRE_SEARCH", want "PRE_SEARCH")
+ok   E8  a read with no abort signal takes the shared path
+ok   E9  and the first-layer read supplies none
+ok   B1  a remembered scope still preloads the first layer  (got "COALESCED", want "COALESCED")
+ok   B2  exactly ONE first-layer read — the preload is not removed  (got 1, want 1)
+ok   B3  and the read model IS in hand when it lands
+ok   B4  NOTHING is committed — `applied` is still null  (got null, want null)
+ok   B5  the page stays PRE_SEARCH until the operator searches  (got "PRE_SEARCH", want "PRE_SEARCH")
+ok   B6  no READY paint before Search ([])
+ok   B7  and no "Searching…" paint either
+ok   B8  the remembered Country IS restored into the selector  (got "US", want "US")
+ok   B9  and the remembered Marketplace  (got "MP-US", want "MP-US")
+ok   B10 the preload drove the load region ZERO times ([])  (got 0, want 0)
+ok   C1  the preload landed in one read  (got 1, want 1)
+ok   J1  a failed preload commits nothing  (got null, want null)
+ok   J2  and reports the read failure rather than claiming pre-search silence  (got "ERROR", want "ERROR")
+ok   J3  the validated scope is still SHOWN so Search is one click away  (got "US", want "US")
+ok   J4  and a failed read never un-remembers a scope that worked before  (got {"country":"US","marketplaceId":"MP-US"}, want {"country":"US","marketplaceId":"MP-US"})
+ok   D3  nothing is committed while the read is open  (got null, want null)
+ok   D4  an explicit Search DOES show its own loading state  (got "LOADING", want "LOADING")
+ok   H1  US is applied after its Search  (got {"country":"US","marketplaceId":"MP-US"}, want {"country":"US","marketplaceId":"MP-US"})
+ok   H1a ... and the scope KEY every async consumer compares against moved with it  (got "us|MP-US", want "us|MP-US")
+ok   C2  Search issued NO further first-layer read — the preload is reused  (got 1, want 1)
+ok   C3  and the scope is now committed  (got {"country":"US","marketplaceId":"MP-US"}, want {"country":"US","marketplaceId":"MP-US"})
+ok   C4  the table is READY only after an explicit Search  (got "READY", want "READY")
+ok   C5  the commit painted exactly once, as READY
+ok   F1  the operator confirmed US in this session  (got {"country":"US","marketplaceId":"MP-US"}, want {"country":"US","marketplaceId":"MP-US"})
+ok   G1  the APPLIED scope is still the searched one  (got {"country":"US","marketplaceId":"MP-US"}, want {"country":"US","marketplaceId":"MP-US"})
+ok   G2  the page marks the displayed result stale  (got true, want true)
+ok   G3  and a selector change issues NO read  (got 1, want 1)
+ok   F2  re-entry RESTORES the result the operator already confirmed — D-R  (got "RESTORED", want "RESTORED")
+ok   F3  with zero blocking reads  (got 0, want 0)
+ok   F4  and the first paint is READY, never a loading state  (got "READY", want "READY")
+ok   F5  the applied scope is the one the operator confirmed  (got {"country":"US","marketplaceId":"MP-US"}, want {"country":"US","marketplaceId":"MP-US"})
+ok   I1  the scope key advanced with the Search
+ok   I2  a result stamped for the PREVIOUS scope is refused  (got false, want false)
+ok   I3  and the current one is accepted  (got true, want true)
+ok   I4  an UNSTAMPED result is refused, not waved through  (got false, want false)
+ok   I5  and so is nothing at all  (got false, want false)
+ok   G4  only Search moves the applied scope  (got {"country":"CA","marketplaceId":"MP-CA"}, want {"country":"CA","marketplaceId":"MP-CA"})
+ok   G5  and clears the stale mark  (got false, want false)
+ok   H2  CA is applied after its Search  (got {"country":"CA","marketplaceId":"MP-CA"}, want {"country":"CA","marketplaceId":"MP-CA"})
+ok   H2a ... and the scope KEY every async consumer compares against moved with it  (got "ca|MP-CA", want "ca|MP-CA")
+ok   F6  a quiet revalidation still runs behind it
+ok   F7  ... and never took the table out of READY  (got "READY", want "READY")
+ok   D5  when the read lands, the Search commits  (got {"country":"US","marketplaceId":"MP-US"}, want {"country":"US","marketplaceId":"MP-US"})
+ok   D6  ... as READY  (got "READY", want "READY")
+ok   D7  and the page never issued more than the preload plus the Search (2)
+ok   H3  DE is applied after its Search  (got {"country":"DE","marketplaceId":"MP-EU"}, want {"country":"DE","marketplaceId":"MP-EU"})
+ok   H3a ... and the scope KEY every async consumer compares against moved with it  (got "de|MP-EU", want "de|MP-EU")
+ok   I6  during the preload the applied key is EMPTY  (got "", want "")
+ok   I7  so even a correctly-stamped US result cannot be consumed before the commit  (got false, want false)
+ok   I8  Suggested Qty is PENDING before the first commit — never a stale number, never zero  (got "PENDING", want "PENDING")
+ok   H4  JP is applied after its Search  (got {"country":"JP","marketplaceId":"MP-JP"}, want {"country":"JP","marketplaceId":"MP-JP"})
+ok   H4a ... and the scope KEY every async consumer compares against moved with it  (got "jp|MP-JP", want "jp|MP-JP")
+ok   H5  the last CONFIRMED scope is the remembered one  (got {"country":"JP","marketplaceId":"MP-JP"}, want {"country":"JP","marketplaceId":"MP-JP"})
+
+== X — MUTATION COVERAGE ==
+ok   X-X3 moving the banner host back into the gap is caught
+ok   X-X4 a wholesale host write that erases another producer is caught
+ok   X-X6 removing the reserved scrollbar gutter is caught
+ok   X-X7 letting the two gap declarations diverge is caught
+ok   X-X2 painting a loading state during the preload is caught
+ok   X-X1 restoring the bootstrap auto-commit is caught
+ok   X-X5 a tautological scope-stamp comparison is caught
+ok   X0  NO mutant survived  (got [], want [])
+
+PASS 110  FAIL 0

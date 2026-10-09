@@ -1,0 +1,17 @@
+
+== A/C — Sales-Driven uses the canonical run-rate; regular FC + Target% never enter the path ==
+
+== L — CO1100-R Sales-Driven D45 regression: the OLD forecast D45=2804 authority is gone ==
+
+== B/D — Forecast-Driven still consumes regular FC (Target% applied upstream); backward compatible default ==
+
+== E/F — Special-event prep demand additive ONCE in BOTH paths (count-once) ==
+
+== G — unknown / missing Planning Model fails CLOSED (never guessed) ==
+
+== valid-zero — a genuine 0 run-rate is a real value, never fail-closed ==
+
+== suggested qty stays the KMCALC carton owner (no page/second math) ==
+
+----------------------------------------
+PLANNING MODEL DEMAND SPLIT (F1-4B-FM5-R4UI-R3): 27 passed, 0 failed

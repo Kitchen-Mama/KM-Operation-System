@@ -1,0 +1,17 @@
+
+== §1 header total token re-derived from the compacted rows (no 96px gray band) ==
+
+== §2 active-row pin removed (FM5-R4UI-R7 §2: master row + detail scroll as one natural unit — no float) ==
+
+== §3 Recommendation Summary — green container + green left border removed ==
+
+== §5 Inventory top Suggested Qty = materialized d90_suggested_qty (not a cumulative sum) ==
+
+== §6A Order Planning top Suggest Order = materialized t1+t2+t3 (T4 excluded) ==
+
+== §6B Demand Summary gains a Suggested column (T1–T4 visible; T4 non-writable read-only cell) ==
+
+== §8 fulfillment badge hidden in the normal Inventory UI (data preserved) ==
+
+----------------------------------------
+R5 MATERIALIZED UI + GEOMETRY (F1-4B-FM5-R4UI-R5): 18 passed, 0 failed

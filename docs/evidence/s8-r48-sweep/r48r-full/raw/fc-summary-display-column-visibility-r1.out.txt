@@ -1,0 +1,157 @@
+
+====================================================================================================
+FC SUMMARY — DISPLAY / COLUMN VISIBILITY + TOOLBAR (DISPLAY-COLUMN-VISIBILITY-R1)
+====================================================================================================
+
+-- A. THE SHIPPED TOOLBAR — §12.1, §12.3, §12.7, §12.8 ------------------------------------------------
+ok   A1 §1 a Display control ships in the markup — FC_DISPLAY_CONTROL_VISIBLE
+ok   A2 §12.2 a More Options menu ships beside it — FC_MORE_OPTIONS_VISIBLE
+ok   A3 §12.1 + New FC Update is still a visible toolbar button — FC_NEW_UPDATE_VISIBLE
+ok   A4 the action toolbar block was located in the shipped markup
+ok   A5 §12.7 view control, then primary action, then secondary menu — in that order
+ok   A6 the More Options panel block was located
+ok   A7 §12.3 the Display control is NOT inside More Options — it is a view control, not a secondary action
+ok   A8 §12.1 Edit Base FC moved into More Options — FC_EDIT_BASE_MOVED_TO_MORE_OPTIONS
+ok   A9 §12.1 Import Forecast moved into More Options — FC_IMPORT_FORECAST_MOVED_TO_MORE_OPTIONS
+ok   A10 §12.1 Reset Column Widths is hosted by More Options — FC_RESET_WIDTHS_MOVED_TO_MORE_OPTIONS
+ok   A11 §12.5 the per-panel reset bar is GONE, not duplicated — one canonical entry per action
+ok   A12 §12.2 a divider separates the table/UI utility from the forecast data-management actions
+
+-- B. ONE PATTERN, ONE SET OF HANDLERS — §12.4, §12.5 -------------------------------------------------
+ok   B1 §12.4 the shared .km-action-menu primitive exists in components.css
+ok   B2 §12.4 the FC toolbar REUSES it rather than restating a dropdown — FC_MORE_OPTIONS_SKU_DETAILS_PATTERN_MATCH
+ok   B3 §12.4 every new page rule is scoped to #fc-summary-section — no CSS leakage
+ok   B4 §12.5 exactly ONE Edit Base FC entry — FC_DUPLICATE_HANDLER_COUNT
+ok   B5 §12.5 exactly ONE Import Forecast entry
+ok   B6 §12.5 and one element carrying its id
+ok   B7 §12.5 likewise for Import Forecast
+ok   B8 §12.5 the relocated items keep their tab marker class
+ok   B9 §12.5 _fcSetEditLock still locks them by id — the edit-mode guard survived the move
+ok   B10 §12.6 the menu closes after an action is selected
+
+-- C. THE REGISTRY — §2, §3 ---------------------------------------------------------------------------
+ok   C1 §2 the Regular registry is the shipped Regular table — 21 scroll columns
+ok   C2 positions are 1-based, matching :nth-child
+ok   C3 §2 registry and resize schema are the SAME list — one column schema, not two
+ok   C4 §2 the twelve forecast months are grouped as months
+ok   C5 §2 Total FC and both share columns are grouped as summary — FC_COLUMN_GROUPS_PASS
+ok   C5b §2 the four columns the prompt did not list are grouped, not dropped
+ok   C6 §3 the frozen SKU column is outside the scroll header, so nothing can hide it — FC_SKU_IDENTITY_PRESERVED
+ok   C6b §3 ... and the shipped markup still puts it there
+ok   C7 Actions is the last Target column
+ok   C8 §4 a control column cannot be hidden — the row keeps its actions
+ok   C9 §2 the Event table groups FC Qty as summary
+ok   C10 §2 the Target table groups its twelve percent columns as months
+ok   C11 keys are slugged labels
+ok   C12 ... and a percent column slugs distinctly from its month
+ok   C13 §6 no key is a column index — inserting a column cannot shift a stored preference
+
+-- D. DEFAULT LAYOUT — §3, §10.1 ----------------------------------------------------------------------
+ok   D1 §3 with no stored preference every Regular column is visible
+ok   D2 ... and every Event column
+ok   D3 ... and every Target column
+ok   D4 §3 the injected sheet is EMPTY — the default layout is not "everything re-stated" — FC_DEFAULT_LAYOUT_PRESERVED
+ok   D5 §9 the trigger states the count
+ok   D6 the panel offers one checkbox per hideable Regular column
+ok   D7 §3 and every one is checked
+
+-- E. HIDING COLUMNS — §10.2, §10.3, §10.13, §8 -------------------------------------------------------
+ok   E1 §10.2 hiding one month hides exactly that month
+ok   E2 §10.13 the rule hides the HEADER and the BODY together — FC_HEADER_BODY_ALIGNMENT_PASS
+ok   E3 and only that column
+ok   E4 the count follows
+ok   E5 §10.3 several months hide independently
+ok   E6 four hidden columns, four rules — nothing else was touched
+ok   E7 §7 hiding a Regular column leaves the Event table alone
+ok   E8 ... proved on the injected rule, not on the state alone
+ok   E9 §8 the visibility sheet sets no width — width persistence is untouched
+ok   E10 §8 re-showing removes the rule, leaving the stored width to apply
+ok   E11 ... and the other three stay hidden
+
+-- F. PRESETS — §4, §10.4, §10.5, §10.6 ---------------------------------------------------------------
+ok   F1 §10.4 Months Only leaves months and nothing else
+ok   F2 ... all twelve of them
+ok   F3 §10.4 Summary Only leaves the three summary columns
+ok   F4 §10.5 Select All restores every column
+ok   F5 §10.6 Reset Default restores the shipped layout
+ok   F6 §10.6 ... and the injected sheet is empty again
+ok   F7 §4 Reset Default drops the stored entry, so a future change to the default reaches the user
+ok   F8 §7 a preset on Regular does not reach the Event table
+ok   F9 §4 Months Only on Target leaves the Actions column alone — the rows keep their controls
+ok   F10 §7 the Event table has no month columns, so Months Only is not offered
+ok   F11 ... the ones it can honour are
+ok   F12 §7 the Target table has no summary columns, so Summary Only is not offered
+ok   F13 ... but its twelve percent columns are month columns, so Months Only is
+ok   F14 §7 the Target panel offers 18 of 19 columns — Actions is a control, not a view choice
+
+-- G. NO DRIFT — §5, §10.10, §10.11, §10.12 -----------------------------------------------------------
+ok   G1 §10.10 toggling columns issued ZERO requests — FC_NO_REQUEST_DRIFT
+ok   G2 §10.11 ... and triggered ZERO re-renders, so no share was recomputed — FC_NO_CALCULATION_DRIFT
+ok   G3 §10.12 the page index is where it was — FC_PAGINATION_STATE_PRESERVED
+ok   G4 ... and so is the rest of the pagination state
+ok   G5 §10.12 the filter selection is untouched — FC_FILTER_STATE_PRESERVED
+ok   G6 §5 the visibility path names no renderer, no transport and no pagination state at all
+
+-- H. PERSISTENCE — §6, §10.8, §10.9, §10.14 ----------------------------------------------------------
+ok   H1 §6 the stored preference is versioned
+ok   H2 §6 it stores HIDDEN keys per table — an all-visible table stores nothing
+ok   H3 §10.8 the preference survives route re-entry — FC_PERSISTENCE_PASS
+ok   H4 ... per table, independently
+ok   H5 §10.8 and it is APPLIED on re-entry, not merely remembered
+ok   H6.1 §10.9 corrupt JSON -> the default set, everything visible
+ok   H6.2 §10.9 a version this build does not know -> the default set, everything visible
+ok   H6.3 §10.9 an array where an object belongs -> the default set, everything visible
+ok   H6.4 §10.9 no hidden set at all -> the default set, everything visible
+ok   H6.5 §10.9 null -> the default set, everything visible
+ok   H6.6 §10.9 a string where a list belongs -> the default set, everything visible
+ok   H7 §10.9 unreadable storage still mounts
+ok   H8 ... on the default set
+ok   H9 ... and the choice still works for this session
+ok   H10 §6 a stored key for a column that no longer exists is dropped
+ok   H11 §10.14 the new column reaches the registry
+ok   H12 §6 ... and an OLDER preference does not hide it — storing hidden keys is what makes this true
+
+-- I. THE POPOVERS — §9, §12.6, §10.15 ----------------------------------------------------------------
+ok   I1 both popovers start closed
+ok   I2 Display opens
+ok   I3 §9 and says so — aria-expanded
+ok   I4 §12.6 opening More Options closes Display — FC_DISPLAY_MORE_OPTIONS_MUTUAL_CLOSE
+ok   I5 §12.6 and the other way round
+ok   I6 §9 opening Display moves focus into the panel
+ok   I7 §9 an outside click closes both — FC_MORE_OPTIONS_OUTSIDE_CLICK_PASS
+ok   I8 §9 Escape closes — FC_MORE_OPTIONS_ESCAPE_PASS
+ok   I9 §9 a click inside the Display panel is stopped before the outside-click closer sees it
+ok   I10 §9 ... so unchecking a column does not close the panel
+ok   I11 ... and the change reached the state
+ok   I12 §10.15 three mounts, one change listener and one click listener — FC_LISTENER_DRIFT
+ok   I13 §12.6 ... and one document-level closer of each kind — FC_TOOLBAR_LISTENER_DRIFT
+ok   I14 §10.15 rebuilding the panel body four times adds none
+ok   I15 §12.5 exactly ONE reset item is offered — the one belonging to the table on screen
+ok   I16 §12.6 switching tabs closes any open popover — a menu cannot be left open over another tab
+
+-- J. PANEL CONTENTS — §2, §7, §9 ---------------------------------------------------------------------
+ok   J1 §2 the panel is grouped, in the declared order
+ok   J2 §4 the four quick actions are offered
+ok   J3 §4 the panel states which column cannot be hidden
+ok   J4 §4 ... and names the right one per tab
+ok   J5 §7 the Event panel offers Event Period and not the Regular table's Total FC
+ok   J6 §7 nine columns, which is what the Event table renders
+ok   J7 column labels are escaped on the way into the panel
+
+-- K. MUTANTS — each returns TRUE when the defect is CAUGHT -------------------------------------------
+ok   K0  the unmutated baseline hides a column in header and body — a probe can tell a mutant from the fixture
+ok   K1  the preference stores VISIBLE keys, so tomorrow's column is hidden by yesterday's choice (caught)
+ok   K2  the resolver ignores hideable, so a stale preference hides the Actions column and the rows lose their buttons (caught)
+ok   K3  the injected rule names only the header, so the header hides and the body does not (caught)
+ok   K4  the panel is built from the Regular table whatever tab is open, offering columns that tab does not render (caught)
+ok   K5  the bind-once guard is dropped, so every route re-entry stacks another set of listeners (caught)
+ok   K6  hiding a column also resets pagination, so the operator loses their place (caught)
+ok   K7  opening Display leaves More Options open, so two popovers overlap the table (caught)
+ok   K8  Reset Default hides everything instead of restoring the shipped layout (caught)
+ok   K9  every table's reset item is shown at once, so the menu offers three identical rows (caught)
+ok   K10  the version field is not checked, so a preference written by a future format is applied anyway (caught)
+ok   K11  the style element is appended instead of replaced, so re-mounts stack stale sheets (caught)
+
+====================================================================================================
+FC SUMMARY DISPLAY / COLUMN VISIBILITY R1 — passed 127  failed 0  |  mutants caught 11  survived 0
+====================================================================================================

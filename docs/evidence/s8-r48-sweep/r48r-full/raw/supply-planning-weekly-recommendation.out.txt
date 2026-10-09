@@ -1,0 +1,22 @@
+
+== W. weekly line projection — NORMAL, FLOOR, grain ==
+
+== W. mode preservation — SHORTAGE / PROTECTED + THREE_PL reserve ==
+
+== W. multi-source consolidation + breakdown balance ==
+
+== W. blocked / zero / no-allocation ==
+
+== W. blocked Ledger demand propagation ==
+
+== W. gap via named calculateGap owner (not UI fields) ==
+
+== W. factory allocation weekly line ==
+
+== W. separation + duplicate line key + Monthly rejection ==
+
+== W. live-analysis exclusion + no decision-authority qty ==
+
+== P. determinism / purity / error ==
+
+All Round 1M Weekly Recommendation Facts assertions passed (35 assertions).

@@ -1,0 +1,23 @@
+
+== A. exact 30-col line schema == live production (djb2| = e4880646); accidental 31st field removed ==
+
+== B. K2 group key = the frozen 10 dimensions (route context on the header) ==
+
+== C. deterministic ids (stable; group vs SKU+window grain) ==
+
+== D. CREATE / REUSE / CONFLICT over the K2 group key ==
+
+== E. incompatible-route guard + split/regroup ==
+
+== F. atomic write: exact-schema reason + pre-write batch validation (zero-write on any failure) ==
+
+== G. atomic write source contract: one lock, validate-before-write, compensation, no delete, routed ==
+
+== H. empty-header classifier + USER-gated cleanup tools ==
+
+== I. validator: exact-30, K2 contract ready / live NOT activated, empty-header classification, zero-write ==
+
+== J. three flags frozen; INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ stays false ==
+
+----------------------------------------
+R6F1 EXACT30 + K2 CONTRACT + ATOMIC (F1-7N-FA-3C-R6F1): 66 passed, 0 failed

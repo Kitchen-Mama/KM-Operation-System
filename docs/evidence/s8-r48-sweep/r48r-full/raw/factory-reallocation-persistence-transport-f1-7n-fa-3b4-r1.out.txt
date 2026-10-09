@@ -1,0 +1,18 @@
+
+== CASE A/B/C — runtime §41 facts transport VERBATIM: line → gap row → T1 draft snapshotRow ==
+
+== T1-only — receiver-level snapshots attach to the primary tier ONLY (T2/T3 blank, no inflation) ==
+
+== CASE D — Σin == Σout preserved across a two-receiver scope (transport only) ==
+
+== CASE E — numeric ZERO is preserved as 0 (never blanked) ==
+
+== CASE F — MISSING producer fact stays missing/blank (never fabricated 0) ==
+
+== CASE G/H/I — sanctioned migration is additive + idempotent (prodMigrateAppendColumns_) ==
+
+== CASE F(auth) — migration without valid authorization DTO fails closed ==
+
+== CASE K — transport performs NO recomputation (KMFSR/KMMSA/KMAR/KMALLOC never called) ==
+
+OK — all 29 assertions passed

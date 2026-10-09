@@ -1,0 +1,22 @@
+
+== A — the asset loads and is NAMES ONLY ==
+
+== B — COUNTRIES: authority 1 verified, and every level reachable ==
+
+== C — CONTINENTS: reviewed list, and the unnamed case is HIDDEN ==
+
+== D — ADMIN-1: accepted per row, fallback proven, never blocking ==
+
+== E — the script test: two pinned sources, detection only, never conversion ==
+
+== F — transformation, provenance and the long-name boundary ==
+
+== G — load order, cache-bust, and observability ==
+
+== H — determinism ==
+
+== I - the globe LABEL LAYER consumes the authority (content only; hierarchy untouched) ==
+
+----------------------------------------
+GEO NAMES zh-Hant (MAP-VISUAL-REAL-EARTH-TEXTURE-3): 175 passed, 0 failed
+----------------------------------------

@@ -1,0 +1,26 @@
+ok   A ordinary shipment unchanged (header scope, 600)
+ok   B merged line1 → US 600
+ok   B merged line2 → CA 400
+ok   B nothing left under MULTI (both lines attributed)
+ok   C US partial → remaining 300
+ok   C CA unaffected → 400
+ok   D US fully received → 0
+ok   D CA still 400
+ok   E MULTI header + lineage → specific receivers
+ok   F blank lineage → NOT attributed to specific receiver
+ok   F blank lineage → remains under MULTI (fail-closed)
+ok   G attribution deterministic (no live FC Share input)
+ok   I Σ attributed remaining == Σ physical remaining (600)
+ok   J no receiver exceeds physical line qty
+ok   schema: shipment_lines header contract includes shipping_plan_line_id
+ok   dispatch persists shipping_plan_line_id from the exact source plan line
+ok   dispatch ensures the shipping_plan_line_id column (predating tabs)
+ok   normalizer exposes shippingPlanLineId
+ok   projection prefers frozen lineage receiver; present-but-unresolved lineage fails closed (R7C parity)
+ok   H destination warehouse identity not conflated with marketplace receiver
+ok   cloud path builds lineReceiverById from shipping_plan_lines + shipping_plans
+ok   and the cloud row builder consumes exactly that one projection
+ok   with the receiver projection fed from the SAME exposure model the lineage came from
+ok   no live FC Share used to build lineage (code, not comments)
+
+24 passed, 0 failed

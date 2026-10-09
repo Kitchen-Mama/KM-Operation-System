@@ -1,0 +1,15 @@
+ok   Target% with no rule → 100 (default)
+ok   Adjusted FC = Base 1000 × 80% = 800
+ok   Special Event FC 300 unaffected by 80% Target
+ok   Prep = Start−30 → 2026-09-15 → month 2026-09
+ok   Prep-month key = 2026-09
+ok   N+1..N+3 from 2026-11 crosses year → Dec/Jan/Feb
+ok   Current/Next/After from 2026-12 → 2026-12 next = 2027-01
+ok   PO ordered 1000/completed 400 → scheduled 600, completed 400
+ok   cancelled PO excluded from factory orders
+ok   closure PO excluded from factory orders
+ok   blank line date → header date fallback (2026-09)
+ok   no completion date at all → not bucketed (never created_at/order_date)
+ok   Special events total = only prep-month-in-window events (300+200)
+
+ALL PASS  |  passed 13  failed 0

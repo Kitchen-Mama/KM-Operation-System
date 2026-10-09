@@ -1,0 +1,410 @@
+
+=== §A  TWO AUTHORITIES, AND THEY ARE THE ONLY TWO ===
+  ok   A1  the SERVER authority is true — PRODUCT_STRATEGY_ENABLED_ in 00_config.gs
+  ok   A1a assigned in exactly one place (a bare `=` would also match the resolver's `=== true`)
+  ok   A1b with one resolver that COMPARES it, so no caller can hold a copy
+  ok   A2  the NAVIGATION authority is true — KM_STAGED_SECTIONS_['product-strategy'].enabled
+  ok   A2a and the registry entry has exactly one `enabled` — two would be an answer with no owner
+  ok   A3.1 the activation path never reads a query string
+  ok   A3.2 the activation path never reads a parsed query string
+  ok   A3.3 the activation path never reads a fragment
+  ok   A3.4 the activation path never reads browser storage
+  ok   A3.5 the activation path never reads session storage
+  ok   A3.6 the activation path never reads a cookie
+  ok   A3.7 the activation path never reads a client copy of the server flag
+  ok   A4  nor does the page controller read location
+  ok   A5  and no bypass, debug switch or TEMP entry sits beside the server flag
+  ok   A6  both gates are in the same position — an activated feature needs both and needs them to agree
+
+=== §B  THE SERVER GATE — DRIVEN THROUGH THE REAL CONSTANT, BEFORE THE DOOR ===
+  ok   B1  with the shipped constant, the real resolver answers true
+  ok   B2  so productPricing.workspace.get is no longer refused for being switched off
+  ok   B3  and neither is productPricing.siteUniverse.get
+  ok   B4  the site universe read opens the spreadsheet, which is the point of activation
+  ok   B5  both handlers open with the flag gate
+  ok   B5a and it is evaluated BEFORE the spreadsheet is opened
+  ok   B5b with no table read between the two
+
+=== §C  TWO READ ACTIONS, AND NOTHING WRITE-SHAPED ===
+  ok   C1  the router knows exactly two productPricing actions
+  ok   C2.1 productPricing.workspace.get is a .get
+  ok   C2.2 productPricing.siteUniverse.get is a .get
+  ok   C3.1 no productPricing action named with `save`
+  ok   C3.2 no productPricing action named with `create`
+  ok   C3.3 no productPricing action named with `update`
+  ok   C3.4 no productPricing action named with `delete`
+  ok   C3.5 no productPricing action named with `submit`
+  ok   C3.6 no productPricing action named with `generate`
+  ok   C3.7 no productPricing action named with `apply`
+  ok   C3.8 no productPricing action named with `approve`
+  ok   C3.9 no productPricing action named with `upsert`
+  ok   C3.10 no productPricing action named with `write`
+  ok   C3.11 no productPricing action named with `set`
+  ok   C3.12 no productPricing action named with `import`
+  ok   C3.13 no productPricing action named with `cancel`
+  ok   C4.1 72_ contains no getRange().setValue
+  ok   C4.2 72_ contains no setValues(
+  ok   C4.3 72_ contains no appendRow(
+  ok   C4.4 72_ contains no deleteRow(
+  ok   C4.5 72_ contains no insertSheet(
+  ok   C4.6 72_ contains no LockService
+  ok   C4.7 72_ contains no getLock(
+  ok   C5  and the file says so where the orchestrator is defined
+
+=== §D  THE MENU IS BUILT FROM THE REGISTRY, AND index.html STILL HAS NO MARKUP ===
+  ok   D1  index.html still has no Product Strategy menu parent
+  ok   D1a and no markup calls the view entry point
+  ok   D1b nor the section entry point
+  ok   D1c and the label appears in no menu item
+  ok   D2  the builder is named twice — its definition and exactly one caller
+  ok   D2a and the caller is mountStagedMenus
+  ok   D2b which refuses a section whose enabled is not exactly true BEFORE it builds anything
+  ok   D3  app.js evaluates against the real sidebar
+  ok   D3a and mountStagedMenus mounts exactly the activated section
+  ok   D4  a Product Strategy menu parent is now in the sidebar
+  ok   D4a and it sits IMMEDIATELY ABOVE Pricing Center — the anchor is a menu id, not an ordinal
+  ok   D4b labelled Product Strategy
+  ok   D5  the six sub-tabs, in order, exactly as the brief names them
+  ok   D5a each carrying its view id
+  ok   D5b and the count is PSB_VIEWS.VIEWS's own — not a second list of six labels
+  ok   D6  a second mount does nothing
+  ok   D6a and there is still exactly one Product Strategy menu
+  ok   D7  the DOMContentLoaded block calls it
+  ok   D7a in the DOMContentLoaded block
+  ok   D7b inside its own try, so a navigation failure cannot take the homepage down with it
+
+=== §E  THE SIX SUB-TABS OPEN, AND THEY ARE REACHABLE WITHOUT A MOUSE ===
+  ok   E1.1 clicking "Executive Overview" activates the section
+  ok   E1.1a and records the route for the controller to pick up on mount
+  ok   E1.2 clicking "Category Analysis" activates the section
+  ok   E1.2a and records the route for the controller to pick up on mount
+  ok   E1.3 clicking "Deal Risk" activates the section
+  ok   E1.3a and records the route for the controller to pick up on mount
+  ok   E1.4 clicking "Data Quality" activates the section
+  ok   E1.4a and records the route for the controller to pick up on mount
+  ok   E1.5 clicking "Strategy Workspace" activates the section
+  ok   E1.5a and records the route for the controller to pick up on mount
+  ok   E1.6 clicking "Advanced Details" activates the section
+  ok   E1.6a and records the route for the controller to pick up on mount
+  ok   E2  the last click left the last view's canonical route, resolved through PSB_VIEWS
+  ok   E3  the parent is announced as a button
+  ok   E3a and is in the tab order
+  ok   E3b starting collapsed
+  ok   E3c naming what it controls
+  ok   E3d and that id resolves to the child list — the same node, not an equal one
+  ok   E4  clicking expands it and says so
+  ok   E4a with the shared is-open class every group uses
+  ok   E4b and clicking again collapses it
+  ok   E5  Enter expands the parent from the keyboard
+  ok   E5a and the event is consumed
+  ok   E5b Space collapses it — and does not scroll the page
+  ok   E6.1 "Executive Overview" is announced as a button
+  ok   E6.1a and is in the tab order
+  ok   E6.2 "Category Analysis" is announced as a button
+  ok   E6.2a and is in the tab order
+  ok   E6.3 "Deal Risk" is announced as a button
+  ok   E6.3a and is in the tab order
+  ok   E6.4 "Data Quality" is announced as a button
+  ok   E6.4a and is in the tab order
+  ok   E6.5 "Strategy Workspace" is announced as a button
+  ok   E6.5a and is in the tab order
+  ok   E6.6 "Advanced Details" is announced as a button
+  ok   E6.6a and is in the tab order
+  ok   E7  Enter on a sub-tab opens it
+  ok   E7a on the view the item names — Deal Risk
+
+=== §F  ROLLBACK — REHEARSED, NOT DESCRIBED ===
+  ok   F1  with the constant set back to false, the real resolver answers false
+  ok   F2  workspace.get refuses with FEATURE_DISABLED
+  ok   F2a with dbOpened false
+  ok   F2b and no table read
+  ok   F2c the spreadsheet was never opened — measured, not reported
+  ok   F2d and nothing was read
+  ok   F3  siteUniverse.get refuses the same way
+  ok   F3a and opens nothing either
+  ok   F4  a rolled-back deployment touches the database zero times, in either direction
+  ok   F5  app.js with the registry switched off still evaluates
+  ok   F5a mountStagedMenus mounts nothing
+  ok   F5b and there is NO Product Strategy menu — absent, not greyed out
+  ok   F5c no staged node of any kind was inserted
+  ok   F6  with the registry off, showSection refuses the id by name — the second half of the stop
+  ok   F7  00_config.gs carries the rollback instruction
+  ok   F7a naming the new version AND the existing deployment — an edited file that is not deployed changes nothing
+  ok   F7b and it never asks anyone to delete a deployment or rewrite history
+
+=== §G  RELEASE IDENTITY — WHAT MUST BE SYNCED, AND WHAT MUST NOT ===
+  ok   G1  63_ declares a release at or after the activation release R11 (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+  ok   G1b and it is a well-formed release stamp, not merely non-empty
+  ok   G1a and 63_'s own module stamp is at or after it, because THIS FILE changed in the activation (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+  ok   G2  00_config.gs's stamp is at or after the round it last changed in, the activation (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11)
+  ok   G2a and the manifest expects EXACTLY what 00_config declares — derived, never restated
+  ok   G2b as does 63_'s own self-referential row
+  ok   G3.1 72_api_v1_product_pricing_workspace.gs declares exactly the build its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24)
+  ok   G3.1a and it is no longer on R10 — PRICING-R4G changed it, so it joined the sync list rather than staying off it
+  ok   G3.2 01_router.gs declares exactly the build its manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41)
+  ok   G3a the router never READS the activation flag — a flag cannot add or remove a route
+  ok   G3a0 (it names it only in prose, explaining which handler is gated on it — measured with comments out)
+  ok   G3a1 the flag lives in 00_config, which is where activation happens
+  ok   G4  the action contract version is untouched by this round
+  ok   G4a and the required-action list gained nothing from activation — no page depends on a productPricing action
+  ok   G5  IN ACTIVATION — between B8D's base and the commit it completed at — appsscript.json did not move
+  ok   G5a the manifest declares oauthScopes EXACTLY ONCE — a duplicate key parses away and would hide G5b
+  ok   G5b and the scope set is STILL the one activation inherited — no round since has widened what the deployment may do, which is what G5 was always defending
+  ok   G6a P1-B8D ACTIVATION changed exactly these two Apps Script files (a3889c2 -> dc3f6fd) — the activation sync set, and not a claim about any later round
+  ok   G6b P1-B8D-R10D changed exactly ONE Apps Script file (dc3f6fd -> 2636d8d) — the R10D incremental sync set
+  ok   G6c and that one file is the one carrying the added capability field
+  ok   G7  R11 sits after its predecessor in the shared owner-stamp order — append-only, never spliced
+  ok   G7b and it is in that order at all
+  ok   G7a and it sits after R10
+  ok   G7b and it matches the canonical stamp shape
+
+=== §H  THE CO-DEPLOYED FRONTEND TOKEN ===
+  ok   H1  the activation token is registered in the release order
+  ok   H1a and the set has not moved BACKWARDS from it
+  ok   H2  no index.html reference is left behind on an older token
+  ok   H2a and no asset carries a token from another series
+  ok   H3  the CURRENT token is the last entry in the release order — append-only
+  ok   H3a appearing exactly once — a published token may never be reused
+  ok   H4  the old Product Strategy token is gone from index.html entirely
+  ok   H5.1 product-strategy-board.css is on the current co-deployed token
+  ok   H5.2 km-product-pricing-adapter.js is on the current co-deployed token
+  ok   H5.3 psb-data-contract.js is on the current co-deployed token
+  ok   H5.4 psb-board-ui.js is on the current co-deployed token
+  ok   H5.5 psb-views.js is on the current co-deployed token
+  ok   H5.6 product-strategy-board.js is on the current co-deployed token
+  ok   H5.7 km-image-reference-policy.js is on the current co-deployed token
+  ok   H5.8 sku-overrides.js is on the current co-deployed token
+  ok   H5.9 km-repo-asset-manifest.js is on the current co-deployed token
+  ok   H5.10 app.js is on the current co-deployed token
+  ok   H6  no member of the co-deployed set is left behind on an older application token
+  ok   H6a and the set has not shrunk (55 references)
+  ok   H7  the image policy loads before sku-overrides.js
+  ok   H7a psb-views.js before the page controller
+  ok   H7b psb-board-ui.js before it too
+  ok   H7c psb-views.js stays at boot — the sidebar builds its six children from it before any route opens
+  ok   H7c1 while the 290 KB board renderer is fetched only when the route is opened
+  ok   H7d PSB_VIEWS loads before app.js, whose menu is built from it
+  ok   H7e and app.js does build that menu at boot, which is why the order above is load-bearing
+  ok   H7f stagedChildren still tolerates an absent PSB_VIEWS — defence in depth, not the guarantee
+  ok   H8  the stylesheet is in the head, before any markup it styles
+  ok   H9  and the partial mount point is in the document
+
+=== §I  THE DRAFT PRICE DISCLOSURE ===
+  ok   I1  the adapter carries price_status_raw onto the row
+  ok   I1a verbatim, and a source that never carried the column stays UNDEFINED rather than becoming null
+  ok   I1a1 while a live read's null — the row exists and has no status — is passed through as null
+  ok   I1b.1 and never toLowerCased on the way
+  ok   I1b.2 and never toUpperCased on the way
+  ok   I1b.3 and never trim()d on the way
+  ok   I2  the contract declares PRICE_STATUS once
+  ok   I2a naming its source column
+  ok   I2b declaring that no value is mapped
+  ok   I2c and that no value is filtered out
+  ok   I2d and that the vocabulary is not pinned anywhere in config
+  ok   I2e so no value is treated as final
+  ok   I2f and the disclosure says what happens to a draft row
+  ok   I3.1 no code path maps a price status to "approved"
+  ok   I3.2 no code path maps a price status to "final"
+  ok   I3.3 no code path maps a price status to "live price"
+  ok   I3.4 no code path maps a price status to "approved"
+  ok   I3.5 no code path maps a price status to "final"
+  ok   I4  the selectors count the raw values
+  ok   I4a sorted by count, with the raw strings kept exactly as found
+  ok   I4b and "no status on the row" is kept apart from "this source carries none"
+  ok   I4c two spellings stay two values — normalising them would be deciding what they mean
+  ok   I5  the board renders a price-status chip
+  ok   I5a on the context row, which sits above every one of the six views
+  ok   I5b carrying the contract's own disclosure sentence
+  ok   I5c and the long form in Advanced details reads the SAME declaration — one sentence, two placements
+  ok   I5d under an id a test and a reader can find
+
+=== §J  NOTHING ELSE MOVED ===
+  ok   J1  not one stylesheet changed in this round
+  ok   J1a and no page partial changed
+  ok   J2  the price-status chip uses `cmd-chip` — the class the scenario chip beside it already uses
+  ok   J2a which the board stylesheet already defines
+  ok   J3.1 00_config.gs changed, as intended
+  ok   J3.2 63_api_v1_system_health.gs changed, as intended
+  ok   J3.3 app.js changed, as intended
+  ok   J3.4 index.html changed, as intended
+  ok   J3.5 km-product-pricing-adapter.js changed, as intended
+  ok   J3.6 psb-data-contract.js changed, as intended
+  ok   J3.7 psb-selectors.js changed, as intended
+  ok   J3.8 psb-board-ui.js changed, as intended
+  ok   J3  and NO OTHER client runtime file changed
+  ok   J4.1 the router still has no Login
+  ok   J4.2 the router still has no RBAC
+  ok   J4.3 the router still has no Session.getActiveUser
+  ok   J4.4 the router still has no getEffectiveUser
+  ok   J5  and the AI Plan WRITE flag did not travel with the read activation
+
+=== §L  THE BROWSER EVIDENCE, READ BACK ===
+  ok   L0  the activation acceptance evidence exists
+  ok   L1  it was taken in ACTIVATED mode
+  ok   L1a with the menu built by the production function, not by the runner
+  ok   L1b against the real sidebar, so the placement anchor resolved in the real document
+  ok   L2  all seven viewports were measured
+  ok   L3.1 1920x1080 rendered with no error
+  ok   L3.1 1920x1080 page-level horizontal overflow is 0
+  ok   L3.1 1920x1080 Product Strategy is immediately above Pricing Center
+  ok   L3.1 1920x1080 with its six sub-tabs, in order
+  ok   L3.1 1920x1080 the Y axis is complete
+  ok   L3.1 1920x1080 and the shell reports the section as activated
+  ok   L3.2 1440x900 rendered with no error
+  ok   L3.2 1440x900 page-level horizontal overflow is 0
+  ok   L3.2 1440x900 Product Strategy is immediately above Pricing Center
+  ok   L3.2 1440x900 with its six sub-tabs, in order
+  ok   L3.2 1440x900 the Y axis is complete
+  ok   L3.2 1440x900 and the shell reports the section as activated
+  ok   L3.3 1366x768 rendered with no error
+  ok   L3.3 1366x768 page-level horizontal overflow is 0
+  ok   L3.3 1366x768 Product Strategy is immediately above Pricing Center
+  ok   L3.3 1366x768 with its six sub-tabs, in order
+  ok   L3.3 1366x768 the Y axis is complete
+  ok   L3.3 1366x768 and the shell reports the section as activated
+  ok   L3.4 1280x720 rendered with no error
+  ok   L3.4 1280x720 page-level horizontal overflow is 0
+  ok   L3.4 1280x720 Product Strategy is immediately above Pricing Center
+  ok   L3.4 1280x720 with its six sub-tabs, in order
+  ok   L3.4 1280x720 the Y axis is complete
+  ok   L3.4 1280x720 and the shell reports the section as activated
+  ok   L3.5 1024x768 rendered with no error
+  ok   L3.5 1024x768 page-level horizontal overflow is 0
+  ok   L3.5 1024x768 Product Strategy is immediately above Pricing Center
+  ok   L3.5 1024x768 with its six sub-tabs, in order
+  ok   L3.5 1024x768 the Y axis is complete
+  ok   L3.5 1024x768 and the shell reports the section as activated
+  ok   L3.6 768x1024 rendered with no error
+  ok   L3.6 768x1024 page-level horizontal overflow is 0
+  ok   L3.6 768x1024 Product Strategy is immediately above Pricing Center
+  ok   L3.6 768x1024 with its six sub-tabs, in order
+  ok   L3.6 768x1024 the Y axis is complete
+  ok   L3.6 768x1024 and the shell reports the section as activated
+  ok   L3.7 390x844 rendered with no error
+  ok   L3.7 390x844 page-level horizontal overflow is 0
+  ok   L3.7 390x844 Product Strategy is immediately above Pricing Center
+  ok   L3.7 390x844 with its six sub-tabs, in order
+  ok   L3.7 390x844 the Y axis is complete
+  ok   L3.7 390x844 and the shell reports the section as activated
+  ok   L4.1 1920x1080 shows the whole X lane
+  ok   L4.2 1440x900 shows the whole X lane
+  ok   L4.3 1366x768 shows the whole X lane
+  ok   L4.4 1280x720 shows the whole X lane
+  ok   L4.5 1024x768 shows the whole X lane
+  ok   L4.6 768x1024 shows the whole X lane
+  ok   L5  390x844 does not — RECORDED, not passed
+  ok   L5a and it scrolls inside the chart container rather than the page
+  ok   L5b with page-level overflow still 0, which is the rule that matters
+  ok   L6.1 overview rendered with no error
+  ok   L6.1 overview shows six tabs
+  ok   L6.1 overview with itself aria-selected, and only itself
+  ok   L6.1 overview and every tab label is visible
+  ok   L6.1 overview page overflow 0
+  ok   L6.2 category rendered with no error
+  ok   L6.2 category shows six tabs
+  ok   L6.2 category with itself aria-selected, and only itself
+  ok   L6.2 category and every tab label is visible
+  ok   L6.2 category page overflow 0
+  ok   L6.3 risk rendered with no error
+  ok   L6.3 risk shows six tabs
+  ok   L6.3 risk with itself aria-selected, and only itself
+  ok   L6.3 risk and every tab label is visible
+  ok   L6.3 risk page overflow 0
+  ok   L6.4 quality rendered with no error
+  ok   L6.4 quality shows six tabs
+  ok   L6.4 quality with itself aria-selected, and only itself
+  ok   L6.4 quality and every tab label is visible
+  ok   L6.4 quality page overflow 0
+  ok   L6.5 workspace rendered with no error
+  ok   L6.5 workspace shows six tabs
+  ok   L6.5 workspace with itself aria-selected, and only itself
+  ok   L6.5 workspace and every tab label is visible
+  ok   L6.5 workspace page overflow 0
+  ok   L6.6 advanced rendered with no error
+  ok   L6.6 advanced shows six tabs
+  ok   L6.6 advanced with itself aria-selected, and only itself
+  ok   L6.6 advanced and every tab label is visible
+  ok   L6.6 advanced page overflow 0
+  ok   L7.1 feature-disabled rendered with no error
+  ok   L7.1 feature-disabled states its own case in words
+  ok   L7.1 feature-disabled and #view is empty — nothing is drawn behind the message
+  ok   L7.2 not-authorized rendered with no error
+  ok   L7.2 not-authorized states its own case in words
+  ok   L7.2 not-authorized and #view is empty — nothing is drawn behind the message
+  ok   L7.3 timeout rendered with no error
+  ok   L7.3 timeout states its own case in words
+  ok   L7.3 timeout and #view is empty — nothing is drawn behind the message
+  ok   L7.4 non-json rendered with no error
+  ok   L7.4 non-json states its own case in words
+  ok   L7.4 non-json and #view is empty — nothing is drawn behind the message
+  ok   L7.5 source-unavailable rendered with no error
+  ok   L7.5 source-unavailable states its own case in words
+  ok   L7.5 source-unavailable and #view is empty — nothing is drawn behind the message
+  ok   L7.6 awaiting-site rendered with no error
+  ok   L7.6 awaiting-site states its own case in words
+  ok   L7.6 awaiting-site and #view is empty — nothing is drawn behind the message
+  ok   L7.7 empty-site rendered with no error
+  ok   L7.7 empty-site states its own case in words
+  ok   L7.7 empty-site and #view is empty — nothing is drawn behind the message
+  ok   L7  and no two states show the same message
+  ok   L8  every <img> on Executive Overview loaded, none broken
+  ok   L8a and none is broken on Category Analysis either
+  ok   L8b with no IMAGE FAILED TO LOAD notice anywhere
+  ok   L9.1 overview has a price-status chip
+  ok   L9.1 overview and it is visible
+  ok   L9.1 overview announced as a status
+  ok   L9.1 overview carrying the full disclosure in its title
+  ok   L9.1 overview and its text never calls a price final
+  ok   L9.2 category has a price-status chip
+  ok   L9.2 category and it is visible
+  ok   L9.2 category announced as a status
+  ok   L9.2 category carrying the full disclosure in its title
+  ok   L9.2 category and its text never calls a price final
+  ok   L9.3 risk has a price-status chip
+  ok   L9.3 risk and it is visible
+  ok   L9.3 risk announced as a status
+  ok   L9.3 risk carrying the full disclosure in its title
+  ok   L9.3 risk and its text never calls a price final
+  ok   L9.4 quality has a price-status chip
+  ok   L9.4 quality and it is visible
+  ok   L9.4 quality announced as a status
+  ok   L9.4 quality carrying the full disclosure in its title
+  ok   L9.4 quality and its text never calls a price final
+  ok   L9.5 workspace has a price-status chip
+  ok   L9.5 workspace and it is visible
+  ok   L9.5 workspace announced as a status
+  ok   L9.5 workspace carrying the full disclosure in its title
+  ok   L9.5 workspace and its text never calls a price final
+  ok   L9.6 advanced has a price-status chip
+  ok   L9.6 advanced and it is visible
+  ok   L9.6 advanced announced as a status
+  ok   L9.6 advanced carrying the full disclosure in its title
+  ok   L9.6 advanced and its text never calls a price final
+  ok   L9  and Advanced details carries the long form, naming the source column
+  ok   L10 print/PDF produced a real document
+
+=== §K  MUTANTS ===
+  ok   K1  a THIRD activation flag is introduced — A1a/A2a (caught)
+  ok   K2  server true, navigation false — the gates disagree — A6 (caught)
+  ok   K3  navigation true, server false — the other way round — A6 (caught)
+  ok   K4  a WRITE action is added under productPricing — C1/C3 (caught)
+  ok   K5  the gate moves BELOW the spreadsheet open — B5a/F2c (caught)
+  ok   K6  a draft price is relabelled as final — I2e/I3 (caught)
+  ok   K7  the chip stops showing the values and shows a reassurance — I5 (caught)
+  ok   K8  price statuses are normalised, so two spellings become one — I4c (caught)
+  ok   K9  Product Strategy is moved BELOW Pricing Center — D4a (caught)
+  ok   K10 one sub-tab disappears — D5/D5b (caught)
+  ok   K11 the mount stops honouring `enabled` — D2b/F5a (caught)
+  ok   K12 a stale cache token is left on one asset — H2 (caught)
+  ok   K13 a bare-class rule leaks out of .psb-page — J1/B8A (caught)
+  ok   K14 appsscript.json gains an OAuth scope — G5a/G5b (caught)
+  ok   K14a a scope is APPENDED to the real list rather than duplicated — G5b (caught)
+  ok   K14b the advanced-service addition alone is NOT a scope widening — G5b stays green (caught)
+  ok   K15 the activation flag is consulted inside the router — G3a (caught)
+  ok   K16 an external image host is added to the allowlist — the image gate reopens (caught)
+  ok   K17 campaign-risk goes back to putting the raw cell in src — the image gate reopens (caught)
+  ok   K18 a query parameter is added as a second way in — A3 (caught)
+
+====================================================================================================
+P1-B8D ACTIVATION — passed 362  failed 0  |  mutants caught 20  survived 0
+====================================================================================================

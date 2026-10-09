@@ -1,0 +1,93 @@
+
+== A. §13.1 / §13.14 — all three stages commit, and the readback VERIFIES it ==
+ok   A1 stage 2 commits two lines
+ok   A2 stage 3 commits two events
+ok   A3 the GRAPH READBACK verifies the whole save (executed end to end)
+ok   A4 with nothing missing and nothing orphaned
+
+== B. §13.2–§13.5 — every incomplete graph refuses to be called success ==
+ok   B1 campaign present, lines absent -> NOT verified, and the missing ids are NAMED
+ok   B2 lines present, events absent -> NOT verified, and the SKUs without an event are named
+ok   B3 the EU BFCM shape — events present, every line gone — is NOT verified (executed)
+ok   B4 and each orphaned event is reported BY ID, which is what makes a recovery possible
+ok   B5 a receipt claiming 2 against a sheet holding 0 is NOT success — the claim and the count come from different places, which is the whole repair (executed)
+
+== C. §4 / §13.6–§13.7 — referential integrity on the event write ==
+ok   C1 an event naming a line that does not exist is REFUSED and writes nothing (executed)
+ok   C1a with its own typed reason
+ok   C2 a line that exists under a DIFFERENT campaign is refused — existence alone is not enough
+ok   C2a naming both campaigns, so the operator can see which is wrong
+ok   C3 and the SAME event with its line present commits normally — the gate refuses holes, not writes
+ok   C4 the gate WRITES nothing — it cannot create the missing line
+ok   C4a and never searches by SKU, so it cannot adopt a different line
+ok   C4b an unreadable line table is its OWN refusal — never reported as a dangling reference
+
+== D. §5 / §13.12 — UPDATE is gated only when the reference CHANGES ==
+ok   D1 an UNCHANGED reference does not block an edit — the orphaned events stay editable
+ok   D1a and the quantity edit lands (executed)
+ok   D1b without corrupting the reference it did not touch
+ok   D2 an EXPLICIT reference change to a missing line IS refused
+ok   D2a and the stored reference is untouched — a refusal writes nothing
+
+== E. §6 / §13.8 — concurrent stage-2 creates ==
+ok   E1 stage 2 takes the ScriptLock
+ok   E1a BEFORE the authoritative read — locking after it would fence nothing
+ok   E1b and releases after the last mutation, in a finally
+ok   E2 a contended write is refused with its own token and writes NOTHING (executed)
+ok   E3 two saves of one identity resolve to ONE canonical row and ONE id (executed)
+ok   E4 still EXACTLY ONE authoritative read — the lock wraps the read, it does not add one
+
+== F. §13.9–§13.11 — retry, timeout, and idempotent convergence ==
+ok   F1 the save commits (the answer is then lost, which the server never learns)
+ok   F2 a retry of stage 2 converges on the SAME row and id — no duplicate (executed)
+ok   F3 and a retry of stage 3 does not mint a second event
+ok   F4 after the retry the graph verifies — idempotent CONVERGENCE, not accumulation
+ok   F5 a retry over PARTIAL state creates only what is missing (executed)
+ok   F6 an unreadable graph is OUTCOME_UNKNOWN in the page
+ok   F7 OUTCOME_UNKNOWN_AUTOREPLAY_COUNT = 0 — the unknown branch dispatches nothing
+
+== G. §3 / §13.13 — the projection, and the identity boundary it must not break ==
+ok   G1 the projection selects ONE campaign’s rows and no other’s (executed)
+ok   G2 an EMPTY campaign_id selects NOTHING — a readback that answered for every campaign would verify a save against rows it never wrote
+ok   G3 and an unknown campaign answers empty, not everything
+ok   G4 the adapted graph carries exactly the four fields the comparison reads
+ok   G4a and the real comparison verifies it — projection, adapter and comparison agree end to end
+ok   G4b the shipped adapter performs that exact rename (source)
+ok   G5 FC-ID-R2 still fails closed
+ok   G5a with ITS token, not the new line-reference one — two fail-closed gates, two reasons
+
+== H. §11 — the request budget ==
+ok   H1 FULL_TABLE_READ_COUNT_ADDED = 0 — neither graph table joined the primary-render set
+ok   H2 the graph slice declares exactly the three tables it needs
+ok   H3 they are SLICE-ONLY, so a healthy FC Summary open still pays for four sheets, not six
+ok   H4 AUTHORITATIVE_READBACK_REQUEST_COUNT = 1 — one readback per save (computed)
+ok   H5 and it happens AFTER the write, never on modal open
+ok   H6 PER_SKU_REQUEST_COUNT = 0 — the readback is not inside any per-SKU loop
+
+== J. §8 — the EU BFCM incident: nine, derived, and untouched ==
+ok   J1 HARDCODED_INCIDENT_ROW_COUNT = NO — no literal row count is compared anywhere in the repair
+ok   J2 the real incident size — NINE orphans across two Series — is derived from the graph, not assumed
+ok   J3 and the nine events still CARRY the line ids the recovery must reuse — they are the only surviving copy, which is why the recovery reconstructs lines and never rewrites events
+ok   J4 RECOVERY_REQUIRES_OPERATOR_DISCOUNT = YES — discount_percent exists on the LINE and on no event
+ok   J4a nor does any other commercial value survive on the event row (computed)
+
+== K. MUTANTS — §13.15–§13.18 ==
+kill K-M1 [13.15] a verifier that reports success on an incomplete graph
+kill K-M2 [13.16] removing the reference validation lets the orphan back in
+kill K-M3 [13.17] removing stage 2’s lock
+kill K-M4 [13.18] a receipt built from the payload count
+kill K-M5 an UPDATE gate that also blocks UNCHANGED references
+kill K-M6 a projection that ignores campaign scope
+
+=====================================================
+FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2
+SAVE_SUCCESS_AUTHORITY = POST_WRITE_AUTHORITATIVE_GRAPH_READBACK
+FALSE_SUCCESS_REACHABLE = NO   EVENT_REFERENTIAL_INTEGRITY_ENFORCED = YES
+DANGLING_EVENT_CREATE_REACHABLE = NO   DUPLICATE_LINE_CREATE_REACHABLE = NO
+OUTCOME_UNKNOWN_AUTOREPLAY_COUNT = 0   RETRY_IDEMPOTENT = YES
+AUTHORITATIVE_READBACK_REQUEST_COUNT = 1   FULL_TABLE_READ_COUNT_ADDED = 0
+CURRENT_EU_BFCM_ROWS_MODIFIED = 0   PRODUCTION_ROWS_WRITTEN = 0
+=====================================================
+FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 — 54 passed / 0 failed
+MUTATION 6/6
+=====================================================

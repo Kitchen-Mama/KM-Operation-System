@@ -1,0 +1,31 @@
+
+== A one SKU / one destination / one window assembles a valid B DTO end to end ==
+
+== B–E cumulative -> incremental projection (via assembler) ==
+
+== F–G survival attaches once (earliest active window); zero-demand windows get no receiver ==
+
+== H–I demandWeight conservation ==
+
+== J demandKey convention sku|destinationWarehouseId|windowCode (deterministic, isolated) ==
+
+== K–O factory identity: exact warehouse_id only; fail closed; no country inference ==
+
+== P–T source residual chain through the real B builder ==
+
+== U–W count-once (shared pool <=100%, supply once, demand once) through B ==
+
+== X–Y carton FLOOR + residual preserved ==
+
+== Z–AA blocked: invalid UPC & missing destination ==
+
+== AB fulfillment-model pool eligibility preserved ==
+
+== AC–AE provenance ==
+
+== AF–AG purity / determinism ==
+
+== AH–AL no side effects / DTO boundary / monthly unchanged ==
+
+----------------------------------------
+WEEKLY AI PLAN INPUT ASSEMBLER (F1-7N-D0-B): 57 passed, 0 failed

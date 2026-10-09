@@ -1,0 +1,11 @@
+
+== A. root cause: generic completeness rule vs a marketplace-logical K2 destination ==
+
+== B. REUSE only for a self-consistent genuine K2 group; legacy protection preserved ==
+
+== C. typed observable reasons (no blind retry / no auto overwrite-heal) ==
+
+== D. zero-write REUSE + comprehensive frozen-scope gate ==
+
+----------------------------------------
+R6F2G5 K2-REUSE-ROUTE-RECONCILIATION: 45 passed, 0 failed

@@ -1,0 +1,138 @@
+
+== A — [§C] THE ETA AUTHORITY, traced by execution ==
+ok   A1 [§C.1] the base is the PROJECT calendar day (Asia/Taipei) + the lead days
+ok   A2 [§C.1] read in the project timezone, not the browser one
+ok   A3 [§C.2] the day count comes from the matched carrier_lead_times row (max_days, per R6-R1 §6)
+ok   A4 [§C.2] matched on shippingMethod + destinationCountry
+ok   A5 [§C.2] a row with no destination country is a wildcard match
+ok   A6 [§C.2] a row for another country is NOT a match
+ok   A7 [§C.3, §C.4] sea resolves to the Sea lead time
+ok   A8 [§C.4] sea_express to Sea Express
+ok   A9 [§C.3] and an express-ocean display label to Sea Express
+ok   A10 [§C.5, §D.9] with ONLY a Sea row present, sea_express resolves to NOTHING — no family fallback
+ok   A11 [§C.5] while sea itself still resolves
+ok   A12 [§C.5] there is no prefix ladder to fall back through
+ok   A13 [§C.6] the calculator returns a STRUCTURED date…
+ok   A14 [§C.7] …and the display string is derived FROM it
+ok   A15 [§C] nothing reads the ETA back out of the rendered sentence
+ok   A16 [§C] there is exactly ONE ETA calculator — no second one was created
+
+== B — [tests 5, 6, 7, 17] THE TWO OCEAN SERVICES, and no guessing ==
+ok   B1 [test 5] sea uses the sea lead time (15d)
+ok   B2 [test 6] sea_express uses the sea_express lead time (9d)
+ok   B3 [test 7] and they are DIFFERENT dates — one never answers for the other
+ok   B4 [test 7, 17] no exact lead time = BLANK, never the neighbour
+ok   B5 [test 17] with an explicit unavailable state the operator can see
+ok   B6 [test 17] no method at all is blank too
+ok   B7 [test 17] and an unknown service is refused outright
+
+== C — [tests 8, 9, 10] SNAPSHOT vs LIVE: who owns the answer ==
+ok   C1 [test 8] a stored ETA is returned as the snapshot it is
+ok   C2 [test 8] and it is NOT the live figure
+ok   C3 [test 9] changing carrier_lead_times does NOT rewrite a saved commitment
+ok   C4 [test 9] even though the live computation for the same route did move
+ok   C5 [test 10] a route with no stored ETA computes live
+ok   C6 [test 10, 11] and a BLANK stored ETA is not a snapshot — it computes, it does not backfill
+ok   C7 a snapshot taken under a DIFFERENT service no longer describes this route
+ok   C8 both sides canonicalise, so a display spelling is the SAME basis
+ok   C9 a stored date with no recorded basis is still stored
+
+== D — [tests 18] DATE SEMANTICS: one meaning, no drift ==
+ok   D1 [test 18] a US spring-forward boundary does not shift the day
+ok   D2 [test 18] nor an EU fall-back boundary
+ok   D3 [test 18] year wrap is exact
+ok   D4 [test 18] and a leap day is a real day
+ok   D5 [test 18] toISOString is never called on a local-midnight Date — the classic off-by-one
+ok   D6 [test 18] and no locale formatter can reshape the stored value
+ok   D7 [§E] 2026-02-30 is refused, NOT rolled into March
+ok   D8 [§E] an impossible month is refused
+ok   D9 [§E] and a display sentence is not a date
+ok   D10 [§E] nor a locale-shaped one
+ok   D11 [§E] the canonical shape passes through unchanged
+ok   D12 [§E] which is the project-wide stored date shape
+ok   D13 [§E] and Asia/Taipei is the zone the server itself canonicalises in
+ok   D14 [§E] with no Intl the page still yields a canonical date shape
+
+== E — [tests 1, 2, 3, 4, 19] THE PATH: render → collect → payload ==
+ok   E1 [test 19] the render asks the single owner
+ok   E2 [test 19] and publishes BOTH the structured date and the text it derived — one source, two renderings
+ok   E3 [test 1, 19] the collect reads that structured value, re-validating its shape
+ok   E4 [§C] and never the rendered sentence
+ok   E5 [test 3] the hydrate only READS the stored expected_arrival
+ok   E6 [test 3] it computes no ETA of its own
+ok   E7 [test 3] and issues no write of any kind
+ok   E8 [test 2] the async lead-time recompute updates the DISPLAY only — it never schedules a save
+ok   E9 [test 9] and it carries the stored snapshot, so an async recompute cannot overwrite a saved commitment
+ok   E10 [test 4] a declined confirmation still returns before any request
+ok   E11 [test 4] and the question is still asked first
+ok   E12 [§D.3] the dialog reads the route model expected_arrival…
+ok   E13 [§D.3, test 19] …and shows the date itself, not the "(est. Nd)" sentence
+
+== F — [tests 11, 12] LEGACY BLANK STAYS BLANK ==
+ok   F1 [test 12] 2026-10-16 appears nowhere in the page
+ok   F2 [test 12] nor in the shared draft module
+ok   F3 [test 12] nor in either Apps Script owner
+ok   F4 [test 11] a blank stored ETA validates as blank
+ok   F5 [test 11] the UI may show a live figure for it…
+ok   F6 [test 11] …but NOTHING reaches the database, so the stored blank is untouched
+ok   F7 [test 12] and no code path can carry a computed date into the line payload
+
+== G — [tests 13, 14, 15, 16, 20] THE SERVER SIDE IS ALREADY CAPABLE, AND ETA IS NOT AN IDENTITY ==
+ok   G1 [§F] the SHIPPED B3 writer accepts an expected_arrival…
+ok   G2 [§F] …and persists it on the line — no server change is needed
+ok   G3 [test 13] an ETA-ONLY change is accepted…
+ok   G4 [test 13] …and is actually written
+ok   G5 [test 13] because the ETA is inside the line fingerprint
+ok   G6 [test 14] expected_arrival is NOT a K4 dimension
+ok   G7 [test 14] nor a K2 one
+ok   G8 [test 14] so an ETA cannot change the K4 key
+ok   G9 [test 15] the header id is unchanged by an ETA edit
+ok   G10 [test 15] and so is the line id
+ok   G11 [test 16] the quantity is untouched
+ok   G12 [test 20] and no duplicate line was appended
+ok   G13 [test 20] replaying the identical save creates no duplicate header or line
+ok   G14 [test 11] saving with no ETA stores a BLANK — nothing is invented
+
+== H — [§F, §H] CONTRACTS AND THE BROWSER TOKEN ==
+ok   H1 [§F] B6-R1 changed no Apps Script source — measured from ITS OWN diff, not the working tree
+ok   H2 [§F] and 69_ is unmoved
+ok   H3 [§F] the manifest expects exactly what the SOURCE declares — never a number typed twice
+ok   H4 [§F] the deployed ACTION contract is at or after 10 and the TRANSPORT contract is still 1 — two independent axes, and only the action axis moves when a route is added
+ok   H4a and the required-action LIST version is at or after 9 (it is append-only)
+ok   H5 [§F] and the frontend pins exactly what the deployment declares
+ok   H6 [§H] B6-R1 minted its own application token, and the release order has not moved behind it
+ok   H7 [§H] strictly after B6 in the release order
+ok   H8 [§H] the changed page carries it
+ok   H9 [§H] and so does the shared draft module
+ok   H10 [§H] the whole co-deployed set rotated together (55 on r46-avgsales-20261008)
+ok   H11 [§H] and B6's token is GONE from index.html — it was already published on origin/main, so reusing it would have left every browser that fetched it on the B6 copy of this page
+ok   H12 [§H] no map token moved
+ok   H13 [§H] the map set is untouched
+ok   H14 [§H] and so is every unrelated token
+
+== I — THE BLOCKED DECISION, recorded so it cannot be closed by accident ==
+ok   I1 the spec defines Expected Arrival from a PLANNED SHIP DATE, plus max_days, plus a Receiving Buffer
+ok   I2 and the Execution Plan mapping lists that ship date among this cell's inputs
+ok   I3 but there is no ship date on the allocation draft header or line…
+ok   I4 …nor on shipping_plans…
+ok   I5 …and the Execution Plan has no ship-date control
+ok   I6 and the Receiving Buffer the formula requires is defined by no field, table or value
+ok   I7 the display therefore counts from TODAY, which is a substitution, not the spec base
+ok   I8 and from avg_days, which the spec calls the reference ETA — while the ARRIVAL formula uses max_days
+ok   I9 SO expected_arrival IS NOT WIRED INTO THE LINE PAYLOAD, and this assertion is the tripwire that keeps it that way
+ok   I10 with the blocked decision written at the point where the wiring would go
+
+== J — MUTATION TESTS ==
+ok   M1 an expected_arrival appearing in the line payload is caught (caught)
+ok   M2 reading the ETA out of the rendered sentence is caught (caught)
+ok   M3 sea_express falling back to sea is caught (caught)
+ok   M4 the hydrate computing an ETA is caught (caught)
+ok   M5 a declined confirmation that still issues a request is caught (caught)
+ok   M6 recomputing over a persisted snapshot is caught (caught)
+ok   M7 adding the ETA to the K4 identity is caught (caught)
+ok   M8 a UTC/local off-by-one is caught, proven across two real timezones (caught)
+ok   M9 hardcoding or backfilling 2026-10-16 is caught (caught)
+ok   M10 a second ETA calculator is caught (caught)
+
+PASS — 115 passed, 0 failed
+negative tests: 10 caught, 0 missed

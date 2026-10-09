@@ -1,0 +1,13 @@
+
+== §16 backend scope gate (fail-closed, whole-batch) ==
+
+== §14 relational Company/Country/Warehouse filtering ==
+
+== §14 7/8 change-handler pruning (real handler) ==
+
+== §15 scoped template ==
+
+== HTML modal scope selectors ==
+
+----------------------------------------
+OVERSEAS INVENTORY SCOPED IMPORT (F1-UX-R1): 52 passed, 0 failed

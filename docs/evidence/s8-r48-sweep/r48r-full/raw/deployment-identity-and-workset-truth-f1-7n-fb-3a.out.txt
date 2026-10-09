@@ -1,0 +1,20 @@
+
+== A. editor success cannot mask a stale deployed endpoint ==
+
+== B. immutable deployment identity ==
+
+== C. a stale deployment is DEPLOYMENT_CONTRACT_MISMATCH, never GAP_READ_ERROR ==
+
+== D. registry failure: PRE_SEARCH preserved, one Retry = one request, no navigation needed ==
+
+== E. schema READY must not be second-guessed ==
+
+== F. the origin of 234 — EXECUTING the shipped workset builder ==
+
+== G. interrupted-saga reconciliation before any retry ==
+
+== H. Send PO returns a structured document cause, and the PO stays Draft ==
+
+== I. no local business success, no Demo mutation, no email ==
+
+ALL PASS  (207 assertions)

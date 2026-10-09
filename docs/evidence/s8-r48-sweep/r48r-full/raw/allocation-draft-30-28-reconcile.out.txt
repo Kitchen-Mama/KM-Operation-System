@@ -1,0 +1,13 @@
+
+== Constants byte-for-byte = approved 30/28 (§11.1, §11.2, §11.3, §11.4) ==
+
+== Route context is HEADER-level; line is SKU+qty (§3, §7) ==
+
+== Completeness gates (§8): PLAN_HEADER_INCOMPLETE / PLAN_LINE_INCOMPLETE ==
+
+== K3 idempotency + cancel-preserves-history + no reserve/deduct (§4, §9, §12) ==
+
+== Frontend flush derives the header route (§7) + docs agree (§11.15) ==
+
+----------------------------------------
+ALLOCATION DRAFT 30/28 RECONCILE (C2-D1R): 29 passed, 0 failed

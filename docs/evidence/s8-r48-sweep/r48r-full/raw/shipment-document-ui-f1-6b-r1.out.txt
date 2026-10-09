@@ -1,0 +1,17 @@
+
+== B0 — the action group HTML (only SHIPDETAIL + PL; Generate buttons + status spans) ==
+
+== B3 — Generate sends the thin canonical payload; one backend call ==
+
+== B4/B5 — success surfaces Download/Open; the result is cached for open ==
+
+== B4c — reused generation shows "Ready" (idempotent reuse-by-key, no duplicate) ==
+
+== B6/B7 — blocked readiness + backend error are visible (never faked ready) ==
+
+== B11 — double-click does NOT create a duplicate document (button guard) ==
+
+== SOURCE — card gate + no frontend business logic + dispatch untouched ==
+
+----------------------------------------
+SHIPMENT DOCUMENT UI (F1-6B Part B): 22 passed, 0 failed

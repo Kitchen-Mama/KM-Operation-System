@@ -1,0 +1,15 @@
+
+== A/B — complete token structure + canonical integrity ==
+
+== B — typed read failures (never silently repaired) ==
+
+== C — DRY_RUN: zero-write, complete token, integrity, +1/+5 deltas (runtime empty mocks → freeze refuses) ==
+
+== D — COMMIT: placeholder confirmation writes nothing; readback-verify contract ==
+
+== E — VALIDATE from a stored COMPLETE token: structure ok, guards, pre-gen RECONCILIATION (no writes) ==
+
+== regression — no generation / no flag flip anywhere ==
+
+----------------------------------------
+R6F2E3 PERSIST TOKEN COMPLETE: 40 passed, 0 failed

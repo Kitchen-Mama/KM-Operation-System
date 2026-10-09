@@ -1,0 +1,212 @@
+
+== A — THE SELECTION AND THE SCREEN NEVER DISAGREE ==
+ok   A1  the six-step production ladder ran through the real controls
+ok   A2  and nothing threw on the way
+ok   A3  canonical scope and DOM selection agree at EVERY step
+ok   A4  every narrowing is exactly what the ladder asks for
+ok   A5  a KEPT control is re-valued from the canonical scope, not left on its old value
+ok   A5a and it really was kept rather than rebuilt
+
+== B — THE CONTROL SURVIVES THE PICK (THE DEFECT, AS A FOCUS FACT) ==
+ok   B1  no pick hands the focus back to <body>
+ok   B2.1 focus is still on a site control after "1 company=KM"
+ok   B2.2 focus is still on a site control after "2 marketplace=Shopify"
+ok   B2.3 focus is still on a site control after "3 category=Cutting Board"
+ok   B2.4 focus is still on a site control after "4 company=KM"
+ok   B2.5 focus is still on a site control after "5 marketplace=Shopify"
+ok   B2.6 focus is still on a site control after "6 company=ResTW"
+ok   B2.7 focus is still on a site control after "7 country=JP"
+ok   B2.8 focus is still on a site control after "8 company=ResUS"
+ok   B2.9 focus is still on a site control after "9 marketplace=Walmart"
+ok   B2.10 focus is still on a site control after "10 company=KM"
+ok   B2a the Company control is the same node through the whole ladder
+ok   B3  a control records what it offers, so the next paint can tell whether to keep it
+ok   B4  and the paint reconciles rather than rebuilding
+ok   B5  the host is no longer emptied before every paint
+
+== C — THE BOARD DOES NOT OUTLIVE ITS SITE ==
+ok   C1  the ladder passes through an incomplete scope more than once
+ok   C2.1 no chart is left on screen at "1 company=KM"
+ok   C3.1 and the controller does not claim a mounted board
+ok   C4.1 and no stale site label is left beside the data
+ok   C2.2 no chart is left on screen at "4 company=KM"
+ok   C3.2 and the controller does not claim a mounted board
+ok   C4.2 and no stale site label is left beside the data
+ok   C2.3 no chart is left on screen at "6 company=ResTW"
+ok   C3.3 and the controller does not claim a mounted board
+ok   C4.3 and no stale site label is left beside the data
+ok   C2.4 no chart is left on screen at "8 company=ResUS"
+ok   C3.4 and the controller does not claim a mounted board
+ok   C4.4 and no stale site label is left beside the data
+ok   C2.5 no chart is left on screen at "10 company=KM"
+ok   C3.5 and the controller does not claim a mounted board
+ok   C4.5 and no stale site label is left beside the data
+ok   C5  at no incomplete step does the page still name the previous site beside the numbers
+
+== D — A SLOW ANSWER NEVER OVERWRITES A NEWER CHOICE ==
+ok   D1  the stale-response sequence ran clean
+ok   D2  after the slow answer lands, the scope is still the site chosen SECOND
+ok   D3  and the slow answer was dropped rather than rendered
+ok   D4  two sites asked for, two reads — no retry storm
+ok   D5  and the controls still show what the controller believes
+ok   D6  the page records which site an outstanding read is for
+ok   D7  and withdrawing a scope invalidates that read instead of letting it land
+
+== E — A FAILURE KEEPS THE SELECTION AND ALLOWS A RETRY ==
+ok   E1  the failure/retry sequence ran clean
+ok   E2  the workspace read was refused
+ok   E3  and the site the person chose is still chosen
+ok   E4  with the controls still showing it
+ok   E5  the chooser is still operable after a failure
+ok   E6  re-picking the same marketplace asks again and succeeds
+ok   E7  which means a second read really went out
+ok   E8  but ten changes on the site already loaded cost no further reads
+
+== F — ONE FILTER PANEL, ONE AUTHORITY, IN ORDER ==
+ok   F1  the ladder loaded three different sites
+ok   F2.1 exactly one filter panel at "2 marketplace=Shopify"
+ok   F3.1 and exactly three controls claim to set a site
+ok   F2.2 exactly one filter panel at "3 category=Cutting Board"
+ok   F3.2 and exactly three controls claim to set a site
+ok   F2.3 exactly one filter panel at "5 marketplace=Shopify"
+ok   F3.3 and exactly three controls claim to set a site
+ok   F2.4 exactly one filter panel at "7 country=JP"
+ok   F3.4 and exactly three controls claim to set a site
+ok   F2.5 exactly one filter panel at "9 marketplace=Walmart"
+ok   F3.5 and exactly three controls claim to set a site
+ok   F4  the browser returned this round of its own measurements
+ok   F4a and the row reads Company, Country, Marketplace, Category, Series
+ok   F4b with More filters after them
+ok   F4c and Meeting scenario last
+ok   F5  the page declares ownership of the site and the board reads it
+ok   F6  and the board draws no site ladder when it is not the owner
+ok   F7  while the STATE correction that ladder also did is kept
+ok   F8  the two renderers are flattened into one row rather than taught about each other
+ok   F9  and the partial carries the one panel that holds them
+ok   F10 after a site switch the board still offers a Category control
+ok   F11 with a value that is not empty
+ok   F12 Series is re-derived from the new site rather than carried across
+ok   F12a and the value showing is one the new site actually offers
+ok   F13  the ladder read the category menu on more than one site
+ok   F13a at no loaded step is the selected Category absent from the menu that site offers
+
+== G — THE PAGE LOOKS LIKE THE OPERATION SYSTEM ==
+ok   G1  the page no longer paints its own grey ground
+ok   G2  and the header band is not a banner
+ok   G3  the shell section is transparent while the prototype keeps its own ground
+ok   G4  no `?` control is rendered anywhere on the page
+ok   G5  and there is exactly one page-level info button
+ok   G6  which is an `i`, not a seventh question mark
+ok   G7  the icons are suppressed by an argument, not deleted
+ok   G8  and every paragraph of the help text is still in the file
+ok   G9  the X axis prints no price under any column
+ok   G10 while the hover panel still leads with it
+ok   G11 and so does the label a screen reader reads
+
+== H — ONE HEIGHT, ONE BASELINE ==
+ok   H1@1920 the panel holds at least five controls
+ok   H2@1920 every control is --filter-height
+ok   H3@1920 one label gap in the whole panel
+ok   H4@1920 the panel is at most three rows deep
+ok   H5@1920 psbSiteCompany sits on its row
+ok   H5@1920 psb-site__value sits on its row
+ok   H5@1920 psbSiteMarketplace sits on its row
+ok   H5@1920 catMore sits on its row
+ok   H5@1920 fSeriesContext sits on its row
+ok   H5@1920 moreFiltersToggle sits on its row
+ok   H5@1920 meetingToggle sits on its row
+ok   H1@1440 the panel holds at least five controls
+ok   H2@1440 every control is --filter-height
+ok   H3@1440 one label gap in the whole panel
+ok   H4@1440 the panel is at most three rows deep
+ok   H5@1440 psbSiteCompany sits on its row
+ok   H5@1440 psb-site__value sits on its row
+ok   H5@1440 psbSiteMarketplace sits on its row
+ok   H5@1440 catMore sits on its row
+ok   H5@1440 fSeriesContext sits on its row
+ok   H5@1440 moreFiltersToggle sits on its row
+ok   H5@1440 meetingToggle sits on its row
+ok   H1@1024 the panel holds at least five controls
+ok   H2@1024 every control is --filter-height
+ok   H3@1024 one label gap in the whole panel
+ok   H4@1024 the panel is at most three rows deep
+ok   H5@1024 psbSiteCompany sits on its row
+ok   H5@1024 psb-site__value sits on its row
+ok   H5@1024 psbSiteMarketplace sits on its row
+ok   H5@1024 catMore sits on its row
+ok   H5@1024 fSeriesContext sits on its row
+ok   H5@1024 moreFiltersToggle sits on its row
+ok   H5@1024 meetingToggle sits on its row
+
+== I — THE DRAWER CLOSES, AND CLOSING IS NOT CLEARING ==
+ok   I1  the drawer sequence ran clean
+ok   I2  the open drawer has exactly one close control
+ok   I3  it is a <button type="button">
+ok   I4  with an accessible name that says what it closes
+ok   I5  and the glyph is a real ×
+ok   I6  square, not the 60px the global button min-width used to force on it
+ok   I7  clicking it closes the drawer
+ok   I8  the panel has no box left
+ok   I9  and nothing of it is under the pointer where it used to be
+ok   I10 no control inside it can still be reached
+ok   I11 focus goes back to the control that opened it
+ok   I12 closing neither applies nor clears the scenario
+ok   I13 and reopening still shows the unsubmitted work
+ok   I14 the drawer is not left over a presentation or a fullscreen chart
+
+== J — THE HELP POPOVER: KEYBOARD, TOUCH, AND NOT ON PAPER ==
+ok   J1  one help button
+ok   J2  with an accessible name naming its subject
+ok   J3  closed to begin with
+ok   J4  a click opens it
+ok   J5  and aria-expanded says so
+ok   J6  Escape closes it — no mouse required
+ok   J7  and Enter opens it — no pointer required
+ok   J8  it carries the paragraph the state box used to hold permanently
+ok   J9  while the awaiting state keeps one short sentence that says what to do
+ok   J10 and no longer carries the long paragraph in the state itself
+ok   J11 the floating popover is not printed
+
+== J2 — A PANEL WITH NOTHING IN IT IS NOT DRAWN ==
+ok   J12.1 no filter panel is painted in the feature-disabled state
+ok   J13.1 and the help button is still there to explain the page
+ok   J12.2 no filter panel is painted in the universe-refused state
+ok   J13.2 and the help button is still there to explain the page
+ok   J14 the panel IS painted before a site is chosen, because the chooser is in it
+ok   J15 and on a loaded board
+
+== K — SCOPE: NOTHING HERE REACHES ANOTHER PAGE ==
+ok   K1  every selector begins at .psb-page (or a documented body state hook)
+ok   K2  no bare shared selector
+ok   K3.1 assets/css/base.css is untouched by this round
+ok   K3.2 assets/css/components.css is untouched by this round
+ok   K3.3 assets/css/layout.css is untouched by this round
+ok   K4  the file still carries exactly the 21 !important declarations it had — this round added none
+ok   K5  the left navigation entry is untouched
+ok   K6  and the six in-page tabs are still the shared rail
+
+== L — MUTANTS ==
+ok   L1  a rerender destroys the controls and drops the focus (caught)
+ok   L2  the DOM stops agreeing with the controller (caught)
+ok   L3  loading clears the site a person already confirmed (caught)
+ok   L4  a stale response overwrites the newer selection (caught)
+ok   L5  a failure cannot be retried (caught)
+ok   L6  the header sits on a grey banner again (caught)
+ok   L7  the chart `?` controls come back (caught)
+ok   L8  the page info button is removed along with the `?`s (caught)
+ok   L9  the X axis prints the price again (caught)
+ok   L10 the tooltip loses the price (caught)
+ok   L11 Series stops matching the other filters (caught)
+ok   L12 the drawer has no close button (caught)
+ok   L13 close only hides the drawer and it still intercepts (caught)
+ok   L14 closing the drawer throws the unsubmitted work away (caught)
+ok   L15 the board emits a second set of site selectors (caught)
+ok   L16 the filters split back into two panels (caught)
+ok   L17 an illegal Category survives a site change (caught)
+ok   L18 the help popover becomes hover-only (caught)
+ok   J11a and the rule that does it is inside a print block, not merely somewhere in the file
+ok   L19 the floating popover is printed (caught)
+ok   L21 an empty filter panel is drawn over a refusal (caught)
+ok   L20 the left navigation is modified (caught)
+
+passed 184  failed 0  |  mutants caught 21  survived 0

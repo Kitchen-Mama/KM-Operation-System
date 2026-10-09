@@ -1,0 +1,13 @@
+
+== Reconciled contract: WEEKLY Active key = K3 (recommendation_group_no NOT in the key) ==
+
+== MONTHLY_ORDER key UNCHANGED (independent of this reconciliation) ==
+
+== Behavioral (task scenarios B/C/D) — group_no is NOT an Active identity axis under Phase-1 K3 ==
+
+== Behavioral (task scenario E) — MONTHLY drafts differing by draft_purpose coexist (key includes draft_purpose) ==
+
+== Source lock — a future C1 that adds group_no to the WEEKLY key must update this guard + the freeze doc ==
+
+----------------------------------------
+WEEKLY ACTIVE-KEY RECONCILIATION (F1-7N-C0): 29 passed, 0 failed

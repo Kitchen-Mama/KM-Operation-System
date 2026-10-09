@@ -1,0 +1,193 @@
+
+== §I.1-4 — AI Plan scope registry: options, request counts, honest failure ==
+ok   1. the AI modal registry resolves READY
+ok   1. and yields real Country options (not an empty select)
+ok   1. and real Marketplace options for a country
+ok   1. exactly ONE request to populate them
+ok   2. re-opening the modal after the registry is loaded issues ZERO further requests
+ok   2. the registry itself reports one request for the session
+ok   3. changing Country costs ZERO requests — it reads the already-loaded index
+ok   2b. four concurrent consumers share ONE in-flight request (single-flight)
+ok   4. a registry read failure resolves ERROR
+ok   4. and preserves the real error code
+ok   4. it is NOT reported as EMPTY — a failure never masquerades as "nothing configured"
+ok   4b. a genuinely empty registry is EMPTY — a real configuration answer, not an error
+
+== §B2 — one canonical authority; the second source is gone ==
+ok   B2a the scope modal no longer seeds from the broad _opDbCache getter
+ok   B2b and no longer issues its own whole-table marketplaces read
+ok   B2c it reads the ONE shared registry instead
+ok   B2d the Site Inventory page reads that SAME registry, so there is one cache and one authority
+ok   B2e the modal renders READY / LOADING / EMPTY as DISTINCT branches, with ERROR as the remaining one
+ok   B2e2 EMPTY says "nothing is configured" — a configuration answer
+ok   B2e3 ERROR says the read failed AND shows its code — the two can never be confused
+ok   B2f an ERROR offers a Retry control
+ok   B2g the shared registry is loaded by index.html
+ok   B2h and BEFORE its consumers
+
+== §I.5-8 — Method registry: ready, empty configuration, transport error, no N+1 ==
+ok   5. a scope with matching rate cards resolves READY
+ok   5. and yields the canonical method tokens
+ok   5. values are canonical ids, labels are display metadata
+ok   5. an INACTIVE rate card is excluded
+ok   5b. a concrete destination keeps its own card plus the wildcard-destination cards
+ok   6. a route no rate card covers resolves EMPTY_CONFIGURATION
+ok   6. carrying METHOD_REGISTRY_CONFIGURATION_REQUIRED
+ok   6. naming the table
+ok   6. and the exact row that would fix it
+ok   6. with an actionable next step
+ok   6. "no eligible method" is NEVER reported as a transport failure
+ok   8. twenty-five Method pickers in one scope issue ZERO further reads
+ok   8b. concurrent ensureLoaded calls for one scope dedupe to ONE request
+ok   7. a transport/deployment failure resolves ERROR
+ok   7. and PRESERVES the real code (it used to be discarded)
+ok   7. a failure is never reported as a missing rate card
+ok   5c. a catalogue loaded for another station answers STALE_SCOPE, never a confidently wrong list
+
+== §C — the five states reach the operator ==
+ok   C1 registry state exists: LOADING
+ok   C1 registry state exists: READY
+ok   C1 registry state exists: EMPTY_CONFIGURATION
+ok   C1 registry state exists: ERROR
+ok   C1 registry state exists: STALE_SCOPE
+ok   C2 EMPTY_CONFIGURATION has its own sentence
+ok   C3 ERROR shows its CODE, not a generic sentence
+ok   C4 STALE_SCOPE has its own sentence
+ok   C5 the old catch-all "Unable to load methods" is GONE
+ok   C6 the state is exposed on the control itself
+ok   C7 a real retry entry point exists
+ok   C8 the canonical destination warehouse CODE is available to the scoping
+ok   C9 the catalogue is PRELOADED after a successful Search
+ok   C10 and is NOT awaited — it cannot block the first paint of rows
+
+== §I.9-19 — AI draft lifecycle ==
+ok   9. a successful current run expires exactly the older AI drafts
+ok   12. a MANUAL route is never expired
+ok   13. a submitted row is never expired
+ok   13b. a cancelled row is never expired
+ok   13c. a site_confirmed row is never expired
+ok   13d. an already-expired row is not re-expired
+ok   14. another country is untouched
+ok   14b. another marketplace is untouched
+ok   16. the current run never expires its OWN rows
+ok   16b. nor any row already stamped with the current run id
+ok   19. a user-edited old AI draft IS expired (the recorded business decision)
+ok   19b. with the canonical expiration reason
+ok   19c. and its source run id retained
+ok   19d. the user-edit fact is recorded, not lost
+ok   11. a zero-result successful run expires every older AI draft in scope
+ok   11b. NO_DEMAND is classified as a zero-result run
+ok   11c. a zero-result run is a SUCCESS, and so is an all-suppressed run
+ok   11c. all-suppressed is its own classified job status, not a silent NO_DEMAND
+ok   11c. and a partial or failed run is still NEITHER — whole-job success needs every written group to commit
+ok   11d. reported as zero_result in the projection
+ok   10. expiration runs ONLY inside the success branch
+ok   10b. a non-successful run records that it expired nothing
+ok   10c. the current run is COMMITTED before anything is expired (never expire-then-compute)
+ok   15. the caller may pin the execution key
+ok   15b. the run id is DERIVED from it, so a retry is the SAME run and cannot create a second current run
+ok   17. `expired` is a real status in the canonical enum
+ok   17b. and is TERMINAL — no writer may mutate it
+ok   17c. active-header scans skip it, so it can never hydrate as active
+ok   17d. the workspace readback drops expired lines
+ok   18. Submit refuses an expired draft with its OWN typed reason
+ok   18b. and an expired LINE is not shippable
+ok   18c. expired is excluded from the active line set
+ok   D1 the lifecycle never writes `cancelled` to mean expired
+ok   D2 and never writes the reason into a free-text note
+ok   D3 it writes the formal reason column
+ok   D4 the four audit columns are the recorded minimal schema extension
+ok   D5 without the audit columns the lifecycle FAILS CLOSED
+ok   D6 with a typed, actionable code
+ok   D7 naming exactly which columns are missing
+ok   D8 with them present the manifest is producible
+ok   D9 and carries a deterministic checksum
+ok   D10 the checksum does not depend on row order
+ok   D11 nothing may be expired without an immutable run id
+
+== §F / §I.20-21 — active uniqueness and multi-route ==
+ok   F1 two active AI drafts on ONE canonical identity is a conflict
+ok   F2 named as a duplicate active AI identity
+ok   20. one SKU with TWO different routes is NOT a conflict — it is two canonical headers
+ok   F3 identity uses the EXISTING canonical K2 key — no second hash is defined
+ok   F4 the only hash in the module is the manifest checksum, which is not an identity
+ok   21. the pre-insert primary-key assertion still stands
+ok   21b. the batch pre-flight still stands
+ok   21c. canonical line resolution still stands
+ok   20b. the FB-4B-Addendum multi-route grouping is unchanged
+ok   21d. scoped persisted-id adoption is unchanged
+
+== §E — staged commit executed with injected IO (zero SpreadsheetApp) ==
+ok   E1 the staged expiration completes and self-verifies
+ok   E2 exactly the two older AI headers were expired
+ok   E3 and their lines
+ok   E4 the old header is now `expired`
+ok   E5 with the canonical reason
+ok   E6 and the superseding run id
+ok   E7 the MANUAL header is untouched
+ok   E8 the current run stays active
+ok   E9 the submitted row is untouched
+ok   E10 the user quantity on an expired line is PRESERVED
+ok   E11 and its note
+ok   E12 a submitted LINE keeps its own status
+ok   E13 a manual line is untouched
+ok   E14 verification proves no old AI draft is still active
+ok   E15 and that no duplicate ACTIVE AI identity remains
+ok   E15b and no AI/manual identity collision in this scope
+ok   E16 ONLY lifecycle columns were written — no quantity, flag or snapshot was touched
+ok   E17 re-running the expiration expires NOTHING further (idempotent)
+ok   E18 and writes nothing at all
+
+== §H — read-only diagnostic ==
+ok   H1 the diagnostic exists
+ok   H2 the diagnostic performs NO setValue call
+ok   H2 the diagnostic performs NO appendRow call
+ok   H2 the diagnostic performs NO deleteRow call
+ok   H2 the diagnostic performs NO setProperty call
+ok   H2 the diagnostic performs NO DriveApp call
+ok   H2 the diagnostic performs NO MailApp call
+ok   H2 the diagnostic performs NO GmailApp call
+ok   H3 footer declares DB_WRITES: 0
+ok   H3 footer declares STATUS_TRANSITIONS: 0
+ok   H3 footer declares PROPERTY_WRITES: 0
+ok   H3 footer declares DRIVE_WRITES: 0
+ok   H3 footer declares EMAILS: 0
+ok   H3 footer declares DEMO_MUTATIONS: 0
+ok   H4 diagnostic reports: registry
+ok   H4 diagnostic reports: method_registry
+ok   H4 diagnostic reports: ai_runs
+ok   H4 diagnostic reports: expiration_preview
+ok   H4 diagnostic reports: blocking_reason
+ok   H4 diagnostic reports: next_action
+ok   H4 diagnostic reports: duplicate_active_identities
+ok   H4 diagnostic reports: current_generation_authority
+ok   H4 diagnostic reports: schema
+ok   H5 it previews the rows a run WOULD expire
+ok   H6 and the manual rows it would preserve
+
+== §G — API projection and UI behaviour ==
+ok   G1 the run projection returns: generation_run_id
+ok   G1 the run projection returns: execution_key
+ok   G1 the run projection returns: created_headers
+ok   G1 the run projection returns: updated_headers
+ok   G1 the run projection returns: created_lines
+ok   G1 the run projection returns: updated_lines
+ok   G1 the run projection returns: expired_headers
+ok   G1 the run projection returns: expired_lines
+ok   G1 the run projection returns: active_count
+ok   G1 the run projection returns: expired_count
+ok   G1 the run projection returns: zero_result
+ok   G2 the page consumes the projection
+ok   G3 an AI Plan FAILURE explicitly does not clear the Execution Plan
+ok   G4 the result states what was REPLACED, not only what was created
+
+== §A — nothing from FB-4B / the Addendum regressed; canonical spec recorded ==
+ok   A1 the lifecycle rule is recorded in a canonical planning document
+ok   A2 including that rows are kept, never deleted
+ok   A3 the FB-4B cleanup tool is still DRY_RUN by default
+ok   A4 this task did NOT modify the cleanup tool
+ok   A5 no cleanup runs inside a production request path
+ok   A6 the allocation handler still deletes no row
+ok   A7 the lifecycle module deletes no row
+
+171 passed, 0 failed

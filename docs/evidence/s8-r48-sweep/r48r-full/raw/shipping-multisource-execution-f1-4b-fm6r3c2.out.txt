@@ -1,0 +1,15 @@
+
+== CO1100-R — 4200 aggregate → Overseas 1100 + Factory 3000 (+ 100 uncovered, NOT a line) ==
+
+== conservation — one warehouse appearing in multiple pool entries is summed into ONE line (no duplicate key) ==
+
+== edge cases — single source, zero-overseas→factory-only, overseas-fully-covers, all-uncovered ==
+
+== validator + idempotency — 5-part key accepts blank nullable parts; identical rerun is deterministic ==
+
+== MONTHLY_ORDER unchanged — no per-source fan-out, 2-part key ==
+
+== config — WEEKLY line key + nullable designation ==
+
+----------------------------------------
+SHIPPING MULTI-SOURCE EXECUTION (F1-4B-FM6-R3C2): 21 passed, 0 failed

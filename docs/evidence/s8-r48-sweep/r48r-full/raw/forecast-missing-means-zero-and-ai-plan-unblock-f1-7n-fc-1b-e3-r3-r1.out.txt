@@ -1,0 +1,187 @@
+
+== §1 — FORECAST SEMANTICS: the four zeros, and the eight refusals ==
+ok   S0  the window spans a year boundary — that is the whole setting
+ok   S1  §1.1 a positive number is used verbatim
+ok   S2  §1.2 an explicit 0 is 0, and says so
+ok   S3  §1.3 a blank cell is 0
+ok   S4  §1.4 no row for the year is 0 — the live case
+ok   S5  §1 a timeout BLOCKS — it never becomes 0
+ok   S6  a transport failure BLOCKS
+ok   S7  a missing table BLOCKS
+ok   S8  a missing required header BLOCKS
+ok   S9  a present but non-numeric value BLOCKS — somebody typed something unknown
+ok   S10 an incomplete scope identity BLOCKS
+ok   S11 two rows that DISAGREE BLOCK — no tool may pick a winner
+ok   S11a an unknown outcome BLOCKS
+ok   S11b and so does a caller that never said the read succeeded
+ok   S12 §1 the refusal vocabulary is exactly the eight codes the contract names
+ok   S13 §1 AGREEING duplicates resolve to their single value (inherited policy, no merge invented)
+ok   S13a and the module records that it inherited that rule rather than choosing it
+ok   S14 §1 every default-to-zero is counted, by provenance
+ok   S14a and the live basis is 520 — the three real months plus a zero for the missing year
+ok   S15 §1 the authority contains NO write call — this is runtime normalization, not a migration
+ok   S15a and reads no clock
+
+== §2 — THE CANONICAL DEMAND AUTHORITY (measured from the shipped chain) ==
+ok   D1  §2.1 the screen reads inventory_replenishment_gap.d90_suggested_qty — a DB-backed value
+ok   D1a and 43_ is the owner that persists it
+ok   D2  §2.2 the materialized row carries calculation_status and calculation_date...
+ok   D2a ...resolved from the frozen planning config, not a clock
+ok   D3  §2.3/§2.6 the AI Plan takes its demand from the CANONICAL recommendation workspace...
+ok   D3a ...as horizons[].gapQty — the same authority 43_ materializes
+ok   D3b under the server-resolved calculation context, never a clock
+ok   D4  §2.4 the forecast re-read produces forecastShareQty — the §7 WEIGHT basis
+ok   D4a which KMAF uses ONLY as a proportional share (basis ÷ Σ basis)
+ok   D5  §2.5 it computes NO gap — there is no second demand calculation in the allocation stage
+ok   D6  §2 the server-side AI Plan chain cannot read the DOM at all
+
+== §3/§4 — CO1100-R: the block is gone, and the allocator runs ==
+ok   A1  §3 PRE: with the site dropped, KMAF is not ready and the reason is the empty universe
+ok   A1a and the readiness answer refuses
+ok   A2  §4 POST: KMAF_READY = true
+ok   A2a receiverFacts > 0
+ok   A2b with no issues
+ok   A2c and a resolved demandWeight
+ok   A3  §4 the canonical readiness answer is READY
+ok   A3a with no blocking reason
+ok   A3b and a request is produced
+ok   A4  §4 a complete payload: one SKU...
+ok   A4a ...carrying the CANONICAL DB-backed demand of 520 — the same number the screen shows
+ok   A4b with its resolved destination
+ok   A4c and its share
+ok   A4d and the factory pool it may draw from
+ok   A4e under the requested scope
+ok   A5  §3 source_data_as_of comes from the harvest lineage, never from a clock
+ok   A5a and the receiver builder reads no clock at all
+ok   A6  §4 the result is deterministic — identical inputs, identical payload
+ok   A7  §4 requested = allocated basis = the canonical 520, not recomputed
+ok   A8  §3 an all-zero window resolves, with a basis of 0
+ok   A8a every month accounted for by provenance
+ok   A8b a zero-demand SKU beside a real one does not break the group
+ok   A8c and it earns a share of exactly ZERO — no gap is invented for it
+ok   A8d while the SKU that does have demand keeps the whole share
+ok   A9  §4 a genuine data fault still blocks, and now names WHICH of the eight refusals
+ok   A9a and the old catch-all that covered a year boundary and a corrupt table alike is no longer RAISED
+ok   A9b while the typed replacement is raised in its place
+ok   A10 §3 the new engine code is mapped to an EXISTING readiness code, not a synonym
+ok   A10a and the old one is KEPT, so a mixed deployment still maps
+ok   A11 §1 61_ detects a MISSING forecast tab explicitly...
+ok   A11a ...and a throw is an UNKNOWN outcome, not an empty table
+ok   A11b and a header-less tab is a schema fault
+ok   A11c while reading nothing but the header row
+
+== §5 — SHIPPING vs ORDERING: one authority, so they cannot drift ==
+ok   B1  §5.A/§5.C Inventory Summary already contributes nothing for an unresolved month — it never blocked
+ok   B1a and its per-month demand override skips one too
+ok   B2  §5.B Shipping reads the missing 2027 month as 0...
+ok   B2a ...so its basis matches what Inventory Summary computes from the same rows
+ok   B3  §5 the harvest has exactly ONE forecast reading, through the shared authority
+ok   B3a and no second reader beside it
+ok   B4  §5.D the Submit / Weekly Shipping Plan owner never re-reads raw forecast
+ok   B5.1 §5 KMFCN has no dependency on supply-planning-ledgers — it cannot have changed that formula
+ok   B5.2 §5 KMFCN has no dependency on supply-planning-qualified-incoming — it cannot have changed that formula
+ok   B5.3 §5 KMFCN has no dependency on supply-planning-allocations — it cannot have changed that formula
+ok   B5.4 §5 KMFCN has no dependency on supply-planning-time-phased-projection — it cannot have changed that formula
+ok   B5.5 §5 KMFCN has no dependency on supply-planning-horizon-projection — it cannot have changed that formula
+ok   B5a and the bundle order records it as SELF-CONTAINED
+
+== §6 — the 495-row migration is OPTIONAL and was NOT run ==
+ok   M1  §6 DRY_RUN still ships true
+ok   M2  §6 R3's fixed batch size is preserved
+ok   M3  §6 per-business-key readback preserved
+ok   M4  §6 resume-required preserved
+ok   M5  §6 the updated>0 hard STOP preserved
+ok   M6  §6 partial-outcome reconciliation preserved
+ok   M7  §6 neither TEMP is in the deployment manifest
+ok   M7a nor routed as an action
+ok   M8  §6 the harvest does not depend on the rollover in any way
+
+== §7 — the flag, and the deployment contract ==
+ok   F1  §7 the AI Plan flag is FALSE at the end of this round
+ok   F1a and the rollback switch is preserved
+ok   F2  §7 61_ declares exactly the build its manifest entry expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5)
+ok   F2a and 63_ does the same (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   F2b and 61_ is stamped at or after the round whose behaviour it carries (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5)
+ok   F3  §7 KMFCN is registered in the bundle module order
+ok   F3a and bound to the KMFCN global
+ok   F3b and the generated bundle really carries it
+ok   F3c under that name
+
+== §7 — EXECUTED: the health handler, with every .gs in one context ==
+ok   H1  EXECUTED: every one of the 77 .gs files loads in one shared scope
+ok   H2  §7 flag_effective = false
+ok   H3  §7 mixed_deployment = false
+ok   H4  §7 missing_actions = []
+ok   H5  §7 stale_modules = []
+ok   H6  §7 deployment uniformity = UNIFORM
+ok   H7  §7 deployed_action_contract_version is not below 11
+ok   H7a required_action_list_version is not below 12
+ok   H7b transport_contract_version = 1
+ok   H8  and the deployment build is 63_'s own stamp
+ok   H9  §1 KMFCN is reachable as an Apps Script global — the bundle binding works
+ok   H9a and IN Apps Script it resolves the live CO1100-R window to 520 with the missing year at 0
+ok   H10 §7 generation with the flag false is refused
+ok   H10a with the flag's own code
+
+== §8 - the recurring first-attempt timeout is MEASURED, and nothing about the request path moved ==
+ok   T1  §8 a per-stage report exists and is reachable by name
+ok   T2.1 §8 it reports page_boot_elapsed_ms
+ok   T2.2 §8 it reports client_total_elapsed_ms
+ok   T2.3 §8 it reports server_execution_ms
+ok   T2.4 §8 it reports request_count
+ok   T2.5 §8 it reports coalesced_count
+ok   T2.6 §8 it reports retry_count
+ok   T2.7 §8 it reports first_attempt
+ok   T2.8 §8 it reports retry_attempt
+ok   T3.1 §8 with a named stage for deployment_contract
+ok   T3.2 §8 with a named stage for inventory_workspace
+ok   T3.3 §8 with a named stage for recommendation_read
+ok   T3.4 §8 with a named stage for allocation_hydration
+ok   T4  §8 and the FIRST vs RETRY difference, which is the actual question
+ok   T5  §8 server execution time comes from the SERVER envelope meta, not from a client measurement
+ok   T5a and it is never derived from the client elapsed number — reported or null, never estimated
+ok   T5b the capture requires an actual number from the envelope — a missing field stays null, not 0
+ok   T6  §8 the status is RECURRING, not a single transient occurrence
+ok   T6a and the page no longer carries the NOT REPRODUCED reading anywhere
+ok   T7  §8 the read bound still exists...
+ok   T7a ...and the measurement is not wired into the request path at all
+ok   T8  §8 the report issues no request, schedules nothing, and reads no cache
+ok   T8a it only READS the retry count the transport already keeps
+ok   T9  §8 it reads samples the transport ALREADY records - no new collection was added
+ok   T9a which are bounded at 400, so the measurement cannot grow without limit
+ok   T10 §8 and the stage report does not mention the forecast - they are unrelated causes
+
+== §10 - release identity ==
+ok   R1  this round minted its own application token
+ok   R1a strictly after R2's, which was PUBLISHED (origin/main carries 4979903)
+ok   R1b and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   R2  zero production refs remain on R2's token
+ok   R2a and nothing is left behind on any superseded token
+ok   R3  the page carries it - it is the ONE browser asset this round changes
+ok   R4  and the stylesheet stays on its own family token: it did NOT change this round
+ok   R4a which is at or after R2's
+ok   R5  the owner stamp is recorded, after R2's
+ok   R5a and the shared stamp validator accepts it
+
+== MUTATIONS ==
+ok   N1  a missing year row hard-blocks again (caught)
+ok   N2  a timeout is defaulted to zero (caught)
+ok   N3  conflicting rows are defaulted to zero (caught)
+ok   N4  an unknown read outcome is treated as success (caught)
+ok   N5  a non-numeric value becomes zero (caught)
+ok   N6  a missing table becomes a plan for nothing (caught)
+ok   N7  a throw while reading the table is reported as an empty table (caught)
+ok   N8  the harvest goes back to requiring every month to be present (caught)
+ok   N9  Shipping and Ordering read the same absence differently (caught)
+ok   N10 the migration becomes an activation prerequisite again (caught)
+ok   N11 the rollover COMMIT is wired to run automatically (caught)
+ok   N12 the AI Plan flag is opened early (caught)
+ok   N13 the canonical gap is replaced by a re-derived one (caught)
+ok   N14 the audit counters are dropped (caught)
+ok   N15 the normalization writes its zeros back to the database (caught)
+ok   N16 the new engine code is left unmapped, so the refusal loses its readiness code (caught)
+ok   N17 61_ ships without moving its build stamp (caught)
+
+----------------------------------------
+MISSING FORECAST MEANS ZERO + AI PLAN UNBLOCK (F1-7N-FC-1B-E3-R3-R1): 163 passed, 0 failed
+mutations: 17 caught, 0 missed

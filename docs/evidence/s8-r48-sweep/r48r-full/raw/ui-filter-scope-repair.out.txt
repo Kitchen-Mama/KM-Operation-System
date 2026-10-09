@@ -1,0 +1,21 @@
+
+-- Repair H: Carrier Rate Card — All-dates calendar icon removed --
+ok   H1: no ::before calendar glyph on .crc-date-trigger
+ok   H2: the 📅 glyph is gone from carrier-rate-card.css entirely
+ok   H3: "All dates" text still present in the trigger
+ok   H4: date filter handler crcOpenDateModal still wired (date filtering intact)
+ok   H5: date Clear handler still present (date filter behaviour unchanged)
+
+-- Repair B (order): Shipment Overview — Shipping Method precedes SKU (post Round 3 migration) --
+ok   B1: both Shipping Method mount and SKU group exist
+ok   B2: Shipping Method appears BEFORE the SKU group in DOM (→ Tab order preserved)
+ok   B3: Country + Method are shared-component mounts (keys unchanged)
+ok   B3b: old sh-dropdown data-filter panels removed (single owner)
+ok   B4: hardcoded Shipping Method option removed (runtime-derived now) — Air Freight
+ok   B4: hardcoded Shipping Method option removed (runtime-derived now) — Sea Freight
+ok   B4: hardcoded Shipping Method option removed (runtime-derived now) — AGL Ship
+ok   B4: hardcoded Shipping Method option removed (runtime-derived now) — Private Ship
+ok   B4: hardcoded Shipping Method option removed (runtime-derived now) — Express
+ok   B5: SKU free-text control preserved (still an input, not converted)
+
+ALL PASS (15 assertions)

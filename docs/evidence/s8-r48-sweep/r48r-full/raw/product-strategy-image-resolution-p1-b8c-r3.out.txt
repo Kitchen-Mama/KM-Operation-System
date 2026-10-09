@@ -1,0 +1,380 @@
+ok   A0  Node starts with no page origin, as expected
+
+=== §A  THE REGRESSION, REPRODUCED AGAINST THE RULE THAT WAS ACTUALLY SHIPPED ===
+ok   A1  the pre-R3 adapter is recoverable from 5c5861d
+ok   A1a and it exposes imageStateOf
+ok   A1b and the rule it applied really was a bare absolute-URL regex
+ok   A1c and it consulted no shared policy — the drift is the thing being reproduced
+ok   A2  the operator-asserted image_url shape
+ok   A2a and its basis is the operator reading the live row, not a filename that matches a sku
+ok   A2b and every file it names exists at that exact path
+ok   A3  SKU DETAILS RENDERS IT — the value goes into <img src> and a browser resolves it
+ok   A3a AND THE BOARD REFUSED THE SAME VALUE — this is the reported regression, reproduced
+ok   A3b so one page displayed and the other did not, off ONE row of ONE column
+ok   A4.1 PRE-R3 SKU Details put "javascript:alert(1)" straight into <img src>
+ok   A4.2 PRE-R3 SKU Details put "C:\\Users\\viczh\\Desktop\\photo. straight into <img src>
+ok   A4.3 PRE-R3 SKU Details put "1AbCdEfGhIjKlMnOpQrStUvWxYz012345 straight into <img src>
+ok   A4.4 PRE-R3 SKU Details put "data:text/html;base64,PHNjcmlwdD4 straight into <img src>
+ok   A4  VERDICT: the board refused a value production holds, and SKU Details accepted values nothing should — two halves of ONE missing authority
+
+=== §B  ONE RESOLVER, AND IT IS AN EXTRACTION RATHER THAN A SECOND MAPPING ===
+ok   B1  the policy declares a contract id
+ok   B1a and that there is one of it per system
+ok   B1b and that a page may not hold its own
+ok   B1c and that it never composes a path from a sku — P0-R3-R1 stays retracted
+ok   B1d and it names both consumers
+ok   B2  sku-overrides.js asks the policy
+ok   B2a and so does km-product-pricing-adapter.js
+ok   B3  the adapter's image function no longer carries a scheme regex of its own
+ok   B3a and the SKU Details resolver no longer rewrites a scheme itself
+ok   B4  the mixed-content upgrade survived the move
+ok   B4a and is still CONDITIONAL on the page being https
+ok   B5  every <img>/<image> source assignment is found
+ok   B5.1 it is handed a bare value, never a composed path :: im.setAttribute('href', n.image);
+ok   B5.2 it is handed a bare value, never a composed path :: im.setAttribute('src', rep.image);
+ok   B5.3 it is handed a bare value, never a composed path :: im.setAttribute('src', n.image);
+ok   B5a psb-selectors.js composes no sku -> path
+ok   B5b sku-overrides.js composes no sku -> path
+ok   B5c km-image-reference-policy.js composes no sku -> path
+
+=== §C  THE NINE CASES THE ROUND ASKS FOR ===
+ok   C1  a GitHub asset path is a same-origin asset
+ok   C1a resolved verbatim — no directory prefixed, no extension appended
+ok   C1b SKU Details renders it
+ok   C1c AND THE BOARD NOW DOES TOO — the R3 fix
+ok   C2.1 CO1100-R -> verified
+ok   C2.1a and SKU Details renders the same path
+ok   C2.2 CO1150-R -> verified
+ok   C2.2a and SKU Details renders the same path
+ok   C2.3 CO2600-B -> verified
+ok   C2.3a and SKU Details renders the same path
+ok   C2.4 CO5600-RB -> verified
+ok   C2.4a and SKU Details renders the same path
+ok   C2.5 SP3120-R -> verified
+ok   C2.5a and SKU Details renders the same path
+ok   C2.6 SP3410-R -> verified
+ok   C2.6a and SKU Details renders the same path
+ok   C2.7 MO5600-R -> verified
+ok   C2.7a and SKU Details renders the same path
+ok   C2  all seven operator-asserted mappings, and only seven
+ok   C2a a bare filename beside the page resolves too
+ok   C3  an absolute url on the PAGE'S OWN origin is approved
+ok   C3a and is resolved unchanged
+ok   C3b and it needed no allowlist entry — the origin is not a guess, it is where the page is
+ok   C3c an EXTERNAL host is approved once the operator declares it
+ok   C3d and the board honours the same declaration
+ok   C3e and so does SKU Details
+ok   C4.1 "" is ABSENT
+ok   C4.2 null is ABSENT
+ok   C4.3 undefined is ABSENT
+ok   C4.4 "   " is ABSENT
+ok   C4  and named as a DATA gap
+ok   C4a the board calls it IMAGE_SOURCE_MISSING
+ok   C4b SKU Details renders its placeholder
+ok   C4c reported as ABSENT
+ok   C4d with the reason that tells an operator to fill the cell
+ok   C5.1 a script url is REJECTED
+ok   C5.1a with reason UNSUPPORTED_SCHEME
+ok   C5.1b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.1c the board refuses it
+ok   C5.1d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.2 a data url is REJECTED
+ok   C5.2a with reason UNSUPPORTED_SCHEME
+ok   C5.2b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.2c the board refuses it
+ok   C5.2d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.3 another script scheme is REJECTED
+ok   C5.3a with reason UNSUPPORTED_SCHEME
+ok   C5.3b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.3c the board refuses it
+ok   C5.3d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.4 a Windows path is REJECTED
+ok   C5.4a with reason LOCAL_FILE_PATH
+ok   C5.4b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.4c the board refuses it
+ok   C5.4d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.5 a Windows path with forward slashes is REJECTED
+ok   C5.5a with reason LOCAL_FILE_PATH
+ok   C5.5b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.5c the board refuses it
+ok   C5.5d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.6 a UNC path is REJECTED
+ok   C5.6a with reason LOCAL_FILE_PATH
+ok   C5.6b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.6c the board refuses it
+ok   C5.6d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.7 a file: url is REJECTED
+ok   C5.7a with reason LOCAL_FILE_PATH
+ok   C5.7b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.7c the board refuses it
+ok   C5.7d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.8 a traversal is REJECTED
+ok   C5.8a with reason PATH_TRAVERSAL
+ok   C5.8b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.8c the board refuses it
+ok   C5.8d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.9 a Drive id is REJECTED
+ok   C5.9a with reason OPAQUE_REFERENCE
+ok   C5.9b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.9c the board refuses it
+ok   C5.9d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.10 a Spreadsheet id is REJECTED
+ok   C5.10a with reason OPAQUE_REFERENCE
+ok   C5.10b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.10c the board refuses it
+ok   C5.10d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.11 an undeclared external host is REJECTED
+ok   C5.11a with reason UNAPPROVED_HOST
+ok   C5.11b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.11c the board refuses it
+ok   C5.11d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.12 a protocol-relative undeclared host is REJECTED
+ok   C5.12a with reason UNAPPROVED_HOST
+ok   C5.12b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.12c the board refuses it
+ok   C5.12d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.13 an absolute url naming no file is REJECTED
+ok   C5.13a with reason NOT_AN_IMAGE_FILENAME
+ok   C5.13b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.13c the board refuses it
+ok   C5.13d AND SO DOES SKU DETAILS — which it did not before
+ok   C5.14 an attribute break-out attempt is REJECTED
+ok   C5.14a with reason UNSUPPORTED_SCHEME
+ok   C5.14b AND `url` IS EMPTY — a caller reading only `url` still cannot put it in the DOM
+ok   C5.14c the board refuses it
+ok   C5.14d AND SO DOES SKU DETAILS — which it did not before
+ok   C5  and SKU Details reports REFUSED, which is neither ABSENT nor PRESENT
+ok   C5a naming what is wrong with the row, so it is fixable
+ok   C5b absent and refused are DIFFERENT states — the conflation is gone
+ok   C6  SKU Details has an onerror fallback (unchanged)
+ok   C6a and psb-board-ui.js now has one on BOTH of its <img> elements — there were two, not one
+ok   C6b which says the file did not load
+ok   C6c and is a DIFFERENT message from "no url on the row"
+ok   C6d the failed <img> is REMOVED, not left behind the notice
+
+=== §D  PARITY — THE TWO PAGES AGREE, IN BOTH DIRECTIONS ===
+ok   D1  NOT ONE VALUE IS DISPLAYED BY ONE PAGE AND REFUSED BY THE OTHER
+ok   D1a and the agreement is not "both refuse everything" — some do display
+ok   D1b nor "both accept everything" — some are refused
+ok   D2  the two pages resolve the same value to the same ADDRESS, upgrade included
+ok   D2a and it is the upgraded one
+ok   D2b a refused reference yields no address at all
+ok   D3  the adapted row is verified
+ok   D3a and carries the address the selectors put in <img src>
+ok   D3b with the policy's verdict on the row, so "why no picture" is answerable from the data
+ok   D3c and a refused one carries the reason
+ok   D3d while the ORIGINAL cell survives on a refused row — an operator has to see what to fix
+ok   D4  the selectors draw the verified one
+ok   D4a and draw nothing for the refused one
+
+=== §E  THE ASSET-EVIDENCE CAPTURE, AND WHAT ITS PROVENANCE IS ===
+ok   E1  the capture names its own kind
+ok   E1a the image identity is operator-asserted
+ok   E1b AND THE PRICES ARE NOT — it says so itself
+ok   E1c with the basis
+ok   E2  it READS the contract's table rather than carrying a copy
+ok   E2a and no path is retyped inside it, so the two cannot drift
+ok   E2b seven, and the list is closed
+ok   E3  the first seven rows carry the seven asserted paths, in contract order
+ok   E3a AND THE EIGHTH CARRIES ONE THAT MUST BE REFUSED — a run where everything draws proves nothing
+ok   E3b and the board refuses it
+ok   E3c the ninth carries the legacy filename-only convention
+ok   E3c1 and the tenth the root-relative shape
+ok   E3c2 and the rest carry none, so every state is on one page
+ok   E4  three captures, three kinds
+ok   E5  the deterministic redaction marker no longer looks like a file
+ok   E5a so the policy calls it what it is, and it cannot be drawn
+ok   E5b which keeps the de-identified capture unable to claim a photograph
+ok   E5c and the live capture's addresses were removed by the diagnostic, as they had to be
+
+=== §F  CASE 7 — THE LIVE SIXTY REPLAY, AND WHAT IT CAN AND CANNOT PROVE ===
+ok   F1  sixty live-derived rows
+ok   F1a out of a 495-row universe
+ok   F2  every live row is still refused or absent — AND THAT IS NOT A REGRESSION
+ok   F2a fifty-eight carried a reference
+ok   F2b and two carried nothing
+ok   F3  BECAUSE THE ADDRESSES WERE REMOVED BY THE DIAGNOSTIC, and the capture records that
+ok   F3a SO THE LIVE ROWS CANNOT DEMONSTRATE A RENDERED IMAGE, and are not asked to. Claiming "the live replay proves the pictures work" would be claiming evidence R2 deliberately destroyed.
+ok   F4  all sixty still adapt
+ok   F4a with identity intact
+ok   F4b and every one carries a policy verdict rather than a silence
+ok   F4c and not one of them offers an address to <img src>
+
+=== §G  LOAD ORDER, AND FAILING CLOSED WHEN THE POLICY IS NOT THERE ===
+ok   G1  index.html loads the policy
+ok   G1a BEFORE sku-overrides.js
+ok   G1b and before the pricing adapter
+ok   G1c and its cache-bust token does not contain `p1b8c` — P1-B8C §C greps production for exactly that
+ok   G2  with no policy loaded SKU Details renders NOTHING rather than falling back to pass-through
+ok   G2a and reports REFUSED
+ok   G2b naming the deployment fault rather than blaming the row
+ok   G2c and the adapter with no policy verifies NOTHING
+ok   G3  the visual runner loads the policy into its generated page
+ok   G3a and bases that page on the repo root, so a relative image resolves as it does when deployed
+
+=== §H  CASE 8 — SEVEN VIEWPORTS IN A REAL BROWSER, AND naturalWidth ===
+ok   H1  the asset-capture acceptance run produced measurements
+ok   H1a and so did the live regression run
+ok   H2  the asset run really replayed the asset capture
+ok   H2a and names both capture files
+ok   H3.1 1920x1080 was measured
+ok   H3.1a 1920x1080 drew at least one <img>
+ok   H3.1b 1920x1080 AND NOT ONE OF THEM WAS BROKEN
+ok   H3.1c 1920x1080 every one reported naturalWidth > 0 — the bytes arrived
+ok   H3.1d 1920x1080 and the chart drew photograph markers
+ok   H3.1e 1920x1080 WHILE STILL DRAWING PLATES for the rows that have none
+ok   H3.1f 1920x1080 no horizontal page overflow
+ok   H3.1g 1920x1080 no console errors
+ok   H3.1h 1920x1080 and the feature flag is still false
+ok   H3.2 1440x900 was measured
+ok   H3.2a 1440x900 drew at least one <img>
+ok   H3.2b 1440x900 AND NOT ONE OF THEM WAS BROKEN
+ok   H3.2c 1440x900 every one reported naturalWidth > 0 — the bytes arrived
+ok   H3.2d 1440x900 and the chart drew photograph markers
+ok   H3.2e 1440x900 WHILE STILL DRAWING PLATES for the rows that have none
+ok   H3.2f 1440x900 no horizontal page overflow
+ok   H3.2g 1440x900 no console errors
+ok   H3.2h 1440x900 and the feature flag is still false
+ok   H3.3 1366x768 was measured
+ok   H3.3a 1366x768 drew at least one <img>
+ok   H3.3b 1366x768 AND NOT ONE OF THEM WAS BROKEN
+ok   H3.3c 1366x768 every one reported naturalWidth > 0 — the bytes arrived
+ok   H3.3d 1366x768 and the chart drew photograph markers
+ok   H3.3e 1366x768 WHILE STILL DRAWING PLATES for the rows that have none
+ok   H3.3f 1366x768 no horizontal page overflow
+ok   H3.3g 1366x768 no console errors
+ok   H3.3h 1366x768 and the feature flag is still false
+ok   H3.4 1280x720 was measured
+ok   H3.4a 1280x720 drew at least one <img>
+ok   H3.4b 1280x720 AND NOT ONE OF THEM WAS BROKEN
+ok   H3.4c 1280x720 every one reported naturalWidth > 0 — the bytes arrived
+ok   H3.4d 1280x720 and the chart drew photograph markers
+ok   H3.4e 1280x720 WHILE STILL DRAWING PLATES for the rows that have none
+ok   H3.4f 1280x720 no horizontal page overflow
+ok   H3.4g 1280x720 no console errors
+ok   H3.4h 1280x720 and the feature flag is still false
+ok   H3.5 1024x768 was measured
+ok   H3.5a 1024x768 drew at least one <img>
+ok   H3.5b 1024x768 AND NOT ONE OF THEM WAS BROKEN
+ok   H3.5c 1024x768 every one reported naturalWidth > 0 — the bytes arrived
+ok   H3.5d 1024x768 and the chart drew photograph markers
+ok   H3.5e 1024x768 WHILE STILL DRAWING PLATES for the rows that have none
+ok   H3.5f 1024x768 no horizontal page overflow
+ok   H3.5g 1024x768 no console errors
+ok   H3.5h 1024x768 and the feature flag is still false
+ok   H3.6 768x1024 was measured
+ok   H3.6a 768x1024 drew at least one <img>
+ok   H3.6b 768x1024 AND NOT ONE OF THEM WAS BROKEN
+ok   H3.6c 768x1024 every one reported naturalWidth > 0 — the bytes arrived
+ok   H3.6d 768x1024 and the chart drew photograph markers
+ok   H3.6e 768x1024 WHILE STILL DRAWING PLATES for the rows that have none
+ok   H3.6f 768x1024 no horizontal page overflow
+ok   H3.6g 768x1024 no console errors
+ok   H3.6h 768x1024 and the feature flag is still false
+ok   H3.7 390x844 was measured
+ok   H3.7a 390x844 drew at least one <img>
+ok   H3.7b 390x844 AND NOT ONE OF THEM WAS BROKEN
+ok   H3.7c 390x844 every one reported naturalWidth > 0 — the bytes arrived
+ok   H3.7d 390x844 and the chart drew photograph markers
+ok   H3.7e 390x844 WHILE STILL DRAWING PLATES for the rows that have none
+ok   H3.7f 390x844 no horizontal page overflow
+ok   H3.7g 390x844 no console errors
+ok   H3.7h 390x844 and the feature flag is still false
+ok   H4  the chart's image markers carry hrefs
+ok   H4a AND EVERY ONE IS A VALUE THE CAPTURE DECLARED — none was composed
+ok   H5  the category cards drew photographs
+ok   H5a and every one of them loaded
+ok   H5b with no "failed to load" notice
+ok   H6  the live run replayed the live-derived capture
+ok   H6.1a 1920x1080 no overflow on live data
+ok   H6.1b 1920x1080 Y axis fully visible
+ok   H6.1c 1920x1080 X lane fully visible
+ok   H6.1d 1920x1080 six sub-tabs
+ok   H6.1e 1920x1080 no console errors
+ok   H6.1f 1920x1080 AND NO BROKEN IMAGE — the redacted references are refused before they reach an <img>, not after
+ok   H6.1g 1920x1080 flag still false
+ok   H6.2a 1440x900 no overflow on live data
+ok   H6.2b 1440x900 Y axis fully visible
+ok   H6.2c 1440x900 X lane fully visible
+ok   H6.2d 1440x900 six sub-tabs
+ok   H6.2e 1440x900 no console errors
+ok   H6.2f 1440x900 AND NO BROKEN IMAGE — the redacted references are refused before they reach an <img>, not after
+ok   H6.2g 1440x900 flag still false
+ok   H6.3a 1366x768 no overflow on live data
+ok   H6.3b 1366x768 Y axis fully visible
+ok   H6.3c 1366x768 X lane fully visible
+ok   H6.3d 1366x768 six sub-tabs
+ok   H6.3e 1366x768 no console errors
+ok   H6.3f 1366x768 AND NO BROKEN IMAGE — the redacted references are refused before they reach an <img>, not after
+ok   H6.3g 1366x768 flag still false
+ok   H6.4a 1280x720 no overflow on live data
+ok   H6.4b 1280x720 Y axis fully visible
+ok   H6.4c 1280x720 X lane fully visible
+ok   H6.4d 1280x720 six sub-tabs
+ok   H6.4e 1280x720 no console errors
+ok   H6.4f 1280x720 AND NO BROKEN IMAGE — the redacted references are refused before they reach an <img>, not after
+ok   H6.4g 1280x720 flag still false
+ok   H6.5a 1024x768 no overflow on live data
+ok   H6.5b 1024x768 Y axis fully visible
+ok   H6.5c 1024x768 X lane fully visible
+ok   H6.5d 1024x768 six sub-tabs
+ok   H6.5e 1024x768 no console errors
+ok   H6.5f 1024x768 AND NO BROKEN IMAGE — the redacted references are refused before they reach an <img>, not after
+ok   H6.5g 1024x768 flag still false
+ok   H6.6a 768x1024 no overflow on live data
+ok   H6.6b 768x1024 Y axis fully visible
+ok   H6.6c 768x1024 X lane fully visible
+ok   H6.6d 768x1024 six sub-tabs
+ok   H6.6e 768x1024 no console errors
+ok   H6.6f 768x1024 AND NO BROKEN IMAGE — the redacted references are refused before they reach an <img>, not after
+ok   H6.6g 768x1024 flag still false
+ok   H6.7a 390x844 no overflow on live data
+ok   H6.7b 390x844 Y axis fully visible
+ok   H6.7c 390x844 X lane fully visible
+ok   H6.7d 390x844 six sub-tabs
+ok   H6.7e 390x844 no console errors
+ok   H6.7f 390x844 AND NO BROKEN IMAGE — the redacted references are refused before they reach an <img>, not after
+ok   H6.7g 390x844 flag still false
+
+=== §I  CASE 9 — NO OTHER PAGE CHANGED ITS LOOK ===
+ok   I1  not one stylesheet changed in this round
+ok   I1a and no page partial changed
+ok   I1b and no Apps Script file changed
+ok   I2  index.html gained exactly one line
+ok   I2a and lost none
+ok   I2b and that line is the policy script tag
+ok   I3  getNormalizedSkuImage is still exported under its own name
+ok   I3a and so is resolveSkuImageUrl
+ok   I3b and classifySkuImageSource
+ok   I3c exported ONCE — the duplicated export line beside it is gone
+ok   I4  sku-details.js calls it unchanged
+ok   I4a and so does sku-handbook.js
+ok   I5  the feature flag is still false
+ok   I5a index.html still renders no Product Strategy menu item
+ok   I5b and no Login/RBAC SOURCE file changed
+
+=== §J  MUTANTS ===
+ok   J1  the extension test is dropped, so a Drive id becomes a drawable asset — C5.9 — caught
+ok   J2  the host allowlist stops being consulted, so any domain is approved — C5.11 — caught
+ok   J3  the backslash check goes, so a UNC path reaches <img src> — C5.6 — caught
+ok   J4  the other-scheme guard goes, so javascript: is treated as a relative path — C5.1 — caught
+ok   J5  traversal is allowed, so a reference can climb out of the asset tree — C5.8 — caught
+ok   J6  `url` is filled in on a rejection, so a caller reading only `url` renders it — C5.*b — caught
+ok   J7  the mixed-content upgrade is dropped — B4 — caught
+ok   J8  the upgrade becomes unconditional, so an http page rewrites too — B4a — caught
+ok   J9  the adapter stops asking the policy and accepts anything non-blank — C1c/C5c — caught
+ok   J10 the adapter falls OPEN when the policy is missing — G2c — caught
+ok   J11 sku-overrides falls back to pass-through when the policy is missing — G2 — caught
+ok   J12 the adapter carries the RAW cell instead of the resolved address — D2 — caught
+ok   J13 ONE of the board's two broken-image fallbacks is removed — C6a — caught
+ok   J14 the deterministic capture's redaction marker becomes drawable again — E5 — caught
+ok   J15 the asset capture stops carrying a refusable reference, so everything draws — E3a — caught
+ok   J16 the asset capture retypes the mappings instead of reading the contract — E2 — caught
+ok   J17 the visual runner drops the policy from its page, so every image silently vanishes — G3 — caught
+ok   J18 the page loses its <base>, so a relative image 404s and the run photographs the fallback — caught
+ok   J19 whitespace inside a reference is allowed, so one cell becomes two attributes — caught
+ok   J20 an absolute url stops needing to name a file — C5.13 — caught
+
+===================================================================================
+PASS — passed 336  failed 0  |  mutants caught 20  survived 0
+===================================================================================

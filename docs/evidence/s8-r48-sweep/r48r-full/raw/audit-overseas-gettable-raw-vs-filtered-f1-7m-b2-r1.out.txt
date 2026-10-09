@@ -1,0 +1,16 @@
+
+== §1 backend filterRows_ contract on the production schema ==
+
+== §2 frontend normalize+filter matches the backend contract (no frontend-unique drop) ==
+
+== §5 identity contract RESOLVED — overseas_inventory_id canonical (legacy snapshot_id fallback) ==
+
+== VERDICT (audit) ==
+  CASE A (backend filter contract defect): RULED OUT — filter keeps every valid warehouse_id+sku row.
+  CASE B (frontend normalization defect):  RULED OUT — frontend matches backend exactly.
+  => A production zero implies CASE C (rows lack warehouse_id/sku) or CASE D (no data rows).
+     Decisive USER datum: open production overseas_inventory_snapshot — data-row count + whether
+     warehouse_id AND sku cells are populated.
+
+---------------------------------------------
+PASS 14  FAIL 0

@@ -1,0 +1,15 @@
+
+== §1 defect 2 — WEEKLY-ONLY basis with a BLANK channel now RESOLVES (the exact live run-rate-owner-error case) ==
+
+== §1 defect 1 — a Sheet JS Date snapshot_date is coerced to strict YYYY-MM-DD (owner no longer throws) ==
+
+== §1 the real owner exception is SURFACED (opaque "run-rate owner error" → named cause) ==
+
+== §1 identity NOT loosened — a DAILY-driven blank channel still fails closed (sentinel is weekly-only) ==
+
+== §1 unchanged behaviors preserved ==
+
+== §1 source structure — marshalling fixes present, owner untouched ==
+
+----------------------------------------
+R5B SALES OWNER MARSHALLING (F1-4B-FM5-R4UI-R5B): 13 passed, 0 failed

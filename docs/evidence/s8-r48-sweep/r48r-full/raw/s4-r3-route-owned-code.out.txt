@@ -1,0 +1,156 @@
+
+-- A. BOOT — what runs before the menu works -----------------------------------------------------
+
+  ok   A1  fewer local scripts execute at boot than before this round
+  ok   A1a and over 500 KB less JavaScript
+  ok   A1b index.html still loads fewer scripts than before this round
+  ok   A1b1 and the route-owned set has only grown since S4-R3 declared it
+  ok   A2  MENU_AVAILABLE_BEFORE_ROUTE_SCRIPTS: the menu is complete at boot
+  ok   A2a and the route’s own code has NOT run — its global is undefined
+  ok   A2b the loader agrees it has not been loaded
+  ok   A2c and nothing inserted a script before the menu existed
+  ok   A3  PILOT_SCRIPT_SET is the seven route-only Product Strategy modules
+  ok   A3z and psb-views.js is NOT among them — the shell depends on it at boot
+  ok   A3a index.html no longer loads psb-data-contract.js
+  ok   A3b and KM_ROUTE_ASSETS_ does
+  ok   A3a index.html no longer loads km-product-strategy-site-universe.js
+  ok   A3b and KM_ROUTE_ASSETS_ does
+  ok   A3a index.html no longer loads km-product-strategy-live-adapter.js
+  ok   A3b and KM_ROUTE_ASSETS_ does
+  ok   A3a index.html no longer loads psb-selectors.js
+  ok   A3b and KM_ROUTE_ASSETS_ does
+  ok   A3a index.html no longer loads psb-chart-layout.js
+  ok   A3b and KM_ROUTE_ASSETS_ does
+  ok   A3a index.html no longer loads psb-board-ui.js
+  ok   A3b and KM_ROUTE_ASSETS_ does
+  ok   A3a index.html no longer loads product-strategy-board.js
+  ok   A3b and KM_ROUTE_ASSETS_ does
+  ok   A3c PILOT_BYTES_REMOVED_FROM_BOOT
+  ok   A4  every route-loaded script carries a cache token
+  ok   A4a inventory-replenishment.js is cache-versioned at all
+  ok   A4a world-countries-110m.js is cache-versioned at all
+  ok   A4a geo-names-zh-hant.js is cache-versioned at all
+  ok   A4a geo-display-aliases-zh-tw.js is cache-versioned at all
+  ok   A4a geo-admin1-display-names-zh-tw.js is cache-versioned at all
+  ok   A4a geo-name-resolver.js is cache-versioned at all
+  ok   A4a km-geo-topology.js is cache-versioned at all
+  ok   A4a km-globe.js is cache-versioned at all
+  ok   A4a global-logistics-map.js is cache-versioned at all
+  ok   A4a psb-data-contract.js is cache-versioned at all
+  ok   A4a km-product-strategy-site-universe.js is cache-versioned at all
+  ok   A4a km-product-strategy-live-adapter.js is cache-versioned at all
+  ok   A4a psb-selectors.js is cache-versioned at all
+  ok   A4a psb-chart-layout.js is cache-versioned at all
+  ok   A4a psb-board-ui.js is cache-versioned at all
+  ok   A4a product-strategy-board.js is cache-versioned at all
+  ok   A4b and every one of them carries a token from its OWN family
+  ok   A4c with no application asset left behind on a superseded application token
+  ok   A4d psb-data-contract.js is on the current application token
+  ok   A4d km-product-strategy-site-universe.js is on the current application token
+  ok   A4d km-product-strategy-live-adapter.js is on the current application token
+  ok   A4d psb-selectors.js is on the current application token
+  ok   A4d psb-chart-layout.js is on the current application token
+  ok   A4d psb-board-ui.js is on the current application token
+  ok   A4d product-strategy-board.js is on the current application token
+  ok   A4b and releaseAssetToken finds it, so the rule can still be asked of it
+  ok   A4c while a file this release does not ship answers null, which keeps the rule falsifiable
+
+-- B. THE ROUTE — loaded once, mounted after, never twice ----------------------------------------
+
+  ok   B0  the pilot route was driven
+  ok   B1  cold entry fetches each script exactly once
+  ok   B1a and executes each exactly once
+  ok   B1b the route’s global now exists
+  ok   B1c and the page is mounted
+  ok   B1d with content on screen
+  ok   B1e exactly one section is visible
+  ok   B1f DUPLICATE_MOUNT_COUNT = 0 — one mounted section
+  ok   B1g and no refusal is shown when nothing failed
+  ok   B2  DUPLICATE_SCRIPT_FETCH_COUNT = 0 on warm re-entry
+  ok   B2a DUPLICATE_SCRIPT_EXECUTION_COUNT = 0
+  ok   B2b and the page still mounts
+  ok   B2c still one visible section
+  ok   B3  a rapid round trip fetches nothing again
+  ok   B3a and executes nothing again
+  ok   B3b and leaves one mounted section
+  ok   B3c and one visible section
+  ok   B4  MOUNT_BEFORE_SCRIPT_READY_COUNT = 0 — switchTo is reached only inside the loader’s .then
+  ok   B4a and it is the ensure() promise it waits on, not a timer
+  ok   B5  a non-pilot route is unaffected
+  ok   B5a and still shows exactly one section
+  ok   B6  GLOBAL_MISSING_SYMBOL_COUNT = 0 — no error or rejection in the whole run
+
+-- C. FAILURE — the shell stays, the refusal is truthful, nothing half-mounts --------------------
+
+  ok   C0  the failure path was actually driven
+  ok   C0a every script was refused at the network
+  ok   C1  the route shell is still there
+  ok   C1a and carries exactly one refusal
+  ok   C1b which says the page could not be loaded
+  ok   C1c and that nothing was read — truthful about the data
+  ok   C1d SCRIPT_LOAD_FAILURE_FALSE_EMPTY = 0: no data read was attempted at all
+  ok   C2  HALF_MOUNT_COUNT = 0 — the page is not mounted
+  ok   C2a and its global does not exist, so nothing can half-run
+  ok   C2b the loader did NOT record a failed set as loaded
+  ok   C3  other routes remain usable while this one is broken
+  ok   C4  RETRY_DUPLICATE_LOAD_COUNT = 0 — Retry is exactly one new attempt
+  ok   C4a and a failed Retry still does not half-mount
+  ok   C5  once the network allows it, the route recovers
+  ok   C5a in one more attempt
+  ok   C5b and its code is now present
+  ok   C6  and there is no silent fall back to a legacy global
+
+-- D. system.health — once per app session, keyed by the deployment ------------------------------
+
+  ok   D1  the first mount probes the deployment exactly once
+  ok   D2  SYSTEM_HEALTH_DUPLICATE_REQUESTS = 0 — a re-entry probes zero times
+  ok   D3  SYSTEM_HEALTH_INVALIDATION_KEY is the deployment identity
+  ok   D3a built from build id, action contract, transport contract and router build
+  ok   D4  SYSTEM_HEALTH_OWNER holds one verdict per session
+  ok   D4a with an explicit invalidation seam
+  ok   D5  SYSTEM_HEALTH_TTL = NONE — nothing expires on a clock
+  ok   D6  only a SUCCESSFUL verdict is retained — a failure stays retryable and a mismatch can be re-checked
+
+-- E. gapJob.status.get — asked when a job might be running, and not otherwise -------------------
+
+  ok   E1  an unrelated route reads the job status zero times
+  ok   E2  Site Inventory with no known job: zero reads
+  ok   E2a Order Planning with no known job: zero reads
+  ok   E3  and with a job that MAY be running: exactly one read
+  ok   E3a (the marker was written the way a real start writes it)
+  ok   E4  the marker is cleared once the backend has been heard from
+  ok   E5  GAP_STATUS_OWNER is gap-recalc-transport.js — one owner for start, resume and the marker
+  ok   E5a a successful START declares the job live
+  ok   E5b and every terminal outcome clears it
+  ok   E6  the gate needs a product AND no force AND no known job — an explicit refresh always asks
+  ok   E7  the marker outlives a reload and is visible to another tab, which is what recovery needs
+  ok   E8  and no polling interval was introduced
+
+-- F. MANDATE — what §10 said not to touch -------------------------------------------------------
+
+  ok   F1  no service worker
+  ok   F2  no TTL cache
+  ok   F3  no speculative prefetch
+  ok   F4  no bundler and no dynamic import() framework
+  ok   F5  SKU_REGIONAL_PRICING_SPLIT = DECLINED, still one read
+  ok   F6  Promotion Risk Tracker was not touched
+  ok   F7  the R2 listener scope is intact
+  ok   F7a and the R2 warm-re-entry contract is intact
+
+-- G. MUTATION — each change, broken on purpose --------------------------------------------------
+
+  ok   G1 a pilot script is restored to the boot list KILLED
+  ok   G2 the router mounts without waiting for the code KILLED
+  ok   G3 the loader stops de-duplicating KILLED
+  ok   G4 a partially loaded set is recorded as loaded KILLED
+  ok   G5 a failed route shows nothing at all KILLED
+  ok   G6 the held verdict is keyed by a constant, not the deployment KILLED
+  ok   G9 the deployment verdict is not held across mounts KILLED
+  ok   G7 the job status is asked for on every mount again KILLED
+  ok   G8 a job that IS running is never picked up KILLED
+
+  mutants: 9 killed, 0 survived, 0 harness errors
+  ok   G  every planted defect was caught
+
+PASS  130 passed, 0 failed
+BOOT 80 scripts / 5.76 MB → 74 / 5.21 MB (−561 KB) · DUPLICATE_SCRIPT_FETCH = 0 · MOUNT_BEFORE_SCRIPT_READY = 0 · HALF_MOUNT = 0 · SYSTEM_HEALTH_REENTRY 1→0 · GAP_STATUS_UNRELATED = 0 · GAP_STATUS_ACTIVE_JOB = 1

@@ -1,0 +1,13 @@
+
+== Destination DTO / key (D-F1-4B-E0R-1 / §9) ==
+
+== Ratio validation (D-F1-4B-E0R-3 / §4) ==
+
+== Deterministic integer allocation — largest remainder, exact total (§5) ==
+
+== Warehouse isolation + no double-allocation (D-F1-4B-E0R-2/4 / §6/§7) ==
+
+== Special Event, multi-source route, purity, source classification (§8/§10/§13 + audit) ==
+
+----------------------------------------
+DEMAND ALLOCATION (F1-4B-E0R): 37 passed, 0 failed

@@ -1,0 +1,17 @@
+
+== A. REPRODUCE the live failure: a stringified Date threaded as opts.planningCycle → PLANNING_CYCLE_INVALID ==
+
+== A. FIX: 48_ normalizes the gap Date to canonical 2026-08 via recGenProjectCalendarMonth_ (never r4e2Str_) ==
+
+== A. SOURCE: 48_ enumerateEligible uses recGenProjectCalendarMonth_ and does NOT r4e2Str_ the calculation_month cycle ==
+
+== B. FLAT READBACK: a BLANK cycle is a scope-level readback (frontend sends none), NOT INVALID_PLANNING_CYCLE ==
+
+== B. malformed NON-blank cycle stays fail-closed; canonical cycle works; one-SKU works ==
+
+== C. CORE: read path tolerates blank cycle; WRITE path (loadActiveFlat) stays strict + reuses, no duplicate ==
+
+== C. no Draft-Line dependency: readback + core read the flat header table ONLY ==
+
+----------------------------------------
+R5A AI PLAN CYCLE BOUNDARY (F1-7N-FA-3C-R5A): 26 passed, 0 failed
