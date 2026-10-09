@@ -1,0 +1,29 @@
+
+== S. KMTPP bundle registration + parity ==
+
+== A. T1–T4 sequential projection — opening supply carries forward (no incoming) ==
+
+== K. sequential shortage — opening NOT re-subtracted every month ==
+
+== B. incoming ETA in T2 — does NOT cover T1, covers T2 ==
+
+== C. count-once — one incoming event is never reused across tiers ==
+
+== D. valid zero demand stays 0 (not treated as missing) ==
+
+== E. opening supply unavailable / missing forecast month → truthful null (no fabricated projection) ==
+
+== L. per-tier carton suggestion — canonical Monthly-CEIL owner; missing carton authority → null ==
+
+== N/R. additive DTO shape exact + NO day-horizon fields ==
+
+== H/I. warehouse isolation + lineage conservation (per-warehouse independent projections) ==
+
+== warehouseOpeningStock helper — per-warehouse, missing≠0 ==
+
+== M/O/P/Q. MARKETPLACE end-to-end — additive monthlyProjection + scalar compat + request count + cache-safe ==
+
+== G. WAREHOUSE end-to-end — blocked line carries NO fabricated projection (§12 absent-on-blocked) ==
+
+----------------------------------------
+MONTHLY PROJECTION TRANSPORT (F1-4B-FM3c-2): 41 passed, 0 failed

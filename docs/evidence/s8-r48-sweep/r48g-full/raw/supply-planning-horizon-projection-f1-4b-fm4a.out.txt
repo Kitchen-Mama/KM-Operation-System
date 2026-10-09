@@ -1,0 +1,31 @@
+
+== A. single-month D18 (entirely within Aug; 3100/31 = 100/day × 18 = 1800) ==
+
+== B/C/D. cross-month cumulative windows ==
+
+== E/F. incoming time-phasing (before D18 vs after-D18-before-D30) ==
+
+== G/H/I. incoming after D30/D45/D90 ==
+
+== J/W. opening exhausted ONCE + incoming counted ONCE (no reset / no double) ==
+
+== K. valid zero gap → 0 (not null/unavailable) ==
+
+== L. missing opening supply → fail closed (never fabricated 0) ==
+
+== M. missing monthly FC covering a needed horizon → that horizon unavailable (never fabricated) ==
+
+== N/O/P/Q. real month lengths 28 / 29(leap) / 30 / 31 drive the daily rate ==
+
+== R. permutation invariance (incoming order does not change output) ==
+
+== S/T. MARKETPLACE no fake warehouse + two-warehouse isolation ==
+
+== U/CO1100-R. monthlyProjection NON-REGRESSION (KMTPP T1–T4 unchanged) + checkpoint additive field ==
+
+== V. clockless / deterministic (no Date / RNG authority) ==
+
+== carton suggestion via frozen KMCALC owner ==
+
+----------------------------------------
+HORIZON PROJECTION (F1-4B-FM4a): 35 passed, 0 failed

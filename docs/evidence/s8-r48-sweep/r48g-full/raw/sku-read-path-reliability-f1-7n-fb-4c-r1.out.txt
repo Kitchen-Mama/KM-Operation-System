@@ -1,0 +1,24 @@
+
+== §B — the traced call path and the exact expected action ==
+
+== §G.1/§G.2 — initial mount issues exactly ONE canonical read ==
+
+== §G.3-§G.5 — navigation races and concurrent loaders ==
+
+== §G.6-§G.8 — construction safety: the action cannot go missing ==
+
+== §G.9/§G.10 — the live failure, classified ==
+
+== §G.11-§G.13 — retry, stale responses and cache ==
+
+== §F — the six page states, and ERROR is not EMPTY ==
+
+== §D — the deployment contract is caller-driven and covers these pages ==
+
+== §B/§E — the router names a downgraded POST, and the two unknown-action authorities cannot drift ==
+
+== §G.15 — no business writer is called by any read path ==
+
+----------------------------------------
+SKU READ-PATH RELIABILITY (F1-7N-FB-4C-R1): 189 passed, 0 failed
+----------------------------------------

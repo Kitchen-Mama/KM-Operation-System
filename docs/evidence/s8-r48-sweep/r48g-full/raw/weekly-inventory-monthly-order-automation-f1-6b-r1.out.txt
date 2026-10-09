@@ -1,0 +1,17 @@
+
+== A — registry split + MONTHLY default day 10 + migration ==
+
+== A5/A6/A7 — schedules persist + read back ==
+
+== A8/UI — the admin UI renders MONTHLY + Day of Month (data-driven, no hardcoded monthly UI) ==
+
+== B — MONTHLY validation + reconciler + retirement ==
+
+== C — prerequisite Gap gate: blocked ≠ success, no stale fallback ==
+
+== D — product isolation (Weekly = INVENTORY only; Monthly = ORDER_PLANNING only) ==
+
+== §16 — enable/disable safety; disabled handler no-ops ==
+
+----------------------------------------
+WEEKLY INVENTORY + MONTHLY ORDER AUTOMATION (F1-6B): 33 passed, 0 failed

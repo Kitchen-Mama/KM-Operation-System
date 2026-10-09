@@ -1,0 +1,155 @@
+
+== A. §2 — the two couplings, measured ==
+ok   A1  the lead-time DTO has NO marketplace field — the international transit authority never had that axis
+ok   A1a and a CN→US transit question is answered with no marketplace anywhere in it
+ok   A2  CN→US Amazon and CN→US Shopify share one transit authority
+ok   A2a and Walmart shares it too
+ok   A2b two service profiles, keyed by method + last-mile and by nothing else
+ok   A2c and the recommendation states that no marketplace took part
+ok   A3  a method could NOT be obtained from rate cards alone when there are none — the coupling R5 breaks
+
+== B. §3/§4 — the safety rule, and the optimistic number that is never consulted ==
+ok   B1  the transit buffer is a NAMED config authority — there was none before this round
+ok   B1a declared CONFIRMED (not provisional) in the data itself
+ok   B1a1 and nothing in the file still declares it provisional
+ok   B1a2 with the UNIT stated — days_until_stockout is a calendar difference, so the buffer must be too
+ok   B1b with a default and a per-method override map, so it never becomes a scattered magic number
+ok   B1b1 and the overrides a later round will add are NAMED here, so the next one lands in this object
+ok   B1c the flag still travels with every lookup
+ok   B1c1 and a CONFIRMED config reports itself as confirmed
+ok   B1d a per-method override is matched on the CANONICAL key, so "Sea Freight" does not capture Sea Express
+ok   B1e and it DOES capture Sea, however the config spells it
+ok   B1e1 and the unit travels with the number in every lookup
+ok   B2  28 max + 7 buffer = 35 conservative days
+ok   B2a against 30 days of supply that is UNSAFE
+ok   B2b so nothing is auto-recommended
+ok   B2c with the reason named
+ok   B2d and NO least-bad option is dressed up as a recommendation
+ok   B3  arriving EXACTLY on the stockout day is NOT safe — the rule is strict `<`, not `<=`
+ok   B3a and a TIGHT option is never auto-recommended
+ok   B3b nothing is selected on its behalf
+ok   B3a and one day earlier is
+ok   B4  min_days is carried for display and the basis is max_days — the optimistic figure never decides
+ok   B5  two carriers on one service profile produce ONE profile, not two
+ok   B5a folded to the SLOWEST max — a fast carrier cannot make the profile look safe
+ok   B5b so 40 days of supply is correctly UNSAFE
+ok   B5c both carriers are reported as PROVENANCE
+ok   B5d and the selection is explicitly deferred — a lead-time carrier_id is not a chosen carrier
+ok   B5e no cost is claimed
+ok   B5f and the absence is typed, not blank
+ok   B6  with ample time a method IS auto-recommended
+ok   B6a and it is the SLOWEST option that still preserves the buffer — not air, which would burn money the plan was never asked to spend
+ok   B6b it is safe
+ok   B6c and the faster option is offered as a ranked alternative
+ok   B7  when the slow method is unsafe and the fast one is safe, the fast one is recommended
+ok   B7a with the unsafe option still shown, ranked below, and never silently dropped
+ok   B8  no lead time → manual review, no invented method, no invented ETA
+ok   B8a and with no required-arrival date nothing is called safe, though the options are still listed
+ok   B8b — listed, so a person can still choose
+
+== C. §1/§6/§8/§11 — the advice boundary on the live scope ==
+ok   C1  THE ROUND’S POINT: the live scope with NO carrier data is no longer a STOP
+ok   C1a recommendation_ready
+ok   C1b authorized 760, supply allocated 760, unresolved SUPPLY 0
+ok   C1c method_status — a person chooses
+ok   C1d carrier_pricing_ready false
+ok   C1e execution_route_materialized false
+ok   C1f submit_ready false
+ok   C1g and NO shared blocker — carrier coverage is not one
+ok   C1h so the census reports no blockers at all
+ok   C1i writer not constructed
+ok   C1j and zero DB writes
+ok   C2  source, quantity and required-by all still advised
+ok   C2a with days-until-stockout computed from the tranche’s own window
+ok   C2b and the source is still the in-country 3PL
+ok   C2c no method is guessed
+ok   C2d it is marked for manual review
+ok   C3  the carrier gap is reported as a WARNING and says so in its own text
+ok   C3a the buffer is CONFIRMED, so no recommendation warns that it is provisional
+ok   C3a1 and the warning still exists, for a deployment running a config that is behind
+ok   C3b USER_MASTER_DATA_REQUIRED is no longer the verdict
+ok   C4  a lane with a lead time and NO rate card now produces a method — the coupling is broken
+ok   C4a while carrier pricing is still, correctly, not ready
+ok   C4b the method comes from the transit row
+ok   C4c priced at null
+ok   C4d and the absence of a price is typed, never a zero
+ok   C5  and a schema-COMPLETE execution route is derivable from it
+ok   C5a with the method from the transit authority
+ok   C5b and the route records WHICH authority named its method
+ok   C5c so a null cost can never be read as "free"
+ok   C6  3PL first: 760 from the in-country pool
+ok   C6a factory allocation 0
+ok   C6b and with NO carrier data at all the source is STILL the 3PL — never quietly swapped to the factory
+
+== D. §5 — quantity is not multiplied by the number of options ==
+ok   D1  exactly the authorized quantity is COUNTED across all tranches
+ok   D1a and the counted quantities sum to 760, not 760 per option
+ok   D2  every alternative is flagged as NOT part of any shipment total
+ok   D2a and exactly the recommended one is
+ok   D2b an alternative carries `quantity_if_chosen`, never a bare `quantity` a reader could sum
+
+== E. §10 — a label compared with a label could not see a stale body ==
+ok   E1  writer and lifecycle resolve identically at every known schema generation
+ok   E1a and EVERY generation is probed, not just one
+ok   E1b including the live 36-column shape
+ok   E1c which agrees
+ok   E2  the deployment contract now carries the EXECUTED invariant
+ok   E2a whose runtime half is uniform here
+ok   E2b and the label half still reports the owner files this fixture does not compile
+ok   E3  69_ lifecycle declares the round it last changed in — it had been three rounds stale, which is exactly why a label comparison called a mixed deployment UNIFORM
+ok   E3a 16_ likewise, at or after the round it had gone stale in (F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2)
+ok   E3a1 and it is a well-formed stamp
+ok   E3b and 00_config, which this round changes
+ok   E4  NO single-stamp manifest owner carries a stamp older than its own last change — the METHOD is checked, not just the instances this round repaired
+ok   E4a and the files this check cannot cover (two stamps, one file) are NAMED rather than silently skipped: 66_api_v1_request_order_send.gs
+
+== F. §7 — the Layer 2 boundary, frozen ==
+ok   F1  the carrier comparison belongs to the Weekly Shipping Plan
+ok   F1a it selects a CARRIER
+ok   F1b and takes the METHOD as an input, never deriving one
+ok   F2  matching on route, method, last-mile and effective date
+ok   F2a ranked initially on comparable total cost
+ok   F2b and only within one currency and one charge basis
+ok   F3  with the future weights reserved by name, so a later round adds a weight rather than a second surface
+ok   F4  and it may NOT block the AI Plan recommendation
+ok   F4a nor treat a lead-time carrier_id as a selection
+ok   F5  and the UI is explicitly NOT claimed as delivered this round
+
+== G. §9 — one scope’s carrier gap must not fail the batch ==
+ok   G0  a generation on a lane with transit authority and NO rate card SUCCEEDS
+ok   G1  the generation reports a BATCH verdict
+ok   G1a a scope that is advisable but unpriced lands in the WARNINGS band, not STOP
+ok   G1b with the scope counted as recommendation-ready
+ok   G2  and the rule is stated: carrier coverage NEVER stops a batch
+ok   G2a while a shared/system fault does
+ok   G2b none of which applies here
+ok   G3  a scope with no route identity writes NO header — advice is given, nothing schema-invalid is stored
+ok   G3a and no line
+ok   G4  submit_ready is FALSE while the route is not materialized
+ok   G4a and TRUE only when the route is complete AND priced
+ok   G4b a method without a price is advisable but NOT submittable — the two layers stay distinct
+ok   G5  the generation flag is still false
+ok   G5a and the allowlist is still the single authorized scope
+ok   G5b census build stamp
+ok   G5c workspace build stamp
+
+== H. §13 — mutation coverage ==
+ok   H1  marketplace made a required axis on the lead-time join → CN→US Amazon and CN→US Shopify stop sharing one transit authority (caught)
+ok   H2  the lead-time fallback removed from route derivation → a lane with transit authority and no rate card produces no method again (caught)
+ok   H3  conservativeBasis switched to min_days → a 45-day service is called safe on its 30-day best case (caught)
+ok   H4  the buffer dropped from the conservative estimate → a 45-day service clears 46 days with no slack (caught)
+ok   H5  the safety comparison relaxed to `<=` on the raw transit → DOS 30 accepts a 28-day method (caught)
+ok   H6  alternatives marked as counted → the shipment total multiplies by the number of options (caught)
+ok   H7  PASS 1 (overseas/3PL) skipped → the 760 sources from the CN factory instead (caught)
+ok   H8  a fallback method invented when no profile exists → the AI Plan names a method it has no evidence for (caught)
+ok   H9  a default transit substituted for a missing one → an arrival date is produced from nothing (caught)
+ok   H10 carrier coverage promoted to a batch STOP reason → an advisable scope fails the batch (caught)
+ok   H11 the completeness gate on materialization removed → a header is written for a route with no method (caught)
+ok   H12 submit_ready no longer requires a materialized route → an unroutable scope reports submittable (caught)
+ok   H13 the lifecycle resolver reverted to its pre-delegation body → the RUNTIME check reports divergence even though every build stamp still matches (caught)
+ok   H14 the runtime result dropped from the contract verdict → a divergent deployment reports UNIFORM (caught)
+ok   H15 the lead-time carrier_id promoted to a selection → the AI Plan pre-empts the Weekly Shipping Plan (caught)
+
+================================================================================================================
+passed 135  failed 0  |  mutants caught 15  survived 0
+================================================================================================================

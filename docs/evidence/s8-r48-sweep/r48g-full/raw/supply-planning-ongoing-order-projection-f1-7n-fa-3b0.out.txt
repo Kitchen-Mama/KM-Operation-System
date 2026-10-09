@@ -1,0 +1,14 @@
+
+== Lifecycle partition (Phase 16 A-F) ==
+
+== A1 request-source share (Phase 16 G-K) ==
+
+== A2 company monthly FC share (Phase 16 L-R) ==
+
+== §43 FLOOR helper — DIRECT proof (Phase 18) ==
+
+== General conservation + count-once + isolation (Phase 12/16 S-Y, 17) ==
+
+== Phase 17 — KMOOP contains no KMFSR / factory / net-order-need / carton logic (SOURCE) ==
+
+All F1-7N-FA-3B0 KMOOP assertions passed (55 assertions).

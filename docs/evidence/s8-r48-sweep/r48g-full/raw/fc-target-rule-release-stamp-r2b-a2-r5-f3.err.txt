@@ -1,0 +1,1 @@
+warning: in the working copy of 'assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs', LF will be replaced by CRLF the next time Git touches it

@@ -1,0 +1,59 @@
+
+-- A1: single compact shell + rail (2-layer), NOT the Round 2 panel→card→rail (3-layer) --
+ok   A1: exactly ONE #replenCategoryPanel
+ok   A2: exactly ONE #replenCategoryTabs
+ok   A3: shell → rail is a single 2-layer nest (rail is the shell's direct child)
+ok   A4: Round 2 three-layer classes (panel/card/tabs) fully removed from markup
+ok   A5: no `.replen-category-panel > .replen-category-card` rule survives in CSS
+
+-- A6: independent class ownership — no ro-* / km-category-card / km-tab-rail on Inventory --
+ok   A6: markup uses NO km-category-card (comments stripped)
+ok   A7: markup uses NO km-category-card__rail / km-tab-rail
+ok   A8: markup uses NO ro-panel / ro-header / ro-tabs classes
+ok   A9: renderReplenCategoryTabs emits replen-category-rail__tab (not km-tab-rail__tab)
+ok   A10: own __label / __count chip classes
+
+-- A11: Order Planning reference is a SINGLE element with several classes (not 3 nested divs) --
+ok   A11: Order Planning outer = one element, classes ro-panel ro-header km-category-card
+
+-- A12: shell is a SIBLING of the table, never wraps results/table/list --
+ok   A12: dual-layer-table appears AFTER the category shell (sibling, not child)
+ok   A13: category shell does not contain the results/table/list container
+
+-- A14: no expansion — shell/rail carry no height / min-height / flex-grow --
+ok   A14: single compact shell carries the ONE white surface (background:#fff)
+ok   A15: shell has NO height / min-height / flex:1 (cannot expand into a large white region)
+ok   A16: rail is NOT a second white card (bordered frame, no white fill)
+ok   A17: no arbitrary huge z-index hack on the shell
+
+-- A18: no inline display:none empty-gate --
+ok   A18: #replenCategoryTabs carries NO inline display:none in raw markup
+ok   A19: render never sets bar.style.display = none
+ok   A20: render actively clears any stale inline display
+
+-- A21: empty dataset still renders All (0); counts computed BEFORE the category filter --
+ok   A21: empty allData normalized to [] (no early hide-return)
+ok   A22: All tab count = rows.length (0 when empty → All (0))
+ok   A23: category render runs BEFORE the category filter (counts are upstream-scoped)
+
+-- A24: category source is DB-driven (not hardcoded); active-invalid resets to All --
+ok   A24: categories derived from the row data (item.category), not a hardcoded list
+ok   A25: active category no longer present → safely reset to All
+
+-- A26: selection + route re-entry idempotency --
+ok   A26: clicking a category sets replenCategoryTab and re-renders rows
+ok   A27: tab clicks via rebuilt inline onclick (no accumulating rail listeners across re-entry)
+ok   A28: rail is rebuilt via innerHTML each render (no duplicate DOM on re-entry)
+
+-- A29: render is decoupled from the table-body guard (rail renders on empty/loading/remount) --
+ok   A29: renderReplenCategoryTabs runs BEFORE the table-body early-return guard
+
+-- A30: category shell is sticky at the canonical offset (no magic-number top) --
+ok   A30: shell is position:sticky
+ok   A31: shell pins at var(--km-sticky-top-base) (canonical offset, not a magic number)
+ok   A32: shell z-index uses the shared --km-sticky-z-cat-rail token
+ok   A33: table header pins BELOW the rail via calc(base + --km-replen-cat-rail-h) — rail never covered
+ok   A34: JS sets --km-replen-cat-rail-h from the live rail height (derived, not hardcoded)
+ok   A35: shell uses sticky, NOT position:fixed
+
+ALL PASS (35 assertions)

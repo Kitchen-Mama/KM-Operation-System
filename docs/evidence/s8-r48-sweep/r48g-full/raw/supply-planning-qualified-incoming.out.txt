@@ -1,0 +1,108 @@
+ok   1 module exports evaluateQualifiedIncoming
+ok   2 engineType fixed
+ok   3 null input rejected
+ok   4 missing requiredByDate rejected
+ok   5 invalid requiredByDate rejected
+ok   6 kmShipmentResults must be array
+ok   7 externalAuthorityResults must be array
+ok   8 posted keys must be array
+ok   9 other-bucket keys must be array
+ok   10 invalid KM adapterType rejected
+ok   11 invalid external adapterType rejected
+ok   12 positive external adapterEligibleQuantity rejected
+ok   13 external planningEligible=true rejected
+ok   14a all ten gate keys present
+ok   14 all ten gates PASS for valid timely KM Shipment
+ok   15 qualified state
+ok   16 qualified quantity equals adapterEligibleQuantity
+ok   17 late risk zero
+ok   18 external quantity does not affect total
+ok   19 SKU mismatch excluded
+ok   20 company mismatch excluded
+ok   21 destination mismatch excluded
+ok   22 missing destination review (precedence)
+ok   23 ready_to_ship qualifies
+ok   24 shipped qualifies
+ok   25 in_transit qualifies
+ok   26 arrived qualifies
+ok   27 draft excluded
+ok   28 received excluded
+ok   29 closed excluded
+ok   30 cancelled excluded
+ok   31 unknown status review
+ok   32 delivered token excluded upstream remains excluded
+ok   33 ETA before Required-By qualifies
+ok   34 ETA equal Required-By qualifies
+ok   35 ETA after Required-By = Late Risk
+ok   36 Late Risk quantity visible
+ok   37 Late Risk qualified quantity zero
+ok   38 missing ETA review
+ok   39 invalid ETA review
+ok   40 Required-By not read from system clock (deterministic vs input date)
+ok   41 sourceUpdatedAt does not affect timing
+ok   42 positive quantity qualifies
+ok   43 zero quantity excluded
+ok   44 negative/invalid quantity excluded
+ok   45 no quantity coercion (string remaining not positive)
+ok   46 adapterEligibleQuantity used, not raw external observed quantity
+ok   47 exact posted lineage excluded
+ok   48 unrelated posted lineage does not exclude
+ok   49 status alone does not infer posting
+ok   50 exact active-other-bucket lineage excluded
+ok   51 unrelated ownership key does not exclude
+ok   52 no PO/Plan inference exists (no evidence → PASS)
+ok   53 unique lineage counted once
+ok   54 two identical duplicates count once
+ok   55 extra identical duplicate marked DUPLICATE_STABLE_LINEAGE
+ok   56 identical duplicate total not doubled
+ok   57 conflicting duplicate quantity fails closed
+ok   58 conflicting duplicate ETA fails closed
+ok   59 conflicting duplicate destination fails closed
+ok   60 conflicting duplicate status fails closed
+ok   61 conflicting group contributes zero (all EXCLUDED)
+ok   62 deterministic result independent of input order
+ok   63 linked external contributes zero
+ok   64 linked evidence informational token appears
+ok   65 quarantined external contributes zero
+ok   66 fresh quarantined external still zero
+ok   67 stale-looking quarantined external still zero
+ok   68 adopted external row contributes zero
+ok   69.1 REJECTED_EXTERNAL_RECORD remains zero
+ok   69.2 IGNORED_FOR_PLANNING remains zero
+ok   69.3 SUPERSEDED remains zero
+ok   69.4 REVERSED remains zero
+ok   70 external observed quantity reported separately
+ok   71 external quantity never included in qualified total
+ok   72 external quantity never included in Late Risk total
+ok   73 deterministic lifecycle failure → EXCLUDED
+ok   74 unresolved ETA → REVIEW
+ok   75 otherwise eligible late ETA → LATE_RISK
+ok   76 all-pass → QUALIFIED
+ok   77 posted + late remains EXCLUDED, not Late Risk
+ok   78 duplicate conflict + missing ETA remains EXCLUDED
+ok   79 review does not fabricate qualified quantity
+ok   80 all ten gate keys present
+ok   81 candidate lineage retained
+ok   82 upstream exclusion reasons preserved
+ok   83 upstream review reasons preserved
+ok   84 new reasons deterministic (order preserved) + 85 unique
+ok   86 multiple unique timely candidates sum
+ok   87 timely + late split correctly
+ok   88 timely + review split correctly
+ok   89 qualified total finite and nonnegative
+ok   90 Late Risk total finite and nonnegative
+ok   91 excluded/review totals finite and nonnegative
+ok   92 top-level input not mutated + 95 key arrays not mutated
+ok   93 KM adapter result not mutated
+ok   94 external adapter result not mutated
+ok   96 output fresh per call + 97 candidateResults fresh + 98 gate/reason arrays fresh
+ok   99 one result cannot affect another
+ok   FIX-A(pre) B4-R4 draft sourceEligible=false
+ok   FIX-A Golden #12 foundation: draft EXCLUDED, gate 4/8 FAIL (NOT promoted)
+ok   FIX-B Golden #13 foundation: all gates pass, qualified 250 once, external 0 + linked-evidence token (NOT promoted)
+ok   FIX-C Golden #14 foundation: LATE_RISK, qualified 0, late-risk 175 visible (NOT promoted)
+ok   FIX-D duplicate conflict: total 0, all EXCLUDED, conflict visible
+ok   FIX-E posted to current stock: total 0, EXCLUDED
+ok   FIX-F other ownership bucket: total 0, EXCLUDED
+
+All B4-R6 qualified-incoming assertions passed (106 assertions).

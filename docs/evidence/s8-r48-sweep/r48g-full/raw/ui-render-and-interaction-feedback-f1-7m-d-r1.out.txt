@@ -1,0 +1,12 @@
+
+== D3 PO Overview: per-command in-flight guard + feedback on all 4 write commands ==
+
+== D2 On-the-Way: search keystrokes coalesce into ONE trailing render; latest wins; selects immediate ==
+
+== D5 Factory/Overseas: bounded INITIAL_LOADING replaces the blank-until-data region ==
+
+== Deferrals locked in: Weekly guard unchanged; no optimistic success; no pagination added ==
+
+== Frozen invariants ==
+
+✓ 31 passed

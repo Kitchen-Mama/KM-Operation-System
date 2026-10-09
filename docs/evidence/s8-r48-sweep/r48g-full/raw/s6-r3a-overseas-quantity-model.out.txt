@@ -1,0 +1,160 @@
+
+== A. §30 — the supersession, both halves of it ==
+ok   A0 PART V exists in the mainline contract
+ok   FROZEN D_S6_OVERSEAS_OPERATIONAL_QUANTITY_MODEL = A
+ok   FROZEN D_S6_OVERSEAS_OPERATIONAL_QUANTITY_MODEL_STATUS = FROZEN
+ok   FROZEN S6_OVERSEAS_QUANTITY_MODEL_FREEZE = YES
+ok   FROZEN SUPERSEDED_S6_R3_TOKEN_COUNT = 1
+ok   FROZEN OVERSEAS_CURRENT_STOCK_FIELD = wh_available_stock  — the Phase-1 shipping/availability current-stock authority
+ok   FROZEN OVERSEAS_CURRENT_STOCK_FIELD_SUPERSEDES = wh_physical_stock (PART IV §24)
+ok   A1 PART IV still declares the ORIGINAL value — the R3 freeze is readable as what R3 decided
+ok   A2 and carries a SUPERSEDED annotation, so nobody reads it as current
+ok   A3 the amended value is NOT smuggled into PART IV — exactly one value per Part
+ok   A4 EXACTLY ONE PART IV token is contradicted by PART V, and it is the one the operator amended (computed)
+ok   FROZEN PHYSICAL_STOCK_DECREMENT_ON_DISPATCH = NO
+ok   FROZEN OVERSEAS_PHYSICAL_PARTICIPATES_IN_PHASE1_ARITHMETIC = NO
+ok   FROZEN OVERSEAS_PHYSICAL_STOCK_LIFECYCLE_PHASE = DEFERRED
+ok   FROZEN OVERSEAS_DAMAGED_STOCK_LIFECYCLE_PHASE = DEFERRED
+ok   FROZEN OVERSEAS_REFURBISH_PHASE1 = NO  — Phase-1 refurbish stays deferred — no semantics added here
+ok   A5 ZERO statements anywhere assign wh_physical_stock — the amendment rests on a census, not on a blank sample (computed)
+
+== B. §31 — the frozen arithmetic, EXECUTED ==
+ok   FROZEN OVERSEAS_AVAILABILITY_AUTHORITY = wh_available_stock
+ok   FROZEN OVERSEAS_RESERVED_AUTHORITY = wh_reserved_stock
+ok   FROZEN OVERSEAS_RESERVE_MODEL = AVAILABLE_TO_RESERVED_TRANSFER
+ok   FROZEN OVERSEAS_RELEASE_MODEL = RESERVED_TO_AVAILABLE_TRANSFER
+ok   FROZEN OVERSEAS_DISPATCH_MODEL = RESERVED_DECREMENT_ONLY
+ok   B1 reserve 30 of 100/0 -> 70/30 (executed)
+ok   B2 cancel 30 -> 100/0, the state is restored exactly (executed)
+ok   B3 reserve 30 then dispatch 30 -> 70/0 — NO double subtraction (executed)
+ok   B3a and the dispatch movement declares the bucket it actually drained
+ok   B4 a second draft cannot reserve units the first already holds (executed)
+ok   B4a and the refused reserve wrote nothing
+ok   B5.0 physical="" is carried UNTOUCHED and alters no availability (executed)
+ok   B5.1 physical=0 is carried UNTOUCHED and alters no availability (executed)
+ok   B5.2 physical=500 is carried UNTOUCHED and alters no availability (executed)
+ok   B5.3 physical=12 is carried UNTOUCHED and alters no availability (executed)
+ok   B6 damaged units are NOT allocatable and NOT added to available (executed)
+ok   B6a and a fully-reserved row cannot dip into the damaged bucket to satisfy one more unit
+ok   FROZEN OVERSEAS_DOUBLE_SUBTRACTION_GUARD = RESERVED_NEVER_SUBTRACTED_FROM_AVAILABLE
+ok   FROZEN OVERSEAS_CONSUME_DEDUCTS_TWICE = NO
+ok   B7 the CORRECT allocatable figure is 70; `available - reserved` gives 40 — the forbidden formula, computed here so its wrongness is a number rather than a warning (executed)
+
+== C. §32 — the domains stay separate, and Option A is the new pressure on that ==
+ok   FROZEN FACTORY_OVERSEAS_STORAGE_MERGED = NO
+ok   FROZEN FACTORY_OVERSEAS_RESERVATION_OWNER_MERGED = NO
+ok   FROZEN OVERSEAS_CAN_PRODUCE = NO
+ok   FROZEN OVERSEAS_CAN_SHIP = YES
+ok   FROZEN OVERSEAS_ADDED_BY_FILTER_LOOSENING = NO
+ok   C1 FACTORY availability is still DERIVED current - reserved = 70 (executed)
+ok   C2 both domains answer 70 — factory by SUBTRACTING reserved, overseas by having already moved it. Same number, opposite arithmetic: this is why the owners stay separate (executed)
+ok   C3 an overseas row through the FACTORY owner is still UNREADABLE, never a silent zero (executed)
+ok   C4 KMFSG's factory filter has not been loosened to admit overseas rows
+
+== D. §33 — import field authority, and the client half nobody was looking at ==
+ok   FROZEN IMPORT_WRITES_RESERVED = NO
+ok   FROZEN ABSENT_COLUMN_SEMANTIC = NO_WRITE
+ok   FROZEN BLANK_CELL_SEMANTIC = NO_WRITE
+ok   FROZEN IMPORT_ZERO_REQUIRES_EXPLICIT_ZERO = YES
+ok   FROZEN IMPORT_PROTECTION_OWNER_COUNT = 2
+ok   D1.wh_available_stock is classified in the import authority matrix
+ok   D1.wh_reserved_stock is classified in the import authority matrix
+ok   D1.wh_damaged_stock is classified in the import authority matrix
+ok   D1.wh_physical_stock is classified in the import authority matrix
+ok   D1.wh_on_the_way_qty is classified in the import authority matrix
+ok   D2 the importer declares its overwrite set as a literal list
+ok   D2a and wh_reserved_stock IS in it today — the hazard is in the shipped overwrite set, not in a corner case
+ok   D2b while wh_physical_stock is NOT — which is why the live column is blank (R4A §2)
+ok   D3 [R4B] reserved_stock has LEFT the client quantity list. Until R4B it was in it, so a column the operator never wrote arrived at the server as an explicit zero.
+ok   D3a and it reads a MISSING column as the empty string rather than skipping the field
+ok   D3b [R4B] and a blank or absent cell is now OMITTED rather than turned into 0 — the two stopped being the same value here, which is what let the server tell them apart
+ok   D3c [R4B] and only the keys actually present are placed on the request. Until R4B every field went unconditionally, which destroyed the distinction BEFORE the server saw it — the reason the owner count was 2 and the reason both halves had to land together
+ok   D4 [R4B] the shipped template no longer emits a reserved_stock column
+ok   D4a [R4B] nor an example row writing 0 into it — the tree no longer hands the operator a file that zeroes a bucket this system owns
+ok   FROZEN IMPORT_TEMPLATE_RESERVED_COLUMN = REMOVED (target)
+
+== E. §34 — THE HAZARD, driven against the SHIPPED importer ==
+ok   E1 CONTROL — a refresh of an unreserved row updates available, as it should (executed, shipped code)
+ok   E2 [R4B] a routine refresh of 70/30 reporting 100 now leaves 70/30 — the reservation SURVIVES. Until R4B this assertion read [true, 100, 0]: the hold erased, with success:true and no warning.
+ok   E2a and the operator is told the row was "updated" — the receipt is not merely silent, it is reassuring
+ok   E3 [R4B] the request never MENTIONED reserved, and reserved is now left alone. Until R4B absent was read as zero and written, so omitting the column was not an escape from it.
+ok   E4 [R4B] an omitted damaged count is PRESERVED. Until R4B the same absent-means-zero rule erased it, which is why the client fix had to cover the three buckets that have no lifecycle as well.
+ok   E5 wh_physical_stock is NOT written even when the payload supplies it — the column has no importer, which is the census A5 proves and the reason the amendment could not name it (executed)
+ok   E6 a row created by import is born with available set and physical BLANK (executed) — the live production shape is what this code produces, not a data-entry omission
+ok   FROZEN ACTIVE_RESERVATION_SURVIVES_IMPORT = YES (REQUIRED)
+ok   FROZEN IMPORT_MAY_ZERO_ACTIVE_RESERVATION = NO
+ok   FROZEN IMPORT_MAY_MAKE_RESERVED_UNITS_ALLOCATABLE_TWICE = NO
+ok   E7 a reserved-ONLY fix yields 100/30 — 130 units held against a source figure of 100. Still forbidden, which is why §34 gates the AVAILABLE arithmetic and not just the reserved column (executed)
+ok   E7a while the correct post-refresh state is the one the import did not change: 70/30, allocatable 70
+ok   FROZEN IMPORT_AMBIGUITY_COUNT = 1
+ok   FROZEN UNRESOLVED_IMPORT_DECISION_COUNT = 1
+ok   FROZEN IMPORT_ARITHMETIC_GUESSED = NO
+ok   FROZEN IMPORT_SILENT_SUBTRACTION_INTRODUCED = NO
+ok   E8 the gate is declared OPEN — the round did not choose the import arithmetic on the operator's behalf
+ok   E8a with three options on the board and one recommended — a recommendation is not a freeze
+
+== F. §35 / §36 — the ledger can tell the truth, and receiving already does ==
+ok   FROZEN NEW_MOVEMENT_TYPES_REQUIRED = 0
+ok   FROZEN MOVEMENT_SCHEMA_EXTENSION_REQUIRED = NO
+ok   F1 the contract declares the seven-type movement vocabulary
+ok   F1a the PART V mapping table declares four overseas movement events (computed)
+ok   F1b and names these four movement types (parsed from the contract)
+ok   F1c every one of which is ALREADY in the declared vocabulary — nothing is invented (computed)
+ok   F2 the page spec declares an allowed from/to stock-type set
+ok   F2a and it is these five values (computed)
+ok   F2b the three directions the reserve/release/dispatch mapping uses are all members — no value is invented (computed)
+ok   F3 05_ declares the canonical movements header
+ok   F3a and every column the reserve/release/dispatch mapping needs is already on it (computed)
+ok   FROZEN DELIVERED_INCREASES_OVERSEAS_AVAILABLE = NO
+ok   FROZEN OVERSEAS_RECEIPT_OWNER_COUNT = 1
+ok   FROZEN SECOND_RECEIPT_OWNER_CREATED = NO
+ok   F4 the receipt posts its delta to the AVAILABLE bucket
+ok   F4a and holds no column index for reserved at all — it cannot touch an existing reservation
+ok   F4b the only reserved write is the literal 0 on a row being CREATED, which cannot hold a reservation yet
+
+== G. §37 / §38 — schema gate, and the shape of the one atomic change ==
+ok   FROZEN NEW_TABLE_REQUIRED = NO
+ok   FROZEN SCHEMA_EXTENSION_REQUIRED = NO
+ok   FROZEN DB_MIGRATION_REQUIRED = NO
+ok   FROZEN NEW_COLUMNS_REQUIRED = NONE
+ok   FROZEN BACKFILL_REQUIRED = NO
+ok   G1 every field Option A names is on the operator-verified live header — no column is requested (computed)
+ok   FROZEN R4_MUST_LAND_AS_ONE_CHANGE = YES
+ok   FROZEN R4_DEPLOYABLE_INTERMEDIATE_STATES = 0
+ok   FROZEN R4_IMPLEMENTATION_OWNER_COUNT = 8
+ok   G2 the four owners that may not be split across deploys are named
+ok   G3 [R4B] the precheck now ROUTES by source domain. Until R4B it read factory_stock for any source, which is what made an overseas source impossible — a restriction by accident rather than by rule
+ok   G3a and an overseas shortfall now refuses as OVERSEAS rather than wearing a factory-shaped message
+ok   G3b [R4B] the overseas reservation writers now exist, and they are in 05_ as §38 planned
+ok   FROZEN REQUEST_ORDER_BEHAVIOR_CHANGED = NO
+ok   FROZEN PO_BEHAVIOR_CHANGED = NO
+ok   FROZEN S5_RECOMMENDATION_BEHAVIOR_CHANGED = NO
+ok   FROZEN SHIPPING_TO_ORDERING_AUTO_ORCHESTRATION = NO
+ok   FROZEN KMFSG_INPUT_CONTRACT_CHANGED = NO
+ok   FROZEN SECOND_AVAILABILITY_CALCULATION_PATH_CREATED = NO
+ok   FROZEN SECOND_EXPOSURE_CALCULATION_PATH_CREATED = NO
+ok   FROZEN S6_R4_RUNTIME_IMPLEMENTATION_AUTHORIZED = NO
+ok   FROZEN S5_READY_FOR_INTEGRATION = YES
+ok   FROZEN S5_DEPLOYMENT = HOLD
+ok   FROZEN S6_DEPLOYMENT = HOLD
+ok   FROZEN PRODUCTION_ROWS_WRITTEN = 0
+
+== H. NEGATIVE CONTROLS — each probe corrupts the thing the assertion above claims to watch ==
+ok   M1 scoping PART V to the whole document would let the SUPERSEDED value pass as the amendment (caught)
+ok   M2 an availability owner that subtracts reserved from available is caught (caught)
+ok   M3 a dispatch that also decrements available is caught (caught)
+ok   M4 the response alone cannot tell a GROSS-corrected write from a naive one (caught)
+ok   M5 a census that counted wh_before/after_physical_stock would report false writers (caught)
+ok   M6 restoring the unconditional payload forwarding is caught (caught)
+ok   M7 a movement type invented IN THE CONTRACT TABLE is caught against the declared vocabulary (caught)
+ok   M8 a model field absent from the live header would fail the schema gate (caught)
+
+=====================================================
+S6-R3A — OVERSEAS OPERATIONAL QUANTITY MODEL AMENDMENT
+D_S6_OVERSEAS_OPERATIONAL_QUANTITY_MODEL = A (FROZEN)
+OVERSEAS_CURRENT_STOCK_FIELD = wh_available_stock   SUPERSEDED_S6_R3_TOKEN_COUNT = 1
+NEW_COLUMNS_REQUIRED = NONE   DB_MIGRATION_REQUIRED = NO   BACKFILL_REQUIRED = NO
+UNRESOLVED_IMPORT_DECISION_COUNT = 1   S6_R4_RUNTIME_IMPLEMENTATION_AUTHORIZED = NO
+PRODUCTION_ROWS_WRITTEN = 0   BEHAVIOR_CHANGED = NO
+=====================================================
+PASSED  134 passed, 0 failed   (negative controls: 8 caught, 0 missed)

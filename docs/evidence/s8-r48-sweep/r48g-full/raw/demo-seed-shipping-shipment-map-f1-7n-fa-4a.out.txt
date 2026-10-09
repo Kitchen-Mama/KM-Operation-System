@@ -1,0 +1,317 @@
+
+== schema — owned columns ⊆ canonical HEADERS ==
+
+== 1. ABSENT_ALL ==
+
+== 2. PRESENT_EXACT_ALL ==
+
+== 3. PARTIAL_PRESENT ==
+
+== 4. CONTENT_DRIFT ==
+
+== 5. DUPLICATE_DEMO_ID ==
+
+== 6. live FK ==
+
+== 7. live qty/status/coord/event ==
+
+== 8. real SKU/site-SKU ==
+
+== 9. distinct W/C/E ==
+
+== 10. dynamic counts + checksum ==
+
+== 11. rollback ==
+
+== 12. CLEAR ==
+
+== 13. write boundary ==
+
+== G. event semantics ==
+
+== V3A-1..4. post-write fail-closed rollback (inserted-only, any post-insert failure) ==
+
+== V3A-5..6. durable journal integrity ==
+
+== V3A-7..8. real scope authority (no fallback) + canonical active ==
+
+== V3A-9. external-reference audit beyond the six demo tables ==
+
+== V3A-10..11. exact success / exact retry ==
+
+== V3C-1..2. no master modification, no coordinate manufactured ==
+
+== V3C-3..4. canonical identifier binding wins; no fuzzy matching ==
+
+== V3C-5..8. Demo fallback uses existing active locations; exact filters; deterministic; distinct roles ==
+
+== V3C-9..11. abstract timeline preserved; abstract rows blank; bound rows carry Demo evidence ==
+
+== V3C-12..15. events geographic + chronology + status; coords equal master ==
+
+== V3C-16. checksum binds bindings/locations/coordinates ==
+
+== V3C-17..20. V3A safety + state refusal + retry + CLEAR ==
+
+== V3C-21..23. no production side effects; no line marketplace ==
+
+== V3C-B. diagnostic identifier audit ==
+
+== V3D-H1. CN→US current marker rejects an unrelated third country (France/Calais) ==
+
+== V3D-H2. an EXPLICIT third-country route node authorizes that country ==
+
+== V3D-H3/H4. sea/truck destination is never an airport; air may be ==
+
+== V3D-H5/H6. sea origin is maritime/factory; truck last-mile is a warehouse-class endpoint ==
+
+== V3D-H7/H9. transport/role + node/role compatibility matrix ==
+
+== V3D-H10. explicit synonym normalization only — no fuzzy/name matching ==
+
+== V3D-H11. deterministic, order-stable selection among equally-valid candidates ==
+
+== V3D-H12/H13. full plan on a polluted pool — no invented coord, no FR/airport, abstract timeline intact ==
+
+== V3D-H14. previous V3A/V3B/V3C gates remain intact on the V3D plan ==
+
+== V3D-H15. the retired checksum 77e18d0b is neither pinned nor accepted; type/decision bound into the checksum ==
+
+== V3D-H16. both confirmation constants remain placeholders ==
+
+== V3D-G. LIVE validator enforces the geography semantics (H17 zero-new-failure proven by the runner) ==
+
+== V3E-H1/H2. diagnostic is strictly read-only + one compact log ==
+
+== V3E-H5. every one of the 12 filter stages is independently reported ==
+
+== V3E-H6/H9. first-zero stage distinguishes region mismatch from type mismatch ==
+
+== V3E-H7/H8. unknown stays unknown; no fuzzy/name matching ==
+
+== V3E-B/C/D/F/G. full diagnostic core over a coherent fixture ==
+
+== V3E-E/G. region-authority mismatch is distinguishable from type mismatch ==
+
+== V3E-H10. eligibility / binding / matrix behavior is UNCHANGED ==
+
+== V3E-H11. both confirmation constants remain placeholders ==
+
+== V3F-J1. exact warehouses→logistics warehouse_id join (no fuzzy/name/city) ==
+
+== V3F-J2/J3/J5/J6/J7/J11. typed coordinate branches ==
+
+== V3F-J3/J4/J9/J10. buildPlan with warehouse authority — READY ==
+
+== V3F-J6/J8/J11. buildPlan fails closed (no fabricated FBA, no received) — identity/coordinate not ready ==
+
+== V3F-F. warehouse-location authority diagnostic ==
+
+== V3F-G. PREFLIGHT-style warehouse gates ==
+
+== V3F-J12/J13/J14. protections + write-boundary + constants intact ==
+
+== V3G-J1/J2. warehouse ADDRESS is the destination authority; blank master coordinate keeps identity ==
+
+== V3G-J3/J4. an exact-address-derived, source-bound coordinate renders the Demo destination (Demo-only) ==
+
+== V3G-J3/J10. buildPlan on the address-derived path — READY, both ids + source bound ==
+
+== V3G-J6. a seaport stays a gateway and is NEVER relabelled the FBA (derived plan) ==
+
+== V3G-J9. an in-transit destination node carries the facility coordinate but NO future event ==
+
+== V3G-J10. a received shipment ends at the selected warehouse (derived coordinate + note) ==
+
+== V3G-J5. the seed never writes the warehouses OR logistics_locations masters (read-only) ==
+
+== V3G-J7. an incomplete address fails closed (identity) ==
+
+== V3G-J8. an ambiguous / unverified / non-facility coordinate fails closed ==
+
+== V3G-J11. record_status detection is truthful; a dead record_status is ineligible ==
+
+== V3G-J12. fulfillment_center / third_party_warehouse tokens are recognized (never UNKNOWN) ==
+
+== V3G-J13. the checksum changes if the address, the coordinate, or the source reference changes ==
+
+== V3G-J14/J15. V3A protections + confirmation constants remain intact ==
+
+== V3G-J3. LIVE VALIDATE proves the derived destination authority end-to-end ==
+
+== V3G-J16. legacy (no-warehouse) plans are byte-identical (address authority is additive, gated on warehouses) ==
+
+== V3G1-A/G1/G2. live address_line1/address_line2 precedence; legacy flat fallback only when live columns absent ==
+
+== V3G1-B/G3/G4. exact three-region candidate selection + actual reviewable rows exposed ==
+
+== V3G1-C/G5/G6. the proposal is NOT authorization and cannot arm itself ==
+
+== V3G1-D/G7/G8/G9. proposal validator — fingerprint drift / non-facility accuracy / exact facility ==
+
+== V3G1-F/G10. empty authority returns the typed NOT_ARMED reason; an armed authority does not ==
+
+== V3G1-E/G11/G12. map destination display truth + received coordinate == destination route coordinate ==
+
+== V3G1-G13/G14. masters untouched + write/authority gates safe ==
+
+== V3G2-E1. exactly three proposal entries, one per region ==
+
+== V3G2-E2/E3/E4. exact per-warehouse proposal values + exact live address fingerprint ==
+
+== V3G2-E5/E6. the three coordinates are distinct and none is a gateway coordinate ==
+
+== V3G2-E7. the accepted accuracy classes are an EXPLICIT enum, not a wildcard ==
+
+== V3G2-E8. every proposal entry carries a reviewable source reference ==
+
+== V3G2-E9/D. the AUS2 ZIP discrepancy: the LIVE 78665 fingerprint stays authoritative ==
+
+== V3G2-E10/C. the validator predicts THREE_REGION_COORDINATE_PROPOSAL_READY on the live-shaped fixture ==
+
+== V3G2-E11/B. the populated proposal still cannot arm the authority ==
+
+== V3G2-E12. PREFLIGHT/build stays NOT_ARMED with the proposal populated ==
+
+== V3G2-E13/E14. masters never written; confirmation constants remain placeholders ==
+
+== V3G3-C. exactly the three approved authorities are armed, bound and immutable in source ==
+
+== V3G3-D. with the three approved authorities the plan builds and each region gets ITS OWN coordinate ==
+
+== V3G3-D. route geography / endpoint / status truthfulness gates pass ==
+
+== V3G3-D. received ends at its warehouse; shipped / in-transit stay truthful ==
+
+== V3G3-D. determinism + checksum binding of the approved evidence ==
+
+== V3G3-D. V3A protections intact; COMMITTED_UNVERIFIED impossible; nothing armed for write ==
+
+== V3G4-REGRESSION. the exact live evidence: 29 destination rejections BEFORE, three qualified W/C/E AFTER ==
+
+== V3G4-E1/E2/E3/E4. each approved warehouse makes its region destination-eligible, all three simultaneously ==
+
+== V3G4-E6/E7. the destination no longer depends on a generic role-compatible location_type; gateways cannot substitute ==
+
+== V3G4-E8/E9/E10. stale fingerprint / missing authority entry / join conflict each fail closed with a typed reason ==
+
+== V3G4-E11. origin and current compatibility remain enforced ==
+
+== V3G4-E12/E13/E14. selection and build consume the SAME evaluation; the route terminal carries it exactly ==
+
+== V3G4-E15/E16. received only at the approved final warehouse; in-transit destination stays planned ==
+
+== V3G4-E18/E19. deterministic W/C/E plan; checksum binds the destination authority evidence ==
+
+== V3G4-E20/E21/E22. V3A protections intact; COMMITTED_UNVERIFIED impossible; constants untouched ==
+
+== V3G4-F. PREFLIGHT-grade compact evidence is exposed without dumping masters ==
+
+== V3G4A-E1/E2/E16. exactly one Logger entry, no nested verbose log, no write API reachable ==
+
+== V3G4A-E3/E8. the envelope is compact and truncation cannot remove the verdict or the checksum ==
+
+== V3G4A-E4. every required field is present ==
+
+== V3G4A-E5/E6. exactly three compact shipment objects; exact W/C/E coverage ==
+
+== V3G4A-E7. may_run_dry_run is true ONLY under the complete conjunction ==
+
+== V3G4A-E9/E10. ABSENT_ALL is required; PRESENT / PARTIAL / duplicate / unexpected states block ==
+
+== V3G4A-E11/E12/E13/E14. one false gate, fallback mode, a missing region and a missing template each block ==
+
+== V3G4A-E15. a changed plan is surfaced as a changed checksum ==
+
+== V3G4A-E17. the extracted PREFLIGHT verdict rule reproduces the previous behaviour exactly ==
+
+== V3G4A-E18/E19. V3A protections and confirmation constants untouched ==
+
+== V3G4A-D. a FAILING envelope stays tiny: reason counts + at most five short codes ==
+
+== V3G5-F1/F2. an exact Apps-Script-like setValues/getValues round trip classifies PRESENT_EXACT_ALL ==
+
+== V3G5-A(1). the writer-projection gate: a dropped physical column is caught BEFORE any write ==
+
+== V3G5-F3..F9. field-class canonicalization: numeric / blank / boolean / invalid / identifier / text / coordinate ==
+
+== V3G5-F10/F11. physical alias contract + writer-unowned columns ==
+
+== V3G5-F12/F13/F14. a real business mutation still drifts and is named exactly ==
+
+== V3G5-F15/C. the forensic envelope is capped and truncation-safe ==
+
+== V3G5-F16/F17/F18/F23. evidence never delays or replaces rollback; COMMITTED_UNVERIFIED impossible ==
+
+== V3G5-F19/F20/E. a failed rolled-back journal cannot authorize CLEAR and a retry is bound to the current plan ==
+
+== V3G5-F21/F22. exact success classifies PRESENT_EXACT_ALL and an exact retry is REUSED with six zero deltas ==
+
+== V3G5-D. the read-only canonicalization diagnostic contract ==
+
+== V3G5-F24/F25. the shared contract did not change the plan, and the constants remain placeholders ==
+
+== V3G5A-L1/L2/L3. the old shipments.warehouse_id semantic is classified and its meaning is not lost ==
+
+== V3G5A-L4..L10. the final physical plan/shipment contract ==
+
+== V3G5A-L11..L17. plan → shipment lineage and no geographic substitution ==
+
+== V3G5A-L19/L20/L23. missing source or destination authority fails closed and gates all_pass ==
+
+== V3G5A-L21/L22/L31/L32. lineage is checksum-bound, the corrected checksum is deterministic, 7e4cf9d9 is retired ==
+
+== V3G5A-L24/I. the compact authorization envelope carries the warehouse lineage and requires the gate ==
+
+== V3G5A-L25..L30/H. the pre-write projection gate on the corrected contract ==
+
+== V3G5A-L37/L38/K. prior failed journal: cannot authorize CLEAR, and retry safety is classified ==
+
+== V3G5A-L39..L45. drift, rollback, REUSED and PRESENT_EXACT_ALL remain intact on the corrected contract ==
+
+== V3G5B-1..3. the source-resolver precedence: exact template authority wins, invalid fails closed, blank falls back ==
+
+== V3G5B-4..8. every fallback filter is required ==
+
+== V3G5B-9..16. the fallback is deterministic and never substitutes another identity ==
+
+== V3G5B-17..24. source and destination are propagated into every plan and shipment ==
+
+== V3G5B-25..29. the physical shipment contract and the pre-write projection gate ==
+
+== V3G5B-30..32. the source/destination lineage gate and the authorization conjunction ==
+
+== V3G5B-33..35. the format-risk correction: only ACTUAL coercion risk counts ==
+
+== V3G5B-36/37. the six-table shape and route/event semantics stay complete ==
+
+== V3G5B-38..41. the corrected checksum is natural, deterministic and lineage-bound ==
+
+== V3G5B-42..47. journal safety, rollback and REUSED remain intact on the corrected contract ==
+
+== V3G5B-48..50. earlier contracts, constants and coordinate authorities are untouched ==
+
+== V3G5C-A/E. the semantic correction is documented in source and NO executable path consults is_shipping_enabled ==
+
+== V3G5C-I. the corrected eligibility matrix, one row per rule ==
+
+== V3G5C-C. country / company scope still fails CLOSED - nothing is silently broadened ==
+
+== V3G5C-H. the read-only output contract of both compact entrypoints ==
+
+== V3G5C-D/F/G. propagation, projection, checksum and the V3G5B protections all survive the correction ==
+
+== V3G5D-A. the shared-factory rule is ALREADY canonical - cited, not invented ==
+
+== V3G5D-L1..L7. the supplied live DB rows: YOUXIN is selected for CN, the TW factory is rejected ==
+
+== V3G5D-E/F. propagation and the shared-company evidence on the live-shaped plan ==
+
+== V3G5D-J. the checksum is new, deterministic and sensitive to source + shared-policy mutation ==
+
+== V3G5D-H/I. the read-only outputs carry the shared-factory evidence and stay compact ==
+
+== V3G5D-K/L. counts, routes, events, journal, rollback and constants all survive ==
+
+----------------------------------------
+DEMO-4A SEED V3C: 1203 passed, 0 failed

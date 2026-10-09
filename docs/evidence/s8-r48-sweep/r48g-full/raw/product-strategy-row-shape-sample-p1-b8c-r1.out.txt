@@ -1,0 +1,490 @@
+=== PRODUCT-STRATEGY-P1-B8C-R1 — minimal live row-shape readback · read-only · no activation ===
+
+=== SECTION A  §0/§3 ONE NEW FUNCTION, NO PARAMETERS, AND NOTHING ELSE GREW ===
+ok   A1  the function exists and takes NO parameters — there is nothing for a caller to widen
+ok   A1a and it is defined exactly once
+ok   A2  exactly three RUN_ entry points exist, and all three are named here
+ok   A3  the file still defines no web entry point of its own
+ok   A4  the sample is in no router table
+ok   A4a and no action name resembling it was registered
+ok   A4b the productPricing action table is still exactly the two reads it was
+ok   A5  the function body is found
+ok   A5a it calls ppwWorkspaceBuild_ — the builder that serves the page
+ok   A5b through the shipped request validator, so an invalid scope is refused the same way
+ok   A5c and reuses the census's own table reader
+ok   A5d there is no p1b3ReadTables_ — the plural helper the proposal named never existed
+ok   A5e the manifest states which reader the sample reuses
+ok   A5e1 and it is the singular helper that exists
+ok   A5e2 with the plural name it originally proposed marked as never having existed
+ok   A6  the file ASSIGNS `analysable` nowhere — it only reads the builder's verdict
+ok   A6b while it does READ the builder's verdict, which is what makes A6 a real scope
+ok   A6a nor does it re-derive any of the builder's intermediate decisions
+ok   A7  P1B8C_ROW_SAMPLE_MAX_ = 60
+ok   A7a and its scope is GLOBAL_REPORT, declared as a constant beside it
+ok   A7b spent by ONE selector that takes the pooled universe, not a per-site one
+ok   A7c and the per-site selector is gone, not merely unused
+ok   A7d the global selector is defined once and called once
+ok   A7e the two call sites are found
+ok   A7e1 the global selector sits SHALLOWER than the per-site builder — it is outside the loop
+ok   A7e2 at exactly the depth of the phase-1 declarations — one statement of the run, not of a loop
+ok   A7a and the constant is what the code uses, not a repeated literal
+
+=== SECTION B  §7 THE CALL CLOSURE REACHES NO FLAG, NO HANDLER AND NO WRITER ===
+ok   B1  the closure does reach the shipped builder
+ok   B1a and through it the shipped row normaliser
+ok   B2.1 NOTHING the sample can reach calls productStrategyEnabled_ — the feature flag resolver
+ok   B2.2 NOTHING the sample can reach calls handleProductPricingWorkspaceGet_ — the HTTP handler
+ok   B2.3 NOTHING the sample can reach calls handleProductPricingSiteUniverseGet_ — the other HTTP handler
+ok   B2.4 NOTHING the sample can reach calls prodMigrateCreateSheet_ — the migration sheet creator
+ok   B2.5 NOTHING the sample can reach calls prodMigrateAppendColumns_ — the migration column writer
+ok   B2.6 NOTHING the sample can reach calls getOperationDb — the shared DB opener
+ok   B3  the census DOES reach the handler — the two entry points really do differ here
+ok   B3a and it DOES read the flag, to report it; the sample does not read it at all
+ok   B4  not one writer method appears anywhere in the sample's call closure
+ok   B4.1 nor LockService
+ok   B4.2 nor PropertiesService
+ok   B4.3 nor CacheService
+ok   B4.4 nor DriveApp
+ok   B4.5 nor UrlFetchApp
+ok   B4.6 nor MailApp
+ok   B4.7 nor ScriptApp
+ok   B4a nor a trigger
+ok   B5.1 handleWeeklyAiPlanGenerate is not reachable from the sample
+ok   B5.2 handleShippingPlanSubmit is not reachable from the sample
+ok   B5.3 GapMaterialization is not reachable from the sample
+ok   B5.4 backfill is not reachable from the sample
+ok   B5.5 materializeGap is not reachable from the sample
+ok   B5.6 handleMigrate is not reachable from the sample
+ok   B6  the body never names the flag constant
+ok   B6a nor its resolver — flag_read is DECLARED false and the source agrees
+ok   B6b and the whole file makes zero assignments to the flag
+
+=== SECTION C  §3 IT RUNS, AND THE WRITE API IS NOT EVEN PRESENT ON THE FAKE ===
+ok   C0  the sample completes against a synthetic production DB
+ok   C1  read_only = true
+ok   C2  writes = 0
+ok   C3  writer_calls = 0
+ok   C4  sheets_created = 0
+ok   C5  drive_writes = 0
+ok   C5a db_writes = 0
+ok   C6  rows_modified = 0 — and this one is MEASURED, before and after
+ok   C6a a table that grows mid-run stops the sample
+ok   C6b naming the table that moved
+ok   C7  flag_modified = false
+ok   C7a flag_read = false — and §B proves the closure agrees
+ok   C8  deployment_created = false
+ok   C8a version_created = false
+ok   C8b http_endpoint_called = false
+ok   C9  the report says which counter is MEASURED
+ok   C9a and which are DECLARED, writer_calls among them
+ok   C9b naming where the declared ones are proved
+ok   C10  not one writer method appears in the recorded call log
+ok   C10a while the read method it needs does
+ok   C11  a wrong target stops the sample — AND IS NOT SWALLOWED BY THE REDACTION SCAN
+ok   C11a with the safety token
+ok   C11a1 under a name the forbidden-key list does not claim
+ok   C11a2 while `token` stays forbidden — the collision was resolved in the sample, not in the list
+ok   C11b and no spreadsheet id anywhere in the report
+ok   C11c nor in a successful one
+ok   C12  capture_kind = LIVE_READBACK
+ok   C12a is_live = true
+ok   C12b not_a_fixture = true
+ok   C12c and it names the builder it used
+ok   C12d by name
+ok   C12e the ACTION NAME is reported — a contract string
+ok   C12f and no deployment URL is anywhere near it
+
+=== SECTION D  §2/§3 ONE GLOBAL BUDGET OF SIXTY ROWS, SPENT ONCE ACROSS EVERY SITE ===
+ok   D0  the ten-site universe samples cleanly
+ok   D1  the universe really is 1050 rows
+ok   D1a AND THE WHOLE REPORT CARRIES SIXTY — not sixty per site
+ok   D1b counted from the rows themselves rather than from the field
+ok   D1c the cap is reported
+ok   D1d WITH ITS SCOPE — the field the defect lacked
+ok   D1e and there is no per-site cap to report
+ok   D1f and the algorithm is versioned
+ok   D2  sampled_rows_total <= 60
+ok   D2a sum(site rows) === sampled_rows_total
+ok   D2b and each site's own declared count sums to the same number
+ok   D2c sampled_rows_total <= universe_total_rows
+ok   D2d omitted_rows === universe_total_rows - sampled_rows_total
+ok   D2e capped === (universe_total_rows > sampled_rows_total)
+ok   D2f which here is true
+ok   D3  all sixty sampled rows are distinct
+ok   D4  ten sites were examined
+ok   D4a and all ten have at least one row — pass 1 does its job
+ok   D4b no site is absent from the sample
+ok   D4c the first site in canonical order holds at most a quarter of the budget
+ok   D4d and so does every other one
+ok   D5  ten seats went to site representation
+ok   D5a the rest went to rare traits and global rank
+ok   D5b and the four passes account for every seat
+ok   D6  the same source gives the same sixty rows
+ok   D6a a reversed source still samples
+ok   D6b AND SELECTS EXACTLY THE SAME SIXTY ROWS — the order is canonical identity, not row position
+ok   D6c with the same total
+ok   D6d and the rule says so in the output
+ok   D6e naming what it is NOT keyed on
+ok   D6f the selector probe builds a 120-row pool across three sites
+ok   D6f1 and scrambles it into the same multiset
+ok   D6g THE SELECTOR SORTS ITS OWN POOL — a scrambled pool selects exactly the same sixty rows
+ok   D6h and the budget still bought sixty
+ok   D6i the skewed universe samples
+ok   D6i1 one site of 900 and nine of 5
+ok   D6i2 and the report still carries sixty rows
+ok   D6j EVERY SITE IS STILL REPRESENTED, including the nine small ones
+ok   D6j1 not one of them is absent from a universe that is 94% one site
+ok   D7  a universe of 59 is kept whole, and reports itself uncapped
+ok   D7a a universe of exactly 60 is kept whole
+ok   D7b and 61 gives 60 sampled, 1 omitted, capped
+ok   D8  one site has no rows at all
+ok   D8a and it sampled none
+ok   D8b while the budget still bought sixty rows elsewhere
+ok   D8c and only the nine non-empty sites are counted as represented
+ok   D8d counted from the rows themselves
+ok   D9  the budget is not reset per site
+ok   D9a nor per builder call
+ok   D9b and the bound is not a truncation applied after selection
+ok   D9c the rule carries the scope too
+ok   D9d chunking does not re-sample
+ok   D9e nor duplicate rows
+ok   D9f and there is no per-chunk budget
+
+=== SECTION E  §6 COVERAGE IS REPORTED, AND A STATE PRODUCTION LACKS IS A GAP, NEVER A FIXTURE ===
+ok   E1  every §6 binary dimension is reported
+ok   E2  and every §6 categorical dimension
+ok   E3.1 regular_price reports both values in both populations
+ok   E3.2 minimum_price reports both values in both populations
+ok   E3.3 msrp reports both values in both populations
+ok   E3.4 product_image reports both values in both populations
+ok   E3.5 promotion reports both values in both populations
+ok   E3.6 analysable reports both values in both populations
+ok   E3.7 data_quality reports both values in both populations
+ok   E3.8 status reports both values in both populations
+ok   E4  the synthetic universe covers every binary state
+ok   E5  a universe with no promotion at all reports STATE_ABSENT_FROM_PRODUCTION
+ok   E5a naming which value is missing
+ok   E5b and saying, in the output, that nothing was invented to fill it
+ok   E5c while pointing at the fixture as the labelled alternative
+ok   E5d and the dimension is reported UNCOVERED rather than quietly passing
+ok   E6  this universe has more than one value on every categorical dimension
+ok   E6a and a universe with one country says so, rather than reporting the dimension covered
+ok   E7  the old nested `universe` object is gone, not kept in parallel
+ok   E7.1 §4 field universe_total_rows is present and populated
+ok   E7.2 §4 field sampled_rows_total is present and populated
+ok   E7.3 §4 field omitted_rows is present and populated
+ok   E7.4 §4 field capped is present and populated
+ok   E7.5 §4 field sites_examined is present and populated
+ok   E7.6 §4 field sites_represented is present and populated
+ok   E7.7 §4 field coverage_counts is present and populated
+ok   E7.8 §4 field coverage_gaps is present and populated
+ok   E7.9 §4 field row_sample_cap is present and populated
+ok   E7.10 §4 field row_sample_cap_scope is present and populated
+ok   E7.11 §4 field selection_algorithm_version is present and populated
+ok   E7a the omitted count is their difference, stated
+ok   E7b coverage_counts carries every trait
+ok   E7c each as {universe, sampled} with sampled never exceeding universe
+ok   E7d and the numbers are real — promotion=present has rows in both
+ok   E8.1 the site carries the envelope field sourceState
+ok   E8.2 the site carries the envelope field analysis_permitted
+ok   E8.3 the site carries the envelope field counts
+ok   E8.4 the site carries the envelope field membership
+ok   E8.5 the site carries the envelope field filtersApplied
+ok   E8.6 the site carries the envelope field filterOptions
+ok   E8.7 the site carries the envelope field pagination
+ok   E8.8 the site carries the envelope field schema
+ok   E8a with the schema contract version the accessor checks
+ok   E8b and NO per-site cap field, because there is no per-site cap
+
+=== SECTION F  §4 THE REDUCED ROW IS AN ALLOWLIST, AND THE NAMES ARE THE BUILDER'S OWN ===
+ok   F0  the shipped builder's row keys were read from a real build
+ok   F0a the report carries rows to inspect
+ok   F1  the reduced row is exactly (the wire shape − the dropped fields) + the named derived ones
+ok   F2  `msrp` was not renamed to list_price
+ok   F2a a row with a campaign line is in the sample
+ok   F2b and `promo_price` was not renamed to official_deal_price
+ok   F3  prices are published — the one clause §0 relaxed
+ok   F3a as numbers, the builder's own type
+ok   F3b and a missing minimum price is null, not absent and not zero
+ok   F3c likewise a missing msrp
+ok   F4  the image URL field is gone
+ok   F4a rows with an absolute-URL image are distinguishable
+ok   F4b from rows whose image cell holds something that is not an address
+ok   F4c from rows with no image at all
+ok   F4d with missing_reasons alongside, which completes imageStateOf's three inputs
+ok   F4e and the client rule those two booleans stand in for is the one shipped: blank -> missing
+ok   F4f a same-origin asset path -> verified (R3: this is what production holds)
+ok   F4f2 an opaque id with no extension -> unverified
+ok   F4g an absolute url on an UNDECLARED host -> unverified (a scheme is not an approval)
+ok   F4h0 the same row without the missing reason IS verified — so F4h isolates one input
+ok   F4h and the third input is the one missing_reasons carries
+ok   F5  the regional sub-object is dropped whole
+ok   F8  PRODUCTION_READBACK_PRICE_FIELD — the sample carries all three RESOLVED prices
+ok   F8a and none of the pricing editor's layers — auto, override-alias or source token
+ok   F8b while the override cell itself stays, under its own name, so a reader can compare the two
+ok   F8c and it is copied verbatim — no fallback expression stands behind the resolved price
+ok   F5a while both sides of the join are still distinguishable
+ok   F6  data-quality rows are in the sample
+ok   F7  a source table with unexpected columns still samples cleanly
+ok   F7a and an unknown cost column does not reach the report
+ok   F7b nor an unknown email column
+ok   F7c though the schema fingerprint still NAMES it, so a new column is visible as a column
+
+=== SECTION G  §5 REDACTION: FORBIDDEN KEYS, SECRET SHAPES, AND A FAIL-CLOSED REFUSAL ===
+ok   G0  the clean run passes the scan
+ok   G0a with no violations
+ok   G0b and it says the scan ran
+ok   G1.1 an image URL is not in the report
+ok   G1.2 a product URL is not in the report
+ok   G1.3 a marketplace product id is not in the report
+ok   G1.4 a regional detail id is not in the report
+ok   G1.5 a pricing row id is not in the report
+ok   G1.6 a campaign id is not in the report
+ok   G1.7 a campaign line id is not in the report
+ok   G1.8 a campaign name is not in the report
+ok   G1a not one absolute URL is anywhere in the report
+ok   G2  the authorised prices ARE there
+ok   G2a and the site sku, which §4 allows by name
+ok   G2b and the master sku
+ok   G3  an email in a product name refuses the run
+ok   G3a and nothing was emitted
+ok   G3b THE WHOLE REPORT IS DISCARDED — not trimmed, not partially handed over
+ok   G3c the violation count is reported
+ok   G3d with the rule that fired
+ok   G3e and its name
+ok   G3f and the PATH to it
+ok   G3g AND THE VALUE ITSELF IS NOT IN THE REFUSAL — a redaction failure that prints what leaked has leaked it into the log it was written to protect
+ok   G3h the length is reported instead, which is enough to find it and not enough to read it
+ok   G4.1 ABSOLUTE_URL refuses the run
+ok   G4.1a and is named as the rule that fired
+ok   G4.2 APPS_SCRIPT_EXEC_ID refuses the run
+ok   G4.2a and is named as the rule that fired
+ok   G4.3 GOOGLE_FILE_ID_SHAPE refuses the run
+ok   G4.3a and is named as the rule that fired
+ok   G4.4 OPAQUE_TOKEN refuses the run
+ok   G4.4a and is named as the rule that fired
+ok   G5  a forbidden key is a violation on its own
+ok   G5a reported as FORBIDDEN_KEY
+ok   G5b naming the key
+ok   G5c with its path
+ok   G6.1 the key `spreadsheet_id` is refused
+ok   G6.2 the key `script_id` is refused
+ok   G6.3 the key `deployment_id` is refused
+ok   G6.4 the key `endpoint` is refused
+ok   G6.5 the key `url` is refused
+ok   G6.6 the key `image_url` is refused
+ok   G6.7 the key `email` is refused
+ok   G6.8 the key `token` is refused
+ok   G6.9 the key `authorization` is refused
+ok   G6.10 the key `cost` is refused
+ok   G6.11 the key `margin` is refused
+ok   G6.12 the key `customer` is refused
+ok   G6.13 the key `supplier` is refused
+ok   G6.14 the key `marketplace_product_id` is refused
+ok   G6.15 the key `regional_detail_id` is refused
+ok   G7  a SCREAMING_SNAKE verdict name and a kebab filename are not opaque tokens; a mixed-case run is
+ok   G7a and the file records WHY the first version of that rule was wrong
+ok   G8  the scan runs BEFORE anything is emitted
+ok   G8a and `passed` is derived from the violations rather than declared
+
+=== SECTION H  §3 THE CHUNKED EMIT CARRIES ALL FOUR FIELDS ON EVERY CHUNK ===
+ok   H0  a large report is emitted in more than one chunk
+ok   H0a and the count it declares is the count it wrote
+ok   H1.1a chunk 1 carries chunk_index
+ok   H1.1b and chunk_count
+ok   H1.1c and full_report_fingerprint
+ok   H1.1d and full_report_length
+ok   H1.2a chunk 2 carries chunk_index
+ok   H1.2b and chunk_count
+ok   H1.2c and full_report_fingerprint
+ok   H1.2d and full_report_length
+ok   H1.3a chunk 3 carries chunk_index
+ok   H1.3b and chunk_count
+ok   H1.3c and full_report_fingerprint
+ok   H1.3d and full_report_length
+ok   H1.4a chunk 4 carries chunk_index
+ok   H1.4b and chunk_count
+ok   H1.4c and full_report_fingerprint
+ok   H1.4d and full_report_length
+ok   H1.5a chunk 5 carries chunk_index
+ok   H1.5b and chunk_count
+ok   H1.5c and full_report_fingerprint
+ok   H1.5d and full_report_length
+ok   H1.6a chunk 6 carries chunk_index
+ok   H1.6b and chunk_count
+ok   H1.6c and full_report_fingerprint
+ok   H1.6d and full_report_length
+ok   H1.7a chunk 7 carries chunk_index
+ok   H1.7b and chunk_count
+ok   H1.7c and full_report_fingerprint
+ok   H1.7d and full_report_length
+ok   H1.8a chunk 8 carries chunk_index
+ok   H1.8b and chunk_count
+ok   H1.8c and full_report_fingerprint
+ok   H1.8d and full_report_length
+ok   H1.9a chunk 9 carries chunk_index
+ok   H1.9b and chunk_count
+ok   H1.9c and full_report_fingerprint
+ok   H1.9d and full_report_length
+ok   H1.10a chunk 10 carries chunk_index
+ok   H1.10b and chunk_count
+ok   H1.10c and full_report_fingerprint
+ok   H1.10d and full_report_length
+ok   H1.11a chunk 11 carries chunk_index
+ok   H1.11b and chunk_count
+ok   H1.11c and full_report_fingerprint
+ok   H1.11d and full_report_length
+ok   H1.12a chunk 12 carries chunk_index
+ok   H1.12b and chunk_count
+ok   H1.12c and full_report_fingerprint
+ok   H1.12d and full_report_length
+ok   H1.13a chunk 13 carries chunk_index
+ok   H1.13b and chunk_count
+ok   H1.13c and full_report_fingerprint
+ok   H1.13d and full_report_length
+ok   H1.14a chunk 14 carries chunk_index
+ok   H1.14b and chunk_count
+ok   H1.14c and full_report_fingerprint
+ok   H1.14d and full_report_length
+ok   H1.15a chunk 15 carries chunk_index
+ok   H1.15b and chunk_count
+ok   H1.15c and full_report_fingerprint
+ok   H1.15d and full_report_length
+ok   H1.16a chunk 16 carries chunk_index
+ok   H1.16b and chunk_count
+ok   H1.16c and full_report_fingerprint
+ok   H1.16d and full_report_length
+ok   H1.17a chunk 17 carries chunk_index
+ok   H1.17b and chunk_count
+ok   H1.17c and full_report_fingerprint
+ok   H1.17d and full_report_length
+ok   H1.18a chunk 18 carries chunk_index
+ok   H1.18b and chunk_count
+ok   H1.18c and full_report_fingerprint
+ok   H1.18d and full_report_length
+ok   H1.19a chunk 19 carries chunk_index
+ok   H1.19b and chunk_count
+ok   H1.19c and full_report_fingerprint
+ok   H1.19d and full_report_length
+ok   H1.20a chunk 20 carries chunk_index
+ok   H1.20b and chunk_count
+ok   H1.20c and full_report_fingerprint
+ok   H1.20d and full_report_length
+ok   H1.21a chunk 21 carries chunk_index
+ok   H1.21b and chunk_count
+ok   H1.21c and full_report_fingerprint
+ok   H1.21d and full_report_length
+ok   H1.22a chunk 22 carries chunk_index
+ok   H1.22b and chunk_count
+ok   H1.22c and full_report_fingerprint
+ok   H1.22d and full_report_length
+ok   H1.23a chunk 23 carries chunk_index
+ok   H1.23b and chunk_count
+ok   H1.23c and full_report_fingerprint
+ok   H1.23d and full_report_length
+ok   H1.24a chunk 24 carries chunk_index
+ok   H1.24b and chunk_count
+ok   H1.24c and full_report_fingerprint
+ok   H1.24d and full_report_length
+ok   H1.25a chunk 25 carries chunk_index
+ok   H1.25b and chunk_count
+ok   H1.25c and full_report_fingerprint
+ok   H1.25d and full_report_length
+ok   H1.26a chunk 26 carries chunk_index
+ok   H1.26b and chunk_count
+ok   H1.26c and full_report_fingerprint
+ok   H1.26d and full_report_length
+ok   H1.27a chunk 27 carries chunk_index
+ok   H1.27b and chunk_count
+ok   H1.27c and full_report_fingerprint
+ok   H1.27d and full_report_length
+ok   H1.28a chunk 28 carries chunk_index
+ok   H1.28b and chunk_count
+ok   H1.28c and full_report_fingerprint
+ok   H1.28d and full_report_length
+ok   H2  every chunk carries the SAME fingerprint of the whole
+ok   H2a and the indices run 1..n, so a missing chunk is detectable
+ok   H3  the concatenated chunks are exactly the declared length
+ok   H3a and they parse as JSON
+ok   H3b carrying the verdict
+ok   H3c and the same numbers the return value has
+ok   H3d the reassembled report carries sixty rows
+ok   H3e and every one of them is distinct
+ok   H3f and they are the same sixty rows the return value selected
+ok   H3g so no chunk path can push the report past the global cap
+ok   H3h and the fingerprint recomputed over the reassembled bytes matches the declared one
+ok   H4  the redaction refusal is emitted as one complete chunk
+ok   H4a with its own fingerprint
+
+=== SECTION I  §7 ZERO WRITE, ZERO ROUTER, ZERO FLAG, ZERO PROTECTED-FILE CHANGE ===
+ok   I1  this round did not touch 00_config.gs at all
+ok   I1a assigned in exactly one place
+ok   I1a1 while the resolver still COMPARES it, which is what made the first probe wrong
+ok   I1b the router still dispatches the workspace read to 72_
+ok   I2.1 72_api_v1_product_pricing_workspace.gs does not mention the sample
+ok   I2.2 00_config.gs does not mention the sample
+ok   I2.3 01_router.gs does not mention the sample
+ok   I2.4 29_production_safety_adapter.gs does not mention the sample
+ok   I3  and the diagnostic is still NOT in the runtime-owner mirror
+ok   I4  the sample is named by the diagnostic, three suites and two evidence files
+ok   I4a and not one of them is shipped source
+ok   I4b the runtime mirror is found
+ok   I4b1 and no runtime owner file carries one of this round's identifiers
+ok   I4b2 nor the manifest — no scope, no library, no trigger was added
+ok   I5  no root document mentions the sample
+ok   I5a nor the diagnostic file at all
+ok   I6  the body names no service that could write, lock or persist
+ok   I6a and the file creates no spreadsheet and no sheet
+
+=== SECTION J  THE ROUND'S DOCUMENTS SAY THE SAME THING THE CODE DOES ===
+ok   J1  the manifest names the function the USER must run
+ok   J2  and the bound, matching the constant
+ok   J2a the manifest states the cap is GLOBAL_REPORT
+ok   J2b in words as well as in the field name
+ok   J2c and carries the arithmetic §2 specifies
+ok   J2d with the reason the per-site reading was wrong
+ok   J2e the manifest records why the reorder test could not see the selector sort
+ok   J2f and why site representation had to be tested on a skewed universe
+ok   J3  the §1.3 reduction table is found
+ok   J3a no table row proposes an image object the code does not build
+ok   J3b nor the rename §4 forbids
+ok   J3c and the image row names the two booleans that were built instead
+ok   J3d and the campaign row uses the builder's own field name
+ok   J4  and the section says it is no longer a proposal
+ok   J5.1 the manifest records the scan refusing its own constants
+ok   J5.2 the manifest records the token key collision
+ok   J5.3 the manifest records the head-of-the-order sample
+
+=== SECTION K  MUTANTS ===
+ok   K1  the cap is raised — D1a sees more than sixty rows in the report (caught)
+ok   K1a  the cap is 61 — an off-by-one is still a breach of the authorised bound (caught)
+ok   K1b  THE BUDGET GOES BACK TO PER-SITE — the defect this round exists to fix (caught)
+ok   K1c  the per-site budget is reset inside the selector — the same defect, one level down (caught)
+ok   K1d  the report claims GLOBAL_REPORT while the code is per-site — the label alone is not the fix (caught)
+ok   K2  the global-rank pass goes back to stride — D4d sees one site swallow the budget (caught)
+ok   K2a  PASS 1 IS REMOVED — on a skewed universe the small sites vanish (caught)
+ok   K3  the rare-trait pass stops running — E4 loses a covered state (caught)
+ok   K4  rarest-first becomes commonest-first — the selection moves (caught)
+ok   K4a  THE SELECTOR STOPS SORTING ITS POOL — D6g sees a scrambled pool select differently (caught)
+ok   K4b  the canonical id drops its site scope — two sites can no longer be told apart in the order (caught)
+ok   K5  the image URL is published again — G1a finds an absolute URL (caught)
+ok   K6  the regional sub-object is copied wholesale — G1 finds the product URL (caught)
+ok   K7  the scan becomes advisory — the refusal no longer discards the report (caught)
+ok   K8  the refusal prints the value it caught — G3g (caught)
+ok   K9  the opaque-token rule drops its mixed-case test — the report refuses its own vocabulary (caught)
+ok   K10  the sample stops using the shipped builder — F1 sees the wire shape drift (caught)
+ok   K11  a forbidden key is quietly dropped from the list — G5 stops flagging it (caught)
+ok   K12  the chunk header loses its fingerprint — H1c and H2 (caught)
+ok   K13  `capped` is hard-coded false — D2e (caught)
+ok   K13a  omitted_rows stops being the difference — D2d (caught)
+ok   K13b  THE PER-SITE LISTS STOP BEING A PARTITION — D2a sees the sum disagree (caught)
+ok   K13c  A CHUNK REPEATS ITS ROWS — H3e sees a duplicate after reassembly (caught)
+ok   K14  a state absent from production is silently reported as covered — E5 (caught)
+ok   K15  rows_modified becomes a declared zero — C6a stops catching the growing sheet (caught)
+ok   K16  the scan stops walking arrays — a leak inside a row list is missed (caught)
+ok   K17  the error path goes back to `error.token` — C11 is swallowed again (caught)
+
+=== P1-B8C-R1 ROW SHAPE SAMPLE ===
+passed   435
+failed   0
+mutants  27 (caught 27, survived 0)

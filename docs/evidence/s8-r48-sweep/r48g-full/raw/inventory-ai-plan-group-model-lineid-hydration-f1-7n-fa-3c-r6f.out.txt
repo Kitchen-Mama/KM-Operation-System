@@ -1,0 +1,21 @@
+
+== A. canonical model + schema (30 header / 31 line; route on header; no selected_*) ==
+
+== B1. deterministic + stable line id; natural-key reconciliation (no duplicate) ==
+
+== B1. 16_ edit path structure (id-or-natural-key, heal blank id, deterministic insert, under lock) ==
+
+== B2. hydration reads header recommended_* + line source_warehouse_id; NO selected_* ==
+
+== C. generation chain intact (deterministic id + lock + find-or-reuse; NOT run) ==
+
+== E. downstream mapping table frozen (§43); handoff deferred ==
+
+== F. validator present + zero-write ==
+
+== G. flags frozen + no Shipment/Submit; blank orphan never reused ==
+
+== H. unified release token (R6F) ==
+
+----------------------------------------
+R6F GROUP-MODEL / LINE-ID / HYDRATION (F1-7N-FA-3C-R6F): 63 passed, 0 failed

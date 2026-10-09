@@ -1,0 +1,326 @@
+
+== §B — the row UI state is derived from the lifecycle, never from a message ==
+ok   B1  §B the vocabulary is exactly the seven states the spec names
+ok   B2  §B.4 and ONLY those two may use the red failure surface
+ok   B2a and three states are never write candidates
+ok   B3  an untouched composer is PRISTINE
+ok   B4  §B.2 one edited field makes it TOUCHED_INCOMPLETE
+ok   B5  §B.3 a STORED route mid-edit is its own state, by its stored identity
+ok   B5a while a half-typed route the database never held is not
+ok   B6  SAVING is SAVE_PENDING
+ok   B6a and so is RECONCILING — the answer is still being fetched
+ok   B7  SAVED is SAVED
+ok   B8  §B.4 a REFUSED write on a complete route is SAVE_FAILED
+ok   B8a and a lost response is its own state, never SAVED
+ok   B9  a COMPLETE row with a lost response is a failure state, not a composer state
+ok   B10 §B the classifier reads ONLY lifecycle fields off the row — no message, no error, no reason text
+ok   B11 the fallback is measured with the shared module genuinely ABSENT
+ok   B12.1 the fallback agrees with the module on: pristine composer
+ok   B12.2 the fallback agrees with the module on: touched composer
+ok   B12.3 the fallback agrees with the module on: persisted mid-edit
+ok   B12.4 the fallback agrees with the module on: half-typed new route
+ok   B13 on a COMPLETE row the fallback answers SAVE_PENDING — deliberately coarser
+ok   B13a and never a FAILURE state: a guessed state must not be able to paint a red database failure
+
+== §A — executed: request count, write count and what the operator is shown ==
+ok   A1  §A.1 pristine composer: ZERO requests
+ok   A1a and ZERO writes
+ok   A1b and no error at any point
+ok   A1c and §B.1 it is furniture: it says nothing at all
+ok   A2  §A.2 touched incomplete composer: ZERO requests
+ok   A2a and ZERO writes
+ok   A2b and NEVER "Unsaved — database update failed", not even as a flash
+ok   A2c no technical details
+ok   A2d no "Server message" — no server was asked
+ok   A2e no "Retryable" row
+ok   A2f and the failure surface is not even coloured
+ok   A2g §B.2/§D.2 ONE neutral row-local line, naming the fields
+ok   A2h and it is visible
+ok   A2i §B the row is badged INCOMPLETE, not "Not saved"
+ok   A3  §A.3 complete composer: exactly ONE create request
+ok   A3a with no error
+ok   A3b and no hint — there is nothing left to complete
+ok   A3c and the row settles as SAVED
+ok   A4  §A.4 persisted route mid-edit: ZERO requests (§F.4 — never an incomplete UPDATE)
+ok   A4a and ZERO writes, so the DB keeps its last complete version
+ok   A4b and it is NOT called a database failure
+ok   A4c §B.3 the neutral line, and it says the stored version is intact
+ok   A4d nothing is cancelled
+ok   A4e badged INCOMPLETE
+ok   A6  a touched composer beside a real edit does not stop that route saving (§B.1)
+ok   A6a and the composer SPEAKS — before R2 the same row was silent when another row was touched
+ok   A6b one row's outcome never describes the other's
+ok   A5  §A.5/§D.5 a REFUSED write still shows the red panel
+ok   A5a with its technical details
+ok   A5b and its retryability
+ok   A5c in red
+ok   A5d and it reaches the cross-SKU unsaved banner
+ok   A5e while the neutral surface stays silent: this is not an unfinished edit
+ok   A5f the row is badged with the OUTCOME it actually got
+ok   A5g §B.4 a LOST response also keeps the red surface
+ok   A5h and is distinguished from a refusal, never reported as SAVED
+ok   A7  two composers, neither complete: ZERO requests
+ok   A7a only the TOUCHED one is badged — a pristine composer is left entirely alone
+ok   A7b an empty touched composer lists all four readably — "From and To and Qty and Method" is not English
+ok   A7c and still issues nothing
+ok   A7d and a logical Amazon destination counts as a To — three missing, listed the same way
+
+== §D — the two surfaces, and the door on the red one ==
+ok   D1  §D the neutral state has its OWN element, not a shared one
+ok   D1a carrying the class the stylesheet declares
+ok   D2  §D.1 the failure renderer REFUSES a non-failure envelope at the door
+ok   D2a and it refuses BEFORE the failure lede is composed — a guard after the fact is not a guard
+ok   D2b redirecting it to the surface that owns it rather than dropping it (§G.8: never silence)
+ok   D3  §D.2 the neutral renderer offers NO technical disclosure of any kind
+ok   D3a and sets no colour: the stylesheet owns it, so it cannot be quietly turned red inline
+ok   D4  clearing the failure surface clears its COLOUR too — emptying innerHTML left it red
+ok   D5  §D.2 the stylesheet declares .ir-route-hint
+ok   D5a amber, NOT the error red this page reserves for a refused or lost write
+ok   D5b and it borrows no red at all
+ok   D5e and the amber is the page's EXISTING blocked/config pair, not a fourth colour invented for one line
+ok   D5c ONE line, bounded, so a longer sentence can never reopen the row-height work
+ok   D5d §D.3 and it is not scoped into the six-column grid
+ok   D6  §D.4 the helper essay E3 removed is still gone, and the hint did not become its replacement
+ok   D6a the neutral sentence is the short one the spec wrote
+
+== §A — the mechanism, named where it lives ==
+ok   A8  a composer is filtered out of the write scope
+ok   A8a and the empty-touched-set fallback is GONE — no dirty intent means zero mutation requests
+ok   A8b the scope is the touched set and nothing else
+ok   A8c and _persistAllocationDraftToDb DECLARES its scope instead of relying on the absence of one
+ok   A9  §B.2 a touched composer is hinted from the WHOLE row set, not from the write scope
+ok   A10 and the incomplete notice no longer reaches the failure renderer from here
+ok   A11 exactly ONE envelope declares itself non-failing — the incomplete-route notice
+
+== §C — Submit is not relaxed (the SHIPPED preflight, executed) ==
+ok   C1  §C a touched incomplete composer BLOCKS Submit
+ok   C1a with the composer's own code, not a route's
+ok   C1b naming the route and the missing field
+ok   C2  §C a persisted route left incomplete BLOCKS Submit
+ok   C2a and is a ROUTE refusal, distinct from a composer's
+ok   C3  §C a pristine composer beside a saved route is IGNORED — Submit proceeds
+ok   C4  §C a COMPLETE but unsaved route still blocks — R2 did not weaken this
+ok   C4a with the unsaved-changes code it always had
+ok   C5  and a saved complete route alone submits
+ok   C6  §C the preflight snapshot is built from the ON-SCREEN model, so a stored version cannot be submitted for it
+ok   C7  §C an incomplete route can never be EXCLUDED past the block by a confirmation
+
+== §E — the read timeout is classified, not guessed ==
+ok   E1  §E the LIVE shape — one timeout then a successful retry
+ok   E2  §E one timeout with no recovery yet
+ok   E3  §E two timeouts is a different problem with a different owner
+ok   E4  §E a typed refusal is NOT slowness, and is reported first
+ok   E4a even alongside a timeout — waiting out a real fault is the failure to avoid
+ok   E5  and a clean read is not a diagnosis looking for a cause
+ok   E6  §E only READ samples are counted — a write timeout is a different question
+ok   E7  §E the read bound is untouched (no timeout value was raised)
+ok   E7a and the diagnostic is not wired into the request path at all
+ok   E8  §E it reads samples the transport ALREADY records — no new collection was added
+ok   E9  §E and it never presents anything cached as a fresh answer
+ok   E10 §E the classifier HAS a caller on the page and is reachable by name
+ok   E10a which hands the transport's OWN bounded samples to the pure classifier
+ok   E10b and names the two ways it can have no answer rather than returning a misleading one
+ok   E10c it issues no request and touches no retry — it is an observation, nothing more
+
+== §G — the year-row contract, proven from the PRODUCTION writers ==
+ok   G1  §G.1 one row per scope + SKU + YEAR is the business key the Add-SKU writer guards on
+ok   G1a and that writer is router-registered too, so the base-row contract is a contract
+ok   G2  §G.2 Jan–Dec = 0 IS the base-row initialisation, written by the production writer
+ok   G2a and total_fc = 0 with it
+ok   G2b while fc_share is deliberately left BLANK, not zero
+ok   G3  §G.3 identity is FC-{year}-{uuid8}, minted by the writer
+ok   G4  §G.4 a duplicate guard on that same key already exists
+ok   G5  §G.5 source and both timestamps are columns of record
+ok   G6  §G an OFFICIAL writer for ANY year already exists — it takes row.year
+ok   G6a keyed on the identical business key
+ok   G6b header-validated BEFORE any write
+ok   G6c and it is router-registered, so it is a contract rather than an internal helper
+ok   G7  §G.6 the harvest reads fc_regular_forecast LIVE at run time...
+ok   G7a ...through the SHARED canonical reader, so a new base row takes effect on the next run
+
+== §F — the census: read-only, and the four causes stay four ==
+ok   F1  §F the census contains NO write call of any kind (swept over code, not prose)
+ok   F1a and never reaches the writer
+ok   F1b nor the allocator, the generator or the persistence deps
+ok   F1c and declares db_writes: 0
+ok   F2  §F/§0 NO CLOCK is read — the planning cycle is a required parameter
+ok   F2a and there is no "current cycle" default that would make the answer depend on WHEN it ran
+ok   F3  §F the required window comes from the FROZEN owner, so the census cannot disagree with the harvest
+ok   F3a and it refuses rather than inventing a window when that owner is absent
+ok   F4  EXECUTED: the census performed ZERO writes
+ok   F4a and reports it
+ok   F4b having actually read both tables (2 reads)
+ok   F5  §F the required window for RECO-2026-09 is M+1..M+4
+ok   F5a spanning TWO years — which is the whole mechanism of the gap
+ok   F6  §F five ACTIVE scopes; the inactive one is not counted
+ok   F6a and the inactive row is reported separately
+ok   F7  two scopes have a complete basis
+ok   F7a and three are blocked
+ok   F8  §F NO_ROW_FOR_YEAR is counted on its own
+ok   F8a CELL_BLANK_OR_NON_NUMERIC on its own
+ok   F8b CONFLICTING_VALUES on its own
+ok   F8c and EXPLICIT_ZERO is never folded into any of them
+ok   F8d with the resolved non-zero months counted apart again
+ok   F9  §F a scope whose required months are explicit ZEROS is COMPLETE, not blocked
+ok   F9a while the scope with no 2027 row at all IS blocked
+ok   F9b three affected scopes, listed by key
+ok   F10 §F per-month codes name WHICH month failed and why — the live evidence's exact shape
+ok   F10a and the year the missing row needs
+ok   F10b with a suggested action matched to that cause
+ok   F11 two disagreeing rows are a CONFLICT...
+ok   F11a with both rows counted
+ok   F11b ...and its action is STOP: no tool may pick a winner
+ok   F12 §F the census verdict is STOP while any conflict stands
+ok   F12a and says so
+ok   F13 §F every exit reports through ONE writer that serialises the whole result
+ok   F14 §F a covered table reaches FORECAST_BASIS_COMPLETE
+ok   F14a with nothing blocked
+ok   F14b and no action to suggest
+ok   F15 §F no planning cycle -> STOP
+ok   F15a named, not silently defaulted to "now"
+
+== §H — the migration: DRY RUN by default, official writer, replay-safe ==
+ok   H1  §H the migration performs no direct write of its own
+ok   H1a §H every creation goes through the OFFICIAL router-registered writer (identity + validation)
+ok   H1b and it never mints a forecast_id itself — a second identity authority is what put three rows under one key
+ok   H2  §H DRY_RUN ships TRUE
+ok   H2a and COMMIT READS it and refuses — the flag is load-bearing, not decorative
+ok   H3  §H COMMIT is a separate, explicitly named entry point
+ok   H3a and the zero-argument default entry is the DRY RUN
+ok   H4  §H COMMIT requires the content token of the exact plan reviewed
+ok   H4a and the token is derived from the plan CONTENT, never from a clock that would authorise any plan
+ok   H5  §H only a COMPLETELY MISSING year row is ever created — a blank month in an existing row is not touched
+ok   H6  §H an `updated` result is a HARD failure: the writer is an upsert, so that is data loss
+ok   H7  §H a duplicate or conflict STOPS the run
+ok   H8  §H a readback verifies each planned key exists once with all twelve months at zero
+ok   H9  §H every created row is stamped, so an interrupted batch is identifiable
+ok   H10 §H the four required output fields are reported
+ok   H11 EXECUTED: the DRY RUN called the writer ZERO times
+ok   H11a and reports zero writes
+ok   H11b as a dry run
+ok   H12 with a committable plan
+ok   H12a would_create holds exactly the ONE missing year row
+ok   H12b named by its business key
+ok   H12c for the required year
+ok   H13 §H a scope whose 2027 row EXISTS with a blank month is NOT in the plan — that value is the owner's
+ok   H13a existing rows are counted as skipped, not rewritten
+ok   H14 and a content token is printed for review
+ok   H15 §H COMMIT with the CORRECT token is still refused...
+ok   H15a ...because DRY_RUN is true, which is how it ships
+ok   H15b zero writes
+ok   H15c and the official writer was never reached
+ok   H16 §H REPLAY: the plan is empty once the row exists
+ok   H16a would_create is empty
+ok   H16b and a replay is ZERO writes — idempotency lives in the re-read
+ok   H17 §H a conflict in the required scope STOPS the run
+ok   H17a naming the conflict
+ok   H17b and offers NO plan at all while it stands
+ok   H17c zero writes
+ok   H18 across every executed path the official writer was called zero times
+
+== §C (F1-7N-FC-1B-E3-R2-R3) — 495 ROWS: the writer is NOT atomic, so the RUNNER is what is safe ==
+ok   C1  §C.3 the writer no longer appends one row at a time
+ok   C1-1 every insert goes out as ONE block
+ok   C1a §C.3 it now takes a script lock, so it IS serialised against another writer
+ok   C1b and releases it in a finally, so a throw cannot strand it
+ok   C1c with the whole batch validated before the first mutation
+ok   C1c §C.4 the SUCCESS response is assembled only after the loop — a killed execution reports nothing at all
+ok   C1d and it is the last statement, after every append
+ok   C2  §C.11 the batch boundary is a FIXED COUNT
+ok   C2a and the clock can only stop the run STARTING another batch
+ok   C2b §C.11 what is LEFT is re-read from the table, never derived from a cursor or from elapsed time
+ok   C3  §C.11 every batch RE-PLANS from a fresh read, so its payload is computed moments before it is sent
+ok   C4  §C.7 a response that does not account for every row it was given is refused
+ok   C5  §C.4 an unknown outcome is settled by READING the keys back, never by assuming either way
+ok   C6  §C.11 and it still delegates: no second production writer was created
+ok   C7  EXECUTED at the live scale: would_create = 495
+ok   C7a conflicts = 0
+ok   C7b writes = 0
+ok   C7c and the sheet received ZERO appendRow calls
+ok   C7d with no 2027 row created
+ok   C8  COMMIT with the CORRECT token is still refused by the shipped flag
+ok   C8a zero appendRow
+ok   C9  §C.4 killed mid-run: the runner STOPS
+ok   C9a naming the writer, not guessing a cause
+ok   C9b the sheet received no per-row appends at all
+ok   C9b1 it received 125 rows, as five whole atomic blocks
+ok   C9b2 in exactly five block writes
+ok   C9c and 125 are ACCOUNTED FOR as created (five whole batches)
+ok   C9d the dying batch is marked OUTCOME UNKNOWN, never "failed"
+ok   C9e and it is settled by READING those 25 keys back: 0 present, 25 absent
+ok   C10 §C.7 created + errored + skipped + unknown + not-attempted = 495, exactly
+ok   C10a and no business key is duplicated
+ok   C11 §C.4 the REPLAY re-derives exactly the remainder from the table (370)
+ok   C11a and completes
+ok   C11b with ZERO updates — nothing already present was resent to the upsert
+ok   C11c total ROWS written across BOTH runs is exactly 495 — no row written twice
+ok   C11c1 and not one of them went out as a per-row append
+ok   C11d 495 rows for 2027
+ok   C11e zero duplicate business keys
+ok   C11f and the per-key readback passes
+ok   C12 §C across the whole thing ZERO setValue calls — no existing month was overwritten
+ok   C12a and all 495 pre-existing 2026 rows are still there
+ok   C13 §C replay: a third run plans nothing
+ok   C13a and commits nothing
+ok   C13b zero additional appendRow calls
+ok   C14 §C.8 a writer reporting `updated` is a HARD STOP
+ok   C14a on the FIRST batch, not after all of them
+ok   C14b named as possible data loss
+ok   C15 §C.7 a reply accounting for 3 of 25 rows is refused rather than believed
+ok   C15a and treated as an UNKNOWN outcome, settled by readback
+ok   C16 §C.9 a conflict STOPS before the first write
+ok   C16a with zero appendRow calls
+
+== §I — the AI Plan flag stays FALSE ==
+ok   I1  §I the flag is false at the end of this round
+ok   I1a and the rollback switch is PRESERVED, never deleted
+ok   I2  §I.H the file records WHY it is false — the canonical harvest is not ready
+ok   I2a and names the forecast census as a re-activation condition
+ok   I2b together with the activation census verdict it requires
+ok   I3  §K 00_config.gs carries a stamp at or after R1 — R2 itself churned nothing
+ok   I3a 63_ has a manifest entry for itself
+ok   I3b and declares exactly the build that entry expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+ok   I4  §I health still reports the flag, so flag_effective is readable after a deploy
+ok   I5  §K neither TEMP tool is in the deployment manifest
+ok   I5a and neither is routed as an action
+
+== §K — release identity ==
+ok   K1  this round minted its own application token
+ok   K1b and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   K1a strictly after R1's, which was PUBLISHED (origin/main carries 951d58c)
+ok   K2  zero production refs remain on it
+ok   K2a and nothing is left behind on any superseded token
+ok   K3  the page carries it
+ok   K3a and so does inventory-compat.js — it is where IRRouteUiState lives
+ok   K4  the stylesheet family rotates when the file changes: .ir-route-hint was new in R2
+ok   K4a and index.html carries the stylesheet's own token
+ok   K4b strictly after E3's
+ok   K5  the owner stamp is recorded, after R1's
+ok   K5a and the shared stamp validator accepts it
+ok   K6  §K no bundle source changed — the new module is frontend-only, so no rebuild is required
+
+== MUTATIONS — each one is a way this could regress ==
+ok   N1  a composer is readmitted to the write scope (caught)
+ok   N2  the incomplete notice goes back to the red panel (caught)
+ok   N3  the failure renderer stops refusing a NEUTRAL envelope (caught)
+ok   N4  the incomplete notice drops its severity (caught)
+ok   N5  the neutral hint grows a <details> disclosure (caught)
+ok   N6  an unfinished row is badged with a save OUTCOME again (caught)
+ok   N7  a PRISTINE composer is hinted too (caught)
+ok   N8  a failure state is reclassified as a non-failure (caught)
+ok   N9  an editor state overrides a settled save outcome (caught)
+ok   N10 a typed server failure is classified as a timeout (caught)
+ok   N11 the census treats an explicit ZERO as a missing month (caught)
+ok   N12 the census defaults the planning cycle from the clock (caught)
+ok   N13 the migration appends a row itself (caught)
+ok   N14 the DRY_RUN flag stops gating COMMIT (caught)
+ok   N15 DRY_RUN ships false (caught)
+ok   N16 an unexpected UPDATE is tolerated instead of stopping (caught)
+ok   N17 the migration writes over a blank month in an existing row (caught)
+ok   N18 the AI Plan flag is set true while the harvest is not ready (caught)
+ok   N19 the neutral hint is repainted in the failure red (caught)
+ok   N20 one asset is left behind on a superseded token (caught)
+
+----------------------------------------
+MANUAL COMPOSER EXPECTED STATE + FORECAST ROLLOVER (F1-7N-FC-1B-E3-R2): 296 passed, 0 failed
+mutations: 20 caught, 0 missed

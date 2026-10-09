@@ -1,0 +1,17 @@
+
+== A. route-incomplete new Draft never creates K3 ==
+
+== A. cores handle BLOCK + legacy guard; K3 callers classified ==
+
+== B. payload fingerprint (REUSE=equal / REGENERATE=changed) ==
+
+== C. sadRegenerateLinePatch_ ownership rule ==
+
+== G. per-group outcome + truthful partial job status ==
+
+== D. PREFLIGHT runs the live dry assembly + scoped verdict; read-only; R6F2A alias + FREEZE present ==
+
+== F. empty-header classifier unchanged (still K2-aware, read-only) — no cancel/repair added ==
+
+----------------------------------------
+R6F2A NO-K3 + REUSE/REGEN + OWNERSHIP + DRY-PREFLIGHT: 48 passed, 0 failed

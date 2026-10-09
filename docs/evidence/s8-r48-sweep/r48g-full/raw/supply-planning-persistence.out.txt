@@ -1,0 +1,118 @@
+
+== resolveActiveDraft (PO-6) ==
+ok   resolve: 0 active → CREATE
+ok   resolve: first generate COMPLETED
+ok   resolve: 1 active → REUSE
+ok   resolve: >1 active → BLOCKED_CONFLICT
+ok   generate over duplicate active → BLOCKED
+ok   generate duplicate reason
+ok   generate duplicate: store unchanged (no silent pick / no 3rd draft)
+
+== create + write order + totals ==
+ok   create: one draft
+ok   create: two lines
+ok   create: one run
+ok   create: draft status = draft (active)
+ok   create: draft_version = 1
+ok   create: run reached COMPLETED
+ok   create: run status COMPLETED
+ok   create: totals recomputed
+ok   create: userQty init = recommended (PO-10)
+ok   create: line not user-edited on create
+ok   purity: input store not mutated
+ok   purity: input command lines not mutated
+
+== calculation_run_id + draft_version (PO-7 / PO-8) ==
+ok   refresh: draft_version unchanged (=1)
+ok   refresh: reuses calculation_run_id
+ok   refresh: no duplicate run row
+ok   regenerate: draft_version +1
+ok   regenerate: new calculation_run_id
+ok   regenerate: second run row
+ok   regenerate: recommended_qty recomputed
+ok   regenerate (no edits): userQty follows recommended
+
+== user-edit protection (PO-10) ==
+ok   edit: userQty updated
+ok   edit: userEdited flag set (explicit provenance)
+ok   refresh: user-edited planned/order qty preserved
+ok   refresh: recommended_qty immutable in version
+ok   refresh: untouched line unchanged
+ok   regenerate over edits w/o confirm → BLOCKED
+ok   regenerate blocked reason
+ok   regenerate blocked: user edit still preserved (store unchanged)
+ok   regenerate blocked: no new run (version not consumed)
+ok   regenerate confirmed → COMPLETED
+ok   regenerate confirmed: version +1
+ok   regenerate confirmed: userQty re-init to new recommended
+ok   regenerate confirmed: userEdited reset
+ok   version guard: blocked regenerate
+ok   version guard: draft_version not consumed by blocked regenerate
+
+== reconcile (PO-13) ==
+ok   reconcile: kept line ACTIVE
+ok   reconcile: new line inserted ACTIVE
+ok   reconcile: removed system line SUPERSEDED (not deleted)
+ok   reconcile: no rows hard-deleted
+ok   reconcile: totals exclude superseded
+ok   reconcile: removed user-edited line → SUPERSEDED_USER_REVIEW
+ok   reconcile: user-edited value retained for review
+
+== blocked lines (PO-14; §34A/§39/§40 tokens, never auto-0) ==
+ok   blocked: line marked BLOCKED
+ok   blocked: reason token preserved
+ok   blocked: qty never fabricated to 0
+ok   blocked: user qty not fabricated
+ok   blocked: totals count blocked separately, exclude from active sum
+ok   blocked line does not block the whole draft (per-line)
+ok   blocked: §34A MISSING_SNAPSHOT token preserved
+
+== partial write + resume (PO-12 / PO-15) ==
+ok   partial: run status PARTIAL
+ok   partial: stopped at LINES
+ok   partial: totals not yet written
+ok   partial: run row PARTIAL
+ok   resume: run COMPLETED
+ok   resume: reuses calculation_run_id
+ok   resume: flagged resumed
+ok   resume: totals computed after resume
+ok   resume: no duplicate run
+ok   resume: no duplicate lines
+ok   resume: completed run → NOOP
+ok   partial@HEADER: no lines yet
+ok   resume@HEADER: completes
+ok   resume@HEADER: lines written from captured run intent
+ok   resume@HEADER: totals correct
+
+== retry idempotency (PO-8 / PO-19) ==
+ok   retry: business state (drafts+lines) idempotent
+ok   retry: no duplicate draft
+ok   retry: no duplicate lines
+ok   retry: no duplicate run
+ok   retry: refresh→refresh fully idempotent (byte-identical store)
+ok   retry-after-partial: re-generate completes
+ok   retry-after-partial: same calculation_run_id
+ok   retry-after-partial: no duplicate run
+
+== determinism ==
+ok   determinism: same input → identical store
+ok   determinism: same input → identical result
+ok   determinism: business scope key is field-order independent
+ok   scope: weekly + monthly are distinct Active Drafts
+ok   scope: monthly still resolvable after weekly added
+
+== validation (structural throws) ==
+ok   validate: unknown recommendationType → RangeError
+ok   validate: unknown mode → RangeError
+ok   validate: non-string planningCycle → TypeError
+ok   validate: non-object businessScope → TypeError
+ok   validate: non-array recommendedLines → TypeError
+ok   validate: empty lineKey → TypeError
+ok   validate: non-number recommendedQty → TypeError
+ok   validate: negative recommendedQty → RangeError
+ok   validate: NaN recommendedQty → RangeError
+ok   validate: duplicate lineKey → RangeError
+ok   validate: BLOCKED line without reason → TypeError
+ok   validate: user edit on missing line → RangeError
+
+All Round 1B Recommendation Persistence assertions passed (96 assertions).

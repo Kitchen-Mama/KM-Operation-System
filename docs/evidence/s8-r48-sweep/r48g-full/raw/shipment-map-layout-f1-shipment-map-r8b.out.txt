@@ -1,0 +1,27 @@
+ok   render() composes the status/attention rail + main workspace
+ok   A/B order (R12): status/attention rail → main workspace (filters now inside the map panel)
+ok   C runtime side renders the shipment list directly (list starts top-left)
+ok   C legacy tall renderFilters panel removed (filters no longer above the list)
+ok   C filters are not concatenated into the left list column
+ok   C filters live in the Map Control Panel (glm-pfilters) — R12 relocation
+ok   E shipment list has bounded independent scroll
+ok   F no primary page-level mode tab row (glm-modebar removed)
+ok   F no page-level data-mode tab buttons emitted
+ok   G the Map View selector (built from MODE_TABS) lives in the map-surface control panel
+ok   G the Map Control Panel overlays the map surface
+ok   G all three modes (runtime/template/global) preserved
+ok   G Map View selector is wired (mode change → render)
+ok   F body render carries no top bar / mode control (Map View lives in the map surface; Refresh moved to the page header — R8C)
+ok   §3 one region nests Shipment Status + Attention (R8C: renderKpiStrip → renderAttentionRow)
+ok   §3 status summary consumes the SAME filtered collection as list + map
+ok   §5 card renders backend shipment.status pill
+ok   §5 received vs partially_received visually distinct
+ok   §9 receipt Save submits shipment_id + lines + actor only (no frontend status authoring)
+ok   §8 changed-only receipt collection preserved (R8)
+ok   §8 canonical route-point mutation preserved
+ok   §8 Remaining = MAX(0, shipped - received) display arithmetic preserved
+ok   selectedShipmentId authority + drawer open preserved
+ok   map/list selection highlight preserved
+ok   no new shipment CRUD writer introduced on the map page
+
+25 passed, 0 failed

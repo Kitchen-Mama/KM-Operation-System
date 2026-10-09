@@ -1,0 +1,33 @@
+
+== §4/§11B — double-rounding is FORBIDDEN (raw gap sum cartonized ONCE, not Σ of per-tier cartons) ==
+
+== §4/§11C — larger multi-tier case ==
+
+== §5/§11D — T4-only shortage is visibility-only (actionable total = 0, NO_ACTION) ==
+
+== §11E — all actionable tiers zero → NO_ACTION ==
+
+== §11F — BLOCKED materialized row → no actionable qty, no total ==
+
+== §2/§11G — per-tier values preserved VERBATIM; T4 excluded from the total ==
+
+== §3/§9 — updated Order Planning DTO shape ==
+
+== units-per-carton absent → total null + reason (never a fabricated / single-rounded number) ==
+
+== §6 cartonization owner — the canonical KMCALC (single owner), not reimplemented in KMREC ==
+
+== §11J — manual (page) == automatic (47.gs) for identical source rows + identical UPC authority ==
+
+== §11K — staleness detectable via source fingerprint ==
+
+== §11A/§11I — Inventory recommendation UNCHANGED (no OP-only fields leak in) ==
+
+== §11L/§11M/§11N — no downstream write, no gap recalc, no schema mutation ==
+
+== §7 — manual OP AI Plan surfaces the Actionable Total + basis; Order Qty untouched ==
+
+== §6/§17/§18 — recommendation DECISION persistence authority does NOT exist (proposal only, nothing created) ==
+
+----------------------------------------
+ORDER PLANNING TOTAL AUTHORITY (F1-4B-FM5-R1): 45 passed, 0 failed

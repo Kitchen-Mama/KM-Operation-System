@@ -1,0 +1,139 @@
+
+== buildDemandLedger ==
+ok   D empty entries → empty ledger
+ok   D REGULAR counted
+ok   D REGULAR state COUNTED
+ok   D non-event eventId null
+ok   D SALES_RUN_RATE counted
+ok   D SAFETY counted
+ok   D one SPECIAL_EVENT counted
+ok   D event eventId preserved
+ok   D #27 two distinct events → two entries
+ok   D #27 distinct events summed (500)
+ok   D #27 no conflict
+ok   D #27 same event (diff marketplace) counts once
+ok   D #27 duplicate event not doubled (300)
+ok   D #27 conflict → one entry
+ok   D #27 conflict state
+ok   D #27 conflict reason
+ok   D #27 conflict qty 0
+ok   D #27 conflict total 0
+ok   D #27 blockedCount 1
+ok   D non-event same sourceRef counts once
+ok   D non-event dedup qty 40
+ok   D non-event conflict blocked
+ok   D non-event conflict reason
+ok   D marketplace not part of identity (dedup)
+ok   D marketplace dedup qty 70
+ok   D zero quantity valid (0)
+ok   D permutation invariance (identical output)
+ok   D sorted by requiredByDate
+ok   D tie-break by demandType
+ok   D total counts only COUNTED (30)
+ok   D blockedCount aggregate (1)
+ok   D input not mutated
+ok   D mutating one output does not affect a later call
+ok   D fresh output per call
+ok   D fresh entries array each call
+ok   D TypeError input null
+ok   D TypeError input array
+ok   D TypeError entries non-array
+ok   D TypeError entry null
+ok   D TypeError empty masterSku
+ok   D TypeError non-string company
+ok   D TypeError non-string demandType
+ok   D TypeError non-string requiredByDate
+ok   D TypeError non-number quantity
+ok   D TypeError non-string/null country
+ok   D TypeError SPECIAL_EVENT missing eventId
+ok   D TypeError SPECIAL_EVENT empty eventId
+ok   D RangeError bad demandType enum
+ok   D RangeError NaN quantity
+ok   D RangeError Infinity quantity
+ok   D RangeError negative quantity
+ok   D RangeError non-strict date
+ok   D RangeError non-real date
+ok   D unexpected extra property ignored
+
+== buildSupplyLedger ==
+ok   S empty entries → empty ledger
+ok   S FBA poolType
+ok   S THREE_PL poolType
+ok   S FACTORY poolType
+ok   S active bucket COMMITTED_PRODUCTION contributes 100
+ok   S active bucket COMMITTED_PRODUCTION visible in byLifecycleBucket
+ok   S active bucket APPROVED_SHIPPING_PLAN contributes 100
+ok   S active bucket APPROVED_SHIPPING_PLAN visible in byLifecycleBucket
+ok   S active bucket SHIPPED_IN_TRANSIT contributes 100
+ok   S active bucket SHIPPED_IN_TRANSIT visible in byLifecycleBucket
+ok   S active bucket DELIVERED_NOT_RECEIVED contributes 100
+ok   S active bucket DELIVERED_NOT_RECEIVED visible in byLifecycleBucket
+ok   S active bucket RECEIVED_NOT_REFLECTED contributes 100
+ok   S active bucket RECEIVED_NOT_REFLECTED visible in byLifecycleBucket
+ok   S active bucket CURRENT_STOCK contributes 100
+ok   S active bucket CURRENT_STOCK visible in byLifecycleBucket
+ok   S excluded bucket DRAFT contributes 0
+ok   S excluded bucket DRAFT still visible (qty 100)
+ok   S excluded bucket CANCELLED_INVALID contributes 0
+ok   S excluded bucket CANCELLED_INVALID still visible (qty 100)
+ok   S excluded bucket CORRECTION_REVERSAL contributes 0
+ok   S excluded bucket CORRECTION_REVERSAL still visible (qty 100)
+ok   S identical duplicate lineage counts once (100)
+ok   S dedup lineageRefs = [DUP]
+ok   S #17 same lineage two buckets blocked
+ok   S #17 reason SUPPLY_LINEAGE_CONFLICT
+ok   S #17 blocked total 0 (not 200/300)
+ok   S #17 blockedCount 1
+ok   S #17 single-bucket lineage = 100
+ok   S distinct lineages same pool+bucket sum (200)
+ok   S #15 delivered bucket present
+ok   S #15 not current stock
+ok   S #15 delivered contributes as supply (100), non-current-stock
+ok   S #16 received-not-reflected present
+ok   S #16 received-not-reflected contributes (100)
+ok   S #16 current stock present
+ok   S 100-unit lifecycle stage COMMITTED_PRODUCTION = 100
+ok   S 100-unit lifecycle stage APPROVED_SHIPPING_PLAN = 100
+ok   S 100-unit lifecycle stage SHIPPED_IN_TRANSIT = 100
+ok   S 100-unit lifecycle stage DELIVERED_NOT_RECEIVED = 100
+ok   S 100-unit lifecycle stage RECEIVED_NOT_REFLECTED = 100
+ok   S 100-unit lifecycle stage CURRENT_STOCK = 100
+ok   S #32 one physical pool
+ok   S #32 pool copied across marketplaces stays 1000 (not 3000)
+ok   S #32 byLifecycleBucket 1000
+ok   S #32 conflicting snapshot blocked
+ok   S #32 reason PHYSICAL_POOL_QTY_CONFLICT
+ok   S #32 conflict total 0 (not summed/picked)
+ok   S #10/#11 FBA and THREE_PL are two separate pools
+ok   S #10 FBA pool 200
+ok   S #11 THREE_PL reserve 500 (not reclassified as FBA)
+ok   S #10/#11 total 700, buckets never merged
+ok   S FACTORY pool separate from THREE_PL
+ok   S permutation invariance (identical output)
+ok   S pools sorted by poolKey
+ok   S lineageRefs sorted ascending
+ok   S W1 pool sums distinct lineages (25)
+ok   S zero quantity valid (0)
+ok   S input not mutated
+ok   S mutating one output does not affect a later call
+ok   S fresh output per call
+ok   S fresh pools array each call
+ok   S fresh byLifecycleBucket each call
+ok   S TypeError input null
+ok   S TypeError entries non-array
+ok   S TypeError entry null
+ok   S TypeError empty supplyLineageRef
+ok   S TypeError non-string warehouseId
+ok   S TypeError non-string poolType
+ok   S TypeError non-string lifecycleBucket
+ok   S TypeError non-number quantity
+ok   S RangeError bad poolType enum
+ok   S RangeError bad lifecycleBucket enum
+ok   S RangeError NaN quantity
+ok   S RangeError -Infinity quantity
+ok   S RangeError negative quantity
+ok   S unexpected extra property ignored (marketplace/siteSku not identity)
+ok   S determinism: repeated identical input → identical output
+ok   D determinism: repeated identical input → identical output
+
+All Round 9B Demand/Supply Ledger assertions passed (133 assertions).

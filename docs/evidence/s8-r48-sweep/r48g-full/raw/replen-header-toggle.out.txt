@@ -1,0 +1,53 @@
+ok   A1: level-1 group cells appear in the correct order
+ok   A1/A5: parent header sequence (Status renamed to Planning Model)
+ok   A1: Replenishment colspan = 2
+ok   A1: Factory Stock colspan = 2
+ok   A1: Inventory colspan = 3
+ok   A1: Sales colspan = 3
+ok   A1: Replenishment group is 240px (2 × 120px)
+ok   A1: Factory Stock group is 240px (2 × 120px)
+ok   A1: first-layer body cells line up 1:1 with the leaves (inventory→sales→replen→factory)
+ok   A2: chevron rendered in the fixed SKU column
+ok   A2: chevron is a native <button>
+ok   A2: chevron has aria-expanded
+ok   A2: chevron aria-controls points at the detail panel id
+ok   A2: chevron has a descriptive aria-label
+ok   A2: chevron wired to _replenChevronClick
+ok   A2: detail panel gets the matching id
+ok   A2: gear button (planned-qty-config-btn) removed from JS + CSS
+ok   A2: gear tooltip removed
+ok   A2: _replenChevronClick calls stopPropagation (single toggle)
+ok   A2: interactive-target guard exists
+ok   A2: _replenRowClick excludes interactive targets from row toggle
+ok   A2: guard covers BUTTON/INPUT/SELECT/... tags
+ok   A3: initial state collapsed (no expanded key)
+ok   A3: one toggle → row expanded (single key set)
+ok   A3: second toggle on same row → collapsed
+ok   A3: rapid toggling resolves to a single deterministic key (no desync)
+ok   A3: _irNextExpandedKey is the single-state decision
+ok   A3: toggleReplenRow uses the single-state decision
+ok   A3: BOTH left (fixed) and right (scroll) get .expanded in the same pass
+ok   A3: both sides open synchronously before any setTimeout (no per-side stagger)
+ok   A3/A2: chevron aria-expanded synced to open/closed
+ok   A5: sales_driven → Sales
+ok   A5: forecast_driven → Forecast
+ok   A5: shared formatter _replenPlanningModelLabel exists
+ok   A5: table cell uses the shared formatter
+ok   A5: table cell no longer shows "Sales Driven"/"Forecast Driven"
+ok   A5: Add/Edit forms show Sales/Forecast (no "…Driven") while keeping canonical values
+ok   A5: canonical option values preserved (sales_driven / forecast_driven)
+ok   A4: category container uses the OWN .replen-category-rail (not km-tab-rail)
+ok   A4: markup no longer uses the shared km-tab-rail class
+ok   A4: tabs render with the OWN .replen-category-rail__tab / __count classes
+ok   A4: rail still wired to KM.ui.tabRail (behavior-only wheel/keyboard scroll)
+ok   A4: old "More Categories" overflow mode removed
+ok   A4: page-scoped shell + rail CSS present (own styling, not km-category-card)
+ok   A6: trigger uses SKU Details neutral colours (#f1f5f9 / #334155)
+ok   A6: panel matches SKU Details (soft shadow, 240px, border-light)
+ok   A6: menu items match SKU Details tokens
+ok   CD2: option label sourced from marketplace_display_name
+ok   CD2: option value stays marketplace_id (identity)
+ok   CD2: no country suffix appended to the label
+ok   CD2: company hint appended ONLY on same-country display-name collision
+
+7 FAILURE(S)

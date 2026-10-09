@@ -1,0 +1,19 @@
+
+== K3 resolver (§3): 0 / 1 / >1 (tests 6,7,8) ==
+
+== K3 key excludes draft_version + recommendation_group_no (§3 tests 9,10) ==
+
+== Multiple-route Phase-1 block (§4/§7, tests 12,13,14) ==
+
+== C1 adapter alignment + text-first targeted readback (§9, §10, tests 23,24,25,27) ==
+
+== Targeted readback handler reads only the 2 draft tables (§9) ==
+
+== Whole-Draft Cancel (§13, tests 30,31,32,33) ==
+
+== Router actions + BLOCKED_CONFLICT on Save (§20, §3) ==
+
+== Submit → Weekly-Plan handoff is HALTed + schema unchanged (§14-§19, §2) ==
+
+----------------------------------------
+ALLOCATION DRAFT RUNTIME (C2-D2): 29 passed, 0 failed

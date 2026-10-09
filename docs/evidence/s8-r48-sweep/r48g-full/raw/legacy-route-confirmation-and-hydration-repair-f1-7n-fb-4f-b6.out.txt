@@ -1,0 +1,226 @@
+
+== A — [§C] THE SEVEN DIAGNOSTIC ANSWERS, each demonstrated rather than asserted ==
+ok   A1 [§C.1] the hydrate no longer derives a marketplace destination from the ABSENCE of a warehouse
+ok   A2 [§C.1] and no destination field is answered by the page scope any more
+ok   A3 [§C.1] the destination comes from one resolver over the PERSISTED row
+ok   A4 [§C.2] the Amazon option IS offered by the picker
+ok   A5 [§C.2] with no matching option VALUE the cell renders the "To…" placeholder
+ok   A6 [§C.2] supplying the TOKEN selects it — the gap was the token, never the option list
+ok   A7 [§C.2] and the render now reads that token first
+ok   A8 [§C.3] the hydrate itself carries the persisted 800 — no quantity is lost
+ok   A9 [§C.3] and the render field the Qty box reads carries it too
+ok   A10 [§C.3] with an EMPTY scope the hydrate returns false and stores nothing
+ok   A11 [§C.3] so bySku is empty, _allocationDraftRowsFor returns null, and the DEFAULT editor renders
+ok   A12 [§C.3] the mount-time restore gates the hydrate on a scope it reads BEFORE the selectors are populated
+ok   A13 [§C.3] and the mount CALLS it before the bootstrap that populates those selectors
+ok   A14 [§C.3] THE FIX: the hydrate now runs where the scope actually exists — a confirmed Search
+ok   A15 [§C.4] NOT ONE live header has a resolvable destination, so K4 can classify none of them
+ok   A16 [§C.4] K4 therefore finds no match and would CREATE…
+ok   A17 [§C.4] …but a K2 rival exists that K4 cannot tell apart, so it BLOCKS instead of creating beside it
+ok   A18 [§C.4] and the sea_express simulation blocks for the same reason
+ok   A19 [§C.5] the rival for sea_express + Amazon is H1 (the sea_express header)
+ok   A20 [§C.5] the rival for sea + Amazon is H4 (the sea header, the one holding 800)
+ok   A21 [§C.5] the two are DIFFERENT rivals because service is a K2 dimension — sea never answers for sea_express
+ok   A22 [§C.6] H1/H2 ARE hydrated as active headers of the station…
+ok   A23 [§C.6] …but contribute NO route row, because a header with no lines renders nothing
+ok   A24 [§C.6] and on the server they ARE candidates for identity matching — H1 is the sea_express rival above
+ok   A25 [§C.7] the atomic writer ALREADY accepts a user-owned reconcile authority — no new action is needed
+ok   A26 [§C.7] the action contract stays at 10
+ok   A27 [§C.7] and the transport contract stays at 1 — B6 adds no action and no route
+ok   A28 [§C.7, §K] the deployed ACTION contract is at or after 10 and the TRANSPORT contract is still 1 — two independent axes, and only the action axis moves when a route is added
+ok   A28a and the required-action LIST version is at or after 9 (it is append-only)
+
+== B — [§D, tests 2-6] ONE DESTINATION AUTHORITY ==
+ok   B1 [test 2] a blank persisted destination hydrates as BLANK, not as the scope
+ok   B2 [test 2] and no warehouse is invented either
+ok   B3 [test 2] nor a MARKETPLACE_DESTINATION type
+ok   B4 [test 3] it carries the typed confirmation state
+ok   B5 [test 3] so the completeness gate refuses it and no write can be scheduled for it
+ok   B6 [test 1] H4 hydrates as Sea / 800 from WH-CN-01 — From, Method and Qty all persisted
+ok   B7 [test 4] a PERSISTED marketplace hydrates as itself
+ok   B8 [test 4] with the marketplace destination type
+ok   B9 [test 4] and the EXACT token the selector expects
+ok   B10 [test 4] no confirmation is required for a stored destination
+ok   B11 [test 4] which SELECTS Amazon in the rendered To cell
+ok   B12 [test 4] and the route is complete again
+ok   B13 [test 5] a persisted warehouse keeps its id AS its token — no marketplace, no confirmation
+ok   B14 [test 5] and it selects in the picker
+ok   B15 [test 6] warehouse AND marketplace is a typed refusal
+ok   B16 [test 6] neither identity is adopted — the contradiction is not resolved by picking one
+ok   B17 [test 6] and nothing can be written for it
+ok   B18 [test 6] the shared resolver says the same, independently of the page
+ok   B19 [§D.8] the token is CONSTRUCTED in exactly one place (parsing it elsewhere is not a second dictionary)
+ok   B20 [§D.8] and the Amazon builder is that one builder, not a second spelling of it
+ok   B21 [§D.1] a route with no destination of its own forms NO group — it is not persistable
+ok   B21b [§D.1] so the page scope cannot be written as its destination by any path
+
+== C — [§E, §F, tests 7] THE PERSISTED ROW RENDERS, AND THE CONFIRMATION IS EXPLICIT ==
+ok   C1 [§E.3] the render knows the confirmation-required state
+ok   C2 [§F.1] and states it beside the To cell in words the operator can act on
+ok   C3 [§F] the persisted state survives the DOM round trip, so a later save knows this was an adoption
+ok   C4 [§E.4] Qty is read from the persisted route row...
+ok   C4a [§E.4] ...and the renderer consults no suggestion authority at all
+ok   C4b [§E.4] while a non-route row gets a BLANK Qty rather than a re-derived one
+ok   C5 [§E.5] the Add Route editor exists only by explicit user intent...
+ok   C5a [§E.5] ...and the row it creates carries NO header or line identity, so it can adopt nothing
+ok   C5b [§E.5] and the id-less row is no longer conjured from a suggestion at all — the plan shows empty
+ok   C6 [§F.3] the dialog states From, To, Method and Qty
+ok   C7 [§F.3] and says the EXISTING record will be updated, naming it
+ok   C8 [§H.1] a blank ETA is not presented as a value being confirmed
+ok   C9 [§F.3] an ETA that IS explicitly present is shown
+ok   C10 [§F] a group carrying a destination-less persisted route needs confirmation
+ok   C11 [test 7] a declined dialog returns false
+ok   C12 [test 7] and the operator was actually asked exactly once
+ok   C13 [test 7] with the real quantity in the question
+ok   C14 [§F.4] an explicit yes returns true
+ok   C15 [§F.4] and NO reachable confirm is not consent — it refuses rather than assuming yes
+ok   C16 [test 7] the confirmation is asked BEFORE the line-cancel dispatch, which is itself a write
+ok   C17 [test 7] and before the group writer that issues the requests
+ok   C18 [test 7] a decline RETURNS out of the flush — zero request, zero write
+ok   C19 [test 7] and the queued cancels are PUT BACK, so nothing at all happened
+ok   C20 [§F.5] nothing preselects the scope marketplace in the To cell
+ok   C21 [§F.7] no bulk-confirm action was added
+ok   C22 [§F.8, §J] and no automatic cleanup or deletion was added
+
+== D — [§G, tests 8-17, 22-25] SAFE LEGACY ADOPTION, against the four frozen headers ==
+ok   D1 the seeded state matches the frozen live census: 4 headers, 6 lines, 1020 units
+ok   D2 [§G] WITHOUT the authority the save neither adopts nor is refused…
+ok   D3 …it creates its OWN ticket, so H4 is never silently adopted
+ok   D3a and no reconciliation verdict is produced — there is nothing to reconcile
+ok   D4 H4 itself is UNTOUCHED — the unauthorised save wrote nothing to it
+ok   D5 and the station gained exactly the new ticket 800, nothing else
+ok   D6 [test 8] WITH the explicit authority the adoption succeeds
+ok   D7 [test 8, 23] under H4's OWN stored id — never re-keyed
+ok   D8 [test 8] and NO new header is created
+ok   D9 [test 8] the destination is PERSISTED on that same header
+ok   D10 [test 10] and the service is still sea — never rewritten to sea_express
+ok   D11 Amazon was not written into a warehouse column
+ok   D12 [test 24, 25] exactly one line still hangs off H4 — no orphan, no duplicate
+ok   D13 [test 9, 22] and its quantity is still 800
+ok   D14 [test 22] station-wide quantity is conserved exactly
+ok   D15 [test 23] every stored header id is unchanged
+ok   D16 [test 25] replaying the same save succeeds…
+ok   D17 [test 25] …and creates no duplicate header or line
+ok   D18 [test 11] sea_express + Amazon adopts…
+ok   D19 [test 11] …H1, the ONLY eligible candidate on every K2 dimension
+ok   D20 [test 12] no second header is created
+ok   D21 [test 11, 18] H1 keeps sea_express and gains the destination
+ok   D22 [test 12, 10] H4 (sea / 800) is NOT touched — no destination written, no service change
+ok   D23 [test 12] and H4 still holds its single 800 line
+ok   D24 [test 11] the 400 line is created UNDER H1
+ok   D25 [test 13] H2 (air) is untouched — existing is not the same as adopted
+ok   D26 [test 22] the only quantity change is the one the user explicitly entered
+ok   D27 [test 13] an explicit air + Amazon save DOES adopt H2, under its own id
+ok   D28 [test 14] a US/ResUS air save reaches H2, NEVER the ResTW/JP header
+ok   D29 [test 14] H3 gains no destination from another station's save
+ok   D30 [test 14] and its 5 lines / 220 units are preserved exactly
+ok   D31 [test 14] from its OWN ResTW / JP context H3 adopts correctly
+ok   D32 [test 14, 22] with its 220 units conserved
+ok   D33 [test 15] two eligible legacy candidates BLOCK…
+ok   D34 [test 15] with the typed reason
+ok   D35 [test 15] and the server says zero_write
+ok   D36 [test 15] the database is byte-for-byte unchanged
+ok   D36b [test 16] naming the terminal header EXPLICITLY is refused with its own typed reason, zero write
+ok   D37 [test 16] and resolving by route, a submitted H4 is not a candidate at all…
+ok   D38 [test 16] …under a NEW K4 id — a terminal row is never adopted and never edited
+ok   D39 [test 16] and the terminal row is left exactly as it was
+ok   D40 [test 17] a service no legacy header carries adopts nothing…
+ok   D41 [test 17] …it creates its own distinct route
+ok   D42 [test 17] and no existing header was given a destination it did not ask for
+ok   D43 [§G.4] a route to a DIFFERENT destination is a different route…
+ok   D44 [§G.4] …and gets its own header rather than merging
+ok   D45 [§G.4] exactly one header was added
+
+== E — [§H, tests 18-21] EXPECTED ARRIVAL AND THE TWO OCEAN SERVICES ==
+ok   E1 [test 18] sea canonicalises to sea
+ok   E2 [test 18] and sea_express to sea_express
+ok   E3 [test 18] so they are two identities for two services in the K4 key
+ok   E4 [test 18] the lead-time lookup maps sea to Sea…
+ok   E5 [test 18] …and sea_express to Sea Express, a different rate card
+ok   E6 [test 19] there is no prefix ladder — nothing can make sea answer for sea_express
+ok   E7 [test 19] an unmapped service returns NOTHING rather than a neighbour's number
+ok   E8 [test 19] and the canonicaliser refuses an unknown spelling outright
+ok   E9 [test 20] expected_arrival is inside the payload fingerprint…
+ok   E10 [test 20] …so changing ONLY the ETA changes the fingerprint and forces a real write
+ok   E11 [test 20] and the semantic comparison agrees it is a genuine content change
+ok   E12 [test 20] an ETA-only save is accepted
+ok   E13 [test 20] and the ETA is PERSISTED on the line
+ok   E14 [test 22] with the quantity untouched
+ok   E15 [§H.2] expected_arrival is in NEITHER group key — a line attribute cannot reach a header identity
+ok   E16 [§H.2] so the ETA save created no new header
+ok   E17 [test 21] 2026-10-16 appears in NO shipped source — it is attempt evidence, not data
+ok   E18 [test 21, §H.1] adopting a route with no ETA leaves the ETA BLANK — nothing is backfilled
+ok   E19 [§H.1] the line payload never carries the DISPLAY-computed arrival date — that would be a backfill
+
+== F — [§I, tests 26-28] THE SUBMIT GATE ==
+ok   F1 [test 26] the destination-less 800 route is named as a submit blocker
+ok   F2 [test 26] with its SKU, quantity and state
+ok   F3 [test 26] and the gate is evaluated BEFORE the submit request is built
+ok   F4 [test 26] a blocked submit RETURNS — nothing is submitted and nothing is written
+ok   F4a and that one gate is evaluated BEFORE the submit request is built
+ok   F5 [test 27] once the destination is persisted the gate passes
+ok   F6 [test 27] and the route is submittable again
+ok   F7 [test 28] a zero-line active header in the submit set FAILS the whole batch…
+ok   F8 [test 28] with SUBMIT_VALIDATION_FAILED
+ok   F9 [test 28] and zero writes — so it blocks every real route beside it
+ok   F10 [test 28] the empty header is the one named
+ok   F11 [test 28] THE DECISION: the client sends only headers a complete route is actually bound to
+ok   F12 [test 28] so the empty H1/H2 are NOT sent, and the real H4 still is
+ok   F13.0 [§I] submit validation MIXED_SITE_PAYLOAD is intact
+ok   F13.1 [§I] submit validation APPLIED_SCOPE_MISMATCH is intact
+ok   F13.2 [§I] submit validation NO_LINES is intact
+ok   F13.3 [§I] submit validation ROUTE_INCOMPLETE is intact
+ok   F13.4 [§I] submit validation NO_POSITIVE_PLANNED_QTY_LINES is intact
+ok   F13.5 [§I] submit validation OPERATOR_PROVENANCE_INCOMPLETE is intact
+ok   F14 [§I] and the pre-existing drift and duplicate gates are untouched
+
+== G — [§J] THE TWO EMPTY HEADERS ARE RECORDED, NOT REMOVED ==
+ok   G1 [§J] both empty headers still exist after an adoption elsewhere
+ok   G2 [§J] still active — not cancelled, not expired, not deleted
+ok   G3 [§J] and they created no phantom line or quantity
+ok   G4 [§J] the handler still contains no row deletion at all
+ok   G5 [§J] and the save path added no expiry or purge
+
+== H — [§K, tests 29-30] DEPLOYMENT IDENTITY AND PAGE WIRING ==
+ok   H1 16_ is at or after the B6 owner build (F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2)
+ok   H2 and the deployment manifest expects exactly what the source declares
+ok   H3 69_ is UNCHANGED this round, so its stamp does not move
+ok   H4 the owner stamp MOVED, because 16_ changed this round
+ok   H5 the frontend pin AGREES with the deployed action contract
+ok   H6 transport contract still 1
+ok   H7 the probed action list is at or above the B6 size (it is append-only)
+ok   H8 [§K] and the router registers no new action for adoption
+ok   H9 the application token is at or after the round that changed these files (r46-avgsales-20261008)
+ok   H10 [test 29] the page carries it
+ok   H11 [test 29] and so does the shared draft module
+ok   H12 the whole co-deployed application set rotated together — never a half-updated deployment (55 refs on r46-avgsales-20261008)
+ok   H13 and no map round moved it onto a map token
+ok   H14 the release order only ever moves forward
+ok   H15 the changed stylesheet is bumped off its prior token
+ok   H16 [§K] no duplicate index reference was introduced
+ok   H17 [test 29] the hydrate is single-flight — a remount cannot stack it
+ok   H18 [test 29] and a superseded scope discards its own result
+ok   H19 [test 30] the MOUNT issues no draft read of its own — the hydrate hangs off a confirmed Search
+ok   H20 [test 30] which is a user action, not page load
+ok   H21 [test 29] and the new code binds no listener at all, so a remount cannot duplicate one
+
+== I — MUTATION TESTS: every one of these SHOULD break something ==
+ok   M1 restoring the ctx.marketplace synthesis in the hydrate is caught (caught)
+ok   M2 preselecting the scope marketplace in the To cell is caught (caught)
+ok   M3 dropping the persisted quantity in the hydrate is caught (caught)
+ok   M4 collapsing sea_express onto sea is caught (caught)
+ok   M5 creating a new header instead of adopting is caught (caught)
+ok   M6 re-keying the adopted header is caught (caught)
+ok   M7 adopting across a scope boundary is caught (caught)
+ok   M8 adopting a terminal header is caught, at BOTH points of detection (caught)
+ok   M9 adopting when more than one candidate is eligible is caught (caught)
+ok   M10 writing an ETA during hydration is caught (caught)
+ok   M11 submitting a quantity-bearing route with no destination is caught (caught)
+ok   M12 a declined confirmation that still issues a request is caught (caught)
+ok   M13 leaving destination_marketplace out of the payload fingerprint is caught (caught)
+ok   M14 adopting without the explicit user authority is caught (caught)
+ok   M15 adopting a legacy row without supplying a destination is caught (caught)
+ok   M16 sending a zero-line header to Submit is caught (caught)
+
+PASS — 205 passed, 0 failed
+negative tests: 16 caught, 0 missed

@@ -1,0 +1,25 @@
+
+== A. Eligible destination warehouses (identity = warehouse_id; active + same company + country) ==
+
+== B. Destination selection — NO auto-select; explicit only ==
+
+== C. Empty eligible set — FBA/platform vs generic no-destination (never fabricate an id) ==
+
+== D. Calculation Month — explicit YYYY-MM only; no browser clock ==
+
+== E. Planning Cycle — explicit non-empty run identifier (no invented format, no auto-copy) ==
+
+== F. Normalized context model + status truth ==
+
+== G. Normalized DTO matches the F1-4B-A request contract ==
+
+== H. Session restore — validated + scope-guarded (never restore an invalid/foreign value) ==
+
+== I. Internal context wiring (no UI binding; runtime seam preserved) ==
+
+== J. UI removal — panel gone; original filters restored; Summary intact ==
+
+== K. Dead CSS removed; Summary state CSS retained ==
+
+----------------------------------------
+REPLEN RECOMMENDATION CONTEXT (F1-4B-C internal): 64 passed, 0 failed

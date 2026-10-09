@@ -1,0 +1,27 @@
+
+== A resolveWorkspaceLineDestination — WAREHOUSE (self_fulfilled/3PL) UNCHANGED = warehouse_id ==
+
+== B resolveWorkspaceLineDestination — MARKETPLACE (FBA) = marketplace_id LOGICAL node (NOT physical) ==
+
+== C legacy/absent destinationType — bare warehouseId ⇒ WAREHOUSE; bare marketplace ref ⇒ MARKETPLACE ==
+
+== D fail-closed — no resolved canonical destination → destinationRef "" (line skipped, never guessed) ==
+
+== E a marketplace_id destination is NEVER matched as a CN/TW factory identity (exact-id only) ==
+
+== F demandKey deterministic = sku|destination|windowCode for BOTH a warehouse and a marketplace destination ==
+
+== G harvest→request — FBA lanes carry marketplace_id; 3PL lane carries warehouse_id (destinations distinct) ==
+
+== H KMWIA — FBA marketplace_id destination produces a canonical demandKey + no duplicate destination/window ==
+
+== I batch — Amazon + another marketplace share the overseas pool ONCE (count-once); per-marketplace K3 ==
+
+== J repeated invocation does NOT re-offer supply (stateless compute rations once per run) ==
+
+== K K3 identity unchanged (marketplace axis; NO destination in K3) + writes ONLY shipping_allocation drafts ==
+
+== L determinism — identical harvest → identical request ==
+
+----------------------------------------
+WEEKLY AI PLAN FBA DESTINATION (F1-7N-D-2c): 45 passed, 0 failed

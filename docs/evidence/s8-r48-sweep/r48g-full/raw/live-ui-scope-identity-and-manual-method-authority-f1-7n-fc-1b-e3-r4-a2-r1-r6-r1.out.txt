@@ -1,0 +1,173 @@
+
+== A. §4/§5 — a price list was still deciding whether a shipping method exists ==
+ok   A1  the registry consults the TRANSIT authority — it loaded carrier_lead_times all along and never read them
+ok   A2  one profile per (method, last mile) — the pairs §4 lists, from real data only
+ok   A2a and a US→US domestic service is NOT offered on a CN→US lane — the ORIGIN is matched, not just the destination
+ok   A3  SLOWEST max and SLOWEST avg, FASTEST min — one quick carrier cannot make a service look quicker than the slowest operator who actually runs it
+ok   A3a with every carrier carried as PROVENANCE
+ok   A4  §5 the carrier is DEFERRED — a carrier_id in a lead-time row is evidence a service exists, never a commercial decision
+ok   A4a on every profile, without exception
+ok   A5  §4 Amazon and the unspecified lane resolve the SAME services
+ok   A5a and Shopify resolves them too — one transit authority, shared by construction
+ok   A5b because the lane match has no marketplace clause at all — not a rule someone remembered to write
+ok   A6  §6 a blank max_days is NULL, never 0 — Number("") is 0 and passes isFinite, which would make an empty cell the fastest service on the lane
+ok   A6a null and undefined likewise
+ok   A7  distinct METHODS for the dropdown, under the canonical token the header persists
+ok   A8  §5 carrying every last mile the method runs on
+ok   A8a and saying when there is a real choice to make
+ok   A8b while an unambiguous one is resolved rather than left blank
+ok   A8c one profile, one last mile, no picker needed
+
+== B. §4 — the registry resolution, end to end ==
+ok   B1  a lane with transit data and NO rate card is READY — the reported defect is closed
+ok   B1a and it names the authority the answer came from
+ok   B1b with the carrier deferred
+ok   B1c and pricing reported as unavailable, separately
+ok   B1d by name
+ok   B1e offering the three services the lane actually has
+ok   B2  a lane WITH a rate card still answers from the rate card
+ok   B2a with exactly what the card holds
+ok   B3  both authorities silent → an EMPTY CONFIGURATION, not an error
+ok   B3a and it names carrier_lead_times — sending an operator to add a rate card would be the wrong table
+ok   B3b and the page says so in the option itself
+
+== C. §1 — company was the one axis the hydrate treated as optional ==
+ok   C1  the permissive company clause is GONE — a blank on either side was a wildcard in both directions
+ok   C2  a stored row that names NO company is never adopted into a named company
+ok   C3  and another company’s row is never adopted either
+ok   C3a the hydrate asks that owner rather than carrying its own copy of the rule
+ok   C4  an unknown page company hydrates NOTHING — fail-closed, because the alternative is adopting anything
+ok   C5  and both exclusions are COUNTED and published — a route that vanishes without explanation is the failure mode this page keeps being asked about
+ok   C6  the rule is stated in the code
+ok   C6a and a missing owner is a REFUSAL — never a fallback to a second copy of the predicate
+ok   C7  and the page context carries all three, which it always did
+ok   C8  §1 the selector value is a marketplace_id — KM/US/Amazon and ResUS/US/Amazon are two options, never one
+ok   C8a with a company hint when two labels collide
+ok   C9  the company is rendered on the Execution Plan
+ok   C9a including the unknown-company state, which is the one that hydrates nothing
+ok   C9b and the stylesheet actually has the rule
+
+== D. §3 — 760 and 520 on one screen, with nothing saying how they relate ==
+ok   D1  the live case: AI recommends 760
+ok   D2  currently planned 520 — the two routes ALREADY on screen
+ok   D2a two of them
+ok   D3  difference 240, stated as a number rather than left to be computed
+ok   D3a and nothing over-planned
+ok   D4  §3 this run changed nothing — a FACT the page measured, not a reassurance
+ok   D4a with materialization off
+ok   D5  §3 the strip emits no application vocabulary at all — there is no claim left to deny
+ok   D5a and it still adds nothing: the difference is reported, never planned
+ok   D6  §3 whether THIS run changed the plan is still published — as a measured attribute, not as a sentence
+ok   D7  over-planning is its own number, not a negative remainder
+ok   D7a and nothing recommended with nothing planned is not a difference
+ok   D8  the card is titled CURRENT — the word is load-bearing
+ok   D8a and so is the total’s label
+
+== E. §6 — the arrival was the average, and the lane was half a lane ==
+ok   E1  the lookup matches the ORIGIN country as well as the destination
+ok   E2  and the arrival is the CONSERVATIVE one
+ok   E2a folded to the SLOWEST max across the carriers that run the service
+ok   E3  a blank is checked BEFORE coercion — an empty max_days would otherwise arrive today
+ok   E3a and a row that cannot answer says so rather than answering with a zero
+ok   E4  §6 the 7-day buffer is EXCLUDED from the displayed transit — it is our caution, not the carrier’s promise
+ok   E4a and the displayed days are a rounded max_days with nothing added to them
+ok   E4a1 no buffer term is summed anywhere in the calculation
+ok   E5  §6 no method or no lead time stays an explicit unavailable state
+ok   E6  §6 with the arrival RANGE available beside the single conservative date
+
+== F. §5 — the last mile had nowhere to go, and now it does ==
+ok   F1  the ROUTE SCHEMA can hold a last mile — the K2 header builder writes it
+ok   F1a and it is a K4 route-IDENTITY dimension, so dropping it merges two distinct routes into one
+ok   F2  the ROW can now hold it too — that was the missing half
+ok   F3  a picker appears when the method offers more than one
+ok   F3a and ONLY then — an unambiguous method offers no picker, carrying its single value instead
+ok   F3b and the value it carries is the one the lane actually names — never blank
+ok   F4  and the collect reads it back into the model
+ok   F5  the control sits INSIDE the existing Method track — no grid column was guessed at
+ok   F6  every option carries the last mile it belongs to
+ok   F7  the header payload maps the collected last_mile_delivery onto the column it belongs in
+ok   F7a and a route composed with a last mile REACHES the column — measured, not inferred from a field name
+ok   F7b while a route with none stays blank — nothing is invented to fill the column
+ok   F7c and sea+truck and sea+parcel are two DIFFERENT route identities — which is what dropping the last mile merged
+ok   F8  the async catalogue refresh repaints the last-mile control alongside the method it belongs to
+ok   F8a reading the operator’s existing choice off the control BEFORE the swap — never resetting it
+ok   F8b and swapping between picker and hidden field in BOTH directions, as the method changes
+ok   F8c and a last mile the NEW method does not run is dropped, not carried across the change
+
+== G. §7 — a hundred-SKU run announced by its own reason code ==
+ok   G1  the notice leads with WHAT RAN
+ok   G1a and says the advice half completed
+ok   G1b §7 in as many words
+ok   G2  §7 current Execution Plans unchanged
+ok   G2a and nothing written
+ok   G3  §7 the materialization flag is named — AFTER the outcome
+ok   G4  §7 with the count of SKUs needing a manual method
+ok   G5  §7 and per-SKU detail is in the expanded row
+ok   G6  the reason code is no longer the headline — the outcome is stated first
+ok   G7  §7 one count, and it is the batch’s — no per-SKU quantity appears in a batch notice at all
+ok   G8  §7 and the tone is warn/info, never a generic failure
+
+== H. §2 — the census said zero and the screen showed two, and both were honest ==
+ok   H1  the census reports the PAGE’s set as well as its own
+ok   H1a and the difference between them
+ok   H2.1 the STATUS difference is named
+ok   H2.2 the COMPANY difference is named
+ok   H2.3 the MARKETPLACE difference is named
+ok   H2.4 the SOURCE difference is named
+ok   H3  §2 with the reason each row falls on each side — a difference with no reason is not a diagnosis
+ok   H4.1 §2 provenance field reported: generation_run_id
+ok   H4.2 §2 provenance field reported: created_by
+ok   H4.3 §2 provenance field reported: created_at
+ok   H4.4 §2 provenance field reported: draft_version
+ok   H4.5 §2 provenance field reported: line_ids
+ok   H4.6 §2 provenance field reported: quantity
+ok   H4.7 §2 provenance field reported: status
+ok   H4.8 §2 provenance field reported: source_warehouse_id
+ok   H4.9 §2 provenance field reported: destination_marketplace
+ok   H5  §2 and each row is CLASSIFIED from stored fields — never guessed from what is on screen
+ok   H6  §2 stated plainly: these rows predate the run, and the census constructs no writer
+ok   H7  §8 and the new reader writes nothing
+
+== I. §8 — the safety envelope ==
+ok   I1  the materialization flag is still false
+ok   I1a and the allowlist is still the single scope
+ok   I2  §8 nothing in the reconciliation adds a route, or writes anything at all
+ok   I2a and the 240 is never written into a quantity field
+ok   I3  §8 and the method registry only ever READS — resolving a method writes nothing
+ok   I4  §8 the Submit preflight guard is unchanged
+ok   I4a and the regenerate-over-edits confirmation is still asked
+
+== J. release discipline — three families rotated, because three files changed ==
+ok   J1  no application-token reference is left behind on an older token
+ok   J1a and the family never shrank (55 >= 20)
+ok   J1a and none was left behind
+ok   J1b on this round’s token or a later one
+ok   J2  method-registry.js carries its OWN family’s current token
+ok   J2a which is at or after the previous round’s
+ok   J3  and the stylesheet family rotated too — three rules here are NEW
+ok   J3a at or after R2’s
+ok   J4  and this round’s owner stamp is in the shared ledger
+
+== K. §9 — mutation coverage ==
+ok   K1  KM and ResUS collapse on company → one station answers for the other (caught)
+ok   K2  the recommendation is reported as APPLIED → an operator believes 760 is planned (caught)
+ok   K3  a pending or unavailable number is printed as 0 → an operator reads "nothing is recommended" (caught)
+ok   K4  the difference is auto-planned → 240 units are added while the flag is off (caught)
+ok   K5  the method dropdown requires a rate card again → R5’s coupling returns to the UI (caught)
+ok   K6  marketplace becomes a lead-time join key → Amazon and Shopify stop sharing CN→US transit (caught)
+ok   K7  the origin country stops constraining the lane → a domestic row answers for an ocean one (caught)
+ok   K8  the last mile is dropped → sea+truck and sea+parcel merge into one route identity (caught)
+ok   K9  the carrier is locked by the picker → a lead-time carrier_id becomes a commercial decision (caught)
+ok   K10 a blank max_days becomes 0 → an empty cell is the fastest service on the lane (caught)
+ok   K11 the fold takes the FASTEST max → one quick carrier speaks for the slowest (caught)
+ok   K12 the ETA goes back to avg_days → a coin-flip date is presented as the expected arrival (caught)
+ok   K13 the buffer is added to the displayed arrival → our caution becomes the carrier’s promise (caught)
+ok   K14 the aggregate notice quotes ONE SKU’s quantity → 760 reads as the hundred-SKU total (caught)
+ok   K15 the aggregate notice reverts to a failure tone → a completed advice run reads as broken (caught)
+ok   K16 the flag-off path writes → a run that reported "nothing written" wrote (caught)
+ok   K17 the Submit gate is relaxed → advice readiness becomes permission to submit (caught)
+ok   K18 the census stops reporting the UI’s set → 0 vs 2 becomes unanswerable again (caught)
+
+================================================================================================================
+passed 147  failed 0  |  mutants caught 18  survived 0
+================================================================================================================

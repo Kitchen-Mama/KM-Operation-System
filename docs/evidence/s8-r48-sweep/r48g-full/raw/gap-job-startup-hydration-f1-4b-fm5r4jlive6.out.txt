@@ -1,0 +1,53 @@
+
+== A–E — page load on a terminal / none status → idle (never Calculating) ==
+
+== F/G — a genuinely-active or freshly-started job DOES resume Calculating ==
+
+== H/I — a stale non-terminal job with NO lifecycle evidence → NOT resurrected (idle) ==
+
+== J/K — cancelled / completed job + reload → idle ==
+
+== L/M/N — no Calculating before first status; startup is READ-only (no WRITE, no retry) ==
+
+== O — Inventory job is product-global: a stale global job does not make any country page calculate ==
+
+== diagnostics + lifecycle-evidence contract (source) ==
+
+== backend stale authority is the ONE frozen owner (no new timeout in the frontend) ==
+[GapJob] RESUME_CHECK 0/? NONE
+[GapJob] RESUME_SKIPPED 0/? NONE
+[GapJob] RESUME_CHECK run=R 10/10 DONE
+[GapJob] RESUME_SKIPPED run=R 10/10 DONE
+[GapJob] RESUME_CHECK run=R 0/10 CANCELLED
+[GapJob] RESUME_SKIPPED run=R 0/10 CANCELLED
+[GapJob] RESUME_CHECK run=R 0/10 FAILED
+[GapJob] RESUME_SKIPPED run=R 0/10 FAILED
+[GapJob] RESUME_CHECK run=R 0/10 STALLED
+[GapJob] RESUME_SKIPPED run=R 0/10 STALLED
+[GapJob] RESUME_CHECK run=R 3/10 RUNNING
+[GapJob] RESUME_ACTIVE run=R 3/10 RUNNING
+[GapJob] RESUME_CHECK run=R 0/10 PENDING
+[GapJob] RESUME_ACTIVE run=R 0/10 PENDING
+[GapJob] RESUME_CHECK run=R 0/10 PENDING
+[GapJob] RESUME_SKIPPED run=R 0/10 PENDING
+[GapJob] RESUME_CHECK run=R 0/10 RUNNING
+[GapJob] RESUME_SKIPPED run=R 0/10 RUNNING
+[GapJob] RESUME_CHECK run=R 0/10 CANCELLED
+[GapJob] RESUME_SKIPPED run=R 0/10 CANCELLED
+[GapJob] RESUME_CHECK run=R 10/10 DONE
+[GapJob] RESUME_SKIPPED run=R 10/10 DONE
+[GapJob] RESUME_CHECK 0/? NONE
+[GapJob] RESUME_SKIPPED 0/? NONE
+[GapJob] RESUME_CHECK run=R 0/10 PENDING
+[GapJob] RESUME_SKIPPED run=R 0/10 PENDING
+[GapJob] RESUME_CHECK run=R 0/10 PENDING
+[GapJob] RESUME_SKIPPED run=R 0/10 PENDING
+[GapJob] RESUME_CHECK run=R 0/10 PENDING
+[GapJob] RESUME_SKIPPED run=R 0/10 PENDING
+[GapJob] PROGRESS run=R 3/10 RUNNING
+[GapJob] PROGRESS run=R 1/10 RUNNING
+[GapJob] CLIENT_TERMINAL run=R 10/10 DONE
+[GapJob] CLIENT_TERMINAL run=R 10/10 DONE
+
+----------------------------------------
+GAP JOB STARTUP HYDRATION (F1-4B-FM5-R4J-LIVE6): 20 passed, 0 failed

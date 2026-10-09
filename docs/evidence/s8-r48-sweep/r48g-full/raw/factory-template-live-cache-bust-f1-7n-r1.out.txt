@@ -1,0 +1,9 @@
+
+== A cache-version tokens bumped OFF the stale pre-fix values (deployment fix) ==
+
+== B each inventory-import asset is independently cache-versioned (bumped when it changes) ==
+
+== C single template owner + factory-scoped source (no duplicate live path) ==
+
+----------------------------------------
+FACTORY TEMPLATE LIVE CACHE BUST (F1-7N-R1): 10 passed, 0 failed

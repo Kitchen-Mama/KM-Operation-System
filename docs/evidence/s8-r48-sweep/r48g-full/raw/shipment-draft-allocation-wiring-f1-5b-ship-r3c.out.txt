@@ -1,0 +1,37 @@
+
+== DB API adapter — thin bridge to the ONE R3A authority ==
+ok   generateShipmentLineAllocations DB method exists
+ok   adapter posts the canonical router action
+ok   adapter runs the post-write seam on success (F1-7K: shipment page owns the scoped readback that makes draft allocations visible)
+ok   adapter contains NO FIFO / capacity / shipped math (pure transport)
+
+== §3 write order: Save → reconcile → dispatch ==
+ok   §3 physical Save persists BEFORE allocation reconciliation
+ok   §3 allocation reconciles BEFORE Confirm & Dispatch (never allocate-then-save)
+
+== §17 one shipment-scoped reconcile — no per-SKU fan-out ==
+ok   exactly ONE reconcile call in the dispatch flow
+ok   reconcile is shipment-scoped (one call reconciles all lines)
+ok   §17 no Promise.all / per-line fan-out of the allocation call
+
+== §6/§9 insufficient capacity fails closed (readiness gate; backend still authoritative) ==
+ok   allocation failure blocks the chain (no dispatch) via a handled sentinel
+ok   §6/§18 physical draft stays saved; readiness = Needs Attention with an actionable message
+ok   §6 surfaces backend shortfall (need/available/short) — not recomputed in frontend
+ok   fail-closed branch precedes the dispatch call (blocked shipments never dispatch)
+ok   handled block does not fall through to a generic error
+ok   §9 backend Confirm & Dispatch (R3B) still invoked on ready — frontend readiness is UX only
+
+== §2/§12/§35 no frontend FIFO / PO-capacity / shipped math ==
+ok   §12 no order_date FIFO key anywhere in Shipment Draft frontend
+ok   §35 no completed−shipped capacity math in frontend
+ok   §35 frontend never writes/derives shipped_qty
+ok   §14 frontend does not assign purchase_order_line_id (multi-PO authority is backend allocations)
+ok   §2 no FIFO/eligible-PO/allocation engine in frontend
+
+== §10/§15 R3B remains the execution + capacity-revalidation authority ==
+ok   §10 frontend does not duplicate R3B in-lock capacity revalidation
+ok   §15 frontend never flips allocations to executed (R3B/dispatch owns execution)
+
+----------------------------------------
+SHIPMENT DRAFT ALLOCATION WIRING (F1-5B-SHIP-R3C): 22 passed, 0 failed

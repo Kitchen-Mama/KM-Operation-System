@@ -1,0 +1,27 @@
+ok   source: procShipmentDestId_ extracted from 13_procurement_handlers.gs
+ok   source: procurementOnTheWayMaps_ extracted from 13_procurement_handlers.gs
+ok   A canonical wins over legacy on conflict
+ok   B canonical present, legacy blank → canonical
+ok   C canonical blank → legacy fallback (flagged)
+ok   D canonical column absent → legacy fallback
+ok   E both blank → explicit missing
+ok   F both columns absent → explicit missing
+ok   G whitespace canonical treated as blank → legacy fallback
+ok   H string id "0" preserved as canonical id (not coerced to missing)
+ok   canonical id trimmed via procSrcNorm_
+ok   byDest: canonical destination_warehouse_id WH-A (not code/text/legacy)
+ok   byDest: legacy warehouse_id WH-B used as fallback when canonical blank
+ok   byDest: missing destination is explicit under __MISSING_DEST__ sentinel (code/text/source NOT used)
+ok   warehouse_code is NEVER a destination key
+ok   destination display text is NEVER a destination key
+ok   source_warehouse_id (origin) is NEVER a destination fallback
+ok   CLOSED shipment (cancelled) excluded from byDest too
+ok   B4-R1 preserved: exact = 100 + 50 + 30 = 180 (S4 cancelled excluded; shipment_qty primary, legacy 999 ignored)
+ok   B4-R1 preserved: bySku = 180
+ok   B4-R1 preserved: exact grouping key unchanged (sku|country|marketplace)
+ok   return is additive: { exact, bySku, byDest }
+ok   shipments source rows NOT mutated (read-only)
+ok   shipment_lines source rows NOT mutated (read-only)
+ok   legacy-only sheet: warehouse_id read as destination fallback
+
+All B4-R2 shipment-destination-identity assertions passed (25 assertions).

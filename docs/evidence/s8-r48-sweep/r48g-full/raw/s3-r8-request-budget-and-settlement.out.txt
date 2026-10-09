@@ -1,0 +1,88 @@
+
+=== A — §5/§14 SETTLEMENT: does open_requests return to zero for EVERY code? ===
+  ok   A1 SUCCESS settles
+  ok   A1a and open_requests returns to 0
+  ok   A2 a read that is never answered settles as REQUEST_TIMEOUT
+  ok   A2a and open_requests returns to 0 — a timeout decrements the count
+  ok   A3 an expired redirect twice over settles as REDIRECT_TARGET_NOT_FOUND
+  ok   A3a and open_requests returns to 0 — a 404 settlement decrements the count
+  ok   A3b the bounded recovery did run
+  ok   A3c and peak stayed at 1 — the recovery REPLACES the attempt, it does not run beside it, so a recovery cannot double-count the open request
+  ok   A4 404-then-success recovers
+  ok   A4a and open_requests returns to 0
+  ok   A5 a rejected fetch settles
+  ok   A5a and open_requests returns to 0
+  ok   A6 a request refused at BUILD never leaves the count incremented
+  ok   A7 a superseded request settles as ABORTED
+  ok   A7a and open_requests returns to 0 — an unmounted route does not leak its read
+  ok   A8 a failed WRITE returns the count to 0
+  ok   A8a and was dispatched exactly once
+
+=== B — §6/§7 THE BUDGET: one logical read, one timeout ===
+  ok   B1 the recovery still ran — this is a budget correction, not a removal of recovery
+  ok   B2 ONE logical read is bounded by ONE budget: 504ms against a 500ms bound (before this round the same scenario ran past 800ms)
+  ok   B2a and it still settles the count
+  ok   B2b and it did not settle EARLY either — the budget is spent, not truncated
+  ok   B3 with the budget nearly gone, no second attempt is opened
+  ok   B3a and the caller keeps the NAMED failure rather than an anonymous REQUEST_TIMEOUT
+  ok   B3b and the skip is recorded, not silent
+  ok   B3c and the count still settles
+  ok   B4 the recovery floor is PROPORTIONAL to the budget, so the rule is the same at 60 s and at 500 ms
+  ok   B5 a write that is never answered is INDETERMINATE
+  ok   B5a and bounded by its own single budget, unchanged
+
+=== C — §7 TIMEOUT OWNERSHIP: how many clocks are there, and who owns each? ===
+  ok   C1 transport READ bound defaults to 60 000 ms
+  ok   C2 transport WRITE bound defaults to 300 000 ms
+  ok   C3 the db-api READ bound is 45 000 ms — a SECOND owner
+  ok   C4 the db-api WRITE bound is 90 000 ms — and a fourth
+  ok   C5 an attempt is bounded by what REMAINS of the request budget, not by the constant
+  ok   C6 and the deadline is taken ONCE, at dispatch
+  ok   C7 the per-attempt budget is gone — this is the 85 882 ms defect, removed
+  ok   C8 the foundation POST shim is documented as a fallback — it carries NO timeout, and is reachable only when the transport module did not load at all
+
+=== D — §5 open_requests = 3, EXPLAINED ===
+  ok   D1 openRequestDetails() exists
+  ok   D1a and is empty when nothing is open
+  ok   D2 three requests open — the operator's exact number, reproduced
+  ok   D2a and three rows behind it
+  ok   D3 each one NAMED — which is what the bare integer could never say
+  ok   D4 with an age on each — the number that separates "in flight" from "never settled"
+  ok   D4a including requests from the dispatcher this module does not own
+  ok   D4b and the owner, where the caller gave one
+  ok   D5 closing one decrements the count
+  ok   D5a and removes its row — the registry cannot drift from the counter
+  ok   D6 resetMetrics() leaves open_requests alone — so a capture that begins with reset() inherits whatever was already in flight, which is one of the two readings of a non-zero count
+  ok   D6a and the source says so
+
+=== E — §8 CONCURRENCY: does the accounting hold with several reads in flight? ===
+  ok   E1 with 1 concurrent read(s), open_requests reads 1 mid-flight
+  ok   E1a all 1 succeed
+  ok   E1b and the count returns to 0
+  ok   E1c peak records 1
+  ok   E2 with 2 concurrent read(s), open_requests reads 2 mid-flight
+  ok   E2a all 2 succeed
+  ok   E2b and the count returns to 0
+  ok   E2c peak records 2
+  ok   E3 with 3 concurrent read(s), open_requests reads 3 mid-flight
+  ok   E3a all 3 succeed
+  ok   E3b and the count returns to 0
+  ok   E3c peak records 3
+
+=== F — §12 WRITE FREEZE ===
+  ok   F1 a write meeting an expired redirect is dispatched ONCE — WRITE_AUTOREPLAY_ADDED = NO
+  ok   F1a and reported as a failure, never replayed into a possible twin
+  ok   F2 recoveries are still counted for reads
+  ok   F3 a write still uses the WRITE budget — the correction did not quietly shorten it
+
+=== J — MUTANTS: a production fix was made, so it is attacked ===
+  ok   J1 KILLED — the attempt goes back to a fresh per-attempt budget
+  ok   J2 KILLED — the deadline is recomputed on every attempt instead of once
+  ok   J3 KILLED — the no-budget gate is removed, so a doomed recovery is opened anyway
+  ok   J4 KILLED — the registry entry is not removed when the request settles
+  ok   J5 KILLED — the external close does not remove its row
+  ok   J6 KILLED — a timeout no longer decrements the open count
+  mutants: 6 killed, 0 survived, 0 harness errors
+
+PASS  70 passed, 0 failed
+OPEN_REQUEST_LEAK_PROVEN = NO · ONE_LOGICAL_REQUEST_ONE_BUDGET = YES · WRITE_AUTOREPLAY_ADDED = NO

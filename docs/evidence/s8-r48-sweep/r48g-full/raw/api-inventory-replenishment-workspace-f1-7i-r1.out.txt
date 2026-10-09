@@ -1,0 +1,19 @@
+
+== sirWorkspaceBuild_ View-Model: raw passthrough of all 19 tables ==
+
+== orchestrator reads all 19 tables (io injection) ==
+
+== non-silent cap backstop (SIR_WS_ROW_MAX_) ==
+
+== db-api adapter == legacy getters (BEFORE == AFTER via SAME normalizers + SAME filters), keyed by getter name ==
+
+== frontend read-model routing (get()/_replenActiveMarketplaces swap source) ==
+
+== source guards: 60_ read-only, no getOperationDb, no Gap/Reco/allocation/FIFO/PO/Request-Order ==
+
+== activation + registration + LAST registered-only workspace ==
+
+== page: workspace primary read, no broad DB in the primary path, fail-closed, Flow-A, scoped post-write ==
+
+----------------------------------------
+API INVENTORY REPLENISHMENT WORKSPACE (F1-7I-R1): 69 passed, 0 failed

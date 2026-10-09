@@ -1,0 +1,33 @@
+FAIL M1a a live positive-residual world is READY_TO_AUTHORIZE
+  exp "READY_TO_AUTHORIZE"
+  got "STOP"
+FAIL M1b with no condition unmet
+  exp 0
+  got 11
+FAIL M3e and no field is unknown or unreadable
+  exp 0
+  got 3
+FAIL M3f named individually rather than counted
+  exp []
+  got ["expected_header_ids","expected_line_ids","expected_k2_group_keys"]
+FAIL M4a and the deployment build is the one this manifest was written against
+  exp "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20"
+  got "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46"
+FAIL M5  a BEFORE baseline was frozen
+C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\wt-product-strategy-board-p0\assets\tests\positive-residual-and-submit-readiness-census-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r5-r1.test.js:1969
+  return !Object.prototype.hasOwnProperty.call(FB, k);
+                                          ^
+
+TypeError: Cannot convert undefined or null to object
+    at hasOwnProperty (<anonymous>)
+    at C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\wt-product-strategy-board-p0\assets\tests\positive-residual-and-submit-readiness-census-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r5-r1.test.js:1969:43
+    at Array.filter (<anonymous>)
+    at Object.<anonymous> (C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\wt-product-strategy-board-p0\assets\tests\positive-residual-and-submit-readiness-census-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r5-r1.test.js:1968:71)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+
+Node.js v24.14.0

@@ -1,0 +1,17 @@
+
+== _spEffectiveWorkspace gate ==
+
+== Legacy default read path ==
+
+== Workspace read path (flag effective) ==
+
+== Workspace failure → visible error, NO silent legacy fallback ==
+
+== KM.api enabled but getWorkspace missing → fail visibly ==
+
+== Rollback: disabling Weekly restores Legacy ==
+
+== Source-level: writes stay Legacy · stale guard · error-not-empty · entry gate ==
+
+----------------------------------------
+WEEKLY PAGE CUTOVER: 27 passed, 0 failed

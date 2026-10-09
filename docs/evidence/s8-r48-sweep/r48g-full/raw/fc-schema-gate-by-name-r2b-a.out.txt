@@ -1,0 +1,28 @@
+
+-- A. BEFORE — the ordered gate is what refused, and it still refuses -------------------------
+
+-- B. AFTER — the approved tables pass, through the REAL handler entry points -----------------
+
+-- C. EVERY PRODUCED VALUE LANDS UNDER ITS INTENDED NAMED COLUMN ------------------------------
+
+-- D. NO EXISTING DATA IS MOVED OR REINTERPRETED ----------------------------------------------
+
+-- E. THE APPROVED GATE STILL FAILS CLOSED ----------------------------------------------------
+
+-- F. ORDER TOLERANCE IS GENUINE, AND EXTRA COLUMNS ARE ALLOWED -------------------------------
+
+-- G. SCOPE — every unapproved table keeps the ordered gate -----------------------------------
+
+-- H. MUTANTS — each must be caught by an observable outcome ----------------------------------
+ok   M1  the opt-in is globally applied — every one of the fourteen tables gets the relaxed gate (caught)
+ok   M2  the missing-required-column check is removed from the approved path (caught)
+ok   M3  the duplicate-header check is removed from the shared classifier (caught)
+ok   M4  the blank-header check is removed from the shared classifier (caught)
+ok   M5  campaigns alone is repaired — stage 1 commits and stage 2 then refuses (a partial write) (caught)
+ok   M6  campaign_sku_lines is left out of the approved set (caught)
+ok   M7  fc_special_events is left out of the approved set (caught)
+ok   M8  the name lookup is replaced by a numeric index in the append writer (caught)
+
+====================================================================================================
+FC SCHEMA GATE BY NAME (R2B-A) — passed 100  failed 0  |  mutants caught 8  survived 0
+====================================================================================================

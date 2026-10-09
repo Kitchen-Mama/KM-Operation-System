@@ -1,0 +1,19 @@
+
+== M1 — existing material is selectable (presets seed the control) ==
+
+== M2/M3 — a NEW material can be typed/added and remains selected ==
+
+== M4/M5 — Create payload contains the new material via the EXISTING " + " serialization ==
+
+== M6 — whitespace normalization (trim; no whitespace-only duplicates) ==
+
+== M7 — a blank material is never added ==
+
+== M8 — existing material workflow unchanged (selecting a preset still works) ==
+
+== session reuse — a new material becomes a suggestion for the NEXT SKU (session only, no DB) ==
+
+== M9/M10 — no new material master table; unrelated SKU field mapping unchanged (source contract) ==
+
+----------------------------------------
+SKU MATERIAL ADD (F1-SMALL-SKU-MATERIAL): 21 passed, 0 failed

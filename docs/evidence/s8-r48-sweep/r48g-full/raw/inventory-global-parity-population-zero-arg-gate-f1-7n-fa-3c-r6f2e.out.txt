@@ -1,0 +1,19 @@
+
+== A — parity population: multi-pool/source-unresolved is N/A only; resolved-lane mismatch is a blocker ==
+
+== A — PRODUCTION correctness: a multi-pool source blocks with EMPTY manual options (the root of the 5) ==
+
+== A — the TEMP diagnostic exposes the frozen denominator/exclusion contract ==
+
+== B — zero-arg gate summary: may_freeze gating + may_enable_flag always false ==
+
+== C — zero-arg exact-JP freeze gate: JP passes; CA/UK/drift refused ==
+
+== C/freeze — zero spreadsheet writes (read-only): no setValue/setValues/appendRow/atomic call in the freeze ==
+
+== D — zero-arg validator persistence: DRY_RUN first, confirmed COMMIT, read-only validate, cannot widen ==
+
+== regression — no generation triggered; flag stays false; no K3 write path restored ==
+
+----------------------------------------
+R6F2E GLOBAL PARITY + ZERO-ARG GATE: 72 passed, 0 failed

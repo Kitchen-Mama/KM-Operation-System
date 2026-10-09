@@ -1,0 +1,61 @@
+
+== B. 16_ K2-aware NEW-line id helpers (pure) ==
+
+== B. 16_ cores wire K2-aware line-id minting ==
+
+== B. REUSE zero-write + lineage excluded from fingerprint ==
+
+== C. 61_ GAP-INV lineage transport ==
+
+== D/E/F. sandbox setup ==
+
+== D. migration plan (old→new derived from live rows) ==
+
+== D. preflight READY on a clean staged scope ==
+
+== D. duplicate target id blocks readiness ==
+
+== D. downstream reference to an OLD line id → HALT ==
+
+== E. DRY_RUN is read-only + prints the plan checksum; confirmation now carries the reviewed checksum ==
+
+== E. COMMIT refuses while the confirmation constant is the placeholder sentinel (zero write) ==
+
+== E. COMMIT behavior when confirmation matches the plan checksum (in-test override) ==
+
+== E/F. COMMIT source contract (lock · rollback-before-mutation · fail-closed · no-retry) ==
+
+== F. consolidated validator: pre-migration RECONCILIATION_REQUIRED, post-migration FROZEN_SCOPE_VALIDATED ==
+
+== R6F2G1 A. checksum binds the complete field set (old 1c42330d bound only header+mappings) ==
+
+== R6F2G1 B. canonical lineage authorities ==
+
+== R6F2G1 C. checksum changes on any lineage-field OR mapping change ==
+
+== R6F2G1 D. full dry-run contract ==
+
+== R6F2G1 E. rollback token preview contract ==
+
+== R6F2G1 F. incomplete lineage HALTs dry-run and blocks COMMIT (no silent blank) ==
+
+== R6F2G1 G. COMMIT fail-closed source contract (before-drift · rollback read-back · lineage gate) ==
+
+== R6F2G1 H. rollback token written by COMMIT carries all four lineage before-values ==
+
+== R6F2G2 A. current time is never used; production & migration share one authority ==
+
+== R6F2G2 B. retired checksums stay invalid; reproducible without rerunning GAP ==
+
+== R6F2G2 C. validator rejects an arbitrary nonblank source_data_as_of ==
+
+== R6F2G4 A. canonical lineage normalizer (Date-vs-string safe; distinct concepts; fail-closed) ==
+
+== R6F2G4 B. validator passes when the committed header carries DATE cells (serialization-only) ==
+
+== R6F2G4 C. stored-token validator cannot false-pass a wrong/missing date lineage ==
+
+== R6F2G4 D. diagnostic classifies serialization-only + stays read-only ==
+
+----------------------------------------
+R6F2G K2 ID+LINEAGE REMEDIATION: 171 passed, 0 failed

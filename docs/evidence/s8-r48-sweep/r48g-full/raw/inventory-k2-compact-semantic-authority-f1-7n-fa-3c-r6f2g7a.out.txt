@@ -1,0 +1,23 @@
+
+== 1. required stored-nonblank + incoming blank → refuses ==
+
+== 2. both blank → equal ==
+
+== 3. zero/false ≠ blank ==
+
+== 4. exactly status + line_status excluded ==
+
+== 5. unparseable → refuses ==
+
+== 6. compact, non-truncated ==
+
+== 7. live-shaped fixture authorizes ==
+
+== 8. any blocking count → may_run false ==
+
+== 9. atomic REUSE returns before any mutation ==
+
+== 10. entrypoint read-only ==
+
+----------------------------------------
+R6F2G7A COMPACT-AUTHORITY: 51 passed, 0 failed

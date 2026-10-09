@@ -1,0 +1,16 @@
+ok   inbound receiving: good 40 → available 140, damaged 5 → 5
+ok   inbound Delivered≠Received: no movement before Receiving stage
+ok   inbound missing snapshot: current 0 + missing flag
+ok   outbound lock: reserve 30 (available 200→170, reserved 10→40)
+ok   outbound ship confirm: deduct 30 from current AND reserved
+ok   outbound draft: no reserve → no movement
+ok   inbound: cannot Confirm Receipt from draft
+ok   inbound: Confirm Receipt allowed from receiving
+ok   inbound: Close allowed from received
+ok   outbound: cannot Ship Confirm before ready_to_ship
+ok   outbound: Ship Confirm allowed from ready_to_ship
+ok   inbound over/short: exact = 0
+ok   inbound over/short: short = -10
+ok   inbound over/short: over (incl damaged) = +5
+
+ALL PASS

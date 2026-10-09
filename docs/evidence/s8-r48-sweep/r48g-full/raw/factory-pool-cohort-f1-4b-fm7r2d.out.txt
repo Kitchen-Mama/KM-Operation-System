@@ -1,0 +1,21 @@
+
+== A/B/C/D/I/§4 — two companies, SAME warehouse_id+sku, ONE physical pool counted once, conserved, partitioned ==
+
+== §4 — the SAME physical pool presented by N companies is deduped (supply not multiplied) ==
+
+== B(multi-warehouse) — each physical pool conserved independently (no cross-warehouse leakage) ==
+
+== E — inactive receiver excluded from Factory competition (exact reason retained) ==
+
+== F — normal (supply >= demand): priority is quantity-INERT (both fully supplied regardless of priority) ==
+
+== G — shortage: existing KMALLOC deterministic authority decides; conserved, no new weighting formula ==
+
+== H/P — deterministic rerun: same source facts + same pool → byte-identical result ==
+
+== §5 helper — factorySliceForCompany extracts one company's conserved slice (downstream injection shape) ==
+
+== K/L/M/N/O — Overseas untouched, R3D untouched, no writes/tables/persister/second-allocator ==
+
+----------------------------------------
+FACTORY POOL COHORT (F1-4B-FM7-R2D): 30 passed, 0 failed

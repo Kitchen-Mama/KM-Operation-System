@@ -1,0 +1,173 @@
+
+== §0 — invariants this round must not move ==
+ok   A1 the AI Plan DB generation flag is still declared false
+ok   A2 the activation allowlist still holds exactly one entry
+ok   A3 and that entry is a complete four-axis scope with no wildcard
+ok   A4 R6-R3 is a registered owner stamp
+ok   A4a and it is ordered after the round it followed
+ok   A5 no index.html asset is left behind on an older app token
+ok   A6 R6-R3 did not touch 60_ — no server defect was proven, so it moved that stamp not at all
+ok   A7 the registry token R6-R2 shipped is still in the ledger
+ok   A7a and index.html serves the CURRENT registry token, whatever round last moved it
+
+== §1 — the carrier lazy-load R6-R2 fixed is still fixed ==
+ok   B1 adoption still keys on what the response CONTAINS, not on the caller intent flag
+ok   B2 and the flag that settled an empty catalogue has not come back
+ok   B3 the primary read still does not ask for the include
+ok   B4  the dropdown offers all three live options
+ok   B4a with zero rate cards on the lane — every option came from the transit authority alone
+ok   B5 every option VALUE is carrier_lead_times.shipping_method verbatim — which is what the ETA must match on
+
+== §3 — the arrival now answers in the vocabulary the picker offered ==
+ok   C1  Route A (marketplace destination, 美森海卡) resolves an arrival
+ok   C1a computed, and by the transit profile authority — named without changing a stored field
+ok   C1b on the SLOWEST max across the carriers that run it (26 vs 31 -> 31)
+ok   C1c and it declares its basis
+ok   C1d carrier selection stays deferred
+ok   C2  Route B (warehouse destination) resolves an arrival too
+ok   C2a on its own conservative max
+ok   C2b and the two routes get DIFFERENT dates — one is not answering for the other
+ok   C3  all three live options resolve — none is left "Lead time unavailable"
+ok   C4  美森海卡 no longer falls to NO_LEAD_KEY or NO_LEAD_TIME
+ok   C5  the resolver asks the SAME owner that built the option
+ok   C5a and it never consults a display-label translation table
+ok   C5b the transit authority is asked FIRST; the mapped vocabulary is the fallback beneath it
+ok   C6  美森海卡 canonicalises to sea_express — never to sea
+ok   C6a and the shared identity test relates the label to the canonical service
+ok   C6b but never to a neighbouring service
+ok   C7  a route persisted under `sea_express` still resolves
+ok   C7a and conservatively: the SLOWER of the two spellings of one service (31 over 14)
+
+== §3 (cont.) — last mile, blank days, lane exactness, and no rate card ==
+ok   C8  空派 runs on two last miles, so an unchosen one yields no arrival
+ok   C8a reported as a named state, not as missing data
+ok   C8b naming both, so a person can choose
+ok   C9  and the two last miles give two different transit times, which is why merging them loses information
+ok   C10 a blank max_days fails CLOSED — null, not zero, and named
+ok   C11 the US->US row does not answer a CN->US route
+ok   C11a but it answers its own lane
+ok   C12 no rate card is read anywhere in the arrival calculation
+ok   C13 the 7-day buffer is declared excluded and is never added to a displayed transit
+
+== §3 (cont.) — recompute on Method change and after late hydration ==
+ok   C14 the refresher carries the LAST MILE, so a repaint can tell 美森海卡+卡車 from 美森海卡+快遞
+ok   C14a while still honouring a persisted snapshot over a computed one
+ok   C14b and writing nothing
+ok   C15 a station-wide catalogue settle repaints the arrival as well as the method (R6-R2 §7, preserved)
+ok   C15a and so does the per-SKU catalogue settle
+ok   C16 changing the Method away from the snapshot basis DISCARDS the snapshot — two unmapped labels are not one
+ok   C16a and a snapshot under the SAME service is still honoured
+
+== §3 — destination country comes from authority, never from a label ==
+ok   D1  the destination country is the STATION's, taken from the applied scope
+ok   D2  and "Amazon" is never parsed to obtain it
+ok   D3  the origin country is the FROM WAREHOUSE's own country, not a label
+ok   D3a and that country reaches the option from the warehouse row, never from its display name
+ok   D3b nothing parses the origin out of any string
+ok   D4  the CN factory resolves to country CN through the warehouse authority
+ok   D5  AMZLG&S IN resolves to country US through the warehouse authority
+ok   D5a and a warehouse outside the station country is not a destination candidate at all
+ok   D6  the Amazon destination is a LOGICAL token on the station, not a warehouse row
+
+== §4 — one column layout authority, resolved with the real grid algorithm ==
+ok   E1  the shared template still declares every column of the row
+ok   E2  NOT ONE of them is content-sized — that keyword is the whole defect
+ok   E3  Qty is a fixed track — 1 to 5 digits must not move a column
+ok   E3a Action is a fixed track — the button keeps its own column
+ok   E3b and every remaining track is a fraction of the container, not of its own text
+ok   E4  at 720px every row — header included — resolves ONE identical set of column offsets
+ok   E4  at 620px every row — header included — resolves ONE identical set of column offsets
+ok   E4  at 560px every row — header included — resolves ONE identical set of column offsets
+ok   E5  the header row declares NO template of its own — it inherits the shared one
+ok   E5a and it carries the shared grid class
+ok   E6  a persisted route and a composer both carry the shared grid class, so neither can be styled apart
+ok   E7  every control is border-box, full-width and min-width:0 — declared once, for all of them
+ok   E7a and every grid child may shrink below its content
+ok   E8  a long arrival CLIPS rather than widening its track
+ok   E8a and the full value is preserved in the cell title
+ok   E8b including after a repaint
+ok   E9  the layout authority is scoped to #ops-section
+ok   E9a and no unscoped .replen-card__select rule was introduced
+
+== §2 — the provenance diagnostic, run at production scale ==
+ok   F1  BEFORE: the diagnostic kept a full object for EVERY header in the sheet — 4 005 of them
+ok   F1a which serialized to over 3 MB — more than the editor will render (3854 KB)
+ok   F2  AFTER: the reported set is bounded (60 headers)
+ok   F2a and the output is bounded (66 KB)
+ok   F2b an order of magnitude smaller
+ok   F3  and the TOTAL is unchanged by the bound — a bound that moved a number would be worse than none
+ok   F3a the exact 520 remains measurable
+ok   F3b both persisted manual routes are named
+ok   F4  UI and census totals agree
+ok   F4a source_of_520 is answered
+ok   F5  zero writes, no writer, no Submit, no reservation
+ok   F6  each required sheet is read exactly once — two getDataRange calls in total
+ok   F6a and only the two sheets it needs are opened
+ok   F6b rows and columns read are reported
+ok   F7  every stage emits a timing (11 stages)
+ok   F7a each carries a name and elapsed milliseconds
+ok   F7b starting with the authority it cannot run without
+ok   F8  and the run reports its own total elapsed_ms
+ok   F8a completing well inside a defined budget (54ms simulated)
+ok   F9  the transcript is bounded (2789 chars)
+ok   F9a and the serialized size is measured, not discovered by failing
+
+== §2 (cont.) — a failure becomes a TYPED result, never the host's generic message ==
+ok   G1  a missing shared authority does not throw out of the function
+ok   G1a it returns a FAILED verdict
+ok   G1b with a named code
+ok   G1c naming the stage that failed
+ok   G1d and carrying elapsed_ms and a message
+ok   G1e with a stack field present for a real exception
+ok   G1f a failed run still writes nothing
+ok   G2  a row whose group key throws does not end the run
+ok   G2a the total still measures
+ok   G2b and the failure is recorded ON the row that caused it
+ok   G3  the runner still takes NO parameters, so it cannot be aimed at another scope
+ok   G3a and its scope is a hard-coded constant
+ok   G4  it constructs no mutation of any kind
+ok   G5  the census build stamp is a registered owner stamp
+ok   G5a and it is at least the round that rewrote this runner
+
+== §5 — recommendation, current plan and difference stay three separate facts ==
+ok   H1  920 recommended · 520 planned · 400 not yet in a route
+ok   H1a and the difference is arithmetic, not an instruction
+ok   H2  the three quantities are three separate fields
+ok   H3  each side names its own supply
+ok   H3a and whether they are the same supply is stated
+ok   H4  when the sources differ, the strip still refuses the reading that 400 ships from the same stock
+ok   H5  and emits no application vocabulary, so it cannot call the saved routes this run's output
+ok   H6  the manual 520 is never written to by the reconciliation
+ok   H7  and the shared authority still measures them at 520
+
+== SAFETY ==
+ok   S1 the flag is not flipped
+ok   S2 the diagnostic cannot Submit
+ok   S3 nor touch a reservation
+ok   S4 nor read or write carrier master data
+ok   S5 nor start a generation
+
+== MUTATION PROBES ==
+ok   M1  translating the option value away makes every live method unresolvable (caught)
+ok   M2  asking the mapping table FIRST puts the old failure back (caught)
+ok   M3  widening to canonical identity when an exact token exists invents an ambiguity (caught)
+ok   M4  resolving an ambiguous last mile by taking the first chooses for the operator (caught)
+ok   M5  folding on the FASTEST max hides the slowest operator who runs the service (caught)
+ok   M6  coercing a blank max_days produces an arrival of today (caught)
+ok   M7  dropping the last mile from the refresher blinds a repaint (caught)
+ok   M8  an unmapped basis equal to an unmapped method keeps a stale date under a new service (caught)
+ok   M9  a content-sized ETA track makes every row resolve its own columns (caught)
+ok   M10 a long To name moves another row's columns once any track is content-sized (caught)
+ok   M11 keeping every near-miss header returns megabytes the editor cannot render (caught)
+ok   M12 bounding the output by trimming the COUNTING rows would move the total (caught)
+ok   M13 swallowing the top-level exception restores the host's generic message (caught)
+ok   M14 an unguarded route-key call ends a diagnostic that exists to describe bad rows (caught)
+ok   M15 reading each sheet twice doubles the most expensive operation there is (caught)
+ok   M16 a rate card becoming a prerequisite for an ARRIVAL (caught)
+ok   M17 the marketplace destination resolving its country from the word "Amazon" (caught)
+ok   M18 the header row declaring its own template drifts from the rows it labels (caught)
+
+---------------------------------------------------------------
+passed 144  failed 0
+mutants caught 18 of 18
+---------------------------------------------------------------

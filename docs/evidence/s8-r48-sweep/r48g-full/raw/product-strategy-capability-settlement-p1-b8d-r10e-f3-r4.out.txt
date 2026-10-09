@@ -1,0 +1,166 @@
+PRODUCT STRATEGY — CAPABILITY SETTLEMENT SIGNAL (P1-B8D-R10E-F3-R4)
+
+== §A — the shared settlement signal, on the shipped bootstrap bytes ==
+  ok   A1  the db api publishes a settlement accessor
+  ok   A2  and before the bootstrap has run it answers NULL — fail closed, nothing to wait on
+  ok   A3  asking for it dispatched ZERO capability reads  [M12]
+  ok   A4  one bootstrap call arms it with a promise
+  ok   A5  and every later ask returns the IDENTICAL promise object
+  ok   A6  three asks and one bootstrap cost exactly ONE capability read  [M12]
+  ok   A7  it RESOLVES once the bootstrap settles, and resolves with null  [M9: the payload is not an authority]
+  ok   A8  it does not reject
+  ok   A9  while the MIRROR is where the answer actually landed
+  ok   A10 and the promise identity survives settlement
+  ok   A11 a FAILED bootstrap settles the signal as well as a successful one
+  ok   A12 and it still does not reject  [M: a rejection would surface as an unhandled error]
+  ok   A13 the mirror carries the failure
+  ok   A14 classified by the shipped classifier
+  ok   A15 the bootstrap settled as an echo 404
+  ok   A16 a user retry does NOT replace the bootstrap settlement promise  [M11]
+  ok   A17 and it still does not after the retry has finished  [M11]
+  ok   A18 while the retry WAS a real second read — one bootstrap, one retry
+  ok   A19 an answer DISCARDED by the supersede guard still releases the signal
+  ok   A19b and the mirror is correctly left unwritten
+
+== §B — the closed allowlist, held once, by the classifier that produces the codes ==
+  ok   B1  the allowlist is EXACTLY the two transient codes  [M1, M2]
+  ok   B2  and eligibility has one implementation
+  ok   B3  a module nobody has spoken to is not eligible — PENDING is not a fault
+  ok   B4.SOURCE_TIMED_OUT the driver produces SOURCE_TIMED_OUT
+  ok   B5.SOURCE_TIMED_OUT eligible = true
+  ok   B4.HTTP_NOT_FOUND the driver produces HTTP_NOT_FOUND
+  ok   B5.HTTP_NOT_FOUND eligible = true
+  ok   B4.NOT_AUTHORIZED the driver produces NOT_AUTHORIZED
+  ok   B5.NOT_AUTHORIZED eligible = false  [fails closed]
+  ok   B4.RESPONSE_NOT_READABLE the driver produces RESPONSE_NOT_READABLE
+  ok   B5.RESPONSE_NOT_READABLE eligible = false  [fails closed]
+  ok   B4.SOURCE_NOT_CONNECTED the driver produces SOURCE_NOT_CONNECTED
+  ok   B5.SOURCE_NOT_CONNECTED eligible = false  [fails closed]
+  ok   B4.ACTION_MISMATCH the driver produces ACTION_MISMATCH
+  ok   B5.ACTION_MISMATCH eligible = false  [fails closed]
+  ok   B6  an offline browser is BROWSER_OFFLINE, not a timeout
+  ok   B7  and it is NOT eligible  [M3]
+  ok   B8.SERVER_FALSE the mirror reports SERVER_FALSE
+  ok   B9.SERVER_FALSE and a server that ANSWERED is never delegated  [M5]
+  ok   B8.FIELD_ABSENT the mirror reports FIELD_ABSENT
+  ok   B9.FIELD_ABSENT and a server that ANSWERED is never delegated  [M5]
+  ok   B8.SERVER_TRUE the mirror reports SERVER_TRUE
+  ok   B9.SERVER_TRUE and a server that ANSWERED is never delegated  [M5]
+
+== §C — the accessor gate: the opt-in is necessary AND not sufficient ==
+  ok   C1  WITHOUT the opt-in a transient capability still refuses at ZERO requests
+  ok   C2  and reports the transport fault it has
+  ok   C3  WITH the opt-in it dispatches exactly ONE read  [M1]
+  ok   C4  and it is a READ of the site universe — no new action
+  ok   C5  the server answered and the answer is passed through unchanged
+  ok   C6  a caller ASKING under NOT_AUTHORIZED gets nothing dispatched  [M4]
+  ok   C7  and the refusal it already had
+  ok   C8  nor under an explicit server FALSE — a decision is not a fault
+  ok   C9  which is still reported as FEATURE_DISABLED
+  ok   C10 nor under a missing field — a server ANSWERED  [M5]
+  ok   C11 reported in its own words
+  ok   C12 nor while the capability is still PENDING  [M7]
+  ok   C13 which is not a fault either
+
+== §D — the board: capped, still PENDING, then settled ==
+  ok   D1  the arbiter cap fired, the mirror is still PENDING, and ZERO universe reads left  [M7]
+  ok   D2  the page is in LOADING_CAPABILITY — still finding out, not an empty board
+  ok   D3  and exactly one continuation is attached
+  ok   D4  the settlement wakes it and it reads the universe EXACTLY once  [M8: never twice]
+  ok   D5  the continuation is released
+  ok   D6  and the universe is usable
+  ok   D7  every request in the page life was a READ — writes and non-GET = 0
+  ok   D8  a settled server FALSE reads NOTHING
+  ok   D9  and is reported as FEATURE_DISABLED
+  ok   D10 with NO retry control — a product decision is not a connection problem
+  ok   D11 zero requests of any kind
+  ok   D12a nothing is read while the capability is in flight  [M7]
+  ok   D12b a settled SOURCE_TIMED_OUT reads the universe EXACTLY once  [M1, M2, M8]
+  ok   D12c and the server — not the browser — decided the feature is on
+  ok   D12d through the existing action, with no new one
+  ok   D14a nothing is read while the capability is in flight  [M7]
+  ok   D14b a settled HTTP_NOT_FOUND reads the universe EXACTLY once  [M1, M2, M8]
+  ok   D14c and the server — not the browser — decided the feature is on
+  ok   D14d through the existing action, with no new one
+  ok   D18.1 BROWSER_OFFLINE → ZERO universe reads  [M3, M4, M5, M6]
+  ok   D19.1 BROWSER_OFFLINE → ZERO requests of any kind
+  ok   D20.1 BROWSER_OFFLINE → the refusal it already had is on screen
+  ok   D21.1 BROWSER_OFFLINE → and it is NOT reported as a switched-off feature
+  ok   D18.2 NOT_AUTHORIZED → ZERO universe reads  [M3, M4, M5, M6]
+  ok   D19.2 NOT_AUTHORIZED → ZERO requests of any kind
+  ok   D20.2 NOT_AUTHORIZED → the refusal it already had is on screen
+  ok   D21.2 NOT_AUTHORIZED → and it is NOT reported as a switched-off feature
+  ok   D18.3 FIELD_ABSENT → ZERO universe reads  [M3, M4, M5, M6]
+  ok   D19.3 FIELD_ABSENT → ZERO requests of any kind
+  ok   D20.3 FIELD_ABSENT → the refusal it already had is on screen
+  ok   D21.3 FIELD_ABSENT → and it is NOT reported as a switched-off feature
+  ok   D18.4 RESPONSE_NOT_READABLE → ZERO universe reads  [M3, M4, M5, M6]
+  ok   D19.4 RESPONSE_NOT_READABLE → ZERO requests of any kind
+  ok   D20.4 RESPONSE_NOT_READABLE → the refusal it already had is on screen
+  ok   D21.4 RESPONSE_NOT_READABLE → and it is NOT reported as a switched-off feature
+  ok   D18.5 SOURCE_NOT_CONNECTED → ZERO universe reads  [M3, M4, M5, M6]
+  ok   D19.5 SOURCE_NOT_CONNECTED → ZERO requests of any kind
+  ok   D20.5 SOURCE_NOT_CONNECTED → the refusal it already had is on screen
+  ok   D21.5 SOURCE_NOT_CONNECTED → and it is NOT reported as a switched-off feature
+  ok   D18.6 ACTION_MISMATCH → ZERO universe reads  [M3, M4, M5, M6]
+  ok   D19.6 ACTION_MISMATCH → ZERO requests of any kind
+  ok   D20.6 ACTION_MISMATCH → the refusal it already had is on screen
+  ok   D21.6 ACTION_MISMATCH → and it is NOT reported as a switched-off feature
+  ok   D18.7 A_CODE_NOBODY_HAS_INVENTED_YET → ZERO universe reads  [M3, M4, M5, M6]
+  ok   D19.7 A_CODE_NOBODY_HAS_INVENTED_YET → ZERO requests of any kind
+  ok   D20.7 A_CODE_NOBODY_HAS_INVENTED_YET → the refusal it already had is on screen
+  ok   D21.7 A_CODE_NOBODY_HAS_INVENTED_YET → and it is NOT reported as a switched-off feature
+  ok   D22 the delegated read went out exactly once
+  ok   D23 and a SERVER FEATURE_DISABLED is kept as the code it is — not rewritten, not softened
+  ok   D24 and it is what the page shows
+  ok   D25 one delegated read, and it was refused on the wire
+  ok   D26 the EXISTING universe retry control is offered — unchanged by this round
+  ok   D27 the click is ONE more logical read, carrying the same authority
+  ok   D28 and the retry recovered
+  ok   D29 with NO settlement signal a transient code still fails CLOSED — zero reads
+  ok   D30 and the capability refusal is what the page shows
+  ok   D31 nothing was attached to anything
+
+== §E — unmount, route return, and an idle page ==
+  ok   E1  a settlement after unmount issues ZERO universe requests  [M10]
+  ok   E2  and ZERO requests of any kind — no workspace read either
+  ok   E3  and writes NOTHING into the page it no longer owns
+  ok   E4  the first visit delegated one read
+  ok   E5  coming back re-reads the mirror and delegates once more
+  ok   E6  and the returning page is usable too
+  ok   E7  and the capability was never re-requested  [M11]
+  ok   E8  a settled board left alone for 200ms sends NOTHING more
+  ok   E9  and the delegated read is still exactly one  [M8]
+
+== §F — nothing scheduled, nothing widened, nothing new on the wire ==
+  ok   F1  the new page block is locatable
+  ok   F2  it schedules nothing and listens to nothing
+  ok   F3  and it cannot issue or re-issue a capability read
+  ok   F4  the signal itself schedules nothing and opens no socket
+  ok   F5  the read budget is untouched at 45s
+  ok   F6  and the bounded two-attempt policy is untouched
+  ok   F7  the arbiter cap is untouched at 8s — this round waits past it, it does not move it
+  ok   F8  the action is the existing one — no new action, endpoint or payload
+  ok   F9  system.health is nowhere on this page
+  ok   F10 and nothing is cached in the browser
+  ok   F11 the page implements no eligibility rule of its own
+  ok   F12 and holds no copy of the allowlist
+  ok   F13 it asks the accessor, in exactly one place
+
+== §M — twelve mutants, each driven ==
+  ok   M1  SOURCE_TIMED_OUT removed from the allowlist  [D12b, C3] (caught)
+  ok   M2  HTTP_NOT_FOUND removed from the allowlist  [D14b] (caught)
+  ok   M3  BROWSER_OFFLINE added to the allowlist  [B7, D18] (caught)
+  ok   M4  NOT_AUTHORIZED added to the allowlist  [C6, D18] (caught)
+  ok   M5  FIELD_ABSENT admitted by widening the eligibility rule  [B9, C10, D18] (caught)
+  ok   M6  RESPONSE_NOT_READABLE added to the allowlist  [D18] (caught)
+  ok   M7  the delegated read is dispatched while the capability is still PENDING  [D1, D29] (caught)
+  ok   M8  a second settlement continuation is attached, so one answer reads twice  [D4, E9] (caught)
+  ok   M9  the settlement signal is made to carry the capability payload  [A7] (caught)
+  ok   M10 the central request-ownership guard is disabled  [E1] (caught)
+  ok   M11 the user retry re-arms and replaces the bootstrap settlement  [A16, A17] (caught)
+  ok   M12 the settlement getter starts a capability read  [A3, A6] (caught)
+
+== SUMMARY ==
+  assertions : 135 passed, 0 failed
+  mutants    : 12 caught, 0 survived

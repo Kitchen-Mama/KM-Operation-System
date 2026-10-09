@@ -1,0 +1,298 @@
+
+== A. canonical cross-company partial coverage (T1 donor → T2 receiver) ==
+ok   D1 initial 100
+ok   D1 protected 60
+ok   D1 out 40
+ok   D1 releasable remaining 0
+ok   D1 coverage DONOR_SURPLUS_RELEASED
+ok   D2 in 40 (cross-company KM→ResUS)
+ok   D2 remaining shortage 10
+ok   D2 netOrderNeed 10
+ok   totalNetOrderNeed 10
+ok   one transfer ledger row
+ok   ledger row exact
+ok   canonical §41.9(1) Σinitial ≤ supply
+ok   canonical §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   canonical §41.9(9) tier ordering D1->D2
+ok   canonical ledger reason D1
+ok   canonical §41.9(6) in matches ledger D1
+ok   canonical §41.9(5) out matches ledger D1
+ok   canonical §41.9(8) out ≤ initial-protected D1
+ok   canonical §41.9(2,3) non-negative remainders D1
+ok   canonical §41.9(4) protected in [0,initial] D1
+ok   canonical integer qtys D1
+ok   canonical §41.9(6) in matches ledger D2
+ok   canonical §41.9(5) out matches ledger D2
+ok   canonical §41.9(8) out ≤ initial-protected D2
+ok   canonical §41.9(2,3) non-negative remainders D2
+ok   canonical §41.9(4) protected in [0,initial] D2
+ok   canonical integer qtys D2
+
+== B. no shortage / no surplus (factory initial covers) ==
+ok   S1 initial 100
+ok   S1 no surplus
+ok   S1 no shortage
+ok   S1 FACTORY_INITIAL_COVERED
+ok   no net order need
+ok   no transfers
+ok   no-shortage §41.9(1) Σinitial ≤ supply
+ok   no-shortage §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   no-shortage §41.9(6) in matches ledger S1
+ok   no-shortage §41.9(5) out matches ledger S1
+ok   no-shortage §41.9(8) out ≤ initial-protected S1
+ok   no-shortage §41.9(2,3) non-negative remainders S1
+ok   no-shortage §41.9(4) protected in [0,initial] S1
+ok   no-shortage integer qtys S1
+
+== C. same-company eligible full coverage ==
+ok   K1 out 40 (same company)
+ok   K2 in 40
+ok   K2 fully covered
+ok   K2 SURPLUS_REALLOCATION_COVERED
+ok   full coverage → 0 net need
+ok   same-company §41.9(1) Σinitial ≤ supply
+ok   same-company §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   same-company §41.9(9) tier ordering K1->K2
+ok   same-company ledger reason K1
+ok   same-company §41.9(6) in matches ledger K1
+ok   same-company §41.9(5) out matches ledger K1
+ok   same-company §41.9(8) out ≤ initial-protected K1
+ok   same-company §41.9(2,3) non-negative remainders K1
+ok   same-company §41.9(4) protected in [0,initial] K1
+ok   same-company integer qtys K1
+ok   same-company §41.9(6) in matches ledger K2
+ok   same-company §41.9(5) out matches ledger K2
+ok   same-company §41.9(8) out ≤ initial-protected K2
+ok   same-company §41.9(2,3) non-negative remainders K2
+ok   same-company §41.9(4) protected in [0,initial] K2
+ok   same-company integer qtys K2
+
+== D. T2→T1 and T3→T1 rejected (later surplus never covers earlier shortage) ==
+ok   T2→T1 no transfer
+ok   EARLY shortage remains 40
+ok   EARLY SHORTAGE_REMAINS
+ok   net need 40 (rejected transfer)
+ok   T2->T1 §41.9(1) Σinitial ≤ supply
+ok   T2->T1 §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   T2->T1 §41.9(6) in matches ledger EARLY
+ok   T2->T1 §41.9(5) out matches ledger EARLY
+ok   T2->T1 §41.9(8) out ≤ initial-protected EARLY
+ok   T2->T1 §41.9(2,3) non-negative remainders EARLY
+ok   T2->T1 §41.9(4) protected in [0,initial] EARLY
+ok   T2->T1 integer qtys EARLY
+ok   T2->T1 §41.9(6) in matches ledger LATE
+ok   T2->T1 §41.9(5) out matches ledger LATE
+ok   T2->T1 §41.9(8) out ≤ initial-protected LATE
+ok   T2->T1 §41.9(2,3) non-negative remainders LATE
+ok   T2->T1 §41.9(4) protected in [0,initial] LATE
+ok   T2->T1 integer qtys LATE
+ok   T3→T1 no transfer
+ok   T3->T1 §41.9(1) Σinitial ≤ supply
+ok   T3->T1 §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   T3->T1 §41.9(6) in matches ledger E1
+ok   T3->T1 §41.9(5) out matches ledger E1
+ok   T3->T1 §41.9(8) out ≤ initial-protected E1
+ok   T3->T1 §41.9(2,3) non-negative remainders E1
+ok   T3->T1 §41.9(4) protected in [0,initial] E1
+ok   T3->T1 integer qtys E1
+ok   T3->T1 §41.9(6) in matches ledger L3
+ok   T3->T1 §41.9(5) out matches ledger L3
+ok   T3->T1 §41.9(8) out ≤ initial-protected L3
+ok   T3->T1 §41.9(2,3) non-negative remainders L3
+ok   T3->T1 §41.9(4) protected in [0,initial] L3
+ok   T3->T1 integer qtys L3
+
+== E. T4 + out-of-range are visibility-only (no allocation, no reallocation, no net need) ==
+ok   T4R tier T4
+ok   T4 gets NO factory allocation
+ok   T4 never in Request/PO payload → netOrderNeed 0
+ok   T4 visibility-only
+ok   OOR tier null (monthDelta ≥ 5)
+ok   OOR not actionable
+ok   no actionable demand → nothing allocated
+ok   all supply unused (no actionable claim)
+ok   T4/OOR contribute 0 net need
+ok   T4-visibility §41.9(1) Σinitial ≤ supply
+ok   T4-visibility §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   T4-visibility §41.9(6) in matches ledger OOR
+ok   T4-visibility §41.9(5) out matches ledger OOR
+ok   T4-visibility §41.9(8) out ≤ initial-protected OOR
+ok   T4-visibility §41.9(2,3) non-negative remainders OOR
+ok   T4-visibility §41.9(4) protected in [0,initial] OOR
+ok   T4-visibility integer qtys OOR
+ok   T4-visibility §41.9(6) in matches ledger T4R
+ok   T4-visibility §41.9(5) out matches ledger T4R
+ok   T4-visibility §41.9(8) out ≤ initial-protected T4R
+ok   T4-visibility §41.9(2,3) non-negative remainders T4R
+ok   T4-visibility §41.9(4) protected in [0,initial] T4R
+ok   T4-visibility integer qtys T4R
+ok   T4 donor gets no allocation → no surplus
+ok   no transfer from a T4 donor
+ok   R1 shortage unmet by T4 donor
+ok   T4-donor §41.9(1) Σinitial ≤ supply
+ok   T4-donor §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   T4-donor §41.9(6) in matches ledger R1
+ok   T4-donor §41.9(5) out matches ledger R1
+ok   T4-donor §41.9(8) out ≤ initial-protected R1
+ok   T4-donor §41.9(2,3) non-negative remainders R1
+ok   T4-donor §41.9(4) protected in [0,initial] R1
+ok   T4-donor integer qtys R1
+ok   T4-donor §41.9(6) in matches ledger T4D
+ok   T4-donor §41.9(5) out matches ledger T4D
+ok   T4-donor §41.9(8) out ≤ initial-protected T4D
+ok   T4-donor §41.9(2,3) non-negative remainders T4D
+ok   T4-donor §41.9(4) protected in [0,initial] T4D
+ok   T4-donor integer qtys T4D
+
+== F. source-aware eligibility (multi-source donor; receiver eligible for VN only) ==
+ok   MS initial 60 (CN30+VN30)
+ok   MS source breakdown CN30/VN30
+ok   RV receives only 30 (VN source only)
+ok   MS retains 10 CN surplus (RV not CN-eligible)
+ok   RV remaining 20 (CN 10 not consumable)
+ok   single VN transfer
+ok   transfer from VN source
+ok   source-aware §41.9(1) Σinitial ≤ supply
+ok   source-aware §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   source-aware §41.9(9) tier ordering MS->RV
+ok   source-aware ledger reason MS
+ok   source-aware §41.9(6) in matches ledger MS
+ok   source-aware §41.9(5) out matches ledger MS
+ok   source-aware §41.9(8) out ≤ initial-protected MS
+ok   source-aware §41.9(2,3) non-negative remainders MS
+ok   source-aware §41.9(4) protected in [0,initial] MS
+ok   source-aware integer qtys MS
+ok   source-aware §41.9(6) in matches ledger RV
+ok   source-aware §41.9(5) out matches ledger RV
+ok   source-aware §41.9(8) out ≤ initial-protected RV
+ok   source-aware §41.9(2,3) non-negative remainders RV
+ok   source-aware §41.9(4) protected in [0,initial] RV
+ok   source-aware integer qtys RV
+
+== G. multi-donor (receiver draws from two donors, deterministic order) ==
+ok   RB fully covered from two donors
+ok   DA gives 30 first (earliest req-by)
+ok   DB gives remaining 20
+ok   two transfer rows
+ok   RB covered
+ok   multi-donor §41.9(1) Σinitial ≤ supply
+ok   multi-donor §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   multi-donor §41.9(9) tier ordering DA->RB
+ok   multi-donor ledger reason DA
+ok   multi-donor §41.9(9) tier ordering DB->RB
+ok   multi-donor ledger reason DB
+ok   multi-donor §41.9(6) in matches ledger DA
+ok   multi-donor §41.9(5) out matches ledger DA
+ok   multi-donor §41.9(8) out ≤ initial-protected DA
+ok   multi-donor §41.9(2,3) non-negative remainders DA
+ok   multi-donor §41.9(4) protected in [0,initial] DA
+ok   multi-donor integer qtys DA
+ok   multi-donor §41.9(6) in matches ledger DB
+ok   multi-donor §41.9(5) out matches ledger DB
+ok   multi-donor §41.9(8) out ≤ initial-protected DB
+ok   multi-donor §41.9(2,3) non-negative remainders DB
+ok   multi-donor §41.9(4) protected in [0,initial] DB
+ok   multi-donor integer qtys DB
+ok   multi-donor §41.9(6) in matches ledger RB
+ok   multi-donor §41.9(5) out matches ledger RB
+ok   multi-donor §41.9(8) out ≤ initial-protected RB
+ok   multi-donor §41.9(2,3) non-negative remainders RB
+ok   multi-donor §41.9(4) protected in [0,initial] RB
+ok   multi-donor integer qtys RB
+
+== H. multi-receiver (one donor; earliest-required receiver filled first) ==
+ok   R1 (earliest) fully covered 40
+ok   R2 gets remaining 20
+ok   R2 partial
+ok   net need 20
+ok   multi-receiver §41.9(1) Σinitial ≤ supply
+ok   multi-receiver §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   multi-receiver §41.9(9) tier ordering BIG->R1
+ok   multi-receiver ledger reason BIG
+ok   multi-receiver §41.9(9) tier ordering BIG->R2
+ok   multi-receiver ledger reason BIG
+ok   multi-receiver §41.9(6) in matches ledger BIG
+ok   multi-receiver §41.9(5) out matches ledger BIG
+ok   multi-receiver §41.9(8) out ≤ initial-protected BIG
+ok   multi-receiver §41.9(2,3) non-negative remainders BIG
+ok   multi-receiver §41.9(4) protected in [0,initial] BIG
+ok   multi-receiver integer qtys BIG
+ok   multi-receiver §41.9(6) in matches ledger R1
+ok   multi-receiver §41.9(5) out matches ledger R1
+ok   multi-receiver §41.9(8) out ≤ initial-protected R1
+ok   multi-receiver §41.9(2,3) non-negative remainders R1
+ok   multi-receiver §41.9(4) protected in [0,initial] R1
+ok   multi-receiver integer qtys R1
+ok   multi-receiver §41.9(6) in matches ledger R2
+ok   multi-receiver §41.9(5) out matches ledger R2
+ok   multi-receiver §41.9(8) out ≤ initial-protected R2
+ok   multi-receiver §41.9(2,3) non-negative remainders R2
+ok   multi-receiver §41.9(4) protected in [0,initial] R2
+ok   multi-receiver integer qtys R2
+
+== I. explicit zero supply / zero requirement ==
+ok   zero supply → full shortage
+ok   zero supply net need 100
+ok   zero-supply §41.9(1) Σinitial ≤ supply
+ok   zero-supply §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   zero-supply §41.9(6) in matches ledger Z
+ok   zero-supply §41.9(5) out matches ledger Z
+ok   zero-supply §41.9(8) out ≤ initial-protected Z
+ok   zero-supply §41.9(2,3) non-negative remainders Z
+ok   zero-supply §41.9(4) protected in [0,initial] Z
+ok   zero-supply integer qtys Z
+ok   zero requirement → NO_REQUIREMENT
+ok   zero requirement no shortage
+ok   all supply unused
+ok   zero-requirement §41.9(1) Σinitial ≤ supply
+ok   zero-requirement §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   zero-requirement §41.9(6) in matches ledger N
+ok   zero-requirement §41.9(5) out matches ledger N
+ok   zero-requirement §41.9(8) out ≤ initial-protected N
+ok   zero-requirement §41.9(2,3) non-negative remainders N
+ok   zero-requirement §41.9(4) protected in [0,initial] N
+ok   zero-requirement integer qtys N
+
+== J. §43 integer safety — no ratio step, no over-allocation, residual retained ==
+ok   FLOOR/integer FIFO: exactly 30 allocated
+ok   residual is NOT donor surplus
+ok   70 residual retained separately (§43.6)
+ok   §43.5 Σalloc ≤ available (never over-allocate)
+ok   §43.3 integer allocation only
+ok   Σ(protected+in) ≤ Σinitial — no physical unit conjured
+ok   Σreallocated ≤ Σreleasable surplus
+ok   over-alloc-guard §41.9(1) Σinitial ≤ supply
+ok   over-alloc-guard §41.9(7) netOrderNeed = Σ actionable remaining shortage
+ok   over-alloc-guard §41.9(9) tier ordering P1->P2
+ok   over-alloc-guard ledger reason P1
+ok   over-alloc-guard §41.9(6) in matches ledger P1
+ok   over-alloc-guard §41.9(5) out matches ledger P1
+ok   over-alloc-guard §41.9(8) out ≤ initial-protected P1
+ok   over-alloc-guard §41.9(2,3) non-negative remainders P1
+ok   over-alloc-guard §41.9(4) protected in [0,initial] P1
+ok   over-alloc-guard integer qtys P1
+ok   over-alloc-guard §41.9(6) in matches ledger P2
+ok   over-alloc-guard §41.9(5) out matches ledger P2
+ok   over-alloc-guard §41.9(8) out ≤ initial-protected P2
+ok   over-alloc-guard §41.9(2,3) non-negative remainders P2
+ok   over-alloc-guard §41.9(4) protected in [0,initial] P2
+ok   over-alloc-guard integer qtys P2
+
+== K. determinism (§41.9(10)) — permuted input → identical output ==
+ok   permutation invariance
+
+== L. input immutability + fresh output per call ==
+ok   input not mutated
+ok   fresh output per call (mutation did not leak)
+
+== M. malformed input (strict validation) ==
+ok   null input → TypeError
+ok   missing masterSku → TypeError
+ok   missing calculationDate → TypeError
+ok   factoryPools not array → TypeError
+ok   receiver missing demandKey → TypeError
+ok   duplicate demandKey → RangeError
+ok   negative projectedRequirementQty → RangeError
+ok   bad requiredByDate → RangeError (classifier)
+
+All F1-7N-FA-3A KMFSR assertions passed (270 assertions).

@@ -1,0 +1,24 @@
+
+-- A. THE DOCUMENT — what the browser is actually told to do --------------------------------------
+   Phase 0: core/namespace.js -> core/lifecycle.js -> core/state.js -> core/partial-loader.js -> pages/home.js
+   parser-blocking local JS: 0.045 MB
+   deferred local JS       : 3.75 MB  (+2 CDN, ~1.10 MB measured)
+
+-- B. THE CLOCK IS HOME-OWNED, AND THERE IS ONLY ONE OF IT ----------------------------------------
+
+-- C. DEFER IS ORDER-SAFE — computed over every file, not asserted --------------------------------
+
+-- D. THE LOADER HARNESS — Phase 0 executed for real ----------------------------------------------
+
+-- E. §6.1-6.11 — THE HOME MATRIX -----------------------------------------------------------------
+   ran: core/namespace.js -> core/lifecycle.js -> core/state.js -> core/partial-loader.js -> pages/home.js
+
+-- F. §6.12-6.18 — ROUTING IS UNCHANGED -----------------------------------------------------------
+
+-- G. MUTATION — every defect restored must be caught ---------------------------------------------
+
+-- H. VACUITY + SEALED REGRESSIONS ----------------------------------------------------------------
+
+-- I. NO SIBLING SUITE MAY READ THESE TAGS WITH A PATTERN THAT MISSES ATTRIBUTES ------------------
+
+PASS  151 passed, 0 failed, 13 mutants, 0 survived, vacuity clean

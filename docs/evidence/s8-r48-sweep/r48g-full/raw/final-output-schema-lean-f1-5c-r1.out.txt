@@ -1,0 +1,23 @@
+
+== §3 REMOVED: 5 header derived totals are no longer persisted ==
+
+== §5 REMOVED: declared_total_value (pure unit×qty) is no longer persisted ==
+
+== NO OVER-REMOVAL: frozen party VALUES stay (§2 HALT — masters mutable-in-place) ==
+
+== NO OVER-REMOVAL: frozen customs + master/display line facts stay (§4/§5) ==
+
+== NO OVER-REMOVAL: multi-PO lineage FKs + historical po_no stay (§6 re-parent DECLINED) ==
+
+== builders no longer emit the derived facts ==
+
+== §3 renderer DERIVES header totals from the FROZEN LINES (not from any persisted header total) ==
+
+== §5 renderer DERIVES declared_total_value = unit × physical qty ==
+
+== multi-PO lineage preserved; physical qty = frozen snapshot qty ==
+
+== immutability preserved: renderer reads NO live master/operational table (still snapshot-only) ==
+
+----------------------------------------
+FINAL OUTPUT SCHEMA LEAN (F1-5C-R1): 59 passed, 0 failed

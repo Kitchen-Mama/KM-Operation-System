@@ -1,0 +1,46 @@
+ok   clamp: within range unchanged
+ok   clamp: below min → min (O3 min clamp)
+ok   clamp: above max → max (O4 max clamp)
+ok   clamp: rounds to integer px
+ok   clamp: non-numeric → min (safe)
+ok   readGroup: numeric kept+clamped (image→140), non-number sku dropped, unknown key ignored
+ok   readGroup: missing page/group → {}
+ok   readGroup: corrupt/null root → {} (O23 fallback)
+ok   mergePersist: unrelated page preserved
+ok   mergePersist: sibling group in same page preserved
+ok   mergePersist: target group written
+ok   clearGroup: target group removed
+ok   clearGroup: sibling group kept
+ok   clearGroup: other page kept (H8)
+ok   clearGroup: empties page → page removed
+ok   handle uses role=separator
+ok   handle exposes aria-orientation + valuemin/max/now
+ok   handle is tabindex 0 (keyboard focusable)
+ok   keyboard: Arrow Left/Right + Home
+ok   keyboard: 10px / Shift 25px steps
+ok   F7: drag coalesced via requestAnimationFrame
+ok   E: Pointer Events with up/cancel cleanup
+ok   E: handle stops propagation (no sort / row Edit)
+ok   storage key km.ui.tableWidths.v1
+ok   storage identity page/group present
+ok   stable column key present: sku
+ok   stable column key present: product_name
+ok   stable column key present: product_name_cn
+ok   stable column key present: item_dimensions
+ok   stable column key present: units_per_carton
+ok   stable column key present: selling_price
+ok   H: Reset Column Widths action wired in Display panel
+ok   pilot init hooked on mount
+ok   J: idempotent refresh (no duplicate handles/listeners)
+ok   pilot scope: request-order.js does NOT activate resizable columns
+ok   pilot scope: inventory-replenishment.js does NOT activate resizable columns
+ok   pilot scope: global-logistics-map.js does NOT activate resizable columns
+ok   pilot scope: factory-stock.js does NOT activate resizable columns
+ok   pilot scope: overseas-stock.js does NOT activate resizable columns
+ok   Part E: campaign-risk wires the shared dualLayerResize adapter
+ok   Part E: adapter points at the Promotion Risk table id selectors
+ok   Part E: isolated storage group promotion-risk (shares km.ui.tableWidths.v1 key)
+ok   Part E: scroll header carries the id the adapter needs to out-specify base widths
+ok   Part E: resize init invoked once on mount (header static → no duplicate handles)
+
+ALL PASS

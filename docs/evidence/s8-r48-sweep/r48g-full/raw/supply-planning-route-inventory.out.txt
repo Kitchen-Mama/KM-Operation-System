@@ -1,0 +1,14 @@
+
+== A. router parsed + recommendation actions present ==
+
+== B. classify every recommendation action; FAIL on FORBIDDEN_PUBLIC_WRITE ==
+   route inventory: {"upsertRequestOrderAllocationDraft":"LOCKED_USER_EDIT","upsertRequestOrderAllocationDraftLines":"LOCKED_USER_EDIT","submitRequestOrderAllocationDrafts":"EXPLICIT_SUBMIT_OR_HANDOFF","upsertShippingAllocationDraft":"LOCKED_USER_EDIT","upsertShippingAllocationDraftLines":"LOCKED_USER_EDIT","submitShippingAllocationDrafts":"EXPLICIT_SUBMIT_OR_HANDOFF","upsertRequestOrderSiteConfirmations":"INTERNAL_ONLY","generateRecommendationDraftLocked":"LOCKED_GENERATION","updateRecommendationDecisionLocked":"LOCKED_USER_EDIT","getRecommendationDraftToken":"READ_ONLY"}
+
+== C. legacy line writers are now locked adapters (no raw unlocked Sheet write remains) ==
+
+== D. locked handlers terminal-guard + edit path token-checks ==
+
+== E. full-table writer not reachable from a locked production route ==
+
+== F. Submit routes remain visibly distinct (not folded into generation/edit) ==
+

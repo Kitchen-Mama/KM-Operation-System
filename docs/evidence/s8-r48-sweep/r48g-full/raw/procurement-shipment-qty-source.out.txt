@@ -1,0 +1,25 @@
+ok   source: procShipmentLineQty_ extracted from 13_procurement_handlers.gs
+ok   source: procurementOnTheWayMaps_ extracted from 13_procurement_handlers.gs
+ok   A canonical positive preferred over legacy (100 not 80)
+ok   B canonical zero stays 0, does NOT fall back to legacy 80
+ok   C canonical blank → legacy fallback 80
+ok   D canonical column absent → legacy fallback 80
+ok   E canonical valid, legacy blank → 100
+ok   F both blank → 0
+ok   F2 both columns absent → 0
+ok   G present-but-malformed canonical → 0 (no legacy override)
+ok   H negative canonical → 0 (never increases On-the-Way)
+ok   C2 whitespace-only canonical treated as blank → legacy 80
+ok   numeric-string canonical parsed → 100
+ok   negative legacy fallback → 0 (never increases On-the-Way)
+ok   aggregate: 100 + 0 = 100 (canonical primary, zero no-fallback, no double-sum)
+ok   bySku aggregate = 100 (S2 cancelled excluded)
+ok   grouping key preserved: sku|country|marketplace, lowercased
+ok   input shipment_lines rows are NOT mutated (read-only)
+ok   aggregate: legacy 80 + canonical 20 = 100 (each line counted once)
+ok   legacy-only sheet: qty column read as fallback (80)
+ok   closed statuses (delivered/completed) excluded → no entry
+ok   closed statuses contribute 0 to bySku
+ok   return preserves exact + bySku (additive byDest allowed, keys not exclusive)
+
+All B4-R1 shipment-quantity-source assertions passed (23 assertions).

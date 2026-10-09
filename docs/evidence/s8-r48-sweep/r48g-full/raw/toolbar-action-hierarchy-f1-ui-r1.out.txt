@@ -1,0 +1,17 @@
+
+== §5 — ONE shared toolbar-action geometry contract (existing --km-button-* tokens) ==
+
+== §2 — AI Support = restrained PLANNING accent (ghost-orange), NOT a filled block ==
+
+== §8/§2 — Submit strongest CTA + More Options neutral (unchanged semantic colours) ==
+
+== §6 — AI Plan is the emphasized menu row (restrained), Recalculate rows stay neutral, no full-orange row ==
+
+== §10/§14 — handlers + user-facing actions UNCHANGED (markup onclicks intact) ==
+
+== §7 — Inventory / Order Planning parity via the SHARED .km-action-menu class ==
+
+== deployment — changed CSS is cache-versioned so browsers refetch ==
+
+----------------------------------------
+TOOLBAR ACTION HIERARCHY (F1-UI-PLANNING-ACTION-HIERARCHY-R1): 28 passed, 0 failed

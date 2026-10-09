@@ -1,0 +1,15 @@
+
+== A. Foundation activation policy — recommendation is CANONICAL (default-on, master-independent) ==
+
+== B. Single emergency kill switch (rollback) — no overlapping flags ==
+
+== C. Safe version diagnostics (deployment/runtime guard; no secrets) ==
+
+== D. Inventory consumer — canonical default-on + distinct states (extracted READ block) ==
+
+== E. Order Planning consumer — canonical default-on + no opt-in block (extracted READ block) ==
+
+== F. Order Allocation legacy empty-state coexistence + no-formula / single-registration scans ==
+
+----------------------------------------
+RECOMMENDATION PRODUCTION CUTOVER (F1-4B-FM2B): 39 passed, 0 failed

@@ -1,0 +1,29 @@
+
+== A. Three flags — single authority (KM.api mirrors + applyClientCapabilities + snapshot) ==
+
+== A. flags are INDEPENDENT (setting one never moves another) ==
+
+== A. Site Confirm true/false ROLLBACK is exact + reversible ==
+
+== B. Backend config = owner-of-record; three flags at the exact required posture ==
+
+== B. capability transport wired (single wire channel; read-only) ==
+
+== C. Additive schema migration 23 → 31 (existing cells preserved; idempotent) ==
+
+== D. WRITE-gate: presence-based lines gate passes ONLY after migration; strict plans gate unchanged ==
+
+== E. Submit idempotency — writer structure (behavioral fingerprint model → R6E1A suite) ==
+
+== E. frontend generates ONE stable execution key per Submit intention ==
+
+== F. Canonical snapshot mapping (never [object Object]; the 8 canonical fields written) ==
+
+== G. R6D1 staged Inventory state preserved (no regression) ==
+
+== H. Unified release authority (R6E1A cumulative changed assets on one token) ==
+
+== I. TEMP R6E1 tooling present (migration dry-run/execute/validate + preflight) ==
+
+----------------------------------------
+R6E1 THREE-FLAG / MIGRATION / SUBMIT IDEMPOTENCY (F1-7N-FA-3C-R6E1-R1): 85 passed, 0 failed

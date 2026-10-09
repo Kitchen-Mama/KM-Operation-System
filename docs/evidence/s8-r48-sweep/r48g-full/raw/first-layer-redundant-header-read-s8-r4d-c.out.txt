@@ -1,0 +1,106 @@
+
+================ A — THE CALL COUNT, MEASURED ON BOTH TREES ================
+
+ok   A1  PRE (f6b4164) makes 30 getValues() range reads for 13 tables
+ok   A2  of which 17 are header-only reads — 13 from prodRequireSheet_, 4 from prodRequireColumns_
+ok   A3  and 13 are the full-sheet reads
+ok   A4  POST makes 13 getValues() range reads — one per table
+ok   A5  HEADER_READ_COUNT_POST = 0 — no separate header range is fetched at all
+ok   A6  FULL_SHEET_READ_COUNT_POST = 13 — unchanged, and now the only read
+ok   A7  the reduction is real and in the right direction (30 -> 13)
+ok   A8  SERVICE_CALL_REDUCTION_PERCENT = 57
+ok   A9  getSheetByName also falls — the optional probe and the guard no longer each resolve the sheet (22 -> 13)
+ok   A10 getLastColumn is once per table (PRE was 17 — 13 + 4 repeats)
+
+================ B — RESPONSE EQUALITY, TABLE BY TABLE ================
+
+ok   B1  SEMANTIC_RESULT_DIFF_COUNT = 0 — all 13 tables return identical rows
+ok   B2  table PRESENCE is identical — 13 in, 13 out
+ok   B3  marketplaces row count unchanged (2)
+ok   B3  marketplace_skus row count unchanged (2)
+ok   B3  sku_details row count unchanged (2)
+ok   B3  warehouses row count unchanged (2)
+ok   B3  amazon_inventory_snapshot row count unchanged (2)
+ok   B3  amazon_inventory_health_snapshot row count unchanged (2)
+ok   B3  amazon_daily_sales_snapshot row count unchanged (2)
+ok   B3  amazon_weekly_sales_snapshot row count unchanged (2)
+ok   B3  fc_regular_forecast row count unchanged (2)
+ok   B3  fc_target_rules row count unchanged (0)
+ok   B3  fc_special_events row count unchanged (2)
+ok   B3  overseas_inventory_snapshot row count unchanged (2)
+ok   B3  factory_stock row count unchanged (2)
+ok   B4  the HEADER SET a row is keyed by is unchanged
+ok   B5  canonical row identities match position for position, not merely as a set
+ok   B6  the all-blank row is still dropped (4 sheet rows -> header + 2 kept)
+
+================ C — ONE HEADER SOURCE, AND requiredCols USES IT ================
+
+ok   C1  a table WITH requiredCols costs exactly ONE getValues()
+ok   C2  ADDITIONAL_HEADER_READ_COUNT_FOR_REQUIRED_COLS = 0
+ok   C3  a table WITHOUT requiredCols also costs exactly ONE getValues()
+ok   C4  and the one read is the DATA range — the header is row 0 of it
+
+================ D — FAIL-CLOSED SEMANTICS, PRE vs POST ================
+
+ok   D  SHEET ABSENT (required) -> same outcome on both trees (SCHEMA_NOT_PROVISIONED)
+ok   D  SHEET ABSENT (optional) -> same outcome on both trees (null)
+ok   D  EMPTY (header only) -> same outcome on both trees (null)
+ok   D  HEADER BLANK -> same outcome on both trees (HEADER_BLANK)
+ok   D  HEADER DUPLICATE -> same outcome on both trees (HEADER_DUPLICATE)
+ok   D  REQUIRED COLUMN MISSING -> same outcome on both trees (MISSING_REQUIRED_HEADER)
+ok   D  TOTALLY BLANK SHEET -> same outcome on both trees (HEADER_MISSING)
+ok   D1  ABSENT_TABLE_SEMANTICS_PRESERVED — a REQUIRED missing sheet still fails closed
+ok   D2  an OPTIONAL missing sheet is still [] — absence is not an error for a missing-safe table
+ok   D3  EMPTY_TABLE_SEMANTICS_PRESERVED — fc_target_rules is header-only and answers [], not a throw
+ok   D4  SCHEMA_MISMATCH_SEMANTICS_PRESERVED — a blank header is still refused
+ok   D5  a missing REQUIRED column is still refused, from the header array rather than a second read
+ok   D6  ABSENT and EMPTY remain DIFFERENT states — the three did not collapse into one
+
+================ E — WHAT THIS ROUND DID NOT DO ================
+
+ok   E1  FIRST_LAYER_TABLE_COUNT = 13 and the membership is byte-identical
+ok   E2  EXPOSURE_TABLE_COUNT = 6 — lazy-once is untouched
+ok   E3  DAILY_SALES_PROJECTION_APPLIED = NO — all 36 fields still return
+ok   E4  and in the same order, so no column was quietly dropped from the middle
+ok   E5  the siteScope exposure contract is still present and still fails closed
+ok   E6  and the lineage closure is still the thing that applies it
+ok   E7  recentWindow still keeps 14 dates — the business projection is untouched
+ok   E8  FRONTEND_RUNTIME_CHANGED = NO — no browser-served byte moved between f6b4164 and 1876f4a
+
+================ F — ZERO WRITE ================
+
+ok   F1  WRITE_PRIMITIVE_COUNT = 0 — no write, property, drive, trigger or mail primitive in 60_
+ok   F2  GAP_WRITE_REACHABLE = NO and JOB_START_REACHABLE = NO from this handler
+
+================ G — RELEASE IDENTITY ================
+
+ok   G1  60_ is stamped R43 or later — the round its call count changed
+ok   G2  the RELEASE is R43 or later
+ok   G3  63_ own stamp is R43 or later — it carries 60_ row
+ok   G3a and a PRE-R43 stamp is still rejected — the floor is a floor, not a formality
+ok   G4  01_ is UNCHANGED at R41 — no action and no route moved
+ok   G5  R43 is after R42 in the release order
+ok   G5a and a floor written at R43 rejects R42
+ok   G6  ACTION_CONTRACT_VERSION stays 18
+
+================ H — MUTANTS ================
+
+caught: M1  a separate prodRequireSheet_ header read is reintroduced
+caught: M2  the prodRequireColumns_ repeat header read is reintroduced
+caught: M3  header validation is skipped entirely
+caught: M4  a missing REQUIRED sheet is answered with [] instead of failing closed
+caught: M5  a missing header is accepted
+caught: M6  a missing REQUIRED column is accepted
+caught: M7  a first-layer table is dropped from the workspace set
+caught: M8  an extra table is added to the workspace set
+caught: M9  the daily-sales column projection is mixed into B3
+caught: M10  a write primitive is introduced into the read handler
+caught: M11  the one full-sheet read is replaced by a header-only read, losing the rows
+caught: M12  the blank-row drop is lost when rows are built from values
+ok   H1  every mutant detector is checked against a tree where the fault is ABSENT
+ok   H2  0 mutants survived
+ok   H3  0 vacuous mutants — every mutation actually edited the source
+
+====================================================================================================
+PASS  66 passed, 0 failed, 12 mutants, 0 survived, vacuity clean
+====================================================================================================

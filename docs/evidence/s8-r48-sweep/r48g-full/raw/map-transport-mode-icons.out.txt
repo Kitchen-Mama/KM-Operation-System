@@ -1,0 +1,99 @@
+
+=== A — §6 ACCEPTANCE: one visual per transport mode, driven ===
+  ok   A1  truck  -> truck visual
+  ok   A2  sea    -> ship visual
+  ok   A3  air    -> airplane visual
+  ok   A4  rail   -> train visual
+  ok   A5  parcel -> parcel visual
+  ok   A6  road resolves to its class
+  ok   A6  inland resolves to its class
+  ok   A6  ground resolves to its class
+  ok   A6  ltl resolves to its class
+  ok   A6  drayage resolves to its class
+  ok   A6  ocean resolves to its class
+  ok   A6  vessel resolves to its class
+  ok   A6  fcl resolves to its class
+  ok   A6  lcl resolves to its class
+  ok   A6  barge resolves to its class
+  ok   A6  air_express resolves to its class
+  ok   A6  airfreight resolves to its class
+  ok   A6  flight resolves to its class
+  ok   A6  train resolves to its class
+  ok   A6  intermodal_rail resolves to its class
+  ok   A6  courier resolves to its class
+  ok   A6  last_mile resolves to its class
+  ok   A6  last-mile resolves to its class
+  ok   A6  express resolves to its class
+  ok   A7  case and padding do not defeat the match
+  ok   A7a nor does a display-cased phrase
+  ok   A8  the five visuals are distinct
+
+=== B — THE ORDERING THAT MAKES PARCEL VISIBLE AT ALL ===
+  ok   B1  a parcel token classifies as parcel, not truck
+  ok   B1a and so does courier
+  ok   B1b and a token carrying BOTH ideas resolves to the more specific one
+  ok   B2  parcel is tested BEFORE truck in the source, which is what B1 depends on
+  ok   B3  an intermodal rail leg is rail
+
+=== C — §5 FALLBACK: no shipment leaves the map ===
+  ok   C1  a blank mode yields NO glyph
+  ok   C1a an unrecognised mode yields no glyph
+  ok   C2  null does not throw and yields no glyph
+  ok   C2  undefined does not throw and yields no glyph
+  ok   C2  0 does not throw and yields no glyph
+  ok   C2  false does not throw and yields no glyph
+  ok   C2  {} does not throw and yields no glyph
+  ok   C2  [] does not throw and yields no glyph
+  ok   C2a and the class is the named "unknown", not a guess
+  ok   C3  an unknown-mode shipment marker carries an empty icon
+  ok   C3a and keeps its id, its coordinates and its size — it is drawn exactly as before
+
+=== D — §3 MULTI-LEG: the icon follows the LEG, not the shipment ===
+  ok   D1  the ocean leg draws a ship
+  ok   D1a the inland leg draws a parcel
+  ok   D1b so one shipment is NOT collapsed into one transport mode
+  ok   D2  the current node wins
+  ok   D2a then the last completed one
+  ok   D2b and only then the shipment-level method — the documented fallback, not the first choice
+  ok   D2c a shipment with nothing at all yields blank, which falls through to no glyph
+  ok   D2d and a missing shipment does not throw
+  ok   D3  a leg with no recorded mode draws no glyph rather than borrowing one
+  ok   D4  the per-node marker uses THAT node's transportMode
+  ok   D4a the position marker uses the current leg
+  ok   D4b and so does each shipment in the runtime list
+
+=== E — §4 VISUAL: the marker is upgraded, never moved ===
+  ok   E1  the glyph is anchored to the marker's projected centre
+  ok   E1a and is collected only when the marker declares one
+  ok   E2  one projection per marker per frame — the glyph pass adds none
+  ok   E3  the glyph size is derived and clamped
+  ok   E3a so it tracks the marker and can neither vanish nor overpower the map
+  ok   E3b and stays under 1, so a rim of the marker's own status colour survives around it
+  ok   E4  glyphs are painted after every geographic label class
+  ok   E5  MARKER_CLICK_REGRESSION = 0 — the glyph canvas cannot receive a pointer event
+  ok   E5a and it stays out of the accessibility tree, as decoration
+
+=== F — WHAT WAS NOT TOUCHED, ASSERTED RATHER THAN PROMISED ===
+  ok   F1  shipMode is unchanged — TOOLTIP_REGRESSION = 0
+  ok   F2  no transport mode is assigned or emitted by this page — nothing is written back
+  ok   F2a and the icon is never read back as a decision input
+  ok   F3  SHIPMENT_FILTER_REGRESSION = 0 — the method filter still matches the stored value verbatim
+  ok   F3a and no filter classifies a mode
+  ok   F4  the helper pulls in nothing
+  ok   F4a and no external icon dependency was added to the shell
+  ok   F5  no operator method label is spelled in either changed file
+  ok   F6  MAP_POSITION_REGRESSION = 0 — placement does not consult the transport mode
+  ok   F6a and neither do the KPIs
+
+=== J — MUTANTS ===
+  ok   J1 the parcel branch stops matching KILLED
+  ok   J2 an unknown mode is given a truck KILLED
+  ok   J3 the current leg is ignored KILLED
+  ok   J4 the glyph is drawn away from the marker KILLED
+  ok   J5 the glyph size clamp is removed KILLED
+  ok   J6 the glyph pass is disabled KILLED
+  mutants: 6 killed, 0 survived, 0 harness errors
+  ok   J   every planted defect was caught
+
+PASS  75 passed, 0 failed
+PRESENTATION_ONLY = YES · MULTI_LEG = PER-LEG · UNKNOWN_FALLBACK = GENERIC MARKER · BUSINESS_LOGIC_CHANGED = NO

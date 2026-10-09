@@ -1,0 +1,29 @@
+
+== Router registration + no whole-DB read (source) ==
+
+== Pure View-Model builder (weeklyWorkspaceBuild_) ==
+
+== Filter / sort / pagination determinism ==
+
+== Summary + multi-currency (no cross-currency aggregation) ==
+
+== Filter options + line identity ==
+
+== dataVersion ==
+
+== Server handler (injected io) — timing, requestId, tablesRead, targeted reads ==
+
+== RequestId hardening ==
+
+== Fail-closed (exact-ID / schema) + business-failure never false-success ==
+
+== Foundation client resolver — per-workspace flag, no dual execution, requestId, abort ==
+
+== Business failure + malformed response cannot become false-success ==
+
+== Cache TTL=0 + no write methods invoked + other workspaces unaffected ==
+
+== Legacy ↔ Workspace parity (fixtures) ==
+
+----------------------------------------
+API WEEKLY WORKSPACE: 66 passed, 0 failed

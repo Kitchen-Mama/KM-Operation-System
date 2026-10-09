@@ -1,0 +1,623 @@
+
+== A — the census runs read-only, and says so in numbers it measured ==
+ok   A0  the census does not throw against a positive-residual world
+ok   A1  it reports dry_run, zero writes and zero writer calls
+ok   A1a and that it called neither Generate, nor Submit, nor a migration
+ok   A1b MEASURED ON THE SHEETS — every table in the world, including the five added here, has zero writes
+ok   A2  the generation flag is false
+ok   A3  no census-level predicate failed
+ok   A4  at least one scope was examined
+ok   A5  NO candidate is selected — that is a person's act, not a diagnostic's
+ok   A5a and the whole result is marked proposal_only
+ok   A6  the exposure equation is stated in full, all three subtrahends
+ok   A7.1 the census source contains no appendRow (comments and string literals stripped)
+ok   A7.2 the census source contains no deleteRow (comments and string literals stripped)
+ok   A7.3 the census source contains no deleteRows (comments and string literals stripped)
+ok   A7.4 the census source contains no insertRow (comments and string literals stripped)
+ok   A7.5 the census source contains no insertRows (comments and string literals stripped)
+ok   A7.6 the census source contains no moveRows (comments and string literals stripped)
+ok   A7.7 the census source contains no insertSheet (comments and string literals stripped)
+ok   A7.8 the census source contains no deleteSheet (comments and string literals stripped)
+ok   A7.9 the census source contains no removeSheet (comments and string literals stripped)
+ok   A7.10 the census source contains no setFormula (comments and string literals stripped)
+ok   A7.11 the census source contains no setName (comments and string literals stripped)
+ok   A7.12 the census source contains no clearContents (comments and string literals stripped)
+ok   A7.13 the census source contains no Utilities.getUuid (comments and string literals stripped)
+ok   A7.14 the census source contains no SpreadsheetApp.flush (comments and string literals stripped)
+ok   A7.15 the census source contains no DriveApp (comments and string literals stripped)
+ok   A7.16 the census source contains no MailApp (comments and string literals stripped)
+ok   A7.17 the census source contains no UrlFetchApp (comments and string literals stripped)
+ok   A7.18.1a setValue( appears exactly 2 time(s) in the whole file
+ok   A7.18.1b and every one of them is inside RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL / S1_movRollback_ - R4E's single-cell repair and its rollback
+ok   A7.18.2a setValues( appears exactly 1 time(s) in the whole file
+ok   A7.18.2b and every one of them is inside S1_remRollback_ - R4H's removal rollback, which restores all fifteen cells at once
+ok   A7.18.3a clearContent( appears exactly 1 time(s) in the whole file
+ok   A7.18.3b and every one of them is inside RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL - R4H's removal, which empties exactly one range
+ok   A7.18.4a LockService appears exactly 2 time(s) in the whole file
+ok   A7.18.4b and every one of them is inside S1_remAcquireLock_ - the one place a script lock is taken
+ok   A7.19.1a RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS is extractable
+ok   A7.19.1b RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS reaches no write API, no lock and no getRange at all
+ok   A7.19.2a RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS is extractable
+ok   A7.19.2b RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS reaches no write API, no lock and no getRange at all
+ok   A7.19.3a RUN_S1_SUBMIT_READINESS_CENSUS is extractable
+ok   A7.19.3b RUN_S1_SUBMIT_READINESS_CENSUS reaches no write API, no lock and no getRange at all
+ok   A7.19.4a RUN_S1_MANIFEST_P is extractable
+ok   A7.19.4b RUN_S1_MANIFEST_P reaches no write API, no lock and no getRange at all
+ok   A7.19.5a RUN_S1_MANIFEST_S is extractable
+ok   A7.19.5b RUN_S1_MANIFEST_S reaches no write API, no lock and no getRange at all
+ok   A7.19.6a RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC is extractable
+ok   A7.19.6b RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC reaches no write API, no lock and no getRange at all
+ok   A7.19.7a RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS is extractable
+ok   A7.19.7b RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS reaches no write API, no lock and no getRange at all
+ok   A7.19.8a RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST is extractable
+ok   A7.19.8b RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST reaches no write API, no lock and no getRange at all
+ok   A7.19.9a RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS is extractable
+ok   A7.19.9b RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS reaches no write API, no lock and no getRange at all
+ok   A7.19.10a RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST is extractable
+ok   A7.19.10b RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST reaches no write API, no lock and no getRange at all
+ok   A7.19.11a RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST is extractable
+ok   A7.19.11b RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST reaches no write API, no lock and no getRange at all
+ok   A7.19.12a RUN_S1_CONTROLLED_GENERATE_PREFLIGHT is extractable
+ok   A7.19.12b RUN_S1_CONTROLLED_GENERATE_PREFLIGHT reaches no write API, no lock and no getRange at all
+ok   A7.20 twenty public entry points in total
+ok   A7.20.1 and each of the three that TAKE OPTIONS and may write gates on `opts.execute !== true`, by identity
+ok   A7.20.2 and each of the three that TAKE OPTIONS and may write gates on `opts.execute !== true`, by identity
+ok   A7.20.3 and each of the three that TAKE OPTIONS and may write gates on `opts.execute !== true`, by identity
+ok   A7a it READS the flag …
+ok   A7b … and never assigns it
+ok   A7c nor the activation allowlist
+ok   A8.1 and it never CALLS handleGenerateWeeklyAiPlanDraft_ — it is named in prose only
+ok   A8.2 and it never CALLS sadSubmitToShippingPlansCore_ — it is named in prose only
+ok   A8.3 and it never CALLS handleSubmitAllocationDraftsToShippingPlans_ — it is named in prose only
+ok   A8.4 and it never CALLS shippingPlanCommitFromLines_ — it is named in prose only
+ok   A8.5 the production generator is CALLED from exactly one site in the whole file
+ok   A8.6 and the controlled capability is MINTED at exactly one site
+ok   A8.6a the one site is S1_cgProductionCall_, and it is extractable
+ok   A8.6b the generator call is inside it, once
+ok   A8.6c and so is the mint
+ok   A8.6d.1 RUN_S1_CONTROLLED_GENERATE_PREFLIGHT does not call the generator itself
+ok   A8.6e.1 nor mint a capability
+ok   A8.6d.2 RUN_S1_CONTROLLED_GENERATE_EXECUTE does not call the generator itself
+ok   A8.6e.2 nor mint a capability
+ok   A8.6d.3 RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE does not call the generator itself
+ok   A8.6e.3 nor mint a capability
+ok   A8.6d.4 RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK does not call the generator itself
+ok   A8.6e.4 nor mint a capability
+ok   A8.6d.5 RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK does not call the generator itself
+ok   A8.6e.5 nor mint a capability
+ok   A8.6d.6 RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST does not call the generator itself
+ok   A8.6e.6 nor mint a capability
+ok   A8.6d.7 RUN_S1_MANIFEST_P does not call the generator itself
+ok   A8.6e.7 nor mint a capability
+ok   A8.6d.8 RUN_S1_MANIFEST_S does not call the generator itself
+ok   A8.6e.8 nor mint a capability
+ok   A8.6d.9 S1_cgReadback_ does not call the generator itself
+ok   A8.6e.9 nor mint a capability
+ok   A8.6d.10 S1_cgObserve_ does not call the generator itself
+ok   A8.6e.10 nor mint a capability
+ok   A8.6d.11 S1_cgIdempotency_ does not call the generator itself
+ok   A8.6e.11 nor mint a capability
+ok   A8.6d.12 S1_cgClassify_ does not call the generator itself
+ok   A8.6e.12 nor mint a capability
+ok   A8.6d.13 S1_pfInputEvidence_ does not call the generator itself
+ok   A8.6e.13 nor mint a capability
+ok   A8.6d.14 S1_pfClassify_ does not call the generator itself
+ok   A8.6e.14 nor mint a capability
+ok   A8.6d.15 S1_pfExpectedIdentities_ does not call the generator itself
+ok   A8.6e.15 nor mint a capability
+ok   A8.6d.16 S1_pfProtectedSurfaces_ does not call the generator itself
+ok   A8.6e.16 nor mint a capability
+ok   A8.6d.17 S1_ai2Search_ does not call the generator itself
+ok   A8.6e.17 nor mint a capability
+ok   A8.6d.18 S1_ai2HeaderFacts_ does not call the generator itself
+ok   A8.6e.18 nor mint a capability
+ok   A8.6d.19 S1_ai2PairCompleteness_ does not call the generator itself
+ok   A8.6e.19 nor mint a capability
+ok   A8.6d.20 S1_ai2Reconciliation_ does not call the generator itself
+ok   A8.6e.20 nor mint a capability
+ok   A8.6d.21 S1_ai2Classify_ does not call the generator itself
+ok   A8.6e.21 nor mint a capability
+ok   A8.6d.22 S1_ai2KeyDiff_ does not call the generator itself
+ok   A8.6e.22 nor mint a capability
+ok   A8.7.1a S1_cgProductionCall_ is extractable
+ok   A8.7.1b S1_cgProductionCall_ reaches no write API of its own
+ok   A8.7.2a S1_cgObserve_ is extractable
+ok   A8.7.2b S1_cgObserve_ reaches no write API of its own
+ok   A8.7.3a S1_cgReadback_ is extractable
+ok   A8.7.3b S1_cgReadback_ reaches no write API of its own
+ok   A8.7.4a S1_cgClassify_ is extractable
+ok   A8.7.4b S1_cgClassify_ reaches no write API of its own
+ok   A8.7.5a S1_cgIdempotency_ is extractable
+ok   A8.7.5b S1_cgIdempotency_ reaches no write API of its own
+ok   A8.7.6a S1_cgAuthorizationAudit_ is extractable
+ok   A8.7.6b S1_cgAuthorizationAudit_ reaches no write API of its own
+ok   A8.7.7a S1_cgBaselineDrift_ is extractable
+ok   A8.7.7b S1_cgBaselineDrift_ reaches no write API of its own
+ok   A8.7.8a S1_cgPermittedWriteSet_ is extractable
+ok   A8.7.8b S1_cgPermittedWriteSet_ reaches no write API of its own
+ok   A8.7.9a S1_cgTableSnapshot_ is extractable
+ok   A8.7.9b S1_cgTableSnapshot_ reaches no write API of its own
+ok   A8.7.10a S1_cgRetryContract_ is extractable
+ok   A8.7.10b S1_cgRetryContract_ reaches no write API of its own
+ok   A8.7.11a S1_cgFinishExecute_ is extractable
+ok   A8.7.11b S1_cgFinishExecute_ reaches no write API of its own
+ok   A8.7.12a S1_cgFinishPreflight_ is extractable
+ok   A8.7.12b S1_cgFinishPreflight_ reaches no write API of its own
+ok   A8.7.13a S1_cgOnceAuthorizationCheck_ is extractable
+ok   A8.7.13b S1_cgOnceAuthorizationCheck_ reaches no write API of its own
+ok   A8.7.14a S1_cgFinishOnce_ is extractable
+ok   A8.7.14b S1_cgFinishOnce_ reaches no write API of its own
+ok   A8.7.15a S1_pfExpectedIdentities_ is extractable
+ok   A8.7.15b S1_pfExpectedIdentities_ reaches no write API of its own
+ok   A8.7.16a S1_pfTargetUniverse_ is extractable
+ok   A8.7.16b S1_pfTargetUniverse_ reaches no write API of its own
+ok   A8.7.17a S1_pfProtectedSurfaces_ is extractable
+ok   A8.7.17b S1_pfProtectedSurfaces_ reaches no write API of its own
+ok   A8.7.18a S1_pfInputEvidence_ is extractable
+ok   A8.7.18b S1_pfInputEvidence_ reaches no write API of its own
+ok   A8.7.19a S1_pfClassify_ is extractable
+ok   A8.7.19b S1_pfClassify_ reaches no write API of its own
+ok   A8.7.20a S1_pfFinish_ is extractable
+ok   A8.7.20b S1_pfFinish_ reaches no write API of its own
+ok   A8.7.21a S1_pfRetryContract_ is extractable
+ok   A8.7.21b S1_pfRetryContract_ reaches no write API of its own
+ok   A8.7.22a S1_ai2KeyDiff_ is extractable
+ok   A8.7.22b S1_ai2KeyDiff_ reaches no write API of its own
+ok   A8.7.23a S1_ai2HeaderFacts_ is extractable
+ok   A8.7.23b S1_ai2HeaderFacts_ reaches no write API of its own
+ok   A8.7.24a S1_ai2LineFacts_ is extractable
+ok   A8.7.24b S1_ai2LineFacts_ reaches no write API of its own
+ok   A8.7.25a S1_ai2LineSelfConsistency_ is extractable
+ok   A8.7.25b S1_ai2LineSelfConsistency_ reaches no write API of its own
+ok   A8.7.26a S1_ai2Search_ is extractable
+ok   A8.7.26b S1_ai2Search_ reaches no write API of its own
+ok   A8.7.27a S1_ai2PairCompleteness_ is extractable
+ok   A8.7.27b S1_ai2PairCompleteness_ reaches no write API of its own
+ok   A8.7.28a S1_ai2Reconciliation_ is extractable
+ok   A8.7.28b S1_ai2Reconciliation_ reaches no write API of its own
+ok   A8.7.29a S1_ai2Classify_ is extractable
+ok   A8.7.29b S1_ai2Classify_ reaches no write API of its own
+ok   A8.7.30a S1_ai2Finish_ is extractable
+ok   A8.7.30b S1_ai2Finish_ reaches no write API of its own
+ok   A8.7.31a S1_ai2RetryContract_ is extractable
+ok   A8.7.31b S1_ai2RetryContract_ reaches no write API of its own
+ok   A8.7.32a S1_ai2FinishAcceptance_ is extractable
+ok   A8.7.32b S1_ai2FinishAcceptance_ reaches no write API of its own
+ok   A8.7.33a RUN_S1_CONTROLLED_GENERATE_PREFLIGHT is extractable
+ok   A8.7.33b RUN_S1_CONTROLLED_GENERATE_PREFLIGHT reaches no write API of its own
+ok   A8.7.34a RUN_S1_CONTROLLED_GENERATE_EXECUTE is extractable
+ok   A8.7.34b RUN_S1_CONTROLLED_GENERATE_EXECUTE reaches no write API of its own
+ok   A8.7.35a RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE is extractable
+ok   A8.7.35b RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE reaches no write API of its own
+ok   A8.7.36a RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK is extractable
+ok   A8.7.36b RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK reaches no write API of its own
+ok   A8.7.37a RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK is extractable
+ok   A8.7.37b RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK reaches no write API of its own
+ok   A8.7.38a RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST is extractable
+ok   A8.7.38b RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST reaches no write API of its own
+
+== B — a positive residual is found, and every number comes from the shipped authority ==
+ok   B0  the frozen SKU appears in the census output
+ok   B1  under the exact four-axis identity
+ok   B1a and the axes are all four, never three
+ok   B2  the recommendation state is NONZERO
+ok   B2a recommended 900, from the furthest cumulative window
+ok   B2b qualifying MANUAL planned 520
+ok   B2c residual 380 = 900 - 520, from weeklyAiPlanNoActionDecision_
+ok   B2d and production classifies it as RESIDUAL_REMAINS — not a no-action at all
+ok   B2e so production would NOT answer no-action
+ok   B3  no AI has planned anything for this scope yet
+ok   B3a and the AI quantity comes from the exposure authority, not a second traversal
+ok   B4  the row belongs to the accepted run's date
+ok   B4a and the freshness is in the accepting set at the pinned hour
+ok   B5  all four cumulative windows are reported as stored
+ok   B6  the factory pool is warehouse_id||sku
+ok   B6a current 2000 - reserved 100 = physically available 1900
+ok   B6b the active draft exposure is 520, ALL of it manual — manual and AI are told apart
+ok   B6c no shipping-plan exposure yet
+ok   B6d available_to_allocate = 1900 - 520 - 0 = 1380
+ok   B6e the shipment stage is the RESERVED side of the balance, named rather than omitted
+ok   B7  the proposal is min(residual 380, available 1380) = 380 — the residual, not the recommendation
+ok   B7a and nothing is clamped, because the pool covers it
+ok   B7b so a controlled Generate WOULD write
+ok   B8  it is a candidate …
+ok   B8a … with no refusal reason
+ok   B8b and it carries its own proofs, individually
+ok   B8c every one of which passed
+ok   B9  a ranked list is returned
+ok   B9a and every entry in it is marked proposal_only
+ok   B9b the verdict says candidates exist AND that authorization is still required
+
+== C — the manual rows are protected, and the census can prove which ones ==
+ok   C1  both manual Route A and Route B lines are listed as protected
+ok   C1a each under MANUAL provenance, from 69_'s classifier
+ok   C1b and each names the exact header AND line identity it is protecting
+ok   C2  no AI exposure row exists for this scope yet
+ok   C2a so a generation would supersede nothing — an empty list, not an unavailable one
+ok   C3  the manual-protection proof holds
+ok   C4  residual = recommended - qualifying manual, exactly
+ok   C4a and the proposal is strictly less than the recommendation, because 520 is already planned
+
+== D — an existing AI draft is netted as EXPOSURE and named as a supersede candidate ==
+ok   D1  the qualifying MANUAL quantity is UNCHANGED by the AI draft — a run does not net against itself
+ok   D1a so the residual is unchanged at 380
+ok   D2  while the AI quantity is reported SEPARATELY as 100 — excluded from the residual, never hidden
+ok   D2a and the pool splits the exposure 520 manual / 100 AI
+ok   D2b available falls to 1900 - 620 = 1280, because the AI draft claims real cartons
+ok   D3  the proposal is still the residual, since 1280 still covers it
+ok   D4  the existing AI identity is named as a supersede candidate
+ok   D4a by exact allocation_draft_id
+ok   D5  and both manual identities are still protected
+ok   D6  a SUBMITTED AI draft contributes no AI exposure — it is history
+ok   D6a and the pool is back to 1380
+ok   D6b nor is it a supersede candidate
+ok   D7  another marketplace's AI draft is NOT this scope's planned quantity
+ok   D7a but it IS the same shared factory pool: 1900 - 520 - 300 = 1080
+ok   D7b the pool counts it, because a carton does not care which marketplace claimed it
+ok   D7c the residual still fits, so the proposal is unchanged
+
+== E — the factory pool decides the proposal, and an unreadable pool is never a zero ==
+ok   E1  residual 380 against available 700 - 520 = 180
+ok   E1a the proposal is 180 and it declares that it clamped
+ok   E1b it is still a candidate — a clamp is a legitimate outcome, not a refusal
+ok   E1c and the proposal is within availability
+ok   E2  the standing manual plan consumes the whole pool
+ok   E2a so it is NOT a candidate …
+ok   E2b … and the availability condition is named
+ok   E2c nothing would be written
+ok   E3  520 already planned against 300 physical is MINUS 220 — the size of the breach is visible
+ok   E3a and it is refused
+ok   E3b with a proposal of zero, never a negative allocation
+ok   E4  an absent factory_stock row yields NO pool object …
+ok   E4a … and the missing-pool condition is named
+ok   E4b the proposal is NULL — an unknown pool is never read as an unlimited one, nor as an empty one
+ok   E5.1 a blank current stock → not a candidate, nothing would be written
+ok   E5.2 a non-numeric current stock → not a candidate, nothing would be written
+ok   E5.3 a null current stock → not a candidate, nothing would be written
+ok   E6  another COMPANY's plan is not this scope's qualifying plan …
+ok   E6a … but it IS the same pool: 1900 - (520 + 900) = 480
+ok   E6b the residual still fits inside 480
+ok   E6c 1000 - 520 - 400 = 80 …
+ok   E6d … so the other company's claim CLAMPS this one — no ownership partition anywhere
+ok   E7  a pending-approval plan holds 300 of exposure
+ok   E7a so available is 1900 - 520 - 300 = 1080
+ok   E7b once transferred_shipment_id is stamped the plan STOPS counting …
+ok   E7c … because those units are inside fac_reserved_stock and already subtracted. No double count.
+
+== F — a scope with no residual, or a recommendation that is not current, is not a candidate ==
+ok   F1  the proved FULLY_COVERED world has residual 0 …
+ok   F1a … so it is not a positive-residual candidate
+ok   F1b and the residual condition names itself
+ok   F1c production still classifies it as the proved no-action class — the two rounds agree
+ok   F2  a blank furthest window is MISSING
+ok   F2a the residual is NULL and it is not a candidate — a blank is never read as a zero
+ok   F2b the readiness condition is named
+ok   F3.1 calculation_status PENDING as the ONLY row → the whole census STOPs on the run
+ok   F3.1a and it reports no candidate at all
+ok   F3.2 calculation_status NONE as the ONLY row → the whole census STOPs on the run
+ok   F3.2a and it reports no candidate at all
+ok   F3.3 calculation_status BLOCKED as the ONLY row → the whole census STOPs on the run
+ok   F3.3a and it reports no candidate at all
+ok   F3b.1 a PENDING scope beside a READY one is still REPORTED, not dropped
+ok   F3b.1a and it is refused, naming readiness
+ok   F3b.1b as MISSING_RECOMMENDATION with a NULL residual — never a zero
+ok   F3b.1c and the examined count includes it
+ok   F3b.2 a NONE scope beside a READY one is still REPORTED, not dropped
+ok   F3b.2a and it is refused, naming readiness
+ok   F3b.2b as MISSING_RECOMMENDATION with a NULL residual — never a zero
+ok   F3b.2c and the examined count includes it
+ok   F3b.3 a BLOCKED scope beside a READY one is still REPORTED, not dropped
+ok   F3b.3a and it is refused, naming readiness
+ok   F3b.3b as MISSING_RECOMMENDATION with a NULL residual — never a zero
+ok   F3b.3c and the examined count includes it
+ok   F3c a mixed-date snapshot STOPS the census …
+ok   F3c1 … under the freshness authority's own PARTIAL_SNAPSHOT_BLOCKED state
+ok   F3c2 with no candidate and no ranking — an incomplete snapshot yields no evidence, not weak evidence
+ok   F3c3 and nothing selected
+ok   F3d the census carries an explicit accounting for identities the authority does not return
+ok   F3d1 which marks them, rather than omitting them
+ok   F3d2 and the examined count is the sum of both lists, so it cannot exceed what is reported
+ok   F3e a gap row with no SKU is COUNTED as a malformed identity, not skipped
+ok   F3e1 and it STOPS the census, because a row nobody can identify is not a row nobody needs
+ok   F4  past the completion window, a yesterday-only snapshot STOPS the census
+ok   F4a naming the freshness gate
+ok   F4b and no candidate is reported at all
+ok   F4c while INSIDE the refresh window the same snapshot is accepted — R4-A2-R1 §4 stays fixed
+ok   F5  a census run with the flag already TRUE refuses
+ok   F5a naming the flag
+
+== G — Submit readiness is a SEPARATE census with a SEPARATE verdict ==
+ok   G0  the submit census does not throw with no draft named
+ok   G1  with no allocation_draft_id it reports the CONTRACT and says so — not a readiness verdict
+ok   G1a zero writes, zero writer calls, Submit not called
+ok   G1b measured on the sheets
+ok   G1c and it states that it authorizes nothing
+ok   G2  the router action is named
+ok   G2a the core is named
+ok   G2b and the ONE shipping_plans authority is named
+ok   G3.1 the refusal INPUT_MISSING_DRAFT_IDS exists in 16_'s source
+ok   G3.2 the refusal LOCK_ERROR exists in 16_'s source
+ok   G3.3 the refusal IN_PROGRESS_SAME_EXECUTION_KEY exists in 16_'s source
+ok   G3.4 the refusal HEADER_NOT_FOUND exists in 16_'s source
+ok   G3.5 the refusal DRAFT_CANCELLED exists in 16_'s source
+ok   G3.6 the refusal DRAFT_EXPIRED_SUPERSEDED_BY_NEWER_AI_PLAN exists in 16_'s source
+ok   G3.7 the refusal STATUS_NOT_SUBMITTABLE exists in 16_'s source
+ok   G3.8 the refusal STALE_VERSION exists in 16_'s source
+ok   G3.9 the refusal OPERATOR_PROVENANCE_INCOMPLETE exists in 16_'s source
+ok   G3.10 the refusal PLANNING_CYCLE_MISSING exists in 16_'s source
+ok   G3.11 the refusal ROUTE_INCOMPLETE exists in 16_'s source
+ok   G3.12 the refusal LINEAGE_INCOMPLETE exists in 16_'s source
+ok   G3.13 the refusal NO_LINES exists in 16_'s source
+ok   G3.14 the refusal LINE_ID_MISSING exists in 16_'s source
+ok   G3.15 the refusal DUPLICATE_LINE_ID exists in 16_'s source
+ok   G3.16 the refusal FK_MISMATCH exists in 16_'s source
+ok   G3.17 the refusal DUPLICATE_NATURAL_KEY exists in 16_'s source
+ok   G3.18 the refusal NO_POSITIVE_PLANNED_QTY_LINES exists in 16_'s source
+ok   G3.19 the refusal MIXED_SITE_PAYLOAD exists in 16_'s source
+ok   G3.20 the refusal APPLIED_SCOPE_MISMATCH exists in 16_'s source
+ok   G3.21 the refusal SUBMIT_DRAFT_ALREADY_SUBMITTED exists in 16_'s source
+ok   G3.22 the refusal ROUTE_DESTINATION_UNRESOLVED exists in 16_'s source
+ok   G3.23 the refusal POSTCHECK_FAILED_ROLLED_BACK exists in 16_'s source
+ok   G3.24 the refusal POSTCHECK_FAILED_ROLLBACK_UNVERIFIED exists in 16_'s source
+ok   G4  before Submit: the draft counts and the plan does not
+ok   G4a during: one lock, plan committed and read back BEFORE the draft transitions
+ok   G4b after: `submitted` is terminal, and the two sets are disjoint by status
+ok   G4c after transfer: the plan stops counting and the reservation becomes the authority
+ok   G4d and the ONLY reservation owner is a shipment
+ok   G5  16_ defines a terminal-status set …
+ok   G5a … and `submitted` is in it, which is what makes the two sets disjoint
+ok   G5b and 16_ states the order the census claims
+ok   G6  the submit census runs against a named draft
+ok   G6a and echoes the identity it was asked about
+ok   G6b reading the status and the provenance from the row
+ok   G6c one shippable line totalling 380
+ok   G7  the expected plan total equals the draft total, exactly
+ok   G7a and exactly ONE source row transitions, to a terminal status
+ok   G7b with a total exposure delta of ZERO — the quantity moves stage, it is not created
+ok   G7c the draft counts before and not after
+ok   G7d and the plan counts after and not before
+ok   G8  the plan natural key is the nine dimensions 11_ groups on
+ok   G8a and the census refuses to predict a plan id, because the writer mints it
+ok   G9  the verdict says ready AND that authorization is still required
+ok   G9a with no failed predicate
+ok   G10.1 a CANCELLED draft → STOP, naming the_draft_is_not_terminal
+ok   G10.1a and still zero writes
+ok   G10.2 an EXPIRED draft → STOP, naming the_draft_is_not_terminal
+ok   G10.2a and still zero writes
+ok   G10.3 an ALREADY SUBMITTED draft → STOP, naming the_draft_is_not_terminal
+ok   G10.3a and still zero writes
+ok   G10.4 an unknown status → STOP, naming the_draft_status_is_submittable
+ok   G10.4a and still zero writes
+ok   G10.5 no draft_version at all → STOP, naming the_expected_draft_version_is_known
+ok   G10.5a and still zero writes
+ok   G10.6 a zero planned quantity → STOP, naming the_draft_has_at_least_one_positive_shippable_line
+ok   G10.6a and still zero writes
+ok   G10.7 a blank planned quantity → STOP, naming the_draft_has_at_least_one_positive_shippable_line
+ok   G10.7a and still zero writes
+ok   G10.8 a terminal line status → STOP, naming the_draft_has_at_least_one_positive_shippable_line
+ok   G10.8a and still zero writes
+ok   G10.9 a line with no id → STOP, naming every_shippable_line_carries_an_id
+ok   G10.9a and still zero writes
+ok   G10.10 a system draft with no calculation lineage → STOP, naming the_provenance_the_core_demands_is_present
+ok   G10.10a and still zero writes
+ok   G11 a draft that does not exist is a named refusal, not an empty success
+
+== H — two manifests, two authorizations, and neither implies the other ==
+ok   H1  both manifests are dry-run with zero writes
+ok   H1a and producing them wrote nothing
+ok   H2  they are separately named
+ok   H3  P states in its own text that it does not authorize S
+ok   H3a and S states that it is independent of P
+ok   H3b P lists Submit among the things it does not authorize
+ok   H3c.1 and so is Pending Approval
+ok   H3d.1 in S as well
+ok   H3c.2 and so is Confirm Overage
+ok   H3d.2 in S as well
+ok   H3e S does not authorize any Shipment
+ok   H3f and it says the resulting plan still needs its own approval
+ok   H4  MANIFEST P expects zero of every side effect it must not have
+ok   H4a MANIFEST S expects an exposure delta of zero and no reservation or shipment
+ok   H5  P states that a guard STOP with zero writes is a CORRECT outcome, not a failure
+ok   H6  both rollbacks are marked complete
+ok   H6.generate.1 the generate rollback names aiplExpirationCandidates_
+ok   H6.generate.2 the generate rollback names PASS 1
+ok   H6.generate.3 the generate rollback names ACK_UNKNOWN
+ok   H6.submit.1 the submit rollback names shippingPlanCommitFromLines_
+ok   H6.submit.2 the submit rollback names execution_key
+ok   H6.submit.3 the submit rollback names POSTCHECK_FAILED_ROLLBACK_UNVERIFIED
+ok   H7  aiplExpirationCandidates_ exists in 69_
+ok   H7a 16_ really does bind a journal with the draft before-state
+ok   H7b and it really does have an INDETERMINATE outcome that is not reported as success
+ok   H7c the browser really does hold an ACK_UNKNOWN outcome
+ok   H8  P offers a sentence to sign only on a READY_TO_AUTHORIZE run
+ok   H8a and it carries NO placeholder — see section M for the measured values it carries instead
+ok   H8b a READY sentence still ends by refusing Submit
+ok   H9.1 S's wording contains <allocation_draft_id>
+ok   H9.2 S's wording contains <draft_version>
+ok   H9.3 S's wording contains <execution_key>
+ok   H9.4 S's wording contains <total_planned_qty>
+ok   H9.5 S's wording contains ACK_UNKNOWN
+ok   H9.6 S's wording contains IT DOES NOT AUTHORIZE APPROVAL
+ok   H8c and a READY sentence pins the allowlist to one scope
+ok   H9a and S's wording forbids retrying a timeout
+
+== R — S1-R1: the eligible pair universe, and evidence that fits in its own log ==
+ok   R1  the readability diagnostic does not throw
+ok   R1a dry_run, zero writes, zero writer calls
+ok   R1b Generate, Submit, migration and refresh were all NOT called
+ok   R1c measured on every sheet in the world
+ok   R2  the four required segments, with ONE line per pair and one per eligible scope
+ok   R2a and the largest entry is under the chunk bound the sibling census proved
+ok   R2b s1_gap_failed is emitted only when something failed — an empty failure line is noise
+ok   R2c no per-module deployment row appears in any log entry
+ok   R2d and the payload chunk bound is 3000, not the unmeasured 45000
+ok   R3  the eligible pair universe is exactly the allowlist's distinct (company, country)
+ok   R3a with the four-axis scopes it came from
+ok   R3b named as the allowlist authority, re-gated per entry
+ok   R3c and PRODUCTION's own weeklyAiPlanTargetScopes_ returns the same scope set
+ok   R3d while the foreign pair is NOT a scope production would write — so its readability cannot gate this
+ok   R4  the foreign pair is NOT eligible and NOT readable
+ok   R4a its reason is named, not inferred
+ok   R4b with the freshness authority's OWN sentence, which is the useful part
+ok   R4c and its row count, dates and statuses are on the same line
+ok   R4d while the ELIGIBLE pair is readable and current
+ok   R4e so the root cause is classified as this census's own too-wide universe
+ok   R4f and the next action says why, naming the pair
+ok   R4g with no failed predicate — nothing about the data is blocking
+ok   R5  an ELIGIBLE pair the authority cannot read is DATA_NOT_READY and a STOP
+ok   R5a naming the eligible-pair readability gate
+ok   R5b and naming WHICH eligible pair
+ok   R5c the next action sends it to the Gap Job and forbids starting one here
+ok   R5d and NOW the failure segment is emitted
+ok   R6  an eligible pair with NO gap row is DATA_NOT_READY, not an empty scope
+ok   R6a under its own predicate
+ok   R7  an empty allowlist cannot decide eligibility, so the diagnostic refuses
+ok   R7a naming the universe gate
+ok   R7b and stating that nothing is assumed while eligibility is unknown
+ok   R7c with no pair verdict at all — an unknown universe yields no pair opinions
+ok   R8  the eligible scope is reported at four-axis identity
+ok   R8a with all four cumulative windows as STORED
+ok   R8b none missing, none non-finite, none negative
+ok   R8c and the summary flag, status and state agree
+ok   R8d a blank window is NON-FINITE and the flag falls — a blank is never a zero
+ok   R8e and a negative window is reported as negative
+ok   R9  the production shape now reaches a candidate verdict
+ok   R9a with no failed predicate
+ok   R9b eligible universe = the allowlist pair
+ok   R9c while BOTH table pairs are still enumerated — nothing is hidden
+ok   R9d and the unreadable foreign pair is REPORTED, just not allowed to veto
+ok   R9e per-pair readability is carried for every pair in the table
+ok   R9f and the eligible scope is a candidate with the same numbers as before
+ok   R9g no foreign identity enters the candidate or rejection lists
+ok   R10 an ELIGIBLE pair the authority cannot read still STOPS the census
+ok   R10a naming the eligible-pair gate
+ok   R10b with no candidate and nothing examined
+ok   R10c an empty allowlist STOPS the census too
+ok   R10d naming the universe gate rather than proceeding on the whole table
+ok   R11 the gap table genuinely has no calculation_run_id column
+ok   R11a and the census reports the run id from weeklyAiPlanResolveGapRunLineage_
+ok   R11b naming the script property it actually came from
+ok   R11c so a candidate row carries a real run id instead of a null
+ok   R11d and the readability diagnostic reports the same one
+ok   R12 the deployment is carried as COUNTS, with no per-module row array
+ok   R12a and it says so, naming what it caused
+
+== S — S1-R2: the row grain, and a discovery layer that finds candidates and can execute none ==
+ok   S1  a NULL residual is never FULLY_COVERED_BY_ACTIVE_PLAN
+ok   S1a it is UNKNOWN, and the refusal names the input that was absent
+ok   S1b a BLANK residual is refused the same way — a blank is never a zero
+ok   S1c a null recommended_qty is refused, and named separately
+ok   S1d a null qualifying qty is refused, and named separately
+ok   S1e the proved 160 / 520 / 0 shape IS FULLY_COVERED_BY_ACTIVE_PLAN
+ok   S1f and a valid zero keeps its own class — the split follows the STATE, as 61_ does it
+ok   S1g a positive residual is RESIDUAL_REMAINS, which is not a no-action at all
+ok   S1h a MISSING recommendation stays MISSING
+ok   S1i an unrecognised state is UNKNOWN — a future enum value cannot be absorbed into coverage
+ok   S1j a blank state is a named refusal, not an empty pass
+ok   S1k the pinned state vocabulary is exactly 61_'s WAP_RECOMMENDATION_STATES_ values
+ok   S2  the no-candidate verdict says WHICH universe it examined
+ok   S2a and it is a clean run, not a refusal
+ok   S2b it declares its boundary
+ok   S2c and names the entry point that answers the wider question
+ok   S2d exactly one examined identity was inside the allowlist
+ok   S2e and nothing is activation_ready
+ok   S3  the allowlisted identity is measured at 160 / 520 / 0 …
+ok   S3a … and is the proved no-action class
+ok   S3b it is currently allowlisted
+ok   S3c the NON-allowlisted identity is measured at its OWN 700 / 0 / 700 …
+ok   S3d … and its class is RESIDUAL_REMAINS, not the neighbour's FULLY_COVERED_BY_ACTIVE_PLAN
+ok   S3e neither a null residual nor an inherited class — the exact production defect
+ok   S3f the state is named as this identity's own, and says how it was obtained
+ok   S3g the target set's aggregate answer is preserved …
+ok   S3h … and labelled as being about the whole scope set
+ok   S3i the authorized set really does hold one scope
+ok   S4  a non-allowlisted identity is not a readiness candidate …
+ok   S4a … and is not activation_ready …
+ok   S4b … and the FIRST reason is the allowlist, not a story about readiness
+ok   S4c the gate is a named condition on the row
+ok   S4d and it passes for the identity that is in the allowlist
+ok   S5  the proposal census runs
+ok   S5a and finds the candidate the pair holds
+ok   S5b with no failed predicate
+ok   S5c declaring the discovery boundary
+ok   S5d the non-allowlisted positive-residual scope IS listed
+ok   S5e with its own four quantities
+ok   S5f and its pool, availability and proposed quantity = min(residual, available)
+ok   S5g carrying the run id from the lineage authority, not from the gap row
+ok   S5h the fully-covered identity is not a proposal …
+ok   S5i … and appears in the rejection index with the reason that actually applies to it
+ok   S5j both identities in the pair were examined
+ok   S6  nothing is selected …
+ok   S6a … the whole census is proposal_only …
+ok   S6b … and the listed row is not allowlisted, not activation ready, and requires authorization
+ok   S6c no proposal is activation_ready
+ok   S6d the rows a person would have to move the allowlist for are named
+ok   S6e the boundary is a stated condition, not a comment
+ok   S6f weeklyAiPlanTargetScopes_ still refuses every listed non-allowlisted scope
+ok   S6g and the next action says the allowlist move is its own authorization
+ok   S7  the discovery range is the allowlist's distinct (company, country)
+ok   S7a a scope outside the eligible pairs is never a proposal …
+ok   S7b … and is not examined at all, rather than examined and refused
+ok   S7c the range did not widen to reach it
+ok   S7d an empty allowlist STOPS the proposal census
+ok   S7e naming the range as the thing that failed
+ok   S7f and it examines nothing — it never falls back to the gap table
+ok   S7g an ALL/wildcard entry cannot open the range either
+ok   S7h because the gate is re-asked per entry, exactly as 61_ re-asks it
+ok   S8  the proposal census wrote nothing, counted on every sheet
+ok   S8a and reports both as zero
+ok   S8b Generate, Submit, migration and the Gap Job were none of them called
+ok   S8c and neither the allowlist, the flag nor a script property was modified
+ok   S8d the generation flag was false throughout
+ok   S8e and the allowlist authority still returns the config value it started with
+ok   S8f still exactly one entry
+ok   S8g and the proposal census itself reaches no write API at all
+ok   S9  exactly the named segments, in order, and no payload dump
+ok   S9a with no failure line when nothing failed — an empty one is noise
+ok   S9b every entry is under the chunk bound
+ok   S9c and the whole payload is not logged at all
+ok   S9d a failing run DOES emit s1_proposal_failed
+ok   S9e the rejections are logged as classified counts
+ok   S9f while the complete per-identity list stays on the RETURN VALUE, so nothing disappears
+ok   S9g the readiness census emits the same shape of segments
+ok   S9h and its refusal counts are keyed by the first failed condition
+ok   S10  a payload over the bound emits no chunks at all
+ok   S10a0 the chunk budget is the line budget, not the payload budget
+ok   S10a it says it was withheld
+ok   S10a1 and how many lines it would have been, at its own budget
+ok   S10b and distinguishes withheld from truncated — a cut value is a wrong value
+ok   S10c a payload under the bound is still emitted whole
+ok   S11.1 the row proves the_identity_carries_all_four_axes
+ok   S11.2 the row proves every_schema_fingerprint_this_row_depends_on_is_present
+ok   S11.3 the row proves recommended_qty_is_a_finite_number
+ok   S11.4 the row proves qualifying_manual_planned_qty_is_a_finite_number
+ok   S11.5 the row proves qualifying_ai_exposure_qty_is_a_finite_number
+ok   S11.6 the row proves the_proposed_quantity_is_finite_and_greater_than_zero
+ok   S11a a blank window refuses the recommendation by name
+ok   S11b and its class is MISSING_RECOMMENDATION — never a coverage claim
+ok   S11c a proposed quantity of zero is refused by name
+ok   S12  both censuses measure the identity identically
+ok   S12a differing only in the boundary each declares
+ok   S12b and in whether the allowlist gate is one of the conditions
+ok   S12c while NEITHER calls it activation ready — that needs the gate, in both
+ok   S13  two identities examined …
+ok   S13a … with the per-identity plan quantity still exact from the shared read
+ok   S13b and the allowlisted identity still reads its own 520 from the same one call
+
+== M — S1-R4: MANIFEST P re-measures, freezes a baseline, and a STOP hands over nothing ==
+ok   M1  the manifest runs
+ok   M1c and it is a substantial ledger, not two lines of contract text
+ok   M1d dry-run, zero writes, zero writer calls, no writer constructed
+ok   M1e measured on every sheet in the world
+ok   M2  the candidate census was RE-RUN by the manifest
+ok   M2a and it found candidates with nothing failed
+ok   M2b writing nothing itself
+ok   M2c and still selecting nothing — the allowlist is the choice
+ok   M2d the manifest names its authorities and says none of them is a stored value
+ok   M3  the exact four-axis scope
+ok   M3a the run id, accepted date, status and freshness
+ok   M3b all four windows
+ok   M3c the recommendation, the manual plan, the AI plan and the residual
+ok   M3d the warehouse identity, the headroom, the proposal and the clamp decision
+ok   M3g over a required set worth checking
+ok   M4  uniform deployment, no stale module, flag false, exactly one allowlisted scope

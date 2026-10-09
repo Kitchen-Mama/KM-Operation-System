@@ -1,0 +1,71 @@
+
+=== A — THE ROOT CAUSE: two tools may never share a basename again ===
+  ok   A0 there is more than one capture tool, which is what makes A1 necessary
+  ok   A1 no two capture tools share a basename — an editor tab strip shows the basename and nothing else
+  ok   A1a and the name that caused it is gone from the tree entirely
+  ok   A2 s3r11-interaction-capture.js is prefixed with the round that owns it, so the path and the protocol agree
+  ok   A2 s3r6-read-cost-capture.js is prefixed with the round that owns it, so the path and the protocol agree
+  ok   A2 s3r7-redirect-chain-capture.js is prefixed with the round that owns it, so the path and the protocol agree
+
+=== B — EACH FILE DECLARES WHICH GLOBAL IT CREATES, BEFORE YOU PASTE IT ===
+  ok   B1 the S3-R6 tool names __kmS3R6 in its first twelve lines
+  ok   B2 the S3-R7 tool names __kmS3R7 in its first twelve lines
+  ok   B3 and the S3-R6 header points at its sibling BY PATH, so the wrong file is recoverable without asking
+  ok   B4 and the S3-R7 header does the same in reverse
+  ok   B5 the S3-R6 tool assigns exactly one global, and it is __kmS3R6
+  ok   B6 the S3-R7 tool assigns exactly one global, and it is __kmS3R7
+
+=== C — READ ONLY: neither tool can write, lock or mutate ===
+  ok   C1 S3-R6 contains no POST
+  ok   C2 S3-R6 calls no mutating method
+  ok   C3 S3-R6 takes no lock
+  ok   C4 S3-R6 persists nothing in the browser
+  ok   C5 S3-R6 declares a zero-write contract
+  ok   C1 S3-R7 contains no POST
+  ok   C2 S3-R7 calls no mutating method
+  ok   C3 S3-R7 takes no lock
+  ok   C4 S3-R7 persists nothing in the browser
+  ok   C5 S3-R7 declares a zero-write contract
+  ok   C6 neither tool is referenced by index.html — they are pasted, never shipped
+
+=== D — EXECUTED: the S3-R6 tool defines __kmS3R6 and measures what the protocol asks for ===
+  ok   D1 typeof __kmS3R6 === "object" — the operator's acceptance check
+  ok   D1a __kmS3R6.measure exists
+  ok   D1a __kmS3R6.passive exists
+  ok   D1a __kmS3R6.reset exists
+  ok   D1a __kmS3R6.contract exists
+  ok   D2 measure("COLD", scope) resolves to a pasteable block
+  ok   D3 WARM and REPEAT run the same way — three samples, and the report will not call them a P50
+  ok   D4 the COLD block reports run
+  ok   D4 the COLD block reports action
+  ok   D4 the COLD block reports result
+  ok   D4 the COLD block reports server_ms
+  ok   D4 the COLD block reports client_total_ms
+  ok   D4 the COLD block reports tables_read
+  ok   D4 the COLD block reports rows_returned
+  ok   D4 the COLD block reports wire_bytes
+  ok   D4 the COLD block reports request_id
+  ok   D4a and the COLD/WARM/REPEAT label is on the ROW, not only in the header — a pasted table stays readable once it is out of context
+  ok   D5 the scope is passed through to the Product Strategy workspace read
+  ok   D5a and the site universe read is issued
+  ok   D6 skuDetails.workspace.get was issued
+  ok   D6 productPricing.siteUniverse.get was issued
+  ok   D6 productPricing.workspace.get was issued
+  ok   D6 fcSummary.workspace.get was issued
+  ok   D7 timeline() is an object carrying .request_timeline
+  ok   D8 passive() runs against it
+  ok   D8a and prints the request rows
+  ok   D8b including the totals only the object shape carries
+  ok   D9 and it reads .request_timeline rather than forEach-ing the object — the §12 repair, still in place
+
+=== E — THE TWO TOOLS DO NOT OVERWRITE EACH OTHER ===
+  ok   E1 after loading the S3-R6 tool, __kmS3R6 is an object
+  ok   E1a and __kmS3R7 does not exist yet
+  ok   E2 after loading the S3-R7 tool, __kmS3R7 is an object
+  ok   E3 AND __kmS3R6 SURVIVES — the tools are independent
+  ok   E3a each still has its own methods, so neither is a shell of the other
+  ok   E4 loaded in the reverse order, both globals are still present
+  ok   E4a and both are still themselves
+
+PASS  58 passed, 0 failed
+TOOL_BASENAME_COLLISIONS = 0 · __kmS3R6 = object · __kmS3R7 = object · WRITES = 0

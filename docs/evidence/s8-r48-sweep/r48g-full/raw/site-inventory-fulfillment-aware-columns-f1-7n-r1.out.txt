@@ -1,0 +1,13 @@
+
+== 1-10 PURE column model per fulfillment_model ==
+
+== DOM apply — one container class drives header + body + group span ==
+
+== 16/12 header+body use the SAME model (single container class); alignment by structure not offset ==
+
+== 23-28 presentation-only — no data/DTO/backend/schema/formula change surface ==
+
+== deploy — cache tokens bumped so the change goes live ==
+
+----------------------------------------
+SITE INVENTORY FULFILLMENT-AWARE COLUMNS (F1-7N-R1): 24 passed, 0 failed

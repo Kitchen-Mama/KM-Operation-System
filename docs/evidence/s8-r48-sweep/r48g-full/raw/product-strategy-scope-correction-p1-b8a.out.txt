@@ -1,0 +1,122 @@
+
+=== §A  THE SECURITY TRACK IS DEFERRED, NOT HALF-PRESENT ===
+  ok   A1 removed: services/auth-gateway
+  ok   A2 removed: assets/tests/auth-gateway-contract-sec-a2.test.js
+  ok   A3 removed: assets/tests/auth-gateway-production-readiness-sec-a2r.test.js
+  ok   A4 removed: assets/tests/_sec-a2-harness.js
+  ok   A5 removed: assets/tests/_sec-a2-local-e2e.js
+  ok   A6 removed: assets/tests/_sec-a2r-prod-mode-proof.js
+  ok   A7 removed: docs/planning/SEC_A3_T_TEST_CLOUD_RUNBOOK.md
+  ok   A8 nothing under assets/ still loads or requires the gateway
+  ok   A9 and index.html never did
+  ok   A10 kept: docs/planning/IDENTITY_AND_ACCESS_ARCHITECTURE_SEC_A0.md
+  ok   A11 kept: docs/planning/SEC_A1_IDENTITY_PROTOTYPE_EVIDENCE.md
+  ok   A12 kept: docs/planning/SEC_A2R_PRODUCTION_READINESS_AND_COST_MODEL.md
+  ok   A13 kept: assets/tests/identity-boundary-baseline-sec-a0.test.js
+  ok   A14 kept: assets/tests/identity-verifier-prototype-sec-a1.test.js
+  ok   A15 kept: assets/prototypes/sec-a1/sec-a1-auth-contract.js
+  ok   A16.1 IDENTITY_AND_ACCESS_ARCHITECTURE_SEC_A0.md is marked DEFERRED_TO_P2_A at the top
+  ok   A16.1a and NOT_A_P1_BLOCKER
+  ok   A16.1b and NOT_DEPLOYED
+  ok   A16.1c and NOT_PART_OF_PRODUCT_STRATEGY_RUNTIME
+  ok   A16.2 SEC_A1_IDENTITY_PROTOTYPE_EVIDENCE.md is marked DEFERRED_TO_P2_A at the top
+  ok   A16.2a and NOT_A_P1_BLOCKER
+  ok   A16.2b and NOT_DEPLOYED
+  ok   A16.2c and NOT_PART_OF_PRODUCT_STRATEGY_RUNTIME
+  ok   A16.3 SEC_A2R_PRODUCTION_READINESS_AND_COST_MODEL.md is marked DEFERRED_TO_P2_A at the top
+  ok   A16.3a and NOT_A_P1_BLOCKER
+  ok   A16.3b and NOT_DEPLOYED
+  ok   A16.3c and NOT_PART_OF_PRODUCT_STRATEGY_RUNTIME
+  ok   A17 the SEC-A1 contract prototype is loaded by no page
+
+=== §B  THE PAGE STYLESHEET IS SCOPED TO THE PAGE ===
+  ok   B1 every rule in the sheet is scoped to .psb-page
+  ok   B2 and that is a real sheet, not a stub
+  ok   B3 it declares no :root block
+  ok   B4 no html rule
+  ok   B5 no universal reset — base.css already has one
+  ok   B6 and no body rule beyond the two declared document modes
+  ok   B6.1 `body.presenting` is keyed on a class the board declares and owns
+  ok   B6.2 `body.is-fullscreen` is keyed on a class the board declares and owns
+  ok   B7 the sheet redefines no token that base.css already defines
+  ok   B8 it still has its own private tokens
+  ok   B9 and they are declared on .psb-page, not on :root
+
+=== §C  AND THE PAGES IT USED TO REACH ARE NAMED ===
+  ok   C1 the sheet does style class names other pages also use (23)
+  ok   C2 and not one of them is declared outside .psb-page
+  ok   C3.1 `.panel` is never styled outside the board
+  ok   C3.2 `.col` is never styled outside the board
+  ok   C3.3 `.card` is never styled outside the board
+  ok   C3.4 `.nav` is never styled outside the board
+  ok   C3.5 `.grid` is never styled outside the board
+  ok   C3.6 `.info` is never styled outside the board
+  ok   C3.7 `.kpi` is never styled outside the board
+  ok   C3.8 `.shell` is never styled outside the board
+  ok   C3.9 `.main` is never styled outside the board
+  ok   C4 the sheet is still loaded on every page
+  ok   C5 and still loads LAST, so nothing but the scoping is protecting the other pages
+
+=== §D  THE PAGE LIVES IN THE OPERATION SYSTEM, DISABLED ===
+  ok   D1 the partial is in assets/html/pages
+  ok   D2 the page controller is in assets/js/pages
+  ok   D3 the stylesheet is in assets/css
+  ok   D4.1 module in assets/js/product-strategy: psb-data-contract.js
+  ok   D4.2 module in assets/js/product-strategy: km-product-strategy-site-universe.js
+  ok   D4.3 module in assets/js/product-strategy: km-product-strategy-live-adapter.js
+  ok   D4.4 module in assets/js/product-strategy: psb-selectors.js
+  ok   D4.5 module in assets/js/product-strategy: psb-chart-layout.js
+  ok   D4.6 module in assets/js/product-strategy: psb-board-ui.js
+  ok   D5 every module is loaded by the release
+  ok   D6 and in dependency order, controller last
+  ok   D7 the page is registered in the STAGED section registry
+  ok   D8 the registry is the switch, and it is a literal boolean
+  ok   D9 naming the section it would mount
+  ok   D10 no sidebar item invokes the section — navigation is absent, not merely greyed out
+  ok   D11 only an empty mount point exists
+  ok   D12 and it is empty in the shipped document
+
+=== §E  THE FIXTURE AND THE SHIM STAY OUT OF PRODUCTION ===
+  ok   E1 the fixture exists, in the prototype
+  ok   E2 and index.html does not load it
+  ok   E3 no production module loads the fixture or the token shim
+  ok   E4 the token shim exists, in the prototype
+  ok   E5 and index.html does not load it
+  ok   E6 it says so at the top, where somebody about to link it would read it
+  ok   E7 and imports nothing, so it cannot pull a shared sheet in sideways
+  ok   E8 the shim is scoped too — no :root
+  ok   E9 base.css really does set body{overflow:hidden} — the reason the prototype cannot link it
+  ok   E10 so the prototype links neither shared sheet
+  ok   E11 exactly two sheets: the shim and the board
+
+=== §F  TWO READ ACTIONS, AND NOTHING OPENS A DATABASE BEFORE THE GATE ===
+  ok   F1 PRODUCT_STRATEGY_ENABLED_ is one server-owned boolean
+  ok   F1a with no bypass, query parameter or debug switch beside it
+  ok   F2.1 the API layer names productPricing.workspace.get
+  ok   F2.2 the API layer names productPricing.siteUniverse.get
+  ok   F2a and NO OTHER productPricing action — a third name is a scope change whatever it is called
+  ok   F3 and no write-shaped action name anywhere in it
+  ok   F4 neither the page nor the accessor knows anything about a gateway or a token
+  ok   F5 the accessor uses the existing Operation System transport
+
+=== §G  MUTANTS ===
+  ok   G1 one bare .card rule comes back (caught)
+  ok   G2 a bare .panel rule comes back — ten other partials use that class (caught)
+  ok   G3 a bare .main rule comes back, and index.html has one (caught)
+  ok   G4 a :root block returns, undoing the whole pass in one line (caught)
+  ok   G5 a base.css token is redefined here again (caught)
+  ok   G6 a third document-level body rule is added quietly (caught)
+  ok   G7 a universal reset returns (caught)
+  ok   G8 the staged section is switched on (caught)
+  ok   G9 a sidebar item appears (caught)
+  ok   G10 the feature flag is flipped (caught)
+  ok   G11 index.html starts loading the preview fixture (caught)
+  ok   G12 index.html starts loading the prototype token shim (caught)
+  ok   G13 the gateway directory reappears and something requires it (caught)
+  ok   G14 a deferral marker is dropped from a kept security document (caught)
+  ok   G15 the page controller is loaded before the modules it depends on (caught)
+  ok   G16 the sheet stops being scoped but keeps its own tokens, so only §C would notice (caught)
+
+====================================================================================================
+passed 88  failed 0  |  mutants caught 16  survived 0
+====================================================================================================

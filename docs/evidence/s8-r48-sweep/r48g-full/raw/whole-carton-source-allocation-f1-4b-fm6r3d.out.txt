@@ -1,0 +1,31 @@
+
+== wholeCartonAvailable(x,UPC) = floor(max(0,x)/UPC)*UPC ==
+
+== §13.A — R=2000 UPC=40 O=1149 F>=880 → Overseas 1120, Factory 880, uncovered 0 ==
+
+== §13.B — O=39 (<1 carton) → Overseas allocation 0 (loose never auto-allocated) ==
+
+== §13.C — O=2041 → Overseas 2000 (caps at R), Factory 0 ==
+
+== §13.D — O=1149 F=879 → Overseas 1120, Factory 840, uncovered 40 ==
+
+== §13.E/§2 — every automatic source allocation is a carton multiple + allocated+uncovered == R ==
+
+== §13.F — loose source remainder is NOT consumed (availableQty − allocated stays as loose) ==
+
+== §13.G — a shared physical pool is never double-allocated across competing receivers ==
+
+== §13.H — identical inputs are deterministic / idempotent (input order-independent) ==
+
+== assertions — R must already be a whole-carton multiple; UPC must be a positive integer ==
+
+== §3/§9 CO1100-R — 2000 / UPC 40 / Overseas 1149 / Factory 880 → planned 1120 + 880 (uncovered 0) ==
+
+== §13.F end-to-end — loose 29 overseas units stay visible as raw source availability, NOT auto-shipped ==
+
+== §13.I — Order Planning (MONTHLY) is NOT fanned out and NOT whole-carton decomposed (order_qty init = recommended) ==
+
+== §13.J — a manual order_qty edit is preserved (never overwritten by the execution rule) ==
+
+----------------------------------------
+WHOLE-CARTON SOURCE ALLOCATION (F1-4B-FM6-R3D): 50 passed, 0 failed

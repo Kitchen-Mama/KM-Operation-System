@@ -1,0 +1,3 @@
+FAIL A3  no shipping_history / shipment_history table is declared in any spec or handler
+  exp []
+  got ["../docs/planning/PHASE1_RELEASE_EXECUTION_RUNBOOK_R1.md","../docs/planning/S8_R4A_BROWSER_FATIGUE_RESULTS.md","../docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md"]

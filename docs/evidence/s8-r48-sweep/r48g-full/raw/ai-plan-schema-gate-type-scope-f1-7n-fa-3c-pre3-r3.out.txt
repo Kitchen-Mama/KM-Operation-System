@@ -1,0 +1,10 @@
+
+== A — authorizedTableSpecs is scoped to the requested recommendationType ==
+
+== B — a stale/ABSENT shipping_allocation schema no longer gates a MONTHLY_ORDER draft ==
+
+== C — fail-closed PRESERVED: a stale table that IS written still blocks (no guard weakening) ==
+
+== D — source wiring: 24_ threads the recommendationType into the gate ==
+
+✓ 18 passed

@@ -1,0 +1,103 @@
+
+== A — MODEL A OWNERSHIP, AND NO SECOND AUTHORITY ==
+ok   A1  the contract states CANONICAL_OWNERSHIP_MODEL = A
+ok   A2  no separate promotion table is required, permitted or created
+ok   A3  every mapped field lands in one of the two existing tables — there is no third
+ok   A4  the rejected table is named and refused, not omitted
+ok   A5  identity is server-minted; the browser promo_* id is rejected
+ok   A6  a campaign header is not grouped by free-text name alone
+ok   A7  duration and discountPercent are server-recomputed, never trusted
+ok   A8.1  promotionId is mapped
+ok   A8.2  campaignName is mapped
+ok   A8.3  company is mapped
+ok   A8.4  country is mapped
+ok   A8.5  marketplace is mapped
+ok   A8.6  promotionType is mapped
+ok   A8.7  eventFlag is mapped
+ok   A8.8  startDate is mapped
+ok   A8.9  endDate is mapped
+ok   A8.10  duration is mapped
+ok   A8.11  sku is mapped
+ok   A8.12  marketplaceSkuId is mapped
+ok   A8.13  promoPrice is mapped
+ok   A8.14  regularPrice is mapped
+ok   A8.15  discountPercent is mapped
+ok   A8.16  lps is mapped
+ok   A8.17  specialCondition is mapped
+ok   A8.18  createdAt is mapped
+ok   A9  promotionId is provenance only and may not become a canonical id
+
+== B — THE EXISTING ACTIONS ARE REUSED, AND NO NEW ONE IS PROPOSED ==
+ok   B1  upsertCampaign / upsertCampaignSkuLines are reused; 0 registered
+ok   B2  the missing atomicity of the existing pair is stated, not glossed
+ok   B3  the refusal vocabulary is enumerated
+ok   B4.1  CAMPAIGN_SCOPE_INCOMPLETE is in the refusal vocabulary
+ok   B4.2  MARKETPLACE_SKU_UNRESOLVED is in the refusal vocabulary
+ok   B4.3  PROMOTION_DUPLICATE_IDENTITY is in the refusal vocabulary
+ok   B4.4  PROMOTION_WINDOW_OVERLAP is in the refusal vocabulary
+ok   B4.5  CAMPAIGN_VERSION_CONFLICT is in the refusal vocabulary
+ok   B4.6  NOT_AUTHORIZED is in the refusal vocabulary
+ok   B4.7  FEATURE_DISABLED is in the refusal vocabulary
+ok   B5  an unknown write outcome is held, not retried blind
+ok   B6  nothing is implemented: schema, actions, reads, writes, migration
+
+== C — A ROW THAT IS NOT QUALIFIED CANNOT MOVE A PLANNING NUMBER ==
+ok   C1  local_only, draft, test, cancelled and retired are all INELIGIBLE
+ok   C2  and the three states that MAY plan are named positively
+ok   C3  a blank status is not a lifecycle — the default is refusal, not eligibility
+ok   C4  the downstream repair is declared and gates the write enablement
+
+== D — AUTHORIZATION, BROWSER DATA AND FIRST RELEASE ==
+ok   D1  authorization precedes any DB open, and the gate is OPEN
+ok   D2  not even a local implementation is authorised yet
+ok   D3  a deployed action is not treated as an authorised one
+ok   D4.1  frontend role is named as NOT an authority
+ok   D4.2  localStorage is named as NOT an authority
+ok   D4.3  query parameter is named as NOT an authority
+ok   D4.4  payload is named as NOT an authority
+ok   D5  existing browser records are preserved, export-first
+ok   D6  silent data loss is forbidden
+ok   D7  an export must exist first, and the reset helper is not a migration tool
+ok   D8  a local record is retired only after a server readback
+ok   D9  the first release is read-only
+ok   D10 local overlay rows are labelled local-only, never server truth
+ok   D11 the one question only an operator can answer is recorded as blocking migration
+
+== E — THE CONTRACT'S CLAIMS ABOUT THE CODE, CHECKED AGAINST THE CODE ==
+ok   E1  both reused actions really are routed, read from 01_router.gs and not from prose
+ok   E2  and both handlers exist
+ok   E3  the browser overlay is still the runtime state the contract describes
+ok   E4  NO promotion write was wired into campaign-risk.js under cover of a documentation round
+ok   E5  and no rejected table name entered the runtime as a table
+ok   E6  no Apps Script file mentions the rejected table
+ok   E7  the contamination authority still treats a blank status as eligible — the repair is still open
+ok   E8  the writer still takes its actor from the payload — the authorization gate is still open
+ok   E9  the S-series census points at the contract that answered it
+ok   E10 and so does the P1 → S2 handoff
+ok   E11.1  the handoff still specifies S2-A
+ok   E11.2  the handoff still specifies S2-B
+ok   E11.3  the handoff still specifies S2-C
+
+== F — DRIVEN MUTANTS (each flips a PARSED value and must break its own predicate) ==
+ok   M1  ownership is changed to Model B (caught)
+ok   M2  a separate promotion table is permitted (caught)
+ok   M3  a new table is declared required (caught)
+ok   M4  a field is mapped into a third table (caught)
+ok   M5  draft rows are allowed into planning (caught)
+ok   M6  a blank status becomes eligible again (caught)
+ok   M7  authorization before the DB open is removed (caught)
+ok   M8  production writes are enabled (caught)
+ok   M9  silent deletion of browser records is permitted (caught)
+ok   M10 export-before-migration is downgraded to optional (caught)
+ok   M11 the local overlay is described as shared server truth (caught)
+ok   M12 the first release becomes read/write (caught)
+ok   M13 a new action is declared required (caught)
+ok   M14 the server readback before local retirement is dropped (caught)
+ok   M15 the downstream qualification repair is declared unnecessary (caught)
+ok   M16 a client-minted id becomes canonical (caught)
+ok   M17 headers are grouped by free-text name alone (caught)
+ok   M18 a client-supplied derived value becomes authoritative (caught)
+
+====================================================================================================
+CAMPAIGN PROMOTION RECORD CONTRACT (S2-R1-R1) — passed 87  failed 0  |  mutants caught 18  survived 0
+====================================================================================================

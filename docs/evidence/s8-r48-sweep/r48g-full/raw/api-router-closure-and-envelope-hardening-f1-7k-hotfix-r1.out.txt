@@ -1,0 +1,10 @@
+
+== ROUTER_HANDLER_CLOSURE: every router-dispatched handle*_ is defined in the .gs release set ==
+
+== the 5 unimplemented Weekly-Plan actions are NOT advertised/dispatched by the router ==
+
+== foundation failure-envelope precedence: errors[] > string error (BACKEND_ERROR) > generic ==
+
+== success envelope unchanged ==
+
+✓ 64 passed

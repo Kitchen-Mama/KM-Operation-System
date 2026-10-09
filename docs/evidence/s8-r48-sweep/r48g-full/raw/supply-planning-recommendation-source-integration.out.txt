@@ -1,0 +1,16 @@
+
+== A. Weekly routing → full chain → Plan Builder (recommendedQty 96) ==
+
+== B. Monthly routing → full chain → Plan Builder (CEILING 24, manual_refresh) ==
+
+== C. Reader issues propagation (valid rows continue; issues not lost) ==
+
+== D. Structural fail-closed (propagated, no fallback) ==
+
+== E. demandKey ownership (Ledger-owned; never recomputed; unknown ref fails closed) ==
+
+== F. Purity / determinism ==
+
+== G. Boundary (no persistence write / submit / PO / projection in the integration) ==
+
+All Round 1Q Recommendation Source Integration assertions passed (29 assertions).

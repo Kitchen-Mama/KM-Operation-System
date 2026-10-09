@@ -1,0 +1,27 @@
+ok   E top-level nav order = frozen Phase-1 hierarchy
+ok   F/11 Campaign Performance before SKU Management
+ok   G Pricing Center after SKU Management, before Training Center
+ok   A/B top-level label = Site Inventory (route key ops preserved)
+ok   A old generic "Inventory" top-level label removed
+ok   C page heading = Site Inventory Monitor
+ok   C old page heading removed
+ok   D Site Inventory icon communicates site/storefront (🏬), not the generic box
+ok   H Pricing Center label with internal routing key data-menu-id="carrier" preserved
+ok   23 toggleMenu(carrier) key unchanged
+ok   14 Carrier Rate Card real route preserved under Pricing Center
+ok   old "Carrier / Route" visible label removed (provenance comment may retain the name)
+ok   15/I Container Rate Card = Soon placeholder (no fabricated route)
+ok   16/I Warehouse Pricing = Soon placeholder (no fabricated route)
+ok   J Shipping Management "Stage 2" menu row removed
+ok   23 route key preserved: showSection\('ops'\)
+ok   23 route key preserved: showSection\('global-logistics-map'\)
+ok   23 route key preserved: showSection\('skuDetails'\)
+ok   23 route key preserved: showSection\('campaign-risk'\)
+ok   23 route key preserved: showSection\('request-order-draft'\)
+ok   K completeness surfaced per shipment (R8C: page-wide banner replaced by per-shipment issue detail)
+ok   K secondary copy explains historical/partial data; records remain available
+ok   K old wiring-implying copy removed
+ok   L/9 warning CONDITION unchanged (no shipment_routes and/or no shipment_events rows)
+ok   L warning visibility logic preserved (only fires when data is genuinely incomplete)
+
+25 passed, 0 failed

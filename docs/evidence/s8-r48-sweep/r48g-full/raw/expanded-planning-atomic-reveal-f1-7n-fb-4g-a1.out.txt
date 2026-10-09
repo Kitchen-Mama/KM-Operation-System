@@ -1,0 +1,144 @@
+
+== §B — THE PRE MEASUREMENT, ON THE COMMIT THIS ROUND STARTED FROM ==
+ok   B1  the route row is painted at t=0, before the carrier catalogue exists
+ok   B2  and the Method options are REBUILT at t=120 — a second, correcting paint
+ok   B3  and the Expected Arrival is recomputed in that same later frame
+ok   B4  §B.5 the half-built window is real and measured, not inferred
+ok   B5  even a CACHED catalogue produced two paints — the flicker was not a cold-start artefact
+
+== §C — THE READINESS CONTRACT (one owner, terminal means terminal) ==
+ok   C1  §C five named states — no sixth "probably done"
+ok   C1a and ABANDONED is not a terminal readiness — nothing is revealed for it
+ok   C2  §C READY / EMPTY / ERROR are terminal; LOADING is the only state that waits
+ok   C3  a loaded gap scope is READY
+ok   C4  a scope with no stored rows is a TERMINAL empty, never a permanent skeleton
+ok   C5  §C a read error is TERMINAL and keeps its typed error — not swallowed into an empty panel
+ok   C5a and a TIMEOUT is reported as a timeout, never as a scope problem
+ok   C6  in flight is LOADING
+ok   C7  the legacy synchronous table has nothing to wait for
+ok   C8  the workspace cutover path reports its own error state
+ok   C9  §C without the read model there are no warehouse candidates — not ready
+ok   C10 §C a hydration still in flight can still replace the route — not ready
+ok   C11 §C without the catalogue the Method and the ETA are both still provisional — not ready
+ok   C12 §C all four inputs settled -> READY
+ok   C13 §C a catalogue failure is TERMINAL and named — the picker can print the code and a Retry
+ok   C14 §C a catalogue held for another station is terminal for THIS one — never an endless wait
+
+== §H.1–§H.3 — THE BARRIER, IN BOTH ORDERS AND IN A TIE ==
+ok   H1  Recommendation ready at t=40 is PAINTED at t=40 — it waits for nothing else
+ok   H1a and the Execution Plan appears on its own clock at t=120
+ok   H1b the route is painted exactly ONCE, from a settled catalogue
+ok   H1c and never corrected afterwards — no second paint at all
+ok   H2  carrier fast, Recommendation slow: the Execution Plan does NOT wait for the summary either
+ok   H2a and it is still built exactly once, from a settled catalogue
+ok   H3  when they DO settle together they still appear together — coincidence, no longer a constraint
+ok   H3a §H.20 exactly ONE render frame per panel
+
+== §H.4 — A LEGITIMATE ZERO IS DATA ==
+ok   H4  §C the recommendation readiness verdict is invariant to every quantity — a 0 cannot make it EMPTY
+ok   H4a a stored 0 survives as 0; only genuinely absent values become null
+ok   H4b a stored suggested qty of 0 is READY with the value 0 — not EMPTY, not NONE
+ok   H4s STALE SCOPE: a stored 0 from another scope is PENDING, not a READY 0
+
+== §H.5–§H.7 — WHAT "READY" HAS TO COVER ==
+ok   H5  a SKU whose panel holds routes still waits for its pickers and catalogue
+ok   H5a a zero recommendation paints NO route, shows the empty state once, and still updates the total
+ok   H6  the persisted H4 route reaches its FIRST paint already carrying sea (普船海卡) and 800
+ok   H6a in the reveal frame — never before the catalogue that resolves its label
+ok   H6b with the Execution Plan's own readiness terminal at that moment
+ok   H7  §C a lead time nobody configured is an UNAVAILABLE terminal answer — the catalogue answered, so execution is READY
+
+== §H.8–§H.9 — A SETTLED FAILURE IS AN ANSWER ==
+ok   H8  a Recommendation ERROR is shown when it SETTLES, not when its neighbour does
+ok   H8a and each panel shows its own outcome — a typed error beside a real plan, never a permanent skeleton
+ok   H9  an Execution ERROR is named rather than blank, beside a successful summary
+ok   H9a one frame each — an error is not a reason to paint twice
+
+== §H.10–§H.12 — STALE GENERATIONS CANNOT PAINT ==
+ok   H10 a response for the PREVIOUS sku is refused by generation
+ok   H10a and only the sku actually open is ever painted
+ok   H11 a response from a station the user has left is refused by scope
+ok   H11a so a re-Search cannot be painted over by the previous station
+ok   H12 after a collapse a late response has no generation to land in
+ok   H12a and nothing re-opens the row the user closed
+ok   H12b a reveal already scheduled is dropped if the row is collapsed before its frame runs
+
+== §E / §H.13–§H.17 — THE PERFORMANCE CONTRACT, ON THE SHIPPED REGISTRY ==
+ok   H14 the barrier calls the SAME deduped per-scope loader Search calls — it introduces no new endpoint
+ok   H14a §E.3 nothing in either barrier issues a request of its own — not one new round trip
+ok   H16 §E.5 the barrier never re-runs the allocation hydrate — it only observes the one Search already ran
+ok   H17 §D.3 no timer, no interval, no polling loop anywhere in the barrier
+ok   H17a and no sequential await — the two sources are never chained
+ok   H17b the reveal is scheduled on a render frame, which is what makes it ONE paint
+ok   E6  each panel is revealed at its OWN readyAt + one frame, in every ordering — never max() of the pair
+ok   E10 a fully warm scope reveals both in the SAME frame the panel was inserted — no barrier defeats a cache
+ok   E7  the skeletons are in the first frame's markup and are replaced inside that frame — present, never lingering
+
+== §H.18–§H.19 / §F — WHAT THE SHELL SHOWS AND WHAT IT REFUSES ==
+ok   F1  the pending Execution Plan shows a route-row-shaped skeleton
+ok   H18 + Add Route is DISABLED and unwired while the panel is a shell
+ok   H18a and fully operable once revealed
+ok   F2  §F no "Loading methods…" select is ever shown
+ok   F2a and no half-built route controls at all — nothing to mis-edit
+ok   F3  §F the Total is not shown as a fabricated 0 while loading — it appears with the routes it totals
+ok   F3a the routes container itself only exists once there are correct routes to put in it
+ok   F4  the decision area declares its pending state in the first frame
+ok   F5  §F BOTH panels show their own content-shaped skeleton immediately
+ok   F6  and both keep their canonical ids, so every existing owner still finds them
+ok   F7  §F the pending Recommendation Summary reserves a base height — the reveal cannot become a layout jump
+ok   F7a §F and so does the pending Execution Plan, under its own selector
+ok   F8  the shimmer is disabled under prefers-reduced-motion
+ok   H19 a settled failure is rendered as a named alert — EMPTY/ERROR never leave a permanent skeleton
+ok   H18b §F Submit Plan is disabled while any decision area on screen is still a shell
+
+== §H.20 / §D.4 — ONE RENDER TRANSACTION, AND NOTHING PAINTS AROUND IT ==
+ok   H20 a LOADING panel schedules no frame
+ok   H20a its own terminal state schedules exactly one — it does not consult any other panel
+ok   H20b one callback, one frame id
+ok   H20c and a later report cannot schedule a second reveal of the same generation
+ok   D4  §D.4 the recommendation re-render REFUSES a card still behind the barrier — no early half-reveal
+ok   D4a a panel gate has exactly ONE reveal call site — a second would be a second transaction for that panel
+
+== §D / §G — WHAT IS NOT BEHIND THE BARRIER, AND WHAT DID NOT MOVE ==
+ok   D2  §D Sales Trend is behind NEITHER barrier — it keeps its own path and is not delayed by either
+ok   D2a Stock / Forecast / Upcoming Event are outside the reveal container entirely
+ok   D3  the expand tick no longer seeds the Execution Plan — the barrier owns that, and starts synchronously
+ok   D3a the generation opens in the same synchronous pass as the panel insert
+ok   D7  §D.7 every collapse pass abandons the open generation
+ok   D6  §D.6 a table re-render (a new Search included) abandons any pending reveal with the panels it destroys
+ok   G1  the persisted-method carrier and the canonical service identity are untouched
+ok   G2  the destination XOR authority is untouched
+ok   G3  the expected_arrival persistence policy is untouched
+ok   G4  and no readiness rule reads a legacy snapshot — the A0-R2 closure is not reopened
+ok   G5  a BOTH row is still refused — this round changed no business rule
+ok   G6  and sea / sea_express are still distinct services
+
+== §I — DEPLOYMENT IDENTITY ==
+ok   I1  the co-deployed application refs rotated together (63 on r46-avgsales-20261008)
+ok   I1a and it is at or after the round that introduced the reveal owner
+ok   I2  §I the already-published A0-R2 token is not reused for changed client code
+ok   I3  both changed page scripts carry it
+ok   I4  §I the stylesheet is in its OWN token family (irrestinglayout-20261008) — never the JS app token
+ok   I4a and the two families are not crossed
+ok   I5  the release-order helper is present
+ok   I6  no Apps Script file mentions this round, its owner or its token — nothing joins the sync set
+ok   I6a the allocation owner stamp is at or after A0-R2 and no presentation round has moved it (F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2)
+ok   I6b and neither barrier touches a server surface — presentation only
+
+== MUTATIONS — each applied for real, each caught ==
+ok   M1  the barrier is removed (a LOADING panel is revealed) (caught)
+ok   M2  the two panels are re-coupled (one waits for the other) (caught)
+ok   M3  the generation token is ignored (a stale response paints) (caught)
+ok   M4  a legitimate stored 0 is treated as EMPTY (caught)
+ok   M5  the route is rendered early (a LOADING catalogue counts as ready) (caught)
+ok   M6  execution is marked READY before the method catalogue settles (caught)
+ok   M7  a typed error is swallowed into EMPTY (caught)
+ok   M8  a late response re-opens a collapsed row (caught)
+ok   M9  the carrier catalogue is requested per expand instead of once per scope (caught)
+ok   M10 a panel's reveal is split into two render transactions (caught)
+ok   H13 twenty expands on a warm scope cost ZERO extra requests (cache hit)
+ok   H13a and a barrier itself holds no request of any kind
+ok   H15 twenty CONCURRENT cold expands share ONE catalogue request — never N+1
+
+PASSED: 115 passed, 0 failed
+mutations: 10 caught, 0 missed

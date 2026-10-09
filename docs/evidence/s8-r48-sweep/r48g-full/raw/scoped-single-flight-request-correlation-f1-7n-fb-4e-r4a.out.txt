@@ -1,0 +1,32 @@
+
+§1 — THE DEFECT, REPRODUCED BY EXECUTING THE PRE-FIX SOURCE (8d42ca1)
+
+§2 — THE FIX: ONE PHYSICAL REQUEST, BOTH CONSUMERS SERVED
+
+§3 — A FORGED OR GENUINELY UNCORRELATED ECHO IS STILL REFUSED
+
+§4 — THE COALESCING RULES
+
+§5 — THE SIX READ PATHS, EXECUTED END TO END
+
+§6 — THE CONTRACT IS UNTOUCHED (a client-side boundary fix must not need a publish)
+
+§7 — INVARIANTS AND ANTI-REGRESSION RULES
+
+§8 -- DEPLOYMENT SURFACE
+    consumer outcomes: OK / RESPONSE_REQUEST_ID_MISMATCH   correlation: MATCH / MISMATCH
+
+  §5 — READ PATH x CORRELATION MECHANISM
+  page                        boundary                reqs  sharing      consumers               writes
+  FC Summary                  workspace choke point   1     COALESCED    OK / OK                 0
+  SKU Details                 workspace choke point   1     COALESCED    OK / OK                 0
+  Purchase Order Workspace    workspace choke point   1     COALESCED    OK / OK                 0
+  Request Order Draft         workspace choke point   1     COALESCED    OK / OK                 0
+  Site Inventory              workspace choke point   1     COALESCED    OK / OK                 0
+  Automation Schedule         shared transport        2     INDEPENDENT  OK / OK                 0
+
+  BEFORE/AFTER (two concurrent equivalent workspace reads):
+    PRE  8d42ca1: requests=1  consumers=OK + RESPONSE_REQUEST_ID_MISMATCH
+    POST      : requests=1  consumers=OK + OK
+
+104 passed, 0 failed

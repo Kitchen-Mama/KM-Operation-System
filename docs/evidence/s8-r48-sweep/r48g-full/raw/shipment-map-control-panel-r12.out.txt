@@ -1,0 +1,66 @@
+
+== A/B — one filter owner, inside the map control panel ==
+ok   A the page-level filter bar (renderFilterBar) is retired — one filter UI owner
+ok   A render() no longer emits a page-level filter bar
+ok   B filters live inside the Map Control Panel
+ok   A/B exactly one Search filter control exists in the page (no duplicate owner)
+
+== C — Map View inside panel ==
+ok   C Map View selector lives inside the panel
+ok   C map shell no longer emits a standalone Map View selector
+ok   C old standalone .glm-map-view container is gone
+
+== D — Layers (Route Arcs / Reference Pins) inside panel ==
+ok   D Route Arcs + Reference Pins toggles live inside the panel
+ok   D map shell no longer emits the layer toggles directly
+
+== E/F — Legend inside panel; old standalone legend removed ==
+ok   E legend relocated into the panel, reusing legendHtml()
+ok   F old standalone bottom-left legend removed (no <details class="glm-legend">)
+ok   F single legend renderer call site (in the panel) — no duplicate legend on the map
+
+== G/H — Status + Attention share ONE visual family; all 8 indicators ==
+ok   G Shipment Status + Attention both render through the shared glmKpiTileHtml family
+ok   G no divergent button family for Attention
+ok   H Attention keeps its 5 indicators (delayed/exception/arrivingSoon/customs/deliveredToday)
+ok   H Shipment Status retains its 3 backend buckets (In Transit / Partially Received / Received) → 3 + 5 = 8
+
+== I/J — collapsible panel; collapsed hides internal controls ==
+ok   I panel collapse state exists (state.mapPanelCollapsed + is-collapsed)
+ok   I toggle has aria-expanded (accessible)
+ok   I toggle-map-panel action wired in bindRuntime
+ok   J collapsed → only the ☰ header (head) renders, no body
+ok   J collapsed panel exposes NO internal focusable controls (no hidden focus traps)
+
+== K — all current filter data keys preserved ==
+ok   K filter key preserved: search
+ok   K filter key preserved: company
+ok   K filter key preserved: destWarehouse
+ok   K filter key preserved: carrier
+ok   K filter key preserved: method
+ok   K filter key preserved: etaFrom
+ok   K filter key preserved: etaTo
+ok   K Clear Filters preserved
+ok   K removed controls (Origin/Status/Stage/Exception/Delayed) NOT reintroduced
+
+== L — map controls stay separate from right-side zoom ==
+ok   L zoom/reset controls remain in the map shell (separate .glm-map-controls)
+ok   L the Map Control Panel does NOT contain the zoom controls
+ok   L CSS: zoom controls right, control panel left (no overlap — §11)
+
+== M — no backend/API/business change on the map page ==
+ok   M presentation-only: no backend writer / Apps Script reference introduced
+ok   M no status/attention/filter LOGIC redefined in the new UI owners
+
+== N — one canonical UI state, no duplicated desktop/mobile DOM ==
+ok   N single panel builder — no separate mobile DOM tree
+ok   N one panel authority (collapsed + expanded branches of the SAME builder)
+
+== O — responsive CSS present + bounded ==
+ok   O panel width adapts at existing breakpoints (1100 / 640)
+ok   O status/attention groups wrap to full-row on small (balanced 2-row)
+ok   O KPI tiles flex to consume the full row width (no fixed giant widths)
+ok   O groups grow proportionally (3:5) for equal tile widths across the full-width rail
+
+----------------------------------------
+SHIPMENT MAP CONTROL PANEL (F1-SHIPMENT-MAP-R12): 41 passed, 0 failed

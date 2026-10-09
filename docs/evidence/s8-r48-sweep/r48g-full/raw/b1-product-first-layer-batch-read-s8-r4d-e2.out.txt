@@ -1,0 +1,197 @@
+
+================ A — THE SCOPE IS EXACTLY THIRTEEN ================
+
+ok   A1  B1_PRODUCT_TABLE_COUNT = 13, and they are exactly the approved set in order
+ok   A2  the date map covers every one of the thirteen — a table in the batch with no map entry would have its dates left as bare serials
+ok   A3  and the workspace still declares all thirteen, in the same order
+ok   A4  the workspace declares 21 tables in total — B1 takes thirteen and leaves eight
+ok   A5  UNRELATED_IO_READTABLE_CALLER_CHANGE_COUNT = 0 — the other eight are not in the batch
+ok   A5a an exposure table and a carrier table are both excluded
+ok   A6  14 other workspace files define their OWN readTable — 60_'s change is structurally unable to reach them, which is why the "unrelated callers" count is zero by construction
+ok   A6a and none of them calls batchGet
+
+================ B — THE DECLARED DATE MAP, AND THE TRAPS THAT STAY OUT OF IT ================
+
+ok   B1  PRODUCT_DATE_COLUMN_MAP_COUNT = 46 — 41 observed populated + 5 declared blank
+ok   B2  marketplaces declares exactly its date columns
+ok   B2  marketplace_skus declares exactly its date columns
+ok   B2  sku_details declares exactly its date columns
+ok   B2  warehouses declares exactly its date columns
+ok   B2  amazon_inventory_snapshot declares exactly its date columns
+ok   B2  amazon_inventory_health_snapshot declares exactly its date columns
+ok   B2  amazon_daily_sales_snapshot declares exactly its date columns
+ok   B2  amazon_weekly_sales_snapshot declares exactly its date columns
+ok   B2  fc_regular_forecast declares exactly its date columns
+ok   B2  fc_target_rules declares exactly its date columns
+ok   B2  fc_special_events declares exactly its date columns
+ok   B2  overseas_inventory_snapshot declares exactly its date columns
+ok   B2  factory_stock declares exactly its date columns
+ok   B3  fc_special_events traps declared
+ok   B3a amazon_weekly_sales_snapshot trap declared
+ok   B3b NON_DATE_TRAP_COUNT = 3
+ok   B4  NO declared trap appears in the date map — event_month is the number 11, and coercing it would yield 1900-01-10 and destroy every FC event window
+ok   B5  every mapped column exists in the recorded live header for its table — the map cannot name a column that is not there
+
+================ C — THE CONVERSION, EXECUTED ================
+
+ok   C1  a date-only serial is local midnight — the UTC-16:00 form the product has always returned
+ok   C1a and it reads back as the calendar date the cell displays
+ok   C2  a fractional serial round-trips to the SECOND
+ok   C3  leap day 2028-02-29 converts exactly
+ok   C4  the timezone boundary puts local midnight on the PREVIOUS UTC day, which is the behaviour consumers already parse
+ok   C5  a number in a declared date column becomes a Date
+ok   C5a a STRING in a declared date column passes through UNTOUCHED
+ok   C5b a blank stays blank — never epoch, never Invalid Date
+ok   C5c and exactly the numeric cells in declared columns were converted
+ok   C6  event_month stays the NUMBER 11 — the trap that a name heuristic converts to 1900-01-10
+ok   C6a while event_start_date, two columns away, is converted
+ok   C7  a declared date column that is blank today stays blank
+ok   C8  the timezone is read from the spreadsheet at runtime
+ok   C8a and no hard-coded +08:00 offset appears anywhere in the reader
+
+================ D — RAGGED ROWS, PADDED BEFORE ANYTHING READS THEM ================
+
+ok   D1  a short row is padded to header width with empty strings
+ok   D1a and an entirely missing row becomes all-blank
+ok   D1b a padded cell is "" — never the string "undefined"
+ok   D2  the all-blank row is then correctly DROPPED (2 of 3 data rows kept)
+ok   D3  WITHOUT padding the blank row SURVIVES — the rule inverts, and three tables end in an all-blank column today
+ok   D4  the reader pads, THEN coerces, THEN maps — the order is the contract
+
+================ E — THE TWO-CALL TOPOLOGY, EXECUTED AGAINST A FAKE SERVICE ================
+
+ok   E1  B1_REMOTE_CALL_COUNT: exactly ONE metadata call
+ok   E1a and exactly ONE batchGet — 13 reads become 2
+ok   E1b and the reader reports 2
+ok   E1c thirteen ranges in that one call
+ok   E2  the metadata mask is the narrowest that answers existence and width — no values, no formats, no formulas
+ok   E3  the render options are the frozen pair
+ok   E4  ranges are column-bounded and ROW-OPEN — gridProperties.rowCount is the ALLOCATED grid, not the last row with content, so bounding on it would make an empty sheet look full
+ok   E4a and no frozen literal width — the schema contract runs extraColumnsPolicy ALLOW
+ok   E5  all thirteen came back
+ok   E6  a declared date column arrived as a Date through the whole path
+ok   E7  IDENTITY: a numeric sku stays a NUMBER
+ok   E7a and a string sku stays a string — no blanket String()
+
+================ F — ABSENT / EMPTY / SCHEMA STATES ================
+
+ok   F1  one absent OPTIONAL sheet does not fail the batch for the other twelve
+ok   F1a and it reads as [] — SHEET_ABSENT, the browser's graceful empty
+ok   F1b and it was NOT named in the ranges
+ok   F1c proven on the actual ranges
+ok   F2  an absent REQUIRED sheet fails closed with SCHEMA_NOT_PROVISIONED — READ FAILURE != EMPTY DATA
+ok   F3  an EMPTY sheet raises HEADER_MISSING — the same token R43 raises, decided on the same geometry
+ok   F4  a blank header cell is HEADER_BLANK, NOT collapsed into HEADER_MISSING
+ok   F5  a missing required column is MISSING_REQUIRED_HEADER
+ok   F6  a HEADER_ONLY sheet is VALID
+ok   F6a with zero rows — which is NOT the same fact as absent
+ok   F7  fewer valueRanges than ranges requested is SHEETS_PARTIAL_RESPONSE — treating a MISSING ENTRY as [] would fabricate an empty business table out of a malformed response
+
+================ G — THE BOUNDED FALLBACK ================
+
+ok   G1  "Service invoked too many times: ..." classifies as SHEETS_QUOTA_EXCEEDED
+ok   G1a and FALLBACK_ALLOWED = true
+ok   G1  "API call failed with 503 backend..." classifies as SHEETS_SERVICE_ERROR
+ok   G1a and FALLBACK_ALLOWED = true
+ok   G1  "500 INTERNAL..." classifies as SHEETS_SERVICE_ERROR
+ok   G1a and FALLBACK_ALLOWED = true
+ok   G1  "Google Sheets API has not been u..." classifies as SHEETS_API_DISABLED
+ok   G1a and FALLBACK_ALLOWED = false
+ok   G1  "403 PERMISSION_DENIED..." classifies as SHEETS_PERMISSION_DENIED
+ok   G1a and FALLBACK_ALLOWED = false
+ok   G1  "400 Unable to parse range..." classifies as SHEETS_RANGE_REJECTED
+ok   G1a and FALLBACK_ALLOWED = false
+ok   G1  "something nobody has seen before..." classifies as SHEETS_READ_FAILED
+ok   G1a and FALLBACK_ALLOWED = false
+ok   G2  FALLBACK_ALLOWED_CLASSES is exactly the three platform-transient ones
+ok   G3  MAX_FALLBACK_COUNT = 1 — there is no retry loop
+ok   G4  NON_FALLBACK_CLASSES all fail closed — a 403 that fell back would turn a deployment error into a permanent silent slow path that nobody is told about
+ok   G5  an UNRECOGNISED failure is not transient — the default is to fail closed, not to take the slow path
+
+================ H — THE META CONTRACT, AND THE CONSUMER THAT WOULD HAVE THROWN ================
+
+ok   H1  slowestTables is still built from an ARRAY slice
+ok   H2  meta carries readerMode
+ok   H2  meta carries timingMode
+ok   H2  meta carries perTableTiming
+ok   H2  meta carries batchMetadataMs
+ok   H2  meta carries batchValuesMs
+ok   H2  meta carries normalizationMs
+ok   H2  meta carries perTableRows
+ok   H2  meta carries primaryReader
+ok   H2  meta carries fallbackUsed
+ok   H2  meta carries fallbackReason
+ok   H2  meta carries fallbackErrorClass
+ok   H2  meta carries fallbackCount
+ok   H2  meta carries finalReader
+ok   H2  meta carries rangeCount
+ok   H2  meta carries remoteCallCount
+ok   H2  meta carries dateMapVersion
+ok   H3  slowestTables is NEVER a string or object sentinel — inventory-replenishment.js:10200 calls .forEach on it inside no try/catch, so a sentinel raises a TypeError on the page
+ok   H3a the consumer really does call .forEach on it — this is why H3 exists
+ok   H3b [] and null survive that expression; a string or object sentinel does NOT
+ok   H4  no spreadsheet id is placed in meta
+ok   H4a nor any credential or token
+
+================ I — THE DRIFT DETECTOR ================
+
+ok   I1  the drift detector exists
+ok   I2  it reads effectiveFormat.numberFormat.type — the mechanism that actually decides whether SpreadsheetApp returns a Date, rather than what a writer intended
+ok   I3  a disagreement is reported as DATE_MAP_DRIFT
+ok   I4  a table with no data row reports UNDETECTABLE_NO_DATA and never "agrees" — fc_target_rules is in the thirteen and has no row 2
+ok   I4a and a declared column with no format is reported as a blind spot rather than counted as agreement
+ok   I5  the detector is NOT called from the read path — detect only, out of band
+ok   I6  nothing ever writes to the date map at runtime — a detected drift never auto-remaps, because that would be the runtime inference the contract forbids, arriving through the back door
+
+================ J — RELEASE, MANIFEST AND HEALTH ================
+
+ok   J1  60_ is stamped R44 or later — the round the batch reader shipped
+ok   J2  the RELEASE is R44 or later
+ok   J3  63_ own stamp is R44 or later — it carries 60_'s row
+ok   J3a and a PRE-R44 stamp is still rejected — the floor is a floor, not a formality
+ok   J4  01_ is UNCHANGED at R41 — no action and no route moved
+ok   J5  ACTION_CONTRACT_VERSION stays 18 — the action set did not change
+ok   J6  the manifest declares Sheets v4 exactly once
+ok   J6a BigQuery preserved
+ok   J6b the three OAuth scopes are unchanged
+ok   J6c and the timezone — which is what makes a date cell local midnight
+ok   J7  the service is declared a PRODUCT RUNTIME dependency, not benchmark infrastructure
+ok   J7a and it names the release that made it one
+ok   J8  63_ attests the service
+ok   J8a BY EXECUTION — a manifest in this repository is not necessarily the one deployed
+ok   J8b and it costs ZERO API calls — a typeof check is not a request
+ok   J9  R44 has a ledger entry
+ok   J9a which records that it is NOT yet deployed
+
+================ K — MAINLINE NON-REGRESSION ================
+
+ok   K1  60_ contains ZERO write primitives — B1 changes read transport and nothing else
+ok   K2  it still declares exactly ONE action
+ok   K3  GAP_WRITE_REACHABLE = NO and JOB_START_REACHABLE = NO
+ok   K4  the exposure family is untouched at six tables
+ok   K5  the recent-window projection is unchanged — it runs AFTER the read, so the transport cannot move it
+
+================ L — MUTANTS ================
+
+caught: M1  a FOURTEENTH table is added to the B1 set
+caught: M2  a table is OMITTED from the B1 set
+caught: M3  a date column is removed from the map — its dates become bare serials
+caught: M4  the event_month TRAP is treated as a date — 11 becomes 1900-01-10
+caught: M5  the drift detector is disabled
+caught: M5a  the drift detector stops using number formats and guesses from values instead
+caught: M6  identity is coerced with String() so a type change passes
+caught: M7  the ragged-row padding is removed — the blank-row rule inverts
+caught: M8  a 403 is added to the fallback allowlist
+caught: M9  a schema mismatch becomes a fallback class
+caught: M10  a SECOND fallback is allowed — the bound becomes a retry loop
+caught: M11  the fallback stops being reported — a silent fallback
+caught: M12  slowestTables becomes a string sentinel and the page throws
+caught: M13  the Sheets declaration is removed from the manifest
+caught: M14  the Sheets service is declared at the wrong version
+caught: M15  a write primitive is introduced into the read handler
+ok   L1  0 mutants survived
+ok   L2  0 vacuous mutants
+
+====================================================================================================
+PASS  141 passed, 0 failed, 16 mutants, 0 survived, vacuity clean
+====================================================================================================

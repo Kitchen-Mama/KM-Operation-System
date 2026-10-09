@@ -1,0 +1,17 @@
+
+== A/B/E — the daily entry points START the SAME canonical job owner (manual + scheduled share it) ==
+
+== §14/§17 — an already-active job → SKIPPED_ALREADY_RUNNING (no duplicate competing job) ==
+
+== G — no fake success: START failure / exception → ERROR ==
+
+== C — orchestration only: NO formula, NO calculation, NO own lock, NO synchronous batch ==
+
+== K — timezone authority Asia/Taipei ==
+
+== L — installer duplicate-protection never rewrites the Amazon import trigger ==
+
+== D/H/I/J — no scheduler-side row writes / page calc / DB-schema creation / order-shipment writes ==
+
+----------------------------------------
+GAP MATERIALIZATION SCHEDULER (F1-4B-FM5-R3 / R4J job owner): 27 passed, 0 failed

@@ -1,0 +1,102 @@
+
+================ A — MANIFEST GOVERNANCE ================
+
+ok   A1  the enable state is DECLARED in the repository, not inferred
+ok   A2  and the future entry is pinned exactly — serviceId sheets, version v4
+ok   A3  POST_ENABLE — the manifest declares Sheets EXACTLY ONCE (two entries would let a reader trust the stale one)
+ok   A3a and it matches the declared entry byte for byte — serviceId, version and userSymbol
+ok   A3b AT 8ba0097 no Product runtime file reached for the advanced service — building a benchmark against it was not adopting it
+ok   A3b1 and that scan saw 77 files, so it is not vacuous
+ok   A3c ...and that scan actually saw the runtime (77 files), so A3b is not vacuously passing over an empty list
+ok   A4  BigQuery is still enabled exactly once — an unrelated service may not be dropped
+ok   A4a BigQuery is unchanged (userSymbol, version, serviceId)
+ok   A5  and NOTHING ELSE is enabled — the service list is exactly what the repository declares
+ok   A6  OAUTH_SCOPE_CHANGE_REQUIRED = NO — the scope set is unchanged, so no re-consent is expected
+ok   A7  the Web App deployment settings are untouched — executeAs and access are not collateral of a service change
+ok   A8  every declared serviceId is accounted for — no entry hides outside the parsed list
+
+================ B — THE PRODUCT RUNTIME DID NOT MOVE ================
+
+ok   B1  PRODUCT_RUNTIME_FILE_CHANGE_COUNT = 0 — the only file this round may move is the manifest, and only because the repository declares the service enabled
+ok   B1a and NO .gs, .js, .css or index.html byte moved — stated separately so the manifest allowance cannot quietly cover a runtime edit
+ok   B1b and EVERY key outside dependencies is byte-identical to 4a4a7f8 — timezone, scopes, webapp, runtimeVersion and exceptionLogging are not collateral of a service addition
+ok   B1c and the pre-existing service list survives the addition unchanged, in order
+ok   B2  AT 8ba0097 60_ contained NO batchGet — the candidate lived outside the Product path
+ok   B3  60_ was still R43 there — R44 was NOT cut by benchmark infrastructure
+ok   B3a and the release was still R43 there
+
+================ C — THE TOOL IS READ ONLY ================
+
+ok   C1  WRITE_PRIMITIVE_COUNT = 0 — no write, property, drive, trigger or mail primitive
+ok   C2  no gap job, no job start, no persistent cache
+ok   C3  the header states PASTE / RUN / REPORT / REMOVE — it is not Product code and says so
+
+================ D — THE ALLOWLIST IS EXACTLY THE THIRTEEN ================
+
+ok   D1  the tool reads EXACTLY the 13 first-layer tables the page declares, in order
+ok   D2  READ_TABLE_COUNT = 13 — there is no fourteenth
+ok   D3  requiredCols mirrors the shipped 60_ exactly for all 13 tables
+
+================ E — RANGES COME FROM METADATA, NOT A LITERAL ================
+
+ok   E1  widths are derived from sheet metadata (gridProperties.columnCount)
+ok   E2  no hard-coded global range literal — the schema contract allows additive columns and a frozen width would truncate column 43 in silence
+ok   E3  the metadata call is FIELD-LIMITED to properties — it does not pull grid data
+ok   E4  the preflight-approved render options are the ones actually requested
+
+================ F — THE PURE LOGIC, EXECUTED ================
+
+ok   F1  a date serial coerces to the SAME instant getValues() returns — including the UTC shift the product depends on
+ok   F1a and it goes through parseDate against the sheet timezone, not a hard-coded +08:00 offset
+ok   F2  a fractional serial (a timestamp, not a date) round-trips to the millisecond
+ok   F3  a short row is padded to header width with empty strings
+ok   F3a and the all-blank row is then correctly DROPPED (2 kept of 3 data rows)
+ok   F3b WITHOUT padding the drop INVERTS — String(undefined) is "undefined", which is not empty, so the blank row survives. This is the defect padding exists for, asserted rather than described.
+ok   F3c and a padded cell is "" — never the string "undefined"
+ok   F4  an empty header is HEADER_MISSING
+ok   F4a a blank header cell is HEADER_BLANK
+ok   F4b a duplicate header is HEADER_DUPLICATE
+ok   F4c a missing required column is named
+ok   F4d and a valid header passes
+ok   F5  a correctly coerced date is NOT a diff
+ok   F5a a ONE DAY shift is caught and reported in milliseconds
+ok   F5b and so is a one-SECOND drift — the gate is exact to the second, not same-day
+ok   F5b1 and the gate is SECOND-resolution by construction - a sub-second delta is not a diff
+ok   F5c equal strings are not a diff
+ok   F5d a number silently becoming a string IS a diff — identity must not be coerced to pass
+ok   F5e and so is a boolean rendered as display text
+ok   F5f a date appearing where no date was expected is a diff, not something to coerce away
+
+================ G — BENCHMARK DESIGN ================
+
+ok   G1  BENCHMARK_PAIR_COUNT = 5
+ok   G2  PAIR_ORDER alternates — a fixed order would hand arm two a warmed handle every pair
+ok   G3  B1_REMOTE_CALL_COUNT = 2 — one metadata call, one batchGet, and the tool counts them itself
+ok   G4  an unavailable service is a TYPED failure, not a silent zero
+ok   G5  there is no fallback to CONTROL inside a measured arm — a fallback would time the wrong implementation
+ok   G6  ONE diff is enough to fail — the verdict is computed, not left to the reader
+ok   G7  the report states that batchGet CANNOT self-identify a date column, so a product B1 needs a declared map
+
+================ H — MUTANTS ================
+
+caught: M1  Sheets added with the WRONG serviceId (spreadsheets, not sheets)
+caught: M2  Sheets added at the wrong VERSION (v3)
+caught: M3  Sheets declared TWICE
+caught: M4  the unrelated BigQuery service is dropped while adding Sheets
+caught: M5  a new OAuth scope rides along with the service change
+caught: M6  the Web App is quietly reconfigured to execute as the accessing user
+caught: M7  a write primitive is introduced into the TEMP tool
+caught: M8  a fourteenth table is added to the benchmark allowlist
+caught: M9  the date comparison is weakened to same-DAY instead of the same instant
+caught: M10  identity is coerced with String() on both sides so a type change passes
+caught: M11  the trailing-blank padding is removed
+caught: M12  a semantic diff is ignored and the verdict says YES anyway
+caught: M13  the ranges are frozen to a literal width instead of sheet metadata
+caught: M14  the serial coercion uses a hard-coded +08:00 instead of the sheet timezone
+ok   H1  every mutant detector is checked against a tree where the fault is ABSENT
+ok   H2  0 mutants survived
+ok   H3  0 vacuous mutants
+
+====================================================================================================
+PASS  60 passed, 0 failed, 14 mutants, 0 survived, vacuity clean
+====================================================================================================

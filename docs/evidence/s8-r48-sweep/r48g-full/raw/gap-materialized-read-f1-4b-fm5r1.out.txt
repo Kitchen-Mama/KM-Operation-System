@@ -1,0 +1,13 @@
+
+== SERVER · bounded scope read returns stored rows verbatim ==
+
+== WIRING · router + KM.DB read endpoints ==
+
+== INVENTORY · expand reads STORED row (no live getWorkspace), valid zero + missing preserved ==
+
+== ORDER PLANNING · expand reads STORED T1–T4 (no getWorkspace), Order Qty cells untouched ==
+
+== NO CONVERGENCE + CONTAINMENT ==
+
+----------------------------------------
+MATERIALIZED READ CUTOVER (F1-4B-FM5-R1): 33 passed, 0 failed

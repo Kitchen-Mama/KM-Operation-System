@@ -1,0 +1,14 @@
+
+== §11 — EXACT Spreadsheet-ID gate (fail-closed, no fallback) ==
+
+== §12 — Header validation returns a deterministic status with ZERO mutation ==
+
+== §13 — Header-row write barrier + structural-mutation barrier (code-enforced) ==
+
+== Migration authorization boundary (a boolean is never sufficient) ==
+
+== §16 — additive ensure contract (pure KMPR mirror never overwrites a non-empty Header) ==
+
+== §17 — module load has zero side effects (no SpreadsheetApp / no top-level write) ==
+
+All Production Safety Round S0 KMSAFE assertions passed (67 assertions).

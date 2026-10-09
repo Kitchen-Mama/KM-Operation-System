@@ -1,0 +1,13 @@
+
+== B — may_freeze uses SELECTED-scope conservation, not global ==
+
+== C — freeze gate typed refusal SELECTED_SCOPE_CONSERVATION_FAILED ==
+
+== A/E6/E7 — selected scope obtained by EXACT company|country|marketplace; CA cannot substitute for JP ==
+
+== A/D — gate summary: dual conservation authorities + compact one-primary-log + zero writes (runtime) ==
+
+== source contracts — global blocked truthfully computed; freeze wrapper uses shared scoped checks ==
+
+----------------------------------------
+R6F2E2 SCOPED CONSERVATION / MAY_FREEZE: 30 passed, 0 failed

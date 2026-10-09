@@ -1,0 +1,12 @@
+
+§A — THE PROBE, TRACED END TO END: the exact action, the exact request, the executed router
+
+§B — THE DEFECT, REPRODUCED FROM THE REAL ANSWER (this is what the live report saw)
+
+§C — THE REPAIR, DRIVEN THROUGH THE REAL SHIPPED CLIENT AGAINST THE REAL EXECUTED ROUTER
+
+§E — THE GATE IS NOT WEAKENED: every refusal it could make before, it still makes
+
+§D — R1 FOUND FOUR UNRESOLVED ACTIONS; R2 CLOSED ALL FOUR AND THE GATE NOW PASSES
+
+113 passed, 0 failed

@@ -1,0 +1,16 @@
+
+== §0/§21 the 47 writer success paths no longer force a whole-DB reload ==
+
+== §1/§13/§23/§25 auto-coupled posture probe: reload ONLY in a non-scoped (rollback) posture ==
+
+== §17 error semantics: a FAILED write never invalidates (seam is only in the success branch) ==
+
+== §12 writer PAYLOAD authority unchanged (transport-only round) ==
+
+== §3/§10 bounded targeted cache patch: refreshes ONLY the named slice, reuses the SAME normalizer ==
+
+== §2/§3-§11 page-level post-write readback intact (no duplicate fetch, scoped where expected) ==
+
+== §14/§15/§34-§38 debt untouched: app.js prime + authority-debt code unchanged ==
+
+✓ 155 passed

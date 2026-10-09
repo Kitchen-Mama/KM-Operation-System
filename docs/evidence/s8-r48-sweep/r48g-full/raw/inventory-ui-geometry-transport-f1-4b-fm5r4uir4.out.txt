@@ -1,0 +1,11 @@
+
+== §1 header rowspan/tall cells span the compact two-row total (token-driven; no stale height → no gray band) ==
+
+== §2 active row highlight on expand (no reposition); sticky deferred to scroll ==
+
+== §3 Recommendation Summary — fixed 4-row schema + stable cell identities + cell patching ==
+
+== §6/§7 transport-error recovery — refetch READ, never re-run WRITE, never fabricate success (both buttons) ==
+
+----------------------------------------
+INVENTORY UI GEOMETRY + TRANSPORT (F1-4B-FM5-R4UI-R4): 25 passed, 0 failed

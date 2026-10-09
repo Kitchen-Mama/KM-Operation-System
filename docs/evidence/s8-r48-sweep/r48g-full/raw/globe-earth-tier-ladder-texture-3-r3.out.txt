@@ -1,0 +1,36 @@
+
+== §J1 — the accepted July 2004 imagery is what is active, at a higher sample rate
+
+== §J2 — true source resolution per tier, and the forbidden upscale is REJECTED
+  fine-scale detail at one 8192-texel (0.0439 deg), on the common 8192 grid:
+    box             REAL_8192  UPSCALED_5400   ratio
+    alps               30.079         11.431   2.63x
+    himalaya           29.662         12.136   2.44x
+    andes              12.714          5.379   2.36x
+    rockies-ca         31.790         12.020   2.64x
+    sahara-edge         5.629          2.777   2.03x
+    amazon              3.851          1.943   1.98x
+    japan               7.133          3.590   1.99x
+
+== §J3 — an unsupported high tier falls back safely, and capability alone is not enough
+  texture memory by tier: HIGH 171 MB · MID 43 MB · BASE 11 MB
+
+== §J16 — no runtime geographic network dependency
+
+== §J17 — cache-bust tokens cover every changed asset
+
+== §J18 — the accepted Canada gate holds on EVERY tier, on the grid it was calibrated for
+  R2_5400_accepted  PASS  prairie L68 boreal L35 tundra L88 arctic L152 separation 85 maxStep 21
+  HIGH              PASS  prairie L68 boreal L35 tundra L89 arctic L153 separation 85 maxStep 20
+  MID               PASS  prairie L68 boreal L35 tundra L89 arctic L153 separation 85 maxStep 21
+  BASE              PASS  prairie L68 boreal L35 tundra L88 arctic L153 separation 85 maxStep 22
+
+== §B provenance and licence — recorded for the source AND every derived tier
+  runtime tier weight: 5.78 MB across 3 tiers; largest single download 4.02 MB
+
+== the codec itself — deterministic, and checked against a decoder we did not write
+  our full decoder vs the independent DC-only decoder: mean |diff| = 2.392/255
+
+----------------------------------------
+EARTH TIER LADDER (TEXTURE-3-R3 §B): 235 passed, 0 failed
+----------------------------------------

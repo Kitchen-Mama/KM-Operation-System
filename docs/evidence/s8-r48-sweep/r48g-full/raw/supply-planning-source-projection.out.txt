@@ -1,0 +1,24 @@
+
+== A. Weekly full pure-runtime path: canonical snapshots → projection → reader → Plan Builder (96) ==
+
+== B. Monthly full pure-runtime path (CEILING 24) + FACTORY_SHARED pool ==
+
+== C. D-1 FACTORY_SHARED — shared pool, not duplicated per receiver company ==
+
+== D. D-2 Factory source-as-of (last_transaction_at → updated_at → SOURCE_AS_OF_MISSING) ==
+
+== E. D-3 Destination ownership (caller/planning-scope; else MISSING_DESTINATION_WAREHOUSE) ==
+
+== F. shipping_plans → canonical bridge (F1-3b; approved vocab; canonical lineage) ==
+
+== G. shipments → canonical bridge (F1-3b; B4-R3 lineage; SC-11.4 authorities) ==
+
+== H. Current-stock projection FBA / 3PL / FACTORY ==
+
+== I. Demand projection semantics (explicit zero / blank / special event / missing) ==
+
+== J. Required sources fail-closed + malformed input ==
+
+== K. Purity / determinism ==
+
+All Round 1S-P1.5B Source Projection assertions passed (64 assertions).

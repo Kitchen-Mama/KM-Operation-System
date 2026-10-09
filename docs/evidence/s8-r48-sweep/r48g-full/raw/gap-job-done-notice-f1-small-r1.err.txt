@@ -1,0 +1,5 @@
+FAIL Order Planning: announceManualDone called EXACTLY once
+  exp 1
+  got 2
+FAIL OP manual done → announceManualDone(runId, formatDoneMessage(Order Planning,...))
+FAIL OP announce lives inside the manual runJob (product ORDER_PLANNING) block

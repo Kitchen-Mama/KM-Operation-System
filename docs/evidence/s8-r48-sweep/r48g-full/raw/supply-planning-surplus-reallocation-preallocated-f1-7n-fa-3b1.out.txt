@@ -1,0 +1,16 @@
+
+== A. public API present ==
+
+== B. NO second §40 allocation (executable spy proof) ==
+
+== C. shared §41 core — standalone vs adapter equivalence ==
+
+== D + E. donor/receiver behavior + conservation ==
+
+== F. zero cases ==
+
+== G. validation fails closed ==
+
+== H. immutability + determinism ==
+
+All F1-7N-FA-3B1 KMFSR preallocated-adapter assertions passed (99 assertions).

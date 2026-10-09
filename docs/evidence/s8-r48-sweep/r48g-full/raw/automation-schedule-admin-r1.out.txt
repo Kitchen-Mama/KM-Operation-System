@@ -1,0 +1,41 @@
+
+== A — config read (no property → registry defaults for all four automations) ==
+
+== B — config update persists + is read back ==
+
+== C — time validation ==
+
+== D — enabled/disabled controls the trigger ==
+
+== E — daily schedule descriptor ==
+
+== F — weekly schedule representation + validation ==
+
+== G — timezone authority = Asia/Taipei ==
+
+== H/I — only the matching handler trigger is touched; unrelated triggers untouched ==
+
+== J — duplicate trigger prevention (pre-existing duplicates collapse to one) ==
+
+== K — re-save is idempotent ==
+
+== L — disabled job leaves zero owned triggers ==
+
+== M — the two split Recommendation automations are schedulable (F1-6B) ==
+
+== N — GET (page load) writes NOTHING (no property write, no trigger mutation) ==
+
+== O — no DB / schema access anywhere in the owner ==
+
+== P — no Inventory / Order Planning formula dependency ==
+
+== Q — no secret / deployment identifier exposed to the UI ==
+
+== R — an existing (manually-created) Amazon trigger is not changed until Save & Apply ==
+
+== wiring — router + KM.DB client + navigation + section map ==
+
+== UX — approximate-window note + duplicate-submit guard present ==
+
+----------------------------------------
+AUTOMATION SCHEDULE ADMIN (ADMIN-AUTOMATION-R1): 57 passed, 0 failed

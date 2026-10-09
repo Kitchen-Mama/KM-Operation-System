@@ -1,0 +1,86 @@
+
+=== §A  THE POSTURE, AS PUBLISHED  (each line: if it changes, re-run the decision) ===
+  ok   A1 the Web App is published to anyone, anonymously — RE-RUN THE SEC DECISION IF THIS CHANGES
+  ok   A2 and executes as the deploying owner — the sheet authority every caller borrows
+  ok   A3 the script is CONTAINER-BOUND (31 files call getActiveSpreadsheet) — under executeAs USER_ACCESSING every user would need edit rights on the container itself
+  ok   A4 and it holds a BigQuery scope, which under executeAs USER_ACCESSING every user would need too
+  ok   A5 and 4 files write Drive files, likewise — so executeAs stays USER_DEPLOYING
+  ok   A6 not one runtime file asks Apps Script who is calling
+  ok   A6a (checked across every runtime file, 77 of them)
+  ok   A7 the router has no session lookup
+  ok   A8 and no token, shared secret or API key check in front of any handler
+  ok   A9 no external_request scope — the server cannot currently verify an assertion from anyone
+  ok   A9a exactly three scopes, so A9 is about the whole list
+
+=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER ===
+  ok   B1 143 actions are routed — the whole anonymous surface
+  ok   B2 25 of them on the GET read table
+  ok   B3 141 dispatched by doPost
+  ok   B4 and 78 are unambiguous MUTATIONS, every one reachable without identity
+  ok   B4a including pricing.update — PRICING-R2 added the first WRITE since this baseline was measured
+  ok   B4b and pricing.fxReconcile, which one call can apply to every pricing row there is
+  ok   B4c and exactly one action needs naming because its name does not reveal that it writes
+  ok   B5.1 createPurchaseOrderFromRequest is one of them
+  ok   B5.2 confirmShipmentAndDispatch is one of them
+  ok   B5.3 submitAllocationDraftsToShippingPlans is one of them
+  ok   B5.4 importMarketplaceSkusBatch is one of them
+  ok   B5.5 automationSchedule.update is one of them
+  ok   B5.6 updateSkuLifecycle is one of them
+  ok   B6 nothing between doPost entry and the first dispatch performs any identity or permission check
+  ok   B7 PRODUCT_STRATEGY_ENABLED_ is one global boolean — a feature switch, never a caller check
+  ok   B7a and nothing near it consults an identity, because there is none to consult
+  ok   B8 the file says outright that the flag IS the access control today — a feature switch standing in for a lock
+
+=== §C  THE AUDIT IDENTITY IS CLIENT-ASSERTED, WHICH IS A SEPARATE HOLE ===
+  ok   C1 20 runtime files take the actor from the REQUEST BODY, defaulting to a constant
+  ok   C2 e.g. a shipment records created_by = whatever the caller sent, or the literal "system_user"
+  ok   C3 and 00_config.gs has recorded that since P0 §13.1
+  ok   C4 no handler makes a permission decision from a body-derived actor — IT MUST STAY THIS WAY
+  ok   C5 (therefore created_by/updated_by are provenance of a claim, never of a person)
+
+=== §D  THE TRANSPORT ALREADY HAS A NAME FOR WHAT A RESTRICTED AUDIENCE WOULD DO ===
+  ok   D1 the transport sends no `credentials` — cross-origin, so no Google session cookie is attached
+  ok   D2 the read init is method+cache only, which is where a credentials option would have to go
+  ok   D3 and the transport already has a typed code for a Google auth/access page
+  ok   D4 fed by a detector that looks for accounts.google.com and unauthorized markers
+  ok   D5 classified NEVER-RETRY, because the fix is a human changing the access policy
+  ok   D6 and it is in the never-retry set, so every page would surface it as a hard error
+
+=== §E  THE FAIL-CLOSED SHAPE SEC-A2 MUST INHERIT, PINNED BY EXECUTION ===
+  ok   E1 an exact four-part scope matches
+  ok   E2 a near miss does not
+  ok   E3 ALL_SITES can never match — no wildcard exists
+  ok   E3a nor ALL in the sku position
+  ok   E4 an INCOMPLETE key is never enabled
+  ok   E4a and neither is an absent one
+  ok   E5 the match is case-sensitive, so near-identity is not identity
+  ok   E6 (the list really was emptied)
+  ok   E7 an EMPTY allowlist enables nothing — fail-closed, which is the only safe default for a narrow list
+  ok   E8 the list is reportable for diagnostics
+  ok   E8a carrying business identifiers only — no id, url or key
+
+=== §F  WHAT IS ACTIVATED, WHAT IS NOT, AND THE NO-GO THAT CANNOT BE DELETED QUIETLY ===
+  ok   F1 Product Strategy is ACTIVATED — deliberately, and it is the only thing switched on
+  ok   F2 the AI Plan DB GENERATION flag did NOT move with it — a write flag is not carried by a read activation
+  ok   F3 staged navigation is activated to match — two gates that agree is the only safe pair
+  ok   F4 no bypass parameter, token or debug switch exists in the gate path
+  ok   F5 the P1-B7F NO-GO suite still exists
+  ok   F6 both re-decision instructions are still attached, so a green day cannot quietly become a deletion
+  ok   F7 still asserting the two facts the whole NO-GO rests on
+
+=== §G  MUTANTS ===
+  ok   G1 the audience is restricted and the baseline does not notice (caught)
+  ok   G2 executeAs is switched to the accessing user (caught)
+  ok   G3 an external_request scope appears (a token verifier arrived without a decision) (caught)
+  ok   G4 an identity lookup appears in the router (caught)
+  ok   G5 the allowlist gains a wildcard, so a narrow list silently becomes a wide one (caught)
+  ok   G6 an empty allowlist starts meaning "everything" instead of "nothing" (caught)
+  ok   G7 the incomplete-key guard is dropped, so a typo in the allowlist becomes an open scope (caught)
+  ok   G8 the AI Plan write flag is carried along by the read activation (caught)
+  ok   G9 the navigation is switched off while the server stays on — the gates disagree (caught)
+  ok   G10 the P1-B7F NO-GO loses its re-decision instruction (caught)
+  ok   G11 the transport starts sending credentials, changing the compatibility analysis (caught)
+
+====================================================================================================
+passed 57  failed 0  |  mutants caught 11  survived 0
+====================================================================================================

@@ -1,0 +1,90 @@
+ok   1 runSupplyPlanningLine export exists
+ok   2 runtimeType fixed
+ok   3+4 real evaluateQualifiedIncoming & real calculateGap used (match direct calls)
+ok   5 no copied gap formula (no Math.max; calls calculateGap)
+ok   6 null input rejected
+ok   7 invalid lineScope rejected
+ok   8 blank company rejected
+ok   9 blank SKU rejected
+ok   10 blank destination rejected
+ok   11 invalid Required-By rejected (B4-R6)
+ok   12 demand numeric string rejected (no coercion)
+ok   13 negative demand rejected
+ok   14 NaN demand rejected
+ok   15 Infinity demand rejected
+ok   16 negative current stock rejected
+ok   17 invalid committed supply rejected (string)
+ok   18 KM results must be array
+ok   19 external results must be array
+ok   20 matching company accepted
+ok   21 matching SKU accepted
+ok   22 matching destination accepted
+ok   23 optional country accepted
+ok   24 optional marketplace accepted
+ok   25 company mismatch rejected
+ok   26 SKU mismatch rejected
+ok   27 destination mismatch rejected
+ok   28 country mismatch rejected when supplied
+ok   29 marketplace mismatch rejected when supplied
+ok   30 mixed-scope KM candidates rejected
+ok   31 warehouse_code cannot satisfy destination identity (only destinationWarehouseId compared)
+ok   32 qualifiedIncomingQuantity wired to timelyQualifiedIncoming
+ok   33 demand passed unchanged
+ok   34 destinationCurrentStock passed unchanged
+ok   35 timelyApprovedCommittedSupply passed unchanged
+ok   36 calculatedGap matches calculateGap
+ok   37 calculateGap floors at zero
+ok   38 no incoming case (1000-300-0-100=600)
+ok   39 stock-only case
+ok   40 committed-only case
+ok   41 incoming-only case
+ok   42 stock+incoming+committed deducted once each (1000-100-200-100)
+ok   43 one timely qualified Shipment reduces gap
+ok   44 multiple timely unique Shipments sum
+ok   45 linked external evidence does not add a second reduction
+ok   46 adopted external row does not add a second reduction
+ok   47 identical duplicate Shipment counts once
+ok   48 conflicting duplicate Shipment reduces gap by zero
+ok   49 draft Shipment does not reduce gap
+ok   50 received Shipment does not reduce gap
+ok   51 closed Shipment does not reduce gap
+ok   52 cancelled Shipment does not reduce gap
+ok   53+54 late Shipment in Late Risk, does not reduce gap
+ok   55+56 missing ETA in Review, does not reduce gap
+ok   57+58 invalid ETA in Review, does not reduce gap
+ok   59 missing destination does not reduce gap
+ok   60 posted-to-current-stock lineage does not reduce gap
+ok   61 active-other-bucket lineage does not reduce gap
+ok   62 unrelated evidence does not block valid incoming
+ok   63 external observed quantity visible
+ok   64 external observed quantity not gap-deductible
+ok   65 fresh quarantined external remains zero
+ok   66 stale quarantined external remains zero
+ok   67 linked external remains zero
+ok   68 adopted external remains zero
+ok   69.1 REJECTED_EXTERNAL_RECORD remains zero (gap unchanged)
+ok   69.2 IGNORED_FOR_PLANNING remains zero (gap unchanged)
+ok   69.3 SUPERSEDED remains zero (gap unchanged)
+ok   69.4 REVERSED remains zero (gap unchanged)
+ok   70 timelyQualifiedIncoming exact
+ok   71 calculatedGap exact
+ok   72 incomingBreakdown exact
+ok   73 sourceSummary exact
+ok   74 full B4-R6 trace preserved
+ok   75 gate results preserved
+ok   76 candidate reasons preserved
+ok   77 external audit output preserved
+ok   78+79+80 no recommendedShippingQty/orderQty/persistence output
+ok   81+82+85 top-level input / lineScope / evidence arrays not mutated
+ok   83 KM adapter results not mutated
+ok   84 external results not mutated
+ok   86+87+88 output fresh, nested trace fresh, one output cannot affect another
+ok   FIX-A no incoming: timely 0, gap 600
+ok   FIX-B Golden #12 line foundation: draft EXCLUDED, timely 0, gap 600 (NOT promoted)
+ok   FIX-C Golden #13 line foundation: timely 200, external 200 not deducted, gap 400 (NOT promoted)
+ok   FIX-D Golden #14 line foundation: timely 0, lateRisk 200, gap 600 (NOT promoted)
+ok   FIX-E posted to current stock: timely 0, no incoming deduction (gap 600)
+ok   FIX-F other active bucket: timely 0
+ok   FIX-G oversupply: gap floors at 0
+
+All B4-R7 line-runtime assertions passed (88 assertions).

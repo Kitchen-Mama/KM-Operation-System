@@ -1,0 +1,15 @@
+
+== A. flags OFF → legacy preserved, no request ==
+
+== B. flags ON + valid scope → ONE scope-only request ==
+
+== C. invalid scope → no request; dedupe; stale-ignore ==
+
+== D. per-destination rendering (MARKETPLACE + multiple WAREHOUSE) ==
+
+== E. canonical / zero / blocked / partial / no-line / error ==
+
+== F. no internal-context prerequisite / no persistence / no whole-DB / no Context UI ==
+
+----------------------------------------
+REPLEN SCOPE-ONLY CUTOVER (F1-4B-FM1-T): 29 passed, 0 failed

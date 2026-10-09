@@ -1,0 +1,11 @@
+
+== C. structured save-error — no "[object Object]", safe disclosure, never "Saved" ==
+
+== D. Method loading — in-flight dedupe + LOADING/READY/EMPTY_CONFIGURATION/ERROR/STALE_SCOPE ==
+
+== E. Site Confirm flag — backend-owned, frontend mirror, reversible ==
+
+== E. Send gating + status label are flag-driven (source) ==
+
+----------------------------------------
+R6E ERROR + METHOD + SITE-CONFIRM (F1-7N-FA-3C-R6E-P0): 48 passed, 0 failed

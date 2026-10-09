@@ -1,0 +1,17 @@
+
+== §4 KM.loadState pure state machine ==
+
+== weeklyShipping activated as canonical workspace ==
+
+== §6/§10 Workspace primary read requires no broad Operation DB ==
+
+== §5/§8 post-write refresh scoped in Workspace mode ==
+
+== §9 _spLineDisplay: Workspace = DISPLAY_ONLY; BEFORE == AFTER when snapshot present ==
+
+== adapter equivalence: workspace DTO → canonical record ==
+
+== no frontend business authority ==
+
+----------------------------------------
+API WEEKLY SHIPPING CUTOVER (F1-7B-R1): 41 passed, 0 failed

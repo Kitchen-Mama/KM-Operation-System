@@ -1,0 +1,33 @@
+
+== FB1-1. the retired §L folder rule is no longer active anywhere ==
+
+== FB1-2. the frozen destination bucket table, including every EU code ==
+
+== FB1-3. unsupported destinations fail closed ==
+
+== FB1-4. Drive folder reference normalization (raw ID and URL) ==
+
+== FB1-5. conflicting / blank / invalid template roots block BEFORE any folder is created ==
+
+== FB1-6. shipment folder naming, exact idempotency and retry-date stability ==
+
+== FB1-7. PO date folder: same-day reuse, retry-date stability, typed conflict ==
+
+== FB1-8. exact-match idempotency rule (zero / one / many) ==
+
+== FB1-9. Confirm Shipment ends at `shipped`, never in_transit, and never emits departed_origin ==
+
+== FB1-10. automatic shipped -> in_transit promotion (real pure decision fn) ==
+
+== FB1-11. no manual lifecycle controls remain in the UI ==
+
+== FB1-12. the reusable Document Panel: every state, no raw URLs, no browser-side Drive ==
+
+== FB1-13. the SAME panel is reused by the Purchase Order Workspace ==
+
+== FB1-14. registry reuse, failure semantics and no parallel engine ==
+
+== FB1-15. the validated Demo seed is untouched and still readable ==
+
+----------------------------------------
+SHIPMENT/PO DOCUMENT AUTOMATION + TRANSIT FLOW (F1-7N-FB-1): 212 passed, 0 failed

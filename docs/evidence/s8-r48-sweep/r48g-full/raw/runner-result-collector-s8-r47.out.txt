@@ -1,0 +1,119 @@
+
+§A — A GENUINELY CLEAN SUITE
+ok   A1 a passing suite with mutants and a vacuity verdict is CLEAN  (got "CLEAN", want "CLEAN")
+ok   A2 ... with no reason codes at all  (got [], want [])
+ok   A3 ... and its counts are parsed  (got [33,0], want [33,0])
+ok   A4 ... as are its mutants  (got [5,0], want [5,0])
+ok   A5 the "passed / failed" dialect parses too  (got "CLEAN", want "CLEAN")
+ok   A6 ... and the "passed N failed N" dialect  (got "CLEAN", want "CLEAN")
+
+§B — THE BLIND SPOTS, IN BOTH DIRECTIONS
+ok   B1 a silent nonzero exit is NOT_CLEAN though it prints no FAIL line  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   B1a ... by NONZERO_EXIT  (reasons: NONZERO_EXIT,MISSING_SUMMARY)
+ok   B1b ... and MISSING_SUMMARY — nothing ran  (reasons: NONZERO_EXIT,MISSING_SUMMARY)
+ok   B2 a FAIL line with exit 0 is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   B2a ... and the inverse case is named, so a roll-up can count it  (reasons: FAIL_LINES,SUMMARY_FAILED,FAIL_WITH_ZERO_EXIT)
+ok   B3 INDENTED FAIL lines are detected  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   B3a ... all three of them  (got 3, want 3)
+ok   B3b ... and the summary count agrees  (reasons: NONZERO_EXIT,FAIL_LINES,SUMMARY_FAILED)
+
+§C — SUMMARY, VACUITY AND MUTANT SIGNALS
+ok   C1 a failed-summary count with exit 0 is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C1a ... by SUMMARY_FAILED  (reasons: SUMMARY_FAILED,FAIL_WITH_ZERO_EXIT)
+ok   C2 output with NO parseable summary is NOT_CLEAN, never clean-by-default  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C2a ... by MISSING_SUMMARY  (reasons: MISSING_SUMMARY)
+ok   C3 empty output at exit 0 is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C3a ... and is classified EMPTY rather than hidden  (got "EMPTY", want "EMPTY")
+ok   C4 a suite that ran NO assertions is NOT_CLEAN even at exit 0  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C4a ... "nothing ran" is not "nothing wrong"  (reasons: NO_ASSERTIONS)
+ok   C5 a summary that contradicts an earlier one is NOT_CLEAN  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C5a ... by AMBIGUOUS_SUMMARY  (reasons: AMBIGUOUS_SUMMARY)
+ok   C6 a declared-but-EMPTY mutant set is vacuous, not clean  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C6a ... by VACUOUS  (reasons: VACUOUS)
+ok   C6b ... and a self-reported VACUOUS is honoured  (reasons: VACUOUS)
+ok   C7 a surviving mutant is NOT_CLEAN even with zero failed assertions  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   C7a ... by MUTANTS_SURVIVED  (reasons: MUTANTS_SURVIVED)
+ok   C7b ... and "missed" is the same signal under another name  (reasons: MUTANTS_SURVIVED)
+ok   C8a "mutants caught 12  survived 0" → 12 declared, 0 survived  (got [12,0], want [12,0])
+ok   C8b ... and the suite is CLEAN, not falsely accused  (got "CLEAN", want "CLEAN")
+ok   C8c "mutants 12, survived 0" → 12 declared, 0 survived  (got [12,0], want [12,0])
+ok   C8d "5 mutants, 0 survived" → 5 declared, 0 survived  (got [5,0], want [5,0])
+ok   C8e "mutations: 13 caught, 0 missed" → 13 declared, 0 survived  (got [13,0], want [13,0])
+ok   C9a the word VACUOUS in a heading is NOT a vacuity verdict  (got "NOT_REPORTED", want "NOT_REPORTED")
+ok   C9b ... and "mutations 11 caught / 0 missed" parses  (got [11,0], want [11,0])
+ok   C9c ... so the suite is CLEAN  (got "CLEAN", want "CLEAN")
+ok   C10a mutant counts come from the SUMMARY line, not from prose earlier in the transcript  (got [16,0], want [16,0])
+ok   C10b ... so a suite with 16 killed mutants is CLEAN, not VACUOUS  (got "CLEAN", want "CLEAN")
+ok   C10c an explicit "vacuity clean" is not overruled by an unparsed mutant count  (got "CLEAN", want "CLEAN")
+ok   C11a "mutants killed 6/6" → 6 declared, 0 survived  (got [6,0], want [6,0])
+ok   C11b ... so a 6-of-6 suite is CLEAN, not vacuous  (got "CLEAN", want "CLEAN")
+ok   C11c "killed 4/6" → 2 survivors, the remainder  (got [6,2], want [6,2])
+ok   C11d ... and those survivors are NOT_CLEAN
+
+§E — R48-A SUMMARY DIALECTS (each with a near-miss that must NOT parse)
+ok   E-A  "PASS 20  FAIL 0"  (got [20,0], want [20,0])
+ok   E-G  the summary one line above trailing separators is still found  (got [622,0], want [622,0])
+ok   E-A2 ... and a nonzero FAIL in that dialect is still a failure  (got true, want true)
+ok   E-B  "passed 253, failed 0, mutants caught 17, survived 0"  (got [253,0], want [253,0])
+ok   E-B2 ... with the mutant counts read from the SAME line, not confused with the failed count  (got [17,0], want [17,0])
+ok   E-B3 ... and the suite is CLEAN  (got "CLEAN", want "CLEAN")
+ok   E-C  "✓ 21 passed"  (got [21,0], want [21,0])
+ok   E-C2 "✗ 3 FAILED, 18 passed" reads failed FIRST  (got [18,3], want [18,3])
+ok   E-C3 ... and is reported as a failure, not read as a clean 18
+ok   E-D  "OK — all 22 assertions passed"  (got [22,0], want [22,0])
+ok   E-E  "All Amazon daily-sales assertions passed (28 assertions)"  (got [28,0], want [28,0])
+ok   E-N1 "ALL PASS" carries NO number and must never yield one
+ok   E-N2 "ALL PASS  (fast path)" likewise
+ok   E-N3 "All scope-isolation assertions passed." without a count yields none
+ok   E-N4 a bare success sentence is not evidence
+ok   E-N5 a success phrase 30 lines above the end is OUT of the terminal window
+ok   E-N6 an incomplete scenario matrix is NOT_CLEAN even with a clean count  (got "NOT_CLEAN", want "NOT_CLEAN")
+ok   E-N6b ... named INCOMPLETE
+ok   E-N7 two success phrases disagreeing on the count are AMBIGUOUS
+ok   E-N8 a printed count outranks a success phrase in the same output  (got [7,1], want [7,1])
+
+§D — ROLL-UP
+ok   D1 the roll-up counts clean and not-clean  (got [4,1,3], want [4,1,3])
+ok   D2 ... and tallies each reason code  (got 2, want 2)
+ok   D3 the human report states the not-clean count
+ok   D4 ... and names every not-clean suite
+
+§F — TERMINAL-WINDOW BOUNDARY
+ok   F1 a summary 15th-from-last is INSIDE the window  (got [33,"CLEAN"], want [33,"CLEAN"])
+ok   F2 ... and 16th-from-last is OUTSIDE it — no number is borrowed  (got null, want null)
+ok   F2a ... which is reported, not guessed  (reasons: MISSING_SUMMARY)
+ok   F3 a summary quoted in an assertion label is narration, not result  (got [33,"CLEAN"], want [33,"CLEAN"])
+ok   F3a ... and raises neither AMBIGUOUS nor INCOMPLETE  (got [], want [])
+ok   F4 prose numbers in no dialect are ignored  (got [33,"CLEAN"], want [33,"CLEAN"])
+ok   F5 prose matching a dialect is AMBIGUOUS, never silently accepted  (reasons: AMBIGUOUS_SUMMARY)
+ok   F5a ... and the prose count never becomes the suite total
+ok   F6 trailing separator lines do not displace the summary  (got 33, want 33)
+ok   F7 trailing harmless diagnostics do not displace it either  (got 33, want 33)
+ok   F8 output with no summary in its terminal region reports MISSING_SUMMARY  (reasons: MISSING_SUMMARY)
+ok   F9 an incomplete matrix below a clean summary is still INCOMPLETE  (reasons: INCOMPLETE)
+ok   F10 trailing prose cannot overwrite the summary mutation score  (got [4,2], want [4,2])
+ok   F10a ... so real survivors stay visible  (reasons: MUTANTS_SURVIVED)
+ok   F11 ... nor rescue a vacuous run with a borrowed score  (reasons: VACUOUS)
+ok   F12 ... and an assertion LABEL below the summary cannot do it either  (reasons: MUTANTS_SURVIVED)
+ok   F13 a score on its OWN line is still read when the summary carries none  (got [13,0], want [13,0])
+
+§X — COLLECTOR MUTANTS
+ok   X1 killed — anchored ^FAIL misses INDENTED fail lines (the live-readback bug)
+ok   X2 killed — exit-code signal removed — silent nonzero exits go unnoticed
+ok   X3 killed — missing summary treated as clean — unparseable results hidden
+ok   X4 killed — summary failed-count ignored (signal lost; the union still catches the suite)
+ok   X5 killed — summary failed-count ignored at nonzero exit — still caught by the union
+ok   X6 killed — zero-assertion run treated as clean
+ok   X7 killed — vacuous (zero-mutant) execution treated as clean
+ok   X8 killed — surviving mutants treated as clean
+ok   X9 killed by inversion — a harmless edit does not flip a CLEAN verdict
+ok   X10 killed — the terminal window silently expanded to cover the whole transcript
+ok   X11 killed — "ALL PASS" accepted as numeric evidence
+ok   X12 killed — an incomplete scenario matrix allowed to pass
+ok   X13 killed — success phrase allowed to outrank printed counts
+ok   X14 killed — "✗ 3 FAILED, 18 passed" read in the wrong order
+ok   X15 killed — mutant evidence read from the whole transcript — a LABEL outranks the score
+ok   X16 killed — summary-line precedence removed — trailing prose hides surviving mutants
+ok   X17 the mutant set is non-empty (16 mutants) — not vacuous
+
+PASS  103 passed, 0 failed, 16 mutants, 0 survived, vacuity clean

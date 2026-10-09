@@ -1,0 +1,31 @@
+
+-- A. THE ACTOR IS A REVIEWED CONSTANT IN THIS FILE, AND COMES FROM NOWHERE ELSE ----------------
+
+-- B. NO SESSION API IS CALLED — MEASURED BY TOUCH COUNT, NOT BY GREP ---------------------------
+
+-- C. THE ACTOR REACHES THE DTO AND THE EVIDENCE — §3.6 -----------------------------------------
+
+-- D. A BLANK ACTOR REFUSES BEFORE THE MUTATION — §3.7 ------------------------------------------
+
+-- E. THE ADAPTER FLOOR HOLDS INDEPENDENTLY — §3.8 ----------------------------------------------
+
+-- F. THE CORRECTED EXECUTION — §3.10, §3.11, §3.12 ---------------------------------------------
+
+-- G. EVERY OTHER GATE STILL REFUSES — §2 says none of them may change --------------------------
+
+-- H. THE EXECUTION THAT ACTUALLY FAILED WROTE NOTHING — §0 / §3.9 ------------------------------
+
+-- I. MUTANTS -----------------------------------------------------------------------------------
+ok   M1  Session.getActiveUser is restored — the exact regression this round exists to prevent (caught)
+ok   M2  Session.getEffectiveUser is substituted instead — the plausible "fix" that fails the same way (caught)
+ok   M3  the actor constant is blanked and the guard removed — an unauthorized mutation proceeds (caught)
+ok   M4  the actor is taken from a caller argument — a value from outside this file reaches the DTO (caught)
+ok   M5  the actor stops being reported, so the evidence no longer says who authorized the change (caught)
+ok   M6  the local blank-actor guard is removed, so the refusal stops being this file's report (caught)
+ok   M7  BOTH blank-actor guards defeated — an unauthorized migration then really does write (caught)
+
+-- R. RETIREMENT — the helper is gone from the deployment, and still provable -------------------
+
+====================================================================================================
+FC TARGET RULES MIGRATION ACTOR (R2B-A2-R1-F1) — passed 139  failed 0  |  mutants caught 7  survived 0
+====================================================================================================

@@ -1,0 +1,19 @@
+
+== map + primary-projection selection ==
+
+== canonical qty formatter — valid zero vs null vs loading (§10) ==
+
+== DOM patch — Demand Summary Gap + Order Allocation Suggested from monthlyProjection (READY marketplace) ==
+
+== E/H unavailable tier → "—" (null suggested/gap, never fabricated) ==
+
+== O WAREHOUSE blocked → NO fabricated projection values ("—", not 0) ==
+
+== loading → "…" placeholder ==
+
+== R/S/P end-to-end load — ONE request, patch applied, no writes, projection survives ==
+
+== panel markup + ownership (source scans) ==
+
+----------------------------------------
+OP MONTHLY PROJECTION CONSUMER (F1-4B-FM3d): 32 passed, 1 failed

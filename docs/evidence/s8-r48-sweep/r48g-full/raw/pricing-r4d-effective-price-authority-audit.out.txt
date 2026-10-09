@@ -1,0 +1,181 @@
+
+==============================================================================================================
+PRICING-R4D — EFFECTIVE PRICE AUTHORITY AND AUTO-FOLLOW — FINAL AUDIT
+==============================================================================================================
+
+== A · §1 THE THREE-LAYER MODEL — CONFIRMED OR REJECTED FROM THE CODE ==
+ok   A1  three price bands, and only three
+ok   A2  the EFFECTIVE layer is the stored field, named
+ok   A3  the AUTO layer is a separate column per band
+ok   A4  the BASE layer is a third separate column per band
+ok   A5  and each band carries its OWN authority flag — the flags are per field, not per row
+ok   A6  server: blank is UNKNOWN, and it is not FALSE
+ok   A6b including the checkbox booleans a spreadsheet actually produces
+ok   A7  browser: the same three states, blank -> null, in normalizePricingListRecord
+ok   A8  AUTO = BASE x FX, at the currency's frozen precision
+ok   A8b a blank base produces a blank auto — never 0, because 0 is a price
+ok   A9  an override that holds a number IS the resolved price, and the authority is reported beside it
+ok   A9a with the raw override and the auto reference both reported separately — three facts, three fields
+ok   A9b and the resolver says so in the file that implements it
+ok   A10 the canonical spec states the same chain — SKU Details owns BASE, pricing_list owns AUTO
+ok   A11 ... and the same three-state authority, blank explicitly NOT false
+ok   A12 price_source is NOT a fourth layer — legacy, descriptive, never consulted to decide ownership
+ok   A12b it is kept in step by the writer and never reaches the ownership decision
+
+== B · §2 THE FX WRITE CONTRACT — MEASURED PER AUTHORITY STATE ==
+ok   B1  MANUAL_TRUE_AUTO_REFRESH = YES — the reference is refreshed
+ok   B2  MANUAL_TRUE_EFFECTIVE_REFRESH = NO — the negotiated price is not planned at all
+ok   B3  MANUAL_TRUE_FLAG_CHANGE = NO
+ok   B4  AUTO_FALSE_AUTO_REFRESH = YES
+ok   B5  FX_WRITES_MANUAL_OVERRIDE_COUNT = 0 — the effective column is not in the write set
+ok   B5b and the field still RESOLVES to exactly the auto value — reached by reading, not by writing
+ok   B6  AUTO_FALSE_FLAG_CHANGE = NO
+ok   B7  UNKNOWN_AUTO_REFRESH = YES — the reference is refreshed
+ok   B8  UNKNOWN_EFFECTIVE_REFRESH = NO — "nobody has said" is not permission
+ok   B9  UNKNOWN_FLAG_CHANGE = NO — the flag stays blank, so the row is still countable as unclassified
+ok   B9b and the plan REPORTS it as unknown rather than resolving it
+     MANUAL_TRUE_AUTO_REFRESH=YES  MANUAL_TRUE_EFFECTIVE_REFRESH=NO  MANUAL_TRUE_FLAG_CHANGE=NO
+     AUTO_FALSE_AUTO_REFRESH=YES   AUTO_FALSE_EFFECTIVE_FOLLOWS_AUTO=YES  AUTO_FALSE_FLAG_CHANGE=NO
+     UNKNOWN_AUTO_REFRESH=YES      UNKNOWN_EFFECTIVE_REFRESH=NO       UNKNOWN_FLAG_CHANGE=NO
+ok   B10 no base_* cell is planned in state TRUE — FX never writes BASE
+ok   B10 no base_* cell is planned in state FALSE — FX never writes BASE
+ok   B10 no base_* cell is planned in state blank — FX never writes BASE
+ok   B10b and there is no code path anywhere in 73_ that could plan one
+ok   B11 the pre-write audit catches an effective write over a MANUAL row
+ok   B11b naming the authority that forbade it
+ok   B12 ... and over an UNKNOWN row too — blank is not a licence
+
+== C · §3 NEW PRICING ROW INITIALIZATION — THE SHIPPED IMPORTER, EXECUTED ==
+ok   C0  exactly ONE production path creates a pricing_list row
+ok   C0b the master-data endpoint states that it creates none — SKU Details edits sku_details only
+ok   C1  the Add SKU payload is accepted
+ok   C1b and creates exactly one pricing_list row
+ok   C2  the row's local currency is the marketplace's — CAD
+ok   C3  NEW_PRICING_ROW_BASE_SOURCE: base_currency — the fixture master row says USD, and it is honoured
+ok   C3b the base prices DO come from sku_details — selling_price / minimum_price / msrp
+ok   C3c by the §4C map, taken from the sku_details header rather than from the import row
+ok   C3d and base_currency is READ from sku_details rather than defaulted — R4E §2
+ok   C3e proven by a master row that says EUR: the constant no longer overrules it
+ok   C4  NO_INVENTED_FX_RATE_1 — a cross-currency row is created with NO rate at all
+ok   C5  NEW_PRICING_ROW_AUTO_INITIALIZATION: auto_* is BLANK, not the base number in another currency
+ok   C6  NEW_NON_USD_EFFECTIVE_CAN_RECEIVE_RAW_USD_BASE = NO — the effective price is blank
+ok   C6b and is not the base price under another name
+ok   C6c while base_* IS written — which is what lets the first FX run repair the row by itself
+ok   C7  NEW_PRICING_ROW_AUTHORITY_INITIALIZATION: the system owns a row it made — FALSE, not blank
+ok   C7b the importer now addresses the ownership columns by name
+ok   C8  and the legacy descriptive column is kept in step as before
+ok   C8b PENDING_FX is on the row in a column, not only in a free-text note
+ok   C8c with a note naming the action that completes it
+ok   C9  an import row's supplied effective price is written verbatim
+ok   C9b on the import branch, which performs no conversion either
+ok   C9c and stamps no rate at all unless the file carried one
+ok   C10 the Add SKU form posts one row through the same importer
+ok   C10b and that payload contains no price field of any kind, so the fallback branch is the DEFAULT path
+ok   C11 a later FX run computes auto_* from the base on the row
+ok   C11b AND no override is written — R4E creates the row blank, so there is nothing to keep in step
+ok   C11b1 the row nevertheless RESOLVES to the converted price, which is the repair
+ok   C11c THE ROOT CAUSE IS CLOSED: a pending row repairs itself on the first rate, with no migration
+ok   C12 the importer writes nothing back to sku_details — BASE is not mutated
+ok   C12b the master table is exactly as it was found
+
+== D · §4 THE CONSUMER AUDIT — AND WHAT A BLANK EFFECTIVE DOES TO EACH ==
+ok   D1  blank override + UNKNOWN resolves to AUTO — a blank flag no longer withholds the price
+ok   D2  blank override + AUTO resolves to AUTO — what was the one defined substitution is now the rule
+ok   D3  blank override + MANUAL resolves to AUTO too — a claim of ownership with no value is not a value
+ok   D3a while the three authorities are still REPORTED — the flag is read, it simply decides nothing
+ok   D4  72_ now carries auto_* — the fallback is available on this transport at all
+ok   D4a and all three layers travel under distinct names, with a source naming which one answered
+ok   D4b it emits the RESOLVED price, computed by the canonical server resolver
+ok   D4c and the browser adapter passes them through without substituting anything
+ok   D4d which the board data contract states as the adapter rule
+ok   D5  72_ gates `analysable` on the RESOLVED price — a row priced through auto_* stays on the chart
+ok   D5b and the board refuses it as PRICING_SOURCE_MISSING — measured, not read
+ok   D5c while a present price is not refused — so D5b is caused by the blank and nothing else
+ok   D6  FC Summary reads the RESOLVED price, from the canonical normalizer
+ok   D6b explicitly not marketplace_skus and not sku_details
+ok   D6c FC_MISSING_PRICE_AS_ZERO_POST = NO — the zero-coercing wrapper is gone
+ok   D6d and the live path treats a missing price as MISSING, which is what it always did
+ok   D7  the panel holds effective and auto SEPARATELY — nothing is resolved for display
+ok   D7b and states the rule it is implementing
+ok   D8  EFFECTIVE_PRICE_DIRECT_CONSUMERS — counted over the shipped frontend
+ok   D8b AUTO_FALLBACK_CONSUMERS = 0 — not one consumer substitutes auto for a blank effective
+     EFFECTIVE_PRICE_DIRECT_CONSUMERS = assets/js/api/km-product-pricing-adapter.js, assets/js/api/operation-system-db-api.js, assets/js/pages/fc-summary.js, assets/js/pages/sku-regional-pricing.js, assets/js/product-strategy/psb-data-contract.js
+ok   D9  Order Planning / Request Order reads NO effective price — assets/js/pages/inventory-replenishment.js
+ok   D9b nor does any shipment / procurement path
+ok   D10 a campaign line snapshots the pricing_list row that supplied its regular_price
+ok   D11 BLANK_EFFECTIVE_SAFE_SYSTEM_WIDE = NO — proven by D1, D3, D5, D5b and D6c together
+
+== E · §6 / §7 THE CLEANUP ANSWER AND THE FUTURE CONTRACT ==
+ok   E1  AUTO is ALLOWED when there is no auto value — it removes the override rather than restoring one
+ok   E1b and clears identically when there IS one — the auto value is never copied
+ok   E1c AUTO is the one operation that DOES classify the row
+ok   E2  a manual price is by definition not the auto value — nothing else in the row records it
+ok   E3  the ruling lives in PRICING_DATABASE_MAPPING — no parallel spec was created
+ok   E3b CAN_OPERATOR_BLANK_ALL_EFFECTIVE_PRICE_FIELDS_NOW = NO, stated where the contract is
+ok   E3c and the creation defect is recorded with its answer, not left in a test file
+ok   E3d with one canonical read contract recommended over per-consumer fallback
+ok   E4  the future contract forbids inventing a rate
+ok   E4b CURRENT_RUNTIME_SATISFIES_FUTURE_CONTRACT = YES — a cross-currency row gets no invented rate
+ok   E4c ... and base_currency is read from sku_details first, with USD only as a last resort
+
+== F · MUTANTS — each assertion above is asked to fail for a reason it names ==
+ok   M1  a blank flag is read as AUTO (caught)
+ok   M2  an FX run writes the manual override column again (caught)
+ok   M3  the FX run writes an ownership flag while refreshing a reference value (caught)
+ok   M4  the auto fallback is gated on the ownership flag again (caught)
+ok   M4b  NA falls back to auto, answering "this band does not apply" with a number (caught)
+ok   M5  the conversion divides by the rate instead of multiplying (caught)
+ok   M6  the FX planner writes back a base price (caught)
+ok   M7  the pre-write audit accepts an override column in the write set (caught)
+
+== G · §5 THE PRODUCTION CENSUS INSTRUMENT — EXERCISED, AND PROVEN READ-ONLY ==
+ok   G1  the census contains no "setValue" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "setValues" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "appendRow" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "insertRow" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "deleteRow" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "clear(" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "LockService" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "UrlFetchApp" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "getScriptLock" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G1  the census contains no "setFormula" — PRODUCTION_WRITE_AUTHORIZED = NO
+ok   G2  the census entry point exists and the file parses
+ok   G2b and it classifies exactly the three bands 73_ knows about — one vocabulary, not two
+ok   G2c against the same flag columns
+ok   G3  census flag reading agrees with the deployed 73_ for ""
+ok   G3  census flag reading agrees with the deployed 73_ for "TRUE"
+ok   G3  census flag reading agrees with the deployed 73_ for "FALSE"
+ok   G3  census flag reading agrees with the deployed 73_ for "1"
+ok   G3  census flag reading agrees with the deployed 73_ for "0"
+ok   G3  census flag reading agrees with the deployed 73_ for "yes"
+ok   G3  census flag reading agrees with the deployed 73_ for "no"
+ok   G3  census flag reading agrees with the deployed 73_ for "MANUAL"
+ok   G3  census flag reading agrees with the deployed 73_ for "AUTO"
+ok   G3  census flag reading agrees with the deployed 73_ for "wat"
+ok   G3b including the checkbox booleans
+ok   G4.1 the 04_ seed before any FX run — indistinguishable, and named as such
+ok   G4.2 the signature: FX moved auto, the effective price stayed base-shaped
+ok   G4.3 tracking the system value with nobody having said so
+ok   G4.4 a real price of unknown provenance — the rows to ask a person about
+ok   G4.5 no base and no auto to compare against
+ok   G4.6 the AUTO invariant holding
+ok   G4.7 the AUTO invariant BROKEN — a system-owned price that is not the system value
+ok   G4.8 a person price, as intended
+ok   G4.9 claimed by a person and empty — a contradiction, counted not repaired
+ok   G4.10 blank but recoverable by mode AUTO
+ok   G4.11 blank and NOT recoverable — pricing.update refuses AUTO with no auto value
+ok   G4.12 deliberately none — finished, not a gap
+ok   G4.13 a cell that is neither number, blank nor NA is never guessed at
+ok   G5  every bucket in the frozen vocabulary is reachable by a fixture — no count can be a false zero
+ok   G6  29.90 and 29.9 are the same price — compared as numbers
+ok   G7  the R3 census carries none of this vocabulary — two tools, two questions, no shared authority
+ok   G7b and the new tool states the boundary between them in its own header
+ok   G8  PRODUCTION_CENSUS = NOT_MEASURED — no Apps Script runtime and no Sheets credential here
+
+==============================================================================================================
+PRICING-R4D EFFECTIVE PRICE AUTHORITY AUDIT — passed 151  failed 0  mutants caught 8
+THREE_LAYER_MODEL_PASS = YES · AUTO_FALSE_EFFECTIVE_FOLLOWS_AUTO = YES · CONTRACT_GAP = CREATION, not FX
+NEW_NON_USD_EFFECTIVE_CAN_RECEIVE_RAW_USD_BASE = YES (04_marketplace_forecast_import.gs:376-389)
+BLANK_EFFECTIVE_SAFE_SYSTEM_WIDE = NO · CAN_OPERATOR_BLANK_ALL_EFFECTIVE_PRICE_FIELDS_NOW = NO
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+==============================================================================================================

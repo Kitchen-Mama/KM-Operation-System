@@ -1,0 +1,45 @@
+
+-- A. THE RELEASE TOKEN IS DERIVED FROM THE LEDGER, NOT INVENTED --------------------------------------
+
+-- B. EVERY OWNER THAT CHANGED DECLARES THE NEW ROUND -------------------------------------------------
+
+-- C. EVERY OWNER THAT DID NOT CHANGE KEEPS ITS OLD STAMP ---------------------------------------------
+
+-- D. THE MANIFEST EXPECTS WHAT EACH FILE DECLARES ----------------------------------------------------
+
+-- E. EXECUTED — THE FULLY SYNCED PROJECT REPORTS ITSELF SYNCED ---------------------------------------
+
+-- F. EXECUTED — EVERY WAY THIS SYNC CAN GO HALF-DONE IS NAMED ----------------------------------------
+
+-- G. THE SHARED LEDGER IS POSITIONAL, AND THAT IS LOAD-BEARING ---------------------------------------
+
+-- H. THIS ROUND CHANGED THE VOCABULARY, AND SAYS SO IN EXACTLY THE RIGHT PLACES ----------------------
+
+-- I. THE SYNC LIST IS EXACTLY THE DECLARED OWNERS ----------------------------------------------------
+
+-- K. THE RELEASE IS WRITTEN DOWN WHERE GOVERNANCE LOOKS FOR IT ---------------------------------------
+
+-- J. MUTATION — each guard above is load-bearing -----------------------------------------------------
+  caught: M1  a marched 00_config stamp is indistinguishable from a synced one
+  caught: M2  13_ left on its pre-F2 stamp
+  caught: M3  14_ never copied into the project
+  caught: M4  the bundle regenerated from different modules
+  caught: M5  a release that is not in the shared ledger at all
+  caught: M5a  an unchanged owner marched to the current release
+  caught: M6  a malformed release string
+  caught: M7  the manifest expecting a build no file declares
+  caught: M8  a double-quoted bundle hash, which makes every reader pass vacuously
+  caught: M9  90_ given a hand-typed stamp instead of its content hash
+  caught: M10  the release token spliced into the middle of the ledger
+  caught: M11  a changed owner with no manifest row anywhere
+  caught: M12  a release that adds an action and forgets to bump the action contract
+  caught: M13  an owner is stamped at the release but left out of the release owner set
+  caught: M13a  the stampless runtime owner is dropped from the copy list
+  caught: M14  R40 history rewritten so the router looks like it was an owner all along
+  caught: M16  a SECOND file rides along in the editor-applied bucket instead of being declared
+  caught: M17  the manifest moves while the repository still declares the service DISABLED
+  caught: M15  the release is cut in the source but never written into the governance ledger
+
+====================================================================================================
+PASS  107 passed, 0 failed, 19 mutants, 0 survived, vacuity clean
+====================================================================================================

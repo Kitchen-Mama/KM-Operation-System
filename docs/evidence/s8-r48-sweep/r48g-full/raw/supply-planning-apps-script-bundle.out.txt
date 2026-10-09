@@ -1,0 +1,14 @@
+
+== A. deterministic / reproducible output ==
+
+== B. on-disk generated bundle is up to date ==
+
+== C. namespaces available in an Apps Script-like global (no require/module/window) ==
+
+== D. ported modules actually RUN end-to-end inside the bundle context ==
+
+== E. guard passes when loaded, fails safely when absent ==
+
+== F. no residual Node/browser-only runtime dependency ==
+
+All Round 1G Apps Script bundle/port assertions passed (74 assertions).

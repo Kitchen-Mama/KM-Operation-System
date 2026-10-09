@@ -1,0 +1,15 @@
+
+== MASTER fixture: KM/ResTW/ResUS, shared factory, all facts, null-vs-zero ==
+
+== year-crossing planning cycle ==
+
+== empty result ==
+
+== composer envelope + cycle authority + error != empty ==
+
+== composer reuses owners (no duplicated formula) + read-only + layer separation ==
+
+== frontend cutover: canonical composer primary read, fail-closed, no broad DB in first-layer assembly ==
+
+----------------------------------------
+API AI-PLAN FIRST-LAYER COMPOSER (F1-7E-PREREQ-5-R1): 154 passed, 0 failed

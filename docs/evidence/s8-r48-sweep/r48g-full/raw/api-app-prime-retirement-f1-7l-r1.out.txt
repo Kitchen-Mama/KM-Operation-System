@@ -1,0 +1,22 @@
+
+== §8/§11/§12 app.js startup: NO whole Operation DB prime, no hidden/delayed prime ==
+
+== enabler: KM.DB.refreshCacheTables exposed + full 15-table key map ==
+
+== §10/§15 writer full-reload stays 0; canonical broad-load call sites retired ==
+
+== §1/§2 IR allocation-draft hydrate (HALT E resolved): bounded pre-load, UNCHANGED sync hydrate ==
+
+== §3/§4 RO Layer-2 expand + Send + save: bounded (KM.DB.refreshCacheTables), composer refresh ==
+
+== §5/§6 FC Summary modals bounded; §14 Event Assist calc UNCHANGED ==
+
+== §7 sku-details Refresh-DB → scoped in canonical; legacy keeps whole-DB ==
+
+== §14 authority debts untouched (Incoming / sitePlanning / Event Assist) ==
+
+== §9 Legacy kill-switch branches still self-load broad DB on demand ==
+
+== §2/§6 BEFORE==AFTER data transport: bounded refreshCacheTables == normalizeOperationDb (same normalizer) ==
+
+✓ 62 passed

@@ -1,0 +1,16 @@
+
+== A — the registry, and that it agrees with the shipped markup ==
+
+== B — [tests 1, 2, 3, 4] first load with no preference: everything visible, no click needed ==
+
+== C — [tests 5, 6, 7, 8, 9] the persisted preference and its compatibility policy ==
+
+== D — [tests 10, 11, 13, 14] one apply, no listeners, no side effects, no requests ==
+
+== E — [tests 12, 15] THE ROOT CAUSE: the reachable width must not depend on render timing ==
+
+== F — negative / mutation tests ==
+
+== G — cache token and page wiring ==
+
+PASS  118 passed, 0 failed

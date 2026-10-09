@@ -1,0 +1,14 @@
+
+== A. CREATE — header INSERT + line INSERTs, applies to empty sheet ==
+
+== B. determinism + serialization + validation ==
+
+== C. REGENERATE — header UPDATE + line UPDATE (existing draft) ==
+
+== D. SUPERSEDE + edited-line preservation (end-to-end apply) ==
+
+== E. edited removed line → superseded_user_review ==
+
+== F. blocked line — no fabricated qty; lineage + totals + audit ==
+
+All Round 1G Persistence Plan Builder assertions passed (44 assertions).

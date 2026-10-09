@@ -1,0 +1,87 @@
+
+================ T — THE TRANSITION IS ONE EVENT ================
+
+ok   T1  at 3d71590 the repository declared the service DISABLED
+ok   T1a ...and the manifest there declared no Sheets service — both halves of PRE_ENABLE, read from git
+ok   T1b and the manifest at 3d71590 is byte-identical to the one at 4a4a7f8, so the declaration baseline and the manifest baseline are genuinely the same tree rather than assumed to be
+ok   T2  in the working tree the repository declares the service ENABLED — S8-R4D-D2 §3
+ok   T2a ...and the manifest declares Sheets exactly once — both halves of POST_ENABLE
+ok   T3  at EVERY point from 3d71590 to the working tree the declaration and the manifest AGREE — the flip and the service entry are one state and must land in one commit
+ok   T3a ...and that walk saw 68 points, so T3 is not passing over an empty history
+ok   T3b ...and it SPANS the transition — it contains a declared-false point and a declared-true point, so T3 is comparing the two states rather than one state with itself
+ok   T4  the state flips EXACTLY ONCE in this round (at b308984) — not twice, and not never
+ok   T5  the declaration states that the repository and the Apps Script project are two separate switches — this file is INTENT and cannot prove ADVANCED_SHEETS_SERVICE_LIVE
+ok   T5a and it is now declared a PRODUCT RUNTIME dependency, not benchmark infrastructure — R44 cannot serve its primary read without the service, which is a different kind of claim from "a benchmark used it"
+ok   T5b and it points at the EXECUTED attestation, because a manifest in this repository is not necessarily the manifest in the deployed project
+
+================ U — WHAT THE FLIP DID NOT BUY ================
+
+ok   U0  the runtime scan sees 77 files — the checks below are not passing over an empty list
+ok   U0a and the 8ba0097 scan sees 77 files
+ok   U1  AT 8ba0097 no Product runtime file consumed the advanced service — enabling it for a benchmark was not adopting it
+ok   U2  and none called batchGet — B1 PRODUCT IMPLEMENTATION was NOT AUTHORIZED in that round
+ok   U3  the TEMP benchmark tool DOES consume it — so U1 is a real exclusion, not a pattern that matches nothing
+ok   U4  60_ was still R43 at 8ba0097 — no R44 was cut by enabling a service for a benchmark
+ok   U4a and the deployment release was still R43 there
+ok   U4b and the string R44 appeared in no runtime file at all
+ok   U5  AT HEAD exactly ONE Product runtime file CALLS the advanced service — the first-layer reader, and nothing else drifted onto the dependency
+ok   U5a and exactly one calls batchGet
+ok   U5b 63_ ATTESTS the service without calling it — a typeof check costs no API call, which is what lets the health probe answer honestly on a deployment that cannot serve the read at all
+ok   U6  and it declares R44 or later — the round its read transport changed
+ok   U6a and the deployment release is R44 or later
+ok   U6c and a PRE-R44 stamp is still rejected — the floor is a floor, not a formality
+ok   U6b 01_ is NOT stamped R44 — no action, no route and no request field moved
+ok   U5  OAUTH_SCOPE_CHANGE_REQUIRED = NO — the scope set at 3d71590 and now are identical, so no new consent is expected and an unexpected prompt is a signal, not noise
+ok   U6  the Web App executeAs / access settings are unchanged
+ok   U7  and timezone, runtime and exception logging are unchanged — the timezone in particular is what makes a date cell local midnight, so moving it would silently move 41 date columns
+
+================ V — ROLLBACK IS DEFINED, NOT IMPROVISED ================
+
+ok   V1  removing the Sheets entry restores the 3d71590 manifest EXACTLY — the change is reversible by deletion alone, with no other edit to undo
+ok   V2  and the declaration names the NO-GO cleanup — both halves move back together, for the same reason they moved forward together
+
+================ P — THE §8 AVAILABILITY PROBE IS READ ONLY ================
+
+ok   P1  WRITE_PRIMITIVE_COUNT = 0 — no sheet write, property, cache, drive, mail or trigger primitive
+ok   P2  the header declares PASTE / RUN / REPORT / REMOVE — it says what it is, in the file itself
+ok   P3  it takes NO timing — §8 answers availability, and §15 answers speed, in pairs, separately
+ok   P4  the batchGet call names its ranges literally, so the width is reviewable
+ok   P4a exactly ONE range
+ok   P4b and it is a single cell — A1:A1
+ok   P4c and the metadata call is field-limited to titles, so it pulls no grid data
+ok   P5  the id comes from 00_config.gs — no literal id is introduced by a TEMP file
+ok   P5a and no spreadsheet-id-shaped literal appears anywhere in it
+ok   P6  it registers no action and defines no entry point the router could reach
+ok   P6a and no Apps Script runtime file calls it
+ok   P7  it reports SHEETS_NAMESPACE_RESOLVES on its own
+ok   P7  it reports SPREADSHEETS_GET_OK on its own
+ok   P7  it reports VALUES_BATCHGET_OK on its own
+ok   P7a and LIVE = YES requires ALL THREE — two of three would hand the benchmark a candidate arm that cannot complete
+ok   P8  every one of the three calls, plus the hard stop, pushes its RAW error text
+
+================ W — MUTANTS ================
+
+caught: M1  the declaration says ENABLED but the manifest never got the service (half a transition)
+caught: M2  the manifest got the service but the declaration was never flipped (the other half)
+caught: M3  Sheets declared with the wrong serviceId (spreadsheets)
+caught: M4  Sheets declared at v3 rather than v4
+caught: M5  Sheets declared twice — a reader could trust the stale entry
+caught: M6  BigQuery dropped while adding Sheets — the Amazon import breaks and the diff looks like one line
+caught: M7  a new OAuth scope rides along with the service addition
+caught: M8  the Web App is quietly reconfigured to execute as the accessing user
+caught: M9  the manifest timezone moves, which silently moves every date cell the product reads
+caught: M10  a SECOND Product runtime file starts consuming the advanced service
+caught: M11  a SECOND Product runtime file starts calling batchGet
+caught: M12  a THIRD runtime file is marched to the release id to make it look complete
+caught: M13  an unrelated manifest edit hides beside the service, so deletion no longer restores PRE
+caught: M14  the probe gains a write primitive
+caught: M15  LIVE is computed from two of the three answers, so a partial pass reports YES
+caught: M16  the one-cell range is widened into an unmeasured read of a whole sheet
+caught: M17  a literal spreadsheet id is introduced by a TEMP diagnostic
+caught: M18  the probe starts timing itself, inviting its number to be read as the benchmark
+ok   W1  0 mutants survived
+ok   W2  0 vacuous mutants
+
+====================================================================================================
+PASS  50 passed, 0 failed, 18 mutants, 0 survived, vacuity clean
+====================================================================================================

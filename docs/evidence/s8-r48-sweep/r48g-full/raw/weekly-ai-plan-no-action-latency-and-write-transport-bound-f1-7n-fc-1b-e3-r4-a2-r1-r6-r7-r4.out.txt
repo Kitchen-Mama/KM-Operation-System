@@ -1,0 +1,176 @@
+
+== A — the timing chain, and where the wasted work sits in it ==
+ok   A1  all four landmarks exist in the harvest
+ok   A1a the decision is made BEFORE the short-circuit that reads it
+ok   A1b the short-circuit returns BEFORE the KMAF receiver build
+ok   A1c which itself precedes the allocation projection
+ok   A2  the handler has a no-action gate and a mapper call
+ok   A2a the gate sits between the harvest and the mapper — NOT inside the mapper's failure branch
+ok   A2b the mapper-failure branch KEEPS its own no-action call — a faster path is not a reason to remove a net
+ok   A2c so the handler asks twice: once before the mapper, once inside its failure branch
+ok   A3  the fast decision path calls weeklyAiPlanCanonicalDemand_
+ok   A3  the fast decision path calls weeklyAiPlanTargetScopes_
+ok   A3  the fast decision path calls weeklyAiPlanRecommendationState_
+ok   A3  the fast decision path calls weeklyAiPlanQualifyingPlannedQty_
+ok   A3  the fast decision path calls weeklyAiPlanNoActionDecision_
+ok   A3a and it does NOT touch KMAF — the same answer, without that work
+ok   A3a and it does NOT touch weeklyAiPlanBuildKmafReceivers_ — the same answer, without that work
+ok   A3a and it does NOT touch weeklyAiPlanEnumerateSites_ — the same answer, without that work
+ok   A3a and it does NOT touch mapWeeklyHarvestToBatchRequest — the same answer, without that work
+ok   A3a and it does NOT touch gapOpReadSupplyPoolFacts_ — the same answer, without that work
+ok   A3a and it does NOT touch fc_regular_forecast — the same answer, without that work
+ok   A4  LockService appears on exactly two lines of 61_
+ok   A4a both inside weeklyAiPlanPersistenceDeps_
+ok   A4b which the handler calls AFTER the no-action gate, so a valid zero never waits on a lock
+ok   A4c and neither the harvest nor the decision path takes a lock at all
+     decision-path table reads: ["weeklyAiPlanCanonicalDemand_ :: getSheetByName(WAP_GAP_TABLE_)","weeklyAiPlanQualifyingPlannedQty_ :: gapReadObjects_(ss, 'shipping_allocation_drafts')","weeklyAiPlanQualifyingPlannedQty_ :: gapReadObjects_(ss, 'shipping_allocation_draft_lines')"]
+ok   A5  no table is read twice by the same function on the decision path
+
+== B — the harvest control flow, EXECUTED with instrumented seams ==
+ok   B1  a valid zero over a fully-covering plan harvests successfully
+ok   B1a and reports that it short-circuited
+ok   B1b carrying an affirmative no-action decision
+ok   B1c named VALID_ZERO_RECOMMENDATION
+ok   B2  THE MEASUREMENT: the KMAF receiver build and the allocation projection were NEVER CALLED
+ok   B2a and the harvest still returns the empty-but-ready kmaf shape downstream readers expect
+ok   B2b with an empty horizon map rather than a missing one
+ok   B3  the short-circuit carries recommendationState
+ok   B3  the short-circuit carries qualifyingPlanned
+ok   B3  the short-circuit carries residual
+ok   B3  the short-circuit carries noActionDecision
+ok   B3  the short-circuit carries sourceDataAsOf
+ok   B3  the short-circuit carries sourceDataAsOfAuthority
+ok   B3  the short-circuit carries gapLineage
+ok   B3  the short-circuit carries isolation
+ok   B3  the short-circuit carries snapshot_freshness
+ok   B3  the short-circuit carries accepted_snapshot_date
+ok   B3  the short-circuit carries warehousesById
+ok   B3  the short-circuit carries poolsBySku
+ok   B3a with the GAP-INV cutoff resolved, exactly as a full harvest does
+ok   B3b so the as-of authority is still consulted once — the lineage is not skipped
+ok   B3c and it reports the real site count, not 0 — this is not the zero-site return
+ok   B4  a NON-ZERO recommendation still harvests successfully
+ok   B4a and does NOT short-circuit
+ok   B4b it builds receivers and runs the allocation projection exactly once each — the write path is untouched
+ok   B5  520 planned against 800 recommended leaves a residual
+ok   B5a and a residual still reaches the allocator
+ok   B6  520 planned against 520 recommended is fully covered
+ok   B6a which short-circuits as well
+ok   B6b paying for none of the pipeline
+ok   B7  a MISSING recommendation is not a no-action
+ok   B7a so it does not short-circuit
+ok   B7b a scope nobody could read is not a scope with nothing in it, and it keeps taking the long road
+
+== C — the NO_ACTION response contract, at the new path ==
+ok   C1  the envelope is a typed success
+ok   C1a naming the outcome and code
+ok   C2  every counter is of type number — not null, not undefined, not a string
+ok   C2a and every one is 0
+ok   C2b each survives JSON.stringify as a bare 0
+ok   C2c and none of them serializes as null, as a quoted string, or as undefined
+ok   C3  writer_reached is false
+ok   C3a as a boolean
+ok   C3b routes and groups are empty arrays
+ok   C4  0 / 520 / 0
+ok   C5  the builder does not touch LockService
+ok   C5  the builder does not touch getRange
+ok   C5  the builder does not touch setValue
+ok   C5  the builder does not touch appendRow
+ok   C5  the builder does not touch weeklyAiPlanPersistenceDeps_
+ok   C5  the builder does not touch acquireLock
+
+== D — the write-transport bound, EXECUTED against a fake clock ==
+ok   D1  the SHARED write bound is unchanged at 90 000 ms
+ok   D1a and this action has its own bound, above the 90 002 ms the evidence rules out
+ok   D1b which is 180 000 ms
+ok   D2  the page bound exceeds the bound the transport will apply to this action
+ok   D2a at 210 000 ms
+ok   D3  read < shared write <= this action <= page: each layer bounds the one inside it
+ok   D4  _kmTimeoutMs_("write", "weeklyAiPlan.generate") resolves to 180 000
+ok   D4a another write action still gets the shared 90 000
+ok   D4b and a write with NO action given gets the shared bound — previous behaviour kept
+ok   D4c a READ is unaffected by a write-action entry
+ok   D4d and an explicit operator override still wins over everything
+ok   D5  at the OLD 90 000 ms bound the request is still in flight — nothing has been decided
+ok   D5a and nothing has been aborted
+ok   D6  at 90 002 ms the response arrives and is ACCEPTED
+ok   D6a with no timeout error
+ok   D6b from exactly one fetch — no retry
+ok   D6c and a later timer cannot undo a delivered response
+ok   D6d still one fetch
+ok   D7  one ms before the new bound, nothing is decided
+ok   D8  at the new bound it throws a typed kmTimeout
+ok   D8a as REQUEST_TIMEOUT
+ok   D8b carrying the bound that actually applied — 180 000
+ok   D8c the in-flight request was aborted exactly once
+ok   D8d and NOT retried
+
+== E — a real timeout is still ACK_UNKNOWN, and still never auto-retried ==
+ok   E1  a timed-out WRITE is still REQUEST_TIMEOUT_WRITE_INDETERMINATE — the code the live run produced
+ok   E1a a read keeps its own, retryable code
+ok   E2  the transport still states that a timed-out write is never auto-retried
+ok   E2a and records the outcome as ACK_UNKNOWN
+ok   E2b it dispatches exactly once — one fetch per command, no retry loop
+ok   E3  and it passes the ACTION through, so the per-action bound is the one that applies
+ok   E3a the timeout it REPORTS is the one that actually applied, not the shared default
+ok   E4  the timeout message still forbids a second press
+ok   E4a and still says to read the database back first
+ok   E4b and still reports the outcome as UNKNOWN, not as a failure
+ok   E4c with Submit blocked until a run reconciles
+ok   E5  the page dispatches the generation exactly once
+ok   E5a and schedules no re-dispatch of its own
+ok   E6  the timeout wrapper latches: the timer and BOTH settle handlers return early once decided
+ok   E6a so a late response cannot drive a second state transition
+
+== F — release identity, deployment contract, and the browser cache token ==
+ok   F1  61_ moved, because 61_ changed, and is not behind this round
+ok   F2  the RELEASE moved, so a new Web App deployment version is required
+ok   F3  63_ moved, because its manifest row moved
+ok   F4  the census moved, and is not behind this round
+ok   F5  and the pinned activation build moved — the R4 preflight timings do not transfer
+ok   F6  63_'s manifest expects precisely the build 61_ carries — the mixed-deployment parity
+ok   F6a including its own self-referential row
+ok   F7  00_config.gs did NOT change, so its stamp is not marched forward and its row still expects it
+ok   F8  this round is registered, and nothing older was registered after it
+ok   F8a and it is well-formed against the canonical stamp vocabulary
+ok   F8b as is every other entry in the list
+ok   F9  the deployed action contract is not below the version this round required
+ok   F9a and the envelope shape is unchanged, so the transport contract does not move
+ok   F10 ROS_CLIENT_WRITE_TIMEOUT_MS_ still EQUALS KM_WRITE_TIMEOUT_MS_
+ok   F10a so 66_'s derived slice budget is still 43 000 — untouched
+ok   F11 index.html versions its assets
+ok   F11a no asset carries a token from the wrong series
+ok   F11b and no co-deployed asset was left behind on a previous token
+ok   F12 index.html carries a REGISTERED round cache token
+ok   F12a inventory-replenishment.js carries it — a cached previous copy would keep the OLD bound
+ok   F12a operation-system-db-api.js carries it — a cached previous copy would keep the OLD bound
+
+== G — nothing was flipped, generated, deployed or written ==
+ok   G1  the production flag is still FALSE
+ok   G1a and the allowlist entry names all four axes, none of them blank
+ok   G1b with exactly one entry
+ok   G1c and no wildcard
+ok   G2  the harvest does not touch getRange
+ok   G2  the harvest does not touch setValue
+ok   G2  the harvest does not touch appendRow
+ok   G2  the harvest does not touch LockService
+ok   G2  the harvest does not touch weeklyAiPlanPersistenceDeps_
+ok   G3  and across both short-circuit runs, zero pipeline calls
+
+== N — mutants ==
+ok   N1 the timeout relation inverted: page bound below the action bound (caught)
+ok   N2 the per-action bound removed, restoring the 90 s cut-off (caught)
+ok   N3 a per-action entry used to shrink the bound instead of widen it (caught)
+ok   N3a the widen-only guard removed from the resolver (caught)
+ok   N4 the action not passed to the bounded fetch (caught)
+ok   N5 an auto-retry added on timeout (caught)
+ok   N6 the counters moved back into a nested sub-object (caught)
+ok   N7 a counter emitted as the string "0" (caught)
+ok   N8 the harvest short-circuit removed, so a valid zero pays for the pipeline again (caught)
+ok   N9 the short-circuit widened to fire on any decision object (caught)
+ok   N10 the handler gate moved back behind the mapper (caught)
+ok   N11 the short-circuit dropping the source-data lineage a full harvest carries (caught)
+
+----------------------------------------------------------------------------
+WEEKLY AI PLAN NO_ACTION LATENCY + WRITE-TRANSPORT BOUND (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4):
+passed 155  failed 0  |  mutants caught 12  survived 0

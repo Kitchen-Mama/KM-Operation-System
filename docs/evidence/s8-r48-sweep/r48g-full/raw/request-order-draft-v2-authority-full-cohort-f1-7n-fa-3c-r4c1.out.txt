@@ -1,0 +1,19 @@
+
+== authority map — exactly 26 own keys, all 2026-08, exact membership ==
+
+== no USER manual-ID placeholder remains in the release helper ==
+
+== full live 26-row actionable cohort → exact canonical distributions ==
+
+== exact distributions ==
+
+== exact normalization counts + report ==
+
+== authority mutation → MIGRATION_AUTHORIZED_ID_SET_MISMATCH (fail closed) ==
+
+== changing one cycle to 2026-07 fails PLANNING_CYCLE_AUTHORITY_OK (format-valid but wrong) ==
+
+== public Dry Run is PACKAGE-COMPLETE (frozen authority, no manual edit): 26 rows, all gates, zero writes ==
+
+----------------------------------------
+R4C1 26-ID AUTHORITY + FULL-COHORT (F1-7N-FA-3C-R4C1): 33 passed, 0 failed

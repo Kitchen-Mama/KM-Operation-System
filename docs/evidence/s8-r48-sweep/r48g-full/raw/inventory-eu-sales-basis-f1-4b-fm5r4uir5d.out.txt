@@ -1,0 +1,27 @@
+
+== §1 EU is a REGION, not a country alias (identity intact) ==
+
+== §5 A/B — EU scope matches member-country daily rows ==
+
+== §5 C — EU multi-country same-day daily summed ONCE (never averaged, never double-counted) ==
+
+== §5 D — EU weekly-only across DE + ES → weekly fallback resolves (summed once ÷ 7) ==
+
+== §5 E — EU source EXCLUDES non-member / unrelated countries ==
+
+== §5 F — company isolation (structural: the daily snapshot has no company column; scope.company is stamped, never used to pool) ==
+
+== §5 G/H — marketplace + SKU isolation preserved under EU aggregation ==
+
+== §5 I — channel isolation preserved for SINGLE markets (unchanged; EU intentionally rolls up member sites) ==
+
+== §5 J/K/L — non-EU scopes UNCHANGED ==
+
+== §5 M — Forecast-Driven never reaches the sales resolver  [RESTATED S8-R5-B / R46] ==
+
+== §5 N — identical recalc → identical READY result (deterministic) ==
+
+== §4 — missing ≠ zero; genuinely no EU source stays BLOCKED ==
+
+----------------------------------------
+R5D EU SALES BASIS (F1-4B-FM5-R4UI-R5D): 24 passed, 0 failed

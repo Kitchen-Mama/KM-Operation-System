@@ -1,0 +1,99 @@
+
+== A · THE HARNESS REALLY DOES COERCE — everything below depends on it ==
+ok   A1  a numeric cell with a numeric format reads back as the number
+ok   A2  the SAME cell with a date format reads back as a Date
+ok   A3  and serial 35 is 1900-02-03 — exactly what the operator saw for a price of 35
+ok   A3a serial 40 is 1900-02-08, for a price of 40
+ok   A4  writing a Date into a cell makes that cell date-formatted
+
+== B · THE ROOT CAUSE, REPRODUCED — and why only base_msrp ==
+ok   B1  exactly ONE numeric field sits in a physical column that receives a date field: base_msrp
+ok   B1a which is physical column 14
+ok   B1b the column the reorder fills with fx_rate_date
+ok   B2  writing fx_rate_date into physical column 14 gives that column a date format
+ok   B3  and the restored NUMBER now reads back as a Date — the reported fault
+ok   B3a at 1900-02-03 for a price of 35
+
+== C · THE REPAIR ==
+ok   C1  the dry run finds base_msrp and nothing else
+ok   C2  and proves the quantity survived, by serial, rather than assuming it
+ok   C3  the repaired grid reproduces the PRE snapshot over every PRE field
+ok   C4  ZERO writes from a dry run
+ok   C5  the repair passes its own validator
+ok   C6  base_msrp holds no Date anywhere
+ok   C7  and the REAL gate accepts the result
+ok   C8  canonical positions 1..30 exact
+ok   C9  extensions preserved at 31 / 32
+ok   C10 every row still there
+ok   C11 base_msrp reads back as a NUMBER
+ok   C12 and holds 35, from the PRE snapshot
+ok   C12a and 40 on the next row
+ok   C13 base_msrp is NOT the effective msrp — the two legitimately differ and were not made to agree
+ok   C14 regular_price_is_manual is BLANK on every row
+ok   C14 minimum_price_is_manual is BLANK on every row
+ok   C14 msrp_is_manual is BLANK on every row
+ok   C15 a fresh snapshot is taken and the PRE__ one is left alone
+ok   C16 formats were written, not only values
+
+== D · WHAT IT REFUSES ==
+ok   D1  a second differing field REFUSES the repair
+ok   D1a with nothing written
+ok   D2  a changed QUANTITY is refused, not repaired
+ok   D2a with nothing written
+ok   D3  no snapshot REFUSES
+ok   D3a and says why the obvious substitute is wrong
+ok   D4  a row that is not the same row REFUSES
+ok   D5  COMMIT with unarmed constants is REFUSED
+ok   D5a with nothing written
+
+== F · THE PHASE 1 PROOF, AND WHAT A HARD STOP OWES THE OPERATOR ==
+ok   F1  the dry run prints a PHASE 1 PROOF block
+ok   F2  proved: pricing_list ROW_COUNT ==
+ok   F2  proved: pricing_list is the legacy 29-column layout
+ok   F2  proved: the three authority flags are NOT present yet
+ok   F2  proved: live header matches the PRE snapshot header exactly
+ok   F2  proved: extensions are exactly marketplace_id, company
+ok   F2  proved: pricing_change_log COLUMN_COUNT == 15
+ok   F2  proved: pricing_change_log canonical positions 1..9 EXACT
+ok   F2  proved: pricing_change_log PK is log_id at position 1
+ok   F2  proved: pricing_log_id is absent
+ok   F2  proved: pricing_change_log extensions exact and in order
+ok   F2  proved: pricing_change_log ROW_COUNT == 0
+ok   F2  proved: PRE pricing_list snapshot present
+ok   F2  proved: PRE pricing_change_log snapshot present
+ok   F2  proved: pricing_id identity matches PRE row for row
+ok   F2  proved: base_msrp is the ONLY differing PRE field
+ok   F2  proved: every current Date base_msrp matches PRE by serial
+ok   F2  proved: FX_VALUES_UNCHANGED
+ok   F2  proved: AUTO_VALUES_UNCHANGED
+ok   F2  proved: EFFECTIVE_VALUES_UNCHANGED
+ok   F2  proved: EXTENSION_VALUES_UNCHANGED
+ok   F2  proved: BASE_OTHER_THAN_MSRP_UNCHANGED
+ok   F3  and nothing in the proof fails on a sheet in the expected state
+ok   F4  the dry run ends in an explicit GO
+ok   F5  a change_log that is NOT migrated is caught in the dry run
+ok   F5a and the verdict is NO-GO
+ok   F5b with nothing written
+ok   F6  a missing change_log snapshot is caught before any write
+ok   F6a NO-GO
+ok   F7  a changed quantity stops the run
+ok   F7a and the stop prints the columns the operator needs to act on it
+ok   F7b naming the offending pricing_id and sku
+ok   F7c with the current runtime TYPE — Date, because the cell still wears the format the incident gave it
+ok   F8  a second differing field is named
+ok   F8a with its offending rows
+ok   F9  before arming, the dry run says so
+ok   F10 after arming, it re-checks them
+ok   F10a and authorises COMMIT
+ok   F11 a sheet edited after arming does not read as READY
+ok   F11a it stops at the single-field gate, which runs before the proof block
+
+== E · MUTANTS ==
+ok   E1  the target number formats are never applied (caught)
+ok   E3  base_msrp is taken from the effective msrp column instead of from PRE (caught)
+ok   E4  the single-field gate is removed (caught)
+ok   E5  the quantity proof is skipped (caught)
+ok   E6  the new flag columns are initialized FALSE (caught)
+ok   E7  the repaired grid is not checked against the snapshot (caught)
+
+79 passed / 0 failed   ·   6 mutants, 0 survived

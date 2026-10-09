@@ -1,0 +1,23 @@
+
+== A backend planner — valid 30/70 two-warehouse split ==
+
+== B backend planner — FBA / factory / cross-company / inactive / non-canonical all REJECTED ==
+
+== C backend planner — ratio contract ==
+
+== D backend planner — single warehouse explicit 1/1 (EXPLICIT_1_REQUIRED) ==
+
+== E backend planner — scope-safe reconciliation (unselected previously-active → deactivate) ==
+
+== F backend planner — future non-3PL SELF-operated warehouse ADMITTED (exclusion, not 3PL-only) ==
+
+== G frontend candidates — 3PL picker set UNION rule-linked; FBA/FACTORY/cross-company excluded ==
+
+== H frontend candidates — hydrate checked + ratios from active scope rules ==
+
+== I frontend validation + payload ==
+
+== J wiring — router action, db-api writer, menu item, modal, action branch ==
+
+----------------------------------------
+WAREHOUSE ALLOCATION CONFIG (F1-7N-D-2j): 35 passed, 0 failed

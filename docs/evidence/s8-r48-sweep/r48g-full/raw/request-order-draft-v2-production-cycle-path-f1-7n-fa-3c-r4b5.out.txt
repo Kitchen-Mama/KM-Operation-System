@@ -1,0 +1,15 @@
+
+== the REAL 47_ R4C seam functions load ==
+
+== helper: Apps Script Date Aug 1 Asia/Taipei → 2026-08, NEVER the UTC-July slice ==
+
+== helper: canonical / single-digit / explicit-tz ISO accepted; junk fails closed with distinct tokens ==
+
+== end-to-end: REAL recGenBuildGapDraftBody_ now emits canonical 2026-08 for a Date calculation_month ==
+
+== a Date calculation_month with NO available timezone fails closed (never a clock fallback) ==
+
+== downstream strict normalizer is UNCHANGED (still rejects a raw localized Date string) ==
+
+----------------------------------------
+R4C RUNTIME CYCLE-TRANSPORT FIX (F1-7N-FA-3C-R4C): 19 passed, 0 failed

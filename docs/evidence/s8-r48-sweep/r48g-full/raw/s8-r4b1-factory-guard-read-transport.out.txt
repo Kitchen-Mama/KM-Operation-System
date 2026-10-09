@@ -1,0 +1,83 @@
+
+== A. THE CANONICAL GET READ PATH, BOTH ENDS ==
+ok   A1 the router serves it from the GET read table
+ok   A2 …inside rtrGetReadHandlers_, not merely somewhere in the file
+ok   A3 the client lists it in _KM_GET_READ_ACTIONS_
+ok   A4 the POST route is still present — repository precedent is that a GET-routed read keeps both
+ok   A5 precedent: inventoryReplenishmentGap.get is on BOTH the GET read table and the POST chain
+ok   A5 precedent: orderPlanningGap.get is on BOTH the GET read table and the POST chain
+ok   A5 precedent: gapJob.status.get is on BOTH the GET read table and the POST chain
+ok   A5 precedent: skuDetails.workspace.get is on BOTH the GET read table and the POST chain
+
+== B. THE REQUEST SHAPE IS FLAT — THE TRAP THAT FAILS SILENTLY ==
+ok   B1 the caller passes the payload FLAT to _kmGapRead_
+ok   B2 …and never wraps it in a payload envelope
+ok   B3 the write dispatcher no longer carries it
+ok   B4 the handler reads shipping_plan_id at the TOP LEVEL of the body — the fact that makes B1 load-bearing
+ok   B5 the modelled DTO carries the plan id at the top level
+ok   B6 and carries no payload envelope
+ok   B7 with the unchanged action name
+ok   B8 and a READ request id
+ok   B9 a non-empty planId selects fsgEvaluatePlanOverage_
+ok   B10 …which reads with selfPlanId, not the no-plan branch
+ok   B11 and ONLY that branch sets guard_available, which is the field the UI tests
+ok   B12 …and the UI does test it
+ok   B13 the shipped caller always passes a plan id, so the plan branch is the shipped path
+
+== C. NO WRITE IDENTITY AND NO WRITE-OUTCOME WORDING CAN REACH IT ==
+ok   C1 the read dispatcher never mints a write request id
+ok   C2 …and never builds a mutation shape
+ok   C3 it mints a READ request id
+ok   C4 and bounds the request as a READ — 45 s, not the 90 s write bound
+ok   C5 a timeout is classified as a read timeout
+ok   C6 the string "write" as a kind never appears in the read dispatcher
+ok   C7 the shared helper still branches on kind
+ok   C8 …and still has write-indeterminate wording for actions that really can write
+ok   C9 that wording exists in exactly one place, behind the write branch
+ok   C10 THE GUARD CANNOT REACH THE WRITE BRANCH — its only dispatcher hard-codes kind "read"
+
+== D. HANDLER, RESPONSE AND TABLES ARE UNTOUCHED ==
+ok   D1 the handler signature is unchanged
+ok   D2 every return still declares zero_write: true
+ok   D3 the SEVEN approved tables, in the same order, and no eighth
+ok   D4 no setValue on the read path
+ok   D4 no setValues on the read path
+ok   D4 no appendRow on the read path
+ok   D4 no insertSheet on the read path
+ok   D4 no deleteRow on the read path
+ok   D4 no clearContent on the read path
+ok   D4 no setProperty on the read path
+ok   D4 no DriveApp on the read path
+ok   D4 no newTrigger on the read path
+ok   D4 no LockService on the read path
+ok   D4 no CacheService on the read path
+ok   D5 the override-audit table exists in the file but is NOT reachable from the GET handler
+
+== E. THE STAMPS MOVED EXACTLY AS FAR AS THEY SHOULD ==
+ok   E1 the router stamp and the health mirror agree — they must move in ONE commit
+ok   E2 the router stamp advanced to R41, because 01_router.gs changed
+ok   E2a 01_ declares R41 — the round its routing table really changed, which is what a module stamp is
+ok   E2a1 and the HEAD release is R41 or a LATER one — the router is an owner of R41, carried by whatever follows it, and never marched forward to look current
+ok   E2b R40 was NOT reopened to absorb this change - an id that names two trees cannot answer the question it exists for, which is the rule the ledger states against R30, R31 and now R41
+ok   E3 the Factory Guard stamp did NOT move — 71_ is untouched, and a stamp records the round a FILE changed
+ok   E4 the action-contract version stays at 18: this adds a ROUTE for an existing action, not an action
+
+== F. FACTORY INVENTORY IS NOT INVOLVED ==
+ok   F1 factory-stock.js does not mention the guard action at all
+ok   F2 …and never calls it
+ok   F3 the allowlist surface no longer claims Factory Inventory as a caller
+ok   F4 the only call sites are the db-api definition and the shipping-plan caller
+
+== MUTANTS ==
+ok   MUTANT CAUGHT — the caller is put back on the write dispatcher
+ok   MUTANT CAUGHT — the payload is wrapped, burying shipping_plan_id where the handler never looks
+ok   MUTANT CAUGHT — the plan id stops being carried, so every read takes the no-plan branch
+ok   MUTANT CAUGHT — the guard is dropped from the client read registry, so it silently POSTs again
+ok   MUTANT CAUGHT — the router GET read table loses the action
+ok   MUTANT CAUGHT — the health mirror drifts from the router stamp
+ok   MUTANT CAUGHT — the router stamp is not rotated with the file it belongs to
+ok   MUTANT CAUGHT — the release is cut but 63_ keeps the build stamp of the previous one
+ok   MUTANT CAUGHT — the action-contract version is bumped because the router changed
+ok   MUTANT CAUGHT — 71_ is stamped R41 to make the release look complete, though it never changed
+
+ALL PASS — 67 passed, 0 failed, 10 mutants, 0 survived

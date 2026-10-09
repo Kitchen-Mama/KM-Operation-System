@@ -1,0 +1,4 @@
+FAIL D: locked generation delegates to KMORCH
+FAIL D: locked generation uses keyed-delta write
+
+2 assertion(s) FAILED (30 passed).

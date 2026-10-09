@@ -1,0 +1,183 @@
+
+=== SECTION A  THE PAGE STILL BOOTS, AND STILL CHECKS ITSELF ===
+ok   A1 the page boots with no exception
+     (the page reported self-test 242/242)
+ok   A2 and every one of its own DOM assertions still passes
+ok   A3 a chart is on screen to measure
+
+=== SECTION B  THE DOMAIN BELONGS TO THE SCOPE, NOT TO THE CHECKBOXES ===
+ok   B1 hiding "msrp" moves no price, no gridline, no lane and no card height
+ok   B2 hiding "floor" moves no price, no gridline, no lane and no card height
+ok   B3 hiding "promo" moves no price, no gridline, no lane and no card height
+ok   B4 hiding "scenario" moves no price, no gridline, no lane and no card height
+ok   B5 hiding "steps" moves no price, no gridline, no lane and no card height
+ok   B6 hiding "images" moves no price, no gridline, no lane and no card height
+ok   B7 and hiding all five at once still moves nothing
+ok   B8 Clean view draws less and re-scales nothing
+ok   B9 and Detail comes back to exactly the same drawing
+ok   B10 a hidden layer draws no element
+ok   B11 and keeps no legend key
+ok   B12 and the band goes with its missing cap
+ok   B13 the chart names what its domain was derived from
+ok   B14 a different category is a different set of products, so it re-derives
+ok   B15 a different country draws its own chart
+ok   B15a in its own currency
+
+=== SECTION C  A SCENARIO EXPANDS THE DOMAIN AND NEVER SHRINKS IT ===
+ok   C1 a scenario inside the range does not re-scale the chart
+ok   C2 nor change its height
+ok   C3 and it says so
+ok   C4 while the scenario really did apply
+ok   C5 a scenario above the range expands the top
+ok   C6 and says so
+ok   C7 the CANONICAL envelope underneath is untouched by the simulation
+ok   C8 at both ends
+ok   C9 Reset all scenarios returns the exact canonical drawing
+ok   C10 Undo last change does too
+
+=== SECTION D  VERTICAL READABILITY IS A PIXEL FLOOR ===
+ok   D1 a gridline is worth 44-52px, as the brief asked
+ok   D2 48 in the ordinary case
+ok   D3 the plot height is derived from the tick count, not fixed
+ok   D4 there are plates to check
+ok   D5 and not one of them reaches the label lane or leaves the drawing
+ok   D6 every plate is centred on a price inside the scale
+ok   D7 the image is the 50px the review asked for
+ok   D7a the bottom gutter is at least half a plate, so a product on the lowest tick still clears the label lane
+ok   D7b and the top gutter is too
+ok   D8 the engine carries a step ladder rather than one fixed step
+ok   D9 with a preferred pitch and a declared floor below it
+ok   D10 Comfortable scrolls inside its own card
+ok   D10a and Auto Fit never scrolls vertically at all
+ok   D11 and print lifts the cap so nothing is clipped on paper
+
+=== SECTION E  THE LABEL LANE ===
+ok   E1 the lane is an element, with a declared height
+ok   E2 and it is the drawing’s own
+ok   E3 the chart is exactly the plot plus the lane
+ok   E4 every product label sits on one baseline
+ok   E5 and so does every price beneath them
+ok   E6 both rows are inside the lane
+ok   E7 with clear space between the sku and its price
+ok   E8 and the second row still fits inside it
+ok   E9 no lane row repeats the Series
+ok   E10 the second row carries the everyday price
+ok   E11 forty-four columns to crowd
+ok   E12 and not one drawn label is wider than the room it was given
+ok   E12a the engine thinned the labels rather than shrinking them to stumps
+ok   E13 the long ones were shortened
+ok   E14 and none of them lost its full text
+ok   E15 while a label that fits — or was skipped entirely — carries no second copy of itself
+ok   E15a and a skipped column prints nothing at all
+ok   E15b while every column still exists, labelled or not
+ok   E16 all 44 labels still share one baseline
+ok   E17 nothing was dropped onto a second row
+ok   E18 no plate crosses into the lane at 44 columns
+ok   E19 every marker plate is the same size, with or without a photograph
+
+=== SECTION F  NOTHING JUMPS WHEN A LAYER IS SWITCHED ===
+ok   F1 the chart keeps its height across a toggle
+ok   F2 the legend reserves its block so losing a key does not drag the page up
+ok   F3 a layer toggle keeps the zoom
+ok   F4 and the painted width with it
+ok   F5 while the coordinate system is byte-identical, as it is at every size
+ok   F6 and the control still says so
+ok   F7 the chart keeps the reader’s horizontal position across a redraw
+ok   F8 no transition animates a position or a size anywhere in the stylesheet
+ok   F9 Clean draws the same thing every time
+
+=== SECTION G  A PRICE GAP IS CALLED A PRICE GAP ===
+ok   G1 there is a gap on the chart to read
+ok   G2 the label names the amount in this panel’s currency
+ok   G3 and the word "open" is gone from it
+ok   G2a and whichever form is drawn fits between its line and the next column
+ok   G2b while the whole sentence stays on the element, whichever form is painted
+ok   G4 the layer switch is called Price gaps
+ok   G5 and no layer is called "open" anything
+ok   G6 the legend agrees
+ok   G7 and so does it
+ok   G8 the pipeline found one
+ok   G9 and its headline says what it is
+ok   G10 and says what it is NOT, because "gap" is read four ways on this page
+ok   G11 kind, distance_c and threshold_c survive
+ok   G12 with the same value
+ok   G13 a step of exactly the threshold is NOT a gap
+ok   G14 and one cent under it is
+ok   G15 the panel names both neighbours
+ok   G16 and the threshold in force
+ok   G17 and defines the term
+ok   G18 and rules out the three readings it is not
+ok   G19 reached by keyboard, not only hover
+ok   G20 the amount is the distance between the two prices on the mark
+ok   G21 and the threshold is the one in force
+ok   G22 and it is above it, strictly
+ok   G23 no gap label lands on a product image
+ok   G24 no gap label is wider than the room beside its line
+ok   G25 and a label that would collide goes to the other side of its line
+
+=== SECTION H  THE VIEWPORT DOES NOT MOVE ===
+ok   H1 forty-eight interactions and the content the reader was looking at never moves
+ok   H2 and the scroll offset itself is untouched by all but Apply and Undo
+ok   H2a the single unavoidable case is a page already at the top losing a line above it
+ok   H3 no interaction scrolls the window more than once
+ok   H4 the control being used is never replaced under the reader’s hands
+ok   H5 a dropdown never collapses or opens meeting mode
+ok   H6 nor resets the zoom
+ok   H6a nor the chart’s horizontal position
+ok   H6b no scenario mark in the banner before Apply
+ok   H6c Apply puts the UNSAVED SCENARIO line in the banner
+ok   H6d and the reader’s content is exactly where it was
+ok   H6e having been compensated once, deliberately
+ok   H7 the Series really changed
+ok   H8 and the reach count followed it
+ok   H9 and the Adjustment options followed the price field
+ok   H10 landing on a legal choice, because Everyday cannot be Set to one figure
+ok   H11 and the amount field is relabelled
+ok   H12 and back again
+ok   H13 refusing an incomplete form does not move the page
+ok   H14 and it does say why
+ok   H15 in the reserved row
+ok   H16 the status row holds its height whether or not it has anything to say
+ok   H17 and the form is a grid, so a longer option label cannot re-wrap it
+ok   H18 a disabled reset button is the same size as an enabled one
+ok   H19 nothing on the page scrolls an element into view
+ok   H20 there are exactly two scrollTo calls in the whole renderer
+ok   H20a and the second is leaving fullscreen, putting the reader back where they were
+ok   H21 which only runs when the anchor actually moved
+ok   H22 and nothing navigates to a fragment
+
+=== SECTION I  WHAT KEEPS ITS IDENTITY ===
+ok   I1 four dropdown changes and not one node was replaced
+ok   I2 including the chart, which was not redrawn
+ok   I3 the Adjustment select is the same element
+ok   I4 and its options were rewritten in place
+ok   I5 changing the country DOES rebuild the analysis filters, because the menus differ
+
+=== SECTION J  WHAT ONLY A SCREENSHOT COULD SEE, AGAIN ===
+ok   J1 nothing on the page calls a price gap an "open" anything
+ok   J2 and no amount is followed by the word
+ok   J3 while the page does say what it is
+ok   J4 the recommendation talks about the ladder
+ok   J5 and it does not call the gap an open step
+ok   J6 no gap label reaches another column’s centre line
+ok   J7 not one of the 0 gap labels on the 44-product chart overflows its gutter
+
+=== MUTANTS ===
+ok   M1 the domain is computed from the visible layers again, so a checkbox moves every price (caught)
+ok   M2 the domain is taken from every site at once, so one country stretches another’s ladder (caught)
+ok   M3 the marker gutter is narrowed, so a product on an end tick would sit on the words (caught)
+ok   M4 the gridline pitch is compressed again, so two photographs overlap (caught)
+ok   M5 a layer toggle resets the zoom the room is reading at (caught)
+ok   M6 a chart redraw sends the reader back to the first column (caught)
+ok   M7 the Series dropdown calls the full render again, taking the page with it (caught)
+ok   M8 changing the price field replaces the whole scenario panel (caught)
+ok   M9 updating the options replaces the select node instead of its children (caught)
+ok   M10 a handler scrolls the panel into view, which is a jump with a friendly name (caught)
+ok   M11 Apply re-focuses a control, and the browser scrolls the page to find it (caught)
+ok   M12 a scenario select collapses meeting mode under the reader (caught)
+ok   M13 the status line is created and destroyed again, so a refusal shoves the chart down (caught)
+ok   M14 the gap label goes back to "open", which is read four ways on this page (caught)
+ok   M15 the gap amount is measured between the wrong two prices (caught)
+ok   M16 the axis follows the simulated prices, so a scenario re-scales the chart under it (caught)
+
+PASS — passed 142, failed 0, mutants caught 16, survived 0

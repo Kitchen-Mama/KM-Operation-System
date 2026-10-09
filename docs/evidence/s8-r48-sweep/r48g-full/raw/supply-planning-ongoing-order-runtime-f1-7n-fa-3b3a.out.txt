@@ -1,0 +1,28 @@
+
+== CASE A — ordered 100 / completed 0 / shipped 0 → admitted 100, timed ≤ 100 ==
+
+== CASE B — ordered 100 / completed 40 → ongoing admitted 60 (received 40 excluded) ==
+
+== CASE C — ordered 100 / completed 100 → ongoing 0 ==
+
+== CASE D — ordered 100 / completed 100 / shipped 40 → ongoing 0 (shipped stays Shipment authority) ==
+
+== CASE E — fully shipped lifecycle → KMSF emits no committed-production duplicate ==
+
+== CASE F — A1 admitted 60, source shares 70/30 → 42 / 18 (allocatable = admitted, not 100) ==
+
+== CASE G — A2 (ordered != requested) company FC shares applied to admitted qty only ==
+
+== CASE H — rounding conservation: Σ site incoming ≤ admitted (residual retained, never over) ==
+
+== CASE I — missing expected_completion_date → admitted, but 0 timed incoming + ETA unresolved ==
+
+== CASE J — two PO lines → distinct incomingId ==
+
+== CASE K — one PO line / multiple receivers → distinct incomingId ==
+
+== CASE L — shipment independence: NO shipment input, ongoing still materializes ==
+
+== M — determinism + input immutability ==
+
+OK — all 28 assertions passed

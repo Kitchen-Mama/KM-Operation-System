@@ -1,0 +1,249 @@
+PRODUCT STRATEGY — USER-TRIGGERED RECOVERY (P1-B8D-R10E)
+
+== §A — the shared retry: owner, re-entry and a real single-flight ==
+  ok   A1  the shipped db-api carries the R10E retry block
+  ok   A2  KM.DB.retryClientCapabilities is the public API
+  ok   A3  and its state is readable rather than inferred
+  ok   A4  nothing is in flight before anybody clicks
+  ok   A5  one click issues exactly ONE logical read
+  ok   A6  and the state says a retry is open
+  ok   A7  five clicks while one is open issue ONE read, not five  [M1]
+  ok   A8  and every later click gets the SAME promise, not a new one
+  ok   A9  the latch clears on settlement
+  ok   A10 so the NEXT click is a real read — the latch is not a one-shot
+  ok   A11a a rejected bootstrap resolves to null rather than rejecting the click
+  ok   A11 a REJECTED retry releases the latch as well
+  ok   A12 so a person can try again after a failure  [the "reload fixes it" bug]
+  ok   A13 the latch uses no timer and no time window  [M1/M2]
+  ok   A14 the page publishes its retryable table
+
+== §B — no automatic retry anywhere in the round ==
+  ok   B1  the shared retry schedules nothing  [M2]
+  ok   B2  the page defines exactly three retries
+  ok   B3  and not one of them schedules itself  [M2]
+  ok   B4  a refused board left alone sends nothing more  [M2]
+  ok   B5  and a failed capability sent nothing in the first place
+
+== §C — capability: fail closed, then a retry only where one can help ==
+  ok   C1a HTTP_NOT_FOUND is reported as itself
+  ok   C1b and cost ZERO downstream reads
+  ok   C1c retry offered = true
+  ok   C1d and the classified code is still on screen  [M3]
+  ok   C2a SOURCE_TIMED_OUT is reported as itself
+  ok   C2b and cost ZERO downstream reads
+  ok   C2c retry offered = true
+  ok   C2d and the classified code is still on screen  [M3]
+  ok   C3a SOURCE_NOT_CONNECTED is reported as itself
+  ok   C3b and cost ZERO downstream reads
+  ok   C3c retry offered = true
+  ok   C3d and the classified code is still on screen  [M3]
+  ok   C6a NOT_AUTHORIZED is reported as itself
+  ok   C6b and cost ZERO downstream reads
+  ok   C6c retry offered = false  [retrying is pointless; it needs a person with access]
+  ok   C6d and the classified code is still on screen  [M3]
+  ok   C7a an explicit server false is FEATURE_DISABLED
+  ok   C7b and it gets NO retry button — a product decision is not a connection problem  [M11]
+  ok   C7c and zero requests
+  ok   C8a a missing field is CAPABILITY_NOT_REPORTED
+  ok   C8b it offers a re-read, because a newer deployment is what would change it
+  ok   C8c and the label says READ AGAIN rather than reconnect
+  ok   C8d while the sentence still separates it from the board being off
+  ok   C9.1 HTTP_NOT_FOUND is never rendered as FEATURE_DISABLED
+  ok   C10.1 and the words never reach the screen either
+  ok   C9.2 SOURCE_TIMED_OUT is never rendered as FEATURE_DISABLED
+  ok   C10.2 and the words never reach the screen either
+  ok   C9.3 SOURCE_NOT_CONNECTED is never rendered as FEATURE_DISABLED
+  ok   C10.3 and the words never reach the screen either
+
+== §D — the capability retry, clicked ==
+  ok   D1  the refusal renders a retry control
+  ok   D2  and it is a real <button>, not a styled div
+  ok   D3  typed `button`, so it cannot submit anything
+  ok   D4  enabled while idle
+  ok   D5  and not busy while idle
+  ok   D6  and still zero downstream reads before the click
+  ok   D7  ONE click reaches the SHARED bootstrap exactly once
+  ok   D8  a successful retry settles the mirror
+  ok   D9  and only NOW does the site universe get read  [M10: never before capability]
+  ok   D10 the page counts one capability retry
+  ok   D11 a retry that fails again shows the NEW reason, not the old one  [M3]
+  ok   D12 the new code is on screen
+  ok   D13 and the button is still there — no dead end
+  ok   D14 a failed retry reads nothing downstream
+  ok   D15 the first click reaches the bootstrap
+  ok   D16 four more while it is open reach it ZERO more times  [M1]
+  ok   D17 and the page counts ONE retry, not five
+  ok   D18 the button is disabled while the read is open
+  ok   D19 and marked aria-busy for a screen reader
+
+== §E — keyboard, busy state and the focus contract ==
+  ok   E1  a real <button> — Enter and Space are the browser's contract, not this file's
+  ok   E2  and it is activatable
+  ok   E3  a polite live region accompanies the control
+  ok   E4  announced politely, not assertively
+  ok   E5  and silent while idle — nothing to announce yet
+  ok   E6  and it announces the retry once it is open
+  ok   E7  focus is placed after a successful retry, not dropped on <body>
+  ok   E8  a failed retry returns focus to the button — the next attempt is where they are
+
+== §F — site universe: retry, and the empty/refused distinction ==
+  ok   F1  a refused universe reports its code
+  ok   F2  one read was attempted
+  ok   F3  and NO workspace read followed  [M10]
+  ok   F4  a retryable universe refusal offers a button
+  ok   F5  the click issues exactly one more read
+  ok   F6  and the universe is built on success
+  ok   F7  counted as one universe retry
+  ok   F8  an empty list is not a transport failure
+  ok   F9  and gets NO retry button — it is a measurement, not a failure  [M4/empty-vs-refused]
+  ok   F10 and reads no workspace
+  ok   F11 one refusal plus five clicks = TWO reads, not six  [M1]
+  ok   F12 and one counted retry
+  ok   F13 the second refusal replaces the first  [M3]
+  ok   F14 and still nothing downstream  [M10]
+  ok   F15 the button survives a second failure
+
+== SU2 - the universe retry settles before it is redrawn ==
+  ok   U2a1 the control is still on screen while its own read is open
+  ok   U2a2 disabled while the retry is in flight  [MF2]
+  ok   U2a3 and aria-busy for a screen reader  [MF2]
+  ok   U2a4 labelled Retrying  [MF2]
+  ok   U2a5 and the latch is genuinely held
+  ok   U2a6 a second activation while busy issues ZERO more reads
+  ok   U2a7 and counts one logical retry, not two
+  ok   U2b1 the latch is cleared once the retry settles
+  ok   U2b2 the newest precise code is preserved  [M3]
+  ok   U2b3 the control is still rendered
+  ok   U2b4 and ENABLED again - this is the R10E-F1 defect  [MF1]
+  ok   U2b5 aria-busy is cleared  [MF1]
+  ok   U2b6 and it no longer says Retrying  [MF1]
+  ok   U2b7 focus returned to the button
+  ok   U2b8 the redraw read NOTHING - request delta 0
+  ok   U2b9 and no workspace read followed
+  ok   U2b10 and still nothing a moment later - no auto-retry
+  ok   U2c1 the latch is cleared on success too
+  ok   U2c2 the universe is built
+  ok   U2c3 and the control is gone - nothing left to retry
+  ok   U2c4 exactly two reads: the first, and the one asked for
+  ok   U2c5 the workspace stays blocked until a real selection
+  ok   U2d1 settling onto an unmounted controller does not throw
+  ok   U2d2 the latch is released even when nobody is home
+  ok   U2d3 and no request followed the unmount
+  ok   U2d4 route return re-reads nothing by itself
+  ok   U2d5 and reads no workspace
+
+== §G — workspace: scope binding, generations and fail-closed ==
+  ok   G1  a single complete site reads the workspace
+  ok   G2  and the page counted it
+  ok   G3  the retry issues exactly one more read
+  ok   G4  and sends the scope that is SELECTED, proven by what the accessor received  [M9]
+  ok   G5  counted as one workspace retry
+  ok   G6  a retry with an incomplete scope sends ZERO external requests
+  ok   G7  and says so rather than drawing an empty board  [M4]
+  ok   G8a no retry advances the generation itself  [M9]
+  ok   G8b the two pre-existing advances are unchanged — loadWorkspace, and R7 withdrawing a question
+  ok   G9  and the retry goes THROUGH loadWorkspace, so it inherits that generation
+  ok   G10 no second generation was introduced  [M9]
+
+== §H — unmount, return and the DOM a slow retry must not touch ==
+  ok   H1  a retry on an unmounted controller resolves rather than throwing  [M12]
+  ok   H2  and the controller can still be restored
+  ok   H3  accounting stayed monotonic
+  ok   H4  onUnmount marks the outgoing controller dead  [M12]
+  ok   H5  and restore() brings it back, so parking stays lossless
+  ok   H6  focusAfter refuses to touch the DOM of a dead controller  [M12]
+
+== §J — no new sockets, no new actions, no relaxed bounds ==
+  ok   J1  the page opens no socket of its own  [M5]
+  ok   J2  and no XHR  [M5]
+  ok   J3  the accessor opens none either  [M5]
+  ok   J4  Product Strategy still dispatches ZERO system.health  [M6]
+  ok   J5  in the accessor too  [M6]
+  ok   J6  no private POST shim caller in the page
+  ok   J7  nor in the accessor
+  ok   J8  the capability read budget is unchanged  [M8]
+  ok   J9  the business read budget is unchanged  [M8]
+  ok   J10 the bounded recovery is still at most two attempts  [M7]
+  ok   J11 and the shared transport still caps retries at one  [M7]
+  ok   J12 the retry CALLS the existing bootstrap rather than duplicating it
+  ok   J13 and issues nothing itself  [M5]
+  ok   J14 it neither re-declares nor resets the boot arbiter
+  ok   J15 HTTP_NOT_FOUND is retryable
+  ok   J16 SOURCE_TIMED_OUT is retryable
+  ok   J17 NOT_AUTHORIZED is NOT  [M11]
+  ok   J18 FEATURE_DISABLED is NOT  [M11]
+  ok   J19 and neither is an empty-but-read list  [M11]
+  ok   J20 nor a contract mismatch, which an identical request cannot change
+  ok   J21 the retry control is styled
+  ok   J22 including a visible disabled state
+  ok   J23 and a focus ring for the keyboard
+  ok   J24 no asset was left behind on an older token
+  ok   J25 and no token sits on the wrong family
+  ok   J26 the co-deployed set carries the current token
+
+== §M — mutants: twelve ways to break this, each caught by a named assertion ==
+  ok   M1  the shared single-flight latch is removed (caught)
+  ok   M2  the latch becomes a debounce window (caught)
+  ok   M3  the refusal code is replaced by a generic message (caught)
+  ok   M4  a failed retry empties the refusal list (caught)
+  ok   M5  the retry opens a direct socket (caught)
+  ok   M6  the retry is re-pointed at system.health (caught)
+  ok   M7  the bounded recovery ceiling is raised (caught)
+  ok   M8  the capability read budget is extended (caught)
+  ok   M9  the retry introduces a second generation (caught)
+  ok   M10 the universe is read before the capability succeeds (caught)
+  ok   M11 FEATURE_DISABLED is offered a transport retry (caught)
+  ok   M12 the unmounted-controller guard is removed (caught)
+
+== SMF - settlement-order mutants, mounted and driven ==
+  ok   MF1 the settled retry never redraws the control (caught)
+  ok   MF2 the control is dropped while its own read is open (caught)
+
+== SL - a settled read does not write into a page it no longer owns ==
+  ok   L1a the latch is held while the retry is open
+  ok   L1b a FAILED settlement after unmount leaves the hosts byte-for-byte unchanged
+  ok   L1c the control is the very node left at unmount, not a redrawn one
+  ok   L1d the latch is still released
+  ok   L1e no request followed the unmount
+  ok   L1f and no workspace read either
+  ok   L2a a SUCCESSFUL settlement after unmount changes nothing in the hosts
+  ok   L2b the chooser is not rebuilt into a page nobody is on
+  ok   L2c and the resolved scope issues NO workspace read  [this guard stops a REQUEST]
+  ok   L2d and no further universe read
+  ok   L2e the latch is released either way
+  ok   L3a a capability refusal offers a control
+  ok   L3b the click reached the shared bootstrap
+  ok   L3c a capability settlement after unmount does not render into the page
+  ok   L3d while the shared mirror is still free to move under its own authority
+  ok   L3e and the capability latch is released
+  ok   L4a a workspace read is open
+  ok   L4b and it is genuinely unresolved
+  ok   L4c a workspace settlement after unmount writes no rows, refusal, loading or focus
+  ok   L4d the workspace latch is released
+  ok   L4e and no board is mounted into the dead page
+  ok   L5a a freshly created controller is alive
+  ok   L5b the universe is read normally on a live controller
+  ok   L5c and a resolved scope still reads the workspace
+  ok   L5d the hosts are present and serialise to real markup
+  ok   L5e and the board mounts on a live controller
+  ok   L6a the universe is unresolved
+  ok   L6b an unresolved universe does not restore, so a return is a fresh mount
+  ok   L6c route return with no usable snapshot performs exactly ONE fresh universe read
+  ok   L6d a complete site leaves a mounted board to park
+  ok   L6e a controller holding a complete site restores
+  ok   L6f restore makes it live again, so the guard does not strand it
+  ok   L6g route return WITH a usable snapshot performs zero unnecessary rereads
+  ok   L6h and no workspace reread either
+  ok   L6i and the restored page is drawn, not merely silent
+
+== SLMF - ownership-guard mutants, mounted and driven ==
+  ok   LM1 the show() ownership guard is removed (caught)
+  ok   LM2 the show() guard polarity is inverted (caught)
+  ok   LM3 the ownership guard runs after the first DOM mutation (caught)
+  ok   LM4 a dead controller empties the chooser before show() can refuse (caught)
+  ok   LM5 the success path bypasses the ownership guard (caught)
+  ok   LM6 route return never reuses a valid snapshot (always rereads) (caught)
+  ok   LM7 route return reuses a snapshot it does not have (caught)
+
+----------------------------------------
+P1-B8D-R10E USER-TRIGGERED RECOVERY — passed 196  failed 0  |  mutants caught 21  survived 0

@@ -1,0 +1,17 @@
+
+== §9 Target Days removed from the normal UI (internal constant retained) ==
+
+== §10 filter bar — compact + content-width LTS ==
+
+== §11 category strip — reduced vertical padding, behaviour preserved ==
+
+== §12 two-level table header — compacted via the shared sticky tokens (geometry stays aligned) ==
+
+== §13 (FM5-R4UI-R7 §2) active expanded master SKU row — ONE natural scroll unit, NO pin/overlay ==
+
+== §16 overflow containment preserved (no outer-container overflow) ==
+
+== §14 global header compaction HALTED — the shared owner is NOT touched by this page ==
+
+----------------------------------------
+INVENTORY UI COMPACTION (F1-4B-FM5-R4UI-R3): 25 passed, 0 failed

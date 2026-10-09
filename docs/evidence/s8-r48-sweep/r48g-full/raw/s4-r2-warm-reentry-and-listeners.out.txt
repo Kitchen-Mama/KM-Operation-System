@@ -1,0 +1,143 @@
+
+-- A. WARM RE-ENTRY — the rows are already there, and nothing is fetched to prove it ---------------
+
+  ok   A0  the evidence carries the scenario set
+  ok   A1  cold entry costs exactly ONE canonical workspace read
+  ok   A1a and it renders rows
+  ok   A1b and the page calls its own state CURRENT
+  ok   A2  warm re-entry (leave -> immediate return) costs ZERO requests
+  ok   A2a and the rows are on screen
+  ok   A2b with no skeleton left behind
+  ok   A2  warm re-entry (leave -> wait -> return) costs ZERO requests
+  ok   A2a and the rows are on screen
+  ok   A2b with no skeleton left behind
+  ok   A2  warm re-entry (rapid A -> B -> A) costs ZERO requests
+  ok   A2a and the rows are on screen
+  ok   A2b with no skeleton left behind
+  ok   A3  SHELL_BEFORE_NETWORK_SETTLE: cold, the section is visible before any read has settled
+  ok   A3a warm, likewise — nothing had settled when the section appeared
+  ok   A3b LAST_GOOD_MODEL_BEFORE_NETWORK_SETTLE: the rows were ALREADY there at that moment
+  ok   A3c and no loading surface was shown over them
+  ok   A3d WARM_REENTRY_BLOCKS_ON_NETWORK = NO — there was no network to block on
+  ok   A4  leave-while-in-flight then return still costs ONE read, not two
+  ok   A4a and it recovers to rows
+
+-- B. REFRESH FAILURE — the network broke, not the data --------------------------------------------
+
+  ok   B0  the scenario began with a last-good model on screen
+  ok   B1  LAST_GOOD_MODEL_SURVIVES_REFRESH_FAILURE — the rows are still there
+  ok   B1a all of them, not a subset
+  ok   B1b and the page names that state rather than implying it
+  ok   B2  a non-destructive warning is shown
+  ok   B2a and NOT the error banner — the page is not in an error-only state
+  ok   B2b PERMANENT_LOADING_COUNT = 0
+  ok   B3  with NO last-good model a failed read still shows nothing
+  ok   B3a and the truthful error banner instead
+  ok   B3b named FAILED_NO_MODEL, which is a different state
+  ok   B3c and still no permanent skeleton
+  ok   B4  stale data is NEVER presented as newly refreshed
+
+-- C. RETRY — one genuinely new request, and never at the cost of the rows -------------------------
+
+  ok   C1  RETRY_REAL_NEW_REQUEST_COUNT — a successful Retry is one read
+  ok   C1a and it recovers
+  ok   C1b to CURRENT
+  ok   C2  a second Retry dispatches the same as the first — no reuse of a rejected promise
+  ok   C2a and it IS a dispatch, not a no-op button
+  ok   C2b each failing Retry leaves exactly one error banner, not a stack of them
+  ok   C3  three failing retries in a row cost no rows
+  ok   C3a and hold the same honest state throughout
+  ok   C3b then the network recovers and ONE read fixes it
+  ok   C3c REPEATED_RETRY_POISON_COUNT = 0
+  ok   C4  and a past failure does not poison a later route entry either
+
+-- D. GENERATION — an older answer may not overwrite a newer one -----------------------------------
+
+  ok   D1  STALE_RESPONSE_COMMIT_COUNT = 0 — the narrow, older answer did not win
+  ok   D1a the full answer is what is rendered
+  ok   D1b and the page is CURRENT, not quietly holding stale rows
+  ok   D2  the read-generation guard is retained
+  ok   D3  POST_WRITE_INVALIDATION_OWNER: _srdAfterWrite forces its read, so a pre-write flight cannot answer it
+  ok   D3a using the existing no-sharing seam rather than a new transport path
+  ok   D4  NO TTL and no timer-driven refresh was added
+  ok   D4a and nothing was persisted beyond the session — this is an in-memory last-good model only
+  ok   D4b no speculative prefetch
+
+-- E. LISTENERS — mount owns, unmount releases, a remount makes one equivalent set -----------------
+
+  ok   E0  all five measured pages plus the control were driven
+  ok   E1  LISTENER_DRIFT = 0 after ten return trips: FC Summary
+  ok   E1a TIMER_DRIFT = 0: FC Summary
+  ok   E1b no window listener survives a leave: FC Summary
+  ok   E1c nor a document one: FC Summary
+  ok   E1  LISTENER_DRIFT = 0 after ten return trips: Overseas Inventory
+  ok   E1a TIMER_DRIFT = 0: Overseas Inventory
+  ok   E1b no window listener survives a leave: Overseas Inventory
+  ok   E1c nor a document one: Overseas Inventory
+  ok   E1  LISTENER_DRIFT = 0 after ten return trips: Promotion Risk Tracker
+  ok   E1a TIMER_DRIFT = 0: Promotion Risk Tracker
+  ok   E1b no window listener survives a leave: Promotion Risk Tracker
+  ok   E1c nor a document one: Promotion Risk Tracker
+  ok   E1  LISTENER_DRIFT = 0 after ten return trips: Factory Inventory
+  ok   E1a TIMER_DRIFT = 0: Factory Inventory
+  ok   E1b no window listener survives a leave: Factory Inventory
+  ok   E1c nor a document one: Factory Inventory
+  ok   E1  LISTENER_DRIFT = 0 after ten return trips: Forecast
+  ok   E1a TIMER_DRIFT = 0: Forecast
+  ok   E1b no window listener survives a leave: Forecast
+  ok   E1c nor a document one: Forecast
+  ok   E1  LISTENER_DRIFT = 0 after ten return trips: SKU Details (control)
+  ok   E1a TIMER_DRIFT = 0: SKU Details (control)
+  ok   E1b no window listener survives a leave: SKU Details (control)
+  ok   E1c nor a document one: SKU Details (control)
+  ok   E2  every page actually bound listeners inside its own section
+  ok   E3  DUPLICATE_HANDLER_FIRE = 0 — one equivalent active set after ten re-entries: FC Summary
+  ok   E3  DUPLICATE_HANDLER_FIRE = 0 — one equivalent active set after ten re-entries: Overseas Inventory
+  ok   E3  DUPLICATE_HANDLER_FIRE = 0 — one equivalent active set after ten re-entries: Promotion Risk Tracker
+  ok   E3  DUPLICATE_HANDLER_FIRE = 0 — one equivalent active set after ten re-entries: Factory Inventory
+  ok   E3  DUPLICATE_HANDLER_FIRE = 0 — one equivalent active set after ten re-entries: Forecast
+  ok   E3  DUPLICATE_HANDLER_FIRE = 0 — one equivalent active set after ten re-entries: SKU Details (control)
+  ok   E4  LISTENER_OWNER is the lifecycle manager
+  ok   E4a with an explicit release
+  ok   E4b released AFTER the page’s own unmount hook, so a hand-written removal still wins
+  ok   E4c and on the throwing path too — one broken teardown must not reintroduce the drift
+  ok   E5  not repaired with a global once:true
+  ok   E5a nor with a never-unmount workaround
+
+-- F. data.js — two globals that had not existed for months ----------------------------------------
+
+  ok   F1  UNHANDLED_REJECTION_COUNT_POST = 0
+  ok   F1a and no window errors either
+  ok   F1b UNDEFINED_GLOBAL_READ_COUNT_POST = 0 — nothing named as undefined
+  ok   F2  and the baseline recorded the defect it replaced, so this is a repair rather than a claim
+  ok   F3  data.js no longer reads the retired array outside comments
+  ok   F3a and forecast.js no longer calls the retired methods
+  ok   F4  the summary now derives from the series the page already fetched
+  ok   F5  and NO dummy global was created to silence the error
+
+-- G. MUTATION — each repair, removed, must be caught ----------------------------------------------
+
+  ok   G1 a failed refresh destroys the rows again KILLED
+  ok   G2 a retained model reports itself CURRENT KILLED
+  ok   G3 Retry over a last-good model dispatches nothing KILLED
+  ok   G4 the forced-retry latch is never cleared KILLED
+  ok   G5 a stale in-flight read may answer an invalidation KILLED
+  ok   G6 a forced read stops bypassing in-flight sharing KILLED
+  ok   G7 unmount stops releasing the listener scope KILLED
+  ok   G8 the scope binds but records nothing KILLED
+  ok   G9 Forecast binds outside its scope again KILLED
+  ok   G10 the retired global is read again KILLED
+
+  mutants: 10 killed, 0 survived, 0 harness errors
+  ok   G  every planted defect was caught
+
+-- H. MANDATE — what this round was told not to do -------------------------------------------------
+
+  ok   H1  no service worker
+  ok   H2  no speculative prefetch
+  ok   H3  no TTL in the lifecycle owner
+  ok   H4  the retained-model pilot did NOT roll out to the other warm-refetch routes
+  ok   H5  SKU_REGIONAL_PRICING_SPLIT = DECLINED — pricing still rides the one read
+
+PASS  114 passed, 0 failed
+LAST_GOOD_MODEL_SURVIVES_REFRESH_FAILURE = YES · WARM_REENTRY_BLOCKS_ON_NETWORK = NO · RETRY_REAL_NEW_REQUEST_COUNT = 1 · STALE_RESPONSE_COMMIT_COUNT = 0 · PERMANENT_LOADING_COUNT = 0 · LISTENER_DRIFT = 0 · TIMER_DRIFT = 0 · UNHANDLED_REJECTION_COUNT_POST = 0

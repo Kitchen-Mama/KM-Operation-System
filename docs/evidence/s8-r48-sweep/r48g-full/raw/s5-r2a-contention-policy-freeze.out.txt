@@ -1,0 +1,73 @@
+
+== A. §4 worked examples — the model and the live rule agree, and the winner is DERIVED ==
+ok   A1  A  donor 100 · gaps 100/100  -> {"A":100,"B":0}
+ok   A2  A  donor 100 · gaps 100/100: the canonically-first receiver (A) takes 100
+ok   A1  B  donor 100 · gaps 20/100  -> {"A":20,"B":80}
+ok   A2  B  donor 100 · gaps 20/100: the canonically-first receiver (A) takes 20
+ok   A1  C  donor 100 · gaps 20/30  -> {"A":20,"B":30}  (50 unallocated)
+ok   A2  C  donor 100 · gaps 20/30: the canonically-first receiver (A) takes 20
+ok   A1  D  donor 101 · gaps 100/100 (odd)  -> {"A":100,"B":1}
+ok   A2  D  donor 101 · gaps 100/100 (odd): the canonically-first receiver (A) takes 100
+ok   A1  E  donor 100 · gaps 100/100/100  -> {"A":100,"B":0,"C":0}
+ok   A2  E  donor 100 · gaps 100/100/100: the canonically-first receiver (A) takes 100
+ok   A3  odd donor needs no rounding rule — the cap is the receiver residual, the rest flows on
+
+== B. RECEIVER_SORT — each axis proved independently against the live rule ==
+ok   B1  model: requiredByDate ASC decides
+ok   B2  live:  requiredByDate ASC decides (B served first)
+ok   B1  model: allocationPriority DESC decides when dates tie
+ok   B2  live:  allocationPriority DESC decides when dates tie (B served first)
+ok   B1  model: demandKey ASC is the stable tie-break
+ok   B2  live:  demandKey ASC is the stable tie-break (A served first)
+ok   B3  STABLE_TIE_BREAK — input order does not change the outcome
+
+== C. §10 coverage — invariants over every required fixture ==
+ok   C1  0 receivers
+ok   C2  0 receivers: conserved (in 0 = out 0)
+ok   C1  1 receiver
+ok   C2  1 receiver: conserved (in 40 = out 40)
+ok   C1  1 receiver, gap exceeds donor
+ok   C2  1 receiver, gap exceeds donor: conserved (in 40 = out 40)
+ok   C1  2 equal receivers
+ok   C2  2 equal receivers: conserved (in 100 = out 100)
+ok   C1  2 unequal receivers
+ok   C2  2 unequal receivers: conserved (in 100 = out 100)
+ok   C1  3 receivers
+ok   C2  3 receivers: conserved (in 100 = out 100)
+ok   C1  donor > total demand
+ok   C2  donor > total demand: conserved (in 50 = out 50)
+ok   C1  donor < total demand
+ok   C2  donor < total demand: conserved (in 50 = out 50)
+ok   C1  odd donor quantity
+ok   C2  odd donor quantity: conserved (in 101 = out 101)
+ok   C1  zero-gap receiver among real ones
+ok   C2  zero-gap receiver among real ones: conserved (in 60 = out 60)
+ok   C3  OVER_ALLOCATION = 0 · RECEIVER_OVERFILL = 0 · DOUBLE_CONSUMPTION = 0
+ok   C4  DETERMINISTIC = YES (byte-identical output for identical input)
+ok   C5  already-allocated donor need is protected (only 40 releasable)
+ok   C6  reserved/unallocated physical residual is not donor surplus — only 60 moved
+ok   C7  duplicate lineage fails closed (DOUBLE_CONSUMPTION impossible)
+ok   C8  a negative gap fails closed (never clamped to zero)
+ok   C9  MARKETPLACE_IN_POOL_KEY = NO
+
+== D. The one algorithm covers every receiver count (no count-specific path) ==
+ok   D1  0 receiver(s): same algorithm
+ok   D1  1 receiver(s): same algorithm
+ok   D1  2 receiver(s): same algorithm
+ok   D1  3 receiver(s): same algorithm
+ok   D1  4 receiver(s): same algorithm
+ok   D2  ZERO/ONE/TWO/THREE_PLUS all derive from SEQUENTIAL_GREEDY — no count-specific rule
+
+== E. Mutation — the five §10 targets (in memory; no file is written) ==
+ok   E1 live receiver sort reversed (requiredByDate DESC) (caught)
+ok   E2 live allocationPriority sorted ASC instead of DESC (caught)
+ok   E3 live stable tie-break reversed (demandKey DESC) (caught)
+ok   E4 live receiver cap removed (overfill past the residual gap) (caught)
+ok   E5 live donor cap removed (all three guards) — and it takes all three (caught)
+ok   E5a each donor guard is individually sufficient (defence in depth, measured) (caught)
+ok   E6 live duplicate-lineage protection removed (caught)
+ok   E7 a receiver-count-specific branch is introduced at 2 (caught)
+
+== RESULT ==
+passed 59  failed 0  mutants killed 8/8
+D_S5_1_DONOR_CONTENTION = SEQUENTIAL_GREEDY — model and live agree on every fixture

@@ -1,0 +1,149 @@
+
+== A — §1 THE OWNER MAP, measured rather than declared ==
+ok   A1  the FACTORY stock mutation is called ONLY by dispatch (22_) and the PO receipt (13_)
+ok   A1a and it is implemented exactly once
+ok   A2  and the OVERSEAS stock mutation is private to 05_ entirely
+ok   A3  factory reserve is acquired only by the shipment owner
+ok   A4  and so is the overseas reserve — one acquirer, two domains
+ok   A5  the overseas dispatch consume belongs to the dispatch owner alone
+ok   A6  dispatch has ONE entry point, reachable only through the router
+ok   A7  and so does the warehouse receipt
+ok   A8  the shipping plan status transition has ONE owner
+ok   A8a declared exactly once
+ok   A9  no module outside 05_/21_ writes either balance table
+
+== B — §2 THE HUMAN AUTHORIZATION BOUNDARY ==
+ok   B1  the recommendation generator acquires, releases and consumes NOTHING
+ok   B2  and neither does the weekly AI plan — a recommendation is advice, not an allocation
+ok   B3  the shipment workspace READ touches no reservation either
+ok   B4  and it writes no balance row while answering a read
+ok   B5  nor does opening a page create or dispatch a shipment
+ok   B6  no scheduled automation reserves stock
+
+== C — §4 THE FACTORY SOURCE PATH, driven ==
+ok   C1  factory reserve raises RESERVED and leaves current alone — availability is derived
+ok   C1a one movement, named for what happened
+ok   C1b and the overseas snapshot gained no row at all
+ok   C2  dispatch deducts current and clears the hold together -> 70/0
+ok   C2a and the ledger reads as the story
+ok   C3  a FACTORY shipment wrote ZERO overseas movements
+
+== D — §5 THE OVERSEAS SOURCE PATH, driven (the 70/30 case) ==
+ok   D1  100/0 reserve 30 -> 70/30 — a TRANSFER between two stored cells
+ok   D2  dispatch 30 -> 70/0, NOT 40/0 — those units left available when reserved
+ok   D3  and the two movements the spec names, in order
+ok   D4  an OVERSEAS shipment wrote ZERO factory movements
+ok   D5  and 70/0 is 70 allocatable, read from ovsAllocatableTx_ itself
+ok   D6  §13 70 available / 30 reserved is SEVENTY allocatable — never 40
+
+== E — §6/§11 DELIVERED IS NOT A RECEIPT ==
+ok   E1  advancing to DELIVERED mutated no destination inventory
+ok   E1a and wrote no movement row of any kind
+ok   E1b while the status write itself succeeded
+ok   E1c and the shipment really is delivered now
+
+== F — §9 THE RECEIPT PATH, driven against the real handler ==
+ok   F1  receipt of a cumulative 60 is accepted
+ok   F1a destination available +60
+ok   F1b and the answer states remaining 40 — the operator is told, not left to subtract
+ok   F2  a further forty, sent as the cumulative 100, is accepted
+ok   F2a destination available +40 more, 100 in total
+ok   F2b remaining 0
+ok   F3  re-sending the same cumulative is accepted as a no-op
+ok   F3a and moved NO stock — the duplicate had zero effect
+ok   F4  a receipt beyond the shipped quantity is REFUSED
+ok   F4a named RECEIPT_OVER
+ok   F4b and the refusal wrote nothing — fail-closed, not partially applied
+ok   F5  TWO receipt movements for two real deltas, and none for the duplicate or the refusal
+ok   F5a each movement carries a DISTINCT reference_id
+ok   F5b keyed by the shipment LINE and its cumulative, so a replay collides with itself
+ok   F6  a LOWER cumulative is refused rather than treated as a delta
+ok   F6a named RECEIPT_BACKWARD
+ok   F6b and nothing moved
+ok   F7  the receiving page submits the CUMULATIVE value and skips unchanged lines
+
+== G — §10 THE MOVEMENT VOCABULARIES, final ==
+ok   G1  the FACTORY vocabulary is the declared six — shipment_receipt is not among them
+ok   G2  and the OVERSEAS vocabulary is the declared six, receipt included
+ok   G3  every movement_type any live writer emits is declared in one of the two vocabularies
+ok   G4  21_ never names the overseas ledger
+ok   G4a and 05_ never names the factory ledger
+
+== H — §12 SOURCE AUTHORITY ==
+ok   H1  NO runtime module reads the deprecated source_factory_warehouse_id
+ok   H1a it does still appear in the repository — in a COMMENT, which is why it was not deleted
+ok   H1b and ONLY in a comment — strip the comments and no code references it
+ok   H2  the live source identity on a shipment is source_warehouse_id, written and read by the creator
+ok   H2a and the DISPATCHER reads it too, which is what S6-R8A closed
+
+== I — §14 IMPORT / RESERVATION COHERENCE ==
+ok   I1  S=100 against R=30 stores available 70 and leaves reserved alone
+ok   I1a and the row was accepted
+ok   I2  S=20 against R=30 changes NOTHING — the row is refused, not clamped
+ok   I2a and the refusal is named
+ok   I3  the importer declares which quantity columns it may write
+ok   I3a and wh_reserved_stock is NOT among them — import never owns reserved
+
+== J — §16 DUPLICATES AND CONCURRENCY ==
+ok   J1  the first reserve is applied and says so
+ok   J1a a second reserve for the SAME owner is an idempotent refusal, not a second hold
+ok   J1b and the pool moved once, not twice
+ok   J2  releasing twice leaves 100/0 — the second release moved nothing
+ok   J2a and it says NO_RESERVATION rather than inventing stock to give back
+ok   J3  consuming twice leaves 70/0 — available is never deducted a second time
+ok   J3a and the second consume is a typed no-op, not a second deduction
+ok   J5  a SECOND owner cannot reserve past the pool — the balance guard throws
+ok   J5a and the balance is exactly where the first reserve left it
+ok   J5b while the amount that DOES fit is reserved normally
+ok   J4  and the dispatcher debits its in-memory hold per key, so two lines for one SKU cannot consume it twice
+
+== K — §19 THE ORDERING / SHIPPING BOUNDARY ==
+ok   K1  shipment creation starts no order and touches no purchase_orders
+ok   K1a nor does dispatch
+ok   K1b nor does the warehouse receipt
+ok   K1c nor does any shipping-plan transition
+ok   K2  and the procurement owner creates and dispatches no shipment in return
+ok   K3  no Phase-2 lead-time orchestration entered the shipping execution path
+
+== L — §17 OPERATOR SURFACE TRUTH, re-verified ==
+ok   L1  R7 holds: no plan message still says "Factory stock reserved" over an unknown domain
+ok   L2  and the dispatch confirmation states the effect for the SOURCE DOMAIN, not for Factory always
+ok   L3  resolved through the shared warehouse classifier, not a local guess
+
+== N — WHAT DISPATCH SELECTS: the declared source, and nothing else ==
+ok   N1  the declared-source block is marked and findable
+ok   N2  it begins by reading the warehouse the SHIPMENT declares
+ok   N2a and classifies the domain from THAT warehouse, through 12_'s owner — not a second classifier
+ok   N2b the old local classifier and the SKU-wide loader are both gone
+ok   N3  every planned deduction names the DECLARED warehouse — the key is warehouse + sku
+ok   N3a nothing sorts warehouses to pick one, because nothing picks one
+ok   N3b and there is no candidate list left at all
+ok   N4  the domain is decided BEFORE any inventory row is resolved
+ok   N4a and the consume runs after both
+ok   N4b the consume branches on the domain already decided, not on one re-derived from the row
+ok   N5  an OVERSEAS source never opens factory_stock at all
+ok   N5a so a deployment with no factory row for that SKU cannot refuse an overseas dispatch for it
+ok   N6  an insufficient declared source is refused
+ok   N6a and the message tells the operator another warehouse was deliberately not used
+ok   N7  a BLANK declared source refuses rather than falling back to a search
+ok   N7a and an UNKNOWN one is refused by sufficiency, reporting that it could not be found — a hard gate here would be stricter than the one that creates the shipment, which tolerates a missing row
+
+== M — MUTATIONS ==
+ok   MUTANT CAUGHT — M1 the overseas dispatch consume ALSO deducts available — the 70/30 -> 40/0 defect
+ok   MUTANT CAUGHT — M2 the allocatable rule subtracts reserved from a STORED available
+ok   MUTANT CAUGHT — M3 the receipt treats its quantity as a DELTA instead of a cumulative
+ok   MUTANT CAUGHT — M4 over-receipt is accepted instead of refused
+ok   MUTANT CAUGHT — M5 a backward receipt is silently applied
+ok   MUTANT CAUGHT — M6 the importer stops refusing a source that reports fewer units than are reserved
+ok   MUTANT CAUGHT — M7 shipment_receipt is reinstated as a FACTORY movement type
+ok   MUTANT CAUGHT — M8 the factory reserve deducts current stock as well as raising reserved
+ok   MUTANT CAUGHT — M9 the status update starts writing destination inventory
+ok   MUTANT CAUGHT — M10 the receipt stops keying its ledger by the cumulative, so a replay posts twice
+ok   MUTANT CAUGHT — M11 the dispatcher stops routing by source domain and treats every source as Factory
+ok   MUTANT CAUGHT — M12 a second factory-stock writer appears in a module that is not an inventory owner
+ok   MUTANT CAUGHT — M13 the receiving page starts sending a DELTA instead of the cumulative
+
+----------------------------------------------------------------------------------------------------
+S6-R8 MAINLINE FINAL INTEGRATION: 116 passed, 0 failed  ·  mutants 13, survived 0
+diagnostic invariants: PRODUCTION_ROWS_WRITTEN=0 · NETWORK_CALLS=0 · DEPLOYMENTS=0
+----------------------------------------------------------------------------------------------------

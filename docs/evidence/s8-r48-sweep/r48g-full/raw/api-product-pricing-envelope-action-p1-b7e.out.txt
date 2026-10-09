@@ -1,0 +1,140 @@
+
+=== §A  EVERY ENVELOPE CALL SITE, AND THE PROOF THERE IS NO OTHER ===
+  ok   A1 ppwEnvelope_ is the ONLY thing in 72_ that builds a response envelope
+  ok   A2 nine occurrences: one declaration and eight call sites
+  ok   A3 four call sites answer for productPricing.workspace.get
+  ok   A4 and four for productPricing.siteUniverse.get
+  ok   A5 not one call site still uses the old shape, where the action was assumed
+  ok   A6 the workspace handler has exactly four exits, all of them envelopes
+  ok   A7 and the site-universe handler the same
+  ok   A8 and neither returns a hand-built object that would bypass the builder
+
+=== §B  workspace.get — SUCCESS, REFUSAL AND ERROR ALL SAY workspace.get ===
+  ok   B1 flag refused
+  ok   B1a and it is still FEATURE_DISABLED
+  ok   B2 incomplete scope refused
+  ok   B2a and it is a refusal
+  ok   B3 success
+  ok   B3a and it succeeded
+  ok   B4 exception
+  ok   B4a and the envelope reports failure
+  ok   B4b with no data
+  ok   B5 and the refusal payload names the same action the envelope does
+  ok   B5a as does the success payload
+
+=== §C  siteUniverse.get — SUCCESS, REFUSAL AND ERROR ALL SAY siteUniverse.get ===
+  ok   C1 flag refused
+  ok   C1a and it is still FEATURE_DISABLED
+  ok   C1b and it still refuses before opening the database
+  ok   C2 unreadable table refused
+  ok   C2a with its own code
+  ok   C2b and a missing table is still not an empty one
+  ok   C3 success
+  ok   C3a and it is READY
+  ok   C3b with the three sites the rows describe
+  ok   C4 exception
+  ok   C4a and the envelope reports failure
+  ok   C5 the refusal payload names the same action the envelope does
+  ok   C5a as does the success payload
+  ok   C5b and the unreadable-table refusal
+  ok   C6 two actions from one file no longer answer under one name
+
+=== §D  THE ACTION IS AN INPUT AND IS STILL NOT TRUSTED ===
+  ok   D1 the allowlist is exactly this file's two own constants
+  ok   D2 an action outside the allowlist is refused, not published
+  ok   D2a and the refusal says why
+  ok   D3.1 and so is ""
+  ok   D3.2 and so is null
+  ok   D3.3 and so is "undefined"
+  ok   D3.4 and so is 0
+  ok   D3.5 and so is {}
+  ok   D4 a meta carrying its own action does not win
+  ok   D4a while the rest of the caller's meta is still merged
+  ok   D5 no handler reads an action from the request body
+  ok   D6 and an action smuggled in the payload changes nothing
+
+=== §E  THE ROUTER STILL REFUSES WHAT IT DOES NOT KNOW ===
+  ok   E1 the read table routes the site universe
+  ok   E2 and the workspace read
+  ok   E3 and nothing else under that prefix
+  ok   E4 and doPost dispatches it too — an action cannot be routed for one verb only
+  ok   E5.1 the router still says "Invalid POST action"
+  ok   E5.2 the router still says "Missing or invalid action parameter"
+  ok   E6 THE ROUTER DECLARES EXACTLY WHAT ITS MANIFEST ROW EXPECTS (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41) — a partial sync stays visible
+  ok   E6a and both productPricing actions were routed BEFORE this round — R10 corrected an envelope, not a route
+
+=== §F  THE CLIENT VALIDATOR WAS NOT RELAXED ===
+  ok   F1 the accessor still requires meta.action to be the site-universe action
+  ok   F1a and still has a name for the failure
+  ok   F2 and still refuses a server-sent client-only state
+  ok   F3 and still requires the two arrays
+  ok   F4 AND IT DOES NOT FALL BACK TO data.schema.action — the fix is on the side that was wrong
+
+=== §G  THE R9 CAPTURE STILL REPRODUCES THE DEFECT ===
+  ok   G1 the deployed R9 named the WORKSPACE action on a site-universe response
+  ok   G2 while its own schema named the site-universe action — the two disagreed
+  ok   G3 measured on R9
+  ok   G4 the gate refused, live
+  ok   G5 before the database was opened
+  ok   G6 the deployment served contract 14
+  ok   G7 and was not a mixed sync
+  ok   G8 and the capture declares itself immutable
+  ok   G9.1 the capture carries no script.google.com
+  ok   G9.2 the capture carries no AKfycb
+  ok   G9.3 the capture carries no /exec
+  ok   G9.4 the capture carries no macros/s/
+  ok   G9.5 nor the per-request id
+  ok   G9.6 nor the server timestamp
+  ok   G10 the shipped accessor still rejects the R9 body
+  ok   G10a naming the action mismatch as the reason
+  ok   G11 and the board now says an answer arrived for a different request (R10 §5)
+
+=== §H  THE FIXED ENVELOPE PASSES THE UNCHANGED ACCESSOR ===
+  ok   H1 a refusal now reaches the client AS a refusal
+  ok   H1a carrying the server's own sentence, not a transport guess
+  ok   H2 and the site-universe module classifies it as FEATURE_DISABLED
+  ok   H2a which is NOT what it said before — the two are different facts
+  ok   H3 a READY response is not refused
+  ok   H4 the module accepts it
+  ok   H5 with all three sites
+  ok   H6 and the ladder is built from them
+  ok   H7 narrowed to the chosen company and country, not to every marketplace in the universe
+
+=== §I  R9 UNCHANGED · R10 RECORDED · CONTRACT STILL 14 ===
+  ok   I1 72_ has moved off R10 — PRICING-R4G made it resolve prices through 73_ (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24)
+  ok   I2 the release has moved past R10 — a later round minted its own
+  ok   I2a and it is at or after R11, the activation release (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46)
+  ok   I2b and it is a well-formed release stamp, not merely non-empty
+  ok   I3 63_ moved with it, because the release lives in 63_ and changing it changes that file
+  ok   I4 and the manifest expects exactly that from 72_ — a stamp without its manifest entry is a MIXED sync
+  ok   I5 while 63_'s own manifest row moved with 63_ — the self-referential row tracks the file, not the release
+  ok   I6 WHILE 01_router declares exactly what the manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41) — a stamp names the round its own file belongs to
+  ok   I7 the append-only ledger carries both
+  ok   I7a with R10 after R9, appended rather than inserted
+  ok   I8 NO productPricing action is in SYS_REQUIRED_ACTIONS_ — this round added none, and no page depends on one
+  ok   I8a the deployed action contract is at B7E's level or later (v18), never lowered
+  ok   I8b and the client pin AGREES with it — which is what the two numbers are for
+  ok   I9 the required-action list version is at B7E's level or later (v14)
+  ok   I10 and it still holds at least the 44 actions the captured deployment counted — the registry may grow, never shrink
+  ok   I11 the captured evidence still names R9, not R10
+  ok   I11a on both bodies
+
+=== §J  NOTHING ON EITHER PATH CAN WRITE ===
+  ok   J1 72_ contains no writer, no Drive, no mail, no cache, no lock and no fetch
+  ok   J2 the refusal declares read-only, zero writes
+  ok   J3 and so does the success
+  ok   J4 and a disabled read opens nothing and reads nothing — MEASURED, not declared
+
+=== §K  MUTANTS ===
+  ok   K1 a site-universe REFUSAL is stamped with the workspace action again (caught)
+  ok   K2 a site-universe SUCCESS is stamped with the workspace action (caught)
+  ok   K3 the workspace read starts claiming to be the site universe (caught)
+  ok   K4 the refusal path forgets the action and the exception path keeps it (caught)
+  ok   K5 a caller's meta is allowed to rename the action it was served by (caught)
+  ok   K6 any string the caller passes becomes the published action (caught)
+  ok   K7 the client validator is relaxed to make the symptom go away (caught)
+  ok   K8 the action contract is bumped without the client pin that must move with it (caught)
+
+====================================================================================================
+passed 106  failed 0  |  mutants caught 8  survived 0
+====================================================================================================

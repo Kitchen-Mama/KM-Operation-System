@@ -1,0 +1,82 @@
+
+== A — THE LIVE SCREEN, REPRODUCED THROUGH THE PRODUCTION ENTRY ==
+ok   A1  the server flag is true in the config of record
+ok   A1a and 63_ publishes product_strategy_enabled, so the server state is READABLE by a client
+ok   A2  and the navigation authority is true, which is why the menu and six sub-tabs appear
+ok   A3  the deployed capability payload was parsed from 03_
+ok   A3a SUPERSEDED (R10D): the deployed payload NOW carries product_strategy_enabled
+ok   A3b so applying the whole real payload to the mirror RAISES it
+ok   A4  SUPERSEDED (R10D): the mirror is TRUE after a boot that applies the deployed payload
+ok   A5  SUPERSEDED (R10D): the site universe IS now requested
+ok   A6  SUPERSEDED (R10D): the rendered state is no longer FEATURE_DISABLED
+ok   A6a the headline off the R4 screenshot is not what this page shows now
+ok   A6b nor its detail
+ok   A6c and the refusal code is not named on screen
+ok   A7  SUPERSEDED (R10D): there is no refusal left for this state to describe
+
+== B — THE SIX VIEWS ARE THE SAME SCREEN, WHICH IS WHAT THE SCREENSHOT SHOWED ==
+ok   B1  six views are declared
+ok   B2  the universe-load body is locatable in the shipped source
+ok   B2a and the capability is read before the modules are even checked
+ok   B2b the refusal branch reads no view, so all six render identically
+ok   B3  loadUniverse resolves the capability before running the body
+
+== C — THE THIRD AUTHORITY, NAMED: A MIRROR WITH NO PRODUCER ==
+ok   C1  SUPERSEDED (R10D): exactly ONE shipped file raises the mirror — the shared bootstrap
+ok   C1a and neither does index.html
+ok   C2  the mirror is declared false
+ok   C2a and its own header says only a server payload may raise it
+ok   C3  app.js runs the capability bootstrap at boot
+ok   C3a which applies the backend envelope through KM.api
+ok   C3b SUPERSEDED (R10D): the bootstrap now delivers the same answer to this accessor
+ok   C3c and the foundation still has not heard of it — one apply path, never two
+
+== D — WHY THE HARNESS COULD NOT SEE IT: A SECOND, TEST-ONLY ACTIVATION PATH ==
+ok   D1  the replay harness no longer raises the mirror for the page
+ok   D1a it SERVES the capability question instead, the way the deployment answers it
+ok   D1b on the same action the shipped accessor asks
+ok   D2  the activated visual runner mounts through that same install
+ok   D2a and it no longer reaches into the accessor to decide the answer
+ok   D2b it configures the SERVER side of the question instead
+
+== E — THE REPAIR: DERIVED, NOT DECLARED ==
+ok   E1  the accessor exposes a DERIVE step, so the mirror has a producer at last
+ok   E1a which reads the deployed read-only health action
+ok   E2  and there is still exactly ONE mirror variable — not a fourth flag
+ok   E2a the client never declares the server flag, it only reflects it
+ok   E3  and the server keeps the last gate regardless of what any client mirrors
+
+== F — THE REPAIRED CHAIN, DRIVEN FROM BOTH SERVER STATES ==
+ok   F1  server says enabled -> the mirror rises
+ok   F1a SUPERSEDED (R10D): from ZERO health reads — the page asks for nothing
+ok   F1b and the site universe is then actually requested
+ok   F1c the page is no longer answering FEATURE_DISABLED
+ok   F2  server says disabled -> the mirror stays down
+ok   F2a and no productPricing read is sent
+ok   F2b the page says FEATURE_DISABLED
+ok   F2c and never renders READY
+ok   F3  SUPERSEDED (R10D): a bootstrap that could not be completed leaves the mirror FALSE
+ok   F3a and still costs zero business reads
+ok   F3b failing closed, and named as the unanswered read it was rather than as a disabled feature
+ok   F4  a health answer with no capability field is not a yes
+ok   F4a zero business reads
+ok   F5  and neither is the STRING "true"
+
+== G — mutants ==
+ok   G1 the derive step is removed, leaving the mirror with no producer again (caught)
+ok   G2 the mirror is hard-coded true, so a rolled-back server still gets a business read (caught)
+ok   G7 the controller stops resolving the capability and refuses on the stale default (caught)
+ok   G8 this suite raises the capability itself, the way the replay harness does (caught)
+ok   G9 the refusal branch starts reading the view, so the six views could disagree (caught)
+ok   G3 any capability answer raises the mirror, rather than the literal true (caught)
+ok   G4 an unreadable health answer is treated as permission (caught)
+ok   G5 the capability is read off the wrong key, so a switched-on server is disabled (caught)
+ok   G6 the pricing read no longer waits behind the capability (caught)
+
+== H — THE RULES THIS ROUND DOES NOT OWN, AND WHERE THEY LIVE ==
+ok   H1 the server gate before io.openTarget() — activation suite §F
+ok   H2 the partial is fetched and mounted — shell integration
+ok   H3 no asset is left behind on a published token — the release order
+ok   H4 the six views are declared once — information architecture
+
+passed 64  failed 0  |  mutants caught 9  survived 0

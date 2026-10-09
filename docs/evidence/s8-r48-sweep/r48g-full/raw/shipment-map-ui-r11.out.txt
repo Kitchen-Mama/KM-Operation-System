@@ -1,0 +1,47 @@
+
+== Part A — unified compact KPI family (A/B/C) ==
+ok   C Status + Attention both render through the shared glmKpiTileHtml builder (one visual family)
+ok   shared KPI tile component exists (glm-kpi-tile)
+ok   old divergent families (glm-statcard / glm-chip) no longer emitted by the summaries
+ok   A Attention More/collapse interaction removed
+ok   B Attention renders ALL categories (no nonzero-only gate)
+ok   §16 Attention tiles keep the clickable KPI-filter behavior (data-kpi via the shared builder)
+ok   Status tiles are display-only (no filter) — R8C §16 preserved
+
+== Part A CSS — consistent, compact, aligned, zero-safe ==
+ok   §4 tiles shrunk ~10% (min-width 132→116, value 22→20) yet readable
+ok   §3/§16 rail wraps cleanly with equal-height baseline
+ok   §1 only the accent differs across the shared family (status keys + attention tones)
+
+== Part B — one ETA Date control, semantics frozen (D/E/F) ==
+ok   D single "ETA Date" control label present
+ok   D separate ETA From / ETA To labels removed
+ok   E one range field; F from/to semantics FROZEN (still etaFrom/etaTo)
+ok   F ETA filter still evaluates shipments.eta (etaMs) — no route/wh ETA, no new logic
+ok   ETA Date styled as one compact field (Forecast-Review label parity)
+
+== Part C — shipment card hierarchy (G/H/I) ==
+ok   G Shipment ID sits alone on its own row (glm-ship__idrow)
+ok   H status/issue/coord chips are a SEPARATE row (not in the ID row)
+ok   H badges no longer share the Shipment ID row
+ok   I per-shipment issue badge preserved on the affected card
+ok   card row structure styled (idrow + badges)
+ok   §10 card badges shrunk (compact chips, still readable)
+
+== §11/J — no page-wide route banner reintroduced ==
+ok   J the old global incomplete-route warning is NOT reintroduced
+
+== Part D — no shipment-card list inside the map (K/L/M) ==
+ok   K the map-surface Coordinate-Pending shipment tray is removed
+ok   K map shell renders no shipment-card list overlay
+ok   §14/R12 map shell = globe + Map Control Panel + SEPARATE right-side zoom controls
+ok   R12 Map View + layer toggles live inside the Map Control Panel
+ok   L/M left-list click → single selection → globe focus + drawer (unchanged)
+ok   L left shipment list remains the canonical selection owner
+
+== N/O — drawer + no backend change ==
+ok   N drawer owner unchanged (openShipmentDrawer / receiptPanelHtml present)
+ok   O no backend writer/schema introduced on the map page (presentation-only)
+
+----------------------------------------
+SHIPMENT MAP UI (F1-SHIPMENT-MAP-UI-R11): 30 passed, 0 failed

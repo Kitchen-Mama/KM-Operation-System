@@ -1,0 +1,70 @@
+
+-- UK Inventory / GB compatibility --
+ok   UK-1: GB matches UK scope
+ok   UK-3: US excluded for UK
+ok   UK-6: inventory EU scope stays exact (no expansion)
+
+-- Part A: physical 3rd Party breakdown (summary == detail total) --
+ok   A-1: CO1100-S physical total = 240 (NOT 31)
+ok   A-1b: WINIT UK row = 240
+ok   A-2: 31 (sitePlanningAvailable) is NOT the physical total
+ok   A-3: sitePlanningAvailable preserved on plan (planning path)
+ok   A-4: multi-warehouse total = SUM(rows) = 140
+ok   A-5: UK/GB same warehouse_id deduped (240, not 480)
+ok   A-6: empty breakdown → total 0, hasRows false (no fallback to 31)
+ok   A-7: legal zero row preserved
+
+-- Amazon EU Weekly Sales (unchanged) --
+ok   EU-1: IT+DE+ES+FR=100
+ok   EU-legacy: no legacy country=EU fallback
+
+-- Strict active normalization --
+ok   ACT included: true
+ok   ACT included: "true"
+ok   ACT included: "TRUE"
+ok   ACT included: "yes"
+ok   ACT included: 1
+ok   ACT included: "1"
+ok   ACT excluded: false
+ok   ACT excluded: "false"
+ok   ACT excluded: 0
+ok   ACT excluded: "0"
+ok   ACT excluded: ""
+ok   ACT excluded: null
+ok   ACT excluded: undefined
+ok   ACT excluded: "maybe"
+
+-- Part B: Factory From cross-company --
+ok   FAC-1: KM scope From includes KM+ResUS+ResTW active factories (cross-company)
+ok   FAC-2: inactive factory excluded
+ok   FAC-3: no factory in To
+ok   FAC-4: non-Amazon scope From same active factory pool (marketplace-agnostic)
+
+-- Part B: Amazon logical destination --
+ok   AMZ-1: exactly ONE Amazon logical destination
+ok   AMZ-2: logical dest has null warehouse_id + token
+ok   AMZ-3: NO individual FBA warehouse rows in Weekly-Plan To
+ok   AMZ-4: eligible real 3PL preserved in To
+ok   AMZ-5: non-Amazon has NO logical destination
+ok   AMZ-6: non-Amazon To = eligible 3PL only
+ok   AMZ-7: logical token → marketplace=Amazon + null warehouse_id
+ok   AMZ-8: real id → selected_destination_warehouse_id
+
+-- Part B: EU warehouse compatibility --
+ok   EUW-map: EU → EU/DE/ES/IT/FR
+ok   EUW-map2: DE → DE only
+ok   EUW-map3: UK → UK/GB
+ok   EUW-1: Amazon EU To 3PL = EU/DE/ES/IT/FR (UK excluded)
+ok   EUW-2: DE context = DE only (no cross-country mixing)
+ok   EUW-3: FR context = FR only
+ok   ISO: other-company 3PL excluded
+
+-- wiring guards --
+ok   wire: UK summary+detail use buildPhysicalThirdPartyBreakdown
+ok   wire: summary no longer displays sitePlanningAvailable
+ok   wire: candidate builder delegates to IRWarehouse.buildCandidates
+ok   wire: save path serializes destination via resolveDestinationPayload
+ok   wire: To renders Amazon logical destination option
+ok   wire: no legacy EU sales fallback
+
+ALL PASS

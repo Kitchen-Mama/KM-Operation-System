@@ -1,0 +1,207 @@
+
+== §D — THE SERVER NAMES ITS REASON, AND THE BROWSER NOW KEEPS THE NAME ==
+ok   D1  16_ emits at least 40 distinct typed codes (read: 44)
+ok   D2  every typed code 16_ emits survives the transport adapter verbatim
+ok   D3.1  ROUTE_INTENT_REQUIRED is shown as itself
+ok   D3.2  ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE is shown as itself
+ok   D3.3  ROUTE_CREATE_IDEMPOTENCY_KEY_REQUIRED is shown as itself
+ok   D3.4  APPLIED_SCOPE_MISMATCH is shown as itself
+ok   D3.5  STALE_OPTIMISTIC_TOKEN is shown as itself
+ok   D3.6  ALLOCATION_DRAFT_NOT_FOUND is shown as itself
+ok   D4  a code-less answer still classifies from the leading token
+ok   D5  a prose `code` is not mistaken for a typed classification
+ok   D6.1  the page names ROUTE_INTENT_REQUIRED too
+ok   D6.2  the page names ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE too
+ok   D6.3  the page names APPLIED_SCOPE_MISMATCH too
+ok   D6.4  the page names STALE_OPTIMISTIC_TOKEN too
+ok   D7.1  a failing answer records http_status
+ok   D7.2  a failing answer records elapsed_ms
+ok   D7.3  a failing answer records raw_present
+ok   D7.4  a failing answer records response_is_json
+ok   D7.5  a failing answer records server_code
+
+== §F3 — THE ATOMIC ENVELOPE IS ACKNOWLEDGEABLE (defect 1) ==
+ok   F1  a one-line atomic UPDATE (created:0, updated:1) IS acknowledged
+ok   F2  an atomic CREATE is acknowledged as created
+ok   F3  CREATE_REPLAYED is an acknowledged success
+ok   F4  REUSED is an acknowledged success
+ok   F5  the two-call boolean contract still holds
+ok   F6  no classification at all => still NOT persisted
+ok   F7  no primary key => still NOT persisted, whatever the outcome says
+ok   F8  16_ publishes header_created as a boolean
+ok   F9  16_ republishes the line counts under unmistakable names
+
+== §H.1 — ONE EXISTING ROUTE, To AND Qty, TWICE (defect 2: the version is adopted) ==
+ok   H1.1 the first edit reports NO failure
+ok   H1.2 still exactly one header and one line
+ok   H1.3 the Qty the operator typed is what the database holds
+ok   H1.4 same header id
+ok   H1.5 same line id
+ok   H1.6 the row adopted the version the server moved to
+ok   H1.7 the SECOND edit of the same route also succeeds — no STALE_OPTIMISTIC_TOKEN
+ok   H1.8 and it did not create a second ticket
+ok   H1.9 the To the operator chose is what the database holds
+ok   H1.10 still the same header id after two edits
+
+== §H.2 — ONE UPDATE + ONE + Add Route IN THE SAME SAVE ==
+ok   H2.1 before: one ticket
+ok   H2.2 both routes report success
+ok   H2.3 after: exactly +1 header and +1 line
+ok   H2.4 the UPDATE applied and did not create
+ok   H2.5 the added route got its OWN header
+ok   H2.6 and its line id was bound back
+
+== §H.3/§H.4/§E — THREE AND FIVE DIRTY ROUTES: MEASURED CONCURRENCY AND TIMING ==
+ok   H3.1 THREE dirty routes put at most ONE write request in flight
+ok   H3.2 zero client timeouts
+ok   H3.3 zero lock refusals — the page never contends with itself
+ok   H3.4 zero outcome-unknown, zero failures
+ok   H3.5 three tickets, three lines — no duplicates
+ok   H3.6 three distinct instance ids
+ok   H3.7 and three distinct headers, one per instance
+ok   H4.1 FIVE dirty routes still put at most ONE request in flight
+ok   H4.2 exactly five write requests — one per route, none repeated
+ok   H4.3 no lock refusal and no timeout
+ok   H4.4 five tickets
+ok   H4.5 elapsed is exactly the serial sum (5 x 3 000 ms)
+ok   H4.6 and the whole batch finishes inside ONE client write budget (15000 < 90 000 ms)
+ok   H4.7 at 12 s per request the batch is 60 s and still nothing times out
+ok   H4.8 measured elapsed at 12 s per request
+
+== §H.5 — A CREATE WHOSE RESPONSE IS LOST IS RECONCILED, NOT DUPLICATED ==
+ok   H5.1 the server DID commit exactly one ticket
+ok   H5.2 the read-back settled it as SAVED, so nothing is reported as failed
+ok   H5.2b and it settled it by ASKING THE DATABASE
+ok   H5.3 the route adopted the header the read-back found
+ok   H5.4 and its line id
+ok   H5.5 saving again writes no second ticket
+
+== §H.6 — AN UPDATE WHOSE RESPONSE IS LOST IS SETTLED BY READBACK, NEVER BY A CREATE ==
+ok   H6.1 the write did land server-side
+ok   H6.2 still exactly one header — the lost UPDATE did NOT fall back to a CREATE
+ok   H6.3 the edit is in the database
+ok   H6.4 the read-back proved it saved, so it is reported saved
+ok   H6.5 and the reconciled row adopted the stored version
+
+== §H.6b — A LOST UPDATE THAT DID NOT LAND IS REPORTED NOT SAVED, NOT UNKNOWN ==
+ok   H6b.1 one route is reported
+ok   H6b.2 the read-back proved the version never moved, so it is NOT SAVED
+ok   H6b.3 and it says how that was established
+ok   H6b.4 the database is untouched
+
+== §H.10 — WHEN THE READBACK CANNOT ANSWER, THE ROUTE STAYS OUTCOME UNKNOWN ==
+ok   H10.1 a failed read-back leaves the route OUTCOME UNKNOWN — never a confident NOT SAVED
+ok   H10.2 and says the read-back itself failed
+
+== §H.7 — A BACKEND TYPED REJECTION KEEPS ITS TYPE ==
+ok   H7.1 a named zero-write refusal is NOT SAVED, not unknown
+ok   H7.2 the typed reason reaches the operator
+ok   H7.3 and no read-back was issued — the server already settled it
+
+== §H.8 — A PRE-MIGRATION SHEET FAILS THE CREATE CLOSED, AND WRITES NOTHING ==
+ok   H8.1 the sheet is the pre-migration 35 columns
+ok   H8.2 the create is reported
+ok   H8.3 as a proven zero write
+ok   H8.4 naming the schema refusal — this is what production saw as a bare BUSINESS_COMMAND_ERROR
+ok   H8.5 nothing at all was written
+
+== §H.9 — A GENUINELY STALE VERSION IS A NAMED CONFLICT, AND NEVER A SECOND TICKET ==
+ok   H9.1 refused, and named as a zero write
+ok   H9.2 as an optimistic-token conflict
+ok   H9.3 and NO second ticket was created
+ok   H9.4 the other tab’s row is untouched
+
+== §H.11 — ONE ROUTE FAILING VALIDATION DOES NOT DECIDE THE OTHERS ==
+ok   H11.0 the envelope reports BOTH routes - a per-route report, not a verdict
+ok   H11.1 exactly ONE route is reported failed
+ok   H11.2 and it is an update
+ok   H11.3 correlated to the route that actually failed, by instance id
+ok   H11.4 the other route was written normally
+ok   H11.5 no ticket was created or lost by the failure beside it
+
+== §H.12/§G — A SECOND SAVE CANNOT START WHILE THE FIRST IS IN FLIGHT ==
+ok   H12.1 the page knows a save is running
+ok   H12.2 + Add Route rendered nothing while the save was in flight
+ok   H12.3 and the operator was told why
+ok   H12.4 three rapid clicks never put two operations in flight at once
+ok   H12.4b and the coalesced re-flush issued no extra write, because nothing was left dirty
+ok   H12.5 and exactly one ticket
+ok   H12.6 the gate is released when the batch settles
+ok   H12.7 the control state was synced on entry and on exit
+
+== §G.2 — EVERY ROUTE CARRIES ITS OWN STATE ==
+ok   G2.0 model shape
+ok   G2.1 a state applies to exactly the named instance
+ok   G2.2 the named route is Saving
+ok   G2.3 and the route beside it is untouched
+ok   G2.4 an unknown state is refused
+ok   G2.5.1  SAVING is a declared route state
+ok   G2.5.2  SAVED is a declared route state
+ok   G2.5.3  NOT_SAVED is a declared route state
+ok   G2.5.4  RECONCILING is a declared route state
+ok   G2.5.5  OUTCOME_UNKNOWN is a declared route state
+
+== §F2 — THE TIMEOUT HAS ONE OWNER, AND IT IS NOT 60 SECONDS ==
+ok   F2.1 the write bound is a single named constant
+ok   F2.2 and it is 90 000 ms — the "60 s timeout" in the report was the READ default
+ok   F2.3 the read bound is its own constant
+ok   F2.4 every locked handler declares its wait (5 found)
+ok   F2.5 every lock wait is shorter than the client write budget, so lock starvation answers rather than times out
+ok   F2.6 the current owner stamp is at or after this round
+
+== §F2.4 — A CREATE RETRY REUSES ITS KEY; AN UPDATE RETRY KEEPS ITS ID ==
+ok   F4.1 the create key IS the route instance id, so a retry of the same click reuses it
+ok   F4.2 an UPDATE declares the version it expects and carries its own id
+ok   F4.3 the intent comes from persisted identity — an UPDATE can never become a CREATE
+ok   F4.4 a lost CREATE is settled by its stored key
+ok   F4.5 a lost UPDATE is settled by the version it expected
+
+== §E — THE HYPOTHESES THAT WERE MEASURED FALSE ==
+ok   E1  the save does NOT fan out with Promise.all
+ok   E2  the groups are chained, which is what the measurement confirmed
+ok   E3  a second flush for the same SKU coalesces instead of racing
+
+== §C — THE PRODUCTION CENSUS IS READ-ONLY, AND ITS ZERO-WRITE CLAIM IS STRUCTURAL ==
+ok   C1  the census never names setValue in code
+ok   C2  the census never names appendRow in code
+ok   C3  the census never names deleteRow in code
+ok   C4  the census never names clearContent in code
+ok   C5  the census never names setValues in code
+ok   C6  the census never names insertColumn in code
+ok   C7  the census never names deleteColumn in code
+ok   C8  the census never names getScriptLock in code
+ok   C9  the census never names PropertiesService in code
+ok   C10  the census never names UrlFetchApp in code
+ok   C11  the census never names MailApp in code
+ok   C12  the census never names DriveApp in code
+ok   C13 it reads through getDataRange().getValues()
+ok   C14 and every sheet goes through the read-only facade
+ok   C15 exactly ONE entry point
+ok   C16 it states its own zero-write result
+ok   C17 it answers whether the migration has run, and what that means for + Add Route
+ok   C18 it names zero-line orphan headers
+ok   C19 and headers the hydrate would not show
+ok   C20 and it refuses to attribute a row by K2/K4 shape
+
+== §I — MUTATIONS. Each is applied to shipped source and must be caught. ==
+ok   I1  unbounded Promise.all over route groups (caught)
+ok   I2  a lock wait longer than the client write budget (caught)
+ok   I3  treating a lost response as NOT SAVED without asking the database (caught)
+ok   I4  a CREATE retry that mints a new idempotency key (caught)
+ok   I5  an UPDATE degrading into a CREATE (caught)
+ok   I6  binding a result to a route by position instead of by instance (caught)
+ok   I7  discarding the handler’s own typed code (caught)
+ok   I8  creating a route on a sheet that cannot store the idempotency key (caught)
+ok   I9  not binding the persisted line id back to the row (caught)
+ok   I10  + Add Route still usable while a save is in flight (caught)
+ok   I11  a second batch for the same SKU while the first is in flight (caught)
+ok   I12  reconciling without asking the database (caught)
+ok   I13  re-creating a ticket the server had already committed (caught)
+ok   I14  ignoring the optimistic token (caught)
+ok   I14a accepting an UPDATE that declares no optimistic token at all (caught)
+ok   I15  requiring created/updated booleans from the atomic envelope (caught)
+ok   I16  not adopting the draft_version the server returned (caught)
+
+== RESULT ==
+
+163 passed, 0 failed.  mutations: 17 caught, 0 missed.

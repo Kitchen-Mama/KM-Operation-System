@@ -1,0 +1,91 @@
+
+== A. D-S6-A — the factory reservation trigger, frozen at Shipment Draft creation ==
+ok   FROZEN FACTORY_RESERVATION_TIMING = SHIPMENT_DRAFT_CREATION
+ok   A1 RESERVE happens inside the Shipment Draft creator — the decision matches deployed code
+ok   A2 RELEASE happens on Shipment Draft cancellation
+ok   A3 CONSUME happens at the dispatch movement
+ok   A4 exactly one reservation owner, still
+
+== B. D-S6-B — overseas IS a Phase-1 shipping source, and may not stay unprotected ==
+ok   FROZEN OVERSEAS_ORIGIN_SUPPORTED_PHASE1 = YES
+ok   FROZEN OVERSEAS_RESERVATION_REQUIRED = YES
+ok   FROZEN OVERSEAS_DOUBLE_ALLOCATION_ALLOWED = NO
+ok   FROZEN OVERSEAS_CAN_SHIP = YES
+ok   FROZEN OVERSEAS_CAN_PRODUCE = NO
+ok   FROZEN OVERSEAS_REFURBISH_PHASE1 = NO
+ok   B1 [R4B] the creator asks ONCE which domain the source warehouse belongs to — until R4B it had no factory/overseas branch at all, which is what left the overseas source unprotected
+ok   B2 [R4B] and an overseas source now fails against OVERSEAS stock. Until R4B it was measured against factory stock, so it refused for the wrong reason at a warehouse that holds no factory rows
+ok   B3 TRIPWIRE — nothing yet writes a non-zero overseas reservation
+ok   B4 the overseas handler never reads factory_stock — domains stay separate
+ok   B5 the factory stock authority never reads overseas inventory
+ok   B6 the overseas movement ledger already carries `from_stock_type` — no schema change needed for a reservation
+ok   B6 the overseas movement ledger already carries `to_stock_type` — no schema change needed for a reservation
+ok   B6 the overseas movement ledger already carries `wh_before_reserved_stock` — no schema change needed for a reservation
+ok   B6 the overseas movement ledger already carries `wh_after_reserved_stock` — no schema change needed for a reservation
+ok   B6 the overseas movement ledger already carries `movement_scope` — no schema change needed for a reservation
+ok   B7 …and `reserved` is already in its declared allowed stock-type set
+
+== C. D-S6-C — an approved plan with no shipment must get a terminal escape ==
+ok   FROZEN APPROVED_WITHOUT_SHIPMENT_CAN_CANCEL = YES
+ok   FROZEN GHOST_PLAN_EXPOSURE_ALLOWED = NO
+ok   C1 [R5] cancel is ACCEPTED from `approved`, through an eligibility check — the code now matches the decision frozen above it
+ok   C2 `cancelled` already releases plan exposure — the escape needs no new release field
+ok   C3 …and `approved` holds it, which is exactly why the escape is required
+ok   C4 the "does a shipment exist" predicate already exists — the guard condition needs no new derivation
+ok   C5 one shipment per plan, so "no shipment exists" is a decidable condition
+
+== D. D-S6-D — the movement vocabulary stays closed at seven ==
+ok   FROZEN MOVEMENT_VOCABULARY_EXPANDED = NO
+ok   D1 exactly six declared factory movement types
+ok   D2 [R6] and they are exactly the canonical six — the misfiling was fixed by MOVING a member, never by adding one
+ok   D3 TRIPWIRE — shipment_receipt is still written onto the OVERSEAS ledger
+ok   D4 [R6] and it is no longer declared in the FACTORY vocabulary — neither as a member nor as a constant. The tripwire said the move would not add a type, and D1/D2 above measure that it did not.
+
+== E. D-S6-E — no silent clamp. ALREADY SATISFIED by deployed code. ==
+ok   FROZEN PO_OVER_RECEIPT_SILENT_CLAMP = NO
+ok   FROZEN PO_OVER_RECEIPT_CAN_MUTATE_INVENTORY = NO
+ok   E1 the silent clamp is GONE from the receipt path
+ok   E2 an over-receipt is a typed refusal
+ok   E3 the refusal carries `attempted`, as the decision requires
+ok   E3 the refusal carries `remaining`, as the decision requires
+ok   E3 the refusal carries `excess`, as the decision requires
+ok   E4 the refusal is evaluated BEFORE the apply branch — no inventory mutation on an over-receipt
+ok   E5 no tolerance policy was invented, exactly as the decision requires
+
+== F. D-S6-F — one source-factory authority ==
+ok   FROZEN SOURCE_FACTORY_AUTHORITY_COUNT = 1
+ok   F1 factory_stock_allocation_plans has NO reference in shipped code — the authority is documentation-only
+
+== G. D-S6-G + the phase boundary ==
+ok   FROZEN S6_LARGE_FATIGUE_DEFERRED = YES
+ok   FROZEN S6_PRODUCTION_WRITE_SMOKE_DEFERRED = YES
+ok   FROZEN ORDERING_SHIPPING_ORCHESTRATION_IMPLEMENTED = NO
+ok   FROZEN PHASE2_DECISION_COUNT_IMPLEMENTED_NOW = 0
+ok   G1 no shipping or overseas owner creates a Request Order or a PO
+ok   G2 no procurement owner creates a shipment
+ok   G3 no ordering owner reads a carrier lead time
+
+== H. the already-frozen authorities survive this round (§8) ==
+ok   H1 SOURCE_SELECTION_AUTHORITY still declared in the contract
+ok   H1 AUTOMATIC_SOURCE_PRIORITY_EXISTS still declared in the contract
+ok   H1 CARRIER_FINAL_SELECTION_AUTHORITY still declared in the contract
+ok   H1 DESTINATION_AVAILABILITY_EVENT still declared in the contract
+ok   H1 ROUTE_FREEZE_EVENT still declared in the contract
+ok   H1 POST_DISPATCH_ROUTE_EDIT_ALLOWED still declared in the contract
+ok   H2 the seventeen R2 rules are still carried
+
+== I. mutation ==
+ok   I1 a seventh movement type is added (caught)
+ok   I2 the silent clamp comes back (caught)
+ok   I3 a second factory reservation owner appears (caught)
+ok   I4 the overseas handler starts reading factory stock (caught)
+ok   I5 `cancelled` stops releasing plan exposure (caught)
+
+=====================================================
+S6-R2A DECISION FREEZE GUARDS — 64 passed / 0 failed
+mutants: 5 caught / 5 planted
+D_S6_A..G = FROZEN   UNRESOLVED_DECISION_COUNT = 0
+ALREADY_SATISFIED_BY_DEPLOYED_CODE = D-S6-A, D-S6-E
+AWAITING_S6_R3 = D-S6-B, D-S6-C, D-S6-D, D-S6-F(doc)
+PRODUCTION_ROWS_WRITTEN = 0   S6_BEHAVIOR_CHANGED = NO
+=====================================================

@@ -1,0 +1,150 @@
+
+== A. INITIAL LOAD — THE MODEL AND THE LEDGER ARE ONE FACT (§14.1) ==
+ok   A1  a cold mount reads exactly two slices
+ok   A2  and the Regular tab is drawable from them
+ok   A3  with nothing marked failed
+ok   A4  a missing bootstrap makes the page undrawable, whatever else landed
+ok   A5  the refusal discards the model — never a broad-cache fallback
+ok   A6  AND the ledger that described it, in ONE operation — no record outlives its rows
+ok   A7  so Retry asks for BOTH — the regression was asking only for bootstrap
+ok   A8  one fresh request per missing slice, and no more
+ok   A9  the Regular rows come back — the silent empty table is gone
+ok   A10 and the tab is drawable again
+ok   A11 with the banner cleared, because nothing is still failed
+ok   A12 an invalidated ledger marks nothing as failed
+ok   A13 yet Retry still asks for what the tab needs
+ok   A14 a failed slice settles to REFUSED, never LOADING for ever
+ok   A15 and its single-flight handle is released, so Retry gets a genuinely fresh request
+ok   A16 the mount announces its load to the region
+ok   A17 and Retry announces the same thing, so the region stops describing a refusal it left behind
+ok   A18 while a refusal still sets it to ERROR in the first place
+
+== B. GENERATIONS — A LATE ANSWER MAY NOT OVERWRITE A NEWER ONE (§14.2) ==
+ok   B1  invalidating the model advances the generation
+ok   B2  the older answer is dropped at the COMMIT point, not merely ignored at the draw
+ok   B3  so it cannot repopulate the model the reset had just emptied
+ok   B4  and it leaves no record on a ledger that has been reset under it
+ok   B5  an answer whose generation is still current commits normally
+
+== C. THE COLD MOUNT IS ARBITRATED, NOT RE-TIMED (§14.3) ==
+ok   C1  the read bound is still 60 000 ms — a timeout is not fixed by enlarging it
+ok   C2  and a timeout is still never retried automatically: the bound already elapsed
+ok   C3  the mount waits on the EXISTING boot arbiter, not on a second coordinator
+ok   C4  and only for a dependency that is actually open
+ok   C5  nothing open → dispatch immediately, exactly as before
+ok   C6  no arbiter → dispatch immediately, so nothing depends on the module being present
+ok   C7  and a FAILED dependency releases the read exactly like a settled one
+ok   C8  the dependency is the boot capability read app.js already declares
+ok   C9  which app.js does declare, so the name is not invented here
+ok   C10 and the arbiter caps that wait, so it can only make the read start sooner
+ok   C11 the cold mount goes through it
+ok   C12 and still fires every missing slice TOGETHER — 4.5 s measured against 10 s sequential
+ok   C13 while a warm re-entry still issues ZERO requests and never reaches the wait
+ok   C14 in that order — a page with everything in memory must not wait for a boot read
+
+== D. MARKETPLACES HAS ONE OWNER (§14.4) ==
+ok   D1  marketplaces is NOT a builder prerequisite on either path
+ok   D2  while marketplace_skus still is — no workspace read carries it
+ok   D3  the Regular path is two tables
+ok   D3a  and the forecast table is not one of them — an authoritative read already owns it
+ok   D4  the Special path holds no table outside the ceiling, and is not empty
+ok   D4a and neither table with an authoritative scoped owner is on it
+ok   D4a  with fc_special_events owned by the events slice rather than fetched as a table
+ok   D5  because the bootstrap slice owns those rows
+ok   D6  the workspace adapter runs normalizeMarketplaceRecord with the canonical filter
+ok   D7  and the broad cache runs the SAME one — the two stores are the same rows in the same shape
+ok   D8  exactly one direct broad-cache call remains, inside the accessor itself
+ok   D9  which is read-model-first, so no second cache authority was created
+ok   D100 _populateRegularScopeSelects asks the page accessor
+ok   D11 _fcRegularSiteOptions asks the page accessor
+ok   D12 _populateEventScopeSelects asks the page accessor
+ok   D13 _evtMarketplaceIdentity_ asks the page accessor
+ok   D14 and the Demo guard survives — a demo dataset is never mixed into live
+ok   D15 after a bootstrap read the accessor answers from the model, with zero further requests
+ok   D16 and asking again issues nothing at all
+
+== E. EVENT PERIOD UX — ONE OWNER (§10.2) ==
+ok   E1  New event: the date fields are visible
+ok   E2  New event: no period-confirmation tick
+ok   E3  labelled as the event's dates
+ok   E4  both of them
+ok   E5  (banner state is the chrome's, not the period owner's)
+ok   E6  and the event flag cannot hide them
+ok   E7  Existing: the confirmation row is shown
+ok   E8  Existing: the date editor is hidden by default
+ok   E9  with the saved window stated in words, right under the tick
+ok   E10 ticking reveals the period editor
+ok   E11 prefilled with the saved start
+ok   E12 and the saved end
+ok   E13 labelled as the NEW dates
+ok   E14 both of them
+ok   E15 and the saved window stays visible beside the new ones
+ok   E16 unticking puts the saved window back — an abandoned edit is not left in a hidden field
+ok   E17 and hides the editor again
+ok   E18 loading a saved event lands in the unconfirmed state
+ok   E19 and going back to a new event restores the dates — the regression was leaving them hidden
+ok   E20 each period row is reached from exactly ONE place in the page
+ok   E21 and that place is _evtSyncPeriodUi_
+ok   E22 the event flag no longer owns visibility and defers to it
+ok   E23 so does the editing chrome
+ok   E24 and so does the restore path, which clears the tick
+ok   E25 and the tick itself is wired to the toggle handler
+ok   E26 with addressable labels for it to write
+ok   E27 hydration still assigns the flag programmatically, and now recomputes through the chrome
+
+== F. SAVE BEHAVIOUR — THE CONFIRMATION DECIDES, NOT THE VISIBILITY (§8) ==
+ok   F1  a changed window without the tick still writes NOTHING
+ok   F2  and it is refused before stage 1, so zero tables are touched
+ok   F3  the save does NOT substitute the saved window for the form — swallowing a change is worse than refusing it
+ok   F4  a ticked box with UNCHANGED dates is an ordinary save — the tick alone is not a change
+ok   F5  and reassignment needs BOTH a real change and the confirmation
+ok   F6  the dates are still required when an event is actually being written
+
+== G. OPERATOR-FACING COPY (§9) ==
+ok   G1  the editing banner carries no write-path vocabulary
+ok   G2  and it is two short lines
+ok   G3  line 1: which event, its saved window, how many SKUs
+ok   G4  line 2: that the forecast can be edited
+ok   G5  and that the period changes through the control the form actually shows
+ok   G6  both short
+ok   G7  the tick says what it does, in four words
+ok   G8  and the banner names it by that exact label, so the two cannot drift apart
+ok   G9  the picker no longer advertises a second window per SKU — §10.1 forbids exactly that
+ok   G10 and counts saved events, which is what the list holds
+
+== H. NON-REGRESSION ==
+ok   H1  MAX 8 is still an authoring limit only — an existing event has no cap
+ok   H2  and it is still 8 for a new one
+ok   H3  the server uniqueness guard is untouched
+ok   H4  and so is the client preflight
+ok   H5  the expired-redirect read recovery is untouched
+ok   H6  and the write transport is unchanged
+ok   H7  §10.1 is still frozen
+ok   H8  with §10.2 and §14 frozen beside it
+ok   H9  the Regular batch writer still exists — B1 hardened it in place
+ok   H10 Special stage 3 is no longer a per-SKU loop
+ok   H10a it is one batch request over the action that already existed
+ok   H10b and the per-SKU writer is not called from the builder save at all
+
+== M. MUTANTS — each injects a real fault and must be caught ==
+ok   M1 the ledger outlives the model it described (caught)
+ok   M2 Retry issues no request at all after an invalidation (caught)
+ok   M3 a superseded answer is merged into the newer model (caught)
+ok   M4 a failed flight is left in the record, so Retry re-awaits the rejection (caught)
+ok   M5 the mount dispatches beside an open boot read (caught)
+ok   M6 marketplaces is fetched again although the bootstrap slice carries it (caught)
+ok   M7 the event flag can hide a new event's dates again (caught)
+ok   M8 an existing event exposes its period editor by default (caught)
+ok   M9 a new event offers a period-change confirmation (caught)
+ok   M10 an abandoned period edit survives in a hidden field (caught)
+ok   M11 the banner describes storage to an operator (caught)
+ok   M12 an unknown SKU count is stated as a number anyway (caught)
+
+== V. VACUITY — the instruments must be able to fail ==
+ok   V1  `shown` really does read both a style.display and a hidden flag
+ok   V2  and it changes when the element does
+ok   V3  a failed read really does leave the accessor empty, so A9 is not a tautology
+
+====================================================================================================
+PASS  126 passed, 0 failed, 12 mutants, 0 survived
+====================================================================================================

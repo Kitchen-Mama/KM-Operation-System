@@ -1,0 +1,13 @@
+
+== §0/§19 A/D/E/F — the EXISTING locked writer persists order_qty; recommended_qty immutable; reload restores ==
+
+== §12 stale version + §9/§C recommended_qty not editable — fail closed, zero write ==
+
+== §11 AI Plan regeneration preserves a user-edited order_qty (unchanged R4E2 protection) ==
+
+== PURE — _roBuildOrderQtyEditCommand_ emits order_qty ONLY under the canonical MONTHLY grain ==
+
+== WIRING — adapter wrappers + edit routing + Send Request untouched + no keystroke storm ==
+
+----------------------------------------
+REQUEST ORDER CANONICAL EDIT (F1-4B-FM6-R4E3-PRE): 43 passed, 0 failed

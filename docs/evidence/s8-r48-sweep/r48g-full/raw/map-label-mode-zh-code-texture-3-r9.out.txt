@@ -1,0 +1,33 @@
+
+== §B — the label mode authority, executed ==
+
+== §C/§D — the codes come from the geographic authority, never from a name ==
+
+== §A — the control: semantics, state and keyboard ==
+
+== §E/§F — scope, and what a switch must not touch ==
+
+== §G — the token manifest ==
+
+== §R9A — the copy moved and nothing behind it did ==
+
+== §H negative tests — each guard is made to BITE ==
+  caught: N1 country code derived from the name
+  caught: N2 subdivision code derived from English initials
+  caught: N3 a second country dictionary introduced
+  caught: N4 label mode sent in an API request
+  caught: N5 the switch remounts the page on every change
+  caught: N6 a mode change refetches the ADM1 asset
+  caught: N7 the mode is lost after navigation
+  caught: N8 an invalid stored value is displayed
+  caught: N9 中文 mode returns 中華民國（TW）
+  caught: N10 the application token rotated by a map round
+  caught: N11 the mode dropped from the label cache key
+  caught: N12 the setter accepts a third mode
+  caught: N13 a visible label used as the stored mode value
+  caught: N14 the code option relabelled as a language
+
+  negative tests: 14 caught, 0 missed
+
+----------------------------------------
+MAP LABEL MODE Names/Code (TEXTURE-3-R9/R9A): 307 passed, 0 failed

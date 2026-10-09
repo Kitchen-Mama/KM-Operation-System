@@ -1,0 +1,167 @@
+
+== A — NEXT / PREREQUISITE READINESS ==
+ok   A1  prerequisites resolve → the builder opens exactly once
+ok   A2  and exactly one logical prerequisite load was issued
+ok   A3  the Next control is restored
+ok   A4  with no refusal shown
+ok   A5  feedback is visible in the SAME event loop: disabled + aria-busy + Loading…
+ok   A6  five extra Next clicks while loading produce exactly ONE logical load
+ok   A7  and no builder opens while the load is in flight
+ok   A8  when it lands, the builder opens exactly once — not six times
+ok   A9  and the busy state is released
+ok   A10 a prerequisite failure opens NO builder
+ok   A11 and does not close the selection modal
+ok   A12 the refusal is shown INSIDE the modal
+ok   A13 with the typed prerequisite message
+ok   A14 and a visible Retry control
+ok   A15 with NO automatic re-entry — the old code retried forever here
+ok   A16 state = PREREQUISITE_REFUSED
+ok   A17 the Retry control is addressable
+ok   A18 Retry issues exactly ONE new logical load
+ok   A19 and the builder then opens
+ok   A20 with the refusal cleared
+ok   A21 a late prerequisite SUCCESS after unmount opens nothing
+ok   A22 and the controller records UNMOUNTED
+ok   A23 a late prerequisite FAILURE after unmount mutates no DOM
+ok   A24 and records UNMOUNTED
+ok   A25 with prerequisites already loaded, Next issues no request at all
+ok   A26 and opens the builder synchronously
+ok   A25a a populated-by-someone-else cache is NOT this path being loaded
+ok   A25b so the builder does not open over tables nobody fetched
+
+== B — CONFIRMED SUCCESS IS REPORTED INDEPENDENTLY OF THE READBACK ==
+ok   B1  the modal closes and success is reported BEFORE the readback resolves
+ok   B2  exactly one readback is issued
+ok   B3  and the view returns to CURRENT
+ok   B4  with no banner
+ok   B5  and the error redraw is never used on this path
+ok   B6  [readback timeout] the modal still closes — the write was confirmed
+ok   B7  [readback timeout] success was reported
+ok   B8  [readback timeout] and never contradicted
+ok   B9  [readback timeout] the table was NOT replaced by a read error
+ok   B10 [readback timeout] the last known data is preserved
+ok   B11 [readback timeout] the VIEW is marked stale
+ok   B12 [readback timeout] a non-blocking banner is shown
+ok   B13 [readback timeout] with the exact stale message
+ok   B14 [readback timeout] and one Refresh view control
+ok   B15 [readback timeout] the remedy offered is a READ, never another Save
+ok   B6  [redirect-target 404] the modal still closes — the write was confirmed
+ok   B7  [redirect-target 404] success was reported
+ok   B8  [redirect-target 404] and never contradicted
+ok   B9  [redirect-target 404] the table was NOT replaced by a read error
+ok   B10 [redirect-target 404] the last known data is preserved
+ok   B11 [redirect-target 404] the VIEW is marked stale
+ok   B12 [redirect-target 404] a non-blocking banner is shown
+ok   B13 [redirect-target 404] with the exact stale message
+ok   B14 [redirect-target 404] and one Refresh view control
+ok   B15 [redirect-target 404] the remedy offered is a READ, never another Save
+ok   B16 the view is stale after the failed readback
+ok   B17 the Refresh view control is addressable
+ok   B18 three clicks issue exactly ONE new read — the retry is single-flight
+ok   B19 a successful retry clears the stale state
+ok   B20 and removes the banner
+ok   B21 and re-renders from the fresh data
+ok   B22 a failed readback retry issues one read and no more
+ok   B23 the view stays stale
+ok   B24 and STILL does not replace the table with an error
+ok   B25 the banner remains, offering the read again
+
+== C — REFUSAL, UNKNOWN OUTCOME AND THE THREE-WAY SPLIT ==
+ok   C1  success:true → CONFIRMED_SUCCESS
+ok   C2  success:false → CONFIRMED_REFUSAL
+ok   C3  a null answer → OUTCOME_UNKNOWN, never success
+ok   C4  an absent answer → OUTCOME_UNKNOWN
+ok   C5  a malformed/unreadable answer → OUTCOME_UNKNOWN
+ok   C6  an envelope without success:false is a success
+ok   C7  a server refusal is classified as a refusal
+ok   C8  the success path never runs
+ok   C9  nothing is closed as success
+ok   C10 Save is re-enabled so the operator can fix and retry
+ok   C11 with the typed refusal reason
+ok   C12 and NO readback is started after a refusal
+ok   C13 a malformed response is an UNKNOWN outcome, not a success
+ok   C14 and says so
+ok   C15 with the instruction not to resubmit
+ok   C16 and never claims success
+ok   C17 nor claims definite failure
+ok   C18 the permanent busy state is released
+ok   C19 and a read-only reconciliation control is offered
+ok   C20 a network failure leaves OUTCOME_UNKNOWN
+ok   C21 and is reported as unknown
+ok   C22 with NO automatic readback and NO automatic write replay
+ok   C23 the control is "Check latest data"
+ok   C24 and it issues exactly one READ — never another write
+
+== D — SINGLE-FLIGHT AND LIFECYCLE OWNERSHIP ==
+ok   D1  every control latches: the first click starts a write, five more start none
+ok   D2  and the latch stays closed until the write ends
+ok   D3  reopening only after the outcome is recorded
+ok   D4  and the latches are per-control, not global
+ok   D5  a write that settles after route-away is still classified
+ok   D6  but nothing is drawn into the dead page
+ok   D7  and no control on it is touched
+ok   D8  no modal is closed
+ok   D9  the controller records UNMOUNTED
+ok   D10 while the OUTCOME is preserved for reconciliation
+ok   D11 and a dead controller starts no readback
+ok   D12 a late readback failure after unmount shows no banner
+ok   D13 and redraws nothing
+
+== E — THE RESPONSE PATH, RECEIPTS AND METRICS ==
+ok   E1  the summary is read from res.data.summary — the level the server sends
+ok   E2  the legacy level still works where a writer uses it
+ok   E3  and an ABSENT manifest stays absent
+ok   E4  a missing manifest prints nothing — never "0"
+ok   E5  a present manifest prints exactly the counts supplied
+ok   E6  and never invents the ones it was not given
+ok   E7  a confirmed write leaves a receipt
+ok   E8  naming the operation
+ok   E9  the affected row count
+ok   E10 the manifest as supplied
+ok   E11 and a timestamp
+ok   E12 a metric the envelope did not carry is "unknown", not 0
+ok   E13 and so are attempts
+ok   E14 a present serverDurationMs is captured verbatim
+ok   E15 so are attempts
+ok   E16 and the request id when the envelope supplies one
+ok   E17 an empty meta invents nothing
+ok   E18 and neither does a missing one
+ok   E19 prerequisite start and end are timed
+ok   E20 write start and end are timed
+ok   E21 readback start and end are timed
+
+== F — EVERY CONTROL IS WIRED TO THE ONE MECHANISM ==
+ok   F1  Regular, Base Edit, Special Event, Target Rule save and delete all latch and settle through the shared mechanism
+ok   F2  Import Forecast latches through the same mechanism
+ok   F3  and classifies an unreadable answer as unknown rather than as an import failure
+ok   F4  while keeping its own per-row manifest
+ok   F5  the Special Event Builder latches too
+ok   F6  the Special Event Builder routes every failure through ONE handler
+ok   F6b which still reports an unreadable 3-layer failure as an unknown outcome
+ok   F6c and separates a PROVEN zero-write refusal from it
+ok   F7  no control reads the wrong response level any more
+ok   F8  the swallow-and-re-enter prerequisite loader is gone entirely
+ok   F9  and Next added no timer or polling loop
+ok   F10 the post-write readback never calls the full-page error redraw
+ok   F11 the four semantic hosts exist in the partial
+ok   F12 both are hidden until the page has something true to put in them
+ok   F13 no write control replays its own write from a failure handler
+
+== G — DRIVEN MUTANTS (each must change an OBSERVED result) ==
+ok   M1  the modal close is restored to readback-success only (caught)
+ok   M2  a readback failure is reported as a write failure (caught)
+ok   M3  the summary is read from res.summary instead of res.data.summary (caught)
+ok   M4  the prerequisite request latch is removed (callers no longer share one promise) (caught)
+ok   M4b the Next transition latch is removed (one load opens several builders) (caught)
+ok   M5  a prerequisite failure silently re-enters instead of refusing (caught)
+ok   M6  the visible Retry control is removed (caught)
+ok   M7  a dead controller is allowed to draw into the page (caught)
+ok   M8  the Target Rule single-flight guard is removed (caught)
+ok   M9  the unknown outcome triggers an automatic write replay (caught)
+ok   M10 an unknown outcome is presented as a confirmed failure (caught)
+ok   M11 the stale view is replaced by the full-page error redraw (caught)
+ok   M12 a metric the envelope never sent is reported as zero (caught)
+
+====================================================================================================
+FC SUMMARY WRITE OUTCOME TRUTHFULNESS (R1) — passed 149  failed 0  |  mutants caught 13  survived 0
+====================================================================================================

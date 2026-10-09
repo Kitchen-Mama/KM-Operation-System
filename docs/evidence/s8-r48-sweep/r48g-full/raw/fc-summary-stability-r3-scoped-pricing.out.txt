@@ -1,0 +1,109 @@
+
+== A. §2/§3/§11 — the projection is SMALLER and still TRUTHFUL ==
+ok   A1 scope A selects exactly the four rows its SKUs can resolve against
+ok   A2 4 of 408 rows travel — PRICING_ROWS_TRANSFERRED is bounded by the site
+ok   A3 §11 no other site's price is in the payload — wrong-scope prices = 0
+ok   A4 and none of the 400 unrelated rows
+ok   A5 an INACTIVE scoped SKU's price does not travel — the projection uses the page's own scope rule
+ok   A6 §2 the row whose OWN scope columns are blank is kept, because the resolver matches it by id ALONE — a triple-only filter would turn a price that exists into a price that is missing
+ok   A7 and the row with NO id is kept through the business-identity branch — both branches are reproduced
+ok   A8 twelve fields — identity, scope, and the regular band's resolution inputs
+ok   A9 and no row carries a field outside that list — minimum_price / msrp / base_* / fx_* stay home
+ok   A10 §3 a column the SHEET does not have is ABSENT, not blank — pricingResolveBand_ must still fall through
+ok   A11 §11 a different scope selects a different set — no leakage in either direction
+ok   A12 an EMPTY scope selects NOTHING — a site-less caller must not get the full table back through this door
+ok   A13 §11.D a scope with no priced SKU answers zero rows, truthfully
+
+== B. §2/§11 — resolution is UNCHANGED, and the projected row proves it ==
+ok   B1 §11.I a manual override resolves to the override price, through the projection
+ok   B2 §11.J an AUTO-priced row still resolves to its auto price — the absence of resolved_* is preserved end to end
+ok   B3 the business-identity branch resolves from the projection exactly as it did from the whole table
+ok   B4 §2 and the blank-scope row still answers — this is what A6 was protecting
+ok   B5 §11.K a genuinely unavailable price is null and null — never 0, never another site's price
+ok   B6 §11 a CA marketplace_sku_id cannot resolve inside a US projection — no cross-scope price is reachable
+ok   B7 §2 the server names each resolution input once, in the field list, and resolves nothing — PRICING_AUTHORITY_COUNT = 1
+ok   B8 and there is exactly one implementation of the resolution chain in the tree
+
+== C. §3/§4 — no full-table browser read, and no N+1 ==
+ok   C1 the request names a slice and a scope
+ok   C2 §4 and the request carries NO sku — the scope is the site, so N SKUs cost the same as one
+ok   C3 §2 GROUP_CARD_PRICING_SCOPE is company + country + marketplace — Category/Series narrows CARDS, not prices
+ok   C4 §3 the resolver reads the scoped owner — a direct broad-cache read here would be the full table returning
+ok   C5 §3 FULL_PRICING_LIST_SCAN_ON_GROUP_BUILD_POST = 0 — Build asks the scoped owner, not the table loader
+ok   C6 NEW_GENERIC_GETTABLE_PRICING_READ_POST = 0 — no direct whole-table pricing read anywhere in the page
+ok   C7 §3 FULL still reads exactly its four tables — the projection costs the primary render nothing
+ok   C8 §3 and 01_router.gs did not change — the slice rides the action that already exists
+
+== D. §6/§7/§8 — single-flight, stale scope, retry, and what a failure leaves behind ==
+ok   D1 §6 three Builds while the first is unresolved — EQUIVALENT_PRICING_REQUEST_COUNT = 1
+ok   D2 and the one request names the current site scope
+ok   D3 §7 a scope change buys its own request — the two scopes are different questions
+ok   D15 an unselected site is not PENDING — there is no question to answer yet
+ok   D16 and asks for nothing
+
+== E. §5/§8/§9 — deferral, failure isolation and the identity seal ==
+ok   E1 §5 PRICING_BLOCKS_MODAL_OPEN = NO — pricing_list is not on either prerequisite path
+ok   E2 §5 SPECIAL_COLD_BLOCKING_REQS stays at the R2 result of 2 — this repair did not put a table back
+ok   E3 §8 a pricing failure renders in the pricing subsection — LAST_GOOD_DATA_PRESERVED = YES
+ok   E4 §8 and clears no form, closes no modal and reloads nothing
+ok   E5 §13.L no write is triggered by a pricing read failure or its retry
+ok   E6 §9 FC_CANONICAL_IDENTITY_BOUNDARY_SEAL_HELD = YES — BLANK_MARKETPLACE_ID_WRITE_COUNT = 0
+ok   E7 §9 and the server still validates rather than deriving marketplace_id
+ok   E8 §13.K the baseline resolver is untouched by the pricing transport
+ok   E9 and the forecast readers are neither duplicated nor rewritten
+
+== F. §12 — the numbers, measured ==
+ok   F1 the slice answers under its own name with its own count
+ok   F2 §7 and echoes the scope it answered FOR, which is what makes the stale check possible without a timer
+     PRICING_ROWS_TRANSFERRED   PRE 408  ->  POST 4
+     PRICING_FIELDS_TRANSFERRED PRE 19  ->  POST 10
+ok   F3 §12 rows and fields both fall by more than an order of magnitude on this fixture
+ok   F4 and the payload states what it projected FROM, so the saving is reported rather than assumed
+ok   F5 §12 GROUP_BUILD_REQUEST_COUNT_POST = 1 for a scope with 4 SKUs
+ok   F6 and the other two Builds JOINED it — DUPLICATE_PRICING_REQUEST_COUNT = 0
+ok   F7 §4 PER_SKU_PRICING_REQUEST_COUNT = 0 — 4 SKUs, still one request
+
+== G. §10 — FC-2: the repaint that deleted the operator's click target ==
+ok   G1 §10 editing a row field REBUILDS NOTHING — the container is not reassigned
+ok   G2 and the card container's innerHTML is never written on an edit
+ok   G3 while the derived Deal Price IS updated in place — the edit still does its work
+ok   G4 §10 and the field being typed in is NOT echoed back — no caret jump
+ok   G5 and Diff is recomputed from the SAME arithmetic the renderer uses
+ok   G6 still without a repaint
+ok   G7 §10 the GROUP discount patches its rows instead of repainting the container
+ok   G8 and every row in the card gets its new Deal Price
+ok   G9 §10 a card whose DOM is missing falls back to the full render — never to nothing
+kill M1 the scope is removed — the projection returns everything
+kill M2 the full-table getTable path is restored on the group-build path
+kill M3 a per-SKU request implementation
+kill M5 single-flight is removed — every Build buys its own request
+kill M6 a pricing failure clears the form
+kill M7 the blank-marketplace-id save protection is removed
+kill M8 pricing becomes an initial blocking prerequisite again
+kill M11 §10 the row edit repaints the whole container again
+kill M12 §10 the patcher echoes the field being typed in
+kill M9 the projection filters on the site triple ONLY (drops id-matched rows)
+kill M10 the projection emits a key the sheet does not have
+ok   D7 §8 the failed attempt was one request
+ok   D8 and nothing was committed — no partial or foreign pricing is showing
+ok   D9 §8 Retry issues EXACTLY one new request — RETRY_REQUEST_COUNT = 1
+ok   D10 and it is still the pricing slice alone — no siblings
+ok   D12 the committed scope is not pending
+ok   D13 §7 and after a scope change it IS pending — a stale projection is not an answer
+ok   D14 and the old rows are not offered to the new scope
+ok   D11 and the retry succeeds into the same scope
+kill M4 the stale-response guard is removed
+ok   D4 §7 scope A returns AFTER B and is DROPPED — STALE_SCOPE_A_COMMIT_COUNT = 0
+ok   D5 and the drop is counted, not silent
+ok   D6 while scope B remains committed and usable
+
+=====================================================
+FC-SUMMARY-STABILITY-R3 SCOPED PRICING — 70 passed / 0 failed
+MUTATION 12/12  no survivors
+FULL_PRICING_LIST_SCAN_ON_GROUP_BUILD_POST = 0   NEW_GENERIC_GETTABLE_PRICING_READ_POST = 0
+PER_SKU_PRICING_REQUEST_COUNT = 0   DUPLICATE_PRICING_REQUEST_COUNT = 0   STALE_PRICING_COMMIT_COUNT = 0
+RETRY_REQUEST_COUNT = 1   PRICING_BLOCKS_MODAL_OPEN = NO   LAST_GOOD_DATA_PRESERVED = YES
+PRICING_ROWS_TRANSFERRED 408 -> 4   PRICING_FIELDS_TRANSFERRED 19 -> 10
+PRICING_AUTHORITY_COUNT = 1   FC_CANONICAL_IDENTITY_BOUNDARY_SEAL_HELD = YES
+PRODUCTION_ROWS_WRITTEN = 0   FORECAST/GAP_FORMULA_CHANGED = NO
+=====================================================

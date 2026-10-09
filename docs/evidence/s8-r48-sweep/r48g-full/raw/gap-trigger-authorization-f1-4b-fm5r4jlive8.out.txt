@@ -1,0 +1,13 @@
+
+== B15/B16 — SUCCESS: both continuation handlers create + clean up → TRIGGER_AUTHORIZATION_OK ==
+
+== B10 — FAILURE: ScriptApp authorization exception is propagated VERBATIM (never hidden) ==
+
+== B13 — cleanup deletes ONLY owned gap continuation handlers ==
+
+== B14 — Amazon import trigger is never created or deleted by the verifier ==
+
+== source contract — the top-level wrapper verifies BOTH products, guards cleanup, and runs NO calculation ==
+
+----------------------------------------
+GAP TRIGGER AUTHORIZATION (F1-4B-FM5-R4J-LIVE8 PART B): 17 passed, 0 failed

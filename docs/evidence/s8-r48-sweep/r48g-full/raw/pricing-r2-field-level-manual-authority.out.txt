@@ -1,0 +1,317 @@
+
+== A · THE MODEL — three columns, three states, and price_source demoted rather than reused ==
+ok   A1  the three field-level ownership columns exist and are named per field
+ok   A2  each price field names its own auto value and its own flag — one correspondence, written once
+ok   A3  PRICING_LIST_HEADERS_ carries regular_price_is_manual
+ok   A3  PRICING_LIST_HEADERS_ carries minimum_price_is_manual
+ok   A3  PRICING_LIST_HEADERS_ carries msrp_is_manual
+ok   A4  pricing_change_log carries change_type
+ok   A5  and the three typed changes §3 requires
+ok   A6  price_source appears exactly ONCE in the executable source
+ok   A6b and that one occurrence is a WRITE derived from the flags — it is never read to decide anything
+ok   A6c the file says in prose that it is descriptive only
+ok   A7  the file records WHY a row-level flag cannot answer this
+ok   A8  and that a blank flag is UNKNOWN rather than false
+ok   A9  PRICING_DATABASE_MAPPING documents the three columns
+ok   A10 and documents blank as UNKNOWN
+ok   A11 and demotes price_source in the mapping table
+
+== B · THE THREE-STATE FLAG — the server and the browser agree, spelling by spelling ==
+ok   B1  the server reads every spelling as its state
+ok   B2  and the browser reads every one of them identically
+ok   B3  a checkbox boolean is read too
+ok   B3b and the browser agrees
+ok   B4  an ABSENT column is UNKNOWN, never AUTO
+ok   B4b and the browser agrees
+ok   B5  the writer writes TRUE / FALSE
+
+== C · §12 NUMBER SAFETY — blank, NA, zero and a typo stop being the same number ==
+ok   C1  blank: not present, null, not NA
+ok   C2  NA: not present, null, and NA is recorded
+ok   C2b either spelling
+ok   C3  zero IS a price, and is present
+ok   C3b including as a real number
+ok   C4  a typo is invalid, never a price
+ok   C5  a number is a number
+ok   C6  and the browser normalizer gives null / null / 0 / null / 12.34
+ok   C7  normalizePricingListRecord holds no `parseFloat(...) || 0` at all
+ok   C8  regular_price goes through pricingNumOrNull_
+ok   C8  minimum_price goes through pricingNumOrNull_
+ok   C8  msrp goes through pricingNumOrNull_
+ok   C8  auto_regular_price goes through pricingNumOrNull_
+ok   C8  auto_minimum_price goes through pricingNumOrNull_
+ok   C8  auto_msrp goes through pricingNumOrNull_
+ok   C8  base_regular_price goes through pricingNumOrNull_
+ok   C8  base_minimum_price goes through pricingNumOrNull_
+ok   C8  base_msrp goes through pricingNumOrNull_
+ok   C8  fx_rate goes through pricingNumOrNull_
+ok   C9  and the three flags are carried as three states, not booleans
+ok   C10 the change log carries change_type
+
+== D · PER-FIELD PLANNING — independent, and what is refused rather than guessed ==
+ok   D1  NO_CHANGE writes nothing and refuses nothing
+ok   D2  MANUAL sets the value AND takes ownership
+ok   D2b and logs MANUAL_SET with both values
+ok   D3  MANUAL 0 is accepted — zero is a price
+ok   D4  MANUAL with a blank price is REFUSED, not read as 0
+ok   D5  MANUAL with NA is REFUSED — NA is not a price
+ok   D6  a negative price is refused
+ok   D7  a typo is refused rather than becoming 0
+ok   D8  re-saving the same manual value writes nothing and logs nothing
+ok   D9  the same value with no recorded owner DOES write the ownership
+ok   D10 USE AUTO CLEARS the override and hands ownership back
+ok   D10a and the log records the price that was REMOVED — the only trace of what the site was serving
+ok   D11 AUTO ignores any supplied manual value entirely
+ok   D12 USE AUTO with a blank auto value CLEARS — it is the repair for a pending_fx row
+ok   D13 and an NA auto is no obstacle either
+ok   D14 a real auto value of 0 changes nothing here — the override is cleared, not copied
+ok   D14a USE AUTO on a field that already has no override writes nothing
+ok   D15 a one-field edit plans cleanly
+ok   D16 and touches ONLY that field and its own flag
+ok   D16b once every field is decided, the legacy descriptor is brought into step
+ok   D17 one field changed, one audit entry
+ok   D18 the untouched fields are NO_CHANGE — a blank mode is not AUTO
+ok   D19 TRUE / FALSE / TRUE on one row is a valid, readable combination
+ok   D20 any manual, none unknown → manual_override
+ok   D21 all auto → auto_fx
+ok   D22 any UNKNOWN → it says NOTHING rather than something wrong
+ok   D23 a file currency that disagrees with the row is refused, never reconciled
+ok   D24 and a row with no currency at all is refused
+ok   D25 an unrecognised mode is REFUSED, not ignored
+
+== E · §9 BATCH ATOMICITY — one bad line writes nothing, proven by executing the handler ==
+ok   E1  a clean batch plans one changed row
+ok   E2  ONE unknown id discards the WHOLE plan — the good line is not written either
+ok   E3  the same identity twice is refused — both cannot be final
+ok   E4  a line with no marketplace_sku_id is refused
+ok   E5  an empty batch is refused rather than reported as success
+ok   E6  a batch past the ceiling is refused — one request may not rewrite the price book
+ok   E7  EXECUTED: one row written, one audit entry
+ok   E7b and the effective price now holds 11
+ok   E7c with ownership recorded
+ok   E7d and the untouched field is untouched
+ok   E7e including its ownership, which stays UNSTATED
+ok   E8  EXECUTED: a bad second line refuses the batch
+ok   E8b and ZERO physical writes reached the sheet
+ok   E8c and nothing was logged either
+ok   E8d the good line's row still holds its original price
+ok   E9  EXECUTED: a dry run reports the change it WOULD make
+ok   E9b and writes nothing
+ok   E9c the receipt names the mode per field
+ok   E10 a same-value save with UNSTATED ownership still writes — the claim is the change
+ok   E11 and a NO_CHANGE line writes nothing at all
+ok   E12 an unprovisioned schema refuses with the safety token and writes nothing
+ok   E12b zero physical writes
+ok   E12c a pricing_list WITHOUT the three flag columns is refused — the migration is the gate
+ok   E12d and zero physical writes reached the legacy sheet
+ok   E13 a contended lock refuses and writes nothing
+
+== F · §3 THE AUDIT — typed, and written only for a change that actually happened ==
+ok   F1  one row, two fields changed, two audit entries
+ok   F2  a manual set is typed MANUAL_SET
+ok   F3  a hand-back is typed RETURN_TO_AUTO
+ok   F4  both values are recorded
+ok   F5  keyed on the pricing row identity
+ok   F6  and on who did it
+ok   F7  free text is kept as free text, beside the typed value
+ok   F8  each entry has its own id
+ok   F9  a change that changes nothing writes no history
+ok   F10 the writer never READS the change log to decide anything
+ok   F11 and the spec says the log is history, not authority
+
+== G · §11 THE FROZEN FX PRECISION — and it never rounds an operator's number ==
+ok   G1  the eight currencies are frozen exactly as §11 specifies
+ok   G2  case-insensitive, and an unlisted currency is null rather than a guessed 2
+ok   G3  conversion rounds to the currency's decimals
+ok   G4  and refuses to round a currency it has no contract for
+ok   G5  10 converts to 10 — no .99, no .95, no nudge
+ok   G6  and no such constant exists anywhere in the writer
+ok   G7  a JPY price with decimals is REFUSED, not rounded
+ok   G7b and the refusal says so
+ok   G8  a whole-yen price is accepted verbatim
+ok   G9  and two USD decimals are accepted verbatim
+ok   G10 an unlisted currency is not precision-constrained
+ok   G11 and the contract is documented
+
+== H · §2/§13 THE EFFECTIVE-PRICE CONTRACT — and where PRICING-R4G moved it ==
+ok   H1  Product Strategy pricing accessor reads no auto_* field
+ok   H2  Product Strategy pricing accessor does not resolve ownership to find out what something costs
+ok   H1  the campaign snapshot writer reads no auto_* field
+ok   H2  the campaign snapshot writer does not resolve ownership to find out what something costs
+ok   H3  PRICING-R4G — FC Summary reads the RESOLVED price, not the raw override cell
+ok   H3a the Product Strategy adapter carries resolved / auto / override, verbatim from 72_
+ok   H3b and 72_ resolves through 73_ rather than publishing the override cell as a price
+ok   H4  the pricing READ owner declares the stamp its manifest row expects
+ok   H4a and it is no longer R10 — a writer is not a reader, but a reader whose FIELD CHANGED MEANING is
+ok   H5  and the mapping spec freezes it
+ok   H6  including that no consumer reads auto_*
+ok   H7  the writer fetches no FX rate — that is PRICING-R3
+ok   H8  and computes no auto_* value
+
+== I · §4 SKU DETAILS — base_* is NOT a sku_details field, so nothing was invented there ==
+ok   I1  sku_details' editable column list is where the master baseline is declared
+ok   I2  and it contains NO base_regular_price / base_minimum_price / base_msrp — they are not sku_details fields
+ok   I3  base_* belongs to pricing_list, one row per marketplace_sku_id
+ok   I4  the Master SKU editor gained no site-local pricing and no pricing writer
+ok   I5  while its existing base-currency baseline is untouched
+
+== J · §8 THE TEMPLATE — a blank cell is NO_CHANGE, and a round trip changes nothing ==
+ok   J1  human-readable context, then the canonical identity, then one mode + one value per price
+ok   J2  the three modes §8 specifies
+ok   J3  an unedited template is valid
+ok   J4  and asks for NOTHING — every mode ships as No Change
+ok   J4b the fixture anchor is present in the template — these tests can fail
+ok   J5  a BLANK mode cell reads as NO_CHANGE and asks for nothing
+ok   J6  AUTO carries no value forward — a price cannot ride in behind it
+ok   J7  a file without the required columns is refused
+ok   J8  MANUAL with a blank price is refused — blank is not zero
+ok   J9  a non-numeric manual price is refused
+ok   J10 a negative manual price is refused
+ok   J11 an unsupported mode is refused, never ignored
+ok   J12 the same identity twice inside the file is refused
+ok   J13 and a line with no identity is refused
+ok   J14 a rejected file yields zero writable lines
+ok   J15 the current-pricing export names regular_price_owner
+ok   J15 the current-pricing export names minimum_price_owner
+ok   J15 the current-pricing export names msrp_owner
+ok   J16 a manual field exports as MANUAL
+ok   J17 a system field exports as AUTO
+ok   J18 and an unstated one exports as NOT_SET — never as AUTO
+ok   J19 the browser does NOT re-decide the database facts — one pricing authority, not two
+ok   J20 it asks the server for them on a dry run instead
+
+== K · §10 THE CENSUS — counting only, one implementation, zero ambiguous rows written ==
+ok   K1  every row is counted
+ok   K2  a row is manual-provable only when a flag SAYS so
+ok   K3  a row is auto-provable when every field is stated or already equals auto
+ok   K4  and the row with an unexplained divergence stays AMBIGUOUS
+ok   K5  counted per field, not per row
+ok   K6  a price that merely DIFFERS from auto is never classified as manual
+ok   K7  the census exists in exactly one place — the screen that displays it
+ok   K7b and the writer says where it went
+ok   K8  a flag is written in exactly two places — the MANUAL branch and the AUTO branch
+ok   K9  a line naming NO mode writes nothing
+ok   K10 and the ambiguous row is left ambiguous — no default classified it
+ok   K11 zero physical writes, so AMBIGUOUS_LEGACY_ROWS_WRITTEN is 0 by construction
+
+== L · THE WIRING — route, registry, manifest, contract versions, pin, release order, cache token ==
+ok   L1  the router dispatches pricing.update to the handler
+ok   L2  the router CALLS the pricing handler exactly once — one dispatch, not a GET copy and a POST copy
+ok   L2a it is not in the GET read table
+ok   L3  it is in SYS_REQUIRED_ACTIONS_
+ok   L4  73_ is a REQUIRED manifest owner from its first release
+ok   L4a and the round it is expected at is R21 or later — a stamp never moves backwards
+ok   L5  and deliberately not optional
+ok   L6  73_ declares exactly what the manifest expects (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25)
+ok   L6a at or after the round that created it
+ok   L7  the action contract is at or above the version that introduced pricing.update
+ok   L7a because the action it was raised for is still in the registry
+ok   L8  and the required-action list version is at or above the one pricing.update was added at
+ok   L8a which is evidenced by the action still being in SYS_REQUIRED_ACTIONS_
+ok   L9  the client pin AGREES with the deployment contract
+ok   L10 and was RAISED from the pre-PRICING-R2 pin, never lowered
+ok   L11 the release is R21 or later
+ok   L12 63_'s own stamp moved with it and still agrees with its manifest row
+ok   L13 R21 is still IN the release order
+ok   L14 exactly once
+ok   L14a and the current release sorts at or after it — the order is appended to, never rewritten
+ok   L15 59_ still records R21 — the round it last changed, not the current release
+ok   L16 and the manifest expects exactly that
+ok   L17 pricing_list is include-gated and missing-safe — un-requested it costs nothing
+ok   L18 the page asks for it on its existing read
+ok   L19 and the page contains no raw fetch — writes go through KM.DB
+ok   L20 it calls the canonical writer
+ok   L21 which is defined in the API module
+ok   L22 and addresses the one canonical action
+ok   L23 the pricing module performs no transport of its own at all
+ok   L24 no asset is left behind on an older application token
+ok   L25 and no token is on the wrong file
+ok   L26 the new module is on the current token
+ok   L27 and the changed page was rotated onto it
+ok   L28 as was the changed API module
+ok   L29 and the module loads BEFORE the page that calls it
+ok   L30 pricing_change_log was already a declared table
+
+== N · THE SCREEN — three states are three badges, and every class has a rule ==
+ok   N1  .srd-pricing has a CSS rule
+ok   N1  .srd-pr__head has a CSS rule
+ok   N1  .srd-pr__row has a CSS rule
+ok   N1  .srd-pr__lbl has a CSS rule
+ok   N1  .srd-pr__val has a CSS rule
+ok   N1  .srd-pr__eff has a CSS rule
+ok   N1  .srd-pr__auto has a CSS rule
+ok   N1  .srd-pr__note has a CSS rule
+ok   N1  .srd-own has a CSS rule
+ok   N1  .srd-own--manual has a CSS rule
+ok   N1  .srd-own--auto has a CSS rule
+ok   N1  .srd-own--unknown has a CSS rule
+ok   N1  .srd-modal__sec has a CSS rule
+ok   N1  .srd-pe has a CSS rule
+ok   N1  .srd-pe__ctx has a CSS rule
+ok   N1  .srd-pe__row has a CSS rule
+ok   N1  .srd-pe__lbl has a CSS rule
+ok   N1  .srd-errs has a CSS rule
+ok   N1b and the new rules are scoped to the section, as every other rule here is
+ok   N2  all three badge states carry their own declarations
+ok   N3  and no two of the three are styled identically
+ok   N4  the import dialog is appended inside the page section, not to <body>
+ok   N5  and uses the overlay class this page actually defines (one dash, not two)
+ok   N6  and the changed stylesheet was rotated off the baseline token
+
+== O · PRICING-R4 — THE WHOLE CHAIN, BROWSER TEMPLATE TO SHEET TO AUDIT ==
+ok   O1  the downloaded template validates and asks for nothing
+ok   O2  the edited file passes file-shaped validation
+ok   O2a and three rows ask for something
+ok   O3  a MANUAL+AUTO+NO_CHANGE line carries exactly the keys the server reads
+ok   O3a  and AUTO carries no value across the seam
+ok   O4  the preview plans all three rows and writes nothing
+ok   O4a  zero physical writes
+ok   O4b  and nothing logged
+ok   O4c  and the receipt names all three modes of the mixed row
+ok   O5  three rows written
+ok   O6  MANUAL wrote the regular price
+ok   O6a  and took ownership of it
+ok   O6b  PRICING-R4G — AUTO CLEARED the minimum override; the row resolves through auto_minimum_price now
+ok   O6c  and handed that field to the system
+ok   O6d  NO_CHANGE left the MSRP exactly as it was
+ok   O6e  and its ownership is still UNSTATED — not classified by a neighbour
+ok   O7  the MSRP-only row
+ok   O7a  with its regular price and its unstated ownership both intact
+ok   O7b  the minimum-only row
+ok   O7c  likewise untouched elsewhere
+ok   O8  no base_*, auto_*, fx_rate or fx_rate_date cell changed anywhere
+ok   O9  four field changes, four audit entries
+ok   O9a  each typed by what happened, and the NO_CHANGE field has no entry at all
+ok   O10 the hand-back records the override that was REMOVED, and an empty new value
+ok   O11 a relabelled row is still addressed by marketplace_sku_id
+ok   O11a and none of the context columns crosses the seam at all
+ok   O11b and the write lands on M1 regardless
+ok   O12 the smoke sets a manual price
+ok   O12a and the original value is restorable exactly
+ok   O12b but the flag stays TRUE — the rollback restores the price, not the silence
+ok   O12c because the writer has exactly two words and blank is not one of them
+ok   O12d and no branch writes an empty flag, so UNKNOWN is unreachable from here
+ok   O13 no mode, on any field, ever names a base_*, auto_* or fx column in its write set
+
+== M · MUTANTS — every fault is one a person could plausibly write ==
+ok   M1  a blank ownership flag is read as AUTO instead of UNKNOWN (caught)
+ok   M2  USE AUTO copies auto into the override instead of clearing it (caught)
+ok   M3  MANUAL accepts a blank price (caught)
+ok   M4  a blank mode cell is read as AUTO rather than NO_CHANGE (caught)
+ok   M5  an unrecognised mode is ignored instead of refused (caught)
+ok   M6  a failed batch still offers its valid lines for writing (caught)
+ok   M7  the handler proceeds to write after a failed validation (caught)
+ok   M8  the same identity twice in one batch is accepted (caught)
+ok   M9  a manual price is rounded to fit the currency instead of refused (caught)
+ok   M10 NA is read as a price rather than as "deliberately none" (caught)
+ok   M11 one field's edit marks every field manual (caught)
+ok   M12 price_source is written even when a field's ownership is unstated (caught)
+ok   M13 an unchanged field still writes an audit entry (caught)
+ok   M14 an unprovisioned schema no longer stops the write (caught)
+ok   M15 a dry run reaches the write path (caught)
+ok   M16 a pricing row is addressed by master SKU instead of marketplace_sku_id (caught)
+ok   M17 a manual-path write names an auto_* column in its write set (caught)
+ok   M18 NO_CHANGE writes an ownership flag instead of nothing (caught)
+ok   M19 the browser drops a MANUAL price on its way into the payload (caught)
+
+266 passed / 0 failed   ·   19 mutants, 0 survived

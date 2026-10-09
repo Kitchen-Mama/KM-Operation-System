@@ -1,0 +1,15 @@
+
+== Phase 4 — 43 gap-materialization batch envelope carries the READ-ONLY handler-version marker (the Recalculate response) ==
+
+== Phase 4 — 42 recommendation-workspace envelope carries the marker (any workspace GET proves the R5B sales fix is live) ==
+
+== Phase 3 — R5B live-path repair markers still present (the version proven live IS the fixed code) ==
+
+== Phase 3 — exactly ONE sales-rate owner (no alternate/old path bypasses the R5B fix) ==
+
+== Phase 1 — assets are now CACHE-VERSIONED (F1-UI-RUNTIME-CLOSURE-R1 closed the stale-CSS vector) ==
+
+== additive-only — no DB write / formula introduced by the probe ==
+
+----------------------------------------
+R5C VERSION PROBE + LIVE-PATH LOCK (F1-4B-FM5-R4UI-R5C): 21 passed, 0 failed

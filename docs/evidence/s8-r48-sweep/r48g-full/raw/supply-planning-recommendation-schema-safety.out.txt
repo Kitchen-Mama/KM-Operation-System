@@ -1,0 +1,10 @@
+
+== §9 — a fully-provisioned database validates ready with ZERO writes ==
+
+== §15 — the incident database blocks the writer BEFORE lock/write (no create/repair/cleanup) ==
+
+== §14 — wrong Spreadsheet target fails closed with zero writes ==
+
+== duplicate Active Draft is reported, never cleaned (KMVD stays read-only) ==
+
+All Production Safety Round S0 recommendation schema-safety assertions passed (21 assertions).

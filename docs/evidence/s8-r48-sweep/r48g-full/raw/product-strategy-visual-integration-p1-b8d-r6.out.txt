@@ -1,0 +1,134 @@
+
+== A — THE FOURTEEN CLASSES NOW HAVE RULES, AND THEY COME FROM THE SHARED SYSTEM ==
+ok   A1.1 .psb-header is styled (declared or shared)
+ok   A1.2 .psb-header__title is styled (declared or shared)
+ok   A1.3 .psb-header__actions is styled (declared or shared)
+ok   A1.4 .psb-sub is styled (declared or shared)
+ok   A1.5 .psb-site-host is styled (declared or shared)
+ok   A1.6 .psb-site is styled (declared or shared)
+ok   A1.7 .psb-site__field is styled (declared or shared)
+ok   A1.8 .psb-site__label is styled (declared or shared)
+ok   A1.9 .psb-site__select is styled (declared or shared)
+ok   A1.10 .psb-site__value is styled (declared or shared)
+ok   A1.11 .psb-state-host is styled (declared or shared)
+ok   A1.12 .psb-state is styled (declared or shared)
+ok   A1.13 .psb-state__headline is styled (declared or shared)
+ok   A1.14 .psb-state__detail is styled (declared or shared)
+ok   A2  the chooser carries the shared filter-bar class
+ok   A3  and the shared filter-group class, so the label and control specs are the system's
+ok   A4  the control height comes from the --filter-* token family
+ok   A5  the label names its control rather than sitting above it by coincidence
+
+== B — SCOPE: NOTHING THIS PAGE ADDS CAN REACH ANOTHER PAGE ==
+ok   B1  the stylesheet parsed into selectors
+ok   B2  every selector in this stylesheet is scoped to .psb-page
+ok   B3  no bare element or shared-component selector at the top level
+ok   B4  no shared component class is redefined outside .psb-page
+ok   B5.1 this round did not touch base.css
+ok   B5.2 components.css changed, with a recorded reason
+ok   B5.2a and what it added carries no Product Strategy selector
+ok   B5.3 layout.css changed, with a recorded reason
+ok   B5.3a and what it added carries no Product Strategy selector
+ok   B5.4 this round did not touch responsive-foundation.css
+ok   B6  no other page's stylesheet changed without a recorded reason
+ok   B6b the allow-list can never excuse a change to Product Strategy's own stylesheet
+ok   B6c inventory-replenishment.css carries a real reason, not a bare exemption
+ok   B6c sku-regional-details.css carries a real reason, not a bare exemption
+ok   B6c carrier-rate-card.css carries a real reason, not a bare exemption
+ok   B6c automation-schedule.css carries a real reason, not a bare exemption
+ok   B6c request-order.css carries a real reason, not a bare exemption
+ok   B6c fc-overview.css carries a real reason, not a bare exemption
+ok   B7  this round added no !important
+
+== C — THE TAB RAIL IS THE SHARED ONE, NOT A SECOND COPY OF ONE ==
+ok   C1  the host asks for the shared rail
+ok   C2  and every tab carries the shared tab class
+ok   C3  this page declares no .km-tab-rail rule of its own
+ok   C4  and re-declares none of the rail's structure
+
+== D — WHAT THE BROWSER ACTUALLY RENDERS ==
+ok   D0  the probe returned computed styles
+ok   D1  the filter panel is a row
+ok   D1a that wraps rather than overflowing
+ok   D2  on the shared card ground
+ok   D3  at the shared card radius
+ok   D4  with the shared card shadow
+ok   D5  and the bar inside it IS the shared filter bar
+ok   D5a while the bar itself has no card of its own
+ok   D6  three tiers are on screen
+ok   D7.1 company: the label clears its control by 6px
+ok   D8.1 company: the control is one shared filter height
+ok   D9.1 company: the label names its control
+ok   D7.2 country: the label clears its control by 6px
+ok   D8.2 country: the control is one shared filter height
+ok   D9.2 country: the label names its control
+ok   D7.3 marketplace: the label clears its control by 6px
+ok   D8.3 marketplace: the control is one shared filter height
+ok   D9.3 marketplace: the label names its control
+ok   D10 the label is the shared filter-bar label size
+ok   D11 a tier the universe resolved renders as text, not as a dropdown
+ok   D12 and it is the same height, so the row does not jump
+ok   D13 no two controls overlap at 1440
+ok   D14 the header is the shared two-column band
+ok   D15 its actions are a row with their own gap
+ok   D16 the subtitle is body text
+ok   D17 the rail host carries the shared class
+ok   D18 overflow scrolls INSIDE the rail
+ok   D19 six tabs, all of them the shared tab
+
+== E — THE STATE BOX, IN EVERY SEVERITY ==
+ok   E0  the awaiting state renders a state box
+ok   E1  it is a card, not loose paragraphs
+ok   E2  with the shared radius
+ok   E3  and the shared card shadow
+ok   E4  and real padding
+ok   E5  the headline and the detail are two levels, not one wall of text
+ok   E6  awaiting-site is an INFO state
+ok   E7  a timeout is a STOP state
+ok   E8  and the two differ in border WIDTH
+ok   E9  in border STYLE
+ok   E10 and in the glyph they carry — three channels, so none of them is the colour
+
+== F — DISABLED, FOCUS, MOBILE, PRESENTATION, PRINT ==
+ok   F1  before a company is chosen the lower tiers are disabled
+ok   F2  and disabled differs on MORE THAN COLOUR (4 channels)
+ok   F3  a focus-visible ring is declared
+ok   F4  for the site controls specifically
+ok   F5  at 390px no two site controls overlap
+ok   F6  and each one is on its own row
+ok   F6a and none of them hangs out of the card
+ok   F7  Presentation still enters presentation mode
+ok   F8  and the chooser is not part of it
+ok   F9  print rules exist
+ok   F10 and the chooser is not printed either
+
+== G — THIS ROUND CHANGED NO BEHAVIOUR ==
+ok   G1  one universe read
+ok   G2  one workspace read
+ok   G3  and nothing write-shaped
+ok   G4  no site was hard-coded by a styling round
+ok   G5  the server flag is untouched
+ok   G6  SUPERSEDED (R10D): no Apps Script file changed beyond the one this project has recorded
+ok   G7  the staged-section registry is still there
+ok   G8  the Product Strategy registry entry is present
+ok   G8a and it is still enabled
+ok   G9  the sidebar children still have their entry point
+ok   G10 and there are still six of them
+
+== H — MUTANTS ==
+ok   H1  the site toolbar loses its card and its row (caught)
+ok   H2  the label is glued to the control (caught)
+ok   H3  the state box has no styling (caught)
+ok   H4  the severities stop differing on anything but colour (caught)
+ok   H5  disabled is recognisable by colour alone (caught)
+ok   H6  a mobile control stops fitting its card (caught)
+ok   H7  a resolved tier changes the row height (caught)
+ok   H8  the chooser is shown during a presentation (caught)
+ok   H9  a second tab rule overrides the shared rail (caught)
+ok   H10 a rule loses its scope and reaches every page (caught)
+ok   H11 a bare element selector is introduced (caught)
+ok   H12 a shared component class is redefined at the top level (caught)
+ok   H13 !important is used to win an argument (caught)
+ok   H14 the left navigation is removed by a styling round (caught)
+
+passed 116  failed 0  |  mutants caught 14  survived 0

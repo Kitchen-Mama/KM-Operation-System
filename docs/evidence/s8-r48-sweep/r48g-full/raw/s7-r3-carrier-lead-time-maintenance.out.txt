@@ -1,0 +1,114 @@
+ok   S1  the shipped 17_ maintenance handlers load and run against a fake sheet
+ok   S1a with the REAL shared route authority in scope, not a stub of it
+
+== A  THE PRE-STATE — what §2 says was missing, verified rather than recalled ==
+ok   A1  61_ recorded the gap this round closes, in the runtime itself
+ok   A2  the live schema is the 11 columns — no status, no is_active, no effective_from
+ok   A2a the lead-time header list carries none of them
+ok   A2b and this round added none — NEW_COLUMNS_REQUIRED = NONE
+
+== B  PLANNER-EFFECTIVE LANE IDENTITY — derived from KMRA.axisOk, not invented ==
+ok   B1  leadDays filters on method key + origin + destination + last mile
+ok   B1a and NOT on carrier_id — CARRIER_ID_AFFECTS_KMRA_LEADDAYS = NO
+ok   B1b and a BLANK axis on the row is a WILDCARD — which is why tuple equality alone is not the guard
+ok   B2  the write owner resolves methods and rows through KMRA itself
+ok   B2a and REFUSES when the bundle is absent rather than falling back to a private copy of the rules
+
+== C  §24 THE WRITE PATH, EXECUTED ==
+ok   C1  §24A a unique lane is created
+ok   C1a one row appended, the existing row untouched
+ok   C1b with the next id in the canonical CLT-###### sequence
+ok   C1c created_at and updated_at are stamped by the server
+ok   C1d §10 the receipt is READ BACK from the sheet, not echoed from the request
+ok   C2  §24B an identical effective lane is REFUSED
+ok   C2a with a typed reason
+ok   C2b DUPLICATE_CREATE_WRITE_COUNT = 0 — nothing was appended
+ok   C2c and no write of any kind reached the sheet
+ok   C2d the refusal names the row that already owns the lane
+ok   C3  a BLANK origin is a wildcard that reaches the existing CN row, so it is refused — tuple equality alone would have let this in
+ok   C3a while a different concrete origin is a different lane and is allowed
+ok   C4  a method ALIAS of an existing lane is refused — the guard compares canonical keys, as leadDays does
+ok   C5  §24C an existing row updates
+ok   C5a LEADTIME_UPDATE_IDENTITY = lead_time_id — edited in place, never appended
+ok   C5b same id, new values
+ok   C5c §21 created_at is preserved; only updated_at moves
+ok   C5d updated_at is the server clock
+ok   C6  §24D an edit that collides with ANOTHER lane is refused
+ok   C6a DUPLICATE_UPDATE_WRITE_COUNT = 0 — no mutation
+ok   C6b while a row keeping its own lane is not a conflict with itself
+ok   C7  §24E a create that cannot take the lock REFUSES — CONCURRENT_DUPLICATE_LANE_REACHABLE = NO
+ok   C7a and writes nothing
+ok   C7b the happy path takes the existing ScriptLock once and releases it — no second lock architecture
+ok   C8  §24F/G min > max is refused
+ok   C8a  min > max — and not silently clamped into range
+ok   C8  §24F/G avg above max is refused
+ok   C8a  avg above max — and not silently clamped into range
+ok   C8  §24F/G min above avg is refused
+ok   C8a  min above avg — and not silently clamped into range
+ok   C8  §24F/G negative days is refused
+ok   C8a  negative days — and not silently clamped into range
+ok   C8  §24F/G non-numeric is refused
+ok   C8a  non-numeric — and not silently clamped into range
+ok   C8  §24F/G no figure at all is refused
+ok   C8a  no figure at all — and not silently clamped into range
+ok   C9  a missing origin_country is refused
+ok   C9  a missing destination_country is refused
+ok   C9  a missing shipping_method is refused
+ok   C10 a method the planner could never key is refused rather than stored where nothing reads it
+ok   C11 a row carrying avg alone is accepted — demanding all three would reject the system's own seed shape
+
+== D  §16 THE READ-ONLY DUPLICATE CENSUS ==
+ok   D1  the census answers
+ok   D1a and finds the pre-existing ambiguous pair
+ok   D1b naming both rows
+ok   D1c (per-pair, not global)
+ok   D1d and reports which row the planner uses TODAY — the first with a finite avg
+ok   D1e §4 a pair carrying DIFFERENT carriers is counted separately: that is the case needing a product decision, because one planner lane cannot express two carriers' transit times
+ok   D2  READ ONLY — the census wrote nothing, created nothing and flushed nothing
+ok   D3  and a clean table reports none
+
+== E  §14 SEPARATION, §15 PLANNER SEMANTICS, §22 SCHEMA ==
+ok   E1  RATE_CARD_WRITE_FROM_LEADTIME_COUNT = 0 — the write owner opens no other sheet
+ok   E1a and names no rate-card table or column anywhere in its source
+ok   E2  LEADTIME_WRITE_FROM_RATECARD_COUNT = 0 — the rate-card importer opens no lead-time sheet
+ok   E2a and still rejects transit columns in a rate template outright
+ok   E3  KMRA_LEADDAYS_CHANGED = NO — the first-row pick is exactly as it was
+ok   E3a one unique lane resolves exactly as before
+ok   E3b no matching lane still answers nothing, never a fabricated figure
+ok   E3c and a duplicate fixture still takes the FIRST row (7, not 99) — legacy ambiguity, documented and left alone. This round stops NEW ambiguity; it does not rewrite history
+
+== F  §5 ONE WRITE OWNER, §18 READ, §11 SURFACE ==
+ok   F1  CARRIER_LEADTIME_WRITE_OWNER_COUNT_POST = 1
+ok   F1a both actions are routed to it
+ok   F1b and the adapter reaches them through the current transport
+ok   F1c with no legacy direct call reintroduced
+ok   F2  LEADTIME_READ_OWNER = the page's existing scoped read model
+ok   F2a ADDITIONAL_LEADTIME_REQUEST_COUNT = 0 — the only broad load is the pre-existing legacy fallback
+ok   F2b PER_ROW_LEADTIME_REQUEST_COUNT = 0 — the panel issues no transport of its own
+ok   F3  LEADTIME_UI_SURFACE = a Lead Time panel on the existing Carrier Rate Card page
+ok   F3a NEW_TOP_LEVEL_NAV_REQUIRED = NO — no new menu entry was added
+ok   F4  LOADING is its own state
+ok   F4a LEADTIME_FALSE_EMPTY_COUNT = 0 — a failed read never reads as "no lanes"
+ok   F4b LEADTIME_FALSE_FAILURE_COUNT = 0 — a committed write whose refresh lags is not reported as failed
+ok   F4c LEADTIME_FALSE_SUCCESS_COUNT = 0 — only the backend's own success is treated as one
+ok   F4d LEADTIME_UNKNOWN_AUTOREPLAY_COUNT = 0 — unknown says so, and is never resent
+ok   F5  LEADTIME_DELETE_SUPPORTED = NO — with no status column, removing a lane silently un-routes it, and no current workflow asks for that
+ok   F6  SINOTRANS_SEED_CLASSIFICATION = ONE_TIME_SEED — still present, not removed, not executed here
+ok   F7  the action-contract version moved 17 → 18, as adding a router action requires
+ok   F7a and the browser pin agrees, so this frontend refuses a deployment that predates the action
+
+== G  §25 MUTANTS ==
+ok   MUTANT CAUGHT — G1 carrier_id added to the effective uniqueness key
+ok   MUTANT CAUGHT — G2 last_mile_delivery removed from the uniqueness key
+ok   MUTANT CAUGHT — G3 origin and destination swapped in the guard
+ok   MUTANT CAUGHT — G4 the duplicate guard removed entirely
+ok   MUTANT CAUGHT — G5 the update excludes the WRONG lead_time_id from the guard
+ok   MUTANT CAUGHT — G6 min/avg/max validation removed
+ok   MUTANT CAUGHT — G7 the concurrency lock removed
+ok   MUTANT CAUGHT — G8 the rate-card table written from the lead-time action
+ok   MUTANT CAUGHT — G9 KMRA.leadDays changed to a last-row pick
+ok   MUTANT CAUGHT — G10 a per-row network read introduced into the panel
+ok   MUTANT CAUGHT — G11 an unread model treated as empty
+ok   MUTANT CAUGHT — G12 the census quietly gaining a write
+
+PASSED  98 passed / 0 failed   mutants 12, survived 0

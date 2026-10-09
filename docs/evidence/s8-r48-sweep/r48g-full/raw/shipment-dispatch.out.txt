@@ -1,0 +1,23 @@
+ok   idempotency: ready_to_ship not yet confirmed
+ok   idempotency: in_transit → already confirmed
+ok   idempotency: existing route nodes → already
+ok   idempotency: existing event → already
+ok   idempotency: existing movement → already
+ok   template: unique match by dest+carrier+method
+ok   template: dest+carrier ambiguous (2) → error
+ok   template: no match → error
+ok   template: explicit override wins
+ok   template: override not found → error
+ok   node status: single node → current
+ok   node status: 6 nodes → origin completed, leg current, rest planned
+ok   deduction: FIFO by warehouse, movement qty negative
+ok   deduction: insufficient total → blocked (no writes)
+ok   deduction: exact single warehouse
+ok   offset date: ETD 2026-08-01 + 11 = 2026-08-12 (cumulative)
+ok   offset date: blank offset → blank (no fabrication)
+ok   offset date: no ETD → blank
+ok   coord guard: lat present, lng blank → both blank
+ok   coord guard: both present → kept
+ok   coord guard: both blank → blank
+
+ALL PASS

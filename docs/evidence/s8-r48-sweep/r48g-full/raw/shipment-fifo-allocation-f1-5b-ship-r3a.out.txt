@@ -1,0 +1,86 @@
+
+== A single PO ==
+ok   A shipment 600 vs PO 1000 → allocated 600
+ok   A single allocation P1=600
+
+== B two-PO FIFO ==
+ok   B FIFO: P1=300 then P2=300
+
+== C three-PO FIFO ==
+ok   C 300+500+200
+
+== D insufficient capacity → fail closed ==
+ok   D fails closed PO_CAPACITY_INSUFFICIENT
+ok   D diagnostics: available 800, shortage 100
+ok   D no partial allocation set returned
+
+== E FIFO tie → po_no then line-id ==
+ok   E same date → po_no ASC (PO-1 before PO-2)
+ok   E same date+po_no → purchase_order_line_id ASC
+
+== F wrong company never eligible ==
+ok   F same sku+factory but company ResTW → not eligible for KM
+
+== G shared factory: company scopes capacity, NOT factory ==
+ok   G KM shipment on shared Factory A consumes ONLY the KM PO
+ok   G ResTW shipment on the SAME factory consumes ONLY the ResTW PO
+
+== H same company, wrong factory never eligible ==
+ok   H KM/FAC-A shipment cannot consume a KM/FAC-B PO
+
+== I blank order_date never eligible ==
+ok   I blank order_date PO is never FIFO-eligible (no created_at fallback)
+
+== J pre-issue PO never eligible ==
+ok   J pre-issue PO status "draft" excluded
+ok   J pre-issue PO status "pending_approval" excluded
+
+== K two shipment drafts contend for same capacity ==
+ok   K B sees only 300 → fails closed
+ok   K available 300, shortage 200 (no 700+500 over-reserve)
+
+== L current-line edit releases self, no double-count ==
+ok   L editing SL-A 700→400 recomputes to 400 (self released; not 700−400 delta)
+ok   L final total = 400, freeing 600 for others
+
+== M source-row shuffle → identical result ==
+ok   M shuffled PO rows → identical FIFO allocation
+
+== N conservation Σ allocation = shipment_qty ==
+ok   N Σ allocated_qty === shipment_qty (750)
+
+== P capacity = completed − shipped (not ordered) ==
+ok   P completed 600 − shipped 100 = 500 available (never 900 on ordered)
+
+== Q executed shipped + other draft reservation ==
+ok   Q available = 1000 − 300 shipped − 400 other-draft = 300
+
+== R company/factory independence (multi-line plan on shared factory) ==
+ok   R both KM + ResTW lines allocate on shared Factory A
+ok   R KM line → KM PO only
+ok   R ResTW line → ResTW PO only (factory_id never inferred company)
+
+== O physical truth: allocator returns lineage only, never shipment_qty ==
+ok   O pure allocator emits allocation lineage (allocated_qty) and never writes shipment_lines / shipment_qty
+ok   O handler reads shipment_lines for physical qty but never rewrites it
+
+== multi-SKU independence (§24 I) ==
+ok   multi-SKU: line AA → PO AA
+ok   multi-SKU: line BB → PO BB (independent capacity)
+
+== source guards — handler / schema / safety ==
+ok   handler runs under the canonical ScriptLock
+ok   §25 fail-closed when the allocations table is absent (never auto-create)
+ok   §29 fail-closed on factory/company attribution gaps
+ok   §20 handler does NOT mutate purchase_order_lines.shipped_qty
+ok   §13 R3A persists DRAFT allocations only (no executed)
+ok   §6/§7 reuses the existing canonical warehouse→factory resolver (no second resolver)
+ok   §5 shipment business company = persisted shipments.company (never inferred)
+ok   §0B eligibility never infers company from factory or vice-versa
+ok   router wires the canonical action (single owner)
+ok   canonical schema declared (live 14-col contract: status + allocated_qty + PO-line/shipment-line FKs)
+ok   schema matches LIVE 14-col (no fifo_rank/company/factory_id/purchase_order_id/executed_at)
+ok   schema includes reserved shipped_qty + released_* + note (present but NOT authority)
+
+----------------------------------------
+SHIPMENT FIFO ALLOCATION (F1-5B-SHIP-R3A): 43 passed, 0 failed

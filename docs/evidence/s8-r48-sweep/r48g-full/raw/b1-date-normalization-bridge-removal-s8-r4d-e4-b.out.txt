@@ -1,0 +1,87 @@
+
+================ A — THE OLD PATH IS STILL THERE, BYTE FOR BYTE ================
+
+ok   A1  sirWsSerialToDate_ is unchanged from R44 — the differential below compares code to code
+ok   A1a the deployed R44 source is available to diff against
+ok   A1b and that body is the one a940059 actually deployed, not one this test invented
+
+================ B — DIFFERENTIAL: EVERY VALUE SHAPE, OLD vs NEW ================
+
+ok   B1  DATE_VALUE_DIFF_COUNT = 0 over 16 value shapes
+ok   B2  DATE_TYPE_DIFF_COUNT = 0 — every converted cell is still a Date instance
+ok   B3  a 1979 summer serial converts IDENTICALLY — the era in which Asia/Taipei was +9h, not +8h
+ok   B3a and the probe REFUSES 1979: the guard reports the year as non-constant rather than averaging it
+ok   B3b while 2026 is proven constant at +8h, which is what makes the fast path legal at all
+ok   B3c a non-constant year carries NO offset — there is nothing to accidentally use
+ok   B4  a zone with a transition every month falls back for EVERY year and still matches exactly
+
+================ C — THE TYPE GATE, UNCHANGED ================
+
+ok   C1  only numbers are coerced — 8 non-number shapes pass through byte-identical and the converted count stays 0
+ok   C2  a mixed column converts exactly the numbers
+ok   C2a and the string and the blank are untouched between two converted cells
+ok   C3  an UNDECLARED numeric column beside a declared one stays a number
+
+================ D — THE MAP AND THE TRAPS DID NOT MOVE ================
+
+ok   D1  DATE_MAP_DIFF_COUNT = 0 — the declared map is byte-identical to the deployed R44 literal
+ok   D1a thirteen tables
+ok   D1b forty-six columns
+ok   D1c and the map VERSION does not move, because the map did not — only the route to the Date did
+ok   D2  NON_DATE_TRAP_DIFF_COUNT = 0 — no declared non-date has leaked into the map
+ok   D2a all three traps declared
+ok   D3  EVENT_MONTH_11_PRESERVED — still the number 11, not 1900-01-10
+ok   D3a event_period is still a string
+ok   D3b while the real date column beside them DID convert
+ok   D4  snapshot_week is still the range string
+ok   D4a and week_end_date beside it converted
+
+================ E — THE COST: O(date cells) BECOMES O(distinct years) ================
+
+ok   E0  the 70%-of-the-cost table still declares seven date columns
+ok   E1  both runs convert every declared cell (700 and 7,000)
+ok   E2  UTILITIES_CALL_COMPLEXITY_AFTER = O(request): a 10x table costs the SAME number of bridge calls (14)
+ok   E2a and that number is the probe budget — 14 samples for one distinct year, not 14000 crossings
+ok   E3  UTILITIES_CALL_COMPLEXITY_BEFORE = 2 per cell, executed — 700 cells cost 1,400 crossings
+ok   E4  and the new path costs strictly fewer: 14 vs 1400
+ok   E5  five distinct years cost five probe budgets (70), not one per cell
+
+================ F — CANDIDATE A WAS NOT IMPLEMENTED ================
+
+ok   F1  sirWsRecentWindow_ is byte-identical to the deployed R44 — RECENT_WINDOW_SELECTION_CHANGED = NO
+ok   F1  sirWorkspaceBuild_ is byte-identical to the deployed R44 — RECENT_WINDOW_SELECTION_CHANGED = NO
+ok   F2  the daily keep window is still 14 periods
+ok   F2a and the weekly is still 4
+ok   F3  normalization still runs INSIDE the read, before sirWorkspaceBuild_ applies recentWindow — the ordering Candidate A would invert is untouched
+
+================ G — THE RELEASE IDENTITY ================
+
+ok   G1  60_ declares R45 — it changed in THIS round, and is carried unchanged by later ones
+ok   G2  the deployment release is R45 OR LATER — a release cut after this one does not invalidate it
+ok   G3  63_ declares R45 or later — it changed in R45, and changes again whenever a release is cut
+ok   G4  and the manifest row for 60_ EXPECTS R45 exactly, so a partial sync is reported rather than guessed
+ok   G4a likewise 63_'s own row, as a floor — it moves with every cut
+ok   G4b and a PRE-R45 stamp is still rejected — the floor is a floor, not an acceptance of anything
+ok   G5  R45 is registered in the shared ledger AFTER R44 — the list is append-only and stampAtOrAfter compares indexes, so what matters is its position relative to its predecessor, not that it is last
+ok   G5a and it orders after R44
+ok   G6  01_ keeps R41 — ROUTER_CHANGE = NO
+ok   G7  dateCellsConverted and tzProbeCalls reach the diagnostics beside normalizationMs
+
+================ H — MUTATION: EACH GATE IS GIVEN THE FAULT IT CLAIMS TO CATCH ================
+
+ok   H1  a HARD-CODED +8 offset is caught by the 1979 DST serial [mutation applied]
+ok   H1  a HARD-CODED +8 offset is caught by the 1979 DST serial
+ok   H2  a probe that samples only ONE instant per year is caught by the same serial [mutation applied]
+ok   H2  a probe that samples only ONE instant per year is caught by the same serial
+ok   H4  the epoch constant drifting by one day is caught [mutation applied]
+ok   H4  the epoch constant drifting by one day is caught
+ok   H5  dropping Math.round in the new path is caught by a fractional serial [mutation applied]
+ok   H5  dropping Math.round in the new path is caught by a fractional serial
+ok   H6  adding the offset instead of subtracting it is caught [mutation applied]
+ok   H6  adding the offset instead of subtracting it is caught
+ok   H3  [mutation applied] the year memo forgets which timezone it probed
+ok   H3  a memo that forgets the timezone is caught — the second zone would inherit the first's offset
+ok   H7  [mutation applied] the type gate is removed
+ok   H7  removing the type gate is caught — a date-shaped STRING would be rewritten
+
+61 passed, 0 failed

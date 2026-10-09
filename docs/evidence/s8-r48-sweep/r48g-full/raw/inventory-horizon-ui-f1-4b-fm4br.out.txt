@@ -1,0 +1,29 @@
+
+== U · MARKETPLACE renders one Horizon Summary set ==
+
+== I · D18/D30/D45/D90 all render ==
+
+== J–N · exact canonical facts (no page math) ==
+
+== O · valid zero → "0" (D18 gap + suggested) ==
+
+== P · missing → "—" (D90 null facts) ==
+
+== Q · blocked destination → truthful, NO horizon table ==
+
+== V · multi-WAREHOUSE isolation (never pooled / summed) ==
+
+== W · diagnostics collapsed under <details> ==
+
+== X · old technical table DEMOTED (not the primary surface) ==
+
+== R/S/T · NO page-side horizon math, NO Math.*, NO summing of windows ==
+
+== Y/Z · session cache preserves horizons with ZERO refetch ==
+
+== AE · workspace OFF → legacy fallback preserved ==
+
+== AA/AB/AC/AF · Order Planning consumers untouched (regression) ==
+
+----------------------------------------
+INVENTORY HORIZON UI (F1-4B-FM4b-R): 30 passed, 0 failed

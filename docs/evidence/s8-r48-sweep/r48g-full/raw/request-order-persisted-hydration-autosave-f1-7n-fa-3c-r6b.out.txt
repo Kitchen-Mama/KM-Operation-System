@@ -1,0 +1,21 @@
+
+== A. root cause + scope derivation ==
+
+== A. hydration projects the persisted flat Draft (no AI Plan) ==
+
+== A. missing / duplicate / late-response ==
+
+== B. autosave command contract ==
+
+== B. note autosave — debounce + flush + persist ==
+
+== B. optimistic concurrency + states ==
+
+== C. core note contract + no Draft-Line + inventory finding ==
+
+== C. R5D popup authority intact (hydration is silent) ==
+
+== D. READ-ONLY TEMP_R6B diagnostic against a mock live DB ==
+
+----------------------------------------
+R6B PERSISTED HYDRATION + AUTOSAVE (F1-7N-FA-3C-R6B): 45 passed, 0 failed

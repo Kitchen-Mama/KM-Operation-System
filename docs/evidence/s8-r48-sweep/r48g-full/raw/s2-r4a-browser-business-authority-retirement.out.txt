@@ -1,0 +1,98 @@
+
+== A · §2 — a stale imported-SKU override cannot inject a row the server did not return ==
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok   A1  the rendered set is exactly the server set
+ok   A2  GHOST-1 — present in the browser key and nowhere else — is NOT injected
+ok   A3  nor does the key overwrite a field on a SKU the server DID return
+ok   A4  and the key itself is still in storage — ignored, not deleted
+ok   A5  still readable, so an operator can see and clear their own residue
+ok   A6  no CODE in the grouping helper names a browser data store
+ok   A6b while the comment that explains the retirement is still present to be read
+ok   A7  and it pushes nothing into the row set it was handed
+
+== B · §2 — a stale image override cannot outrank sku_details.image_url ==
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok   B1  a SKU with a canonical image renders the CANONICAL one, not the browser one
+ok   B2  a SKU with no canonical image renders NOTHING — the override is not a fallback either
+ok   B3  stated the other way round, because this is the failure that was actually shipping
+ok   B4  and the classifier says ABSENT for the same row, not PRESENT
+ok   B4a with no url smuggled out in the result
+ok   B5  and PRESENT with the canonical url when the row carries one
+ok   B6  the grouped row carries the server image, not the merged browser one
+ok   B7  the image key is likewise ignored rather than destroyed
+ok   B8  but the WRITER is gone, so no new override can be created from the page or the console
+
+== C · §2B — the canonical image path is the one that remains ==
+ok   C1  scoped-workspace spelling `image` resolves
+ok   C2  broad-cache spelling `imageUrl` resolves
+ok   C3  raw-row spelling `image_url` resolves
+ok   C4  a reference that is not an image address is still REFUSED, not forwarded
+ok   C5  03_ accepts image_url on the canonical upsert field list
+ok   C6  and the browser reaches it through the routed upsertSkuDetail action
+
+== D · §3 — a canonical read that did not answer cannot fall back to browser business state ==
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok   D1  an empty canonical answer does not become the browser's rows
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok   D2  and neither does no canonical answer at all
+ok   D3  the residue reader still exists (the operator affordance the ruling preserves)
+ok   D4  but neither the grouping helper nor the image resolver reads storage on any path
+
+== E · §2C — the lifecycle authority stays retired, and is not rebuilt ==
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok   E1  the legacy lifecycle key is still purged once on load
+ok   E2  and no lifecycle override accessor is exposed
+ok   E3  status comes from the row even with a Closure override seeded a moment ago
+ok   E4  and S2-R4A did not quietly bring any of it back
+
+== F · §4 — the legacy Weekly Shipping Plan store cannot affect a canonical plan ==
+ok   F1  DataRepo still loads (its fixtures are untouched)
+ok   F2.1  DataRepo.saveWeeklyShippingPlan is gone
+ok   F2.2  DataRepo.getWeeklyShippingPlans is gone
+ok   F2.3  DataRepo.updateShippingPlanStatus is gone
+ok   F2.4  DataRepo.removeShippingPlan is gone
+ok   F3  a stale weeklyShippingPlans key is neither read into memory nor rewritten
+ok   F4  and the module touches that key on no path
+ok   F5  the canonical writer still exists on the DB surface
+ok   F6  and every mention on the Shipping Plan page is the canonical one — no bare call can bind to a local
+ok   F7  over a call set worth checking
+ok   F8  personalTodos is deliberately left alone — this round retires business authority, not preferences
+
+== G · §5 — route return and hard reload change nothing ==
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok   G1  a second render from the same module yields identical groups
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok   G2  and a fresh load of the module yields the same groups again
+ok   G3  with the stale keys still present the whole time
+ok   G4  and DataRepo presents the same surface on every load
+
+== H · §6 — no new request, timeout, retry or listener ==
+   (the retirement commit is unreachable — the shared-module half is skipped)
+ok   H1  no changed file gained a request, timeout, interval, listener or DB call
+ok   H2  and the PRE baseline really did contain DB calls to compare against
+ok   H3  sku-overrides.js reads storage no more often than before
+ok   H4  sku-overrides.js schedules nothing
+ok   H5  and issues no request of its own — retirement added no read
+
+== I · driven mutants — each injects a fault a person could actually write ==
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok       M1 the imported-SKU injection is restored (caught)
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok       M2 the image override is put back in front of the row (caught)
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok       M3 the override becomes a FALLBACK when the row has no image (caught)
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok       M4 the classifier disagrees with the renderer again (caught)
+ok       M5 the image-override writer is reinstated (caught)
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok       M6 the grouping helper merges the browser image again (caught)
+ok       M7 the legacy weekly-plan store comes back (caught)
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok       M8 the lifecycle purge is dropped (caught)
+[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).
+ok       M9 the image resolver becomes a pass-through again (caught)
+
+----------------------------------------------------------------------------------------------------
+S2-R4A BROWSER BUSINESS AUTHORITY RETIREMENT: 60 passed, 0 failed  ·  mutants 9, survived 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+----------------------------------------------------------------------------------------------------

@@ -1,0 +1,132 @@
+
+== A. every stage of the shipping mainline has exactly one owner, and it is where the audit says ==
+ok   A1 the ONLY creator of a shipments row is createShipmentFromApprovedPlan_ in 12_
+ok   A2 the ONLY shipping_plans mutation authority is shippingPlanCommitFromLines_ in 11_
+ok   A3 the ONLY shipping_allocation_draft writer core is sadAtomicUpsertCore_ in 16_
+ok   A4 the ONLY dispatch owner is handleConfirmShipmentAndDispatch_ in 22_
+ok   A5 the ONLY receipt owner is handleUpdateShipmentReceipt_ in 31_
+ok   A6 the ONLY route-point advance owner is in 31_
+ok   A7 the ONLY PO-source (FIFO) allocation executor is slaApplyExecution_ in 32_
+ok   A8 the ONLY scoped shipment read owner is in 57_
+ok   A9 the ONLY shipment cancellation owner is handleCancelShipmentDraft_ in 12_
+ok   A10 the single factory_stock mutation primitive lives only in 21_
+ok   A11 reservation acquire lives only in 21_
+ok   A12 reservation release lives only in 21_
+ok   A13 the availability owner is the pure KMFSG module, executable outside Apps Script
+ok   A14 71_ reads and KMFSG decides — the server seam re-implements no availability arithmetic
+
+== B. no second calculation path and no second write path ==
+ok   B1 exactly one file writes a factory_stock balance cell
+ok   B2 one shipment row appender
+ok   B3 the shipment creator is defined once even within its own file
+ok   B4a the K2 generator body was isolated, not truncated to nothing
+ok   B4 the KMPR/KMPL WEEKLY_SHIPPING persistence deps are DORMANT — the K2 generator never calls them
+ok   B5 the live AI shipping write goes through 16_'s atomic allocation-draft endpoint
+ok   B6 61_ declares that same endpoint as its only write handler
+ok   B7 the shipping decision/execution owners derive no ordering gap or residual of their own
+
+== C. the Available-to-Ship authority, exercised rather than described ==
+ok   C0 the pool resolved
+ok   C1 physical current stock is read, not derived
+ok   C2 the reservation is a real subtrahend
+ok   C3 factory_available_stock = current - reserved (21_'s own derived quantity)
+ok   C4 an active allocation draft holds exposure
+ok   C5 an approved shipping plan holds exposure
+ok   C6 available_to_allocate nets BOTH pre-execution stages off the physical headroom
+ok   C7 the availability snapshot is fingerprinted, so a human overage confirmation is bound to these facts
+ok   C8 the pool is keyed by warehouse_id||sku alone
+ok   C9 an existing breach is reported at its true size, never clamped to 0
+
+== D. reservation — one owner type, three events, and a derived lifecycle ==
+ok   D1 the only reservation owner type is `shipment`
+ok   D2 acquire and release are a two-row vocabulary on the existing ledger, not a new table
+ok   D3 reservation lifecycle is DERIVED from the ledger — no third copy of the fact is stored
+ok   D4a the creator body was isolated, not truncated
+ok   D4 RESERVE_EVENT = Shipment Draft creation (Execution Commit), not the Ready to Ship transition
+ok   D5 the reservation carries a resolvable owner (shipment id), not an anonymous counter
+ok   D6a the cancel body was isolated, not truncated
+ok   D6 RELEASE_EVENT = cancelShipmentDraft — a claim returned, no physical units moved
+ok   D6b and that forwarder reaches BOTH domain owners — neither domain releases through the other's rule
+ok   D7 CONSUME_EVENT = dispatch — deduction and release land in ONE movement row, never two that can disagree
+ok   D8 the dispatch deduction and the release travel in the same call
+ok   D9 release is owner-scoped — one shipment can never release another shipment's hold
+ok   D10 a release can never exceed what is held, so fac_reserved_stock cannot be driven negative
+
+== E. the Phase-1 mainline separation — shipping demand is NOT purchase demand ==
+ok   E1 11_shipping_plan_handlers.gs creates no Request Order and no PO
+ok   E1 12_shipment_handlers.gs creates no Request Order and no PO
+ok   E1 16_shipping_allocation_handlers.gs creates no Request Order and no PO
+ok   E1 22_shipment_dispatch_handlers.gs creates no Request Order and no PO
+ok   E1 31_shipment_receipt_route_handlers.gs creates no Request Order and no PO
+ok   E1 61_api_v1_weekly_ai_plan.gs creates no Request Order and no PO
+ok   E2 13_procurement_handlers.gs creates no shipment
+ok   E2 47_api_v1_recommendation_generation.gs creates no shipment
+ok   E2 48_api_v1_request_order_draft_job.gs creates no shipment
+ok   E2 66_api_v1_request_order_send.gs creates no shipment
+ok   E2 24_recommendation_orchestrator.gs creates no shipment
+ok   E3 shipment_line_allocations consumes PO supply for an existing shipment — it never causes one
+ok   E4 the FIFO allocator does not mutate purchase_order_lines from the draft stage
+ok   E5 S5_RECOMMENDATION_IS_SHIPPING_QTY_AUTHORITY = NO — no shipping owner reads the ordering recommendation
+
+== F. shipment status — a closed set, and cancellation is a named refusal ==
+ok   F1 the pre-dispatch statuses are declared as data
+ok   F2 the dispatched statuses are declared as data
+ok   F3 updateShipment refuses cancellation BY NAME, pointing at the action that also releases the hold
+ok   F4 an unrecognised status is refused — a shipment in an unknown status is invisible to every filtered page
+ok   F5 a cancelled shipment is REFUSED at dispatch, not answered `already_confirmed`
+ok   F6 dispatch idempotency reads route rows, event rows AND the movement ledger, not status alone
+ok   F7 the dispatch-evidence probe exists as its own named question
+
+== G. multi-leg / On-the-Way — leg grain, one read model ==
+ok   G1 shipment_routes is one row per NODE (leg grain), snapshotted at dispatch
+ok   G2 transport_mode is a leg-level column on the route snapshot
+ok   G3 the On-the-Way map reads routes through the ONE scoped shipment workspace, include-gated
+ok   G4 events come from the same workspace read
+ok   G5 exactly one file advances the current route point
+ok   G6 the ETA owner declares it addresses no route cell — a bounded owner, not a second one
+
+== H. write truth — identity, idempotency, and no automatic replay ==
+ok   H1 the allocation writer carries an execution key as a replay witness
+ok   H2 a retry reuses the SAME deterministic identity, so a committed group REUSEs rather than duplicates
+ok   H3 an unverifiable commit is reported as unknown, never as "nothing was written"
+ok   H4 a dispatch replay is an idempotent success with zero cells changed
+ok   H5 a cancellation replay is a no-op, not a second release
+ok   H6 11_ adds no automatic retry — a lost response is the operator's decision, not the code's
+ok   H6 12_ adds no automatic retry — a lost response is the operator's decision, not the code's
+ok   H6 16_ adds no automatic retry — a lost response is the operator's decision, not the code's
+ok   H6 22_ adds no automatic retry — a lost response is the operator's decision, not the code's
+ok   H6 31_ adds no automatic retry — a lost response is the operator's decision, not the code's
+
+== I. second-layer expand costs no network read ==
+ok   I0 the card toggle AND the element toggle it delegates to were both isolated
+ok   I1 expanding a Shipment card issues NO request — the detail came with the scoped workspace read
+ok   I2 the replenishment row toggle was isolated
+ok   I3 expanding a replenishment row issues NO request of its own
+ok   I4 the carrier catalogue the second layer needs is ADOPTED from the scope read, not fetched per SKU
+
+== J. Phase-2 orchestration is not implemented ==
+ok   J1 42_api_v1_recommendation_workspace.gs reads no carrier lead time — no ordering/shipping lead-time orchestration
+ok   J1 43_api_v1_gap_materialization.gs reads no carrier lead time — no ordering/shipping lead-time orchestration
+ok   J1 47_api_v1_recommendation_generation.gs reads no carrier lead time — no ordering/shipping lead-time orchestration
+ok   J1 48_api_v1_request_order_draft_job.gs reads no carrier lead time — no ordering/shipping lead-time orchestration
+ok   J2 the ordering draft job touches no shipping table
+
+== K. mutation — each claim above can actually fail ==
+ok   K1 a second creator of shipments appears in another handler file (caught)
+ok   K2 a factory_stock balance write leaks back into the dispatch handler (caught)
+ok   K3 availability stops subtracting the reservation (caught)
+ok   K4 availability stops subtracting pre-execution exposure (caught)
+ok   K5 the dormant KMPR deps become a live second write path (caught)
+ok   K6 updateShipment loses its cancellation refusal (caught)
+ok   K7 a dispatch releases more than it holds (caught)
+ok   K8 expanding a shipment card starts issuing a read (caught)
+
+=====================================================
+S6-R1 SHIPPING MAINLINE CONTRACT AUDIT — 100 passed / 0 failed
+mutants: 8 caught / 8 planted
+SECOND_SHIPPING_CALCULATION_PATH_COUNT = 0
+SECOND_SHIPPING_WRITE_PATH_COUNT = 0   DORMANT_WRITE_CONSTRUCTOR_COUNT = 1 (61_ KMPR deps)
+AVAILABLE_TO_SHIP_ALREADY_IMPLEMENTED = YES   INVENTORY_MUTATION_OWNER_COUNT = 1
+S5_RECOMMENDATION_IS_SHIPPING_QTY_AUTHORITY = NO
+ORDERING_SHIPPING_ORCHESTRATION_IMPLEMENTED = NO
+=====================================================

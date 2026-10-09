@@ -1,0 +1,63 @@
+
+== A · SHIPMENT_CENTER_SPEC — Shipping History is a projection, and there is no history table ==
+ok   A1  the spec calls Overview a status-filtered view over shipments / shipment_lines
+ok   A2  and forbids a parallel shipment database outright
+
+== B · the legacy Shipping History shadow cannot reach business state in canonical mode ==
+ok   B1  the canonical posture is active
+ok   B2  historyState holds NOTHING — not the stale rows, not the demo fixture
+ok   B3  and the browser store is not even read on this path
+ok   B4  the key itself survives — retirement ignores residue, it does not destroy it
+ok   B5  demo posture
+ok   B6  demo mode still reads the store, exactly as before
+ok   B7  and still falls back to the demo fixture when the store is empty
+
+== C · the writer that fills that key is a demo flow, and fabricates money ==
+ok   C1  markAsDone is the only writer of the shippingHistory key
+ok   C2  and it invents totalCost from a hardcoded unit cost — these rows were never real
+ok   C3  taking cartons out of a demo fixture as well
+ok   C4  the legacy renderer that hosts its Done button is unreachable whenever DB or Workspace is on
+
+== D · the canonical read stays fail-closed, and no canonical path moved ==
+ok   D1  the canonical read is still getWorkspace(shipment) -> adaptShipmentWorkspace
+ok   D2  a read failure still NULLS the read model rather than keeping a half-truth
+ok   D3  and does not fall back to browser business state or the demo fixture
+ok   D4  historyState.data is still reachable ONLY behind the demo gate
+ok   D5  Overview still filters on canonical shipment status
+ok   D6  and still keys lines by the physical shipment_id
+
+== E · FC §10 — the post-write warm-up publishes what it is fetching ==
+ok   E1  the post-write warm-up issues exactly one scoped read
+ok   E1a for the invalidated tables
+ok   E2  and PUBLISHES them as in flight before awaiting
+ok   E3  a Builder reopen during the warm-up issues NO second read — it joins
+
+== F · a warm-up that FAILS must not strand the reopen ==
+ok   F1  one read in flight, joined by the reopen
+
+== G · the join is an INDEX, not a cache — it holds no data and latches nothing by itself ==
+ok   G1  publishing a table as in-flight does NOT mark it warm — only arrival does
+ok   G2  every entry is a promise, never a row set
+ok   G3  and the join helper does not latch anything on its own authority
+
+== H · nothing business-bearing moved ==
+ok   H1  SAVED_STALE still says the write SUCCEEDED
+ok   H2  a failed readback marks the view stale rather than claiming current data
+ok   H3  receipt reconciliation still short-circuits the readback — zero requests when the receipt is complete
+ok   H4  the Refresh-view control is still single-flight — extra clicks issue nothing
+ok   H5  the R20 stage-2 batch resolver is still in place
+ok   H6  Shipping History touches no pricing field
+
+== I · driven mutants ==
+ok       M1 the warm-up stops publishing its tables (caught)
+ok       M2 the loader stops joining and always asks (caught)
+ok       M4 publishing a table also marks it warm (caught)
+ok       M6 the canonical guard is removed (caught)
+ok       M7 the guard loads the stale rows instead of nothing (caught)
+ok       M8 the guard falls back to the demo fixture (caught)
+ok       M3 a settled flight is left in the index for ever (caught)
+ok       M5 the release clears entries it does not own (caught)
+ok   E4  and still exactly one read after both settle
+ok   E5  the in-flight index is empty again — no leaked entry
+ok   E6  the joined reopen ends READY, not stuck LOADING
+ok   E7  with every table latched warm exactly once

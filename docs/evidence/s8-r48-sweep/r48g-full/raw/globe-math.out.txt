@@ -1,0 +1,39 @@
+ok   latLng(0,0).x = 0
+ok   latLng(0,0).y = 0
+ok   latLng(0,0).z = +1 (faces camera)
+ok   north pole → +Y
+ok   lng +90 → +X
+ok   lng +90 → z 0
+ok   latLng vector is unit length
+ok   focus(0,0) → x≈0
+ok   focus(0,0) → y≈0
+ok   focus(0,0) → z≈+1 (front & center)
+ok   focus(37.77,-122.42) → x≈0
+ok   focus(37.77,-122.42) → y≈0
+ok   focus(37.77,-122.42) → z≈+1 (front & center)
+ok   focus(25.03,121.56) → x≈0
+ok   focus(25.03,121.56) → y≈0
+ok   focus(25.03,121.56) → z≈+1 (front & center)
+ok   focus(-33.9,151.2) → x≈0
+ok   focus(-33.9,151.2) → y≈0
+ok   focus(-33.9,151.2) → z≈+1 (front & center)
+ok   focus(51.5,-0.12) → x≈0
+ok   focus(51.5,-0.12) → y≈0
+ok   focus(51.5,-0.12) → z≈+1 (front & center)
+ok   focus(-23.5,-46.6) → x≈0
+ok   focus(-23.5,-46.6) → y≈0
+ok   focus(-23.5,-46.6) → z≈+1 (front & center)
+ok   I*T keeps tx
+ok   I*T keeps ty
+ok   I*T keeps tz
+ok   translate maps origin.x
+ok   translate maps origin.z
+ok   front point flagged front-facing
+ok   front point projects near horizontal center
+ok   far-side point flagged occluded (not front)
+ok   slerp midpoint on unit sphere
+ok   slerp midpoint lng≈45 (x)
+ok   slerp t=0 = A
+ok   slerp t=1 = B
+
+ALL PASS

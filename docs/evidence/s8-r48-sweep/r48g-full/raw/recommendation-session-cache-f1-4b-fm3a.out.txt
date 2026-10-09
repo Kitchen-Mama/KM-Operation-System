@@ -1,0 +1,23 @@
+
+== A. first load → CACHE MISS → one request → cached ==
+
+== B. navigate away and back → CACHE HIT → zero new requests ==
+
+== C. collapse / re-expand same scope → CACHE HIT (dedupe or cache) → zero new requests ==
+
+== D/E/F. scope change → new key → CACHE MISS ==
+
+== G/H. stale / aborted response is NEVER cached ==
+
+== I. API failure / rejection is NEVER stored as a successful cache entry ==
+
+== J/K. blocked canonical result + valid zero ARE cacheable (valid runtime successes) ==
+
+== L–P. Suggested Qty = numeric presentation aggregation (non-blocked canonical recommendedQty) ==
+
+== Q. cell output — numeric total, honest dash, no "breakdown" ==
+
+== R. source safety — presentation only, no page-side recommendation math / no localStorage / no write ==
+
+----------------------------------------
+RECOMMENDATION SESSION CACHE + SUGGESTED AGG (F1-4B-FM3a): 30 passed, 0 failed

@@ -1,0 +1,256 @@
+
+== A. §1 — the buffer is CONFIRMED, and the rule it feeds is unchanged ==
+ok   A1  the DECLARATION says provisional: false
+ok   A1a and no declaration anywhere in the file still says true — matched on the declaration, not on prose, because a comment explaining the old value satisfied the loose form of this check
+ok   A2  seven days
+ok   A3  in CALENDAR days — days_until_stockout is a difference between two calendar dates, so a buffer in any other unit would be added to two calendar quantities and silently shorten itself
+ok   A4  per-method overrides are retained, and the ones a later round will add are NAMED in the same object
+ok   A4a and it records that this is Phase 1, so a global default is not mistaken for the final shape
+ok   A5  §1 boundary: 30 days of supply, a 28-day service, +7 buffer = 35 — nothing recommended
+ok   A5a and it is classified UNSAFE
+ok   A6  max + buffer EXACTLY equal to days_until_stockout is TIGHT — strict `<`, so equality is never SAFE
+ok   A6a and TIGHT is never auto-recommended
+ok   A7  one day earlier is SAFE — the boundary is where the rule says it is, not near it
+ok   A8  a 2-day best case does not rescue a 28-day worst case — min_days is never consulted by the verdict
+ok   A9  every buffer lookup carries its unit
+
+== B. §2 — the four numbers that read as a failed supply allocation ==
+ok   B1  SUPPLY axis on the live scope: 760 authorized, 760 sourced, 0 unresolved — the supply side is FINISHED
+ok   B2  ROUTE axis: 0 automatic, 760 awaiting a human method choice, 760 unresolved, 0 materialized
+ok   B3  and the two verdicts say which axis each belongs to
+ok   B4  760 unresolved ROUTE units beside 0 unresolved SUPPLY units — the pair that used to be one word
+ok   B4a stated in the report itself, so a reader is not left to infer it
+ok   B5  total_allocated_quantity is kept and DEFINED — a value of 0 can no longer be read as "nothing was sourced"
+ok   B5a the legacy field keeps its historical value, so old logs still compare
+ok   B6  the two axes are separated structurally, not only in prose
+ok   B7  nothing here is a data fault — the whole 760 is waiting on a person, and the report says which
+ok   B7a and the two disjoint halves sum to the unresolved route total — measured, not assumed
+
+== C. §3 — a warning with no code is a sentence, and a sentence cannot be switched on ==
+ok   C1  no SHARED blocker on the live scope
+ok   C1a and no blocker at all
+ok   C1b the recommendation is READY
+ok   C1c with warnings, which is a band and not a failure
+ok   C2.1 NO_TRANSIT_AUTHORITY_FOR_LANE is a TYPED warning code
+ok   C2.2 ROUTE_METHOD_MANUAL_REVIEW_REQUIRED is a TYPED warning code
+ok   C2.3 CARRIER_PRICING_DEFERRED is a TYPED warning code
+ok   C3  every warning carries a CODE (the contract), an OWNER (who acts) and a DETAIL (what a person reads)
+ok   C3a pricing is owned by Layer 2 by NAME — DEFERRED, not UNAVAILABLE: nothing failed, a decision has not been made
+ok   C3b and the method choice is owned by the OPERATOR
+ok   C4  DEPLOYMENT_OR_RUNTIME_AUTHORITY_MISMATCH MAY stop the whole AI Plan
+ok   C4  SNAPSHOT_UNAVAILABLE MAY stop the whole AI Plan
+ok   C4  FORECAST_NORMALIZATION_FAILURE MAY stop the whole AI Plan
+ok   C4  SCOPE_MAPPING_FAILURE MAY stop the whole AI Plan
+ok   C4  QUANTITY_CONSERVATION_FAILURE MAY stop the whole AI Plan
+ok   C4  SCHEMA_INCOMPATIBLE MAY stop the whole AI Plan
+ok   C4  CORRUPTED_DETERMINISTIC_IDENTITY MAY stop the whole AI Plan
+ok   C5  NO_TRANSIT_AUTHORITY_FOR_LANE may NEVER stop it
+ok   C5a NO_TRANSIT_AUTHORITY_FOR_LANE is in fact absent from shared_blockers
+ok   C5  NO_CARRIER_CARD_FOR_LANE may NEVER stop it
+ok   C5a NO_CARRIER_CARD_FOR_LANE is in fact absent from shared_blockers
+ok   C5  CARRIER_PRICING_DEFERRED may NEVER stop it
+ok   C5a CARRIER_PRICING_DEFERRED is in fact absent from shared_blockers
+ok   C5  ROUTE_METHOD_MANUAL_REVIEW_REQUIRED may NEVER stop it
+ok   C5a ROUTE_METHOD_MANUAL_REVIEW_REQUIRED is in fact absent from shared_blockers
+ok   C5  MANUAL_ROUTE_SELECTION_REQUIRED may NEVER stop it
+ok   C5a MANUAL_ROUTE_SELECTION_REQUIRED is in fact absent from shared_blockers
+ok   C5  MANUAL_CARRIER_SELECTION_REQUIRED may NEVER stop it
+ok   C5a MANUAL_CARRIER_SELECTION_REQUIRED is in fact absent from shared_blockers
+ok   C5  EXECUTION_ROUTE_NOT_MATERIALIZED may NEVER stop it
+ok   C5a EXECUTION_ROUTE_NOT_MATERIALIZED is in fact absent from shared_blockers
+ok   C5  USER_MASTER_DATA_REQUIRED may NEVER stop it
+ok   C5a USER_MASTER_DATA_REQUIRED is in fact absent from shared_blockers
+ok   C6  the route findings are carried under a name that is TRUE of them
+ok   C6a route_blockers survives as a compatibility alias of exactly the same list
+ok   C6b and it is LABELLED, because a reader who greps for "blockers" draws the conclusion this round exists to stop
+ok   C7  USER_MASTER_DATA_REQUIRED is a ROUTE finding and not an overall blocker
+ok   C8  and the buffer no longer warns, because §1 confirmed it
+
+== D. §4 — the page told an operator the opposite of what the server said ==
+ok   D1  the run reports success:false — nothing committed, which is true and stays true
+ok   D1a and ALL_BLOCKED, so the page fell to its GENERIC FAILURE branch
+ok   D1b it writes no route, because no method resolved
+ok   D2  the advice reaches the top level of the response — it existed before and was unreachable
+ok   D2a with a THREE-valued outcome; two could not describe "ready, with a decision outstanding"
+ok   D2b and it says the recommendation IS ready
+ok   D3  carrying the quantity
+ok   D3a and that the supply side is finished
+ok   D4  and the SOURCE by name — a total with no source is not advice anybody can act on
+ok   D4a with the quantity that comes from it
+ok   D4b and the FACTORY total, stated at zero: an omitted zero reads as "we did not look"
+ok   D5  and that the stored Execution Plan did not move — a measured fact, not a reassurance
+ok   D6  the page reads the server’s outcome verbatim
+ok   D6a and knows the recommendation is ready
+ok   D6b and has the typed codes, so it branches on a CODE rather than matching a sentence
+ok   D7  and it produces a message for the middle case, which it previously had no branch for
+ok   D7a leading with what SUCCEEDED
+ok   D7b naming the quantity
+ok   D7c naming the source warehouse and its code
+ok   D7d and the factory allocation at zero
+ok   D7e saying a method must be chosen by hand
+ok   D7f and that carrier choice is deferred
+ok   D7g and that nothing on screen was changed
+ok   D8.1 the message never says AI Plan failed
+ok   D8.2 the message never says database failed
+ok   D8.3 the message never says Carrier master data required
+ok   D8.4 the message never says recommendation unavailable
+ok   D8.5 the message never says NO ELIGIBLE ROUTE
+ok   D8.6 the message never says nothing in the current data supports
+ok   D9  the sentence the operator was shown is gone from this path — it was the opposite of the truth
+ok   D10 and the TONE is warn/info, never the red failure tone
+ok   D11 in the zero-result branch the advice is consulted BEFORE the no-route wording — advice outranks absence
+ok   D12 the Submit preflight guard is untouched
+ok   D12a and this scope is NOT submit-ready — advice readiness is not submit readiness
+ok   D13 a response with no advice produces no advice sentence, and the run falls through to the wording it was written for
+ok   D14 and in the FAILURE branch too, before the generic wording — that is the branch the live run takes
+ok   D14a and only when there is nothing else to report: a readiness refusal, a BLOCKED_CONFLICT or a server error is a real finding, and none of them is hidden by an available recommendation
+ok   D14b the technical detail panel is still populated FIRST, so nothing is concealed
+ok   D15 a conflicting run is still counted as blocked
+ok   D15a even though the advice is ready — the guard, not the absence of advice, is what keeps the conflict visible
+
+== E. §5/§6 — a search under fixed predicates, not a scope somebody picked ==
+ok   E1  the live scope alone yields NO candidate — it has no transit authority and never could
+ok   E1a zero writes
+ok   E1b and no writer was ever constructed
+ok   E2  and the rejection names the FIRST failing predicate — the histogram is the actionable half
+ok   E2a all fifteen predicates are declared
+ok   E3  finding no candidate does NOT withdraw the advice readiness R5 established, and says so
+ok   E3a a rate card is not a candidacy requirement
+ok   E4  a lane WITH transit authority yields a candidate
+ok   E4a and one is selected
+ok   E4b naming the SKU
+ok   E4c the quantity
+ok   E4d the source warehouse
+ok   E4e the lane
+ok   E5  with a selected METHOD PROFILE
+ok   E5a which is SAFE
+ok   E5b judged against the confirmed 7-day buffer
+ok   E5c and the conservative transit lands strictly inside it
+ok   E6  the carrier is DEFERRED — a lead-time row’s carrier_id is provenance, never a selection
+ok   E6a and the absence of a rate card is reported without being a disqualification
+ok   E7  a deterministic identity is previewed, so the first live write is predictable before it happens
+ok   E7a and the reasons are stated
+ok   E8  predicate holds: active_marketplace_scope
+ok   E8  predicate holds: current_accepted_snapshot
+ok   E8  predicate holds: forecast_ready_or_legal_zero
+ok   E8  predicate holds: suggested_quantity_positive
+ok   E8  predicate holds: supply_source_available
+ok   E8  predicate holds: source_and_destination_resolved
+ok   E8  predicate holds: country_lead_time_resolvable
+ok   E8  predicate holds: at_least_one_safe_method
+ok   E8  predicate holds: method_independent_of_rate_card
+ok   E8  predicate holds: conservative_transit_within_buffer
+ok   E8  predicate holds: deterministic_identity_resolvable
+ok   E8  predicate holds: allocation_schema_compatible
+ok   E8  predicate holds: no_terminal_identity_collision
+ok   E8  predicate holds: no_ambiguous_active_draft
+ok   E8  predicate holds: no_manual_route_precedence_conflict
+ok   E8a each with the observed value beside it, so a reader checks rather than trusts
+ok   E8b method independence is judged on the OBSERVABLE form — no carrier named, no price claimed
+ok   E8c with both halves in the detail, so the predicate cannot silently become a tautology
+ok   E9  the selected scope censuses as READY
+ok   E9a with zero writes
+ok   E9b and no writer
+ok   E9c chosen by the fixed rule, and the report says how
+ok   E10 every §6 expectation holds
+ok   E10a the method is automatic
+ok   E10b the route materializes completely
+ok   E10c and the automatic route quantity EQUALS the authorized quantity
+ok   E11 carrier selection stays deferred
+ok   E11a and price comparison readiness is reported INDEPENDENTLY — false here, and not a condition of the verdict
+ok   E12 schema parity agrees
+ok   E13 RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R is preserved and still reports recommendation readiness
+
+== F. §7 — what a live activation would actually do, simulated three ways ==
+ok   F1  CASE A: nothing committed, so success is false — and stays false
+ok   F1z with ALL_BLOCKED, the exact live shape
+ok   F1a as a success WITH warnings
+ok   F1b the suggested quantity is preserved
+ok   F1c and the source
+ok   F2  NO allocation header was written
+ok   F2a NO allocation line was written
+ok   F2b and every unrelated table is untouched — no reservation, no shipment, no movement
+ok   F3  the batch verdict is the middle band, never STOP
+ok   F3a with the warning named
+ok   F3b and the response says a warning is not a failure
+ok   F4  CASE B: the run SUCCEEDS
+ok   F4a exactly ONE header
+ok   F4b exactly ONE line
+ok   F4c carrying the whole authorized quantity
+ok   F5  from the right source
+ok   F5a with a method
+ok   F5b with a conservative ETA in the route evidence — never a blank arrival beside a resolved lane
+ok   F5c and a non-zero transit
+ok   F6  still SUCCESS_WITH_WARNINGS, because pricing is deferred — the route materialized anyway
+ok   F6a the whole quantity routed automatically
+ok   F6b and the response says the Execution Plan DID move
+ok   F7  and nothing outside the two draft tables was touched — no reservation, no Submit
+ok   F8  a REPLAY succeeds
+ok   F8a and is still ONE header — a retried click is not a second ticket
+ok   F8b and one line
+ok   F8c the replay CREATED nothing
+ok   F8d and the stored quantity is unchanged
+ok   F9  CASE C: a mixed batch SUCCEEDS
+ok   F9a with the middle verdict
+ok   F9b and no stop reason — a warning may never stop a batch
+ok   F10 at least one scope is recommendation-ready
+ok   F10a and the roll-up reports readiness — a warned scope does not suppress a ready one
+ok   F11 the routable half still materialized
+ok   F12 NO_TRANSIT_AUTHORITY_FOR_LANE can never stop a batch
+ok   F12 NO_CARRIER_CARD_FOR_LANE can never stop a batch
+ok   F12 CARRIER_PRICING_DEFERRED can never stop a batch
+ok   F12 EXECUTION_ROUTE_NOT_MATERIALIZED can never stop a batch
+ok   F12 USER_MASTER_DATA_REQUIRED can never stop a batch
+
+== G. §8 — the mutation manifest, asserted against what an activation actually does ==
+ok   G1  the manifest names EXACTLY two tables it may write
+ok   G2  no reservation is expected
+ok   G2a and no Submit
+ok   G3  and it names the single handler every write goes through
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: shipping_plans
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: shipping_plan_lines
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: shipments
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: shipment_lines
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: factory_stock_movements
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: reservations
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: purchase_orders
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: purchase_order_lines
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: carrier_rate_cards
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: carrier_lead_times
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: inventory_replenishment_gap
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: warehouses
+ok   G4  guaranteed-zero table is byte-identical before and after a real generation: sku_details
+ok   G4a and enough of them exist here for that to mean something
+ok   G5  every written table is also READ — a write with no readback is a write nobody can verify
+ok   G6  replay behaviour is stated
+ok   G6a with the key a readback filters on
+ok   G7  and the rollback is NON-DESTRUCTIVE, stated as such
+ok   G8  the five points the NEXT round compares, fixed before the fact rather than after it
+ok   G9  and the manifest travels with the response that performed the run
+ok   G10 the manifest reports the flag as it was OBSERVED (true in this VM only)
+ok   G11 the REPOSITORY flag is still false — every activation above happened inside a VM
+
+== H. §9 — mutation coverage ==
+ok   H1  the buffer is left PROVISIONAL → the recommendation warns again and activation is not clear (caught)
+ok   H2  the buffer is not 7 days → the safety margin the business confirmed is not the one applied (caught)
+ok   H3  equality is called SAFE → arriving exactly as the shelf empties is auto-recommended (caught)
+ok   H4  unresolved SUPPLY is filled from the unresolved ROUTE quantity → a sourced plan reads as unsourced (caught)
+ok   H5  the ROUTE total is reported as the supply allocation → 760 sourced units read as 0 (caught)
+ok   H6  a warning is mapped to a FAILURE outcome → the page shows red for a completed recommendation (caught)
+ok   H7  the ResUS scope writes an INCOMPLETE execution route → a route with no method reaches the database (caught)
+ok   H8  the candidate selector REQUIRES a rate card → a perfectly routable lane is rejected for a price list (caught)
+ok   H9  a candidate qualifies on min_days → an optimistic best case is mistaken for a safe one (caught)
+ok   H10 the candidate is judged with NO buffer → a service that only just fits is called safe (caught)
+ok   H11 an UNSAFE method is recommended → the plan proposes a shipment that arrives after the stockout (caught)
+ok   H12 a candidate with a MANUAL route conflict is accepted → the first live test proves nothing (caught)
+ok   H13 a missing rate card blocks the METHOD recommendation → R5’s coupling comes back (caught)
+ok   H14 the AI Plan LOCKS a carrier → a lead-time row’s carrier_id becomes a commercial decision (caught)
+ok   H15a two different execution keys still resolve ONE header — identity is the route tuple, not the key
+ok   H15 the header identity stops being deterministic → a replay mints a second ticket for one click (caught)
+ok   H16 a warned scope suppresses a READY one → one lane’s gap discards another lane’s plan (caught)
+ok   H17 the SUBMIT gate is relaxed → advice readiness becomes permission to submit (caught)
+ok   H18 the lifecycle authority splits again → a stale deployed body reports itself UNIFORM (caught)
+
+================================================================================================================
+passed 236  failed 0  |  mutants caught 18  survived 0
+================================================================================================================

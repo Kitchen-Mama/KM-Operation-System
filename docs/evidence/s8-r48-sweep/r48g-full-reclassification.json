@@ -1,0 +1,5804 @@
+{
+ "schema": "km-sweep-reclassification/1",
+ "note": "Derived from the IDENTICAL raw bytes in r48g-full/raw. The manifest there records the verdicts as classified AT SWEEP TIME; this file records the final classification after the INCOMPLETE adjective fix found during the same round. Raw bytes are unchanged and still match their stored hashes.",
+ "evidence_run": "r48g-full",
+ "evidence_manifest_collector_sha256": "4a7a3e923f33514af0c864a39f705af173d5f5ac1634f13434202f8e3a843f25",
+ "final_collector_sha256": "04b8cdb279ff77df7b86a51ab23b47071c413becfa0b659454709fd941be436e",
+ "git_commit_of_sweep": "5606d94157a2b1e6a6201fafb4ec48db3044359f",
+ "registered_count": 627,
+ "totals": {
+  "CLEAN": 582,
+  "FAILING": 6,
+  "UNVERIFIABLE": 39
+ },
+ "superseded_from_sweep_time_manifest": [
+  {
+   "suite": "fc-share-dual-model-r1",
+   "stored": "NOT_CLEAN",
+   "replayed": "CLEAN"
+  },
+  {
+   "suite": "fc-target-rule-status-card-r2b-a2-r5-f6",
+   "stored": "NOT_CLEAN",
+   "replayed": "CLEAN"
+  },
+  {
+   "suite": "inventory-alloc-draft-panel-lifecycle",
+   "stored": "NOT_CLEAN",
+   "replayed": "CLEAN"
+  },
+  {
+   "suite": "inventory-k2-id-lineage-remediation-f1-7n-fa-3c-r6f2g",
+   "stored": "NOT_CLEAN",
+   "replayed": "CLEAN"
+  },
+  {
+   "suite": "inventory-k2-no-k3-write-reuse-regenerate-f1-7n-fa-3c-r6f2a",
+   "stored": "NOT_CLEAN",
+   "replayed": "CLEAN"
+  },
+  {
+   "suite": "recommendation-gap-readiness-f1-4b-fm6r1v",
+   "stored": "NOT_CLEAN",
+   "replayed": "CLEAN"
+  },
+  {
+   "suite": "request-order-draft-v2-paste-ready-entrypoint-f1-7n-fa-3c-r4a",
+   "stored": "NOT_CLEAN",
+   "replayed": "CLEAN"
+  },
+  {
+   "suite": "stable-draft-entity-update-in-place-f1-7n-fb-4g-a2-r4",
+   "stored": "NOT_CLEAN",
+   "replayed": "CLEAN"
+  }
+ ],
+ "records": [
+  {
+   "suite_name": "action-registry-and-router-completeness-f1-7n-fb-4e-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 208,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "add-sku-asin-amazon-rule",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "adm1-content-pinned-cache-texture-3-r8",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 133,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "advanced-sheets-service-enable-transition-s8-r4d-d2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 50,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-generated-k2-route-intent-f1-7n-fc-1b-e3-r4-a2-r1-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 137,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-activation-and-execution-row-layout-f1-7n-fc-1b-e3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 267,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-advice-boundary-transit-safe-method-f1-7n-fc-1b-e3-r4-a2-r1-r5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 135,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-advice-ui-contract-and-materialization-candidate-f1-7n-fc-1b-e3-r4-a2-r1-r6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 236,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-canonical-job-f1-4b-fm6r4e3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-job-router-jsonresponse-contract-f1-7n-fa-3c-pre2-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-lifecycle-migration-f1-7n-fb-4c-addendum",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 244,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-reason-distribution-and-result-panel-f1-7n-fa-3c-pre3-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 37,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-recalc-scope-wiring-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-result-popup-manual-only-f1-7n-fa-3c-r5d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 56,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-schema-gate-type-scope-f1-7n-fa-3c-pre3-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 18,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "ai-plan-terminal-counts-observability-f1-7n-fa-3c-pre3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 20,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "ai-support-menu-runtime-closure-f1-ui-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 36,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ai-support-scope-modal-f1-ai-support-scope-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 52,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-code-first-schema-compatibility-f1-7n-fb-4f-b3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 217,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-draft-30-28-reconcile",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-draft-runtime-c2d2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-draft-schema-audit",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 52,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-draft-ui-c2d2a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 38,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-post-schema-identity-f1-7n-fb-4f-b5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 384,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-runtime-f1-4b-fm7r2b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 31,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-schema-b2-dry-run-f1-7n-fb-4f-b2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 275,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "allocation-two-column-append-migration-f1-7n-fb-4f-b4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 285,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "amazon-daily-sales-date-key",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "amazon-daily-sales-dedup",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "amazon-eu-shared-inventory-and-blank-date-s8-r4d-g0",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-ai-plan-first-layer-composer-f1-7e-prereq5-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 154,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-app-prime-retirement-f1-7l-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 62,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-batch-f-writer-full-reload-retirement-f1-7k-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 155,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-bounded-backend-readback-endpoints-f1-7m-b2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 49,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-bounded-reference-include-extensions-f1-7j-a2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-existing-workspace-secondary-cutover-f1-7j-a-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 54,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-fc-summary-raw-owner-f1-7e-prereq2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-fc-summary-workspace-f1-7g-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 57,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-gap-preread-snapshots-f1-7m-e-43-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 32,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-inventory-replenishment-workspace-f1-7i-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 69,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-lead-time-owner-f1-7e-prereq4-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-non-workspace-primary-scoped-cutover-f1-7j-a3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 55,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-open-po-remaining-owner-f1-7e-prereq1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-order-planning-category-scope-and-shipment-draft-cold-start-f1-7m-b2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 20,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-overseas-import-identity-contract-f1-7m-b2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 24,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-post-write-bounded-readback-f1-7m-b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 46,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-procurement-cold-start-and-sku-regional-reentry-f1-7m-b2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-product-pricing-category-contract-p1-b1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 73,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-product-pricing-envelope-action-p1-b7e",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 106,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-product-pricing-site-universe-p1-b6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 165,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-product-pricing-workspace-p1-b1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 171,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-purchase-order-workspace-f1-7c-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 56,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-raw-inventory-owner-f1-7e-prereq3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 46,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-recommendation-reuse-map-f1-7m-e-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-reference-session-cache-f1-7m-c-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 47,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-request-order-workspace-f1-7d-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 58,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-router-closure-and-envelope-hardening-f1-7k-hotfix-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 64,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-scoped-cold-start-predicate-f1-7m-b2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 78,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-serial-request-elimination-f1-7m-a-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 31,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-shape2-cold-start-residual-f1-7m-b2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-shipment-workspace-f1-7f-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-sku-details-workspace-f1-7h-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 56,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "api-sku-regional-scoped-cold-start-f1-7m-b2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-transport-and-submit-persistence-f1-7n-fb-2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 208,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "api-weekly-shipping-cutover-f1-7b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "apps-script-load-surface-slim-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 62,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "apps-script-read-redirect-transport-f1-7n-fb-4e-r4a1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 422,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "appsscript-manifest-oauth-scopes-f1-4b-fm5r4jauth2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 18,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "atomic-add-route-and-create-idempotency-f1-7n-fb-4g-a2-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 156,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "atomic-release-cache-identity-f1-7n-fc-1a-r1-hf1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 75,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "audit-overseas-gettable-raw-vs-filtered-f1-7m-b2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 14,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "authority-resolution-and-order-planning-closure-f1-7n-fb-4e-r4b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 194,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "automation-legacy-weekly-cleanup-f1-6b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 26,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "automation-schedule-admin-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 57,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "automation-schedule-ui-grouping-f1-6b-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "avg-sales-both-planning-models-r46",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 49,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "avg-sales-event-exclusion-audit-s8-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 46,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "b1-advanced-sheets-benchmark-harness-s8-r4d-d1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 60,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "b1-date-normalization-bridge-removal-s8-r4d-e4-b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 61,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "b1-product-first-layer-batch-read-s8-r4d-e2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 141,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "cache-token-rotation-s8-r4c-p1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 57,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "campaign-promotion-record-contract-s2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 87,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "canonical-harvest-readiness-typed-refusal-f1-7n-fc-1b-e3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 182,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "carrier-rate-card",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "category-bar-rebuild",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "co1100r-live-hydration-closure-f1-7n-fb-4g-a0",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 147,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "cold-boot-immediate-navigation-read-reliability-f1-7n-fc-1b-e3-r4-a2-r1-r6-r5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 131,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "company-legal-entity-live-contract-f1-5c-export-r2a-live",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "contended-factory-partition-storage-f1-7n-fa-3c-pre1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "controlled-ai-plan-compact-proof-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r2-p1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 99,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "controlled-ai-plan-production-parity-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 119,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "controlled-ai-plan-production-readiness-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 343,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "controlled-full-row-freeze-and-response-capture-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r3-p1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 431,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "controlled-no-action-activation-manifest-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 512,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "controlled-preflight-flag-phase-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r3-p2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 184,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "country-identity-repair-f1-4b-fm5r1b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 32,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "demo-mode-retired-f1-small",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "demo-seed-shipping-shipment-map-f1-7n-fa-4a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 1203,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "deployment-contract-probe-routing-f1-7n-fb-4e-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 113,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "deployment-identity-and-workset-truth-f1-7n-fb-3a",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "deployment-r10-activation-boundary-p1-b7f",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 104,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "destination-xor-and-persisted-method-f1-7n-fb-4g-a0-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 125,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "document-runtime-end-to-end-f1-7n-fb-1b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 622,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "document-template-runtime-f1-5c-export-r3b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 63,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "dual-mainline-topology-audit-f1-7n-fc-0a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 241,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "execution-plan-explicit-intent-f1-7n-fc-1b-e1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 182,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "execution-plan-multi-route-persistence-f1-7n-fb-4b-addendum",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 132,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "expanded-planning-atomic-reveal-f1-7n-fb-4g-a1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 115,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "expected-arrival-structured-snapshot-f1-7n-fb-4f-b6-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 115,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-contention-prepass-f1-4b-fm7r2gb",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 48,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-import-select-visual-parity-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-import-template-scope-and-done-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-import-visual-parity-f1-s2-ui",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 36,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-inventory-adjustment-stability-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 95,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-inventory-import-f0-hotfix-fi1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 58,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-inventory-remove-company-filter-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 17,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-inventory-split-category-series-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-operation-config-tw-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 32,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-pool-cohort-f1-4b-fm7r2d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "factory-reallocation-persistence-transport-f1-7n-fa-3b4-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "factory-source-grain-reallocation-f1-7n-fa-3b3b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "factory-template-live-cache-bust-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 10,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-base-edit-and-sidebar",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 47,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "fc-base-event-fc-and-window-guard-r2b-a3-r7",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 113,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-base-event-fc-readiness-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 39,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-base-forecast-source-and-warm-state-r2b-a3-r5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 105,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-campaign-lock-and-baseline-semantics-r2b-a3-r6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 136,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-campaign-reuse-and-builder-memory-r2b-a3-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 128,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-column-resize-and-retry-label-r2b-a2-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 208,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-eu-bfcm-data-reconciliation-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 141,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-eu-bfcm-data-reconciliation-r1a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 108,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-event-picker-year-refresh-r2b-a3-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 63,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-event-window-identity-policy-r2b-a3-r8",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 98,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-id-r1-special-event-marketplace-id",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-id-r1b-registry-hydration-incident",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-id-r2-canonical-identity-save-boundary",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 70,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-initial-read-recovery-and-period-ux-r2b-a3-r10",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 126,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-refusal-classification-and-save-reentry-r2b-a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 126,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-regular-writer-and-special-batch-r2b-b1-perf",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 182,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-retry-canonical-hydration-boot-fc-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 158,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-schema-gate-by-name-r2b-a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 100,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-share-dual-model-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 130,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-special-event-identity-and-builder-prefetch-r2b-a3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 135,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-special-event-persist",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 39,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "fc-special-event-uniqueness-and-read-recovery-r2b-a3-r9",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 116,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-special-event-write-consistency-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 89,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-special-event-write-consistency-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 54,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-special-event-write-route-r2b-a3-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 85,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-special-stage2-large-batch-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 121,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-stability-share-final-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 202,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-display-column-visibility-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 127,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-multiselect",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-pricing",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-read-path-evidence-r3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-stability-r1-false-empty",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 34,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-stability-r2-cold-path",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 48,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-stability-r3-scoped-pricing",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 70,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-staged-hydration-r3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 98,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-workspace-slices-r3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 90,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-summary-write-outcome-truthfulness-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 149,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-target-rule-canonical-row-shape-seam-r2b-a2-r5-f5-f1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 107,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-target-rule-canonical-scope-r2b-a2-r5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 115,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-target-rule-consumer-parity-r2b-a2-r5-f2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 132,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-target-rule-rehydration-r2b-a2-r5-f5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 82,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-target-rule-release-stamp-r2b-a2-r5-f3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 107,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-target-rule-status-card-r2b-a2-r5-f6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 84,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-target-rules-migration-actor-r2b-a2-f1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 139,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "fc-target-rules-schema-repair-r2b-a2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 106,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "final-output-schema-lean-f1-5c-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 59,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "final-output-schema-lean-f1-5c-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 78,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "final-output-seam-audit-f1-5c-export-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "first-layer-redundant-header-read-s8-r4d-c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 66,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "first-load-timeout-and-demand-snapshot-freeze-f1-7n-fc-1b-e3-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 173,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "flow-a-grouping-lineage-truth-closure-f1-7n-fa-4b2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 51,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "flow-a-release-gate-lineage-hardening-f1-7n-fa-4b1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 65,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "forecast-missing-means-zero-and-ai-plan-unblock-f1-7n-fc-1b-e3-r3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 163,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-backed-draft-snapshot-f1-4b-fm6r4e2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-calc-context-f1-4b-fm5r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 24,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-job-done-notice-f1-small-r1",
+   "category": "FAILING",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "NONZERO_EXIT",
+    "FAIL_LINES",
+    "SUMMARY_FAILED"
+   ],
+   "passed_assertions": 26,
+   "failed_assertions": 3,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "gap-job-start-error-f1-4b-fm5r4jlive7",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-job-startup-hydration-f1-4b-fm5r4jlive6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 20,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-materialization-f1-4b-fm5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 32,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-materialization-job-f1-4b-fm5r4j",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 145,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-materialization-scheduler-f1-4b-fm5r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-materialization-self-healing-f1-4b-fm5r4jlive10",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-materialized-read-f1-4b-fm5r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-recalc-transport-f1-4b-fm5r4t",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-trigger-authorization-f1-4b-fm5r4jlive8",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 17,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "gap-trigger-cleanup-f1-4b-fm5r4jauth3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "geo-names-zh-hant-map-visual-real-earth-texture-3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 175,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "global-logistics-map",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "globe-admin1-lod-and-real-earth-map-visual-real-earth-lod-1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 183,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "globe-canada-seasonal-surface-texture-3-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 80,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "globe-canonical-topology-texture-3-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 106,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "globe-country-boundaries-and-iso-labels-f1-7n-map-country-boundary-1",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "globe-decision-density-determinism-texture-3-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 793,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "globe-display-names-and-perf-texture-3-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 264,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "globe-earth-tier-ladder-texture-3-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 235,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "globe-math",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "globe-real-earth-material-map-visual-real-earth-texture-2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 348,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "globe-visual-guard",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 61,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "home-boot-critical-path-boot-fc-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 151,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "identity-boundary-baseline-sec-a0",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 57,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "identity-verifier-prototype-sec-a1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 105,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-add-sku-clear-on-success-f1-small",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 17,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-adjustment",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "inventory-ai-plan-generation-connect-f1-7n-fa-3c-r6d1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 32,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-ai-plan-group-model-lineid-hydration-f1-7n-fa-3c-r6f",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 63,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-ai-plan-submit-authority-f1-7n-fa-4b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-alloc-draft-panel-lifecycle",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-blank-date-key-safety-probe-s8-r4d-g1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 37,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-blocked-and-90dayfc-f1-4b-fm5r4uir7",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-clean-scope-lastmile-pairs-f1-7n-fa-3c-r6f2d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 48,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-compat",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "inventory-controlled-executor-f1-7n-fa-3c-r6f2f",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 53,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-detail-geometry-f1-4b-fm5r4uir5d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-eu-sales-basis-f1-4b-fm5r4uir5d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 24,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-expand-row-height-parity-ui-hotfix",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-expanded-closure-f1-4b-fm5r4uir5g",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 34,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-expanded-closure-f1-4b-fm5r4uir5h",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-expanded-structure-f1-4b-fm5r4uir5e",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-gap-ui-simplification-f1-4b-fm5r4ui",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-global-parity-population-zero-arg-gate-f1-7n-fa-3c-r6f2e",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 72,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-green-button-parity-ui-hotfix",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 26,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-horizon-ui-f1-4b-fm4br",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-import-warehouse-safety-f1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-import-warehouse-scope-guards-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 32,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-internal-controlled-authority-f1-7n-fa-3c-r6f2f1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-k2-compact-semantic-authority-f1-7n-fa-3c-r6f2g7a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 51,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-k2-contract-exact30-atomic-write-f1-7n-fa-3c-r6f1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 66,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-k2-generation-wiring-route-authority-f1-7n-fa-3c-r6f2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 36,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-k2-id-lineage-remediation-f1-7n-fa-3c-r6f2g",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 171,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-k2-live-semantic-diff-true-reuse-f1-7n-fa-3c-r6f2g7",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 39,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-k2-no-k3-write-reuse-regenerate-f1-7n-fa-3c-r6f2a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 48,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-k2-reuse-route-reconciliation-f1-7n-fa-3c-r6f2g5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-k2-true-zero-write-reuse-f1-7n-fa-3c-r6f2g6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 37,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-op-materialized-ui-f1-4b-fm5r4uir5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 18,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-outlook-containment-f1-4b-fm6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-persist-token-complete-f1-7n-fa-3c-r6f2e3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-post-commit-readback-reconciliation-f1-7n-fa-3c-r6f2f2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 32,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-quiet-gate-nontruncated-f1-7n-fa-3c-r6f2e1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 43,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-recalc-determinism-f1-4b-fm5r4uir4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 15,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-recalc-freeze-ui-f1-4b-fm5r4uir6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-route-authority-shared-parity-f1-7n-fa-3c-r6f2b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-route-query-parity-destination-f1-7n-fa-3c-r6f2c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 43,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-sales-basis-diagnostic-f1-4b-fm5r4uir7v",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 11,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-sales-owner-marshalling-f1-4b-fm5r4uir5b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 13,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-sales-weekly-fallback-f1-4b-fm5r4uir5a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 15,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-scoped-conservation-may-freeze-f1-7n-fa-3c-r6f2e2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-search-gate-and-draft-persistence-f1-7n-fb-2a",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "inventory-ui-compaction-f1-4b-fm5r4uir3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-ui-geometry-transport-f1-4b-fm5r4uir4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "inventory-version-probe-f1-4b-fm5r4uir5c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "km-api-foundation-compat",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 50,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "km-api-foundation",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 70,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "km-api-transport-non-json-f1-4b-fm4br",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 14,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "km-api-transport-wiring",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 38,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "km-api-weekly-page-cutover",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "km-api-weekly-workspace",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 66,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "km-body-request-contract-s8-r4d-e5",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "km-weekly-command-reliability",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "last-mile-completion-advice-reconciliation-and-save-identity-f1-7n-fc-1b-e3-r4-a2-r1-r6-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 154,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "legacy-allocation-draft-reconcile-diagnosis-f1-7n-fb-4f-a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 182,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "legacy-route-confirmation-and-hydration-repair-f1-7n-fb-4f-b6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 205,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "live-blocker-execution-plan-identity-and-shipment-eta-f1-7n-fb-4a",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "live-carrier-authority-lifecycle-parity-completeness-f1-7n-fc-1b-e3-r4-a2-r1-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 181,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "live-closure-site-inventory-and-sku-read-f1-7n-fb-4d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 233,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "live-inventory-render-ai-action-and-deployment-identity-f1-7n-fb-4e-r4b-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 163,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "live-provenance-eta-completion-and-column-alignment-f1-7n-fc-1b-e3-r4-a2-r1-r6-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 144,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "live-read-contract-and-stage-accounting-f1-7n-fc-1b-e3-r4-a1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 124,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "live-readback-and-display-closure-f1-7n-fb-4e-r4b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 85,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "live-ui-census-route-parity-and-lead-time-hydration-f1-7n-fc-1b-e3-r4-a2-r1-r6-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 168,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "live-ui-scope-identity-and-manual-method-authority-f1-7n-fc-1b-e3-r4-a2-r1-r6-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 147,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "logo-home-nav-f1-7n-fa-3c-r6c1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 18,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "manual-composer-expected-state-and-forecast-rollover-f1-7n-fc-1b-e3-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 296,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "manual-edit-boundary-and-sliced-orchestration-f1-7n-fb-3c",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "manual-route-composer-and-ai-plan-materialization-f1-7n-fc-1b-e2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 164,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "map-label-and-route-runtime-texture-3-r6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 194,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "map-label-mode-zh-code-texture-3-r9",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 307,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "map-main-integration-texture-3-r5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 242,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "map-transport-mode-icons",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 75,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "marketplace-supply-allocation-f1-4b-fm5r2a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 20,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "materialized-gap-lifecycle-f1-4b-fm5r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 19,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "nav-ia-site-inventory-f1-small-nav-ia-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "no-action-response-contract-and-ai-plan-timeout-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 132,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "no-nul-bytes-apps-script-f1-bundle-nul-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 7,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "notice-visibility-and-resting-layout-s8-r4d-f1b-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 58,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "order-planning-live-hydration-join-f1-7n-fb-4e-r4b-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 93,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "order-planning-monthly-projection-consumer-f1-4b-fm3d",
+   "category": "FAILING",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "NONZERO_EXIT",
+    "FAIL_LINES",
+    "SUMMARY_FAILED"
+   ],
+   "passed_assertions": 32,
+   "failed_assertions": 1,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "order-planning-recommendation-cutover-f1-4b-fm2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 44,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "order-planning-supply-allocation-f1-4b-fm5r2b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "override-audit-provisioning-and-transaction-rollback-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r5-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 184,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "overseas-inventory-scoped-import-f1-ux-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 52,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "overseas-ops-preview",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "panel-local-readiness-and-method-timeout-f1-7n-fb-4g-a1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 108,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "party-authority-f1-5c-export-r2a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "planning-model-demand-split-f1-4b-fm5r4uir3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "planning-model-wiring-f1-4b-fm5r4uir3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 24,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "po-exactly-once-f1-5a-por2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 44,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "po-list-multiselect",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "po-receive-factory-stock-handoff-f1-7n-fa-3b0-pre",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 76,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "positive-residual-and-submit-readiness-census-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r5-r1",
+   "category": "FAILING",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "NONZERO_EXIT",
+    "FAIL_LINES",
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "post-repair-single-row-save-verification-f1-7n-fc-1b-e3-r4-a2-r1-r6-r6-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 272,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "presentation-state-and-resting-layout-s8-r4d-f1b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 110,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "pricing-r2-base-source-final",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 208,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r2-field-level-manual-authority",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 266,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r2-post-verify",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 135,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r2-schema-order-reconciliation",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 148,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r2-surgical-repair",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 79,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r3-execution-operator-tools",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 286,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r3-fx-reconciliation",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 283,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r4b-regional-bulk-update-ui",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 124,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r4c-template-and-preview-ux-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 156,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r4d-effective-price-authority-audit",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 151,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r4e-creation-contract-fix",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 191,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r4f-nullable-override-and-resolved-price-contract",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 108,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "pricing-r4g-resolved-price-runtime",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 112,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "procurement-shipment-qty-source",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-action-integrity-p1-b8d-r10e-f4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 123,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-activation-p1-b8d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 362,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-board-p1-b2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 253,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-board-p1-b2a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 241,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-board-p1-b2b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 142,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-board-p1-b2c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 158,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-board-p1-b4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 255,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-capability-bootstrap-p1-b8d-r10d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 205,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-capability-route-p1-b8d-r10a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 94,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-capability-settlement-p1-b8d-r10e-f3-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 135,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-corrections-p1-b8d-r9",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 154,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-dispatch-ownership-p1-b8d-r10e-f5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 72,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-final-usability-p1-b8d-r7",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 184,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-image-consumer-parity-p1-b8c-r3-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 187,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-image-resolution-p1-b8c-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 336,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-image-universe-census-p1-b8c-r3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 160,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-information-architecture-p1-b8b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 238,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-integration-p1-b5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 160,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-lifecycle-p1-b8d-r8",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 183,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-live-activation-p1-b8d-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 64,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-live-replay-acceptance-p1-b8c-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 274,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-null-canonical-state-p1-b8d-r10c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 92,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-production-readback-p1-b3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 346,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-recovery-p1-b8d-r10e",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 196,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-replay-acceptance-p1-b8c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 398,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-row-shape-sample-p1-b8c-r1",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-scope-correction-p1-b8a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 88,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-shell-integration-p1-b7",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 186,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-site-selection-p1-b8d-r5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 100,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-transport-stability-p1-b8d-r10",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 156,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "product-strategy-visual-integration-p1-b8d-r6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 116,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "production-atomic-save-failure-f1-7n-fb-4g-a2-r3-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 163,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "production-data-integrity-closure-f1-7n-fb-4b",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "production-safety-runtime-integration",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 85,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "production-ui-copy-release-identity-and-manual-save-contract-f1-7n-fc-1b-e3-r4-a2-r1-r6-r6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 401,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "qualified-incoming-event-exposure-f1-4b-fm3c1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "read-path-measurement-f1-7n-fb-4e-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 56,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "read-stability-images-and-invariants-f1-7n-fb-4e-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 109,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-day-horizon-transport-f1-4b-fm4a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 18,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-gap-readiness-f1-4b-fm6r1v",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-generation-f1-4b-fm6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 47,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-live-activation-f1-4b-fm2a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 31,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-monthly-projection-transport-f1-4b-fm3c2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-planning-inputs-correction-f1-4b-fm3f1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 20,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-production-cutover-f1-4b-fm2b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 39,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-session-cache-f1-4b-fm3a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "recommendation-total-authority-f1-4b-fm5r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "render-integrity-and-avg-sales-display-s8-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 55,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "replen-draft-completeness",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "replen-execution-plan",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "replen-header-toggle",
+   "category": "FAILING",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "NONZERO_EXIT",
+    "FAIL_LINES",
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "replen-recommendation-context-f1-4b-b-pre",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 64,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "replen-recommendation-cutover-f1-4b-b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-ai-plan-cycle-boundary-f1-7n-fa-3c-r5a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 26,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-alltier-note-flatresult-remount-f1-7n-fa-3c-r6b2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 51,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-autosave-hydration-remount-f1-7n-fa-3c-r6b1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 34,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-canonical-edit-f1-4b-fm6r4e3pre",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 43,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-data-connection",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-cycle-repair-exact41-f1-7n-fa-3c-r5c1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 43,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-job-f1-4b-fm6r4e2b2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 52,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-line-alignment-f1-s3-ui",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-active-scope-tokens-f1-7n-fa-3c-r4b4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 36,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-audit-all26-f1-7n-fa-3c-r4b2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-authority-full-cohort-f1-7n-fa-3c-r4c1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-canonical-migration-f1-7n-fa-3c-r4c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 53,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-coexistence-f1-7n-fa-3c-r2b2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 50,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-flatten-f1-7n-fa-3c-draft-model-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 95,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-migration-f1-7n-fa-3c-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-paste-ready-entrypoint-f1-7n-fa-3c-r4a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 57,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-production-cycle-path-f1-7n-fa-3c-r4b5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 19,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-draft-v2-staging-write-roundtrip-f1-7n-fa-3c-r4c2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 34,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-flat-lifecycle-preflight-f1-7n-fa-3c-r6a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 55,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-flat-v2-send-authority-eligible-tier-f1-7n-fa-3c-r6a1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 42,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-flat-v2-table-loading-f1-7n-fa-3c-r5b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 26,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-flat-v2-write-textformat-and-truthful-result-f1-7n-fa-3c-r5c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 52,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-manual-draft-hotfix",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 36,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-marketplace-identity",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "request-order-persisted-hydration-autosave-f1-7n-fa-3c-r6b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "request-order-supply-ui",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "request-order-v2-frontend-app-f1-7n-fa-3c-r2b3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "resizable-columns",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "responsive-foundation-system-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 34,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "route-b-forward-compensating-repair-f1-7n-fc-1b-e3-r4-a2-r1-r6-r6-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 232,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "route-identity-and-schema-contract-f1-7n-fb-4f-b1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 162,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "route-instance-update-vs-create-f1-7n-fb-4g-a2-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 176,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "route-mount-registration-boot-fc-r2-f1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "runner-result-collector-s8-r47",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 103,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s2-r3-draft-db-state-unknown",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 96,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s2-r4a-browser-business-authority-retirement",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 60,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s2-r4b-shipping-history-and-fc-warm-race",
+   "category": "FAILING",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "FAIL_LINES",
+    "MISSING_SUMMARY",
+    "FAIL_WITH_ZERO_EXIT"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "s2-r4c-supplychain-canvas-ownership",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 88,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-diagnostic-capture-tools",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 58,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r10-write-truthfulness",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 117,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r11-interaction-performance",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 149,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r12-fc-cold-path",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 68,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r13-fc-special-deferred",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 161,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r1a-factory-inventory-loading-stability",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 60,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r1b-sku-details-transport-redirect-closure",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r1c-fc-postwrite-readback-freshness",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r2-loading-render-ownership",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r3-runtime-lifecycle-audit",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 31,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r4-shipping-plan-read-loop",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 43,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r5a-transport-redirect-authority",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 48,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r6-read-cost-census",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 52,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r7-redirect-chain-browser-cache",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 74,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s3-r8-request-budget-and-settlement",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 70,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s4-r1-performance-baseline",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 53,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s4-r2-warm-reentry-and-listeners",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 114,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s4-r3-route-owned-code",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 130,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s4-r4-deferred-reads",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 160,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s4-r5-route-payloads",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 168,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s4-r6-system-conformance",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 206,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s4-r7-final-seal",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 218,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r1-recommendation-contract-freeze",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 99,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r2-decision-freeze",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r2a-contention-policy-freeze",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 59,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r3-mapping-freeze",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 134,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r4-action-reason-derivation",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 96,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r5-recommendation-read-model",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 64,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r6-write-boundary-mapping",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 112,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r7a-write-execution-wiring",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 99,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s5-r8-ordering-mainline-seal",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 69,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r1-shipping-mainline-contract",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 100,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r2-decision-board",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 46,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r2a-decision-freeze-guards",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 64,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r3-inventory-shipping-mapping-freeze",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 154,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r3a-overseas-quantity-model",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 134,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r3b-import-available-semantic",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 109,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r4-overseas-header-contract-gate",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r4a-live-overseas-storage-contract",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 56,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r4b-overseas-reservation-lifecycle",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 80,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r5-approved-plan-cancellation",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 80,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r6-movement-vocabulary-and-receipt",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 70,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r7-operator-readmodel-conformance",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 66,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r8-mainline-final-integration",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 116,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s6-r8a-declared-source-dispatch",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 66,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s7-r1-supporting-flow-contract-audit",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 142,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s7-r2a-shipment-carrier-name",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 74,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s7-r2a1-weekly-carrier-label",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s7-r2b-document-panel-audit",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 104,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s7-r2b1-boot-topology-and-document-retry",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 58,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s7-r3-carrier-lead-time-maintenance",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 98,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s7-r4-production-deploy-surface",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 106,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s7-r5-supporting-mainline-final-integration",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 127,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s8-r2-fatigue-harness-safety",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 315,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s8-r3b-read-path-fatigue-safety",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 289,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s8-r4a-cdp-guard-safety",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 120,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s8-r4a1-harness-resilience",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 188,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "s8-r4b1-factory-guard-read-transport",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 67,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sales-horizon-reconciliation-f1-4b-fm5r4jlive8",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sales-velocity-authority-f1-4b-fm5r4jlive9",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sales-velocity-live-path-f1-4b-fm5r4jlive9v",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 15,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "schedule-aware-snapshot-and-scope-guard-f1-7n-fc-1b-e3-r4-a2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 176,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "scope-isolation",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "scoped-single-flight-request-correlation-f1-7n-fb-4e-r4a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 104,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "self-fulfilled-opening-stock-f1-4b-fm5r2b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 17,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "send-orchestration-and-station-scope-f1-7n-fb-3b",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "send-request-exactly-once-f1-4b-fm6r4e5b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 44,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "send-request-lifecycle-f1-4b-fm6r4e4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "server-canonical-destination-completeness-f1-7n-fb-4g-a0-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 108,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shared-api-transport-reliability-f1-7n-fb-4e",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 372,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shared-factory-stock-guard-and-overage-approval-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 210,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shared-filter-migration",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shared-transport-timeout-classification-f1-7n-fc-1b-e3-r4-a2-r1-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 120,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-cancellation-and-movement-vocabulary-f1-7n-fc-1a-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 312,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-card-real-data-f1-shipment-incoming-r5",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-destination-identity-source",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shipment-dispatch-po-execution-f1-5b-ship-r3b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-dispatch",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shipment-document-file-f1-5c-export-r3c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-document-renderer-f1-5c-export-r3a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 37,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-document-ui-f1-6b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-draft-allocation-wiring-f1-5b-ship-r3c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-draft-expand-and-map-fidelity-f1-7n-fa-4a-v3g6a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 112,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-fifo-allocation-f1-5b-ship-r3a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 43,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-final-output-f1-5c-export-r2b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 76,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-lifecycle-events-f1-shipment-map-r9",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-line-incoming-f1-shipment-incoming-r7c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 24,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-map-closure-f1-shipment-map-r8",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 19,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-map-control-panel-r12",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-map-destination-endpoint-f1-7n-fa-4a-v3g3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 50,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-map-hierarchy-f1-shipment-map-r8c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 41,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-map-layout-f1-shipment-map-r8b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-map-route-eta-receiving-f1-shipment-map-r10",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 46,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-map-ui-r11",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-merged-lineage-f1-shipment-incoming-r6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 24,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-overview-multiselect",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shipment-po-document-automation-and-transit-flow-f1-7n-fb-1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 212,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-receipt-overseas-posting-f1-shipment-receipt-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 38,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-receipt-route-f1-shipment-receipt-r1b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 57,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-recovery-and-factory-reservation-f1-7n-fc-1a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 333,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-remaining-incoming-f1-shipment-incoming-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 39,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipment-runtime-repair",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shipment-runtime",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shipping-allocation-draft-persistence",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shipping-cost-engine",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shipping-error-method-latency-siteconfirm-f1-7n-fa-3c-r6e",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 48,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipping-multisource-execution-f1-4b-fm6r3c2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipping-plan-canonical-fingerprint-cumulative-release-f1-7n-fa-3c-r6e1a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 105,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "shipping-plan-runtime",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "shipping-plan-submit-schema-writeboundary-f1-7n-fa-3c-r6e",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 19,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sidebar-overseas-disabled",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "single-row-mutation-isolation-and-eta-authority-f1-7n-fc-1b-e3-r4-a2-r1-r6-r6-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 136,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "single-scope-allowlist-cutover-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r6",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 152,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "single-scope-isolation-route-direction-carrier-f1-7n-fc-1b-e3-r4-a2-r1-r3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 248,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "site-inventory-closure-f1-7n-fb-4c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 171,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "site-inventory-fulfillment-aware-columns-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 24,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "site-inventory-inventory-column-order-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "site-inventory-lazy-once-exposure-s8-r4b-2b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 143,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "site-scoped-exposure-read-s8-r4b-2d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 94,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "site-switch-stale-scope-guard-s8-r4d-f1a",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "sku-add-draft-cache-f1-sku-details-draft-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sku-add-unit-lock-f1-sku-details-unit-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 22,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sku-details-display-column-init-f1-7n-sku-details-display-init-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 118,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sku-handbook-filter-alignment-ui-hotfix",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sku-lifecycle-override-cleanup-f1-s1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sku-material-add-f1-small",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sku-read-path-reliability-f1-7n-fb-4c-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 189,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sku-status-export-universe-s2-r2-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 59,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sku-status-import-universe-s2-r2-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 52,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "spa-navigation-lifecycle-db-provider-f1-7n-fa-3c-r6c",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 54,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "stable-draft-entity-update-in-place-f1-7n-fb-4g-a2-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 159,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "submit-plan-e2e-preflight-f1-7n-fb-4g-a2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 163,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "submit-plan-readiness-and-carrier-eligibility-f1-7n-fb-4g-a3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 249,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-execution-handoff-f1-4b-fm6r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-allocation-facts-f1-5a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 36,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-allocation-input",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 47,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-allocations",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 112,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-apps-script-bundle",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 74,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-calculations",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 325,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-demand-allocation-f1-4b-e0r",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 37,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-demand-allocation-integration-f1-4b-e",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 19,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-destination-runtime-f1-4b-fm1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 50,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-external-incoming-adapters",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 82,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-golden-scenarios",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "INCOMPLETE",
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-horizon-projection-f1-4b-fm4a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-incoming-adapters",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 80,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-ledgers",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 133,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-line-runtime",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 88,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-monthly-recommendation",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 42,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-ongoing-order-projection-f1-7n-fa-3b0",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 55,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-ongoing-order-runtime-f1-7n-fa-3b3a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-ongoing-order-tpp-adapter-f1-7n-fa-3b2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 46,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-persistence-locking",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 96,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-persistence-plan-builder",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 44,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-persistence-repository",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 74,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-persistence",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 96,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-plan-bridge",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 60,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-plan-builder",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 50,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-planning-context-f1-5bd",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 39,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-planning-demand-f1-4b-fm3f1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-production-assembly-f1-4b-pre",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-production-safety",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 67,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-production-source",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 43,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-production-writer",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 49,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-qualified-incoming",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 106,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-qualified-ledger-connection-f1-3",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-recommendation-orchestrator",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 37,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-recommendation-schema-safety",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 21,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-recommendation-source-integration",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-recommendation-workspace-f1-4b-a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-route-inventory",
+   "category": "FAILING",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "NONZERO_EXIT",
+    "FAIL_LINES",
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-source-facts",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 37,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-source-projection",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 64,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-source-reader-production",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 38,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-source-reader",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 48,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-supply-candidates",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 54,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-supply-lifecycle",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 76,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-surplus-reallocation-f1-7n-fa-3a",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 270,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-surplus-reallocation-preallocated-f1-7n-fa-3b1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 99,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-time-phased-projection-f1-4b-fm3b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 27,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-user-edit",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 37,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-verification-diagnostics-forensic",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 17,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-verification-diagnostics",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "supply-planning-weekly-recommendation",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "sweep-driver-integration-s8-r47d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 32,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "sweep-evidence-replay-s8-r48f",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "three-flag-authority-shipping-migration-submit-idempotency-f1-7n-fa-3c-r6e1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 85,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "toolbar-action-hierarchy-f1-ui-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 28,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "two-vertical-flow-closure-f1-7n-fb-3",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "typed-sheet-date-and-allocation-schema-compatibility-f1-7n-fc-1b-e3-r4-a2-r1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 149,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ui-filter-scope-repair",
+   "category": "UNVERIFIABLE",
+   "verdict": "NOT_CLEAN",
+   "reason_codes": [
+    "MISSING_SUMMARY"
+   ],
+   "passed_assertions": null,
+   "failed_assertions": null,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "ui-navigation-shell-hotfix",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 38,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "ui-order-planning-explicit-search-gate-f1-7m-ux-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 19,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "ui-render-and-interaction-feedback-f1-7m-d-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 31,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "NOT_CLEAN"
+  },
+  {
+   "suite_name": "utf8-document-integrity-s8-r47",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 23,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "warehouse-actions-more-options-f1-7n-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "warehouse-allocation-config-f1-7n-d-2j-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "warehouse-allocation-config-persistence-f1-7n-d-2k-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "warehouse-allocation-modal-ux-f1-7n-d-2k-ux1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 31,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "warehouse-incoming-eta-preservation-f1-4b-fm3c1b",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-bundle-exports-f1-7n-d-1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-demand-authority-f1-7n-d0-a-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 53,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-fba-destination-f1-7n-d-2c-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-generation-batch-f1-7n-d-2a-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 35,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-generation-runtime-f1-7n-d-1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-harvest-adapter-f1-7n-d-2b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 30,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-hybrid-per-sku-destination-f1-7n-d-2h-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 25,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-input-assembler-f1-7n-d0-b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 57,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-no-action-latency-and-write-transport-bound-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r4",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 155,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-recommendation-draft-persistence-f1-7n-c1-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 47,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-source-allocation-f1-7n-b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 40,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-ai-plan-workspace-fulfillment-projection-f1-7n-d-2f-r2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 12,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-inventory-monthly-order-automation-f1-6b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 33,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-recommendation-persistence-f1-6b-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 45,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-recommendation-scheduler-f1-6a-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 12,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-route-derivation-k2-partition-f1-7n-fa-3c-r6f2",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 49,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "weekly-shipping-active-key-reconciliation-f1-7n-c0-r1",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 29,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  },
+  {
+   "suite_name": "whole-carton-source-allocation-f1-4b-fm6r3d",
+   "category": "CLEAN",
+   "verdict": "CLEAN",
+   "reason_codes": [],
+   "passed_assertions": 50,
+   "failed_assertions": 0,
+   "r47d_era_verdict": "CLEAN"
+  }
+ ]
+}

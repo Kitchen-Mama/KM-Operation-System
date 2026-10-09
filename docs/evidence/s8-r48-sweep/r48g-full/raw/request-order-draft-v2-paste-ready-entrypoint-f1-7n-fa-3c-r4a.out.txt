@@ -1,0 +1,19 @@
+
+== static: definitions/calls consistent, no undefined helper, public entrypoints present ==
+
+== public no-arg wrappers FAIL CLOSED under the live-incomplete frozen authority (6 ids ≠ 26 cohort) ==
+
+== mechanism (core + COMPLETE injected authority): DRY RUN reports normalization + ZERO writes ==
+
+== mechanism EXECUTE: writes ONLY the staging tab (26 rows / 53 cols); legacy untouched ==
+
+== VALIDATE (core + COMPLETE authority): all 14 gates → READY_FOR_SWAP=YES; read-only ==
+
+== EXECUTE fail-closed on a non-empty existing staging tab ==
+
+== drift guard reachable through the public entrypoint (mismatched live shape → HALT before authority) ==
+
+== flag invariant (read-only) ==
+
+----------------------------------------
+R4A PASTE-READY ENTRYPOINT (F1-7N-FA-3C-R4A, R4C-contract): 57 passed, 0 failed

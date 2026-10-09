@@ -1,0 +1,17 @@
+
+== normal view — engineering labels removed; outlook table only ==
+
+== Diagnostics — engineering metadata preserved but collapsed ==
+
+== row-level Note preserved + fixed structure + valid zero ==
+
+== BLOCKED → dash numerics + truthful Note (in the table, not only diagnostics) ==
+
+== shared note helper stays backward-compatible (live workspace path unaffected) ==
+
+== containment CSS — no outer-container overflow (fixed structure) ==
+
+== no formula / no DB change in this UI round ==
+
+----------------------------------------
+INVENTORY GAP UI SIMPLIFICATION (F1-4B-FM5-R4UI): 27 passed, 0 failed

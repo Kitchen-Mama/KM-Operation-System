@@ -1,0 +1,9 @@
+
+== Adapter — response classification (ack decoupled from readback) ==
+
+== Page — single readback, committed/readback-failed, idempotent, retain-on-failure ==
+
+== Source — page wires all writes through the guarded runner; no internal adapter readback ==
+
+----------------------------------------
+WEEKLY COMMAND RELIABILITY: 28 passed, 0 failed

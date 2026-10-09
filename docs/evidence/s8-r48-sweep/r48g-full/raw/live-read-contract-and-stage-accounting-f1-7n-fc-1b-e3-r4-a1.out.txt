@@ -1,0 +1,147 @@
+
+== §1 — THE DTO DROPPED IT. That is why the live server never applied a projection. ==
+ok   D1  the DTO now carries recentWindow through to the payload
+ok   D1a and `only`, the table subset
+ok   D2  a caller that does not ask still sends the pre-R4 payload exactly
+ok   D2a a caller that DOES ask now reaches the server (this is the R4 defect, fixed)
+ok   D2b and a table subset survives the DTO
+ok   D3  the action name is the one the transport records
+ok   D4  PRE (executed): R4's DTO silently discarded recentWindow — the page asked and the server never saw it
+
+== §2 — THE SERVER ECHOES THE CONTRACT, so "asked" and "applied" can disagree visibly ==
+ok   S1  not asked, not applied
+ok   S1a asked, and applied
+ok   S1b the REQUEST is echoed even when the answer is "nothing" — R4 reported only the RESULT, so "not asked"
+     and "asked but the field never arrived" produced the identical null
+ok   S2  the spreadsheet OPEN is timed separately from the reads
+ok   S2a and each table is timed, so "which sheet costs 31 seconds" has an answer instead of a guess
+ok   S2b each entry naming the table, its milliseconds and its rows
+ok   S2c capped at five — enough to decide, never a log of its own
+
+== §3 — READ FEWER TABLES, not merely return fewer rows ==
+ok   T1  today's default still reads twenty-one tables — the contract is unchanged for old callers
+ok   T2  the DEFAULT payload still reads nineteen: the include gate alone drops the two carrier sheets
+ok   T2-lift the page declares IR_FIRST_LAYER_TABLES_
+ok   T2-lift the page declares IR_EXPOSURE_TABLES_
+ok   T2a the page names THIRTEEN first-layer tables
+ok   T2b and SIX exposure tables
+ok   T2c the two layers are DISJOINT
+ok   T2d together they are EXACTLY the nineteen the primary read used to take — nothing dropped, nothing invented
+ok   T2e the server reads exactly those thirteen for the first layer
+ok   T2f and NOT ONE of the six exposure tables is touched by the first-layer read
+ok   T2g and exactly those six for the exposure read
+ok   T3  the CATALOGUE reads exactly two sheets, not twenty-one
+ok   T4  `only` cannot reach an include-gated table without the include — it narrows, it never widens
+ok   T5  the method registry names its two tables
+ok   T6  and the read the SCREEN waits on no longer asks for the include at all
+ok   T6b nor does it pass an inline include object to the workspace call
+ok   T6a its payload is the bounded one, unconditionally — recentWindow PLUS the explicit thirteen
+ok   T7  sirWorkspaceBuild_ honours `only` with NOTHING but its declared helpers in scope...
+ok   T7a ...and echoes it
+ok   T7b the builder calls NO sibling helper — it is documented PURE and four suites lift it alone
+
+== §4 — THE STAGE REPORT: it classified one live request in four, then named a root cause anyway ==
+ok   M1  all four live requests are now placed into a stage
+ok   M1a none dropped
+ok   M1b and the accounting balances
+ok   M2  the timing-out request lands in a NAMED stage...
+ok   M2a ...carrying its code
+ok   M2b and its elapsed time — the 60 s bound, named at last
+ok   M2c and the action that did it
+ok   M3  PRE (executed): R4's guessed map placed ONE of the four, which is why every inventory stage read 0
+ok   M4  an unmapped action is COUNTED...
+ok   M4a ...and NAMED
+ok   M4b the accounting does not balance
+ok   M5  so NO root cause is offered — this is the whole fix
+ok   M5a and it says which action it could not place
+ok   M5b never COLD_START_OR_TRANSIENT_TIMEOUT from an empty set again
+ok   M6  a write action is EXPLICITLY ignored, so the accounting still balances
+ok   M6a and a real classification is available again
+ok   M7.1 the map declares deployment_contract
+ok   M7.2 the map declares scope_registry
+ok   M7.3 the map declares inventory_workspace
+ok   M7.4 the map declares recommendation_read
+ok   M7.5 the map declares allocation_hydration
+ok   M7.6 the map declares carrier_authorities
+ok   M8.1 system.health is mapped AND is a name the shipped code actually emits
+ok   M8.2 getClientCapabilities is mapped AND is a name the shipped code actually emits
+ok   M8.3 inventoryScope.registry.get is mapped AND is a name the shipped code actually emits
+ok   M8.4 inventoryReplenishment.workspace.get is mapped AND is a name the shipped code actually emits
+ok   M8.5 recommendation.workspace.get is mapped AND is a name the shipped code actually emits
+ok   M9  the R4 defect is now VISIBLE in the report: asked true, applied false
+ok   M9a beside the server's own execution time
+ok   M9b and the per-table timing that says where it went
+
+== §5/§6 — THE CENSUS: the live run was an INVALID SCOPE, not an AI Plan finding ==
+ok   C1  the census REFUSES an empty scope — the live blocker was correct behaviour, not a readiness result
+ok   C1a and it never runs ALL_SITES
+ok   C2  §6 there is ONE fixed entry point, and it takes NO parameters
+ok   C2a the scope is IN the function — nobody has to reconstruct an args schema in a console
+ok   C3.1 it prints scope FIRST, before any read
+ok   C3.2 it prints planning_cycle FIRST, before any read
+ok   C3.3 it prints read_only FIRST, before any read
+ok   C3.4 it prints flag_effective FIRST, before any read
+ok   C3.5 it prints db_writes FIRST, before any read
+ok   C3.6 it prints writer_constructed FIRST, before any read
+ok   C3a and that header is printed BEFORE the harvest is called
+ok   C4  it STOPS before harvest if any of the four values is edited
+ok   C4a and that stop comes BEFORE the census call, not after it
+ok   C5  the wrapper writes nothing
+ok   C5a and passes the scope EXPLICITLY — nothing is defaulted, no first-SKU fallback
+ok   C6  an altered scope STOPS (executed — the census itself throws if reached)
+ok   C6a naming which value was altered
+ok   C6b and still reports zero writes
+
+== §A — deployment identity: a stale 60_ must be a NAMED fault ==
+ok   A1  60_ DECLARES a build for the first time
+ok   A1a and the manifest expects exactly it (F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45)
+ok   A1b and it is a registered owner stamp, so a stale 60_ is a NAMED fault
+ok   A1c at least the round that introduced the declaration
+ok   A2  the shared stamp validator accepts an A-series stamp...
+ok   A2.1 ...and so does F1-7N-FB-4G-A0-R1, which it had been rejecting all along
+ok   A2.2 ...and so does F1-7N-FB-4G-A1-R1, which it had been rejecting all along
+ok   A2.3 ...and so does F1-7N-FB-4G-A2-R3-R1, which it had been rejecting all along
+
+== §K — release identity ==
+ok   K1  this round minted its own application token
+ok   K1a strictly after R4's, which was PUBLISHED (origin/main carries 3b44cbd)
+ok   K1b and the series has not moved behind it (current: r46-avgsales-20261008)
+ok   K2  nothing is left behind on a superseded token
+ok   K3  km-api-foundation.js carries it — a cached copy keeps DROPPING recentWindow, which is the R4 defect
+ok   K3a and the page, which carries the rebuilt stage report
+ok   K4  method-registry.js rotates in its OWN family (fc1be3r4a2r1r6r4-method-registry-20260905)
+ok   K4a at or after A1-R1's, in a family that now has a ledger instead of a literal in four suites
+ok   K5  the stylesheet did NOT change and stays on its own token
+ok   K6  the owner stamp is recorded, after R4's
+
+== §H — the boundary this round must not have crossed ==
+ok   B1  the AI Plan flag is still FALSE
+ok   B2  the rollover runner is still DRY_RUN
+ok   B3.1 sirWsRecentWindow_ writes nothing
+ok   B3.2 sirWsOnlyList_ writes nothing
+ok   B3.3 sirWsOnlySet_ writes nothing
+ok   B3.4 sirWorkspaceBuild_ writes nothing
+ok   B4  and the stage report is measurement only
+ok   B4a issuing no request, adding no retry, substituting no cache
+
+== MUTATIONS ==
+ok   N1  the DTO drops recentWindow again (the exact R4 defect) (caught)
+ok   N2  the DTO drops the table subset, so the catalogue reads all 21 again (caught)
+ok   N3  the server stops echoing the REQUEST, so asked-and-lost looks like never-asked (caught)
+ok   N4  `only` is ignored, so the catalogue reads twenty-one tables again (caught)
+ok   N5  `only` can reach an include-gated table WITHOUT the include (caught)
+ok   N6  the primary read goes back to carrying the carrier include (caught)
+ok   N7  the accounting is reduced to one check, so an unrecognised action becomes invisible (caught)
+ok   N7a the LIST check alone still catches it (the count guard removed) (caught)
+ok   N8  a classification is offered even when the accounting does not balance (caught)
+ok   N9  the stage map goes back to the guessed action names (caught)
+ok   N10 the fixed-scope census stops asserting its scope, so an edit censuses another site (caught)
+ok   N11 the census wrapper stops passing the scope explicitly (caught)
+ok   N12 60_ ships at a build its manifest does not expect (caught)
+ok   N13 the AI Plan flag is turned on (caught)
+ok   N14 km-api-foundation.js is left behind on a superseded token (caught)
+ok   N15 the per-table timing is removed, so "which sheet" has no answer again (caught)
+
+----------------------------------------
+LIVE READ CONTRACT + STAGE ACCOUNTING (F1-7N-FC-1B-E3-R4-A1): 124 passed, 0 failed
+mutations: 16 caught, 0 missed

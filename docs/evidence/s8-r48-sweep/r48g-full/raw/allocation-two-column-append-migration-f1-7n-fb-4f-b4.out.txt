@@ -1,0 +1,26 @@
+
+== A — the shape of the tool, and where it is allowed to live ==
+
+== B — [tests 1, 27] the recorded 34/30 state proposes exactly two header cells ==
+
+== C — [tests 2, 19, 21, 22, 23, 24, 25] the COMMIT, and what it is forbidden to disturb ==
+
+== D — [tests 3, 4, 5, 20] idempotency and the two partial states ==
+
+== E — [tests 6, 7, 8, 9, 10, 11, 12] the mandatory refusals, each by its own typed reason ==
+
+== F — [tests 13, 14, 15] the checksum, which is the whole confirmation ==
+
+== G — [tests 16, 17, 18] journal failure, and writes that do not land ==
+
+== H — [test 26] no backfill source is consulted, proven by what stays blank ==
+
+== I — the ordering guard: this tool cannot run before the B3 sync ==
+
+== J — [test 29] no routed action, no deployment contract, no owner build moved ==
+
+== K — [test 30] mutation tests: every guard is load-bearing ==
+
+== L — the recorded live state, and the two fingerprints this migration must produce ==
+
+PASS  285 passed, 0 failed

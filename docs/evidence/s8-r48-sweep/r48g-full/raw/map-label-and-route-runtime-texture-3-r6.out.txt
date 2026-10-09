@@ -1,0 +1,17 @@
+
+== §A/§B — ocean-label eligibility, decided by the resolver ==
+
+== §B — asset-absent fallback stays deterministic and leaks nothing ==
+
+== §B — the globe layer OBEYS the resolver and carries no dictionary of its own ==
+
+== §C/§D — route arc geometry, measured through the shipped builder ==
+
+== §D/§E — the live page contract, lifecycle and disposal ==
+
+== §G — cache tokens: only what changed, and nothing else ==
+
+== §F — Canada assets and hashes unchanged by R6 ==
+
+----------------------------------------
+MAP LABEL + ROUTE RUNTIME (TEXTURE-3-R6): 194 passed, 0 failed

@@ -1,0 +1,234 @@
+
+== A — §1/§2 THE REGULAR BUILDER STOPS FETCHING A TABLE IT ALREADY HOLDS ==
+ok   A1 §18-2 the Regular path no longer names fc_regular_forecast as a prerequisite
+ok   A2 §2 FC_REGULAR_FORECAST_GETTABLE_ON_NEXT = 0, stated by the declaration itself
+ok   A3 §2 the Regular prerequisite count is 2 (was 3)
+ok   A4 the two tables no authoritative read brings are still prerequisites
+ok   A5 ... and the page has no read-model accessor for either, which is why they stay
+ok   A6 the Special path holds no table outside the ceiling, and is not empty
+ok   A6b and fc_special_events in particular is owned by the events slice, not by this list
+ok   A6a and Regular is contained in Special, so a Special load always satisfies Regular
+ok   A6b with the events slice declaring exactly the key that left the table list
+ok   A7 §18-1 _regularPrefillManual does not read the broad cache directly
+ok   A8 §18-1 _regularPrefillManual asks the page accessor
+ok   A7 §18-1 _populateRegularScopeSelects does not read the broad cache directly
+ok   A8 §18-1 _populateRegularScopeSelects asks the page accessor
+ok   A7 §18-1 _fcRegularSiteOptions does not read the broad cache directly
+ok   A8 §18-1 _fcRegularSiteOptions asks the page accessor
+ok   A7 §18-1 _regularFcRows does not read the broad cache directly
+ok   A8 §18-1 _regularFcRows asks the page accessor
+ok   A7 §18-1 _evtBaseFcForSku does not read the broad cache directly
+ok   A8 §18-1 _evtBaseFcForSku asks the page accessor
+ok   A7 §18-1 _populateEventScopeSelects does not read the broad cache directly
+ok   A8 §18-1 _populateEventScopeSelects asks the page accessor
+ok   A7 §18-1 _fcMarketplaceOptions does not read the broad cache directly
+ok   A8 §18-1 _fcMarketplaceOptions asks the page accessor
+ok   A9 §18-1 the ONLY code naming KM.DB.getFcRegularForecast is the page accessor (Legacy fallback)
+ok   A9b ... and the accessor really is the one that names it, so A9 cannot pass by deleting both
+ok   A10 §2 the prefill no longer gates on the broad cache flag
+ok   A11 ... it asks the page whether the forecast is loaded
+ok   A12 ... and the answer is mode-aware: the slice in Workspace, the broad cache in Legacy
+ok   A13 §2 the regular-slice guard is no longer restricted to the Special path
+ok   A14 ... and both builders now declare they read the regular slice
+ok   A15 §19 every prerequisite of an open is settled CONCURRENTLY, so none is additive wall time
+ok   A15a and none of them is chained behind another
+ok   A16 §6 the loader does not special-case REQUEST_TIMEOUT
+ok   A17 §6 AUTO_TIMEOUT_RETRY_ADDED = NO — nothing re-issues a timed-out prerequisite read
+ok   A18 §6 a failed load releases its latch so RETRY IS THE OPERATOR'S, issuing one new request
+
+== B — §19 THE READ GRAPH, EXECUTED. Every count below is measured, not asserted. ==
+
+== B — measured read graph ==
+   REGULAR cold      : 2  ["sku_details","marketplace_skus"]
+   REGULAR warm      : 0
+   SPECIAL cold      : 2
+   SPECIAL warm      : 0
+   SPECIAL in-save   : 1  ["campaign_sku_lines"]
+   SPECIAL post-write: 0
+ok   B1 §2 Regular first Next physical prerequisite reads = 2 (was 3)
+ok   B2 §2 FC_REGULAR_FORECAST_GETTABLE_ON_NEXT = 0, measured
+ok   B3 Regular reopen without a write reads nothing
+ok   B4 the Special cold open reads exactly the tables its path declares
+ok   B5 §18-3 SPECIAL WARM reopen = 0 blocking prerequisite reads
+ok   B6 §18-5 the campaigns receipt is COMPLETE and is reconciled, not re-read
+ok   B7 ... so campaigns stays current THROUGH the invalidation
+ok   B8 §18-6/7 the two PARTIAL receipts do not keep their tables current
+ok   B9 §4 the one table with no receipt and no slice owner is refreshed, ONCE, inside the save
+ok   B9b S3-R13 ... and NOT for a session that never opened a saved event — a deferred table nobody has read is not bought by a save
+ok   B9a and fc_special_events is made current by the events SLICE readback the save performs
+ok   B10 §18-4 POST_SPECIAL_WRITE_NEXT_BLOCKING_READS = 0
+ok   B11 ... and an events save still leaves the Regular path alone
+ok   B12 §18-9 a warm-up that FAILS latches nothing and reports nothing
+ok   B13 §18-8 incomplete data is NEVER marked CURRENT
+ok   B14 §18-9 ... and the next open re-reads exactly the path tables the failed warm left unlatched
+ok   B14a and campaign_sku_lines is still unlatched, so its own deferred consumer reads it — with its own refusal surface
+ok   B15 §18-8 a receipt the OWNING STORE refuses is not treated as reconciled
+ok   B16 ... and its table is invalidated exactly as if no receipt had come
+ok   B17 a build without KM.DB.reconcileCacheRow reconciles nothing
+ok   B18 ... and degrades to the pre-round behaviour rather than assuming success
+ok   B19 the A3-R4 invariant holds: a Target Rule save disturbs neither builder path
+ok   B20 §4 fail-closed — an unknown write scope still discards EVERYTHING the path declares
+
+== C — §3 THE RECEIPT CENSUS, READ AGAINST THE WRITERS THEMSELVES ==
+ok   C1 §3 campaigns: the writer returns the COMPLETE canonical row, read back after the write
+ok   C2 §3 campaign_sku_lines: the per-line receipt carries id + sku + version and NO row
+ok   C3 §3 fc_special_events: the UPSERT computes the full canonical row on the create branch
+ok   C4 §3 ... and handleImportFcSpecialEventsBatch_ DISCARDS it — the reason the warm-up exists
+ok   C5 the receipt census is recorded beside the code that depends on it
+ok   C6 ... including the one finding that would take the warm-up to zero reads
+
+== D — §4 RECONCILE IN THE STORE THAT OWNS THE ROWS, NEVER FROM THE PAGE ==
+ok   D1 the reconcile is exposed by the module that owns _opDbCache
+ok   D2 §4 the PAGE never reaches into the broad cache to patch a row
+ok   D3 the patched row is normalized by the IDENTICAL call the broad load makes
+ok   D4 a row the normalizer REJECTS patches nothing and reports failure
+ok   D5 it refuses to CREATE the cache — a one-row cache would make an empty table look populated
+ok   D6 §18-5 an existing row is REPLACED in place
+ok   D7 ... exactly once, never appended beside itself
+ok   D8 ... with the receipt's values
+ok   D9 a row the cache has never seen is added
+ok   D10 §4 a row the normalizer drops changes NOTHING and returns false
+ok   D11 a table with no declared primary key is refused
+ok   D12 a missing row is refused rather than treated as a no-op success
+ok   D13 §4 with no cache to keep fresh there is nothing to reconcile
+
+== E — §5/§6 THE WARM-UP CANNOT MAKE ANYTHING WORSE ==
+ok   E1 §5 a background failure returns empty-handed instead of throwing
+ok   E2 §5 a warm-up failure never poisons the currently valid UI
+ok   E3 §5 it cannot clear visible valid data — it does not touch the read model or the view state
+ok   E4 §4 the PATH latch is DERIVED from the tables, never asserted alongside them
+ok   E5 it warms only tables that are actually cold — a warm table costs no request
+ok   E6 §5 the warm-up writes no rows itself, so it cannot overwrite newer data with older
+ok   E7 §4 the warm-up is started inside the save flow, where the operator is already waiting
+ok   E8 §4 ... and NOT chained to the readback, so it cannot fail a readback that succeeded
+ok   E9 §19 the two requests overlap: the operator pays the slower, not the sum
+ok   E10 §6 CLIENT_TIMEOUT_CHANGED = NO — the bounded read budget is still 45000 ms
+ok   E11 §6 ... and the write budget is still 90000 ms
+
+== F — §7 THE ANNUAL DIAGNOSTIC SHARE. KMFCS, and the two grains kept apart. ==
+ok   F1 §18-13 KM/US/Amazon is 1200 of KM's 2100
+ok   F2 §18-13 KM/CA/Amazon is 600 of the same 2100
+ok   F3 §18-13 KM/JP/Amazon is 300 of it
+ok   F4 §18-25 three countries, three DIFFERENT shares — no site-key collision
+ok   F5 §18-14 two marketplaces in one country are two sites
+ok   F6 §18-15 ResUS is its company's only site, so it is 100% of it
+ok   F7 §18-15 ... and so is ResTW, in a different country
+ok   F8 §18-16 company annual shares sum to 1 within EVERY company
+ok   F9 §18-17 all-site annual shares sum to 1 across every site
+ok   F10 §18-18 2027 has its own denominator
+ok   F11 §18-18 ... and KM/US is all of KM in 2027, where it was 4/7 in 2026
+ok   F12 §18-18 the two years are genuinely different bases
+ok   F13 §18-23 a zero denominator yields NO share
+ok   F14 §14 ... and displays an em dash
+ok   F15 §14 ... with a typed reason, not a silent null
+ok   F16 §14 ... and NEVER an equal split or a 100% fallback
+ok   F17 §18-24 no year selected -> nothing is projected
+ok   F18 ... and the state is TYPED, not defaulted
+ok   F19 ... with a typed issue
+ok   F20 §14 an unresolved site reports unresolved
+ok   F21 ... and renders an em dash
+ok   F22 a malformed year is INVALID, not coerced
+ok   F23 §14 every annual share is null or inside [0,1] — no NaN, no Infinity, no negative
+ok   F24 §14 ... and a negative forecast is clamped AND reported
+ok   F25 §13 the basis is Σ RAW months (4.8), not Σ ceil(month) (12)
+ok   F26 §13 ROUNDING_BEFORE_SHARE = NO — 3.8%, not the 9.1% a ceiled basis gives
+ok   F27 display is one decimal
+ok   F28 §13 ... and the 100% invariant is checked on the DECIMALS, which is why 33.3×3=99.9 never warns
+
+== G — §8 THE TWO GRAINS ARE NOT INTERCHANGEABLE, AND THE CODE MAKES THAT TRUE ==
+ok   G1 §8 the annual projection declares its grain
+ok   G2 §8 the rolling projection declares a DIFFERENT grain
+ok   G3 §8 the annual result does not expose the ROLLING field name
+ok   G4 §8 FC_SUMMARY_ANNUAL_SHARE has no eligible-receiver share at all
+ok   G5 §8 ... nor the rolling all-site field
+ok   G6 §8 and the rolling result does not expose the ANNUAL field name
+ok   G7 §8 projectAnnual cannot compute an eligible-receiver share: the inputs do not exist
+ok   G8 §8 on the SAME rows the two grains give different numbers — which is the point of two names
+ok   G9 §18-27 FC_SUMMARY_ANNUAL_SHARE_USED_BY_KMFSA = NO
+ok   G10 §18-28 FC_SUMMARY_ANNUAL_SHARE_USED_BY_KMOOP = NO
+ok   G11 §8 KMFSA does not depend on KMFCS at all — the dependency runs the other way
+ok   G12 §8 the annual reader has exactly two call sites: its owner and FC Summary
+ok   G13 §15 fc_regular_forecast.fc_share is still a column the Regular writer knows about
+ok   G13b §15 ... still a REQUIRED header in the writer's contract — DO NOT DROP, DO NOT RENAME
+ok   G13c §15 ... created as EMPTY on insert
+ok   G13d §15 ... and deliberately untouched on update — LEGACY_FC_SHARE_DB_WRITES = 0
+ok   G14 §15 nothing computes or populates it
+ok   G15 §15 KMFCS records that it is legacy and NOT the source of truth for anything
+
+== H — §9/§12/§16 THE PAGE SEAM, EXECUTED ==
+ok   H1 §7 PLANNING_MONTH_CONTROL_ADDED = NO
+ok   H2 §7 the page no longer carries a planning anchor at all
+ok   H3 §7 _fcShareYear_ reads no clock
+ok   H3 §7 _fcAnnualShareProjections_ reads no clock
+ok   H3 §7 _fcShareCells_ reads no clock
+ok   H3 §7 _fcShareRowShape_ reads no clock
+ok   H3 §7 _fcShareSourceRows_ reads no clock
+ok   H3 §7 _fcShareUnavailableTitle_ reads no clock
+ok   H4 §7 and KMFCS still contains no clock of any kind
+ok   H4b ... which its own header note says in as many words, and that note is prose, not a clock
+ok   H5 §12 the renderer projects over the pre-filter source
+ok   H6 §12 never over filteredData or paginatedData
+ok   H7 §12 the projection consumes the pre-filter assignment
+ok   H8 §18-26 the page-local calculators are gone and did not come back
+ok   H9 §18-26 ... nor any of their machinery
+ok   H10 §10 the page reads shares from KMFCS and computes none
+ok   H11 §18-13/14 three sites of one company, three distinct annual shares
+ok   H12 ... and with one company present the all-site column agrees, as it must
+ok   H13a the fixture starts with all three rows visible
+ok   H13b ... and unchecking Walmart really does remove a row from the view
+ok   H13 §18-19 FILTER_INDEPENDENT — the Amazon row is still 80.0%, not 800/850
+ok   H14 §18-20 PAGINATION_INDEPENDENT — a row alone on page 2 keeps its share of the WHOLE set
+ok   H15 §18-18 selecting a year with no rows yields an em dash, not a stale number
+ok   H16 §14 with no year selected both columns are unavailable
+ok   H17 §9 the unavailable title still carries the mandatory sentence AND says what was refused
+ok   H18 §9 the AVAILABLE title carries it too — every share cell explains itself
+ok   H19 §9 the company heading says "Annual"
+ok   H20 §9 the all-site heading says "Annual"
+ok   H21 §9 the old ambiguous "Site FC Share" is gone
+ok   H22 §9 the UI never says Eligible Receiver
+ok   H23 §9 both share headings carry a title attribute
+ok   H24 §9 ... and both carry the MANDATORY sentence, verbatim
+ok   H25 §9 the company tooltip is the required sentence
+ok   H26 §9 the all-site tooltip is the required sentence
+ok   H27 §9 no heading claims the planning window any more — that grain is not what these columns show
+ok   H28 the resize declaration names the shipped headings
+ok   H29 ... and the stylesheet is wide enough to show the word "Annual" rather than ellipse it
+ok   H30 §16 the Special Event table shows no share column at all
+ok   H31 §16 ... and neither does its edit mode
+ok   H32 §16 no annual share is computed from fc_special_events
+ok   H33 §16 the Event header carries no share cell
+
+== J — THE SPEC RECORDS THE DECISION, NOT JUST THE CODE ==
+ok   J1 §7 the spec states the grain
+ok   J2 §7 ... and that no planning-month control was added
+ok   J3 §13 ... and that the basis is raw, not the ceiled display months
+ok   J4 §8 ... and that no allocator consumes it
+ok   J5 §7 ... and it answers the obvious objection rather than leaving it for the next reader
+ok   J6 the rules doc records that the missing anchor owner is still missing — this round did not find one
+ok   J7 §8 ... and names the third share so nobody folds it into the other two
+ok   J8 §15 the legacy column is still recorded as legacy
+ok   J9 §15 DB_MIGRATION_REQUIRED = NO, in the spec as well as in the diff
+
+== I — DRIVEN MUTANTS. Each injects a real fault into real source and must be caught. ==
+ok   N1 §18-18 the annual basis ignores the selected year, pulling another year in (caught)
+ok   N2 §13 the annual basis stops being the whole year (caught)
+ok   N3 §7 the company denominator narrows to company+country (KMAF's grouping, not this one) (caught)
+ok   N4 §7 the all-site column stops having its own denominator (caught)
+ok   N5 §14 an undefined distribution becomes a fabricated 100% (caught)
+ok   N6 §14 a malformed year is accepted instead of typed INVALID (caught)
+ok   N7 §14 a site with no row for the year stops being reported as missing (caught)
+ok   N8 §8 the annual projection starts answering to the ROLLING field name (caught)
+ok   N9 §8 the annual projection claims the rolling grain (caught)
+ok   N10 §11 country leaves the basis key and KM/US, KM/CA, KM/JP collapse again (caught)
+ok   N11 §14 the negative clamp is removed and the DENOMINATOR is poisoned (caught)
+ok   N12 §4 a receipt is trusted without the owning store accepting it (caught)
+ok   N13 §4 the warm-up marks tables CURRENT before (or despite) the read failing (caught)
+ok   N14 §4 a path is latched while tables it holds are still cold (caught)
+ok   N15 §2 fc_regular_forecast returns to the Regular prerequisites and Next fetches it again (caught)
+ok   N16 §4 a complete receipt is discarded and its table is bought a second time (caught)
+ok   N17 §17 the post-write warm-up is removed, so the table it should have made current is left stale (caught)
+ok   N18 §12 the projection is handed the FILTERED rows and the denominator follows the filter (caught)
+
+====================================================================================================
+FC STABILITY + ANNUAL SHARE (R2) — passed 202  failed 0  |  mutants 18  survived 0
+====================================================================================================

@@ -1,0 +1,25 @@
+
+== §11 — cross-company Factory: same physical pool counted ONCE; Σ allocated never exceeds physical available ==
+
+== §11 — several marketplaces per company, same SKU + Factory warehouse ==
+
+== §11 — NORMAL mode (pool ≥ Σ demand): every receiver fully supplied, none over-allocated ==
+
+== §11 — priority affects FIFO order under scarcity (higher priority drawn first), still conserved ==
+
+== §11 — deterministic / no RNG / input-order independent ==
+
+== §11 — duplicate demandKey across companies fails closed (never silently double-counts a receiver) ==
+
+== §12 — Overseas SHORTAGE: pool 800 < Σ survival 1000 → priority-weighted survival, Σ = 800 ==
+
+== §13 — Overseas NORMAL: priority has NO quantity effect (only demandWeight drives the split) ==
+
+== health projection — NORMAL / RISK / CRITICAL / COMPETITION (frozen facts, no new formula) ==
+
+== §6 — eligible-receiver filter excludes inactive marketplaces / SKUs / invalid identity, with reasons ==
+
+== no second engine / no cartonization here (source contract) ==
+
+----------------------------------------
+ALLOCATION RUNTIME (F1-4B-FM7-R2B): 31 passed, 0 failed

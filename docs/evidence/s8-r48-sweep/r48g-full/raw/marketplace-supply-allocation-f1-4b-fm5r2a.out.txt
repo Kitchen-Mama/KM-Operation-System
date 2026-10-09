@@ -1,0 +1,25 @@
+
+== A · Factory ONE receiver → 100% of eligible pool ==
+
+== C · Overseas ONE receiver → 100% of eligible pool ==
+
+== E · country has multiple marketplaces but SKU has ONE eligible receiver → 100% ==
+
+== B · Factory MULTIPLE receivers → canonical allocator + conservation ==
+
+== D · Overseas MULTIPLE receivers → canonical allocator + conservation (shared 1000 split) ==
+
+== M · Factory + Overseas allocation totals INDEPENDENTLY conserved ==
+
+== F · ZERO receivers → allocate nothing (not an error, no fabricated destination) ==
+
+== G · company isolation — cross-company receiver → BLOCKED (no pooling) ==
+
+== H · UK ≡ GB identity via KMCID in the receiver key ==
+
+== valid zero / missing != zero ==
+
+== K/L · no fake warehouse · no SKU+qty heuristic dedup · reuse-only ==
+
+----------------------------------------
+MARKETPLACE SUPPLY ALLOCATION (F1-4B-FM5-R2A): 20 passed, 0 failed

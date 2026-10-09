@@ -1,0 +1,11 @@
+
+== A. Reader — targeted, read-only, safe-empty, normalized ==
+
+== B. Adapter — provisioned rules → per-warehouse demand facts (Warehouse Forecast) ==
+
+== C. Missing / invalid rule → fail closed (no default) ==
+
+== D. Existing recommendation runtime (KMPCX) consumes the per-warehouse destinations UNCHANGED ==
+
+----------------------------------------
+DEMAND ALLOCATION INTEGRATION (F1-4B-E): 19 passed, 0 failed

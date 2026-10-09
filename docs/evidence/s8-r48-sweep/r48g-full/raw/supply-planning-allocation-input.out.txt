@@ -1,0 +1,18 @@
+
+== O. overseas DTO — join + authority + eligibility ==
+
+== O. overseas DTO — missing / invalid planning facts fail closed ==
+
+== O. overseas scope — one company/country/masterSku ==
+
+== A. overseas allocation — real allocator (NORMAL / SHORTAGE / PROTECTED) ==
+
+== A. FBA/THREE_PL separation + platform reserve + conservation ==
+
+== F. factory DTO + allocation (real allocator) ==
+
+== B. blocked input propagation (Ledger conflicts surfaced, not reinterpreted) ==
+
+== Z. missing / zero + error + purity ==
+
+All Round 1L Allocation Input source-projection assertions passed (47 assertions).

@@ -1,0 +1,168 @@
+
+== A  THE THREE JOINS — every supporting surface reaches a canonical owner, or is named ==
+ok   A1  the router dispatches 143 distinct actions
+ok   A2  MISSING_ROUTER_ACTION_COUNT is 0 — every action the browser sends has a dispatch branch
+ok   A3  the dispatch list is populated — an empty one would also report nothing missing
+ok   A3a every handler the router dispatches is defined in some .gs — no unreachable branch
+ok   A4  STALE_LEGACY_DIRECT_CALL_COUNT is 0 — no page bypasses the shared transport
+ok   A4a the ONE endpoint literal lives in the adapter, which is where it belongs
+ok   MUTANT CAUGHT — A2 would catch a client action the router cannot route
+ok   MUTANT CAUGHT — A3 would catch a router branch whose handler was removed with its file
+ok   MUTANT CAUGHT — A4 would catch a page calling Apps Script directly
+
+== B  CARRIER — the identity is right everywhere and the NAME is resolved in one place only ==
+ok   B1  the Weekly Shipping Plan read (40_) loads the carriers master
+ok   B1a and emits carrier { id, name } — the Weekly surface can print a name
+ok   B2  57_ now loads the carriers master, with the same declaration 40_ uses
+ok   B2a and emits it beside the carrierId it always served — identity AND the master to resolve it
+ok   B3  the resolver takes the master as an ARGUMENT — no private cache to go stale, and no answer at all when nothing has been read
+ok   B3a and no longer reaches for the whole-DB getter it could never have found
+ok   B3b that member is still assigned nowhere in the browser, which is why depending on it was the defect
+ok   B3c and the surfaces now CALL it — the resolver is reachable, which it had never been
+ok   B4  there is exactly ONE freight computation and 17_ owns it
+ok   B4a and its only callers are the Weekly rough estimate and the Shipment exact quote — SECOND_CARRIER_RATE_AUTHORITY_COUNT = 0
+ok   B4b and the AI Plan declares in code that it does not price — it recommends a METHOD, never a rate
+ok   B5  exactly one module ever opens carrier_lead_times for writing
+ok   B5a the one-time Sinotrans seed still writes the table, and was not removed
+ok   B5b and there is now a routed maintenance path: ONE write owner plus a read-only duplicate census
+ok   B5b1 whose duplicate-lane guard resolves through KMRA's own predicates, so it cannot drift from the leadDays resolution it protects
+ok   B5c TWO pages read it — the Carrier Rate Card joins it for display and the Execution Plan method registry builds lane options from it. Both depend on a table neither of them, nor any other surface, can write
+ok   B5c1 the Carrier Rate Card page now calls the lead-time maintenance adapter — and exactly one page does
+ok   MUTANT CAUGHT — B5c1 would catch the maintenance call disappearing from the page again
+ok   B5d and the rate-card import still REJECTS lead-time columns — the two authorities stayed separate. R1 found that a lane could be priced through the UI and timed only by hand; S7-R3 gave lead times their own maintenance path rather than merging them into the rate template
+ok   MUTANT CAUGHT — B5b would catch the lead-time maintenance action being removed again
+ok   MUTANT CAUGHT — B5 would catch a second module opening the lead-time table
+ok   MUTANT CAUGHT — B2 would catch the carriers master being dropped from the read again
+ok   MUTANT CAUGHT — B3c would catch the missing link being supplied
+ok   MUTANT CAUGHT — B4a would catch a second file computing freight
+
+== C  SHIPMENT OVERVIEW — a read model that also carries operator actions, and owns neither ==
+ok   C1  shipping-history.js registers the Shipment Overview section
+ok   C1a and the Shipment Draft section — one file, two surfaces
+ok   C2  it issues no request of its own
+ok   C2a and reaches no backend directly
+ok   C3.1 it writes through KM.DB.updateShipment
+ok   C3.2 it writes through KM.DB.generateShipmentLineAllocations
+ok   C3.3 it writes through KM.DB.confirmShipmentAndDispatch
+ok   C3.4 it writes through KM.DB.cancelShipmentDraft
+ok   C3.5 it writes through KM.DB.generateShipmentDocument
+ok   C3a and every one of those is a routed action owned on the server — SHIPPING_HISTORY_WRITE_OWNER_COUNT = 0, because the page owns none of them
+ok   C4  SHIPPING_HISTORY_TRUTH_DRIFT_COUNT = 0 — it derives no inventory balance of its own
+ok   MUTANT CAUGHT — C3a would catch the page gaining a write that no router action backs
+ok   MUTANT CAUGHT — C4 would catch an inventory balance being recomputed in the browser
+
+== D  DOCUMENTS — the backend, the router and the adapter are complete; the SURFACE is absent ==
+ok   D1.1 the adapter exposes KM.DB.listEntityDocuments
+ok   D1.2 the adapter exposes KM.DB.getGeneratedDocument
+ok   D1.3 the adapter exposes KM.DB.retryDocumentGeneration
+ok   D2.1 document.list is routed
+ok   D2.2 document.get is routed
+ok   D2.3 document.retry is routed
+ok   D2a.1 and handleEntityDocumentList_ exists
+ok   D2a.2 and handleGeneratedDocumentGet_ exists
+ok   D2a.3 and handleDocumentRetry_ exists
+ok   D3  and NO page calls any of them — a generated document can be produced once and never listed, reopened or retried from the application. This is the round primary finding
+ok   D4  the one wired half is generation, from the Shipment Draft
+ok   D4a the Purchase Order surfaces have no document control at all, although 39_ serves purchase_order documents — so PO documents are backend-only, which is UNBUILT rather than disconnected
+ok   D4b and that PO support really is there on the server, which is what makes the gap worth naming
+ok   MUTANT CAUGHT — D3 would catch the Document Panel being wired
+
+== E  IMPORT / BULK — one owner each, and which of them an operator can actually reach ==
+ok   E1  IMPORT_SURFACE_COUNT — thirteen import / bulk / repair actions
+ok   E2  each is routed and has EXACTLY ONE handler definition, in the module the audit names — SECOND_WRITE_OWNER_COUNT = 0 and UNKNOWN_WRITE_OWNER_COUNT = 0 across the import surface
+ok   E3  five are operator-unreachable by design — a scheduled job, a one-time seed, a column retirement and two FC id repairs. They are not missing UI; they are deliberately not UI
+ok   MUTANT CAUGHT — E2 would catch a second definition of an import handler
+
+== F  TEMP / MIGRATION CENSUS — what is in the DEPLOYABLE folder, and what it is attached to ==
+ok   F1  NO TEMP file sits in the deployable folder any more — DEPLOYABLE_TEMP_COUNT_POST = 0
+ok   F1a thirty-eight diagnostics live under tools/, outside the deploy folder
+ok   F1b four migrations
+ok   F1b1 and the one seed has a directory of its own, because burying the tool that can empty six tables among ordinary migrations loses the only fact about it that matters
+ok   F1c TEMP_SCRIPT_COUNT = 43
+ok   F1d and the census below reads all 43, not the empty folder
+ok   F2  no permanent file CALLS a TEMP symbol — with comments AND string literals stripped, which is the whole point: three TEMP entry points ARE named inside production error messages, and a mention in a remediation sentence is not a dependency
+ok   F3  and no TEMP file declares a top-level name that production also declares — in one shared global scope a collision would silently replace the production function
+ok   F4  three TEMP entry points are named in production error messages as the operator remediation step, so retiring those files leaves a message pointing at nothing
+ok   MUTANT CAUGHT — F2 would catch production acquiring a real dependency on a TEMP symbol
+ok   MUTANT CAUGHT — F3 would catch a TEMP file shadowing a production function
+
+== G  CROSS-MAINLINE BOUNDARY — supporting flows do not bridge S5 and S6 ==
+ok   G0  the probe detects a module that really does open the execution tables (12_ does) — without this the four refusals below could all be passing on a regex that never matches
+ok   G1  the carrier owner opens no ordering table — carrier support cannot create a PO
+ok   G2  the pricing writer opens no execution table — pricing support cannot create a Shipment
+ok   G3  the overseas inventory owner opens no ordering table
+ok   G3a nor does the factory inventory owner — an inventory import cannot create Ordering
+ok   G4  the document runtime opens no execution table of its own — a document cannot trigger execution
+ok   G4a what it does do is ask 34_ to finalize the snapshot it renders from, through that owner — which is a call into the authority, not a bypass of it
+ok   MUTANT CAUGHT — G2 would catch pricing reaching into the execution tables
+ok   MUTANT CAUGHT — G1 would catch the carrier owner opening an ordering table
+ok   MUTANT CAUGHT — G4 would NOT be fooled by a module merely naming a table in a comment
+
+== H  PRICING — one resolver, and TWO writers whose verbs do not overlap ==
+ok   H1  72_ is the bounded READ owner of the price book
+ok   H2  73_ declares itself the write owner
+ok   H3  04_ ALSO creates pricing_list rows, at marketplace-SKU import
+ok   H3a fail-closed, as pending_fx with blank ownership flags, so FX cannot later claim what nobody owns
+ok   H3b and never overwrites a price — CREATE and UPDATE are disjoint verbs held by two modules
+ok   H3c 04_ reuses 73_ precision authority rather than carrying its own, which is what keeps the split from becoming a second authority. SECOND_PRICING_AUTHORITY_COUNT = 0, with the caveat recorded
+ok   MUTANT CAUGHT — H3b would catch the import gaining an overwrite path
+
+== J  SURFACES THAT CARRY NO LIVE DATA — classified, not repaired ==
+ok   J1  the Forecast page issues no backend read of any kind
+ok   J1a and synthesises its series — it is a UI-only surface in the live navigation, which the report classifies rather than this round repairing
+ok   J2  the Supply Chain Canvas issues no request
+ok   J2a and says so — already adjudicated at S2-R4C as a presentation artefact, so it is OUT of S7 scope rather than an unfinished flow
+ok   MUTANT CAUGHT — J1 would catch the Forecast page being wired to a read
+
+== K  THE SEALS THIS ROUND ENTERS UNDER, re-read rather than assumed ==
+ok   K1  S6_FINAL_SEAL = YES is recorded in the S6 contract
+ok   K1a with no open blockers
+ok   K1b and the frozen dispatch rule S7 must not disturb
+ok   K2  and the dispatcher still consumes only its declared source — S7-R1 changed no runtime file
+
+== L  SUPPORTING WRITE FLOWS — one owner each, counted rather than recalled ==
+ok   L1  SUPPORTING_WRITE_FLOW_COUNT = 26
+ok   L2  SECOND_WRITE_OWNER_COUNT = 0 — no routed handler is defined in two modules
+ok   L3  UNKNOWN_WRITE_OWNER_COUNT = 0 — every routed action resolves to a defined handler
+ok   L1a the detector sees a known writer
+ok   L1b and does not see one in a known read-only handler
+ok   MUTANT CAUGHT — L2 would catch a routed handler defined twice
+
+== M  S7-R2 DECISION FREEZE — each decision as the property of the tree it constrains ==
+ok   M1  the Forecast navigation entry is still present and unguarded
+ok   M1a the source is intact — FORECAST_REVIEW_SOURCE_DELETED = NO
+ok   M1b and it still makes no backend call, which is the recorded finding rather than a defect to fix
+ok   M1c it was NOT added to the staged-section registry — no nav mechanism was applied to it
+ok   M2.1 the panel read owner already exists: document.list
+ok   M2.2 the panel read owner already exists: document.get
+ok   M2.3 the panel read owner already exists: document.retry
+ok   M2a all three are owned by ONE module — DOCUMENT_PANEL_SECOND_READ_AUTHORITY_COUNT = 0
+ok   M2b and generation keeps its own existing owner — SECOND_DOCUMENT_ENGINE_CREATED = NO
+ok   M3  NON_RUNTIME_TEMP_IN_FINAL_PRODUCTION_DEPLOY_SET = 0 (DEPLOYABLE_TEMP_COUNT_PRE was 7)
+ok   M3a PRODUCTION_REQUIRED_TEMP_COUNT = 0 — no production code calls a TEMP symbol, so the final deploy target of 0 is reachable without proving an exception
+ok   M3b TEMP_demo_shipping_shipment_map_seed_v2 has a real write path (appendRow + deleteRow rollback)
+ok   M3b1 and it names the business table shipping_plans
+ok   M3b1 and it names the business table shipping_plan_lines
+ok   M3b1 and it names the business table shipments
+ok   M3b1 and it names the business table shipment_lines
+ok   M3b1 and it names the business table shipment_routes
+ok   M3b1 and it names the business table shipment_events
+ok   M4  every symbol named in a production message lives in a one-time MIGRATION file
+ok   M4a and NONE of them lives in a safe-to-retire file — so removing those three strands no message. S7-R1 said otherwise and was wrong
+ok   M4b.1 TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY is still named in production guidance — DEAD_TEMP_REFERENCE_ALLOWED = NO
+ok   M4b.2 TEMP_AI_LIFECYCLE_MIGRATE_DRY_RUN is still named in production guidance — DEAD_TEMP_REFERENCE_ALLOWED = NO
+ok   M4b.3 TEMP_AI_LIFECYCLE_MIGRATE_COMMIT is still named in production guidance — DEAD_TEMP_REFERENCE_ALLOWED = NO
+ok   M4b.4 TEMP_AI_LIFECYCLE_SCHEMA_VALIDATE is still named in production guidance — DEAD_TEMP_REFERENCE_ALLOWED = NO
+ok   M5  carrier_name is NOT persisted by the shipment owner
+ok   M5a nor by the plan owner — CARRIER_NAME_PERSISTENCE_REQUIRED = NO
+ok   M5b the Weekly read already DERIVES the name at read time, which is the shape R2A must copy
+ok   M6  the live carrier_lead_times header, read from the owner rather than from a document
+ok   M6a there is NO status/active column, so the slice inherits no status semantics and must invent none — NEW_COLUMNS_REQUIRED = NONE
+ok   M7  leadDays does NOT join on carrier — a lead time resolves as a LANE property
+ok   M7a its key is methodKey + origin + destination + last-mile
+ok   M7b and it takes the FIRST matching row. Two rows on one lane tuple are silently resolved to one — the same first-row pick S6-R8A froze out of dispatch. S7-R3 must refuse a duplicate lane at the WRITE path, because this read will not
+ok   MUTANT CAUGHT — M3a would catch production acquiring a dependency on a deployable TEMP file
+ok   MUTANT CAUGHT — M6a would catch a status column being added to the lead-time header
+ok   MUTANT CAUGHT — M5 would catch carrier_name being persisted to solve display
+
+142 passed / 0 failed   (24 mutants, 0 survived)

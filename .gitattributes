@@ -57,3 +57,6 @@ assets/tests/fixtures/TEMP_migrate_fc_target_rules_header_r2ba2.retired.gs.txt -
 # mismatches on a fresh clone, turning the integrity check into a permanent false alarm.
 docs/evidence/s8-r48-sweep/**/raw/** -text -diff
 docs/evidence/s8-r48-sweep/**/manifest.json -text
+# The reclassification record is derived, not hashed, but it is pinned with them so the whole
+# evidence tree behaves alike and nobody later assumes byte-stability it would not have.
+docs/evidence/s8-r48-sweep/*-reclassification.json -text

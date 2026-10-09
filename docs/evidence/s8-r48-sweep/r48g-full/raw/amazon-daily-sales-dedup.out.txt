@@ -1,0 +1,47 @@
+
+-- N. Date normalization byte-compatible with importer amazonNormalizeDate_ --
+ok   N string "2026-07-30" matches importer
+ok   N string "2026/7/5" matches importer
+ok   N string "2026-07-30T00:00:00" matches importer
+ok   N string "not-a-date" matches importer
+ok   N string "" matches importer
+ok   N string "2026-13-40" matches importer
+ok   N Date object matches importer
+ok   N Date and string collapse to identical value
+
+-- C. Duplicate-group classification --
+ok   C1 identical facts+metadata → IDENTICAL_FACTS
+ok   C1b auto-eligible, projects to 1 row
+ok   C2 same facts, diff metadata, mixed Date/string → METADATA_ONLY (auto-eligible)
+ok   C2b winner = later row (sheet row 3, last-wins)
+ok   C3 conflicting facts → REVIEW_REQUIRED, both rows RETAINED (not auto-cleaned)
+ok   C3b conflicting business-field diffs reported
+ok   C4 blank-sku + bad-date → INVALID_KEY (blocked, retained, never deduped)
+
+-- W. Winner rule = later input-row order (last-wins) --
+ok   W1 3-row group → keep last (index 2), remove [0,1]
+
+-- H. source_row_hash audit --
+ok   H1 identical group → same source_row_hash (append-duplicate evidence)
+ok   H2 metadata-only group → differing hashes surfaced
+
+-- P. Dry-run plan (pure, never applied) --
+ok   P1 plan removes ONLY the auto-eligible EARLIER row (last-wins keeps index 1); conflicting pair retained; requiresManualReview flagged
+
+-- E. Empty / no-duplicate inputs --
+ok   E1 empty input → zero groups, null range
+ok   E2 single unique row → no duplicates
+
+-- D. Determinism (JSON-safe, repeatable, no Sheet objects) --
+ok   D1 identical input → byte-identical JSON output (deterministic)
+ok   D2 output contains no Sheet/Range objects
+
+-- T. Authorized derived-field numeric tolerance (HOTFIX A3-PREP §7, opt-in) --
+ok   T1 tolerance OFF → derived-field diff stays CONFLICTING (A2 behaviour preserved)
+ok   T2 tolerance ON → derived-field-only diff becomes AUTO_ELIGIBLE (authorized)
+ok   T2b group flagged toleranceApplied
+ok   T3 core sales_units difference stays CONFLICTING despite tolerance
+ok   T4 non-numeric derived value → strict fallback → CONFLICTING (not silently tolerated)
+ok   T5 core field cannot be forced tolerant (guard ignores it)
+
+All Amazon daily-sales dedup dry-run assertions passed (29 assertions)

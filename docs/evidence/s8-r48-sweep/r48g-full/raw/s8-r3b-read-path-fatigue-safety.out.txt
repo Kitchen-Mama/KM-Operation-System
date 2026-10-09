@@ -1,0 +1,315 @@
+
+== A. THE APPROVED SET IS THE PREFLIGHT THE OPERATOR APPROVED ==
+ok   A1  exactly 11 actions are approved
+ok   A2  the approved set is exactly the eleven named here
+ok   A3  factoryStockGuard.get appears in the approved S8-R3A preflight
+ok   A3  fcSummary.workspace.get appears in the approved S8-R3A preflight
+ok   A3  inventoryReplenishment.workspace.get appears in the approved S8-R3A preflight
+ok   A3  inventoryReplenishmentGap.get appears in the approved S8-R3A preflight
+ok   A3  overseasStock.workspace.get appears in the approved S8-R3A preflight
+ok   A3  purchaseOrder.workspace.get appears in the approved S8-R3A preflight
+ok   A3  recommendation.workspace.get appears in the approved S8-R3A preflight
+ok   A3  requestOrder.workspace.get appears in the approved S8-R3A preflight
+ok   A3  shipment.workspace.get appears in the approved S8-R3A preflight
+ok   A3  skuDetails.workspace.get appears in the approved S8-R3A preflight
+ok   A3  weeklyShipping.workspace.get appears in the approved S8-R3A preflight
+ok   A4  factoryStockGuard.get is on the router GET read table
+ok   A4  fcSummary.workspace.get is on the router GET read table
+ok   A4  inventoryReplenishment.workspace.get is on the router GET read table
+ok   A4  inventoryReplenishmentGap.get is on the router GET read table
+ok   A4  overseasStock.workspace.get is on the router GET read table
+ok   A4  purchaseOrder.workspace.get is on the router GET read table
+ok   A4  recommendation.workspace.get is on the router GET read table
+ok   A4  requestOrder.workspace.get is on the router GET read table
+ok   A4  shipment.workspace.get is on the router GET read table
+ok   A4  skuDetails.workspace.get is on the router GET read table
+ok   A4  weeklyShipping.workspace.get is on the router GET read table
+ok   A5  factoryStockGuard.get travels on GET, like every other approved read
+ok   A5b NO approved read travels on a write verb — the one exception this suite used to record is gone
+
+== B. DENY BY DEFAULT ==
+ok   B1  anActionNobodyHasEverNamed is refused by default
+ok   B1  getTable is refused by default
+ok   B1  system.health is refused by default
+ok   B1  getOperationDb is refused by default
+ok   B1  getClientCapabilities is refused by default
+ok   B1  automationSchedule.get is refused by default
+ok   B1  inventoryScope.registry.get is refused by default
+ok   B1  pricing.write.status is refused by default
+ok   B2  the write adjustFactoryInventory is refused
+ok   B2  the write pricing.update is refused
+ok   B2  the write updateShipment is refused
+ok   B2  the write createShipmentFromPlan is refused
+ok   B2  the write cancelShipmentDraft is refused
+ok   B2  the write upsertSkuDetail is refused
+ok   B2  the write importFcRegularForecastBatch is refused
+ok   B3  an empty action is refused by name
+ok   B4  an empty request is refused
+ok   B5  a null action is refused
+ok   B6  an echo target is refused as an endpoint
+
+== C. gapJob.status.get IS REFUSED THROUGH EVERY VECTOR ==
+ok   C1  it is absent from the approved set
+ok   C2  it is named forbidden
+ok   C3  decide() refuses it
+ok   C4  the action is recovered from a URL
+ok   C5  the recovered action is refused
+ok   C6  the action is recovered from a body and refused
+ok   C7  buildRequest produces no URL for it
+ok   C8  an unreadable request yields no action
+ok   C9  an unreadable request is refused rather than passed
+ok   C10 inventoryReplenishmentGap.job.start is refused
+ok   C10 orderPlanningGap.job.start is refused
+ok   C10 inventoryReplenishmentGap.recalculate.all is refused
+ok   C10 orderPlanningGap.recalculate.all is refused
+ok   C11 the materialized gap READ is approved — it is not the job poll
+
+== D. THE FORBIDDEN SET NAMES THE MECHANISM ==
+ok   D1  the gapJob refusal names "STALLED"
+ok   D1  the gapJob refusal names "ScriptApp"
+ok   D1  the gapJob refusal names "trigger"
+ok   D1  the gapJob refusal names "gap"
+ok   D2  gapJob.status.get carries a reason, not a verdict
+ok   D2  inventoryReplenishmentGap.recalculate.all carries a reason, not a verdict
+ok   D2  orderPlanningGap.recalculate.all carries a reason, not a verdict
+ok   D2  orderPlanningGap.job.start carries a reason, not a verdict
+ok   D2  inventoryReplenishmentGap.job.start carries a reason, not a verdict
+ok   D2  orderPlanningGap.get carries a reason, not a verdict
+ok   D2  aiPlanFirstLayer.get carries a reason, not a verdict
+ok   D3  orderPlanningGap.get is refused for scope and the reason says so
+ok   D3  aiPlanFirstLayer.get is refused for scope and the reason says so
+
+== E. THE DTO IS THE SHIPPED RESOLVER'S DTO ==
+ok   E1  weeklyShipping page defaults
+ok   E2  …and 25 is the shipped default
+ok   E3  weeklyShipping sorts on the shipped field
+ok   E4  weeklyShipping include.summary matches the shipped builder
+ok   E4  weeklyShipping include.plans matches the shipped builder
+ok   E4  weeklyShipping include.details matches the shipped builder
+ok   E4  weeklyShipping include.filterOptions matches the shipped builder
+ok   E5  purchaseOrder page size 2000
+ok   E6  …and 2000 is the shipped default
+ok   E7  purchaseOrder sort field
+ok   E8  requestOrder page size 2000
+ok   E9  requestOrder sort field
+ok   E10 shipment page size 3000
+ok   E11 …and 3000 is the shipped default
+ok   E12 shipment include is the shipped default
+ok   E13 recommendation pagination defaults
+ok   E14 …and 100 is the shipped default
+ok   E15 recommendation diagnostics
+ok   E16 recommendation does not send destinationWarehouseId
+ok   E16 recommendation does not send calculationMonth
+ok   E16 recommendation does not send planningCycle
+ok   E17 fcSummary.workspace.get include
+ok   E18 fcSummary.workspace.get matches its shipped builder
+ok   E17 inventoryReplenishment.workspace.get include
+ok   E18 inventoryReplenishment.workspace.get matches its shipped builder
+ok   E19 skuDetails.workspace.get include
+ok   E20 skuDetails.workspace.get uses the canonical envelope builder
+ok   E21 skuDetails.workspace.get envelope keys
+ok   E19 overseasStock.workspace.get include
+ok   E20 overseasStock.workspace.get uses the canonical envelope builder
+ok   E21 overseasStock.workspace.get envelope keys
+ok   E22 apiVersion matches the shipped constant
+ok   E23 context is the shipped default
+ok   E24 the gap read carries no apiVersion/context
+ok   E25 …and that is the shape operation-system-db-api.js builds
+ok   E26 the gap read sends an empty scope
+ok   E30 exactly two approved reads require a scope
+ok   E31 the page scope is exactly company/country/marketplace
+ok   E32 …and the page returns null rather than issuing an unscoped read
+ok   E33 a scoped gap read carries exactly the three keys
+ok   E34 an unscoped gap read still builds the shipped empty shape
+ok   E35 a partial scope collapses to empty rather than being half-sent
+ok   E36 a scoped recommendation read keeps the shipped sku/siteSku nulls
+ok   E37 a scoped recommendation read still does not send destinationWarehouseId
+ok   E37 a scoped recommendation read still does not send calculationMonth
+ok   E37 a scoped recommendation read still does not send planningCycle
+ok   E38 both owners' refusal codes are recorded in the allowlist
+ok   E27 the guard read carries action + a READ request id, FLAT — no payload envelope
+ok   E27b shipping_plan_id sits at the TOP LEVEL, where handleFactoryStockGuardGet_ reads it
+ok   E27c and is NOT nested under payload — nesting would silently route the handler to its no-plan branch
+ok   E28 …and that is the path operation-system-db-api.js uses
+ok   E28b the write dispatcher no longer carries it
+ok   E29 _kmWeeklyCommand_ builds exactly {action, ...payload}
+
+== F. THE URL IS km-transport's OWN RULE ==
+ok   F1  the transport contract version matches the shipped constant
+ok   F2  readQuery emits action=
+ok   F2  readQuery emits km_via=get
+ok   F2  readQuery emits km_tc=
+ok   F2  readQuery emits km_rid=
+ok   F2  readQuery emits km_body=
+ok   F3  the query is built in the shipped order
+ok   F4  the shipped rule omits an empty body
+ok   F5  …and the harness omits it too
+ok   F6  …and sends it when there is one
+ok   F7  GET_BODY_MAX matches the router constant
+ok   F8  factoryStockGuard.get body 63 <= 4000
+ok   F9  factoryStockGuard.get url 221 <= 6000
+ok   F8  fcSummary.workspace.get body 167 <= 4000
+ok   F9  fcSummary.workspace.get url 393 <= 6000
+ok   F8  inventoryReplenishment.workspace.get body 180 <= 4000
+ok   F9  inventoryReplenishment.workspace.get url 419 <= 6000
+ok   F8  inventoryReplenishmentGap.get body 94 <= 4000
+ok   F9  inventoryReplenishmentGap.get url 282 <= 6000
+ok   F8  overseasStock.workspace.get body 171 <= 4000
+ok   F9  overseasStock.workspace.get url 401 <= 6000
+ok   F8  purchaseOrder.workspace.get body 331 <= 4000
+ok   F9  purchaseOrder.workspace.get url 669 <= 6000
+ok   F8  recommendation.workspace.get body 375 <= 4000
+ok   F9  recommendation.workspace.get url 732 <= 6000
+ok   F8  requestOrder.workspace.get body 330 <= 4000
+ok   F9  requestOrder.workspace.get url 667 <= 6000
+ok   F8  shipment.workspace.get body 297 <= 4000
+ok   F9  shipment.workspace.get url 614 <= 6000
+ok   F8  skuDetails.workspace.get body 168 <= 4000
+ok   F9  skuDetails.workspace.get url 395 <= 6000
+ok   F8  weeklyShipping.workspace.get body 329 <= 4000
+ok   F9  weeklyShipping.workspace.get url 668 <= 6000
+ok   F10 the request id matches the client pattern
+ok   F11 the request id does not use the reserved S8T namespace
+ok   F12 …and that pattern is the shipped one
+
+== G. THE VERB IS THE SHIPPED VERB ==
+ok   G1  factoryStockGuard.get refuses POST
+ok   G1  fcSummary.workspace.get refuses POST
+ok   G1  inventoryReplenishment.workspace.get refuses POST
+ok   G1  inventoryReplenishmentGap.get refuses POST
+ok   G1  overseasStock.workspace.get refuses POST
+ok   G1  purchaseOrder.workspace.get refuses POST
+ok   G1  recommendation.workspace.get refuses POST
+ok   G1  requestOrder.workspace.get refuses POST
+ok   G1  shipment.workspace.get refuses POST
+ok   G1  skuDetails.workspace.get refuses POST
+ok   G1  weeklyShipping.workspace.get refuses POST
+ok   G2  the verb refusal names the dispatch-chain risk
+
+== H. THE RUNNER CANNOT DISPATCH WITHOUT decide() ==
+ok   H1  every fetch in the runner is in a function this test checks
+ok   H2a once contains the fetch this test expects
+ok   H2b once calls the guard before its fetch
+ok   H2a deriveScope contains the fetch this test expects
+ok   H2b deriveScope calls the guard before its fetch
+ok   H2c no fetch sits outside a guarded function
+ok   H3  a refusal returns before the fetch
+ok   H3b a refused scope-derivation read stops the run rather than continuing unscoped
+ok   H4  the guard delegates to decide()
+ok   H5  the endpoint is read from the shipped client
+ok   H6  no deployment URL is hard-coded in the tooling
+ok   H7  --only filters the approved list rather than adding to it
+ok   H8  --only also suppresses the away/return pair list
+ok   H9  the runner has no retry loop
+ok   H10 the runner declares concurrency 1
+ok   H11 nothing in the runner fans out
+
+== I. EVERY EXCLUSION IS RECORDED WITH A REASON ==
+ok   I1  rawInventory.get is recorded as excluded
+ok   I2  rawInventory.get is excluded as unreachable
+ok   I1  openPoRemaining.raw.get is recorded as excluded
+ok   I2  openPoRemaining.raw.get is excluded as unreachable
+ok   I1  leadTime.raw.get is recorded as excluded
+ok   I2  leadTime.raw.get is excluded as unreachable
+ok   I3  rawInventory.get names the preflight it corrects
+ok   I3  openPoRemaining.raw.get names the preflight it corrects
+ok   I4  no shipped frontend file references rawInventory.get
+ok   I4  no shipped frontend file references openPoRemaining.raw.get
+ok   I4  no shipped frontend file references leadTime.raw.get
+ok   I5  the same search finds factoryStockGuard.get, so a zero above is a real zero
+
+== J. THE 44 TABLES, AND THE TWO THAT STAY UNREGISTERED ==
+ok   J1  the approved table list is 44
+ok   J2  no duplicates
+ok   J3  sku_details is named in the approved preflight
+ok   J3  sku_regional_details is named in the approved preflight
+ok   J3  marketplace_skus is named in the approved preflight
+ok   J3  marketplaces is named in the approved preflight
+ok   J3  pricing_list is named in the approved preflight
+ok   J3  fc_regular_forecast is named in the approved preflight
+ok   J3  fc_special_events is named in the approved preflight
+ok   J3  fc_target_rules is named in the approved preflight
+ok   J3  campaigns is named in the approved preflight
+ok   J3  campaign_sku_lines is named in the approved preflight
+ok   J3  warehouses is named in the approved preflight
+ok   J3  logistics_locations is named in the approved preflight
+ok   J3  carriers is named in the approved preflight
+ok   J3  carrier_rate_cards is named in the approved preflight
+ok   J3  carrier_lead_times is named in the approved preflight
+ok   J3  shipment_route_templates is named in the approved preflight
+ok   J3  shipment_route_template_nodes is named in the approved preflight
+ok   J3  tax_referral_rates is named in the approved preflight
+ok   J3  tax_rate_components is named in the approved preflight
+ok   J3  amazon_inventory_snapshot is named in the approved preflight
+ok   J3  amazon_daily_sales_snapshot is named in the approved preflight
+ok   J3  amazon_weekly_sales_snapshot is named in the approved preflight
+ok   J3  request_orders is named in the approved preflight
+ok   J3  request_order_lines is named in the approved preflight
+ok   J3  request_order_line_sources is named in the approved preflight
+ok   J3  purchase_orders is named in the approved preflight
+ok   J3  purchase_order_lines is named in the approved preflight
+ok   J3  shipping_plans is named in the approved preflight
+ok   J3  shipping_plan_lines is named in the approved preflight
+ok   J3  shipments is named in the approved preflight
+ok   J3  shipment_lines is named in the approved preflight
+ok   J3  shipment_events is named in the approved preflight
+ok   J3  shipment_routes is named in the approved preflight
+ok   J3  shipping_allocation_drafts is named in the approved preflight
+ok   J3  shipping_allocation_draft_lines is named in the approved preflight
+ok   J3  generated_documents is named in the approved preflight
+ok   J3  overseas_inventory_movements is named in the approved preflight
+ok   J3  factory_stock_override_audit is named in the approved preflight
+ok   J3  factory_stock is named in the approved preflight
+ok   J3  overseas_inventory_snapshot is named in the approved preflight
+ok   J3  inventory_replenishment_gap is named in the approved preflight
+ok   J3  order_planning_gap is named in the approved preflight
+ok   J3  supplier_price_list is named in the approved preflight
+ok   J3  amazon_inventory_health_snapshot is named in the approved preflight
+ok   J4  the two bounded reads are recorded as NOT registered
+ok   J5  amazon_inventory_health_snapshot is still UNAUTHORIZED_UNKNOWN
+ok   J6  …and a write to it is still refused
+ok   J5  supplier_price_list is still UNAUTHORIZED_UNKNOWN
+ok   J6  …and a write to it is still refused
+ok   J7  the registry is still 58 entries
+
+== K. THE SURFACE FREEZE IS LOAD-BEARING ==
+ok   K1  the verifier exits non-zero when a check fails
+ok   K2  the verifier checks against the approved document, not a restatement of it
+ok   K3  the verifier states that it performs no I/O
+ok   K4a the verifier contains no fetch
+ok   K4b the verifier carries no real deployment id
+ok   K4b the allowlist carries no real deployment id
+ok   K4b the runner carries no real deployment id
+ok   K4b this suite carries no real deployment id
+ok   K5  the weaker derivation is labelled in the output
+
+== L. MUTATION — BREAK EACH GUARD AND REQUIRE THE SUITE TO NOTICE ==
+ok   MUTANT CAUGHT — gapJob.status.get removed from the forbidden set
+ok   MUTANT CAUGHT — gapJob.status.get ADDED to the approved set
+ok   MUTANT CAUGHT — deny-by-default flipped to allow-by-default
+ok   MUTANT CAUGHT — the empty-action refusal removed
+ok   MUTANT CAUGHT — the verb check removed
+ok   MUTANT CAUGHT — the endpoint check removed
+ok   MUTANT CAUGHT — actionFromRequest returns an action for an unreadable request
+ok   MUTANT CAUGHT — buildRequest skips the decision
+ok   MUTANT CAUGHT — the empty-body omission removed from readQuery
+ok   MUTANT CAUGHT — the transport contract version drifts
+ok   MUTANT CAUGHT — the api version drifts
+ok   MUTANT CAUGHT — the shipment page size is tidied to a round number
+ok   MUTANT CAUGHT — the recommendation page size is tidied
+ok   MUTANT CAUGHT — the gap read is given the foundation envelope
+ok   MUTANT CAUGHT — the guard is given the NESTED gapRead envelope, burying shipping_plan_id under payload
+ok   MUTANT CAUGHT — the guard is re-declared a POST, putting it back on the write verb
+ok   MUTANT CAUGHT — a 45th table is slipped into the approved list
+ok   MUTANT CAUGHT — the bounded reads are quietly registered
+ok   MUTANT CAUGHT — orderPlanningGap.get is quietly approved
+ok   MUTANT CAUGHT — the excluded record loses its reasons
+ok   MUTANT CAUGHT — the request id adopts the reserved S8T namespace
+ok   MUTANT CAUGHT — the scope-required flag is dropped from the gap read
+ok   MUTANT CAUGHT — a partial scope is sent as if it were whole
+ok   MUTANT CAUGHT — the scope context is ignored by the recommendation builder
+ok   MUTANT CAUGHT — the GET body ceiling is raised past the router
+ok   MUTANT CAUGHT — the recommendation scope gains a server-owned field
+ok   MUTANT CAUGHT — a gap job start is dropped from the forbidden set
+
+ALL PASS — 289 passed, 0 failed, 27 mutants, 0 survived

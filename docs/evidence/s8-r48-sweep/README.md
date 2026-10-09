@@ -93,5 +93,27 @@ committable. Without `--quarantine` the refusal is exactly as before: nothing is
 - Non-deterministic suites (timing, dates, environment) may produce different bytes on a later run.
   Evidence captures one run, not a guarantee about the next.
 - The committed `fixture-r48f-controlled` run is a **format fixture from five controlled suites**,
-  not a baseline. The authoritative baseline remains `S8_R47_D_BASELINE_CLOSURE.md`:
-  **499 CLEAN / 6 FAILING / 121 UNVERIFIABLE** across 626 suites.
+  not a baseline.
+
+## The runs committed here
+
+| Run | What it is |
+|---|---|
+| `fixture-r48f-controlled/` | format fixture, five controlled suites. Not a baseline. |
+| `r48g-full/` | **the measured baseline.** One full sweep of 627 suites, serial, worktree INTACT. |
+
+`r48g-full/manifest.json` records the verdicts **as classified at sweep time**. During the same
+round's attribution the `INCOMPLETE` signal was found to match the bare adjective and was narrowed
+to the declarative `NOT COMPLETE`; the final classification is therefore published alongside, in
+`r48g-full-reclassification.json`, which names both collector hashes and lists all eight superseded
+records.
+
+**Replaying `r48g-full` under the current collector yields 8 expected diffs.** That is the designed
+behaviour — a replay under a different collector is a visible comparison, which is what
+`collector_sha256` is for. It is neither tampering nor a regression. The raw bytes are untouched and
+still match every stored hash.
+
+Baselines: **S8-R48-G measured 582 CLEAN / 6 FAILING / 39 UNVERIFIABLE across 627 suites**
+(`S8_R48_G_MEASURED_BASELINE.md`). The historical **499 / 6 / 121 across 626**
+(`S8_R47_D_BASELINE_CLOSURE.md`) stands as recorded, and replaying these same bytes under the
+R47-D-era collector reproduces it — the delta is recovered measurement, not changed behaviour.

@@ -1,0 +1,54 @@
+
+====================================================================================================
+S3-R1 §C — FC POST-WRITE READBACK FRESHNESS
+====================================================================================================
+
+-- A. THE BOUNDARY IS UNCHANGED — §C1 -----------------------------------------------------------------
+ok   A1 the warm-up still runs beside the readback, not chained to it
+ok   A2 a complete receipt still short-circuits the readback — reconciliation is untouched
+ok   A3 the view state vocabulary is untouched
+ok   A4 and the banner text is untouched — §C1 forbade changing it to hide the symptom
+ok   A5 the fetcher is STILL unconditionally single-flight for reads — the fix is not here
+
+-- B. A READBACK DOES NOT JOIN A PRE-WRITE ANSWER — §C2, C-RC1 ----------------------------------------
+ok   B1 one read is in the air
+ok   B2 an ordinary second reader JOINS it — single-flight is intact
+ok   B3 ... and gets the very same promise
+ok   B4 the readback DISPATCHES instead of joining — it may not accept a pre-write answer
+ok   B5 ... and it is a different flight
+ok   B6 the readback's own answer is the one that lands
+ok   B7 §C2 and the PRE-WRITE answer, arriving later, CANNOT overwrite it — STALE_RESPONSE_COMMITS = 0
+
+-- C. THE RELEASED FLIGHT CANNOT CLEAR ITS SUCCESSOR'S HANDLE -----------------------------------------
+ok   C1 the live flight still has its handle — an older one landing must not discard it
+ok   C2 ... so the next reader still JOINS rather than dispatching a duplicate
+ok   C3 and the live flight clears its own handle when it lands
+ok   C4 with the newer answer committed
+
+-- D. A SUPERSEDED ANSWER IS NOT A FAILED SLICE — §C2, C-RC2 ------------------------------------------
+ok   D0 the readback itself succeeded
+ok   D0a the readback lands CURRENT before the older flight arrives
+ok   D1 the older flight rejects with the typed supersession code
+ok   D2 ... carrying the marker the caller reads
+ok   D3 §C2 and the SLICE is not marked failed by it — a newer read already answered it
+ok   D4 ... and carries no error for the banner to report
+
+-- E. THE POST-WRITE CATCH — §C3 ----------------------------------------------------------------------
+ok   E1 the write releases the joinable flight before reading — FC_DUPLICATE_POSTWRITE_READS = 0 (one read, not two)
+ok   E2 a superseded readback returns before the banner — FC_FALSE_STALE_BANNER_COUNT = 0
+ok   E3 ... and it returns BEFORE it, not after
+ok   E4 the route-ownership check still comes first — a routed-away controller draws nothing
+ok   E5 a genuine refresh failure still keeps the last known table — FC_WRITE_ACK_PASS unchanged
+ok   E6 and a successful readback still hydrates — FC_HYDRATION_PASS
+ok   E7 the cold-load error path is still NOT called here — those rows are real and must not be blanked
+
+-- F. MUTANTS — each returns TRUE when the defect is CAUGHT -------------------------------------------
+ok   F0  the unmutated baseline commits the NEWER answer
+ok   F1  per-slice request identity is removed, so a pre-write answer lands last (caught)
+ok   F2  a superseded answer is recorded as a slice FAILURE, so the banner reports it (caught)
+ok   F3  a released flight clears its successor's handle, so the next read duplicates (caught)
+
+====================================================================================================
+S3-R1 §C FC POST-WRITE READBACK FRESHNESS — passed 33  failed 0  |  mutants caught 3  survived 0
+diagnostic invariants: DB_WRITES=0 · NETWORK_CALLS=0 · APPS_SCRIPT_EXECUTIONS=0 · DEPLOYMENTS=0
+====================================================================================================

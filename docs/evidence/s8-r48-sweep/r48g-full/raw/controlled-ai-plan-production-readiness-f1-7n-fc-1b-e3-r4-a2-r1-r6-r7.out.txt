@@ -1,0 +1,361 @@
+
+== A — §2 the recommendation authority census ==
+ok   A1 one row, two rules, both numbers accounted for
+ok   A1a with zero failed predicates
+ok   A1b and it wrote nothing at all
+ok   A1c which it also reports about itself
+ok   A1d no writer was constructed
+ok   A2 exactly one authoritative row for the exact four-part key
+ok   A3 the standing authority reads d90 — and it is 0
+ok   A3a the AI Plan DTO reads the earliest actionable window — 920
+ok   A3b0 the standing 0 is the NO_ACTION state
+ok   A3b1 and the DTO reading is a genuine action
+ok   A3b and on THIS row they genuinely do not agree
+ok   A3b2 which is RECORDED as the page-level divergence it is, not refused
+ok   A3b3 while the IN-SESSION DTO is NOT_EVALUATED — a server census cannot see a browser's page state
+ok   A3b4 and the run is named: status,
+ok   A3b5 calculated_at,
+ok   A3b6 run id,
+ok   A3b7 and the rule itself
+ok   A3c the live row reads NO_ACTION standing,
+ok   A3c1 NO_ACTION on the DTO rule,
+ok   A3c2 whose VALUE is null — a state, not a quantity
+ok   A3c3 and they AGREE, which is the §D fix
+ok   A3c4 with no divergence to record
+ok   A3c5 and the authority is established
+ok   A3c naming the window the DTO chose
+ok   A4 both disputed screen values are accounted for
+ok   A4a 920 is reproduced by the AI Plan reading, by name
+ok   A4b 0 is reproduced by the materialized reading, by name
+ok   A5 the census publishes no single adopted "recommendation" field — that would be the guess §2 forbids
+ok   A6 the gap row carries NEITHER a run id NOR a formula version, reported as absent rather than null
+ok   A6a stated explicitly for the run id
+ok   A6b and the run identity is read from the GAP job record, which is where it actually lives
+ok   A6c the formula version a generation would stamp comes from the request constant
+ok   A7 and the gap row carries no source warehouse either — routing is Execution Plan authority
+ok   A8 the readiness state is reported verbatim
+ok   A9 with the stamps the row actually holds
+ok   A10 the UI authority names the exact field
+ok   A10a and tells an operator how to read which authority a live screen used
+ok   A12 no duplicate business keys
+ok   A12a and no mixed-run rows
+ok   A13 a duplicate row for the same key STOPS the round
+ok   A13a naming the duplicate
+ok   A13b and naming the mixed run separately, because two rows from ONE run is a different fault
+ok   A14 a BLOCKED row cannot settle the authority
+ok   A14a and a BLOCKED row yields NULL, never 0 — missing is not zero
+ok   A14b on both readings
+ok   A15 no row at all STOPS
+ok   A15a and says so
+ok   A16 today's row settles the authority even when neither past display value reproduces
+ok   A16a and both are LABELLED historical rather than guessed at
+ok   A16b neither is a write authority, which is the property that actually matters
+ok   A16c and no lineage evidence is invented when none exists
+ok   A16d the note does not assert a third source it cannot see
+ok   A16e a row for ANOTHER marketplace does not disturb this key's authority
+ok   A16f because the key match is exact on all four axes
+ok   A17 a canonical zero reads 0 on the standing authority
+ok   A17a and NO_ACTION on the DTO — no window is actionable, which is not the same as a zero quantity
+
+== B — §4 the controlled AI Plan preflight ==
+ok   B1 the preflight passes every predicate
+ok   B1a and returns the verdict the production path proves
+ok   B1a1 the production outcome, by name
+ok   B1a2 with its formal code
+ok   B1a3 and the reason: 520 already planned covers a recommendation of 0
+ok   B1a4 recommended 0, qualifying planned 520, residual 0
+ok   B1a5 so production would write nothing
+ok   B1b having written nothing
+ok   B1c and reporting the five zeroes §4 asks for
+ok   B2 the flag is still false, which is what this round requires
+ok   B2a the census reads exactly one scope out of the allowlist it was given
+ok   B2b and reports the requested scope as the listed one
+ok   B3 the manual planned total is 520
+ok   B3a and the before shape is two headers, two lines, two rows
+ok   B4 both manual routes are frozen
+ok   B4a each carrying a BLANK recommendation_group_no
+ok   B5 one AI group would be proposed
+ok   B5a carrying the ordinal 1
+ok   B5b so its identity key ENDS in that ordinal, which is the last dimension
+ok   B5c and hashes to an id neither manual route holds
+ok   B5c1 and to a GROUP KEY neither manual route holds, which is the comparison the resolver actually makes
+ok   B5d in the K4 family, because production can store a canonical destination
+ok   B5e and the preflight asserts the non-collision as its own predicate
+ok   B6 an AI group with Route A's EXACT route still resolves to a different id — the ordinal is the difference
+ok   B6a and the preflight still passes
+ok   B6a1 with a success verdict either way
+ok   B7 the preflight states plainly that no server-side reconciliation will happen
+ok   B7a naming the rule that exists and explaining why it cannot fire
+ok   B7b and that the station total becomes the manual total plus the AI total
+ok   B7c while the manual 520 itself is expected to be untouched
+ok   B7d three headers after, not two replaced by one
+ok   B8 d90 zero with an actionable D18 is NOT a zero recommendation
+ok   B8a every window a stored finite 0 IS a correct no-action
+ok   B8b which is a READY, not a failure
+ok   B8b1 and the reason is the valid zero itself, not the manual plan
+ok   B8c expecting no new header at all
+ok   B8d and saying that no empty shell may be created to represent it
+ok   B8e a BLOCKED row is stale-or-missing, never a zero
+ok   B8f and it STOPS
+ok   B8g as does no row at all
+ok   B9 recommendation above the plan is REMAINING
+ok   B9a recommendation below the plan is EXCESS, never a negative remaining
+ok   B9b and an exact match is a remaining of zero, which is a real number
+ok   B10 a flag that is already TRUE is a PHASE, not a failed precondition
+ok   B10a reported as POST_ACTIVATION
+ok   B10b with the effective flag observed as a strict boolean
+ok   B10c and the census still refuses to be its own authorization source
+ok   B10d and the staged-off read is PRE_ACTIVATION, same verdict, different phase
+ok   B11 a widened allowlist stops it — "controlled" means one scope
+ok   B11a and a list that names a DIFFERENT scope fails by name, not by count
+ok   B12 a project missing the lifecycle module is a MIXED DEPLOYMENT and stops
+ok   B12a naming the missing module
+ok   B13 a manual route carrying a generation run id stops the preflight
+ok   B13a because the lifecycle would EXPIRE it rather than preserve it
+ok   B13b the real classifier reads a bare run id as AI, which is why the preflight checks both fields
+ok   B13c and an explicit user_created marker wins over one
+ok   B14 a Route A that has moved since §0 stops the preflight
+ok   B14a and a plan total that is not 520 fails by name
+ok   B15 the write surface is read from 61_'s own manifest
+ok   B15a which names exactly two writable tables
+ok   B15b and lists reservations and shipping_plans among the guaranteed-zero tables
+ok   B16 the forbidden list spells out all four ways a manual row could be lost
+ok   B16a naming both rows
+ok   B16b and that Submit is not part of a generation
+ok   B17 the idempotency contract forbids testing a replay by pressing again
+ok   B18 ACK_UNKNOWN is never auto-resent
+ok   B18a and says so operationally
+ok   B19 the optimistic contract carries R6-R6-R4-R2's refusal forward
+ok   B20 and the lineage policy names the only acceptable run
+ok   B20a resolved through 61_'s own resolver
+
+== C — §6 the readback contract ==
+ok   C1 no AI rows and no failed predicate is a CONFIRMED no-action, not a missing result
+ok   C1a with every manual-row predicate passing
+ok   C1b two manual rows
+ok   C1c and zero AI rows
+ok   C2 an AI header alongside the two manual rows passes every predicate
+ok   C2a and confirms the write
+ok   C2b with exact counts on both sides of the boundary
+ok   C2c and the run that owns the new row
+ok   C3 Route A at a moved version STOPS
+ok   C3a and the version is the proof, because the writer increments it on every UPDATE
+ok   C4 Route B's last mile changing STOPS — the 2026-09-06 incident, in the other round
+ok   C5 a rewritten quantity fails by name
+ok   C6 a manual row expired by the run STOPS
+ok   C6a naming the lifecycle change
+ok   C7 a manual row ADOPTED by the run STOPS
+ok   C7a which no value comparison would have caught — every field it holds is still correct
+ok   C8 a manual row that disappeared STOPS
+ok   C9 a NEW row with no run id is an unexplained write, not an AI plan output
+ok   C9a named as such
+ok   C10 two generation run ids among the new rows means the button was pressed twice
+ok   C10a named exactly that way
+ok   C11 a zero-quantity AI row is an empty shell and must not exist
+ok   C11a named as such
+ok   C12 a header with no line contributes no visible row
+ok   C12a and no SKU-contributing header either — the partial write is visible as a gap
+ok   C17 two rows on ONE deterministic identity STOPS — a replay was not idempotent
+ok   C17a named as a duplicate identity, which is a different fault from two run ids
+ok   C17b and the run-count gate does NOT fire, because one run wrote both
+ok   C18 a clean readback names no changed field
+ok   C18a and a moved version is reported as the COLUMN it is, not only as a failed claim
+ok   C18b naming the exact column the 2026-09-06 incident wrote
+ok   C18c and an adoption is a changed field too, even though every business value is still correct
+ok   C13 another company's row is not counted as this activation's output
+ok   C13a and does not fail the readback
+ok   C14 another SKU's line under the same header does not enter this SKU's units
+ok   C15 the readback asserts the total as manual + AI, as its own predicate
+ok   C16 and the readback itself wrote nothing
+ok   C16a constructing no writer
+
+== D — §3 the trace, pinned to the code that makes each claim true ==
+ok   D1 aiplExpirationCandidates_ preserves a manual row by name
+ok   D1a the REAL rule expires zero manual rows
+ok   D1b preserving it for the stated reason
+ok   D1c while a superseded AI draft IS expired — the rule discriminates
+ok   D2 when the identities DO meet, the manual decision suppresses the AI draft
+ok   D2a and with the ordinal set — which is what every generated group carries — it does NOT, so the AI writes alongside the manual 520 rather than reconciling with it
+ok   D3 recommendation_group_no is K4's last dimension
+ok   D3a and K2's
+ok   D4 the Execution Plan page never sets recommendation_group_no on a payload
+ok   D4a and 16_ defaults it to blank
+ok   D5 the route deriver assigns every generated group a deterministic ordinal
+ok   D6 61_ declares exactly two writable tables
+ok   D6a no reservation and no submit
+ok   D6b stated in the manifest, not only in a test
+ok   D7 the atomic writer is named as the only path to a write
+ok   D7a and generation is split into a compute pass and a write pass, so a gate refusal has no path to a write
+ok   D8 a missing lifecycle module is a typed zero-write refusal
+ok   D8a the write handler is declared all-or-nothing under one lock
+ok   D8b and the writer preflights its line batch and verifies it after, rather than trusting the loop
+ok   D9 an AI upsert may not point itself at an arbitrary row
+ok   D9a and arrives with complete generation evidence or not at all
+ok   D10 the AI intent is NOT client-grantable — a browser cannot request it
+ok   D11 the AI Plan click states in the code that it does not run Submit
+ok   D12 and Submit never calls the generator, so neither implies the other
+
+== E — §0 the historical record, and what it must not claim ==
+ok   E1 stage two is recorded as executed, not as awaiting permission
+ok   E1a all three facts recorded
+ok   E1b while the file still says it authorized nothing itself
+ok   E1c and names the four proven properties
+ok   E1d recording that stage one carried NO optimistic token — the defect, not a footnote
+ok   E1e and that stage two carried one
+ok   E2 recording it wrote nothing
+ok   E2a and the literal false is gone from the manifest
+ok   E3 the R6-R6-R4 readiness now says stage two has happened rather than offering to gate it
+ok   E3a its stage_two_authorized is no longer a constant false
+ok   E3b while the file's own authority stays false
+ok   E3c and it STOPS against today's database, because its frozen BEFORE describes a moment that has passed
+
+== F — read-only, un-aimable, and released ==
+ok   F1 RUN_R6R7_RECOMMENDATION_AUTHORITY_CENSUS takes no arguments
+ok   F1a RUN_R6R7_RECOMMENDATION_AUTHORITY_CENSUS contains no write call of any kind
+ok   F1b RUN_R6R7_RECOMMENDATION_AUTHORITY_CENSUS never CALLS a writer or the generation write pass
+ok   F1c RUN_R6R7_RECOMMENDATION_AUTHORITY_CENSUS hard-codes no scope of its own — it inherits the one constant
+ok   F1 RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT takes no arguments
+ok   F1a RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT contains no write call of any kind
+ok   F1b RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT never CALLS a writer or the generation write pass
+ok   F1c RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT hard-codes no scope of its own — it inherits the one constant
+ok   F1 RUN_R6R7_CONTROLLED_ACTIVATION_MANIFEST takes no arguments
+ok   F1a RUN_R6R7_CONTROLLED_ACTIVATION_MANIFEST contains no write call of any kind
+ok   F1b RUN_R6R7_CONTROLLED_ACTIVATION_MANIFEST never CALLS a writer or the generation write pass
+ok   F1c RUN_R6R7_CONTROLLED_ACTIVATION_MANIFEST hard-codes no scope of its own — it inherits the one constant
+ok   F1 RUN_R6R7_CONTROLLED_AI_PLAN_READBACK takes no arguments
+ok   F1a RUN_R6R7_CONTROLLED_AI_PLAN_READBACK contains no write call of any kind
+ok   F1b RUN_R6R7_CONTROLLED_AI_PLAN_READBACK never CALLS a writer or the generation write pass
+ok   F1c RUN_R6R7_CONTROLLED_AI_PLAN_READBACK hard-codes no scope of its own — it inherits the one constant
+ok   F2 four entry points, zero cells touched
+ok   F3 all four are declared in the entry-point allowlist
+ok   F3a and the list is in sorted order, which is how it is compared
+ok   F4 the census build stamp moved with the file, and has not fallen behind it since
+ok   F4a and this round is registered in the release order, with nothing older after it
+ok   F5 no cache token was minted — this round changes no browser file, and a rotated token would force a download that carries nothing new
+
+== H — §B/§C/§E the production state contract and the residual rule ==
+ok   H1  READY with every window a stored finite 0 is a VALID ZERO
+ok   H1a which is a no-action
+ok   H1b for that reason, not because of the manual plan
+ok   H1c the production response is a typed SUCCESS
+ok   H1d carrying the formal outcome name
+ok   H1e and the existing equivalent code
+ok   H1f recommended 0, residual 0
+ok   H1g every mutation counter explicitly zero
+ok   H1h zero writes, the writer not reached, no route
+ok   H1i and no empty route was created to represent nothing
+ok   H1j and the three keys the shipped page classifies a zero result from
+ok   H1k which the page really does read
+ok   H1l and nothing was written to reach any of it
+ok   H2  a BLOCKED row is MISSING, never a zero
+ok   H2a and never a no-action
+ok   H2b reported as such
+ok   H2c a date with nothing READY on it is refused before any scope is read,
+ok   H2c1 and the reason names the snapshot rather than the scope
+ok   H2c2 one READY row makes the date usable,
+ok   H2c3 and THIS key is still MISSING,
+ok   H2c4 naming the status it found
+ok   H2c5 so one blocked SKU is never answered as a no-action
+ok   H2d a READY row with a BLANK window is still MISSING
+ok   H2e naming the exact window
+ok   H2f whose value stayed null and was never coerced to 0
+ok   H2g an EMPTY table is MISSING
+ok   H2g1 and never a no-action
+ok   H2h the snapshot is usable,
+ok   H2h1 and the missing key is named
+ok   H2h2 a SKU nobody materialized is not a SKU that needs nothing
+ok   H2i a snapshot overdue past the completion window is MISSING, not a zero
+ok   H2i1 and never a no-action
+ok   H2i2 while INSIDE the refresh window the same yesterday snapshot is accepted — R4-A2-R1 §4 stays fixed
+ok   H2j and a duplicate row for one key settles nothing
+ok   H3  900 recommended against 520 planned is NONZERO
+ok   H3a so it is NOT a no-action
+ok   H3b the residual remains
+ok   H3c and it is 900 - 520 = 380, not 900
+ok   H3d residual(900, 520) = 380
+ok   H3e residual(520, 520) = 0
+ok   H3f residual(300, 520) = 0, CLAMPED — never negative
+ok   H3g nothing planned means the whole recommendation is residual
+ok   H3h and a MISSING recommendation stays null, never 0
+ok   H3i as does a blank
+ok   H4  an exact match is a no-action
+ok   H4a covered by the active plan, not a zero need
+ok   H4b residual 0
+ok   H4c and the same typed success
+ok   H4d whose message says WHY, because a bare zero would read as "nothing is needed"
+ok   H5  an over-planned scope is a no-action
+ok   H5a residual 0, clamped rather than negative
+ok   H5b and the excess is REPORTED as its own number
+ok   H5c nothing is cancelled to bring the plan back down
+ok   H5d and nothing is reduced
+ok   H5e the manual routes are untouched, measured on the sheet
+ok   H6  the two manual routes total 520
+ok   H6a another COMPANY does not enter it
+ok   H6b nor another MARKETPLACE
+ok   H6c nor another SKU
+ok   H6d nor a CANCELLED header
+ok   H6e nor a SUBMITTED one
+ok   H6f nor an EXPIRED line under a live header
+ok   H6g while a third ACTIVE route for this scope does
+ok   H6h an AI draft this run would supersede is NOT counted as already planned
+ok   H6h1 and its exclusion is counted, not silent
+ok   H6i as is a bare run id with no generation_type
+ok   H6j provenance is asked of 69_'s classifier, not re-derived in 61_
+ok   H6k a run's own previous draft counts for nothing,
+ok   H6l so a replay can still regenerate the whole recommendation
+ok   H6m and does not answer NO_ACTION against itself
+ok   H7  netting 900 by 520 leaves 380 at every cumulative checkpoint
+ok   H7a and a second pass with nothing planned does not restore the gross — the netting is not re-derived
+ok   H7b the netting is reported rather than silent
+ok   H7c an over-planned site nets to zero, never below it
+ok   H7d and is counted as fully covered
+ok   H7e an UNREADABLE gap is never netted into a number
+ok   H8  a no-action produces no group
+ok   H8a no header
+ok   H8b and no line
+ok   H9  a valid zero: the wrapper says READY_NO_ACTION because production says AI_PLAN_NO_ACTION
+ok   H9a a missing recommendation: the wrapper STOPS because production would refuse
+ok   H9b a residual: production would generate,
+ok   H9b1 and the wrapper says so
+ok   H9c and a wrapper success is unreachable while production would refuse
+ok   H9d stated as the rule it is
+ok   H10 the flag is false in every world above
+ok   H10a and every entry point together touched zero cells
+ok   H10b as did every production-authority evaluation above
+ok   H11 the REQUESTED_SCOPE_EMPTY gate asks the canonical row first
+ok   H11a and returns the typed success when it is one
+ok   H11b while a genuine refusal now SAYS why it could not be read as a zero
+ok   H12 and the older verdict's blind spot is named where it is worked around
+ok   H12a the canonical question is asked BEFORE the verdict that could not answer it
+
+== N — mutants ==
+ok   N1  the census adopting one of the two numbers instead of reporting both rules (caught)
+ok   N2  the earliest-window rule taking the LARGEST instead of the earliest (caught)
+ok   N3  a BLOCKED row being read as a zero recommendation (caught)
+ok   N4  a missing gap cell being coerced to 0 (caught)
+ok   N5  the duplicate-row gate counting rows in the whole table instead of this key (caught)
+ok   N6  the preflight accepting an identity collision with a manual route (caught)
+ok   N7  the preflight reading provenance from generation_type alone (caught)
+ok   N8  the readback proving stillness by value instead of by version (caught)
+ok   N9  the readback accepting a new row that carries no run id (caught)
+ok   N10 the readback calling an empty result a write rather than a no-action (caught)
+ok   N11 the readback tolerating a zero-quantity AI row (caught)
+ok   N12 the readback checking row counts but not the arithmetic of the total (caught)
+ok   N13 the hard-coded flag=false precondition restored, so the POST-flip read STOPS again (caught)
+ok   N14 the preflight ignoring a widened allowlist (caught)
+ok   N15 the activation manifest authorizing itself (caught)
+ok   N16 the §0 record claiming this file authorized the restore (caught)
+ok   N17 changed_fields declared but never filled, so an empty list means nothing was checked (caught)
+ok   N18 the duplicate-identity gate keyed on the row id rather than the group key (caught)
+ok   N19 a blank window read as a stored zero, so an unmaterialized SKU answers NO_ACTION (caught)
+ok   N20 a MISSING recommendation residualising to 0 instead of staying null (caught)
+ok   N21 the residual not clamped, so an over-planned scope reports a negative (caught)
+ok   N22 the qualifying plan keyed without the marketplace (caught)
+ok   N22a the AI exclusion removed, so a run nets itself against its own previous draft (caught)
+ok   N23 a terminal header counted as an active plan (caught)
+ok   N24 a NOT_READY row classified as a valid zero (caught)
+ok   N25 a residual that remains still answered as a no-action (caught)
+ok   N26 the K2 empty-scope gate skipping the canonical question (caught)
+ok   N27 the wrapper naming a success while the production path refuses (caught)
+
+passed 343  failed 0  |  mutants caught 28  survived 0

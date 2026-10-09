@@ -1,0 +1,15 @@
+
+== A. calculation-month authority (server config; no clock) ==
+
+== B. scope-only request validation ==
+
+== C. fulfillment authority ==
+
+== D. missing config / MARKETPLACE end-to-end ==
+
+== E. WAREHOUSE per-warehouse fanout (frozen ratio) + identity ==
+
+== F. missing rules / unknown fulfillment fail closed ==
+
+----------------------------------------
+RECOMMENDATION TRANSPORT (F1-4B-FM1-T): 29 passed, 0 failed

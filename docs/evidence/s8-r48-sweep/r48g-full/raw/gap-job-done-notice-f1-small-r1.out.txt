@@ -1,0 +1,17 @@
+
+== API present ==
+
+== §7 exactly one notice per manual runId (dedupe); different runId notifies; injectable notify ==
+
+== formatDoneMessage — page supplies label; scope counts only when present on the DONE payload ==
+
+== §4/§5 transport calls done() only on terminal DONE, AFTER refresh (refresh-before-notify); non-DONE → failed/cancelled ==
+
+== Inventory wiring — MANUAL done announces once; resume/cancelled/failed stay silent ==
+
+== Order Planning wiring — parity ==
+
+== cache-version bump — changed assets refetch ==
+
+----------------------------------------
+GAP JOB DONE NOTICE (F1-SMALL-GAP-JOB-DONE-NOTICE-R1): 26 passed, 3 failed

@@ -1,0 +1,21 @@
+FAIL A1: leaf header sequence (…Days of Supply, Suggested Qty, CN, TW)
+  exp ["Current Stock","On the Way","3rd Party Stock","Avg. Sales/day","60 days FC","Upcoming Event","Days of Supply","Suggested Qty","CN","TW"]
+  got ["3rd Party Stock","On the Way","Avg. Sales/day","90 days FC","Upcoming Event","Days of Supply","Suggested Qty","CN","TW"]
+FAIL A1: group leaf-spans sum to the number of leaf columns (9)
+  exp 9
+  got 10
+FAIL A1: leaf 7 is the first Replenishment leaf
+  exp "Days of Supply"
+  got "Suggested Qty"
+FAIL A1: leaf 8 is the second (last) Replenishment leaf
+  exp "Suggested Qty"
+  got "CN"
+FAIL A1: leaf 9 (CN) is the first Factory Stock leaf — NOT under Replenishment
+  exp "CN"
+  got "TW"
+FAIL A1: leaf 10 (TW) is the second Factory Stock leaf
+  exp "TW"
+  got undefined
+FAIL A2: Suggested Qty cell shows value/status only (no button)
+  exp true
+  got false
