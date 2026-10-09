@@ -35,6 +35,34 @@ function bodyOf(name) {
   return HANDLERS.slice(i, j === -1 ? undefined : i + 1 + j);
 }
 function acquiresLock(body) { return /LockService\.getScriptLock\s*\(/.test(body); }
+// Same extraction as bodyOf, but over a supplied source so a mutant can be measured without
+// touching the real files.
+function bodyOfIn(src, name) {
+  var i = src.indexOf('function ' + name + '(');
+  if (i === -1) return null;
+  var rest = src.slice(i + 1), j = rest.indexOf('\nfunction ');
+  return src.slice(i, j === -1 ? undefined : i + 1 + j);
+}
+// S8-R48-K2 — the wrapper→delegate path, as FACTS rather than as a source scan of the wrapper.
+// The delegate's NAME is read out of the wrapper rather than spelled here, so a rename moves the
+// assertion with it; what is pinned is that the wrapper delegates, passes its body through, wraps
+// the result, and that the delegate carries the contract and the lock.
+function delegationFacts(src) {
+  var w = bodyOfIn(src, 'handleGenerateRecommendationDraftLocked_') || '';
+  var m = w.match(/return\s+jsonResponse_\(\s*([A-Za-z0-9_]+)\s*\(\s*body\s*\)\s*\)/);
+  var name = m ? m[1] : null;
+  var body = name ? bodyOfIn(src, name) : null;
+  return {
+    name: name,
+    delegates: !!name,                                   // delegation present AND `body` propagated
+    enveloped: /return\s+jsonResponse_\(/.test(w),        // result handling: the envelope is the wrapper's job
+    plainResultCore: /^rpo[A-Za-z0-9_]*LockedResult_$/.test(String(name)),
+    delegateFound: !!body,
+    kmorch: !!body && /KMORCH\.runRecommendationGeneration/.test(body),
+    keyedDelta: !!body && /rpoKeyedDeltaWrite_/.test(body),
+    locks: !!body && acquiresLock(body)
+  };
+}
 function delegatesToLocked(body) { return /handleUpdateRecommendationDecisionLocked_\s*\(|handleGenerateRecommendationDraftLocked_\s*\(/.test(body); }
 
 var MAP = routeMap();
@@ -98,9 +126,26 @@ section('D. locked handlers terminal-guard + edit path token-checks');
   var edit = bodyOf('handleUpdateRecommendationDecisionLocked_');
   ok(/KMUE\.runUserDecisionEdit/.test(edit), 'D: locked user-edit delegates to KMUE (lock+terminal+token)');
   ok(/rpoKeyedDeltaWrite_/.test(edit), 'D: locked user-edit uses keyed-delta write (not full-table)');
-  var gen = bodyOf('handleGenerateRecommendationDraftLocked_');
-  ok(/KMORCH\.runRecommendationGeneration/.test(gen), 'D: locked generation delegates to KMORCH');
-  ok(/rpoKeyedDeltaWrite_/.test(gen), 'D: locked generation uses keyed-delta write');
+  // S8-R48-K2 — THE BEHAVIOUR MOVED OUT OF THE WRAPPER, ON PURPOSE.
+  //
+  // handleGenerateRecommendationDraftLocked_ is now a thin wrapper: the compute was split out into a
+  // PLAIN-result core so the F1-4B-FM6-R4E2-B2 resumable scope job can call it per SKU and introspect
+  // the outcome, while only the public handler wraps it in the ContentService envelope. Scanning the
+  // wrapper body for KMORCH and the keyed-delta write therefore asserted nothing about where the work
+  // actually happens — it looked where the answer no longer was, and failed while the contract held.
+  //
+  // So the delegation is followed instead of assumed. The delegate's NAME is read out of the wrapper
+  // rather than spelled here, so a future rename moves the assertion with it; what is pinned is that
+  // the wrapper delegates, that the delegate exists, and that the delegate carries the contract.
+  var D = delegationFacts(HANDLERS);
+  ok(D.delegates, 'D: locked generation is a thin wrapper that delegates, passing its body through');
+  ok(D.plainResultCore, 'D: ... to the PLAIN-result core (…LockedResult_), not an envelope-returning handler: ' + D.name);
+  ok(D.enveloped, 'D: ... whose result the public handler wraps in jsonResponse_');
+  ok(D.delegateFound, 'D: ... and that delegate exists in the handler sources');
+  ok(D.kmorch, 'D: locked generation delegates to KMORCH');
+  ok(D.keyedDelta, 'D: locked generation uses keyed-delta write');
+  // The guard did not move with the body: the lock is still acquired on the path that writes.
+  ok(D.locks, 'D: the delegate still acquires the ScriptLock (the guard moved WITH the write)');
   // header routes terminal-guard
   ok(/IMMUTABLE_TERMINAL_STATUS/.test(bodyOf('handleUpsertRequestOrderAllocationDraft_')), 'D: 15_ header terminal-guards');
   ok(/IMMUTABLE_TERMINAL_STATUS/.test(bodyOf('handleUpsertShippingAllocationDraftLines_')), 'D: 16_ lines terminal-guards');
@@ -125,6 +170,58 @@ section('F. Submit routes remain visibly distinct (not folded into generation/ed
 })();
 
 // ==========================================================================
+section('G. negative mutants — the wrapper→delegate path must be able to fail');
+// The old assertions could only fail by scanning the wrong function, which is how they failed while
+// the contract held. These mutate the handler sources in memory and require detection.
+var mutants = 0, survived = 0;
+function mutant(label, probe) {
+  mutants++;
+  var detected = false, crashed = null;
+  try { detected = probe(); } catch (e) { crashed = e; }
+  if (crashed) { survived++; fail++; console.error('FAIL G' + mutants + ' CRASHED (not a kill) — ' + label + ' — ' + crashed.message); return; }
+  if (!detected) { survived++; fail++; console.error('FAIL G' + mutants + ' SURVIVED — ' + label); }
+  else { pass++; console.log('ok   G' + mutants + ' killed — ' + label); }
+}
+function mutate(find, repl) {
+  if (HANDLERS.indexOf(find) === -1) throw new Error('mutation anchor absent: ' + find);
+  return HANDLERS.replace(find, repl);
+}
+
+mutant('delegation removed — the wrapper stops calling the core', function () {
+  return !delegationFacts(mutate('return jsonResponse_(rpoGenerateRecommendationDraftLockedResult_(body));',
+    'return jsonResponse_({ success: false });')).delegates;
+});
+mutant('wrong delegate — it calls an envelope-returning handler instead of the plain-result core', function () {
+  var f = delegationFacts(mutate('return jsonResponse_(rpoGenerateRecommendationDraftLockedResult_(body));',
+    'return jsonResponse_(handleSomethingElse_(body));'));
+  return f.delegates && !f.plainResultCore;
+});
+mutant('wrong scope propagation — the request body is not passed through', function () {
+  return !delegationFacts(mutate('return jsonResponse_(rpoGenerateRecommendationDraftLockedResult_(body));',
+    'return jsonResponse_(rpoGenerateRecommendationDraftLockedResult_({}));')).delegates;
+});
+mutant('bypassed guard — the delegate stops acquiring the ScriptLock', function () {
+  // Mutated inside the DELEGATE's own body: a blanket replace over the concatenated handlers hits
+  // the first lock in the project, which is some other route, and proves nothing about this one.
+  var body = bodyOfIn(HANDLERS, 'rpoGenerateRecommendationDraftLockedResult_');
+  if (!body || !acquiresLock(body)) throw new Error('delegate lock anchor absent');
+  return !delegationFacts(HANDLERS.replace(body, body.replace(/LockService\.getScriptLock\s*\(/, 'noLock_('))).locks;
+});
+mutant('wrong result handling — the raw core result is returned without the envelope', function () {
+  var f = delegationFacts(mutate('return jsonResponse_(rpoGenerateRecommendationDraftLockedResult_(body));',
+    'return rpoGenerateRecommendationDraftLockedResult_(body);'));
+  return !f.enveloped || !f.delegates;
+});
+mutant('the delegate loses KMORCH — the generation authority is gone', function () {
+  return !delegationFacts(mutate('KMORCH.runRecommendationGeneration', 'LOCAL_reimplementedGeneration')).kmorch;
+});
+mutant('the delegate loses the keyed-delta write — a full-table write could return', function () {
+  return !delegationFacts(mutate('rpoKeyedDeltaWrite_', 'rprWriteBack_')).keyedDelta;
+});
+
+// ==========================================================================
 console.log('');
 if (fail) { console.error('\n' + fail + ' assertion(s) FAILED (' + pass + ' passed).'); process.exit(1); }
-console.log('All Round 1H Route Inventory assertions passed (' + pass + ' assertions).');
+console.log('All Round 1H Route Inventory assertions passed (' + pass + ' assertions, '
+  + mutants + ' mutants, ' + survived + ' survived, '
+  + (mutants >= 7 ? 'vacuity clean' : 'VACUOUS') + ').');
