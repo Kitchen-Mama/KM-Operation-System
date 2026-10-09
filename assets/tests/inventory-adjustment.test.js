@@ -14,8 +14,8 @@
 
 'use strict';
 
-var failures = 0;
-function assert(cond, msg) { if (!cond) { failures++; console.error('  ✗ FAIL: ' + msg); } else { console.log('  ✓ ' + msg); } }
+var failures = 0, pass = 0;
+function assert(cond, msg) { if (!cond) { failures++; console.error('  ✗ FAIL: ' + msg); } else { pass++; console.log('  ✓ ' + msg); } }
 function eq(a, b, msg) { assert(a === b, msg + ' (got ' + JSON.stringify(a) + ', expected ' + JSON.stringify(b) + ')'); }
 
 // ---- Reference: Factory adjustment (only Available is set; Reserved never changes) ----
@@ -104,5 +104,7 @@ eq(signed(40), '+40', '+40');
 eq(signed(-25), '-25', '-25');
 eq(signed(0), '0', '0');
 
+if (pass + failures === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\npassed ' + pass + '  failed ' + failures);
 if (failures) { console.error('\n' + failures + ' assertion(s) FAILED\n'); process.exit(1); }
 console.log('\nAll inventory-adjustment assertions passed.\n');

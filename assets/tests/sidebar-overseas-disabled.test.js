@@ -11,9 +11,9 @@ var ROOT = path.resolve(__dirname, '..', '..');
 var indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 var appJs = fs.readFileSync(path.join(ROOT, 'assets', 'js', 'app.js'), 'utf8');
 
-var failures = 0;
+var failures = 0, pass = 0;
 function ok(cond, label) {
-  if (cond) { console.log('ok   ' + label); }
+  if (cond) { pass++; console.log('ok   ' + label); }
   else { failures++; console.error('FAIL ' + label); }
 }
 
@@ -71,5 +71,6 @@ ok(indexHtml.indexOf("showSection('overseas-stock')") >= 0, 'Overseas Inventory 
 ok(/stage-badge">Preview/.test(inbound), 'Overseas Inbound keeps its Preview badge');
 ok(/stage-badge">Preview/.test(outbound), 'Overseas Outbound keeps its Preview badge');
 
-console.log('\n' + (failures ? (failures + ' FAILURE(S)') : 'ALL PASS'));
+if (pass + failures === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (failures ? (failures + ' FAILURE(S)') : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + failures);
 process.exit(failures ? 1 : 0);

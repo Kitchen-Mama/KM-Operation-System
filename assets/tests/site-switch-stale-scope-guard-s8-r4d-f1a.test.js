@@ -14,13 +14,13 @@
 'use strict';
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
+var fail = 0, pass = 0;
 function eq(a, e, l) {
   var A = JSON.stringify(a), E = JSON.stringify(e);
   if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); }
-  else console.log('ok   ' + l);
+  else { pass++; console.log('ok   ' + l); }
 }
-function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else console.log('ok   ' + l); }
+function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; console.log('ok   ' + l); } }
 
 var SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'pages', 'inventory-replenishment.js'), 'utf8');
 function sliceFn(src, name, indent) {
@@ -194,7 +194,7 @@ function mutate(find, replace, label, probe) {
   SRC = saved;
   var caught = false;
   try { caught = probe(h); } catch (e) { caught = true; }
-  if (caught) console.log('ok   ' + label + ' — CAUGHT');
+  if (caught) { pass++; console.log('ok   ' + label + ' — CAUGHT'); }
   else { fail++; console.error('FAIL ' + label + ' — SURVIVED'); }
 }
 // M1 — drop the Avg Sales guard: the US rate reappears under CA.
@@ -215,5 +215,6 @@ mutate("    if (!st || typeof st.appliedScopeKey !== 'string') return false;",
   '    if (!st) return false;\n    if (st.appliedScopeKey === undefined) return true;', 'H4 unstamped state accepted',
   function (h) { h.set('search', { applied: CA }); return h.matches({ status: 'READY' }) === true; });
 
-console.log('\n' + (fail ? 'FAILURES: ' + fail : 'ALL PASS'));
-process.exitCode = fail ? 1 : 0;
+if (pass + fail === 0) console.error('VACUOUS - no assertion executed');
+console.log('\n' + (fail ? 'FAILURES: ' + fail : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
+process.exitCode = (fail || pass + fail === 0) ? 1 : 0;

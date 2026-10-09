@@ -12,8 +12,8 @@
 
 'use strict';
 
-var failures = 0;
-function assert(cond, msg) { if (!cond) { failures++; console.error('  ✗ FAIL: ' + msg); } else { console.log('  ✓ ' + msg); } }
+var failures = 0, pass = 0;
+function assert(cond, msg) { if (!cond) { failures++; console.error('  ✗ FAIL: ' + msg); } else { pass++; console.log('  ✓ ' + msg); } }
 function up(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
 function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
 
@@ -119,5 +119,7 @@ assert(kmPool !== resPool, 'KM and ResUS 3PL pools differ');
 var merged = buggyByCountryMarketplace(FIX.marketplace_skus, KM).map(function (m) { return m.sku; });
 assert(merged.length === 2, 'country+marketplace-only predicate merges BOTH companies (documents the bug the company key fixes)');
 
+if (pass + failures === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\npassed ' + pass + '  failed ' + failures);
 if (failures) { console.error('\n' + failures + ' assertion(s) FAILED\n'); process.exit(1); }
 console.log('\nAll scope-isolation assertions passed.\n');

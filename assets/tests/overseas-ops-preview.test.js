@@ -4,11 +4,11 @@
 // PREVIEW never fabricates a posted movement and the projections match the spec (§10.5/§10.6 inbound,
 // §7/§8 outbound). Run: node assets/tests/overseas-ops-preview.test.js
 
-var failures = 0;
+var failures = 0, pass = 0;
 function eq(actual, expected, label) {
   var a = JSON.stringify(actual), e = JSON.stringify(expected);
   if (a !== e) { failures++; console.error('FAIL ' + label + '\n  expected ' + e + '\n  actual   ' + a); }
-  else { console.log('ok   ' + label); }
+  else { pass++; console.log('ok   ' + label); }
 }
 
 // --- inbound projected impact (good → available_stock; damaged → damaged_stock) ---
@@ -89,5 +89,6 @@ eq(overShort(100, 100, 0), 0, 'inbound over/short: exact = 0');
 eq(overShort(100, 90, 0), -10, 'inbound over/short: short = -10');
 eq(overShort(100, 100, 5), 5, 'inbound over/short: over (incl damaged) = +5');
 
-console.log('\n' + (failures ? (failures + ' FAILURE(S)') : 'ALL PASS'));
+if (pass + failures === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (failures ? (failures + ' FAILURE(S)') : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + failures);
 process.exit(failures ? 1 : 0);

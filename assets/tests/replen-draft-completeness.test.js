@@ -9,9 +9,9 @@
 'use strict';
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
-function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
+function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; console.log('ok   ' + l); } }
 
 var mod = require(path.join(__dirname, '..', 'js', 'utils', 'inventory-compat.js'));
 var IRDraft = mod.IRDraft;
@@ -93,5 +93,6 @@ ok(/for \(var v = 0[\s\S]*?sadLineIsComplete_\(lv\)[\s\S]*?return jsonResponse_\
 ok(/for \(var m = 0[\s\S]*?sadApplyLineAliases_/.test(handler) && handler.indexOf('sadLineIsComplete_') < handler.indexOf('created++'), 'P30: batch is validated up-front, before the create/update loop');
 ok(/line_status[\s\S]{0,60}=== 'cancelled'[\s\S]{0,80}skipped\+\+; continue/.test(handler), 'P31: a soft-cancel for a never-stored line does not append a spurious cancelled row');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);
