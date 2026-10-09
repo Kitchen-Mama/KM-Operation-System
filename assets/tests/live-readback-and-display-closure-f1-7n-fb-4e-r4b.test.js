@@ -189,11 +189,50 @@ checks.push(Promise.resolve().then(function () {
   // The restore never assigns `applied` — §B.5's single assignment point is intact.
   var assigns = (IR.match(/_irSearch\.applied\s*=/g) || []).length;
   eq(assigns, 1, 'A8 `applied` is assigned in exactly ONE place in the whole page');
-  var restoreBlock = /var restorable = _irRestorableResult_\(remembered\);[\s\S]{0,2000}?return Promise\.resolve\(remembered\);/.exec(IR);
-  ok(!!restoreBlock, 'A8 the restore branch exists');
-  ok(restoreBlock && restoreBlock[0].indexOf('_irSearch.applied =') === -1,
+  // S8-R47-C — STRUCTURAL EXTRACTION, replacing a fixed-length window.
+  //
+  // This used to bound the block with `[\s\S]{0,2000}?`. The branch has since grown to 2346
+  // characters, so the lazy quantifier could no longer reach its closing anchor and the match went
+  // null — taking all three A8 assertions down with it. Nothing was wrong with the page: both
+  // anchors are present and unique, and both invariants below still hold. A character budget is a
+  // tripwire that re-arms itself every time the code it guards grows, so it is gone. The boundaries
+  // are the two real statements that open and close the branch, and the cut FAILS CLOSED if either
+  // is missing or ambiguous rather than silently testing an empty string.
+  var OPEN = 'var restorable = _irRestorableResult_(remembered);';
+  var CLOSE = 'return Promise.resolve(remembered);';
+  function cutRestoreBlock(src) {
+    var s = src.indexOf(OPEN);
+    if (s < 0) throw new Error('restore-branch OPEN anchor absent');
+    if (src.indexOf(OPEN, s + 1) !== -1) throw new Error('restore-branch OPEN anchor ambiguous');
+    var e = src.indexOf(CLOSE, s);
+    if (e < 0) throw new Error('restore-branch CLOSE anchor absent after OPEN');
+    if (src.indexOf(CLOSE, e + 1) !== -1) throw new Error('restore-branch CLOSE anchor ambiguous');
+    return src.slice(s, e + CLOSE.length);
+  }
+  var restoreBlock = null, cutErr = null;
+  try { restoreBlock = cutRestoreBlock(IR); } catch (e) { cutErr = e; }
+  ok(cutErr === null, 'A8 the restore branch exists, between unique unambiguous anchors'
+    + (cutErr ? ' — ' + cutErr.message : ''));
+  ok(restoreBlock && restoreBlock.indexOf('_irSearch.applied =') === -1,
     'A8 ... and it never assigns `applied` — it only paints a scope that is ALREADY applied and validated');
-  ok(restoreBlock && /quiet: true/.test(restoreBlock[0]), 'A8 ... and its revalidation is quiet');
+  ok(restoreBlock && /quiet: true/.test(restoreBlock), 'A8 ... and its revalidation is quiet');
+
+  // MUTANTS. The two invariants above are the whole point of the branch, so they are proved
+  // sensitive rather than merely satisfied. Both run on an in-memory copy; nothing is written.
+  // Each mutant re-runs the SAME predicate the live assertion uses, and must come out the other way.
+  function assertsNoApplyAssignment(block) { return block.indexOf('_irSearch.applied =') === -1; }
+  function assertsQuietRevalidation(block) { return /quiet: true/.test(block); }
+  ok(assertsNoApplyAssignment(restoreBlock), 'A8m0 (control) the shipped branch satisfies the no-assignment rule');
+  var m1 = restoreBlock.replace(OPEN, OPEN + '\n            _irSearch.applied = { country: pending.country };');
+  ok(assertsNoApplyAssignment(m1) === false,
+    'A8m1 MUTANT an illegal assignment to `_irSearch.applied` inside the restore flips the check to FAIL');
+  var m2 = restoreBlock.replace(/quiet: true/, 'quiet: false');
+  ok(assertsQuietRevalidation(m2) === false,
+    'A8m2 MUTANT removing `quiet: true` from the revalidation flips the check to FAIL');
+  // ... and the cut itself must refuse a source whose anchor is gone, rather than return nothing.
+  var m3err = null;
+  try { cutRestoreBlock(IR.split(OPEN).join('var restorable = _GONE_(remembered);')); } catch (e) { m3err = e; }
+  ok(m3err !== null, 'A8m3 MUTANT a vanished OPEN anchor FAILS CLOSED — the 2000-char bug cannot recur silently');
   // An explicit Search always reads. It must not consult the restore.
   var applyFn = /function _irApplySearch_\([\s\S]*?\n}/.exec(IR);
   ok(applyFn && applyFn[0].indexOf('_irRestorableResult_') === -1,
