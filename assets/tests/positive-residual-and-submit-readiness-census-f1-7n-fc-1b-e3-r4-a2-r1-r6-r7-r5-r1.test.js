@@ -23,10 +23,69 @@
 var fs = require('fs');
 var path = require('path');
 var vm = require('vm');
+var cp = require('child_process');
+
+// ================================================================================================================
+// S8-R48-M2 — THE FIXTURE CLOCK, FROZEN AT THE INSTANT THE BASELINE WAS TAKEN.
+//
+// This world was built around a live run and its frozen baseline, and then read the WALL CLOCK for everything
+// time-shaped: the gap calculation date, the freshness windows, the ship date, and — decisively — whether any
+// carrier lane still arrives ON TIME. Nothing about the fixture changed; the date did. By 2026-10-09 the
+// required-by window had receded past every lane, so route auto-ranking correctly refused
+// (ROUTE_AUTO_RANKING_INSUFFICIENT / NO_ON_TIME), produced no route group, and the census STOPped — taking
+// eleven predicates, three evidence gaps and the frozen baseline down with it.
+//
+// That refusal is RIGHT. A test that silently depends on today's date is not. Measured at the original instant,
+// with nothing else altered, the same fixture returns READY_TO_AUTHORIZE with zero failed predicates.
+//
+// The instant is explicit and carries its timezone. This harness already thinks in Taipei time — see
+// pinTaipeiHourSrc_ below, which pins the HOUR at UTC+8 — and the baseline run is recorded in this file as
+// "the baseline frozen from the live 2026-09-10 14:42:06 run". Neither midnight nor UTC is assumed.
+//
+// SCOPE. The override is installed for THIS fixture only and is restorable. Other suites run in their own
+// processes and are untouched. `withClock` is for the drift scenario and restores in a finally, so no test can
+// leave the clock where another finds it; §T below proves both the restore and that the real Date is intact.
+// ================================================================================================================
+var FIXTURE_CLOCK_ = process.env.KM_S1_FIXTURE_CLOCK || '2026-09-10T14:42:06+08:00';  // baseline instant
+var IS_DRIFT_CHILD_ = !!process.env.KM_S1_FIXTURE_CLOCK;   // set only by the §T-B drift run below
+var DRIFTED_CLOCK_ = '2026-10-09T14:42:06+08:00';   // the date that broke it, kept as a test input
+var REAL_DATE_ = Date;
+function makeFrozenDate_(iso) {
+  var fixedMs = new REAL_DATE_(iso).getTime();
+  if (!isFinite(fixedMs)) throw new Error('FAIL-CLOSED: unparseable fixture clock: ' + iso);
+  function FrozenDate(a, b, c, d, e, f, g) {
+    // Called as a constructor with NO arguments → the frozen instant. Every other form is the real Date,
+    // so parsing and explicit construction keep working exactly as they do in production.
+    if (!(this instanceof FrozenDate)) return new REAL_DATE_(fixedMs).toString();
+    if (arguments.length === 0) return new REAL_DATE_(fixedMs);
+    if (arguments.length === 1) return new REAL_DATE_(a);
+    return new REAL_DATE_(a, b, c, d || 0, e || 0, f || 0, g || 0);
+  }
+  FrozenDate.prototype = REAL_DATE_.prototype;
+  FrozenDate.now = function () { return fixedMs; };
+  FrozenDate.parse = REAL_DATE_.parse;
+  FrozenDate.UTC = REAL_DATE_.UTC;
+  FrozenDate.__frozenAt = fixedMs;
+  return FrozenDate;
+}
+function installClock_(iso) { Date = makeFrozenDate_(iso); return Date; }
+function restoreClock_() { Date = REAL_DATE_; }
+/** Run one scenario at another instant and put the clock back, whatever happens inside. */
+function withClock_(iso, fn) {
+  var prev = Date;
+  Date = makeFrozenDate_(iso);
+  try { return fn(); } finally { Date = prev; }
+}
+installClock_(FIXTURE_CLOCK_);
 
 var fail = 0, pass = 0;
 var neg = { caught: 0, missed: 0 };
 function ok(c, l, d) { if (c) { pass++; console.log('ok   ' + l); } else { fail++; console.error('FAIL ' + l + (d === undefined ? '' : '\n  got ' + JSON.stringify(d))); } }
+// One summary emitter, so an early controlled stop reports the same numeric shape as a full run.
+function emitSummary_() {
+  console.log('\npassed ' + pass + '  failed ' + fail
+    + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);
+}
 function eq(a, e, l) {
   var A = JSON.stringify(a), E = JSON.stringify(e);
   if (A === E) { pass++; console.log('ok   ' + l); }
@@ -1965,6 +2024,48 @@ eq(E.deployment_build, (S1.match(/var S1_BUILD_ = '([^']+)'/) || [])[1],
 // ---- M5 — THE BEFORE BASELINE. -------------------------------------------------------------------------
 var FB = MP1.res.frozen_before;
 ok(!!FB, 'M5  a BEFORE baseline was frozen');
+
+// ---- S8-R48-M3 — A MISSING BASELINE IS A CONTROLLED FAILURE, NOT A TypeError. ---------------------------
+//
+// M5 above DETECTS the absence and then the next line dereferenced FB anyway, so a legitimate STOP — which
+// freezes no baseline, correctly — died with
+//   TypeError: Cannot convert undefined or null to object
+// and took the remaining ~12,800 lines of this suite with it. That is a MASKING failure: everything after the
+// crash reported nothing at all, and two real contract-drift failures (X1/X1h) sat hidden behind it for as long
+// as the STOP lasted. The crash is also why the suite emitted no numeric summary and no verdict a reader could
+// act on.
+//
+// The baseline is never invented and the prerequisite is never skipped quietly. The dependent assertions are
+// declared BLOCKED by name, the summary is printed, and the process exits nonzero — the same outcome a reader
+// would want, arrived at deliberately. Continuing past this point is not safe: the 366 lines below are
+// interdependent and several of their declarations are read later, so pressing on would manufacture a cascade
+// of failures that describe nothing.
+function baselineProblem_(b) {
+  if (b === undefined) return 'ABSENT (the manifest returned no frozen_before — a STOP freezes nothing)';
+  if (b === null) return 'NULL';
+  if (typeof b !== 'object') return 'MALFORMED — not an object, got ' + typeof b;
+  if (Array.isArray(b)) return 'MALFORMED — an array, not a baseline object';
+  return null;
+}
+var FB_PROBLEM_ = baselineProblem_(FB);
+if (FB_PROBLEM_) {
+  // A STOP is the interesting case, so say WHY in one machine-readable line rather than making a reader
+  // re-derive it. §T-B asserts against exactly this line from a run at the drifted clock.
+  var _dws = MP1.res.predicted_write_set || {};
+  console.error('S1-DRIFT-DIAG verdict=' + MP1.res.verdict
+    + ' route_groups=' + ((_dws.route_groups || []).length)
+    + ' blocked=' + JSON.stringify(_dws.blocked_lines || [])
+    + ' allocated=' + _dws.allocated_line_count + ' kept=' + _dws.kept_line_count
+    + ' ship_date=' + JSON.stringify(_dws.ship_date));
+  fail++;
+  console.error('FAIL M5-BLOCKED  the BEFORE-baseline assertions cannot run — frozen_before is ' + FB_PROBLEM_);
+  console.error('                 M5a through M11g3 are BLOCKED: not run, not passed, not skipped.');
+  console.error('                 This is a controlled stop. The verdict above is the thing to read: a STOP');
+  console.error('                 freezes no baseline, so the cause is whatever made the manifest STOP.');
+  emitSummary_();
+  process.exit(1);
+}
+
 var fbMissing = vm.runInContext('S1_FREEZE_REQUIRED_', MP1.world.ctx).filter(function (k) {
   return !Object.prototype.hasOwnProperty.call(FB, k);
 });
@@ -14838,6 +14939,128 @@ mut('N224 the freeze records a build that is not the one the file declares', fun
   return frozenBuild(S1_WORLD) === S1_PIN_ && frozenBuild(m) !== S1_PIN_;
 });
 
-console.log('\npassed ' + pass + '  failed ' + fail
-  + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);
+// ================================================================================================================
+// §T — S8-R48-M — TIME SENSITIVITY, CLOCK ISOLATION, AND THE BASELINE GUARD.
+// ================================================================================================================
+// The whole point of freezing this fixture is that the drift it hid was real. These run the SAME world at the
+// date that broke it and require the refusal to still be a refusal — no fabricated lane, no invented route group.
+// The drift child exists to produce ONE diagnostic line and exercise the M3 guard; it must not recurse
+// into this section, which would spawn a child of its own.
+if (IS_DRIFT_CHILD_) { emitSummary_(); process.exit(fail ? 1 : 0); }
+console.log('\n== T · time sensitivity, clock isolation, baseline guard ==');
+
+// ---- A — the baseline clock (already exercised above; restated as an explicit claim). -------------------
+eq(MP1.res.verdict, 'READY_TO_AUTHORIZE', 'T-A1 at the frozen baseline instant the world is READY_TO_AUTHORIZE');
+eq(MP1.res.predicates_failed, 0, 'T-A2 with no condition unmet');
+eq(MP1.res.evidence_gaps.gaps, [], 'T-A3 and the required evidence is generated, not gapped');
+ok((MP1.res.predicted_write_set.route_groups || []).length >= 1,
+  'T-A4 a real route exists — computed, never asserted into being');
+eq(Date.__frozenAt, new REAL_DATE_(FIXTURE_CLOCK_).getTime(), 'T-A5 the fixture clock is the declared instant');
+
+// ---- B — the drifted clock, run as a CHILD so the WHOLE fixture is built at that instant. ---------------
+//
+// An in-process withClock_ cannot reproduce this. The world's date-shaped constants are computed when this
+// module loads, so moving the clock afterwards changes only what is computed inside the call — and the run
+// comes back READY, which would have been a comfortable and completely false result. The drift is a property
+// of the whole fixture, so the whole fixture is rebuilt at the drifted instant, in its own process.
+//
+// This also exercises the M3 guard end to end: the child STOPs, freezes no baseline, and must therefore exit
+// through the controlled-stop path with a numeric summary rather than a TypeError.
+var DRIFT_OUT = (function () {
+  var r = cp.spawnSync(process.execPath, [__filename], {
+    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+    env: Object.keys(process.env).reduce(function (e, k) { e[k] = process.env[k]; return e; },
+      { KM_S1_FIXTURE_CLOCK: DRIFTED_CLOCK_ })
+  });
+  return { status: r.status, text: String(r.stdout || '') + String(r.stderr || '') };
+})();
+var DIAG = (DRIFT_OUT.text.match(/S1-DRIFT-DIAG .*/) || [''])[0];
+ok(/verdict=STOP/.test(DIAG), 'T-B1 the same fixture at 2026-10-09 STOPs', DIAG || DRIFT_OUT.text.slice(-400));
+ok(/route_groups=0/.test(DIAG), 'T-B2 no route group is produced — none is fabricated', DIAG);
+ok(/"reason":"NO_ON_TIME"/.test(DIAG), 'T-B3 because no eligible on-time carrier remains', DIAG);
+ok(/"block":"ROUTE_AUTO_RANKING_INSUFFICIENT"/.test(DIAG),
+  'T-B4 which is MANUAL_ONLY — auto-ranking refuses, it does not guess', DIAG);
+ok(/allocated=1 kept=1/.test(DIAG),
+  'T-B5 the allocation is untouched — same scope, SKU and quantity; only the ROUTE is unavailable', DIAG);
+ok(/ship_date="2026-10-09"/.test(DIAG), 'T-B6 and it was evaluated at the drifted date', DIAG);
+// The M3 guard, proven by the run that needs it.
+ok(/FAIL M5-BLOCKED/.test(DRIFT_OUT.text),
+  'T-B7 a STOP freezes no baseline, and the dependent assertions are BLOCKED by name');
+ok(!/TypeError/.test(DRIFT_OUT.text), 'T-B8 ... with no TypeError anywhere in the run');
+ok(/\npassed \d+  failed \d+/.test(DRIFT_OUT.text), 'T-B9 ... a numeric summary is still emitted');
+eq(DRIFT_OUT.status, 1, 'T-B10 ... and the run exits NONZERO — a controlled failure, never a false clean');
+
+// ---- C — isolation. The scenario clock is restored, and the real one is intact. -------------------------
+eq(Date.__frozenAt, new REAL_DATE_(FIXTURE_CLOCK_).getTime(),
+  'T-C1 withClock_ restored the fixture clock after the drift scenario');
+var leaked = null;
+try { withClock_(DRIFTED_CLOCK_, function () { throw new Error('boom'); }); } catch (e) { leaked = e.message; }
+eq(leaked, 'boom', 'T-C2 a throwing scenario propagates its error');
+eq(Date.__frozenAt, new REAL_DATE_(FIXTURE_CLOCK_).getTime(), 'T-C3 ... and still restores the clock');
+restoreClock_();
+ok(Date === REAL_DATE_ && typeof Date.__frozenAt === 'undefined',
+  'T-C4 the real Date is restorable — nothing leaks to another suite');
+installClock_(FIXTURE_CLOCK_);
+
+// ---- D — the baseline guard, over every shape it must survive. ------------------------------------------
+eq(baselineProblem_(undefined), 'ABSENT (the manifest returned no frozen_before — a STOP freezes nothing)',
+  'T-D1 an absent baseline is named, not dereferenced');
+eq(baselineProblem_(null), 'NULL', 'T-D2 a null baseline is named');
+eq(baselineProblem_('nope'), 'MALFORMED — not an object, got string', 'T-D3 a malformed baseline is named');
+eq(baselineProblem_([]), 'MALFORMED — an array, not a baseline object', 'T-D4 an array is not a baseline');
+eq(baselineProblem_(FB), null, 'T-D5 and a valid baseline passes the guard');
+// Measured, not assumed: on a STOP this manifest returns frozen_before = null, so NULL is the branch the
+// guard actually takes here. ABSENT (undefined) is kept as a guarded case because a future shape change
+// must not reach the dereference either.
+ok(/FAIL M5-BLOCKED[\s\S]{0,80}frozen_before is NULL/.test(DRIFT_OUT.text),
+  'T-D6 the real STOP in the drift run takes the NULL branch of the guard');
+
+// ---- §TX — mutants for everything this round changed. ---------------------------------------------------
+function tmut(label, probe) {
+  var died = false, crashed = null;
+  try { died = probe(); } catch (e) { crashed = e; }
+  if (crashed) { neg.missed++; fail++; console.error('FAIL TX ' + label + ' CRASHED (not a kill) — ' + crashed.message); return; }
+  if (died) { neg.caught++; pass++; console.log('ok   TX ' + label + ' (caught)'); }
+  else { neg.missed++; fail++; console.error('FAIL TX ' + label + ' SURVIVED'); }
+}
+// The world runs S1_WORLD (S1 with its frozen-baseline declaration neutralised), not the raw file. Building a
+// mutant on the raw source makes the world STOP for a reason that has nothing to do with the mutation — which
+// is what the positive control below exists to catch, and did.
+var S1_SRC_ = S1_WORLD;
+
+tmut('a stale S1_BUILD_ pin refuses a correctly synced project', function () {
+  var m = S1_SRC_.replace("var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46'",
+                          "var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20'");
+  if (m === S1_SRC_) throw new Error('pin anchor absent');
+  return manifestP(pos({ s1: m })).res.verdict === 'STOP';
+});
+tmut('an incorrect release identifier is rejected, not merely a lagging one', function () {
+  var m = S1_SRC_.replace("var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46'",
+                          "var S1_BUILD_ = 'NOT-A-RELEASE'");
+  if (m === S1_SRC_) throw new Error('pin anchor absent');
+  return manifestP(pos({ s1: m })).res.verdict === 'STOP';
+});
+tmut('the pin matches, so the gate ACCEPTS (the gate was not simply disabled)', function () {
+  return manifestP(pos({ s1: S1_SRC_ })).res.verdict === 'READY_TO_AUTHORIZE';
+});
+tmut('the fixture clock drifts to the current time — the route is lost', function () {
+  // Measured by the CHILD run, because the drift is a property of the whole fixture: an in-process clock
+  // change leaves the module-level date constants where they were and comes back READY, which is a false
+  // negative dressed as a pass.
+  return /verdict=STOP/.test(DIAG) && /ship_date="2026-10-09"/.test(DIAG) && DRIFT_OUT.status === 1;
+});
+tmut('a fabricated route group would be visible — the drifted run has none', function () {
+  return /route_groups=0/.test(DIAG) && !/expected_header_ids/.test(DIAG);
+});
+tmut('NO_ON_TIME is not quietly treated as auto-routable', function () {
+  return /"reason":"NO_ON_TIME"/.test(DIAG) && /verdict=STOP/.test(DIAG);
+});
+tmut('a missing frozen baseline is caught by the guard rather than dereferenced', function () {
+  var threw = false;
+  try { Object.prototype.hasOwnProperty.call(undefined, 'x'); } catch (e) { threw = true; }
+  return threw && baselineProblem_(undefined) !== null;   // the raw access throws; the guard names it first
+});
+tmut('a null baseline is caught by the guard', function () { return baselineProblem_(null) !== null; });
+
+emitSummary_();
 process.exit(fail ? 1 : 0);
