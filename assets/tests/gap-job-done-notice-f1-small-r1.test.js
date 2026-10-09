@@ -53,13 +53,60 @@ ok(/status === JOB_STATUS\.DONE \|\| status === JOB_STATUS\.CANCELLED[\s\S]{0,20
 ok(/if \(typeof ui\.failed === 'function'\) ui\.failed\(finalState/.test(TRANSPORT), 'non-DONE terminal routes to ui.failed (never ui.done)');
 ok(!/announceManualDone/.test(TRANSPORT.replace(/announceManualDone: announceManualDone|function announceManualDone|var _announcedRuns[\s\S]*?return true;\n  \}/g, '')), 'transport never self-invokes announceManualDone (page-invoked only)');
 
+// --- structural, fail-closed extraction (shared by both pages) ---------------------------------
+// S8-R48-K — the Inventory side used the same fixed-length windows the Order Planning side did:
+// {0,240} from `done: function (finalState) {` and {0,2500} from `product: 'INVENTORY'`. They had
+// not fired yet only because this handler is shorter — measured 112 of 240 and 1277 of 2500 — so
+// they were the identical tripwire, waiting for one more line in the handler. Both are gone.
+function balancedFrom(src, at, open, close, what) {
+    var depth = 0, started = false;
+    for (var i = at; i < src.length; i++) {
+        var ch = src[i];
+        if (ch === open) { depth++; started = true; }
+        else if (ch === close) { depth--; if (started && depth === 0) return src.slice(at, i + 1); }
+    }
+    throw new Error('FAIL-CLOSED: unbalanced ' + what);
+}
+/** The full argument list of a call, however long it grows. Ambiguity is refused, not resolved. */
+function callArgs(src, needle) {
+    var at = src.indexOf(needle);
+    if (at === -1) throw new Error('FAIL-CLOSED: call site not found: ' + needle);
+    if (src.indexOf(needle, at + 1) !== -1) throw new Error('FAIL-CLOSED: ambiguous call site, found more than one: ' + needle);
+    return balancedFrom(src, at + needle.length - 1, '(', ')', needle);
+}
+/** One handler body out of an options object, by property name. */
+function handlerBody(objSrc, prop) {
+    var re = new RegExp(prop + '\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{', 'g');
+    var m = re.exec(objSrc);
+    if (!m) throw new Error('FAIL-CLOSED: handler not found: ' + prop);
+    if (re.exec(objSrc)) throw new Error('FAIL-CLOSED: ambiguous handler, found more than one: ' + prop);
+    return balancedFrom(objSrc, m.index + m[0].length - 1, '{', '}', prop);
+}
+function extractFn(src, name) {
+    var at = src.indexOf('function ' + name);
+    if (at === -1) throw new Error('FAIL-CLOSED: fn not found: ' + name);
+    return balancedFrom(src, src.indexOf('{', at), '{', '}', name);
+}
+function announces(s) { return count(s, 'announceManualDone('); }
+
 section('Inventory wiring — MANUAL done announces once; resume/cancelled/failed stay silent');
-eq(count(INV, 'gr.announceManualDone('), 1, 'Inventory: announceManualDone called EXACTLY once (only the manual runJob done)');
-ok(/done: function \(finalState\) \{[\s\S]{0,240}gr\.announceManualDone\(_irActiveRunId, gr\.formatDoneMessage\('Inventory', scopeSpec, finalState\)\)/.test(INV), 'Inventory manual done → announceManualDone(runId, formatDoneMessage(Inventory,...))');
-// the announce sits in the runJob block (product: 'INVENTORY'), NOT in the resume-on-mount block
-ok(/product: 'INVENTORY'[\s\S]{0,2500}gr\.announceManualDone\(/.test(INV), 'Inventory announce lives inside the manual runJob (product INVENTORY) block');
-ok(/resumeIfRunning[\s\S]*?done: function \(\) \{(?:(?!announceManualDone)[\s\S])*?\},/.test(INV), 'Inventory resume-on-mount done() does NOT announce (scheduled/resumed silent)');
-ok(!/cancelled: function \([\s\S]{0,200}announceManualDone/.test(INV), 'Inventory cancelled() does NOT announce success');
+var INV_RUNJOB = callArgs(INV, 'gr.runJob(');
+var INV_DONE = handlerBody(INV_RUNJOB, 'done');
+var INV_RESUME = callArgs(INV, 'gr.resumeIfRunning(');
+
+eq(announces(INV_DONE), 1, 'Inventory: the manual completion path announces EXACTLY once');
+ok(/gr\.announceManualDone\(_irActiveRunId,\s*gr\.formatDoneMessage\('Inventory', scopeSpec, finalState\)\)/.test(INV_DONE),
+  'Inventory manual done → announceManualDone(runId, formatDoneMessage(Inventory, …))');
+ok(/product: 'INVENTORY'/.test(INV_RUNJOB), 'Inventory: that done handler belongs to the INVENTORY runJob');
+// The partition: every announce on the page is the one in the completion path. Inventory has no
+// toast-owner reuse, so the completion path must account for ALL of them — a second call site
+// anywhere, of any kind, breaks this.
+eq(announces(INV), announces(INV_DONE), 'Inventory: every announceManualDone on the page is the completion one — nothing else announces');
+eq(announces(INV_RESUME), 0, 'Inventory resume-on-mount announces nothing (scheduled/resumed stay silent)');
+eq(announces(handlerBody(INV_RUNJOB, 'cancelled')), 0, 'Inventory cancelled() does NOT announce success');
+// Recovery delegates a done that only restores the button — it must not announce either.
+var INV_RECOVERY = extractFn(INV, '_irRecalcTransportRecovery_');
+eq(announces(INV_RECOVERY), 0, 'Inventory transport recovery announces nothing');
 
 // =============================================================================
 // S8-R48-J — ORDER PLANNING: THE COMPLETION-NOTIFICATION INVARIANT.
@@ -80,35 +127,6 @@ ok(!/cancelled: function \([\s\S]{0,200}announceManualDone/.test(INV), 'Inventor
 // call sites, which is strictly stronger than counting them.
 // =============================================================================
 section('Order Planning wiring — the completion-notification invariant');
-
-// --- structural, fail-closed extraction -------------------------------------------------------
-function balancedFrom(src, at, open, close, what) {
-    var depth = 0, started = false;
-    for (var i = at; i < src.length; i++) {
-        var ch = src[i];
-        if (ch === open) { depth++; started = true; }
-        else if (ch === close) { depth--; if (started && depth === 0) return src.slice(at, i + 1); }
-    }
-    throw new Error('FAIL-CLOSED: unbalanced ' + what);
-}
-/** The full argument list of a call, however long it grows. */
-function callArgs(src, needle) {
-    var at = src.indexOf(needle);
-    if (at === -1) throw new Error('FAIL-CLOSED: call site not found: ' + needle);
-    return balancedFrom(src, at + needle.length - 1, '(', ')', needle);
-}
-/** One handler body out of an options object, by property name. */
-function handlerBody(objSrc, prop) {
-    var m = new RegExp(prop + '\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{').exec(objSrc);
-    if (!m) throw new Error('FAIL-CLOSED: handler not found: ' + prop);
-    return balancedFrom(objSrc, m.index + m[0].length - 1, '{', '}', prop);
-}
-function extractFn(src, name) {
-    var at = src.indexOf('function ' + name);
-    if (at === -1) throw new Error('FAIL-CLOSED: fn not found: ' + name);
-    return balancedFrom(src, src.indexOf('{', at), '{', '}', name);
-}
-function announces(s) { return count(s, 'announceManualDone('); }
 
 var RO_RUNJOB = callArgs(RO, 'gr.runJob(');
 var RO_DONE = handlerBody(RO_RUNJOB, 'done');
@@ -227,6 +245,51 @@ mutant('(inverted) the done handler grows 200 chars with no behaviour change —
     var stillOk = announces(body) === 1
         && /gr\.announceManualDone\(_roActiveRunId,\s*gr\.formatDoneMessage\('Order Planning', scopeSpec, finalState\)\)/.test(body);
     return stillOk;   // "detected" here means the assertion correctly DID NOT break
+});
+
+// ---- K1: the same five claims, on the Inventory side ------------------------------------------
+// I1 — a second announce inside the Inventory completion path.
+mutant('INV: a duplicate completion announcement is added', function () {
+    var m = INV.replace("gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState))",
+        "gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState)); gr.announceManualDone(_irActiveRunId, 'again')");
+    if (m === INV) throw new Error('FAIL-CLOSED: INV announce anchor absent');
+    return announces(handlerBody(callArgs(m, 'gr.runJob('), 'done')) !== 1;
+});
+// I2 — the Inventory completion announcement removed.
+mutant('INV: the completion announcement is removed', function () {
+    var m = INV.replace(/gr\.announceManualDone\(_irActiveRunId,[\s\S]*?finalState\)\)/, '0');
+    if (m === INV) throw new Error('FAIL-CLOSED: INV announce anchor absent');
+    return announces(handlerBody(callArgs(m, 'gr.runJob('), 'done')) !== 1;
+});
+// I3 — resume-on-mount starts announcing.
+mutant('INV: resume-on-mount announces a completion', function () {
+    var args = callArgs(INV, 'gr.resumeIfRunning(');
+    var m = args.replace(/done: function \(\) \{/, "done: function () { gr.announceManualDone(_irActiveRunId, 'resumed');");
+    if (m === args) throw new Error('FAIL-CLOSED: INV resume done handler absent');
+    return announces(m) !== 0;
+});
+// I4 — a structural anchor goes MISSING: extraction must refuse, not silently return nothing.
+mutant('INV: the structural anchor is missing — extraction must fail closed', function () {
+    var m = INV.split('gr.runJob(').join('gr.runJobRENAMED(');
+    try { callArgs(m, 'gr.runJob('); return false; }          // returning quietly would be the bug
+    catch (e) { return /FAIL-CLOSED: call site not found/.test(e.message); }
+});
+// I5 — a structural anchor becomes AMBIGUOUS: two runJob calls must refuse, not pick the first.
+mutant('INV: the structural anchor is duplicated — extraction must refuse to guess', function () {
+    var m = INV.replace('return gr.runJob(startFn, statusFn, {', 'if (0) gr.runJob(0, 0, {});\n  return gr.runJob(startFn, statusFn, {');
+    if (m === INV) throw new Error('FAIL-CLOSED: INV runJob anchor absent');
+    try { callArgs(m, 'gr.runJob('); return false; }
+    catch (e) { return /FAIL-CLOSED: ambiguous call site/.test(e.message); }
+});
+// I6 — THE ANTI-TRIPWIRE, Inventory side. This is the one the {0,240} window could not survive.
+mutant('(inverted) INV: the done handler grows 200 chars with no behaviour change — must STILL pass', function () {
+    var filler = "/* " + new Array(197).join('x') + " */";
+    var m = INV.replace("done: function (finalState) { _irShowCancel_(false);",
+                        "done: function (finalState) { " + filler + " _irShowCancel_(false);");
+    if (m === INV) throw new Error('FAIL-CLOSED: INV done handler anchor absent');
+    var body = handlerBody(callArgs(m, 'gr.runJob('), 'done');
+    return announces(body) === 1
+        && /gr\.announceManualDone\(_irActiveRunId,\s*gr\.formatDoneMessage\('Inventory', scopeSpec, finalState\)\)/.test(body);
 });
 
 ok(mutants >= 7, 'the mutant set is non-empty (' + mutants + ' mutants) — not vacuous');
