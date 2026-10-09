@@ -471,7 +471,14 @@ var S1_DEPLOYMENT_CONTRACT_FIELDS_ = [
   { field: 'stale_modules', type: 'array' },
   { field: 'mixed_deployment', type: 'boolean' },
   { field: 'verdict', type: 'nonempty_string' },
-  { field: 'runtime_authority', type: 'object' }
+  { field: 'runtime_authority', type: 'object' },
+  // S8-R4D-E2 lifted these two OUT of runtime_authority to the top level so a consumer does not have to
+  // know where they live; this list did not follow until S8-R48-N, and production could only ever have
+  // reported the drift as an unexplained STOP. 63_ assigns runtime.advanced_services UNCONDITIONALLY, so
+  // `object` is its shipped shape rather than an optimistic one, and advanced_services_ok is a `!!(...)`
+  // and therefore ALWAYS a boolean - false included, which is a value this list must not read as absent.
+  { field: 'advanced_services', type: 'object' },
+  { field: 'advanced_services_ok', type: 'boolean' }
 ];
 
 function S1_typeOk_(v, type) {

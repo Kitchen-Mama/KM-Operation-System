@@ -2969,9 +2969,9 @@ section('X — S1-R4B: the deployment contract, against the shape 63_ actually r
 
 // ---- X1 — THE REAL SHAPE, PRODUCED BY 63_ ITSELF, AND WHAT IT DOES NOT CONTAIN. -------------------------
 eq(Object.keys(REAL_STAMPS_).sort(),
-  ['absent_modules', 'absent_optional_modules', 'deployment_build', 'mixed_deployment', 'modules',
-    'runtime_authority', 'stale_modules', 'verdict'],
-  'X1  sysModuleBuildStamps_ returns exactly these eight fields');
+  ['absent_modules', 'absent_optional_modules', 'advanced_services', 'advanced_services_ok',
+    'deployment_build', 'mixed_deployment', 'modules', 'runtime_authority', 'stale_modules', 'verdict'],
+  'X1  sysModuleBuildStamps_ returns exactly these ten fields');
 ok(!('available' in REAL_STAMPS_),
   'X1a and `available` is NOT one of them — the field the old predicate required does not exist',
   Object.keys(REAL_STAMPS_));
@@ -3002,6 +3002,32 @@ var X1fields = vm.runInContext('S1_DEPLOYMENT_CONTRACT_FIELDS_.map(function (f) 
 eq(X1fields, Object.keys(REAL_STAMPS_).sort(),
   'X1h the fields the diagnostic requires are EXACTLY the fields sysModuleBuildStamps_ returns',
   { diagnostic_expects: X1fields, contract_returns: Object.keys(REAL_STAMPS_).sort() });
+
+// ---- X1i/X1j/X1k — WHAT THE TWO LIFTED FIELDS MEAN, AND WHAT ORDER DOES NOT MEAN. ----------------------
+// ORDER IS NOT CONTRACTUAL, and saying so is the honest reading rather than an omission. 63_ declares the
+// ten in one order and the diagnostic requires them in another, and it always has; both X1 and X1h compare
+// SORTED sets on purpose. This is the evidence for that, so the next reader does not take the sort for an
+// oversight and 'repair' it into a sequence check the contract never promised.
+var X1rev = {};
+Object.keys(REAL_STAMPS_).slice().reverse().forEach(function (k) { X1rev[k] = REAL_STAMPS_[k]; });
+eq(manifestP(pos({ stamps: X1rev })).res.verdict, 'READY_TO_AUTHORIZE',
+  'X1i key ORDER is not contractual — the same ten fields in reverse insertion order still pass');
+// advanced_services is the service attested BY EXECUTION (63_ §17), not by reading a manifest that may not
+// be the one deployed; advanced_services_ok is its single-boolean reduction. Asserted from the executed
+// object so a change to either meaning lands here rather than in production.
+ok(REAL_STAMPS_.advanced_services && typeof REAL_STAMPS_.advanced_services === 'object'
+  && typeof REAL_STAMPS_.advanced_services.advanced_sheets_runtime_mode === 'string',
+  'X1j advanced_services is an OBJECT carrying advanced_sheets_runtime_mode',
+  REAL_STAMPS_.advanced_services && REAL_STAMPS_.advanced_services.advanced_sheets_runtime_mode);
+eq(REAL_STAMPS_.advanced_services_ok,
+  REAL_STAMPS_.advanced_services.advanced_sheets_runtime_mode === 'RESOLVED',
+  'X1j2 and advanced_services_ok is exactly that mode reduced to a boolean — not an independent opinion');
+// THE TRAP IN THE READABLE CHECK, PINNED. Presence is `=== undefined || === null`, so a FALSE value is
+// present. A 'tidying' rewrite to a falsy test would turn an honest MISSING service into a missing FIELD —
+// a shape failure where the truth is a health failure, and the two send the operator to different places.
+eq(manifestP(pos({ stamps: stampsWith_({ advanced_services_ok: false }) })).res.verdict,
+  'READY_TO_AUTHORIZE',
+  'X1k advanced_services_ok === false is a VALUE the contract reports, not a missing field');
 
 // ---- X2 — TEST A: THE REAL SHAPE PASSES THE READABLE PREDICATE AND THE WHOLE MANIFEST. ------------------
 var X2 = manifestP(pos());
@@ -15061,6 +15087,62 @@ tmut('a missing frozen baseline is caught by the guard rather than dereferenced'
   return threw && baselineProblem_(undefined) !== null;   // the raw access throws; the guard names it first
 });
 tmut('a null baseline is caught by the guard', function () { return baselineProblem_(null) !== null; });
+
+// ---- §TX-N — THE DEPLOYMENT CONTRACT SCHEMA, MUTATED ON BOTH SIDES OF THE EQUALITY. ----------------------
+// X1h compares what the diagnostic REQUIRES with what 63_ RETURNS, so a mutant on EITHER side must break it.
+// The runtime half is probed separately and deliberately: the required-field list detects a field that is
+// ABSENT or WRONGLY TYPED, but it cannot see an EXTRA one — which is the exact asymmetry X1h exists to cover,
+// and the reason the added-field mutant below asserts the manifest still passes while parity still breaks.
+function contractFieldsOf_(src) {
+  return vm.runInContext('S1_DEPLOYMENT_CONTRACT_FIELDS_.map(function (f) { return f.field; })',
+    S1World(pos({ s1: src === undefined ? S1_SRC_ : src })).ctx).slice().sort();
+}
+function parityBreaks_(src, stamps) {
+  return JSON.stringify(contractFieldsOf_(src))
+    !== JSON.stringify(Object.keys(stamps === undefined ? REAL_STAMPS_ : stamps).sort());
+}
+tmut('the contract DROPS advanced_services — parity breaks', function () {
+  return parityBreaks_(undefined, stampsWith_({ advanced_services: '__DELETE__' }));
+});
+tmut('and the diagnostic REFUSES it at runtime, naming the field', function () {
+  var r = manifestP(pos({ stamps: stampsWith_({ advanced_services: '__DELETE__' }) })).res;
+  return r.verdict === 'STOP' && r.deployment.missing_fields.indexOf('advanced_services') !== -1;
+});
+tmut('the contract DROPS advanced_services_ok — parity breaks', function () {
+  return parityBreaks_(undefined, stampsWith_({ advanced_services_ok: '__DELETE__' }));
+});
+tmut('and the diagnostic REFUSES that one too', function () {
+  var r = manifestP(pos({ stamps: stampsWith_({ advanced_services_ok: '__DELETE__' }) })).res;
+  return r.verdict === 'STOP' && r.deployment.missing_fields.indexOf('advanced_services_ok') !== -1;
+});
+tmut('a RENAMED field is not accepted as the one it replaced', function () {
+  var m = stampsWith_({ advanced_services: '__DELETE__' });
+  m.advanced_services_v2 = REAL_STAMPS_.advanced_services;
+  return parityBreaks_(undefined, m) && manifestP(pos({ stamps: m })).res.verdict === 'STOP';
+});
+tmut('a WRONG-TYPED advanced_services is refused, not coerced', function () {
+  var r = manifestP(pos({ stamps: stampsWith_({ advanced_services: 'RESOLVED' }) })).res;
+  return r.verdict === 'STOP'
+    && r.deployment.wrong_type_fields.join(' ').indexOf('advanced_services') !== -1;
+});
+tmut('an UNEXPECTED added field is caught by X1h, which the required-field list alone cannot do', function () {
+  var m = stampsWith_({ advanced_services_future: { added: true } });
+  // The manifest PASSES — presence and type of what it requires are all satisfied. That is not a hole; it
+  // is the division of labour, and it is why parity is asserted as well as readability.
+  return parityBreaks_(undefined, m) && manifestP(pos({ stamps: m })).res.verdict === 'READY_TO_AUTHORIZE';
+});
+// Removing the two ENTRIES leaves a trailing comma before the bracket, which is a legal ES5 array of eight —
+// so this mutant reverts the list exactly as a bad merge would, without a syntax error to flatter it.
+function dropEntry_(src, lit) {
+  var parts = src.split(lit);
+  if (parts.length !== 2) throw new Error('contract entry anchor not unique: ' + lit);
+  return parts.join('');
+}
+tmut('reverting the diagnostic to the OLD eight-field list breaks parity', function () {
+  var m = dropEntry_(S1_SRC_, "  { field: 'advanced_services', type: 'object' },");
+  m = dropEntry_(m, "  { field: 'advanced_services_ok', type: 'boolean' }");
+  return contractFieldsOf_(m).length === 8 && parityBreaks_(m, undefined);
+});
 
 emitSummary_();
 process.exit(fail ? 1 : 0);
