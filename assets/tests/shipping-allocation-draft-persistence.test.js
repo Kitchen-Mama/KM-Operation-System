@@ -6,9 +6,9 @@
 // Run: node assets/tests/shipping-allocation-draft-persistence.test.js
 'use strict';
 var path = require('path');
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
-function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
+function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; console.log('ok   ' + l); } }
 
 var mod = require(path.join(__dirname, '..', 'js', 'utils', 'inventory-compat.js'));
 var IRDraft = mod.IRDraft;
@@ -70,7 +70,8 @@ var mockDB = {
     eq(calls[1][1].allocation_draft_id, 'SAD-NEW', 'M-4: lines upserted under returned draft id');
     eq(calls[1][1].lines.length, 1, 'M-5: incremental — one line sent (not a full REPLACE)');
     ok(!('selected_destination_warehouse_id' in calls[1][1].lines[0]), 'M-6: line payload carries NO selected_* (28-col grain)');
-    console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+    if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+    console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
     process.exit(fail ? 1 : 0);
   });
 })();

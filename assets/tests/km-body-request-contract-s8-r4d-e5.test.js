@@ -15,13 +15,13 @@
 'use strict';
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
+var fail = 0, pass = 0;
 function eq(a, e, l) {
   var A = JSON.stringify(a), E = JSON.stringify(e);
   if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); }
-  else console.log('ok   ' + l);
+  else { pass++; console.log('ok   ' + l); }
 }
-function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else console.log('ok   ' + l); }
+function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; console.log('ok   ' + l); } }
 
 function readSrc(rel) { return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8').replace(/^﻿/, ''); }
 // Slice a named function out of a CRLF/LF source at a known indent. Never reformats the body.
@@ -288,5 +288,6 @@ eq(JSON.parse(toParameter(qRecovery).km_body).payload.only.length, 13,
 ok(qRecovery.indexOf('km_rid=' + encodeURIComponent(RID + '-R2')) !== -1,
   'I4  and carries its OWN correlation id');
 
-console.log('\n' + (fail ? 'FAILURES: ' + fail : 'ALL PASS'));
-process.exitCode = fail ? 1 : 0;
+if (pass + fail === 0) console.error('VACUOUS - no assertion executed');
+console.log('\n' + (fail ? 'FAILURES: ' + fail : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
+process.exitCode = (fail || pass + fail === 0) ? 1 : 0;

@@ -3,8 +3,8 @@
 // rough candidates (no auto-select), Combined-Plan eligibility / effective lines / marketplace scope / L1
 // clear, and Shipment exact combined marketplace → Split decision. Run: node assets/tests/shipping-plan-runtime.test.js
 
-var fail = 0;
-function eq(a, e, label) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + label); }
+var fail = 0, pass = 0;
+function eq(a, e, label) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + label); } }
 function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
 
 // ---- battery scope: any lithium SKU → whole shipment lithium (mirror shippingBatteryClass_) ----
@@ -137,5 +137,7 @@ function carrierName(carriers, id) { for (var i = 0; i < carriers.length; i++) i
 eq(carrierName([{ carrier_id: 'C_A', carrier_name: '中外運' }], 'C_A'), '中外運', '5: carrier name resolved live from carrier_id');
 eq(carrierName([{ carrier_id: 'C_A', carrier_name: '中外運' }], 'C_X'), '', '5: unknown carrier_id → blank (never fabricated)');
 
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\npassed ' + pass + '  failed ' + fail);
 if (fail) { console.error('\n' + fail + ' FAILED'); process.exit(1); }
 console.log('\nALL PASS');

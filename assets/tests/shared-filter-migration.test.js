@@ -8,8 +8,8 @@
 'use strict';
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
-function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; console.log('ok   ' + l); } }
 function read(rel) { return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8'); }
 
 // ---- Part 1: the ONE shared component contract -----------------------------------------------------
@@ -77,5 +77,6 @@ ok(!/\.replen-filter-group\s*\{/.test(irCss) && !/\.replen-filter-group\s+(selec
 // FC Summary: redundant page-scoped label override removed (shared owner is canonical; appearance same).
 ok(!/#fc-summary-section \.filter-group label\s*\{/.test(fcOverviewCss), 'D30: redundant #fc-summary-section .filter-group label override removed (shared owner canonical)');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

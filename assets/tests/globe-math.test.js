@@ -8,9 +8,9 @@
 var path = require('path');
 var M = require(path.join(__dirname, '..', 'js', 'lib', 'km-globe.js')).math;
 
-var fail = 0;
-function approx(a, e, tol, label) { var ok = Math.abs(a - e) <= (tol == null ? 1e-6 : tol); if (!ok) { fail++; console.error('FAIL ' + label + '\n  exp ' + e + ' got ' + a); } else console.log('ok   ' + label); }
-function truthy(v, label) { if (!v) { fail++; console.error('FAIL ' + label); } else console.log('ok   ' + label); }
+var fail = 0, pass = 0;
+function approx(a, e, tol, label) { var ok = Math.abs(a - e) <= (tol == null ? 1e-6 : tol); if (!ok) { fail++; console.error('FAIL ' + label + '\n  exp ' + e + ' got ' + a); } else { pass++; console.log('ok   ' + label); } }
+function truthy(v, label) { if (!v) { fail++; console.error('FAIL ' + label); } else { pass++; console.log('ok   ' + label); } }
 
 // --- lat/lng convention: (0,0) faces +Z toward the camera ---
 var o = M.latLngToVec3(0, 0, 1);
@@ -55,5 +55,6 @@ approx(mid[0], Math.sin(45 * Math.PI / 180), 1e-9, 'slerp midpoint lng≈45 (x)'
 var s0 = M.slerp(A, B, 0), s1 = M.slerp(A, B, 1);
 approx(s0[2], 1, 1e-9, 'slerp t=0 = A'); approx(s1[0], 1, 1e-9, 'slerp t=1 = B');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS') + '  |  passed ' + pass + '  failed ' + fail);
 process.exit(fail ? 1 : 0);

@@ -4,8 +4,8 @@
 //   included/excluded duty via sku_details.series (never category) · freight by charge_type ·
 //   estimated_unit_cost = total / total_qty (blank when qty 0). Run: node assets/tests/shipping-cost-engine.test.js
 
-var fail = 0;
-function eq(a, e, label) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + label); }
+var fail = 0, pass = 0;
+function eq(a, e, label) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + label + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + label); } }
 
 // ---- mirrors of the engine formulas (17_carrier_handlers.gs) ----
 function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
@@ -87,5 +87,7 @@ eq(total, 230 + 80 + 50, 'total = freight + customs_fee + duty (doc_fee NOT incl
 eq(unitCost(total, 100), round(360 / 100, 4), 'estimated_unit_cost = total / total_qty');
 eq(unitCost(360, 0), '', 'estimated_unit_cost blank when total_qty = 0 (never divide by zero)');
 
+if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
+console.log('\npassed ' + pass + '  failed ' + fail);
 if (fail) { console.error('\n' + fail + ' FAILED'); process.exit(1); }
 console.log('\nALL PASS');
