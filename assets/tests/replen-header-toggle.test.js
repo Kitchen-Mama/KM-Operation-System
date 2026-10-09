@@ -5,8 +5,9 @@
 'use strict';
 var fs = require('fs');
 var path = require('path');
-var fail = 0;
-function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else console.log('ok   ' + l); }
+var fail = 0, pass = 0;
+function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; console.log('ok   ' + l); } }
+function ok(c, l) { if (c) { pass++; console.log('ok   ' + l); } else { fail++; console.error('FAIL ' + l); } }
 
 var html = fs.readFileSync(path.join(__dirname, '..', 'html', 'pages', 'inventory-replenishment.html'), 'utf8');
 var js = fs.readFileSync(path.join(__dirname, '..', 'js', 'pages', 'inventory-replenishment.js'), 'utf8');
@@ -15,12 +16,41 @@ var css = fs.readFileSync(path.join(__dirname, '..', 'css', 'pages', 'inventory-
 // ============================================================================
 // A1 — Header group colspans + leaf sequence (source-scan the HTML) + CSS widths + body-cell order.
 // ============================================================================
-// Parent (level-1) group cells in order: [type, data-leaf-span, text].
-var level1 = (html.match(/km-table__header-row--level1">([\s\S]*?)<\/div>\s*<!--|km-table__header-row--level1">([\s\S]*?)<div class="km-table__header-row--level2/) || [])[0] || '';
-// Fallback: just scan the whole header block for the group cells (they are unique enough).
-var groupRe = /km-table__header-cell--([a-z-]+)"\s+data-leaf-span="(\d+)"[^>]*>([^<]*)</g;
-var groups = [], mm;
-while ((mm = groupRe.exec(html)) !== null) groups.push({ type: mm[1], span: parseInt(mm[2], 10), text: mm[3].trim() });
+// S8-R48-J — STRUCTURAL, FAIL-CLOSED EXTRACTION.
+//
+// The previous version read the leaf row with /<div class="km-table__header-cell">([^<]+)<\/div>/g —
+// the BARE class only — on the stated assumption that "group cells always add a --modifier, so a
+// global scan yields exactly the leaves". That assumption stopped being true when the Current Stock
+// LEAF gained `--current-stock` so CSS could hide it for Self-Fulfilled sites (D3). The regex then
+// silently returned 9 leaves instead of 10, shifted every index after it, and failed six assertions
+// that were all one missing cell. A scan that cannot tell "absent" from "shaped differently" fails
+// open, so the row is now isolated first and every cell inside it is taken, modifiers and all.
+function headerRowBlock(src, level) {
+    var marker = 'km-table__header-row--level' + level;
+    var at = src.indexOf(marker);
+    if (at === -1) throw new Error('FAIL-CLOSED: header row level' + level + ' not found');
+    var open = src.lastIndexOf('<div', at);
+    if (open === -1) throw new Error('FAIL-CLOSED: unanchored header row level' + level);
+    var re = /<div\b|<\/div>/g; re.lastIndex = open;
+    var depth = 0, m;
+    while ((m = re.exec(src)) !== null) {
+        if (m[0] === '</div>') { if (--depth === 0) return src.slice(open, m.index + 6); }
+        else depth++;
+    }
+    throw new Error('FAIL-CLOSED: unbalanced header row level' + level);
+}
+// EVERY header cell in the row — modifier classes included. m[1] is whatever follows the base class.
+function headerCells(block) {
+    var out = [], re = /<div class="km-table__header-cell([^"]*)"([^>]*)>([^<]*)<\/div>/g, m;
+    while ((m = re.exec(block)) !== null) out.push({ mods: m[1].trim(), attrs: m[2], text: m[3].trim() });
+    return out;
+}
+var L1 = headerCells(headerRowBlock(html, 1));
+var groups = L1.map(function (c) {
+    var t = (c.mods.match(/km-table__header-cell--([a-z-]+)/) || [, ''])[1];
+    var s = (c.attrs.match(/data-leaf-span="(\d+)"/) || [, ''])[1];
+    return { type: t, span: parseInt(s, 10), text: c.text };
+});
 
 eq(groups.map(function (g) { return g.type; }),
    ['status', 'company', 'marketplace', 'inventory', 'sales', 'replen', 'factory', 'note-span'],
@@ -34,21 +64,32 @@ eq(spanByType.factory, 2, 'A1: Factory Stock colspan = 2');
 eq(spanByType.inventory, 3, 'A1: Inventory colspan = 3');
 eq(spanByType.sales, 3, 'A1: Sales colspan = 3');
 
-// Leaf (level-2) headers in order. Only the level-2 leaf cells carry the bare class
-// "km-table__header-cell" (group cells always add a --modifier), so a global scan yields exactly them.
-var leaves = (html.match(/<div class="km-table__header-cell">([^<]+)<\/div>/g) || [])
-    .map(function (s) { return s.replace(/<[^>]+>/g, '').trim(); });
-eq(leaves,
-   ['Current Stock', 'On the Way', '3rd Party Stock', 'Avg. Sales/day', '60 days FC', 'Upcoming Event', 'Days of Supply', 'Suggested Qty', 'CN', 'TW'],
-   'A1: leaf header sequence (…Days of Supply, Suggested Qty, CN, TW)');
+// Leaf (level-2) headers, taken structurally from the level-2 ROW so a modifier-bearing leaf counts.
+var L2 = headerCells(headerRowBlock(html, 2));
+var leaves = L2.map(function (c) { return c.text; });
+// INVENTORY_TABLE_MAPPING_SPEC §13.2 (D1/D2, ratified S8-R48-J): canonical 10-leaf model.
+// Order is stock-flow: Current Stock → 3rd Party Stock → On the Way. The FC leaf is the 90-day
+// DISPLAY REFERENCE (§13.1) — Base FC Month+1..+3, no Target%; the runtime identifier forecast60d()
+// is a legacy name and is deliberately not the contract.
+var CANONICAL_LEAVES = ['Current Stock', '3rd Party Stock', 'On the Way', 'Avg. Sales/day',
+    '90 days FC', 'Upcoming Event', 'Days of Supply', 'Suggested Qty', 'CN', 'TW'];
+eq(leaves, CANONICAL_LEAVES, 'A1/D1/D2: canonical 10-leaf header sequence');
+eq(leaves.length, 10, 'A1: exactly 10 leaves');
+// The modifier-bearing leaf is PRESENT and still carries its hook (D3 needs the class to exist).
+eq(L2[0].mods, 'km-table__header-cell--current-stock',
+   'A1/D3: the Current Stock leaf is class-tagged — and is still counted as a leaf');
 // The four data-leaf groups must span exactly the number of leaves, 1:1.
 eq(spanByType.inventory + spanByType.sales + spanByType.replen + spanByType.factory, leaves.length,
-   'A1: group leaf-spans sum to the number of leaf columns (' + leaves.length + ')');
-// Replenishment starts at leaf 7 (Days of Supply); Factory at leaf 9 (CN) — CN is NOT inside Replenishment.
-eq(leaves[6], 'Days of Supply', 'A1: leaf 7 is the first Replenishment leaf');
-eq(leaves[7], 'Suggested Qty', 'A1: leaf 8 is the second (last) Replenishment leaf');
-eq(leaves[8], 'CN', 'A1: leaf 9 (CN) is the first Factory Stock leaf — NOT under Replenishment');
-eq(leaves[9], 'TW', 'A1: leaf 10 (TW) is the second Factory Stock leaf');
+   'A1: group leaf-spans sum to the leaf-column count');
+// Group boundaries, derived from the spans rather than hand-indexed, so a span change moves them.
+var bounds = {}, cur = 0;
+['inventory', 'sales', 'replen', 'factory'].forEach(function (t) {
+    bounds[t] = leaves.slice(cur, cur + spanByType[t]); cur += spanByType[t];
+});
+eq(bounds.inventory, ['Current Stock', '3rd Party Stock', 'On the Way'], 'A1/D2: Inventory group = the 3 stock-flow leaves, in order');
+eq(bounds.sales, ['Avg. Sales/day', '90 days FC', 'Upcoming Event'], 'A1/D1: Sales group carries the 90-day FC reference');
+eq(bounds.replen, ['Days of Supply', 'Suggested Qty'], 'A1: Replenishment spans exactly Days of Supply + Suggested Qty');
+eq(bounds.factory, ['CN', 'TW'], 'A1: CN/TW are Factory Stock leaves — NOT under Replenishment');
 
 // CSS width must equal colspan × 120px (240px for the 2-leaf groups).
 var replenRule = (css.match(/\.km-table__header-cell--replen\s*\{[\s\S]*?\}/) || [''])[0];
@@ -63,7 +104,20 @@ eq(/width:\s*240px/.test(factoryRule) && /min-width:\s*240px/.test(factoryRule),
 // HTML comment inside the old template literal contained a backtick, which ended the literal early and left
 // every emitted row inside an unterminated comment - the live "only the first row has values" symptom.) The
 // leaf ORDER this section defends is unchanged; it is read from the builder.
-var scrollTpl = (js.match(/function _irScrollRowHtml_[\s\S]*?\n}/) || [''])[0];
+// S8-R48-J — brace-matched, not pattern-to-the-first-newline-brace. A `\n}` terminator is a window
+// by another name: it ends wherever the source happens to put a column-0 brace.
+function extractFn(src, name) {
+    var at = src.indexOf('function ' + name);
+    if (at === -1) throw new Error('FAIL-CLOSED: fn not found: ' + name);
+    var depth = 0, started = false;
+    for (var i = at; i < src.length; i++) {
+        var ch = src[i];
+        if (ch === '{') { depth++; started = true; }
+        else if (ch === '}') { depth--; if (started && depth === 0) return src.slice(at, i + 1); }
+    }
+    throw new Error('FAIL-CLOSED: unbalanced fn: ' + name);
+}
+var scrollTpl = extractFn(js, '_irScrollRowHtml_');
 // F1-7N-UX-SITE-INVENTORY-INVENTORY-COLUMN-ORDER-R1 — Inventory reading order is now Current Stock → 3rd Party Stock
 // → On the Way (stock-flow: exists now → external/self warehouses → still inbound); body order tracks the header 1:1.
 var bodyLeafTokens = ['item.currentInventory', 'item.thirdPartyStock', 'item.onTheWay', 'item.avgDailySales',
@@ -90,7 +144,15 @@ eq(/replen-expand-panel--scroll" id="\$\{_irPanelId\(sku\)\}"/.test(js), true, '
 eq(/planned-qty-config-btn/.test(js) || /planned-qty-config-btn/.test(css), false, 'A2: gear button (planned-qty-config-btn) removed from JS + CSS');
 eq(/Configure shipping allocation/.test(js), false, 'A2: gear tooltip removed');
 // Suggested Qty cell shows the value only.
-eq(/replen-suggested-cell__value/.test(scrollTpl) && !/<button/.test((scrollTpl.match(/replen-suggested-cell">[\s\S]*?<\/div>/) || [''])[0]), true, 'A2: Suggested Qty cell shows value/status only (no button)');
+// S8-R48-J — the markup moved out of the row builder into _irSuggestedCellHtml, so asserting it
+// against the row builder asserted nothing: `replen-suggested-cell__value` simply was not there any
+// more and the check failed while the product contract held. Follow the delegation instead.
+eq(/replen-suggested-cell">'\s*\+\s*_irSuggestedCellHtml\(item\)/.test(scrollTpl), true,
+   'A2: the Suggested Qty cell delegates to _irSuggestedCellHtml');
+var sugFn = extractFn(js, '_irSuggestedCellHtml');
+eq(/replen-suggested-cell__value/.test(sugFn), true, 'A2: ... which renders the value/status span');
+eq(/<button/i.test(sugFn), false, 'A2: ... with NO button in the Suggested Qty cell');
+eq(/onclick|addEventListener/i.test(sugFn), false, 'A2: ... and no inline handler either');
 // Chevron click stops propagation so it and the row handler never double-fire.
 var chevronFn = (js.match(/function _replenChevronClick\(event, sku\)\s*\{[\s\S]*?\}/) || [''])[0];
 eq(/stopPropagation\(\)/.test(chevronFn), true, 'A2: _replenChevronClick calls stopPropagation (single toggle)');
@@ -177,5 +239,156 @@ eq(/value="' \+ escapeReplenHtml\(o\.value\)/.test(mpFn), true, 'CD2: option val
 eq(/\(US\)|\(CA\)|o\.country|\+ ' \(' \+ [a-z]*ountry/.test(mpFn), false, 'CD2: no country suffix appended to the label');
 eq(/labelCount\[o\.label\] > 1/.test(mpFn), true, 'CD2: company hint appended ONLY on same-country display-name collision');
 
-console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
+// ============================================================================
+// A7 — D3: the Self-Fulfilled visibility exception (INVENTORY_TABLE_MAPPING_SPEC §13.2).
+// ============================================================================
+// VISUAL, NOT STRUCTURAL. The column is hidden with CSS; the header leaf and the body cell both stay
+// in the DOM, and `data-leaf-span` is NOT rewritten — it is the STRUCTURAL body-cell count the render
+// integrity validator reads. Writing 2 there once made a self_fulfilled scope declare 13 cells while
+// rendering 14, failing every row on US/Shopify and US/Target. Eligibility comes from the canonical
+// fulfillment_model; no marketplace is named here, and none may be.
+// Loaded through `new Function` rather than eval: this file is 'use strict', where an eval'd
+// declaration stays inside the eval's own scope and never reaches the assertions below.
+var COLUMN_MODEL_SRC = extractFn(js, '_irInventoryColumnModel');
+var _irInventoryColumnModel = new Function(COLUMN_MODEL_SRC + '; return _irInventoryColumnModel;')();
+
+var SELF = _irInventoryColumnModel('self_fulfilled');
+var PLAT = _irInventoryColumnModel('platform_fulfilled');
+eq(SELF.hideCurrentStock, true, 'A7/D3: a qualifying Self-Fulfilled site hides Current Stock');
+eq(SELF.columns, ['thirdPartyStock', 'onTheWay'], 'A7/D3: ... leaving 3rd Party Stock → On the Way, in canonical order');
+eq(PLAT.hideCurrentStock, false, 'A7/D3: a non-qualifying (platform) site KEEPS Current Stock');
+eq(_irInventoryColumnModel('hybrid').hideCurrentStock, false, 'A7/D3: hybrid is non-qualifying — full structure');
+eq(_irInventoryColumnModel('').hideCurrentStock, false, 'A7/D3: an unresolved scope FAILS SAFE to the full structure');
+eq(_irInventoryColumnModel('SELF_FULFILLED').hideCurrentStock, true, 'A7/D3: eligibility is the canonical value, case-insensitive — never a platform name');
+eq(/shopify|target|amazon/i.test(extractFn(js, '_irInventoryColumnModel')), false, 'A7/D3: no marketplace is hardcoded in the eligibility rule');
+
+// The logical column model is PRESERVED while hidden: the body still emits the cell unconditionally…
+eq(/replen-cell--current-stock/.test(scrollTpl) && /item\.currentInventory/.test(scrollTpl), true,
+   'A7/D3: the body ALWAYS emits the Current Stock cell (hidden ≠ removed)');
+// …the apply step must not rewrite the structural span…
+var applyFn = extractFn(js, '_irApplyInventoryColumnModel');
+eq(/ir-hide-current-stock/.test(applyFn), true, 'A7/D3: one container class drives the hiding');
+eq(/setAttribute\(\s*['"]data-leaf-span['"]/.test(applyFn), false,
+   'A7/D3: data-leaf-span is NOT rewritten when the column hides — the structural count stays true');
+eq(spanByType.inventory, 3, 'A7/D3: the declared Inventory span stays 3 in the markup');
+// …and ONE class hides the header leaf and the body cell together, so the two rows cannot drift.
+eq(/\.ir-hide-current-stock[^{]*\.km-table__header-cell--current-stock[^{]*\{[^}]*display:\s*none/.test(css)
+   || /\.ir-hide-current-stock[\s\S]{0,200}?\.replen-cell--current-stock\s*\{[^}]*display:\s*none/.test(css), true,
+   'A7/D3: header leaf + body cell are hidden by the SAME container class');
+// Both declarations, checked separately: `[^}]*width:` also matches `min-width:`, so a single loose
+// test would pass on a rule that shrank only one of them and still rendered misaligned.
+function hideInventoryRule(c) {
+    var m = c.match(/\.ir-hide-current-stock\s+\.km-table__header-cell--inventory\s*\{[^}]*\}/);
+    if (!m) throw new Error('FAIL-CLOSED: the hidden-state Inventory group rule is missing');
+    return m[0];
+}
+var HIDE_RULE = hideInventoryRule(css);
+eq(/[^-]width:\s*240px/.test(HIDE_RULE) && /min-width:\s*240px/.test(HIDE_RULE), true,
+   'A7/D3: the Inventory GROUP shrinks 360→240 (width AND min-width) so downstream groups stay aligned');
+
+// ============================================================================
+// §X — NEGATIVE MUTANTS. Every repair above must be able to fail.
+// ============================================================================
+// Each mutant edits an in-memory copy of the real source and re-runs the ONE check it should break.
+// A thrown error counts as a kill ONLY for the fail-closed extractors, where throwing IS the contract;
+// everywhere else a crash is reported as a crash, because a check that explodes proves nothing.
+var mutants = 0, survived = 0;
+function mutant(label, probe) {
+    mutants++;
+    var detected = false, crashed = null;
+    try { detected = probe(); } catch (e) { crashed = e; }
+    if (crashed) { detected = /FAIL-CLOSED/.test(String(crashed.message)); if (!detected) { survived++; fail++; console.error('FAIL X' + mutants + ' CRASHED (not a kill) — ' + label + ' — ' + crashed.message); return; } }
+    if (!detected) { survived++; fail++; console.error('FAIL X' + mutants + ' SURVIVED — ' + label); }
+    else console.log('ok   X' + mutants + ' killed — ' + label);
+}
+function leavesOf(h) { return headerCells(headerRowBlock(h, 2)).map(function (c) { return c.text; }); }
+function spansOf(h) {
+    var by = {}; headerCells(headerRowBlock(h, 1)).forEach(function (c) {
+        var t = (c.mods.match(/km-table__header-cell--([a-z-]+)/) || [, ''])[1];
+        by[t] = parseInt((c.attrs.match(/data-leaf-span="(\d+)"/) || [, ''])[1], 10);
+    }); return by;
+}
+
+// X1 — the exact defect this round repaired: the modifier-bearing leaf dropped from the row.
+mutant('the modifier-bearing Current Stock leaf is omitted', function () {
+    var h = html.replace('<div class="km-table__header-cell km-table__header-cell--current-stock">Current Stock</div>', '');
+    return JSON.stringify(leavesOf(h)) !== JSON.stringify(CANONICAL_LEAVES);
+});
+// X2 — D2 violated: Inventory columns reordered.
+mutant('Inventory columns reordered (On the Way before 3rd Party Stock)', function () {
+    // Whitespace-agnostic and fail-closed: a literal CRLF swap would quietly become a no-op the day
+    // the markup is reindented, and a mutation that does nothing looks exactly like a passing test.
+    var re = /(<div class="km-table__header-cell">)3rd Party Stock(<\/div>)(\s*)(<div class="km-table__header-cell">)On the Way(<\/div>)/;
+    if (!re.test(html)) throw new Error('FAIL-CLOSED: the adjacent 3rd Party / On the Way leaves were not found');
+    var h = html.replace(re, function (_m, a, b, ws, c, d) { return a + 'On the Way' + b + ws + c + '3rd Party Stock' + d; });
+    return JSON.stringify(leavesOf(h)) !== JSON.stringify(CANONICAL_LEAVES);
+});
+// X3 — group spans no longer sum to the leaves.
+mutant('group-span mismatch (Replenishment widened to 3)', function () {
+    var h = html.replace('km-table__header-cell--replen" data-leaf-span="2"', 'km-table__header-cell--replen" data-leaf-span="3"');
+    var s = spansOf(h);
+    return (s.inventory + s.sales + s.replen + s.factory) !== leavesOf(h).length;
+});
+// X3b — and the boundary moves with it: CN would fall inside Replenishment.
+mutant('a widened Replenishment span pulls CN out of Factory Stock', function () {
+    var h = html.replace('km-table__header-cell--replen" data-leaf-span="2"', 'km-table__header-cell--replen" data-leaf-span="3"');
+    var s = spansOf(h), lv = leavesOf(h), c = s.inventory + s.sales;
+    return JSON.stringify(lv.slice(c, c + s.replen)) !== JSON.stringify(['Days of Supply', 'Suggested Qty']);
+});
+// X4 — D1 reverted: the display reference relabelled to the pre-R7 horizon.
+mutant('90 days FC reverted to 60 days FC', function () {
+    var h = html.replace('>90 days FC<', '>60 days FC<');
+    return JSON.stringify(leavesOf(h)) !== JSON.stringify(CANONICAL_LEAVES);
+});
+// X5 — a button comes back into the Suggested Qty cell.
+mutant('a button is injected into the Suggested Qty cell', function () {
+    var mutated = sugFn.replace("return '<span class=\"replen-suggested-cell__value\">'",
+                                "return '<button type=\"button\" onclick=\"x()\"></button><span class=\"replen-suggested-cell__value\">'");
+    if (mutated === sugFn) throw new Error('mutation anchor absent in _irSuggestedCellHtml');
+    return /<button/i.test(mutated) || /onclick/i.test(mutated);
+});
+// X6 — D3 inverted: a qualifying Self-Fulfilled site keeps Current Stock visible.
+mutant('Current Stock stays VISIBLE for a qualifying Self-Fulfilled site', function () {
+    var src = extractFn(js, '_irInventoryColumnModel').replace("=== 'self_fulfilled'", "=== '__never__'");
+    var M = new Function(src + '; return _irInventoryColumnModel;')();
+    return M('self_fulfilled').hideCurrentStock !== true;
+});
+// X7 — D3 over-applied: a non-qualifying site loses Current Stock.
+mutant('Current Stock hidden for a NON-qualifying (platform) site', function () {
+    var src = extractFn(js, '_irInventoryColumnModel').replace("=== 'self_fulfilled'", "!== '__never__'");
+    var M = new Function(src + '; return _irInventoryColumnModel;')();
+    return M('platform_fulfilled').hideCurrentStock !== false;
+});
+// X8 — hidden becomes REMOVED: the structural count is rewritten, which is the Production bug.
+mutant('the logical column structure is removed instead of visually hidden', function () {
+    var mutated = applyFn.replace('var m = _irInventoryColumnModel(fulfillmentModel);',
+        "var m = _irInventoryColumnModel(fulfillmentModel); if (tbl) tbl.querySelector('x').setAttribute('data-leaf-span', m.inventoryLeafSpan);");
+    if (mutated === applyFn) throw new Error('mutation anchor absent in _irApplyInventoryColumnModel');
+    return /setAttribute\(\s*['"]data-leaf-span['"]/.test(mutated);
+});
+// X9 — alignment broken: the group no longer shrinks with the hidden leaf.
+mutant('header/body alignment broken (Inventory group keeps 360px while a leaf is hidden)', function () {
+    var r = hideInventoryRule(css);
+    var mutatedRule = r.replace(/240px/g, '360px');
+    if (mutatedRule === r) throw new Error('FAIL-CLOSED: no width to mutate in the hidden-state rule');
+    return !(/[^-]width:\s*240px/.test(mutatedRule) && /min-width:\s*240px/.test(mutatedRule));
+});
+// X10b — and shrinking only ONE of the two is still misaligned, which the old loose test allowed.
+mutant('only min-width shrinks — the group still renders 360px wide', function () {
+    var mutatedRule = hideInventoryRule(css).replace(/([^-])width:\s*240px/, '$1width: 360px');
+    return !(/[^-]width:\s*240px/.test(mutatedRule) && /min-width:\s*240px/.test(mutatedRule));
+});
+// X10 — the body stops emitting the hidden cell, so hiding really would remove data.
+mutant('the body stops emitting the Current Stock cell', function () {
+    var t = scrollTpl.replace(/<div class="scroll-cell replen-cell--current-stock">'[^;]*?\+\s*'<\/div>'\s*\+/, '');
+    if (t === scrollTpl) t = scrollTpl.replace('replen-cell--current-stock', 'replen-cell--removed');
+    return !(/replen-cell--current-stock/.test(t) && /item\.currentInventory/.test(t));
+});
+
+ok(mutants >= 9, 'X' + (mutants + 1) + ' the mutant set is non-empty (' + mutants + ' mutants) — not vacuous');
+
+// S8-R48-J — a NUMERIC summary. "ALL PASS" carries no count, so this suite could never be verified
+// as having run anything; it sat in the unverifiable 39 for exactly that reason.
+console.log('\n' + (fail ? 'FAIL' : 'PASS') + '  ' + pass + ' passed, ' + fail + ' failed, '
+    + mutants + ' mutants, ' + survived + ' survived, ' + (mutants >= 9 ? 'vacuity clean' : 'VACUOUS'));
 process.exit(fail ? 1 : 0);
