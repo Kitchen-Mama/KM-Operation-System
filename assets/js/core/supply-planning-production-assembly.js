@@ -42,6 +42,20 @@
   function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function nonEmpty(v) { return str(v).length > 0; }
   function has(o, k) { return isObj(o) && Object.prototype.hasOwnProperty.call(o, k); }
+
+  // S8-R49-F — THE CANONICAL MARKETPLACE IDENTITY: company + country + marketplace.
+  // Identical rule and identical normalization to supply-planning-source-projection.js, deliberately: the two
+  // producers feed the same allocator, so a receiver must resolve to the same priority through either path.
+  // The separator is escaped so the join is injective (a bare join would let ('A','B|C','D') and
+  // ('A','B','C|D') collide — this defect in a subtler form), and it does NOT case-fold, because the canonical
+  // owner (03_master_data_handlers.gs) upserts on a trim()-only, case-SENSITIVE comparison.
+  var MKT_SEP = String.fromCharCode(124);   // |
+  var MKT_ESC = String.fromCharCode(92);    // backslash
+  function mktIdentityKey(company, country, marketplace) {
+    return [company, country, marketplace].map(function (v) {
+      return str(v).split(MKT_ESC).join(MKT_ESC + MKT_ESC).split(MKT_SEP).join(MKT_ESC + MKT_SEP);
+    }).join(MKT_SEP);
+  }
   function cmpStr(a, b) { a = str(a); b = str(b); return a < b ? -1 : a > b ? 1 : 0; }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
   function issue(code, ref, message) { return { code: code, ref: ref === undefined ? null : ref, message: message, details: {} }; }
@@ -112,7 +126,14 @@
     var evtRows = toRowObjects(snaps.fcSpecialEvents);
 
     var upcBySku = {}; skuRows.forEach(function (r) { if (nonEmpty(r.sku)) upcBySku[str(r.sku)] = r.units_per_carton; });
-    var prByMkt = {}; mktRows.forEach(function (r) { var k = str(r.marketplace); if (nonEmpty(k)) prByMkt[k] = r.allocation_priority; });
+    // S8-R49-F — keyed by the FULL canonical identity. The previous key was the marketplace name alone, so the
+    // LAST marketplaces row sharing a name decided every receiver's priority regardless of company or country.
+    // The has() guard keeps a MISSING priority missing: a row whose sheet has no allocation_priority column no
+    // longer writes an undefined over the map, so "absent" stays absent instead of being fabricated as a value.
+    var prByMktKey = {}; mktRows.forEach(function (r) {
+      if (!nonEmpty(r.marketplace)) return;
+      if (has(r, 'allocation_priority')) prByMktKey[mktIdentityKey(r.company, r.country, r.marketplace)] = r.allocation_priority;
+    });
 
     var monthsYm = KMPCX._forecastWeightMonths(vr.calculationMonth); // [M+1..M+4] YYYY-MM (frozen D-F1-5B-3)
     var forecastMonthAbbrev = MONTHS[parseYM(monthsYm[0]).mo - 1]; // demand-ledger month = M+1 (single-month, matches source-projection)
@@ -134,7 +155,7 @@
         .filter(function (e) { return nonEmpty(e.eventStartDate); });
       kmpcxReceivers.push({ company: vr.scope.company, country: vr.scope.country, marketplace: vr.scope.marketplace, sku: sku, siteSku: str(m.site_sku),
         destinationWarehouseId: vr.destinationWarehouseId, regularForecastByMonth: fc.map, specialEventFacts: events });
-      recvMeta[sku] = { forecastId: fc.forecastId, upc: upcBySku[sku], priority: prByMkt[vr.scope.marketplace], fulfillmentModel: str(m.fulfillment_model), siteSku: str(m.site_sku), fcMap: fc.map };
+      recvMeta[sku] = { forecastId: fc.forecastId, upc: upcBySku[sku], priority: prByMktKey[mktIdentityKey(vr.scope.company, vr.scope.country, vr.scope.marketplace)], fulfillmentModel: str(m.fulfillment_model), siteSku: str(m.site_sku), fcMap: fc.map };
     });
 
     // KMPCX — destination / window / required-by / driver / forecast anchor+share (frozen decisions).

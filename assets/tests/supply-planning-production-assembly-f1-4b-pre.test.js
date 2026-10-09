@@ -38,7 +38,12 @@ function sheets(over) {
     sku_details: [['sku', 'units_per_carton'], ['CO1100-R', 12]],
     marketplace_skus: [['marketplace_sku_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'fulfillment_model'], ['M1', 'CO1100-R', 'KM', 'US', 'AMAZON_US', 'ST-1', 'self_fulfilled']],
     warehouses: [['warehouse_id', 'company', 'country', 'warehouse_type', 'is_active'], ['WH-3PL', 'KM', 'US', '3PL', true]],
-    marketplaces: [['marketplace', 'allocation_priority'], ['AMAZON_US', 1]],
+    // S8-R49-F — company + country are REQUIRED here now. allocation_priority is resolved by the canonical
+    // marketplace identity (company + country + marketplace), not by the marketplace name alone, so a row
+    // carrying only a name has no identity to match and yields a MISSING priority. These two columns exist on
+    // the live `marketplaces` table (DATABASE_RELATIONSHIP_MAP.md); the fixture was simply narrower than the
+    // schema it stands in for.
+    marketplaces: [['company', 'country', 'marketplace', 'allocation_priority'], ['KM', 'US', 'AMAZON_US', 1]],
     // M = 2026-08 → weight months sep/oct/nov/dec 2026; demand-ledger month (M+1) = sep.
     fc_regular_forecast: [['forecast_id', 'year', 'company', 'country', 'marketplace', 'sku', 'sep', 'oct', 'nov', 'dec'], ['F1', 2026, 'KM', 'US', 'AMAZON_US', 'CO1100-R', 100, 120, 130, 140]],
     overseas_inventory_snapshot: [['warehouse_id', 'sku', 'site_sku', 'wh_available_stock', 'snapshot_date'], ['WH-3PL', 'CO1100-R', 'ST-1', 100, '2026-08-01']],

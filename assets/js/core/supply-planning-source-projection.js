@@ -47,6 +47,31 @@
   function nonEmpty(v) { return str(v).length > 0; }
   function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
 
+  // S8-R49-F — THE CANONICAL MARKETPLACE IDENTITY: company + country + marketplace.
+  //
+  // This is the composite the `marketplaces` upsert key uses in 03_master_data_handlers.gs, where
+  // marketplace_id is MKT-{COMPANY}-{COUNTRY}-{MARKETPLACE} derived from exactly these three fields. A
+  // marketplace NAME alone is not unique: DATABASE_RELATIONSHIP_MAP.md already records the identical rule for
+  // the sibling column — "warehouse_code is NOT globally unique (the same FC code repeats across companies) …
+  // never warehouse_code alone."
+  //
+  // WHY THE SEPARATOR IS ESCAPED. A bare join is not injective: ('A', 'B|C', 'D') and ('A', 'B', 'C|D') collapse
+  // to the same string, so two distinct marketplaces could still share one key — this very defect, reintroduced
+  // in a subtler form. Escaping the separator and the escape character makes the mapping one-to-one for any
+  // input, so the key is safe without having to assume anything about what the data contains.
+  //
+  // WHY IT DOES NOT CASE-FOLD. 03_'s upsert compares with trim() and is case-SENSITIVE, so 'Amazon' and 'amazon'
+  // are two different rows to the database. Upper-casing here would merge identities the canonical owner keeps
+  // apart — a new collision in place of the old one. trim() matches that authority exactly, and a lookup that
+  // does not match yields a MISSING priority, which is preserved rather than fabricated.
+  var MKT_SEP = String.fromCharCode(124);   // |
+  var MKT_ESC = String.fromCharCode(92);    // backslash
+  function mktIdentityKey(company, country, marketplace) {
+    return [company, country, marketplace].map(function (v) {
+      return str(v).split(MKT_ESC).join(MKT_ESC + MKT_ESC).split(MKT_SEP).join(MKT_ESC + MKT_SEP);
+    }).join(MKT_SEP);
+  }
+
   var ORIGIN = 'PROJECTION_RUNTIME';
   var FACTORY_SHARED = 'FACTORY_SHARED';                 // D-1 canonical shared-pool company sentinel
   var MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -145,7 +170,19 @@
 
     var whById = indexBy(whRows, 'warehouse_id');
     var upcBySku = {}; skuRows.forEach(function (r) { if (nonEmpty(r.sku) && has(r, 'units_per_carton')) upcBySku[str(r.sku)] = r.units_per_carton; });
-    var priorityByMkt = {}; mktRows.forEach(function (r) { var k = str(r.marketplace) || str(r.marketplace_id); if (k && has(r, 'allocation_priority')) priorityByMkt[k] = r.allocation_priority; });
+    // S8-R49-F — keyed by the FULL canonical identity, not the marketplace name. The previous key was
+    // `str(r.marketplace) || str(r.marketplace_id)`, so every row sharing a name overwrote the one before it and
+    // the LAST row read decided a receiver's priority. With KM/US/Amazon at 10 and ResUS/US/Amazon at 20, a
+    // KM-scoped receiver was handed 20 — and reversing the two rows changed the answer.
+    //
+    // A row with no marketplace name no longer participates. It has no canonical (company, country, marketplace)
+    // identity, and the old marketplace_id fallback could never match a lookup keyed by name anyway, so nothing
+    // that was reachable has been dropped. Such a row now yields a MISSING priority, which the consumers refuse
+    // on (source-facts raises MISSING_OR_INVALID_ALLOCATION_PRIORITY) rather than silently guessing.
+    var priorityByMktKey = {}; mktRows.forEach(function (r) {
+      if (!nonEmpty(r.marketplace)) return;
+      if (has(r, 'allocation_priority')) priorityByMktKey[mktIdentityKey(r.company, r.country, r.marketplace)] = r.allocation_priority;
+    });
     var ffByMskKey = {}; mskRows.forEach(function (r) { var k = [str(r.company), str(r.country), str(r.marketplace), str(r.sku)].join('|'); if (has(r, 'fulfillment_model')) ffByMskKey[k] = r.fulfillment_model; });
 
     // ---- destination ownership (D-3): caller/planning-scope-owned; never inferred ---------------------------
@@ -365,13 +402,16 @@
       return row;
     });
 
+    // S8-R49-F — the receiver's company and country come from the planning SCOPE. That is not a new assumption:
+    // the mskKey two lines below has always resolved this receiver's fulfillment_model the same way, so the
+    // priority lookup now simply uses the identity the function already treats as the receiver's own.
     var receiverInput = Array.isArray(input.receiverFacts) ? input.receiverFacts : [];
     var receiverRows = receiverInput.map(function (f) {
       var mkt = str(f.marketplace) || str(scope.marketplace);
       var mskKey = [str(scope.company), str(scope.country), mkt, str(f.sku || scope.sku)].join('|');
       return { receiver_key: str(f.receiverKey), demand_source_ref: str(f.demandRef),
         eligible_pool_types: f.eligiblePoolTypes, survival_need_qty: f.survivalNeedQty, daily_demand: f.dailyDemand,
-        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityByMkt[mkt],
+        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityByMktKey[mktIdentityKey(scope.company, scope.country, mkt)],
         demand_weight: f.demandWeight,
         fulfillment_model: nonEmpty(f.fulfillmentModel) ? f.fulfillmentModel : ffByMskKey[mskKey],
         marketplace: mkt, destination_warehouse_id: resolveDestination(str(f.demandRef), f.destinationWarehouseId) };
@@ -381,7 +421,7 @@
     var factoryRows = factoryInput.map(function (f) {
       var mkt = str(f.marketplace) || str(scope.marketplace);
       return { demand_source_ref: str(f.demandRef), eligible_factory_warehouse_ids: f.eligibleFactoryWarehouseIds,
-        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityByMkt[mkt],
+        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityByMktKey[mktIdentityKey(scope.company, scope.country, mkt)],
         required_by_date: has(f, 'requiredByDate') ? f.requiredByDate : requiredByDate,
         marketplace: mkt, destination_warehouse_id: resolveDestination(str(f.demandRef), f.destinationWarehouseId) };
     });
