@@ -485,6 +485,29 @@ function normalizeFactoryStockMovementRecord(raw) {
 
 function normalizeMarketplaceRecord(raw) {
     var r = raw || {};
+    // S8-R49-H — ABSENT IS NOT ZERO.
+    //
+    // This was `parseFloat(r.allocation_priority) || 0`, which collapsed FOUR distinct states — column absent,
+    // blank cell, null/undefined, and unparseable text — into the number 0. That is not a neutral default:
+    // §40 treats 0 as a VALID priority (the lowest), and under a shortage §24.7 still serves a 0-priority
+    // receiver a weighted share because the weight is clamped at max(priority, 1). So "missing → 0" silently
+    // granted a real priority and a share of the pool to a marketplace nobody had ranked, and it made §40's own
+    // refusal of an unresolved priority unreachable from the browser. The database already keeps the
+    // distinction: 03_master_data_handlers.gs writes nothing when the value is blank.
+    //
+    // Number() rather than parseFloat() on purpose. parseFloat is prefix-tolerant: parseFloat('1,000') is 1 and
+    // parseFloat('7abc') is 7, so a malformed cell became a confident wrong number. Number() refuses both, and a
+    // refusal surfaces downstream instead of quietly mis-ranking a marketplace.
+    //
+    // A NEGATIVE value is preserved, not clamped and not nulled. §40 rejects it with a RangeError ("must be
+    // non-negative"), and that refusal is the one that should be seen; converting it here would hide a bad row.
+    //
+    // Written INLINE rather than as a sibling helper: several suites slice this function out of the file and
+    // execute it on its own, so a helper defined outside it would be out of scope for them.
+    var apRaw = (r.allocation_priority === null || r.allocation_priority === undefined)
+        ? null : String(r.allocation_priority).trim();
+    var apNum = (apRaw === null || apRaw === '') ? null : Number(apRaw);
+    var allocationPriority = (apNum !== null && isFinite(apNum)) ? apNum : null;
     return {
         marketplaceId: String(r.marketplace_id || '').trim(),
         company: String(r.company || '').trim(),
@@ -494,8 +517,9 @@ function normalizeMarketplaceRecord(raw) {
         marketplaceAlias: String(r.marketplace_alias || '').trim(),
         // Fulfillment model: platform_fulfilled | self_fulfilled | hybrid (empty when column absent).
         fulfillmentModel: String(r.fulfillment_model || '').trim(),
-        // Shared overseas inventory allocation priority (higher = higher priority). 0 when absent.
-        allocationPriority: parseFloat(r.allocation_priority) || 0,
+        // Shared overseas inventory allocation priority (higher = higher priority).
+        // NULL when absent/blank/unparseable — absent is NOT 0. See normalizeAllocationPriority above.
+        allocationPriority: allocationPriority,
         currency: String(r.currency || '').trim(),
         status: String(r.status || '').trim(),
         createdBy: String(r.created_by || '').trim(),

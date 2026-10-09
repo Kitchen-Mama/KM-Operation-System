@@ -53,7 +53,9 @@ function obs(actual, expectedNow, label, tag) {
 section('L1 TRANSPORT — operation-system-db-api.js normalizeMarketplaceRecord');
 // Browser page script: no module.exports, so the pure normalizer is read out of the SHIPPED bytes and executed.
 
-var DBAPI = fs.readFileSync(path.join(__dirname, '../js/api/operation-system-db-api.js'), 'utf8');
+// R49H_DBAPI_OVERRIDE lets the mutant harness substitute a mutated COPY; absent it this is the shipped file.
+var DBAPI = fs.readFileSync(process.env.R49H_DBAPI_OVERRIDE
+  || path.join(__dirname, '../js/api/operation-system-db-api.js'), 'utf8');
 function extractShipped(src, name) {
   var sig = 'function ' + name + '(';
   var i = src.indexOf(sig);
@@ -73,22 +75,43 @@ var BASE = { company: 'KM', country: 'US', marketplace: 'Amazon' };
 function row(extra) { var o = {}; Object.keys(BASE).forEach(function (k) { o[k] = BASE[k]; });
   Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; }); return o; }
 
-obs(t(row({ allocation_priority: 10 })), 10, 'G1 case 7 — a POSITIVE priority passes through as 10', 'CONTRACT');
-obs(t(row({ allocation_priority: 0 })), 0, 'G2 case 1 — an explicit 0 survives as 0', 'CONTRACT');
-obs(t(row({})), 0, 'G3 case 2 — a MISSING column becomes 0 (indistinguishable from an explicit 0)', 'DEVIATION');
-obs(t(row({ allocation_priority: '' })), 0, 'G4 case 3 — a BLANK string becomes 0', 'DEVIATION');
-obs(t(row({ allocation_priority: null })), 0, 'G5 case 4 — null becomes 0', 'DEVIATION');
-obs(t(row({ allocation_priority: undefined })), 0, 'G6 case 5 — undefined becomes 0', 'DEVIATION');
-obs(t(row({ allocation_priority: 'high' })), 0, 'G7 case 6 — INVALID text becomes 0 rather than being refused', 'DEVIATION');
-obs(t(row({ allocation_priority: -5 })), -5, 'G8 case 8 — a NEGATIVE value passes through UNCHECKED at this layer '
-  + '(the allocator refuses it later; see L5)', 'DEVIATION');
+// S8-R49-H REPAIRED THIS LAYER. G3-G8 were DEVIATION in R49-G and are CONTRACT now; the layers below are
+// untouched and keep their original tags. Re-tagging here reflects an authorized repair at THIS layer only.
+obs(t(row({ allocation_priority: 10 })), 10, 'G1 case 7 -- a POSITIVE priority passes through as 10', 'CONTRACT');
+obs(t(row({ allocation_priority: 0 })), 0, 'G2 case 1 -- an explicit 0 survives as 0', 'CONTRACT');
+obs(t(row({})), null, 'G3 case 2 -- a MISSING column is now null, distinguishable from an explicit 0', 'CONTRACT');
+obs(t(row({ allocation_priority: '' })), null, 'G4 case 3 -- a BLANK string is null', 'CONTRACT');
+obs(t(row({ allocation_priority: null })), null, 'G5 case 4 -- null stays null', 'CONTRACT');
+obs(t(row({ allocation_priority: undefined })), null, 'G6 case 5 -- undefined is null', 'CONTRACT');
+obs(t(row({ allocation_priority: 'high' })), null,
+    'G7 case 6 -- INVALID text is null, never a fabricated number', 'CONTRACT');
+// Negative is PRESERVED here by design (R49-H H1): §40 refuses it with a RangeError naming
+// allocationPriority (G34), and that refusal is the one that should be seen. Nulling or clamping it here would
+// hide a bad row instead of surfacing it. The layers that still pass a negative onward WITHOUT any downstream
+// refusal (G16, G27) remain tagged DEVIATION.
+obs(t(row({ allocation_priority: -5 })), -5,
+    'G8 case 8 -- a NEGATIVE value is PRESERVED for §40 to refuse, not silently corrected here', 'CONTRACT');
 obs(t(row({ allocation_priority: '7' })), 7, 'G9 a numeric STRING is parsed to 7', 'CONTRACT');
+// parseFloat was prefix-tolerant and turned malformed cells into confident wrong numbers.
+obs(t(row({ allocation_priority: '7abc' })), null,
+    'G9b a prefix-numeric string is REFUSED (parseFloat would have read 7)', 'CONTRACT');
+obs(t(row({ allocation_priority: '1,000' })), null,
+    'G9c a comma-formatted value is REFUSED (parseFloat would have read 1, not 1000)', 'CONTRACT');
+obs(t(row({ allocation_priority: ' 3 ' })), 3, 'G9d surrounding whitespace is trimmed, matching the DB owner', 'CONTRACT');
+// A WHITESPACE-ONLY cell is the case that actually needs the explicit trim: Number() trims on its own, so
+// without it String('   ') is not '' and Number('   ') would be 0 -- an empty cell silently ranked lowest.
+obs(t(row({ allocation_priority: '   ' })), null,
+    'G9e a WHITESPACE-ONLY cell is null, not 0', 'CONTRACT');
+obs(t(row({ allocation_priority: '	' })), null, 'G9f and a tab-only cell likewise', 'CONTRACT');
 
 // The non-allocation fields must keep working regardless — a marketplace LIST is not an allocation.
 (function () {
-  var n = normalizeMarketplaceRecord(row({ marketplace_display_name: 'KM Amazon', status: 'active' }));
-  obs([n.company, n.country, n.marketplace, n.marketplaceDisplayName, n.status],
-      ['KM', 'US', 'Amazon', 'KM Amazon', 'active'],
+  var n = normalizeMarketplaceRecord(row({ marketplace_display_name: 'KM Amazon', status: 'active',
+    currency: 'USD', marketplace_id: 'MKT-KM-US-AMAZON', fulfillment_model: 'self_fulfilled',
+    marketplace_alias: 'amz' }));
+  obs([n.company, n.country, n.marketplace, n.marketplaceDisplayName, n.status, n.currency,
+       n.marketplaceId, n.fulfillmentModel, n.marketplaceAlias],
+      ['KM', 'US', 'Amazon', 'KM Amazon', 'active', 'USD', 'MKT-KM-US-AMAZON', 'self_fulfilled', 'amz'],
       'G10 case 12 — the ordinary marketplace listing fields are unaffected by any of this', 'CONTRACT');
 })();
 
