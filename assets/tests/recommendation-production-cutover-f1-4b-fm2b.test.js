@@ -91,6 +91,7 @@ function mkt(over) { var L = { recommendationLineId: 'M1', recommendationMode: '
   function _irRecoRerenderSummaries() {}
   function _legacyRecSummaryTableHtml() { return '<table class="legacy"></table>'; }
   function _recSummaryRows() { return ''; }
+  eval(require('./_f1a-scope-guard.js').guardPreamble());   // S8-R47-A — the F1A guard the region calls
   eval(IR);
   // _irSuggestedCellHtml lives just OUTSIDE the __IRRECO__ block — extract + eval it too (it depends on the
   // block's _irRecommendationWorkspaceEnabled, now in scope).

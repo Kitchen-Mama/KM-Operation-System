@@ -27,6 +27,7 @@ function escapeReplenHtml(s) { return String(s == null ? '' : s).replace(/&/g, '
 function getReplenishmentData() { return []; }
 function _recSummaryRows() { return '<tr><td>legacy</td></tr>'; }
 function updateReplenRecoContext() { return _irctxLastContext; }
+eval(require('./_f1a-scope-guard.js').guardPreamble());   // S8-R47-A — the F1A guard the region calls
 eval(IRCTX); eval(IRRECO);
 
 var READY = { status: 'READY', company: 'KM', country: 'US', marketplace: 'AMAZON_US', marketplaceId: 'MP1', calculationMonth: '2026-08', planningCycle: '2026-W40', missing: [], issues: [] };

@@ -49,6 +49,7 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function code(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
 
 var PAGE = read('assets/js/pages/inventory-replenishment.js');
+require('./_f1a-scope-guard.js').installGlobals(PAGE);   // S8-R47-A — the F1A guard the extracted code calls
 var DBAPI = read('assets/js/api/operation-system-db-api.js');
 var G03 = read('assets/specs/active/apps-script/03_master_data_handlers.gs');
 var G60 = read('assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs');
@@ -86,6 +87,9 @@ function extractVar(src, name) {
 // THE FROZEN FIXTURE. Declared ONCE. No assertion below may restate a value that is not here.
 // ================================================================================================================
 var US = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
+// S8-R47-A — the applied scope these fixtures are produced for, keyed by the SHIPPED resolver.
+var F1A = require('./_f1a-scope-guard.js');
+var SCOPE_KEY = F1A.applyScope(US.country, US.marketplace, PAGE);
 var YOUXIN = 'WH-TW-CN-FACTORY-YOUXIN';
 var H1 = { allocation_draft_id: 'SAD-C787D1B1-D', company: 'ResUS', country: 'US', marketplace: 'Amazon', status: 'draft',
   recommended_shipping_method: 'sea_express', recommended_source_warehouse_id: YOUXIN,
@@ -519,7 +523,7 @@ function suggestedFor(opts) {
     function () { return true; }, function () { return null; });
 }
 var CO_T = { sku: 'CO1100-T', suggestedQty: 0 };
-var matReady = { status: 'READY', bySku: { 'CO1100-T': { calculation_status: 'READY', d90_suggested_qty: 2120 } } };
+var matReady = { status: 'READY', appliedScopeKey: SCOPE_KEY, bySku: { 'CO1100-T': { calculation_status: 'READY', d90_suggested_qty: 2120 } } };
 var g = suggestedFor({ item: CO_T, mat: matReady });
 eq(g.state.state, 'READY', 'G1  the top cell\'s authority is the MATERIALIZED gap row');
 eq(g.state.value, 2120, 'G2  and its value for CO1100-T is 2120');
@@ -539,12 +543,25 @@ ok(!/var suggested = parseInt\(skuData\.suggestedQty\) \|\| 0;/.test(PAGEC), 'G7
 // AND THE HONESTY RULES — no state may become a fabricated number.
 eq(suggestedFor({ item: CO_T, mat: { status: 'LOADING', bySku: {} } }).num, 0, 'G8  PENDING seeds 0 — never a guess');
 ok(suggestedFor({ item: CO_T, mat: { status: 'LOADING', bySku: {} } }).html.indexOf('…') !== -1, 'G9  and the cell still prints "…"');
-var blocked = { status: 'READY', bySku: { 'CO1100-T': { calculation_status: 'BLOCKED', d90_suggested_qty: 2120 } } };
+var blocked = { status: 'READY', appliedScopeKey: SCOPE_KEY, bySku: { 'CO1100-T': { calculation_status: 'BLOCKED', d90_suggested_qty: 2120 } } };
 eq(suggestedFor({ item: CO_T, mat: blocked }).num, 0, 'G10 BLOCKED seeds 0 — a blocked recommendation is not a quantity');
 ok(suggestedFor({ item: CO_T, mat: blocked }).html.indexOf('—') !== -1, 'G11 and the cell still prints an honest em dash');
-var zero = { status: 'READY', bySku: { 'CO1100-T': { calculation_status: 'READY', d90_suggested_qty: 0 } } };
+var zero = { status: 'READY', appliedScopeKey: SCOPE_KEY, bySku: { 'CO1100-T': { calculation_status: 'READY', d90_suggested_qty: 0 } } };
 eq(suggestedFor({ item: CO_T, mat: zero }).state.state, 'READY', 'G12 a valid canonical 0 is READY, not NONE');
 ok(suggestedFor({ item: CO_T, mat: zero }).html.indexOf('>0<') !== -1, 'G13 and prints as 0 — the FM3a rule is intact');
+
+// S8-R47-A — THE F1A GUARD IS LIVE IN THIS CELL, AND THIS PROVES IT.
+// Byte-identical to matReady except for the scope it is stamped for. G1-G3 above read 2120 from it;
+// stamped for another scope the same row must be refused, not painted. A stub or a bypass fails here.
+var staleMat = { status: 'READY', appliedScopeKey: F1A.MISMATCHED_SCOPE_KEY,
+  bySku: { 'CO1100-T': { calculation_status: 'READY', d90_suggested_qty: 2120 } } };
+eq(suggestedFor({ item: CO_T, mat: staleMat }).state.state, 'PENDING',
+  'G13s STALE SCOPE: a READY row stamped for another scope resolves PENDING, never READY');
+eq(suggestedFor({ item: CO_T, mat: staleMat }).num, 0,
+  'G13s2 ... and seeds 0 rather than the other scope\'s 2120');
+var unstampedMat = { status: 'READY', bySku: { 'CO1100-T': { calculation_status: 'READY', d90_suggested_qty: 2120 } } };
+eq(suggestedFor({ item: CO_T, mat: unstampedMat }).state.state, 'PENDING',
+  'G13s3 MISSING STAMP: an unstamped result is a mismatch too — absence is never a pass');
 // §I — it must not save, and it must not touch H4.
 // RESTATED (F1-7N-FC-1B-E1): the "default preview ... captured into the Working Draft only once the PM edits
 // it" comment is gone with the branch it described. Its claim was half true and that was the defect: the

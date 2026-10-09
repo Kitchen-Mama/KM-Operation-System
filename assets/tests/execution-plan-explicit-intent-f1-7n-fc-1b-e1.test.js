@@ -54,6 +54,7 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function code(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
 
 var PAGE = read('assets/js/pages/inventory-replenishment.js');
+require('./_f1a-scope-guard.js').installGlobals(PAGE);   // S8-R47-A — the F1A guard the extracted code calls
 var CMPSRC = read('assets/js/utils/inventory-compat.js');
 var CMP = require(path.join(ROOT, 'assets/js/utils/inventory-compat.js'));
 var PF = CMP.IRSubmitPreflight;
@@ -78,6 +79,10 @@ function swap(src, find, repl) {
 }
 
 var CTX = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
+// S8-R47-A — the scope this suite's results are produced for, and the key the F1A guard will
+// compare them against. Computed by the SHIPPED _irAppliedScopeKey_, never reimplemented here.
+var F1A = require('./_f1a-scope-guard.js');
+var SCOPE_KEY = F1A.applyScope(CTX.country, CTX.marketplace, PAGE);
 var SKU = 'CO1100-R';
 var SUGGESTED = 520, GAP = 519;
 
@@ -224,7 +229,7 @@ function makeWorld(opts) {
     _execToOptionsHtml: function () { return ''; },
     _execEsc: function (v) { return String(v == null ? '' : v); },
     _irCanonicalDateOrBlank_: function (v) { return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : ''; },
-    _irMatState: { status: 'READY', bySku: (function () { var m = {}; m[SKU] = { calculation_status: 'READY', d90_suggested_qty: opts.suggested === undefined ? SUGGESTED : opts.suggested, d90_gap_qty: GAP }; return m; })() },
+    _irMatState: { status: 'READY', appliedScopeKey: (opts.scopeKey === undefined ? SCOPE_KEY : opts.scopeKey), bySku: (function () { var m = {}; m[SKU] = { calculation_status: 'READY', d90_suggested_qty: opts.suggested === undefined ? SUGGESTED : opts.suggested, d90_gap_qty: GAP }; return m; })() },
     _irUseMaterializedGapRead: function () { return true; },
     _irMatNum: function (v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; },
     _irRecommendationWorkspaceEnabled: function () { return true; },
@@ -352,7 +357,7 @@ function reseed(src) {
     '    if (!_isComposer && !_prov) {', '    if (false) {');
 }
 function makePreWorld() {
-  var w = makeWorld({});
+  var w = makeWorld(arguments[0] || {});
   w.api = new Function(w.names.concat(['replenAllocationDraft', '__totals']), reseed(w.src))
     .apply(null, w.names.map(function (n) { return w.deps[n]; }).concat([w.model, w.counts.totals]));
   return w;
@@ -365,6 +370,20 @@ eq(pre.list._rows[0]._fields.qty, '520', 'A2  PRE: its Qty is the Suggested Qty 
 eq(pre.list._rows[0].getAttribute('data-line-id'), null, 'A3  PRE: and it carries NO persisted line identity');
 eq(pre.list._rows[0].getAttribute('data-draft-id'), null, 'A3a PRE: nor any header identity');
 eq(lastTotal(pre), 520, 'A4  PRE: the Execution Plan Total reads 520 — a quantity nobody committed to');
+
+// S8-R47-A — THE F1A GUARD IS LIVE HERE, AND THIS IS WHAT PROVES IT.
+//
+// Identical fixture, one field changed: the materialized result is stamped for a scope that is NOT
+// the applied one. Everything A1-A4 relies on — READY status, a stored d90_suggested_qty of 520 —
+// is still present. If the guard were stubbed, bypassed, or satisfied by the mere presence of a
+// key, this world would paint 520 exactly as the one above does. It must refuse instead, because a
+// result belonging to another site is not a slow answer, it is the wrong answer.
+var staleScope = makePreWorld({ scopeKey: F1A.MISMATCHED_SCOPE_KEY });
+staleScope.api.init(SKU, SKUDATA, { catalogueSettled: true });
+ok(lastTotal(staleScope) !== 520,
+  'A4s STALE SCOPE: a result stamped for another scope does NOT reach the Execution Plan Total');
+var staleQty = staleScope.list._rows.length ? staleScope.list._rows[0]._fields.qty : null;
+ok(staleQty !== '520', 'A4s2 ... and no route is seeded with the other scope\'s Suggested Qty');
 ok(!isEmptyState(pre), 'A5  PRE: no empty state, because the state was unreachable');
 
 var post = makeWorld({});

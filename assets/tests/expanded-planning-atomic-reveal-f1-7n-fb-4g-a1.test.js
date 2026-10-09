@@ -50,6 +50,10 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function code(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
 
 var PAGE = read('assets/js/pages/inventory-replenishment.js');
+// S8-R47-A — the F1A guard the extracted code calls, plus the applied scope its results belong to.
+// US/Amazon is this suite's own scope convention (see the SC fixtures below).
+var F1A = require('./_f1a-scope-guard.js');
+var SCOPE_KEY = F1A.applyScope('US', 'Amazon', PAGE);
 var CMPSRC = read('assets/js/utils/inventory-compat.js');
 var CSS = read('assets/css/pages/inventory-replenishment.css');
 /* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
@@ -312,9 +316,20 @@ section('§H.4 — A LEGITIMATE ZERO IS DATA');
     '_irRecoLinesForSku', '_irAggregateActionableRecommendedQty',
     extractFn(PAGE, '_irSuggestedQtyState_') + ' return _irSuggestedQtyState_;')(
       function () { return true; },
-      { status: 'READY', bySku: { 'CO1100-R': { calculation_status: 'READY', d90_suggested_qty: 0 } } },
+      { status: 'READY', appliedScopeKey: SCOPE_KEY, bySku: { 'CO1100-R': { calculation_status: 'READY', d90_suggested_qty: 0 } } },
       matNum, function () { return false; }, function () { return null; }, function () { return { total: 0, actionableCount: 0 }; });
   eq(sq({ sku: 'CO1100-R' }), { state: 'READY', value: 0 }, 'H4b a stored suggested qty of 0 is READY with the value 0 — not EMPTY, not NONE');
+
+  // S8-R47-A — the same stored 0, stamped for another scope. A legitimate 0 is READY (H4b); a 0
+  // belonging to a different site must not borrow that legitimacy. This is what keeps H4b honest.
+  var sqStale = new Function('_irUseMaterializedGapRead', '_irMatState', '_irMatNum', '_irRecommendationWorkspaceEnabled',
+    '_irRecoLinesForSku', '_irAggregateActionableRecommendedQty',
+    extractFn(PAGE, '_irSuggestedQtyState_') + ' return _irSuggestedQtyState_;')(
+      function () { return true; },
+      { status: 'READY', appliedScopeKey: F1A.MISMATCHED_SCOPE_KEY, bySku: { 'CO1100-R': { calculation_status: 'READY', d90_suggested_qty: 0 } } },
+      matNum, function () { return false; }, function () { return null; }, function () { return { total: 0, actionableCount: 0 }; });
+  eq(sqStale({ sku: 'CO1100-R' }), { state: 'PENDING', value: null },
+    'H4s STALE SCOPE: a stored 0 from another scope is PENDING, not a READY 0');
 })();
 
 // ================================================================================================================
@@ -691,7 +706,7 @@ mut('M4  a legitimate stored 0 is treated as EMPTY', function () {
       '_irRecoLinesForSku', '_irAggregateActionableRecommendedQty',
       extractFn(PAGE, '_irSuggestedQtyState_') + ' return _irSuggestedQtyState_;')(
         function () { return true; },
-        { status: 'READY', bySku: { S: { calculation_status: 'READY', d90_suggested_qty: 0 } } },
+        { status: 'READY', appliedScopeKey: SCOPE_KEY, bySku: { S: { calculation_status: 'READY', d90_suggested_qty: 0 } } },
         numFn, function () { return false; }, function () { return null; }, function () { return { total: 0, actionableCount: 0 }; })({ sku: 'S' });
   }
   return state(honestNum).state === 'READY' && state(mutNum).state === 'NONE';

@@ -43,6 +43,7 @@ function updateReplenRecoContext() { return _irctxLastContext; }
 // FM5-R4UI-R5 §5: the top Suggested cell is materialized-first by default; this suite validates the WORKSPACE
 // aggregation fallback, so it must run with the materialized read OFF (kill switch) to exercise that path.
 global.window = { IRContext: { toScopeRequest: function () { return CURRENT_SCOPE; } }, KM_FLAGS: { USE_MATERIALIZED_GAP_READ: false } };
+eval(require('./_f1a-scope-guard.js').guardPreamble());   // S8-R47-A — the F1A guard the region calls
 eval(IR);
 eval(IRSUG);
 ok(typeof loadRecommendationWorkspace_ === 'function' && typeof _irAggregateActionableRecommendedQty === 'function' && typeof invalidateRecommendationSessionCache === 'function', 'X1 cache + aggregation functions eval OK');

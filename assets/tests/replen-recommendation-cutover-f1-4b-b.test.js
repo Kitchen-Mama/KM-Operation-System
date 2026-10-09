@@ -32,6 +32,7 @@ function escapeReplenHtml(s) { return String(s == null ? '' : s); }
 function getReplenishmentData() { return []; }
 function _recSummaryRows() { return '<tr><td>legacy</td></tr>'; }
 function updateReplenRecoContext() { return _irctxLastContext; }
+eval(require('./_f1a-scope-guard.js').guardPreamble());   // S8-R47-A — the F1A guard the region calls
 eval(IRCTX);
 eval(IRRECO);
 var IR = global.window.IRContext;

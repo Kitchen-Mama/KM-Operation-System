@@ -97,6 +97,7 @@ section('INVENTORY · expand reads STORED row (no live getWorkspace), valid zero
   global.getReplenishmentData = function () { return []; };
   global._recSummaryRows = function () { return ''; };
   global.updateReplenRecoContext = function () { return _irctxLastContext; };
+  eval(require('./_f1a-scope-guard.js').guardPreamble(INVJS));   // S8-R47-A — the F1A guard the region calls
   eval(IRCTX); eval(IRRECO);
   var wsCalls = { n: 0 };
   var readCalls = { n: 0 };
