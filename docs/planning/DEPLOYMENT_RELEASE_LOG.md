@@ -4814,3 +4814,97 @@ against the pre-R46 values. Unconnected Marketplace acceptance is DEFERRED_S8_FI
 
 `missing_actions` = [] is **self-referential** (`missing_actions_is_self_referential: true`) and is NOT
 an independent complete action census: a deployment predating an action cannot report it missing.
+
+---
+
+## S8-R49-I / S8-R49-J — `…-R47` and `…-R48` — UNSHIPPED INTERMEDIATE BUILDS, ABSORBED INTO R49
+
+```
+RELEASE IDS                  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47
+                             F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R48
+STATUS                       NOT DEPLOYED. NOT CUT AS RELEASES. NO Apps Script version exists for either,
+                             and neither was ever synced. They are written down here because the shared
+                             owner-stamp ledger carries them and a token in that ledger with no entry here
+                             is indistinguishable from a release somebody cut and forgot to record.
+
+WHAT THEY ACTUALLY ARE       MODULE-STAMP ROTATIONS, minted by rounds that were explicitly NOT authorized
+                             to move SYS_DEPLOYMENT_RELEASE_.
+                             R47 — S8-R49-I rotated 61_api_v1_weekly_ai_plan.gs when weeklyAiPlanMktKey_
+                                   replaced marketplace-name-only priority lookup with the canonical
+                                   company + country + marketplace identity.
+                             R48 — S8-R49-J rotated 63_api_v1_system_health.gs when the deployment manifest
+                                   was corrected to the bundle hash S8-R49-F had actually built.
+
+WHY THEY ARE NOT REMOVED     `stampAtOrAfter` compares INDEXES in `assets/tests/_release-order.js`. Deleting
+                             or renumbering either token would silently reorder every floor written against
+                             that list, so both stay exactly where they were appended. Append-only is not a
+                             convenience here; it is what makes "at or after round X" answerable at all.
+
+ABSORBED BY                  R49. 61_ ships under R49 while still DECLARING R47, and that is correct rather
+                             than stale: a module stamp records the round its file last changed, never the
+                             release that carries it. An acceptance finding R47 on 61_ after R49 is looking
+                             at a correctly synced file.
+```
+
+---
+
+## S8-R49-L — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49` — MARKETPLACE PRIORITY IDENTITY + THE §14 SEND REFUSAL
+
+```
+BASE    88ec21e   S8-R49-J; R46 is CUT, SYNCED and DEPLOYED, its acceptance still OPEN
+BRANCH  feature/product-strategy-board-p0
+DATE    2026-10-10
+SCOPE   Two runtime defects and the bookkeeping that carries them. A marketplace's allocation_priority was
+        resolved by marketplace NAME alone, so a site could be handed another company's priority order-
+        dependently; and a Request Order line with no usable units_per_carton could be Sent. No action
+        added or removed, no route moved, no schema, no stored row, zero DB writes.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49
+PURPOSE                      Ship the S8-R49-D/F/H/I repairs as one coherent paste set, and reconcile a
+                             release identity that had drifted two tokens behind its own module stamps.
+SUPERSEDES                   nothing. ABSORBS R47 and R48, which were module-stamp rotations and were never
+                             deployed — see the entry above.
+WHY R49 AND NOT R48          The cut was prepared as R48. R48 was already 63_'s own module stamp at HEAD,
+                             set by S8-R49-J, and a release token must be MINTED BY ITS CUT: the E4 gate
+                             requires a changed owner's last commit to be the commit that INTRODUCED its
+                             stamp, while the release contract requires SYS_BUILD_VERSION_ to EQUAL the
+                             release. No commit can introduce R48 twice, so declaring it would have left E4
+                             failing against an otherwise correct tree. Measured, not assumed: with the
+                             release at R48, E4 reported `63_api_v1_system_health.gs (edited in this working
+                             tree, stamp still …R48)`; with the stamp rotated, E4 passed.
+OWNERS                       63_api_v1_system_health.gs                      (SYS_BUILD_VERSION_)
+                             66_api_v1_request_order_send.gs                 (ROS_BUILD_VERSION_)
+                             66_ carries TWO stamps and only ONE moves: Send ORCHESTRATION changed, the send
+                             DIAGNOSTIC did not, so ROSEND_DIAG_BUILD_VERSION_ stays at F1-7N-FB-4G-A2-R4.
+CARRIED                      61_api_v1_weekly_ai_plan.gs stays at R47 — it changed in R49-I, not here.
+                             01_router.gs stays at R41. SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ stays 18,
+                             required-action list 14, transport contract 1.
+BUNDLE                       90_generated_supply_planning_bundle.gs IS part of this release, rebuilt in
+                             S8-R49-F. Content hash fafc1d8e0273cb170601b6481d56d07f35d2ab51660adaf41637e9
+                             06f4258c41, reproducible from the core modules via `--check`. Never hand-edited.
+EDITOR-APPLIED               none. appsscript.json is unchanged — no advanced service, no OAuth scope.
+FRONTEND                     SEPARATE RELEASE, prepared not published. Application-family cache token
+                             r49-priority-sendguard-20261010 is minted and every application reference in
+                             index.html and app.js carries it. The map, Site-Inventory-CSS and method-
+                             registry families are deliberately untouched — no byte of theirs moved.
+
+STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries R49, no Web
+                             App version exists for it, and Production is NOT R49 — Production is R46.
+```
+
+### Apps Script sync set — four files, ONE paste set, 63_ last
+
+```
+61_api_v1_weekly_ai_plan.gs            declares WAP_BUILD_VERSION_ …R47  (carried, correct)
+90_generated_supply_planning_bundle.gs identified by content hash, not by a stamp
+66_api_v1_request_order_send.gs        declares ROS_BUILD_VERSION_ …R49
+63_api_v1_system_health.gs             declares the release and every expectation above — paste it LAST
+```
+
+### Acceptance that must still happen
+
+Nothing in this entry is evidence of a deployment. After the user syncs and publishes a version, a live
+`system.health` probe must report `build_id` = `deployment_release` = R49, `mixed_deployment` = false,
+`stale_modules` = [], `deployment_uniformity_verdict` = UNIFORM, and 61_ reporting R47 with
+`matches_expected` = true. **R46 Production Functional Acceptance remains OPEN against R46 and is not
+closed, superseded or re-dated by this release.**

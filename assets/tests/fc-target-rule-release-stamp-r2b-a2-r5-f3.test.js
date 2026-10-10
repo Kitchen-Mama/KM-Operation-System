@@ -322,6 +322,27 @@ var RELEASE_OWNERS = {
     + 'supported way to add them. A manifest that mis-states its own admission rule is the comment-versus-'
     + 'assertion drift S7-R2B1 was convened to repair, so it is repaired rather than carried. 90_\'s '
     + 'content hash is untouched - no core module changed.',
+  // S8-R49-L - THE TWENTY-SECOND SWAP, and the first release in this ledger to own a TWO-STAMP FILE.
+  //
+  // 66_ JOINS OWNERSHIP AT R49 carrying ONE of its two stamps. S8-R49-D changed Send ORCHESTRATION -
+  // rosBuildWorkset_ resolves units_per_carton and the tier loop refuses a line that has none, and
+  // handleRequestOrderSendOrchestrate_ stops hardcoding DUPLICATE_BUSINESS_IDENTITY - so ROS_BUILD_VERSION_
+  // moves and ROSEND_DIAG_BUILD_VERSION_ does not. That asymmetry is the point of two stamps, and C3 below
+  // depends on it: C3 maps manifest ROWS to file names without de-duplicating, so if BOTH of 66_'s rows
+  // expected the release this file would appear twice in a list compared against a KEY set and could never
+  // match. Exactly one row may carry the release, and the one that carries it is the one whose concern
+  // actually changed.
+  //
+  // 61_ IS NOT HERE AND THAT IS NOT AN OMISSION. It changed in S8-R49-I under R47, a token minted as a
+  // module-stamp rotation by a round forbidden to cut. It is CARRIED below at R47: it ships in this paste
+  // set while still declaring the round it last changed in, which is what a per-module stamp is for.
+  '66_api_v1_request_order_send.gs':
+    'REQUEST ORDER SEND ORCHESTRATION. The §14/§17/§37 missing-units_per_carton refusal: a draft line whose '
+    + 'carton size is absent, blank, zero or non-numeric can no longer be Sent, and the refusal names the '
+    + 'SKU rather than defaulting the quantity to 1. ROSEND_DIAG_BUILD_VERSION_ deliberately does NOT move - '
+    + 'the send DIAGNOSTIC did not change, and marching a second stamp to look current is the churn the '
+    + 'manifest warns against. No action was added and no route changed, so the action-contract version is '
+    + 'untouched.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -354,6 +375,15 @@ var RELEASE_CARRIED = {
   // manifest reports. A carried stamp under an unshipped release is the one case where "stale" and
   // "correct" look identical from the outside, and this entry is how they are told apart.
   '60_api_v1_inventory_replenishment_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45',
+  // S8-R49-L - 61_ JOINS THIS LIST AT R47, and it is the clearest case the list has carried. R47 is not a
+  // release anybody cut: S8-R49-I rotated 61_'s stamp to it while explicitly forbidden to move
+  // SYS_DEPLOYMENT_RELEASE_, so the token exists, sits in the ledger, and names exactly one file. R49 ships
+  // 61_ without marching its stamp, because the stamp's one job is to say which round changed the file -
+  // which was R47, when weeklyAiPlanMktKey_ replaced marketplace-name-only priority lookup with the
+  // canonical company + country + marketplace identity. An acceptance that finds R47 in Production after
+  // this release is looking at a CORRECTLY synced file, and this entry is what lets it tell that from a
+  // stale one.
+  '61_api_v1_weekly_ai_plan.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47',
   // S7-R2A — THE EIGHTEENTH SWAP. 22_ LEAVES OWNERSHIP AT R38 after one release as an owner and keeps R37,
   // the round DECLARED_SOURCE_ONLY actually landed in. R38 changes a read projection and no handler.
   '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37',

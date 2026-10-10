@@ -305,7 +305,30 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // its module stamp here would claim a round it had no part in. The two travel to Production as ONE paste
 // set while keeping separate identities. No action, request field or response field moved; horizonBasis
 // gains four additive diagnostic fields that were already present on the resolver's own return.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46';
+// S8-R49-L — R49, THE CUT. R46 is deployed and its acceptance is still OPEN against the tree it was written
+// for; this release does not touch that evidence. R49 carries four files to Apps Script as ONE paste set:
+// 61_ (marketplace priority resolved by company + country + marketplace), 66_ (the §14 Send refusal when no
+// usable carton size exists), 90_ (the same priority identity repair in the two bundled core producers) and
+// this file.
+//
+// WHY R49 AND NOT R48, WHICH IS WHAT THIS CUT WAS ASKED FOR. R47 and R48 were both minted as MODULE-STAMP
+// ROTATIONS in rounds that were explicitly not authorized to cut a release: R47 for 61_, and R48 for this
+// file when S8-R49-J repaired 90_'s manifest hash. A release token has to be MINTED BY THE CUT, because two
+// gates meet on it — E4 requires a changed owner's last commit to be the commit that introduced its stamp,
+// and the release contract requires SYS_BUILD_VERSION_ below to EQUAL the release. R48 was already this
+// file's stamp at HEAD, so no commit could introduce it again; declaring it would have left E4 failing on a
+// tree that is otherwise correct. R49 is the next token in the same series and satisfies both.
+//
+// R47 AND R48 ARE NOT SEPARATE RELEASES AND NEITHER WAS EVER DEPLOYED. Both stay in the ledger exactly where
+// they were appended — stampAtOrAfter compares INDEXES, so removing either would silently reorder every
+// floor written against the list — and both are recorded in the release log as unshipped and absorbed here.
+// 61_ therefore SHIPS under R49 while still DECLARING R47, which is correct and is the rule this file has
+// stated since R6-R6-R4-R2: a module stamp records the round the file last changed, never the release that
+// carries it.
+//
+// NOTHING HERE CLAIMS A DEPLOYMENT. No Apps Script version exists for R49, and the release log records it as
+// NOT DEPLOYED until a user performs the sync and writes the version down.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -354,7 +377,10 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46';
 // S8-R49-J - moved because THIS FILE changed: 90_s manifest content hash below, which R49-F left at the
 // pre-rebuild value. The RELEASE above is deliberately NOT marched to it, on this rounds explicit
 // authorization - cutting one is the users act. 61_ did not change and keeps R47.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R48';
+// S8-R49-L - R49, and this time it moves WITH the release above rather than ahead of it. THIS FILE changed:
+// the release, 66_'s expected stamp, and its own row below. The two rounds in which this stamp ran ahead of
+// the release (R47, R48) were rotations without a cut, and this is the cut that absorbs them.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -625,7 +651,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R48', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -677,7 +703,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // the R10 copy beside 73_ at R24 shows the right-looking wrong number, which is the worst shape a
   // partial sync can take.
   { file: '72_api_v1_product_pricing_workspace.gs', symbol: 'PPW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24', owns: 'the site-scoped Product Pricing workspace read: the marketplace_skus membership universe, the four-part regional join, the marketplace_sku_id pricing join, and the scoped category/series filter options derived from surviving rows' },
-  { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'Request Order Send orchestration + planning-cycle authority' },
+  { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49', owns: 'Request Order Send orchestration + planning-cycle authority' },
   // 71_ is the guard SEAM. Its absence is precisely the failure the manifest exists to name: 11_ and 61_ both
   // refuse closed without it (FACTORY_STOCK_GUARD_SEAM_MISSING), so a partial sync stops the flow rather than
   // running it unguarded — but only a deployment that can be ASKED which files it has can tell an operator why.

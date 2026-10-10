@@ -686,7 +686,19 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // without a stated reason is how an unrelated edit reaches Production. Excluding it by extension would
   // be the worst possible place to start making exceptions — a manifest is the one file that can silently
   // un-deploy a feature, and nothing else watched it until S8-R4D-D1 built a guard for it.
-  'assets/specs/active/apps-script/appsscript.json'];
+  'assets/specs/active/apps-script/appsscript.json',
+  // S8-R49-L — the two R49 runtime owners reach this register. Neither is reachable from Product Strategy's
+  // read path: no action was added or removed, no capability field changed, the PRODUCT_STRATEGY_ENABLED_
+  // flag is untouched, and the board's own universe/workspace reads are byte-identical.
+  //
+  // 61_ (S8-R49-I) resolves marketplaces.allocation_priority by the canonical company + country +
+  // marketplace identity instead of by marketplace name alone. 66_ (S8-R49-D) refuses a Request Order Send
+  // whose line has no usable units_per_carton. 63_ and 90_ are already declared above.
+  //
+  // DECLARED rather than filtered out, which is the whole method of this register: a visual round that
+  // touched either of these would still be caught, because an undeclared file is still a failure.
+  'assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs',
+  'assets/specs/active/apps-script/66_api_v1_request_order_send.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

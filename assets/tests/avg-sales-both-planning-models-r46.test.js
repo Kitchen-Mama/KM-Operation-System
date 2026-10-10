@@ -178,10 +178,35 @@ section('G — R46 RELEASE GOVERNANCE');
 // =============================================================================================================
 var R46 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46';
 var R45 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
-eq((HEALTH.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R46,
-  'G1  63_ declares R46 — the manifest is where a release is cut');
-eq((HEALTH.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1], R46,
-  'G2  ...and 63_\'s own module stamp moved, because 63_ itself changed');
+// S8-R49-L — G1/G2 ARE RE-ANCHORED TO R46's OWN COMMIT, AND THE EQUALITY IS KEPT RATHER THAN SOFTENED.
+//
+// These two read HEAD and asserted it declared R46. That was a claim about R46's cut written as a claim
+// about every tree that would ever follow it, and S8-R49-L is the round that proves it by cutting R49.
+// The lazy repair is a floor — `stampAtOrAfter(declared, R46)` — and it would be a real weakening: it
+// passes for R47, R48, R49 and everything after, so it could no longer tell that R46 cut what it says it
+// cut, which is the only thing this section was convened to check.
+//
+// The claim is historical, so it is asserted against the commit that made it. 4065ba3 is where
+// SYS_DEPLOYMENT_RELEASE_ became R46, found with `git log -S` on the declaration itself rather than by
+// reading a date. This is the repository's own "FLOORS AT HEAD, EQUALITIES AT A SHA" rule, which
+// s7-r4-production-deploy-surface states in those words.
+var R46_CUT_SHA = '4065ba3';
+function showAt(sha, rel) {
+  return require('child_process').execFileSync('git', ['show', sha + ':' + rel],
+    { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 });
+}
+var HEALTH_AT_R46 = showAt(R46_CUT_SHA, 'assets/specs/active/apps-script/63_api_v1_system_health.gs');
+eq((HEALTH_AT_R46.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R46,
+  'G1  63_ declared R46 AT R46\'s OWN COMMIT — the manifest is where a release is cut');
+eq((HEALTH_AT_R46.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1], R46,
+  'G2  ...and 63_\'s own module stamp moved there too, because 63_ itself changed in R46');
+// The HEAD half of the same claim, which is what this suite can still say about the present tree: the
+// release has only ever moved FORWARD from R46 in the shared append-only order. This is a floor, and it is
+// labelled one — it is additional to G1/G2 above, never a replacement for them.
+var RO_ORDER = require(path.join(__dirname, '_release-order.js'));
+ok(RO_ORDER.stampAtOrAfter((HEALTH.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R46),
+  'G2a and at HEAD the declared release is at or after R46 — it may move on, it may never move back',
+  (HEALTH.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1]);
 var sir = fs.readFileSync(GS + '60_api_v1_inventory_replenishment_workspace.gs', 'utf8');
 eq((sir.match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R45,
   'G3  60_ STAYS at R45 — it did not change in R46, and marching it would claim a round it had no part in');

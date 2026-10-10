@@ -360,7 +360,23 @@ var AUTHORIZED_FLOOR = [
   'assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs',
   'assets/specs/active/apps-script/63_api_v1_system_health.gs'];
 var R46_DELTA = ['assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs'];
-var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).sort();
+// S8-R49-L — R49_DELTA, the second named addition, assembled the same way R46_DELTA was and for the same
+// reason: the set stays an EQUALITY and grows only by files that are declared, never by widening the test
+// into membership. Three files join, each with the round that changed it and why it is deployable:
+//
+//   61_  S8-R49-I — weeklyAiPlanMktKey_. allocation_priority was resolved by marketplace NAME alone, so a
+//                   KM site could be handed ResUS's priority depending on which row was read last.
+//   66_  S8-R49-D — the §14/§17/§37 refusal. A Request Order line with no usable units_per_carton could be
+//                   Sent, and the backend persisted it rather than refusing.
+//   90_  S8-R49-F — the same priority identity repair inside the two bundled core producers. GENERATED:
+//                   rebuilt by the build tool and verified by `--check`, never hand-edited.
+//
+// 63_ is NOT repeated here — it is already in AUTHORIZED_FLOOR above, where R43/R44/R45 put it.
+var R49_DELTA = [
+  'assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs',
+  'assets/specs/active/apps-script/66_api_v1_request_order_send.gs',
+  'assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs'];
+var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).concat(R49_DELTA).sort();
 var CHANGED_SINCE_R42 = runtimeGsBetween(R42_POST_SHA, 'HEAD');
 eq(CHANGED_SINCE_R42, AUTHORIZED_SINCE_R42,
   'H2e SINCE R42 ended, EXACTLY the authorized runtime files have changed — the R43/R44/R45 floor plus the '

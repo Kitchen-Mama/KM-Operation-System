@@ -953,7 +953,21 @@ var ROUND_TOKENS = [
   // whether the basis is sales_driven and asks whether it arrived. A browser holding the previous token
   // would keep the old guard and show '--' for every Forecast-Driven SKU against an R46 backend that is
   // answering correctly, which is exactly the failure this rotation exists to prevent.
-  'r46-avgsales-20261008'];
+  'r46-avgsales-20261008',
+  // S8-R49-L  the R49 application rotation, minted for a release that has NOT been published yet. Two
+  // browser-served files changed and both are still referenced on r46-avgsales-20261008 — a token R46 has
+  // ALREADY PUBLISHED, which by the rule recorded against fb4fb6r1 above may never be reused: every browser
+  // that fetched under it would keep the R46 copies forever.
+  //
+  // operation-system-db-api.js (S8-R49-H1) stops collapsing a missing marketplaces.allocation_priority to 0
+  // and answers null, so a browser on the old copy still shows an unranked marketplace as priority 0 — a real
+  // rank the operator never set. request-order.js (S8-R49-E) renders the MISSING_UNITS_PER_CARTON refusal
+  // 66_ now returns, naming the SKUs that block a Send; the old copy falls back to the generic error and the
+  // operator is told a Send failed without being told which line to fix.
+  //
+  // APPLICATION FAMILY ONLY. No stylesheet, map or method-registry byte moved, so those three series keep
+  // their own current tokens rather than spending one on an unchanged file.
+  'r49-priority-sendguard-20261010'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -1742,7 +1756,27 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // is visible and is NOT closed here: the deployment-uniformity suite asserts build_id == SYS_BUILD_VERSION_
   // and still fails on it. Only a release cut can close it, and a cut is the users act.
   // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R48'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R48',
+  // S8-R49-L - R49, THE CUT. The first release token appended by a round that is actually cutting one since
+  // R46, and it carries four files to Apps Script as ONE paste set: 61_ (allocation_priority resolved by the
+  // canonical company + country + marketplace identity), 66_ (the §14 Send refusal when a line has no usable
+  // units_per_carton), 90_ (the same identity repair in the two bundled core producers) and 63_ (the release,
+  // 66_s expected stamp and its own).
+  //
+  // WHY R49 RATHER THAN R48, WHICH IS WHAT THE CUT WAS ASKED FOR. R47 and R48 above are MODULE-STAMP
+  // ROTATIONS, not releases: each was minted by a round explicitly forbidden to move SYS_DEPLOYMENT_RELEASE_.
+  // That left R48 already declared as 63_s own stamp at HEAD, and a release token must be MINTED BY ITS CUT -
+  // E4 requires a changed owners last commit to be the commit that INTRODUCED its stamp, and the release
+  // contract requires 63_s stamp to EQUAL the release. No commit can introduce R48 a second time, so
+  // declaring it would have left E4 failing against a tree that is otherwise correct. R49 satisfies both.
+  //
+  // R47 AND R48 ARE PRESERVED AND NEITHER WAS DEPLOYED. Removing or renumbering them would reorder every
+  // floor written against this list, because stampAtOrAfter compares INDEXES. Both are recorded in
+  // DEPLOYMENT_RELEASE_LOG.md as unshipped intermediate builds absorbed into R49.
+  //
+  // NOT DEPLOYED. No Apps Script version exists for R49; the sync and the version are the users act.
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

@@ -54,7 +54,13 @@
 
 // F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — found by the standing stamp-rotation check added this round, not by
 // reading: this file last changed in F1-7N-FB-4E-R4B-R3 and its label was still at FB-4A.
-var ROS_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3';
+// S8-R49-L - R49. The stamp moves for the first time since FB-4E-R4B-R3 because S8-R49-D changed this
+// file: rosBuildWorkset_ resolves units_per_carton and the tier loop refuses a line that has none
+// (MISSING_UNITS_PER_CARTON), and handleRequestOrderSendOrchestrate_ derives primaryCode from byCode
+// instead of hardcoding DUPLICATE_BUSINESS_IDENTITY. Both are Send ORCHESTRATION, which is what this
+// stamp owns. ROSEND_DIAG_BUILD_VERSION_ below is deliberately NOT moved: the send DIAGNOSTIC did not
+// change, and marching a second stamp to look current is the churn the manifest warns against.
+var ROS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49';
 
 // The flat V2 canonical tables. The child line table is RETIRED under the cutover and is never read here.
 var ROS_DRAFTS_TABLE_ = 'request_order_allocation_drafts';
