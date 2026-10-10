@@ -212,6 +212,7 @@ section('Golden Matrix + full-suite health (§10)');
   var executedCount  = num(/Executed scenario count[ \t]*=[ \t]*(\d+)/);
   var pendingCount   = num(/Pending implementation count[ \t]*=[ \t]*(\d+)/);
   var excludedCount  = num(/Downstream-owned exclusions:[ \t]*(\d+)/);
+  var downstreamExecuted = num(/Downstream-executed count[ \t]*=[ \t]*(\d+)/);
   var excludedId     = num(/Excluded scenario:[ \t]*#(\d+)/);
   var blockedCount   = num(/(\d+)[/]\d+ scenarios reported as CANONICAL-BLOCKED/);
   // WHICH scenario is pending is MEASURED, not assumed: the suite prints a header per executed
@@ -231,8 +232,15 @@ section('Golden Matrix + full-suite health (§10)');
      && applicable + excludedCount === canonicalTotal,
      '48d applicable + excluded === canonical total (nothing counted twice, nothing dropped)');
   ok(blockedCount === 0, '48e canonical-blocked count remains 0');
-  ok(excludedCount === 1 && pendingCount === 1,
-     '49 exactly one downstream-owned exclusion and exactly one pending scenario');
+  // S8-B5-R2: #34 was EXECUTED downstream under §37, so pending is now 0 while the exclusion stays 1.
+  // The exclusion is about which suite may RUN it; pending is about whether anyone HAS. They were the
+  // same number only while nobody had.
+  ok(excludedCount === 1 && pendingCount === 0,
+     '49 exactly one downstream-owned exclusion, and zero pending scenarios (#34 executed downstream)');
+  ok(downstreamExecuted === 1 && /Downstream execution status:[ \t]*EXECUTED_DOWNSTREAM/.test(out),
+     '49-1 that exclusion reports EXECUTED_DOWNSTREAM — excluded from this suite, not unexecuted');
+  ok(/Downstream evidence suite:[ \t]*assets\/tests\/golden-34-partial-carton-e2e/.test(out),
+     '49-2 and it names the suite that produced the evidence, so the claim is checkable');
   ok(excludedId === 34, '49a the declared exclusion is #34');
   // The pending count and the exclusion count are ONE scenario, not two. Asserted on the observed ID.
   ok(notRun.length === 1 && notRun[0] === excludedId,

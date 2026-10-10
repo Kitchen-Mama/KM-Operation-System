@@ -126,6 +126,18 @@ function pending(id, sourceSection, title, implementationOwner, blocker, decisio
     executionStatus: 'IMPLEMENTATION_PENDING', implementationOwner: implementationOwner, blocker: blocker,
     decisionDependencies: decisionDependencies || [] };
 }
+// S8-B5-R2 — EXECUTED, BUT NOT BY THIS SUITE.
+//
+// A scenario §40.17 forbids this suite to run can still be executed by the owner §40.17 names. Reusing
+// EXECUTED_EXISTING_CORE for it would put #34 into this suite's executed set and make the Allocation Runtime
+// claim something it never ran; leaving it IMPLEMENTATION_PENDING would claim nobody ran it, which stopped
+// being true when S8-B5-R1 executed it end to end. So it gets its own status, carrying the owner AND the
+// suite that produced the evidence — the two facts a reader needs to check the claim.
+function executedDownstream(id, sourceSection, title, owner, evidenceSuite) {
+  return { id: id, sourceSection: sourceSection, title: title, canonicalStatus: 'FROZEN',
+    executionStatus: 'EXECUTED_DOWNSTREAM', implementationOwner: owner, evidenceSuite: evidenceSuite,
+    blocker: null, decisionDependencies: [] };
+}
 function executed(id, sourceSection, title, implementationOwner) {
   return { id: id, sourceSection: sourceSection, title: title, canonicalStatus: 'FROZEN',
     executionStatus: 'EXECUTED_EXISTING_CORE',
@@ -190,7 +202,9 @@ var SCENARIO_INVENTORY = [
   executed(31, '§33 #31 · §14/§34', 'Missing units_per_carton → Calculation Blocked'),
   executed(32, '§33 #32 · §23', 'One Master SKU, many Marketplaces', LEDGER_OWNER),
   executed(33, '§33 #33 · §26/§27A', 'Engine A bucket boundary sweep'),
-  pending(34, '§33 #34 · §37', 'User partial-carton Order Qty', 'UI/state/persistence lane (§37)', 'partial-carton override is a UI/state/persistence acceptance, not a Phase 2A pure calc'),
+  executedDownstream(34, '§33 #34 · §37', 'User partial-carton Order Qty',
+    '§37 Downstream Request Order / PO / UI / Persistence E2E Acceptance',
+    'assets/tests/golden-34-partial-carton-e2e-s8-b5-r1.test.js'),
   executed(35, '§33 #35 · §22.2', '90-day window contains a joined Campaign'),
   executed(36, '§33 #36 · §22.2', 'Continue sampling past the campaign gap'),
   executed(37, '§33 #37 · §22.2', 'Another SKU NOT in that campaign'),
@@ -815,8 +829,10 @@ var execInInventory = SCENARIO_INVENTORY.filter(function (s) { return s.executio
 var goldenIds = GOLDEN_SCENARIOS.map(function (s) { return s.id; }).sort(function (a, b) { return a - b; });
 eq([execInInventory.join(','), goldenIds.join(',')], [EXECUTED_IDS.join(','), EXECUTED_IDS.join(',')],
    'executed scenarios are EXACTLY [1..33,35..40] (all except #34) in both inventory and the runnable set (⇒ executed count = 39)');
-eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length, 1,
-   'implementation-pending count = 1 (only #34 — downstream Request-Order/PO/UI-state/persistence, §37)');
+eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length, 0,
+   'implementation-pending count = 0 (S8-B5-R1 executed #34 downstream under §37; nothing is left unexecuted)');
+eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'EXECUTED_DOWNSTREAM'; }).map(function (s) { return s.id; }), [34],
+   'downstream-executed scenarios = exactly [#34] — executed by its §37 owner, never by this suite');
 eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'CANONICAL-BLOCKED' || s.canonicalStatus !== 'FROZEN'; }).length, 0,
    'canonical-blocked count = 0 (every scenario canonicalStatus = FROZEN)');
 // ---- S8-R48-R — ownership accounting, asserted rather than asserted-about. --------------------
@@ -839,8 +855,12 @@ assert(!!EX34 && EX34.ownerSection === '§37' && /§37/.test(EX34.owner) && !!EX
    'OA6 #34 carries its downstream owner (§37) and the frozen exclusion authority (§40.17)');
 var INV34 = SCENARIO_INVENTORY.filter(function (x) { return x.id === 34; })[0] || null;
 assert(!!INV34, 'OA7 #34 is STILL in the canonical inventory — excluded from scope, not removed from §33');
-assert(!!INV34 && INV34.executionStatus === 'IMPLEMENTATION_PENDING',
-   'OA8 and is NOT marked executed by this suite');
+assert(!!INV34 && INV34.executionStatus === 'EXECUTED_DOWNSTREAM',
+   'OA8 and is marked EXECUTED_DOWNSTREAM — executed by its §37 owner, not by this suite');
+assert(!!INV34 && /golden-34-partial-carton-e2e/.test(String(INV34.evidenceSuite || '')),
+   'OA8a and it names the suite that produced that evidence, so the claim is checkable (' + String(INV34 && INV34.evidenceSuite) + ')');
+assert(!!INV34 && INV34.executionStatus !== 'EXECUTED_EXISTING_CORE',
+   'OA8b and it is NOT folded into this suite\'s executed status — the Allocation Runtime never ran #34');
 assert(executedIds.indexOf(34) === -1, 'OA9 #34 is absent from the executed set');
 // Every applicable scenario actually ran - the denominator cannot be met by shrinking it.
 eq(executedIds.join(','), applicableIds.join(','),
@@ -893,7 +913,7 @@ var executedCount = GOLDEN_SCENARIOS.length;
 var pendingCount = SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length;
 console.log('\n§33 GOLDEN BASELINE:');
 console.log(executedCount + '/' + ALLOCATION_APPLICABLE + ' APPLICABLE scenarios EXECUTED_EXISTING_CORE and PASSED');
-console.log(pendingCount + '/' + CANONICAL_TOTAL + ' canonical scenarios downstream-owned (not executed here)');
+console.log(DOWNSTREAM_EXCLUDED + '/' + CANONICAL_TOTAL + ' canonical scenarios downstream-owned (not executed here)');
 console.log('0/' + CANONICAL_TOTAL + ' scenarios reported as CANONICAL-BLOCKED');
 console.log('');
 console.log('Canonical inventory: ' + CANONICAL_TOTAL);
@@ -905,7 +925,12 @@ DOWNSTREAM_EXCLUSIONS.forEach(function (e) {
   console.log('Downstream owner: ' + e.ownerSection);
   console.log('Downstream owner (full): ' + e.owner);
   console.log('Exclusion authority: ' + e.exclusionAuthority);
+  var inv = SCENARIO_INVENTORY.filter(function (x) { return x.id === e.id; })[0] || {};
+  console.log('Downstream execution status: ' + inv.executionStatus);
+  console.log('Downstream evidence suite: ' + (inv.evidenceSuite || '(none)'));
 });
+var downstreamExecuted = SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'EXECUTED_DOWNSTREAM'; }).length;
+console.log('Downstream-executed count = ' + downstreamExecuted);
 console.log('');
 console.log('Scenario inventory count = ' + SCENARIO_INVENTORY.length);
 console.log('Executed scenario count = ' + executedCount);
@@ -931,7 +956,7 @@ function allocationRuntimeComplete() {
   && executedIds.length === ALLOCATION_APPLICABLE
   && executedIds.indexOf(34) === -1
   && !!EX34 && EX34.ownerSection === '§37' && !!EX34.exclusionAuthority
-  && !!INV34 && INV34.executionStatus === 'IMPLEMENTATION_PENDING'
+  && !!INV34 && INV34.executionStatus === 'EXECUTED_DOWNSTREAM' && !!INV34.evidenceSuite
   && unclassified.length === 0
   && ranIds.join(',') === applicableIds.join(',')
   && ranIds.length === ALLOCATION_APPLICABLE;
@@ -944,6 +969,13 @@ if (allocationRuntimeComplete()) {
   console.log('Canonical §33 inventory remains ' + CANONICAL_TOTAL + ', with '
     + DOWNSTREAM_EXCLUDED + ' downstream-owned exclusion(s) tracked under §37.');
   console.log('§37 downstream E2E acceptance is reported SEPARATELY and is NOT claimed here.');
+  // The GLOBAL registry claim, stated only once every gate above has held. It is the sum of two separately
+  // owned results and says so, because "40/40" must never read as "the Allocation Runtime ran 40".
+  console.log('GOLDEN_REGISTRY_COMPLETE');
+  console.log('Golden Registry: ' + (executedIds.length + downstreamExecuted) + '/' + CANONICAL_TOTAL
+    + ' canonical scenarios executed overall = ' + executedIds.length + ' by the Allocation Runtime + '
+    + downstreamExecuted + ' downstream under §37 (evidence: ' + String(INV34 && INV34.evidenceSuite) + ')');
+  console.log('Pending implementation: 0');
 } else {
   console.log('ALLOCATION_RUNTIME_INCOMPLETE');
   fail++;

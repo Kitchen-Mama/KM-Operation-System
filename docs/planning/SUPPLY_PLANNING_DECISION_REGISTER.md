@@ -1432,3 +1432,52 @@ allocation. `SUPPLY_PLANNING_CALCULATION_RULES.md` §45.C.1 required a named rou
   was do-not-touch this round.
 - **Country canonicalization POLICY beyond identity** (for example whether any further alias should exist) is not
   decided here; KMCID's table is used as-is and unchanged.
+
+---
+
+## D-S8-B5-1 / D-S8-B5-2 — carton quantity semantics (USER-APPROVED 2026-10-10, implemented S8-B5-R2)
+
+Golden #34's end-to-end execution (S8-B5-R1) found the unit quantity correct at every boundary and one field
+disagreeing with its own documents: `carton_qty`. Three sentences said it was the exact ratio and "may be
+fractional"; eight shipped write sites (`13_` x5, `11_` x3), two document renderers and
+`OVERSEAS_INBOUND_SPEC.md` all treated it as `CEILING`. The registry promotion was held rather than decided
+unilaterally, and the decision package (S8-B5-D1) put both readings to the owner.
+
+### D-S8-B5-1 — `carton_qty` is the estimated physical carton count (Option A)
+
+- **Decision:** on request-order and purchase-order lines, `carton_qty = CEILING(qty / units_per_carton)` — an
+  **integer** estimated physical carton count. The fractional carton equivalent is **not** persisted anywhere
+  and requires **no new DB column and no migration**.
+- **Why Option A and not a separate fractional column.** `carton_qty` is multiplied by **per-carton** constants
+  downstream (`shipping_plan_lines.cbm = carton_qty x carton_cbm`, `shipment_lines.gross_weight =
+  carton_qty x carton_weight`). A partial carton still occupies one box's volume and carries one box's
+  packaging weight, so a fraction there would **understate freight and customs figures**. No consumer anywhere
+  was found that wants a fractional carton: the PO document's `{{TOTAL_CARTONS}}`, `purchase_orders.total_cartons`,
+  the carrier invoice / packing list `CARTON_QTY`, and `carton_no_start`/`carton_no_end` all require integers.
+- **The protected rule is unchanged and was never in question:** `order_qty` / `approved_qty` / `ordered_qty`
+  are exact unit quantities, **never re-CEILING'd, FLOOR'd or rounded** at any stage. No code reconstructs a
+  quantity as `carton_qty x units_per_carton`, so the ceiling cannot inflate an order.
+- **The partial carton is a decomposition, not a fraction:** `FLOOR(qty / upc)` full boxes plus `qty mod upc`
+  loose units — already how `request-order.js` renders it, and derivable from any stored row, which is what
+  makes the "no new DB column" override-fact contract work.
+- **Confirmed packed cartons stay independent:** `shipment_lines.shipment_carton_qty` with its validated
+  `carton_no_start`/`carton_no_end` range is a separate packing fact, not this estimate.
+- **Contract text aligned (documentation only, no runtime):** `SUPPLY_PLANNING_CALCULATION_RULES.md` §36.3 and
+  §37, `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §7.1 and §12.15. §37's "its exact `carton_qty`" is clarified
+  as **copied, not re-derived** — which is what the shipped PO conversion already does (`13_:1775` copies the
+  stored value and computes only when the column is absent).
+
+### D-S8-B5-2 — scope of this round: 1 + 2 + 4 only
+
+- **Authorized and done:** the documentation alignment above; Golden #34's contract assertions; the Golden
+  Registry promotion.
+- **Explicitly NOT authorized:** `15_` draft-line normalization, any other Apps Script runtime change, DB schema
+  change, shipment or document change. No `.gs` moved, so **no release cut and no Apps Script sync**.
+
+### Still open after this round (deliberately NOT in scope)
+
+- **`15_` draft-line fractional `carton_qty` debt.** `handleUpsertRequestOrderAllocationDraftLines_` still
+  forwards whatever `carton_qty` the client sends, including a fraction, onto
+  `request_order_allocation_draft_lines`. It is **never read downstream** — `66_` forwards only `order_qty` and
+  `units_per_carton`, so no fractional value can reach `request_order_lines` — which is why it was left alone
+  rather than fixed in a documentation round. **Owner: a future bounded draft-normalization task. NOT closed.**

@@ -11,8 +11,9 @@
 // too large to execute whole (the Send orchestrator's lock/journal machinery) the suite executes the
 // shipped MAPPING helpers and pins the mapping line as a source guard, and says which it did.
 //
-// Execution evidence, the full field mapping and the one open divergence are recorded in
-// docs/planning/GOLDEN_34_PARTIAL_CARTON_E2E_EVIDENCE.md.
+// Execution evidence and the full field mapping are recorded in
+// docs/planning/GOLDEN_34_PARTIAL_CARTON_E2E_EVIDENCE.md; the carton_qty contract this suite asserts was
+// adopted as D-S8-B5-1 Option A (SUPPLY_PLANNING_DECISION_REGISTER.md).
 //
 // Run: node assets/tests/golden-34-partial-carton-e2e-s8-b5-r1.test.js
 // NOTE: no 'use strict' — extracted .gs helpers are eval'd into module scope with a mocked runtime.
@@ -146,6 +147,15 @@ eval(extractFn(GS15, 'handleUpsertRequestOrderAllocationDraftLines_'));
 eval(GS32.match(/var SLA_ELIGIBLE_PO_STATUS_ = \{[^}]*\};/)[0]);
 eval(['slaNum_', 'slaStr_', 'slaLc_', 'slaFifoCompare_', 'slaIsEligible_', 'slaReservedByOthers_',
   'slaAvailability_', 'slaAllocateShipmentLine_', 'slaBuildPlan_'].map(function (n) { return extractFn(GS32, n); }).join(String.fromCharCode(10)));
+
+// The SHIPPED UI decomposition, extracted from request-order.js rather than restated: C10/C11 must exercise the
+// real renderer, because "full boxes + loose units" is the contract's user-facing half.
+var ROPAGE = read('js/pages/request-order.js');
+eval(extractFn(ROPAGE, '_roCartonBreak'));
+function _roCartonBreakProbe(q, upc) {
+  var b = _roCartonBreak(q, upc);
+  return { full: b.full, loose: b.loose, isPartial: b.isPartial };
+}
 
 // ---------------- fixture builders ----------------
 var ROL_COLS = ['request_order_line_id', 'request_order_id', 'sku', 'series', 'company', 'request_bucket',
@@ -550,27 +560,89 @@ section('B10 — repeated reads, retries and side effects (required cases 17 and
 })();
 
 // ===========================================================================
-section('C — the §37 carton_qty clause, MEASURED (the open divergence)');
+section('C — the carton_qty CONTRACT (D-S8-B5-1 Option A, adopted 2026-10-10)');
 // ===========================================================================
-// §36.3 says `carton_qty = order_qty ÷ units_per_carton` "may be fractional for an explicit partial-carton
-// override"; §37 says the PO conversion preserves "its exact carton_qty"; REQ_PO §7.1 repeats that it "is
-// the exact Approved Qty ÷ units_per_carton (may be fractional)". The shipped handlers instead write
-// CEILING(qty ÷ upc) at every write site. This block MEASURES that, so the divergence is pinned by a test
-// instead of being rediscovered later. It asserts WHAT IS, not which side is right — see the report.
-eq((GS13.match(/var carton = [^\n]*Math\.ceil[^\n]*/g) || []).length, 5,
-  'C1 13_ derives carton_qty with Math.ceil at exactly 5 write sites (create, manual-alloc, edit, convert-fallback, PO-line edit)');
-eq(Number(cell(ssB, 'request_order_lines', 0, 'carton_qty')), Math.ceil(PARTIAL / UPC),
-  'C2 MEASURED: the request line stores carton_qty = ceil(137/40) = 4, not the exact 3.425');
-eq(Number(cell(ssB, 'purchase_order_lines', 0, 'carton_qty')), Math.ceil(PARTIAL / UPC),
-  'C3 MEASURED: the PO line stores the same 4 — the conversion copies the stored value, it does not re-derive');
-ok(Number(cell(ssB, 'request_order_lines', 0, 'carton_qty')) !== PARTIAL / UPC,
-  'C4 so the stored carton_qty is NOT the exact quotient the three spec owners describe');
-ok(/carton_qty` is the exact `Approved Qty ÷ units_per_carton` \(may be fractional\)/.test(REQPO),
-  'C5 and REQ_PO §7.1 does say "exact ... (may be fractional)" — the divergence is between owners, not invented here');
+// The two fields are different facts and this block asserts BOTH halves of that, positively.
+//
+//   order_qty / approved_qty / ordered_qty = EXACT UNIT QUANTITY, never re-CEILING'd / FLOOR'd / rounded.
+//   carton_qty                             = ESTIMATED PHYSICAL CARTON COUNT = CEILING(qty / upc), an INTEGER.
+//
+// The ceiling is not a tolerated deviation; it is required. carton_qty is multiplied by PER-CARTON constants
+// downstream (shipping_plan_lines.cbm = carton_qty x carton_cbm; shipment_lines.gross_weight =
+// carton_qty x carton_weight), and a partial carton still occupies one box's volume and carries one box's
+// packaging weight — a fraction there would understate freight and customs figures. The partial carton is
+// expressed as a DECOMPOSITION (full boxes + loose units), never as a fractional carton.
+//
+// 137 units at 40 per carton: 137 ordered, 4 estimated cartons, 3 full boxes, 17 loose.
+var FULL_BOXES = Math.floor(PARTIAL / UPC);          // 3
+var LOOSE_UNITS = PARTIAL % UPC;                     // 17
+var EST_CARTONS = Math.ceil(PARTIAL / UPC);          // 4
+eq([PARTIAL, EST_CARTONS, FULL_BOXES, LOOSE_UNITS], [137, 4, 3, 17],
+  'C1 the contract numbers for this fixture: 137 ordered units, 4 estimated cartons, 3 full boxes, 17 loose');
+eq(Number(cell(ssB, 'request_order_lines', 0, 'ordered_qty') || cell(ssB, 'request_order_lines', 0, 'approved_qty')), PARTIAL,
+  'C2 the request line ORDERED UNITS are exactly 137 — the unit quantity is never rounded');
+eq(Number(cell(ssB, 'request_order_lines', 0, 'carton_qty')), EST_CARTONS,
+  'C3 and its carton_qty is 4 — the estimated PHYSICAL carton count, CEILING(137/40), per §36.3');
 eq(Number(cell(ssB, 'purchase_order_lines', 0, 'ordered_qty')), PARTIAL,
-  'C6 CRUCIALLY the QUANTITY is untouched by this — §37 quantity preservation holds independently of C2/C3');
+  'C4 the PO line ordered_qty is still exactly 137 — conversion preserves the exact unit quantity');
+eq(Number(cell(ssB, 'purchase_order_lines', 0, 'carton_qty')), EST_CARTONS,
+  'C5 and the PO carton_qty is the same 4 — §37: the conversion COPIES the approved carton_qty, never re-derives it');
+ok(Number.isInteger(Number(cell(ssB, 'request_order_lines', 0, 'carton_qty')))
+  && Number.isInteger(Number(cell(ssB, 'purchase_order_lines', 0, 'carton_qty'))),
+  'C6 both stored carton_qty values are INTEGERS — no fractional carton is ever persisted on these lines');
+eq([Number(cell(ssB, 'request_order_lines', 0, 'ordered_qty') || cell(ssB, 'request_order_lines', 0, 'approved_qty')),
+    Number(cell(ssB, 'purchase_order_lines', 0, 'ordered_qty'))].indexOf(SUGGESTED), -1,
+  'C7 no stage turned the ordered units into 160 — the carton count ceilings, the quantity does not');
+eq([FULL_BOXES * UPC + LOOSE_UNITS, EST_CARTONS * UPC], [PARTIAL, SUGGESTED],
+  'C8 the decomposition reconstructs 137 exactly, while cartons x upc would give 160 — which is why C9 matters');
+// C9 is the guard that makes the ceiling SAFE. If any consumer rebuilt a quantity from the carton count it
+// would silently restore the full carton (C8 shows 4 x 40 = 160). No consumer does: carton_qty is only ever
+// multiplied by PER-CARTON cbm and PER-CARTON weight, which is exactly what a physical box count is for.
+(function () {
+  var sources = ['specs/active/apps-script/13_procurement_handlers.gs',
+    'specs/active/apps-script/11_shipping_plan_handlers.gs',
+    'specs/active/apps-script/12_shipment_handlers.gs',
+    'specs/active/apps-script/39_document_runtime_service.gs'];
+  var offenders = [], allowed = [];
+  sources.forEach(function (rel) {
+    // Scanned LINE BY LINE so a "same statement" claim really is about one statement.
+    read(rel).split(String.fromCharCode(10)).forEach(function (line) {
+      // Comment lines are excluded by SHAPE, not by content: a JSDoc continuation marker is itself a `*`,
+      // so prose about units_per_carton would otherwise read as a multiplication. The claim is about code.
+      var t = line.replace(/^\s+/, '');
+      if (t.charAt(0) === '*' || t.slice(0, 2) === '//' || t.slice(0, 2) === '/*') return;
+      var multipliesCarton = /carton_?[qQ]ty\s*\*|\*\s*carton_?[qQ]ty/.test(line);
+      var multipliesUpc = /units_per_carton\s*\*|\*\s*units_per_carton|\*\s*upc\b|\bupc\s*\*/.test(line);
+      if (!multipliesCarton && !multipliesUpc) return;
+      // The two LEGITIMATE multiplications: per-carton CBM and per-carton weight (line totals).
+      if (/cbm|weight/i.test(line)) { allowed.push(line.trim()); return; }
+      offenders.push(rel + ' :: ' + line.trim());
+    });
+  });
+  eq(offenders, [],
+    'C9 no shipped source multiplies carton_qty by units_per_carton to rebuild a quantity — the only ' +
+    'multiplications are the per-carton CBM and per-carton weight line totals');
+  // A scanner that matched nothing would also report zero offenders. This proves it is live: it DID find
+  // the known-legitimate per-carton multiplications, and chose to allow them.
+  ok(allowed.length >= 2,
+    'C9a the scanner is not vacuous — it found the known per-carton CBM / weight multiplications (' +
+    allowed.length + ') and allowed them deliberately');
+})();
+eq(_roCartonBreakProbe(PARTIAL, UPC), { full: FULL_BOXES, loose: LOOSE_UNITS, isPartial: true },
+  'C10 the SHIPPED UI decomposition renders 3 full + 17 loose for this row — never "3.425 cartons"');
+eq(_roCartonBreakProbe(SUGGESTED, UPC), { full: 4, loose: 0, isPartial: false },
+  'C11 and a whole-carton 160 renders 4 full + 0 loose, not flagged partial — the control for C10');
+// The contract text itself, so a future edit that reintroduces "may be fractional" fails here.
+ok(/carton_qty = CEILING\(order_qty ÷ units_per_carton\)/.test(RULES),
+  'C12 §36.3 now states carton_qty = CEILING(order_qty ÷ units_per_carton)');
+ok(/estimated physical carton count/i.test(RULES) && /estimated physical carton count/i.test(REQPO),
+  'C13 both owners name it the estimated PHYSICAL carton count');
+ok(!/may be fractional/.test(RULES) && !/may be fractional/.test(REQPO),
+  'C14 and neither owner says "may be fractional" any more — the conflict is gone, not papered over');
+ok(/copies the approved `carton_qty` rather than re-deriving it/.test(RULES),
+  'C15 §37 says the PO conversion COPIES the approved carton_qty — which is what 13_ actually does');
 ok(/partial-carton exact value is preserved verbatim/.test(read('js/core/supply-planning-plan-builder.js')),
-  'C7 the recommendation plan builder states the same quantity rule on its own line — consistent across lanes');
+  'C16 the recommendation plan builder states the same unit-quantity rule on its own line — consistent across lanes');
 
 // ===========================================================================
 section('D — the full-chain quantity ledger (required cases 10, 11, 12)');

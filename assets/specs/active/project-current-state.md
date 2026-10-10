@@ -33,7 +33,7 @@ Browser Verification: PENDING
 | **Replenishment calculation SPEC (Engine A)** | ✅ **FINALIZED v4.1** |
 | **Order calculation SPEC (Engine B)** | ✅ **FINALIZED v4.1** |
 | **Runtime (both engines)** | ❌ **NOT IMPLEMENTED** — live Inventory Replenishment `IRMap.needBuckets()` still returns 0; live Request Order rows are `_dbPlaceholder` with `suggestedOrder=null`. Nothing here is marked implemented. |
-| **Executable Golden Tests** | ⏳ **PENDING** — the **40-scenario** Golden Scenario Matrix is specified in `SUPPLY_PLANNING_CALCULATION_RULES.md` §33 (#1–#34 + Avg-Sales #35–#40); no executable test was built. |
+| **Executable Golden Tests** | ✅ **40/40 EXECUTED** (S8-B5-R2, 2026-10-10) — the 40-scenario Matrix (`SUPPLY_PLANNING_CALCULATION_RULES.md` §33) is fully executed: **39 by the Allocation Runtime** (`supply-planning-golden-scenarios.test.js`) and **1 downstream under §37** — #34 partial-carton Order Qty, by `golden-34-partial-carton-e2e-s8-b5-r1.test.js`. #34 stays **excluded from the Allocation Runtime denominator** (§40.17 frozen): that suite's scope remains 39/39 applicable and it never ran #34. Pending implementation = 0. |
 | **Browser / Production verification** | ⏳ **PENDING** — no runtime exists to verify. |
 | **Daily Sales source (Avg Sales/day)** | **Canonical Requirement: latest 90 completed days** (`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4). **Config 4 gap-aware importer is IMPLEMENTED IN REPOSITORY SOURCE** (2026-07-21: `06_amazon_import_config.gs` `retentionDays/lookbackDays = 90`, `reconcileRecentDays: 3`, `incrementalDefaultDays: 1` legacy-only; `amazonReadDailyGapAware_` coverage inspection + rolling upsert; latest-per-group fallback removed). **PENDING:** Apps Script production redeploy · live `import_sync_runs` column confirmation · one-time historical gap recovery/backfill · daily trigger confirmation · live BigQuery/Google Sheet verification. This importer Runtime is a **different scope** from the Supply Planning Calculation Runtime (still NOT IMPLEMENTED). BigQuery full history = future long-term store, **not** a Phase-1 prerequisite. |
 
@@ -6492,3 +6492,39 @@ adapter layers stopped inventing 0 for one — R50 settled that, so the page ren
 **Frontend token rotated to `r50-sitepriority-20261010`** (55 references in `index.html`, 8 route-owned in
 `app.js`) because `app.js` itself changed: a browser holding it on the old token would never fetch the router
 that knows the new page. Backend release identity is **unchanged at R50** — no `.gs` file moved in B2.
+
+---
+
+## S8-B5-R2 — Golden #34 contract alignment + registry closure (2026-10-10; local only, NOT pushed, NOT deployed)
+
+**Decision adopted: D-S8-B5-1 Option A.** `carton_qty` on request-order and purchase-order lines is the
+**estimated physical carton count** `CEILING(qty / units_per_carton)` — an **integer**. The fractional carton
+equivalent is not persisted; no new DB column, no migration. The reason is physical: `carton_qty` is multiplied
+by **per-carton** CBM and **per-carton** weight downstream, and a partial carton still occupies one box and
+carries one box's packaging — a fraction there would understate freight and customs figures. **D-S8-B5-2** fixed
+the scope to documentation + tests + registry only.
+
+**Unchanged and restated:** `order_qty` / `approved_qty` / `ordered_qty` are exact unit quantities, **never**
+re-CEILING'd, FLOOR'd or rounded. No code reconstructs a quantity as `carton_qty x units_per_carton` — now
+asserted by a live source scan (C9/C9a). The partial carton is a **decomposition**: full boxes + loose units,
+which is already what `request-order.js` renders.
+
+**Contract text aligned:** calc §36.3, calc §37, REQ_PO §7.1 and §12.15. §37's "its exact `carton_qty`" is
+clarified as **copied, not re-derived** — which is what `13_:1775` already does.
+
+**Golden #34: 120 assertions / 0 failed** (was 110; the measured-divergence block became a contract block and
+grew, nothing was removed or weakened).
+
+**Registry promoted: 40/40 executed overall** = 39 by the Allocation Runtime + 1 downstream under §37.
+#34 carries a new `EXECUTED_DOWNSTREAM` status naming its owner AND the suite that produced the evidence.
+It is deliberately **not** `EXECUTED_EXISTING_CORE`: §40.17 forbids this suite to run #34, so folding it in
+would make the Allocation Runtime claim something it never ran. Preserved exactly: applicable = 39,
+excluded = 1, `notRun = [34]`, exclusion authority §40.17.
+
+**Open debt, recorded not closed:** `15_` still forwards a client-supplied `carton_qty` — including a fraction —
+onto `request_order_allocation_draft_lines`. It is never read downstream (`66_` forwards only `order_qty` and
+`units_per_carton`), so no fractional value can reach `request_order_lines`. Owner: a future bounded
+draft-normalization task. Normalizing it moves a `.gs` and would require an Apps Script sync and a release cut.
+
+**No runtime, schema, router, frontend or `90_` bundle change. Release identity unchanged at R50 — no `.gs`
+moved, so no new cut and no Apps Script sync.**

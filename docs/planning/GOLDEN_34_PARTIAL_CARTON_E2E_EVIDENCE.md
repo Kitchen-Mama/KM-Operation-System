@@ -6,7 +6,7 @@
 > `DATABASE_RELATIONSHIP_MAP.md`, and the Request Order / PO lifecycle to
 > `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`. Where this document and any of those disagree, they win.
 >
-> **Executing suite:** `assets/tests/golden-34-partial-carton-e2e-s8-b5-r1.test.js` — **110 assertions, 0 failed.**
+> **Executing suite:** `assets/tests/golden-34-partial-carton-e2e-s8-b5-r1.test.js` — **120 assertions, 0 failed** (S8-B5-R2; 110 at first execution).
 
 ---
 
@@ -53,48 +53,55 @@ the decision field only — so it is deliberately absent from that ledger and as
 
 ---
 
-## 3. The open divergence: `carton_qty` is CEILING'd, not exact
+## 3. RESOLVED — `carton_qty` is the estimated physical carton count (D-S8-B5-1 Option A)
 
-Three owners say the same thing:
+When this scenario was first executed (S8-B5-R1) three owners said `carton_qty` was the exact ratio and "may be
+fractional", while eight shipped write sites (`13_` x5, `11_` x3), two document renderers and
+`OVERSEAS_INBOUND_SPEC.md` all wrote `CEILING`. The registry promotion was held and the conflict was put to the
+owner rather than patched. **Adopted 2026-10-10, Option A** — see `SUPPLY_PLANNING_DECISION_REGISTER.md`
+D-S8-B5-1:
 
-- §36.3 — `carton_qty = order_qty ÷ units_per_carton`, "**may be fractional** for an explicit partial-carton override"
-- §37 — the PO conversion preserves "its **exact** `carton_qty`"
-- `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §7.1 — "`carton_qty` is the **exact** `Approved Qty ÷ units_per_carton` (may be fractional)"
+- `carton_qty` = **`CEILING(qty / units_per_carton)`**, an **integer estimated physical carton count**, on
+  request-order and purchase-order lines. No fractional equivalent is persisted; **no new DB column, no migration.**
+- **Why the ceiling is required, not tolerated:** `carton_qty` is multiplied by **per-carton** constants
+  downstream (`shipping_plan_lines.cbm = carton_qty x carton_cbm`, `shipment_lines.gross_weight =
+  carton_qty x carton_weight`). A partial carton still occupies one box's volume and carries one box's packaging
+  weight, so a fraction would **understate freight and customs figures**. Every document consumer
+  (`{{TOTAL_CARTONS}}`, `purchase_orders.total_cartons`, the carrier `CARTON_QTY`, `carton_no_start`/`_end`)
+  needs an integer, and **no consumer that wants a fraction was found.**
+- **The unit quantity rule is untouched:** `order_qty` / `approved_qty` / `ordered_qty` are exact and are never
+  re-CEILING'd, FLOOR'd or rounded. Nothing reconstructs a quantity as `carton_qty x units_per_carton` — the
+  suite now scans the shipped sources line by line to keep it that way (C9), with a non-vacuity check (C9a).
+- **The partial carton is a decomposition, not a fraction:** full boxes + loose units, as `request-order.js`
+  already renders it, and derivable from any stored row — which is what makes the "no new DB column"
+  override-fact contract work.
+- **Contract text aligned (documentation only):** calc §36.3, calc §37, REQ_PO §7.1 and §12.15. §37's "its exact
+  `carton_qty`" now reads **copied, not re-derived**, which is what `13_:1775` already does.
 
-The shipped code writes `Math.ceil(qty ÷ upc)` at **five** sites in `13_procurement_handlers.gs`: Request Order
-creation, the Manual-Allocation new-company line, the Request-Order line edit, the PO conversion's computed
-fallback, and the PO line edit. **Measured: 137 at upc 40 stores `carton_qty = 4`, not `3.425`** — on the
-request line and on the PO line.
-
-**The quantity is unaffected.** `ordered_qty` is 137 at every stage; this divergence is confined to one derived
-column. It is pinned by assertions C1–C5 of the executing suite so it cannot drift unnoticed, and those
-assertions record **what is**, not which side is right.
-
-**Why it is not simply a bug to fix.** `purchase_orders.total_cartons = Σ purchase_order_lines.carton_qty`
-(`DATABASE_RELATIONSHIP_MAP.md`), and that total is printed on shipping and customs documents as a **physical
-box count**; `OVERSEAS_INBOUND_SPEC.md` independently defines `carton_qty = CEILING(qty ÷ units_per_carton)`.
-A fractional `carton_qty` would make `total_cartons` fractional. So the two readings are:
-
-- **(a) the spec reading** — `carton_qty` is the exact ratio, and a physical box count is a separate derived value;
-- **(b) the implementation reading** — `carton_qty` **is** the physical box count, and §36.3/§37/§7.1 describe the ratio loosely.
-
-Reading (b) is already recorded in a landed assertion (`po-exactly-once-f1-5a-por2.test.js` PC4/PC12/PC21,
-"the PHYSICAL box count ceilings; the quantity does not").
-
-**This needs an owner decision, not a patch.** Resolving it in favour of (a) changes five write sites, the
-`total_cartons` aggregate, document output and three landed assertions. Resolving it in favour of (b) is a
-one-line correction to three documents. **No runtime change was made in this round.**
+The C-block of the executing suite changed from *measured divergence* to *positive contract assertions* and grew
+from 110 to **120 assertions, 0 failed** — nothing was removed or weakened.
 
 ---
 
-## 4. Registry status — deliberately unchanged
+## 4. Registry status — PROMOTED (S8-B5-R2)
 
-`supply-planning-golden-scenarios.test.js` is the **Allocation Runtime** acceptance. §40.17 froze #34 **out** of
-that contract, and the suite prints, correctly, that "§37 downstream E2E acceptance is reported SEPARATELY and
-is NOT claimed here." That accounting is untouched: **39/39 applicable executed, #34 still the one
-downstream-owned exclusion.**
+**Golden Registry: 40/40 canonical scenarios executed overall** = **39 by the Allocation Runtime** + **1
+downstream under §37**. Pending implementation = **0**.
 
-#34 is now **executed downstream** by the suite named at the top of this document: all four §33 clauses hold
-end-to-end against the real handlers. Promoting its `executionStatus` in the canonical inventory to
-`EXECUTED` is **withheld**, because §3 above is open and promotion would read as a claim that the whole §37
-contract passes. It cascades into three suites and belongs in the round that closes §3 — as one coherent change.
+`supply-planning-golden-scenarios.test.js` remains the **Allocation Runtime** acceptance, and §40.17's exclusion
+of #34 from that contract is untouched: **applicable = 39, excluded = 1, `notRun = [34]`**, and the suite still
+prints that the §37 downstream acceptance "is reported SEPARATELY and is NOT claimed here."
+
+#34 carries a purpose-built status, **`EXECUTED_DOWNSTREAM`**, naming both its §37 owner and the suite that
+produced the evidence. It is deliberately **not** `EXECUTED_EXISTING_CORE`: §40.17 forbids that suite to run
+#34, so folding it into that status would make the Allocation Runtime claim something it never ran.
+
+---
+
+## 5. Open debt, recorded not closed
+
+`15_`'s draft-line route still forwards whatever `carton_qty` the client sends — including a fraction — onto
+`request_order_allocation_draft_lines`. It is **never read downstream**: `66_` forwards only `order_qty` and
+`units_per_carton`, so no fractional value can reach `request_order_lines`. Left alone deliberately, because
+normalizing it moves a `.gs` and would require an Apps Script sync and a release cut.
+**Owner: a future bounded draft-normalization task. NOT closed.**
