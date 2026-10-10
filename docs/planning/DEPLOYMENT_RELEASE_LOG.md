@@ -5004,3 +5004,46 @@ Nothing in this entry is evidence of a deployment. After the user syncs and publ
 `stale_modules` = [], `deployment_uniformity_verdict` = UNIFORM, 66_ reporting R49 with `matches_expected`
 = true, and 61_ reporting R47 with `matches_expected` = true. **R49 and R46 Production Functional Acceptance
 both remain OPEN and are not closed, superseded or re-dated by this release.**
+
+---
+
+## S8-R49 — DEPLOYED-STATUS CONFIRMATION (append-only, 2026-10-10)
+
+The R49 entry above records `STATUS AT CUT: PREPARED, NOT SYNCED, NOT DEPLOYED`, which was true when it was
+written and is **deliberately left unedited** — a cut block records INTENT at cut time. This note records what
+happened AFTERWARDS, the way R43 and R46 recorded theirs.
+
+**STATUS: SYNCED AND PUBLISHED · IDENTITY ACCEPTED · FUNCTIONAL ACCEPTANCE OPEN.**
+
+Live `system.health` (GET, read-only, `read_only: true`, `db_writes: 0`, `drive_writes: 0`) reports:
+
+```
+build_id = deployment_release = F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49
+system_health_module_build      R49      mixed_deployment            false
+workspace_module_build          R45      deployment_uniformity       UNIFORM
+router_build                    R41      stale_modules               []
+deployed_action_contract_version 18      absent_modules              []
+transport_contract_version        1      advanced_services_ok        true
+required_action_list_version     14      router/db/schema ready      true
+66_ ROS_BUILD_VERSION_          R49  matches_expected = true
+66_ ROSEND_DIAG_BUILD_VERSION_  F1-7N-FB-4G-A2-R4  matches_expected = true   (correctly NOT marched)
+61_ WAP_BUILD_VERSION_          R47  matches_expected = true   (carried, correct)
+90_ KM_BUNDLE_CONTENT_HASH_     fafc1d8e…  matches_expected = true   (the bundle arrived intact)
+```
+
+Frontend published and verified by direct fetch from the Pages site: `index.html` 200 carrying 55 references to
+`r49-prioritysendguard-20261010` and 0 to the previous token, `app.js` 200 with its 8 route-asset references,
+`operation-system-db-api.js` 200 carrying the R49 `ABSENT IS NOT ZERO` normalization, and `request-order.js` 200
+carrying `_roConflictText_`. The served `index.html` is byte-identical to the committed file after LF
+normalization (`e7c029c4…` both sides), so the deployed bytes are the committed bytes and not merely a build
+that happened to carry the right token.
+
+**WHAT IS NOT ACCEPTED.** The release IDENTITY is proven; the BEHAVIOUR is not. Still OPEN and deliberately not
+recorded as PASS: Company/Country/Marketplace priority isolation, Priority 0 vs Missing, and the §14 Missing-UPC
+Send guard. The first two could not be exercised against Production because **all 16 marketplace rows carry a
+SET priority** — there is no 0 and no missing row to observe. The third could not be exercised because the
+`requestOrder.sendWorkset.get` read (zero-write, two tables, no writer) returned **0 persisted drafts** for
+planning cycle 2026-10, so the guard had no data to fire on. An empty set is not a pass. Local fixtures carry
+the proof instead (`SEND_GUARD_MEASURED: missing_upc_send_blocked=true`).
+
+**R46 Production Functional Acceptance remains OPEN against R46** and is not closed or re-dated by this note.

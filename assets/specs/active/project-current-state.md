@@ -6455,3 +6455,40 @@ Sub-tab URL routing → unscheduled. **S2 not started.**
 
 **P1 final cleanup:** remove the TEMP diagnostics, remove any raw editor log still present, classify
 evidence as retained or removed, run the branch-to-main merge checklist, restart S2.
+
+---
+
+## S8-B2-R1 — SITE PRIORITY MANAGEMENT PAGE (local; not deployed)
+
+**The missing editing surface for `marketplaces.allocation_priority` now exists.** The column, the API writer
+and twenty reading call sites had all been in place for rounds; the only way to SET a priority was to type into
+the spreadsheet. §45.C.4 sequenced this UI last because it could not show a blank priority honestly until the
+adapter layers stopped inventing 0 for one — R50 settled that, so the page renders **Missing** as missing.
+
+- **Page:** `assets/html/pages/site-priority.html` + `assets/js/pages/site-priority.js` +
+  `assets/css/pages/site-priority.css`, reachable from Administration → Site Priority.
+  Registered as a **route asset**, not a boot script; the canonical country owner (KMCID) travels with it so the
+  page BORROWS the one `UK ≡ GB` alias rather than restating a table that would drift.
+- **Identity:** company + canonical country + marketplace. Company and marketplace are not case-folded, because
+  `03_`'s upsert is case-sensitive. EU stays an independent region. The stored country spelling is displayed.
+- **Existing API only.** `KM.DB.upsertMarketplace` — no second writer, no new action, no router or schema change.
+  A save echoes the stored `currency`, `status` and `marketplace_display_name`, because the handler writes those
+  unconditionally and defaults `status` to `active`; omitting them would silently reactivate a disabled
+  marketplace. The row is targeted by its RAW stored country, since a canonical one would miss and insert a
+  duplicate row.
+- **Read-after-write** on every save; a write that resolves but does not persist is reported as an error.
+- **Spec:** `docs/planning/SITE_PRIORITY_MANAGEMENT_SPEC.md`. **Tests:** `site-priority-page-s8-b2-r1.test.js`.
+
+### Two things this round did NOT do, by instruction
+
+1. **The Inventory Replenishment `|| 0` fallback is unchanged.** It was authorized for correction only if it were
+   display-only. It is not: the object carrying it is passed to `_allocateShared`, where the value is a §24.7
+   shortage weight and a largest-remainder tie-break. Correcting it changes allocation numbers and needs its own
+   authorized round.
+2. **A priority cannot be CLEARED back to Missing.** `handleUpsertMarketplace_` writes the column only when the
+   value is non-empty, so a blank is a no-op rather than a clear. The page offers no clear control and says so in
+   its refusal; supporting it would need an authorized change to `03_master_data_handlers.gs`.
+
+**Frontend token rotated to `r50-sitepriority-20261010`** (55 references in `index.html`, 8 route-owned in
+`app.js`) because `app.js` itself changed: a browser holding it on the old token would never fetch the router
+that knows the new page. Backend release identity is **unchanged at R50** — no `.gs` file moved in B2.

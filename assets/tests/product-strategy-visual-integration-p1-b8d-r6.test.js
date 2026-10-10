@@ -301,7 +301,15 @@ var PAGE_CSS_CHANGED_BY_LATER_ROUNDS = {
     'Target Rules tabs, and their :nth-child specificity out-ranked the resize engine injected ' +
     'rule so only three columns could be dragged. The rules are now per table and carry no ' +
     'max-width. Nothing in this file is scoped to .psb-page and no Product Strategy selector ' +
-    'was added, moved or removed.'
+    'was added, moved or removed.',
+  'assets/css/pages/site-priority.css':
+    'S8-B2-R1 - the Site Priority page stylesheet, NEW in this round, so new selectors only: there was no '
+    + 'file here to edit. Every rule is scoped to #site-priority-section, which is why it cannot reach this '
+    + 'page or any other. It is LISTED rather than filtered out for being new, because a stylesheet arriving '
+    + 'unannounced is exactly how an unscoped rule reaches a page nobody was looking at. It styles the three '
+    + 'priority STATES (Set / Missing / Invalid) as visibly different things, because an unstyled state class '
+    + 'ships as an invisible one - the same defect the entries above record. Nothing here is scoped to '
+    + '.psb-page and no Product Strategy selector was added, moved or removed.'
 };
 var otherPageCss = changedSince(R6_PRE, 'assets/css/pages');
 if (otherPageCss !== '__git_unavailable__') {

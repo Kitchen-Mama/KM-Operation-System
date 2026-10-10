@@ -1,0 +1,64 @@
+<!-- ============================================================================================================
+     S8-B2-R1 — SITE PRIORITY MANAGEMENT
+     Page-scoped partial, injected into #site-priority-mount by KM.partialLoader on lifecycle mount.
+
+     WHAT THIS PAGE IS FOR. `marketplaces.allocation_priority` had no editing surface anywhere in the system:
+     the column existed, the API could write it, fifteen core modules and five server files read it — and the
+     only way to set one was to type into the spreadsheet. §45.C.4 sequenced this UI LAST on purpose, because
+     it cannot display a blank priority honestly until the layers below stop inventing 0 for it. R50 settled
+     that, so the page can now show MISSING as missing.
+
+     THE ROW IS THE UNIT OF IDENTITY. Every control here is scoped to one company + country + marketplace
+     row. A marketplace NAME is not an identity — "Amazon" exists eight times in production across three
+     companies and six countries, carrying different priorities — so nothing on this page is keyed by name.
+============================================================================================================= -->
+<div id="site-priority-section" class="module-section">
+
+  <div class="sp-head">
+    <h2 class="sp-title">Site Priority</h2>
+    <p class="sp-sub">
+      Shared-pool allocation priority per marketplace site. Higher wins. A site with no priority is
+      <strong>Missing</strong>, which is not the same as 0 — 0 is a valid lowest priority that still takes a share.
+    </p>
+  </div>
+
+  <div class="sp-note">
+    Priority is read by the overseas shared-pool allocator. A <strong>Missing</strong> priority is refused by the
+    allocator rather than treated as 0, so a site left blank here is not silently ranked last — it is unresolved
+    and its allocation will not run.
+  </div>
+
+  <div class="sp-filters" role="group" aria-label="Site filters">
+    <label class="sp-field">
+      <span class="sp-field__label">Company</span>
+      <select id="sp-filter-company" class="sp-select"><option value="">All companies</option></select>
+    </label>
+    <label class="sp-field">
+      <span class="sp-field__label">Country</span>
+      <select id="sp-filter-country" class="sp-select"><option value="">All countries</option></select>
+    </label>
+    <button type="button" id="sp-refresh" class="sp-btn sp-btn--ghost">Refresh</button>
+  </div>
+
+  <!-- ONE live region for the whole page. Loading, error and success are three states of the same banner, so
+       they cannot be shown at once and a stale success cannot sit above a fresh failure. -->
+  <div id="sp-status" class="sp-status" role="status" aria-live="polite" hidden></div>
+
+  <div class="sp-table-wrap">
+    <table class="sp-table">
+      <thead>
+        <tr>
+          <th scope="col">Company</th>
+          <th scope="col">Country</th>
+          <th scope="col">Marketplace</th>
+          <th scope="col" class="sp-col-pri">Allocation priority</th>
+          <th scope="col" class="sp-col-state">Status</th>
+          <th scope="col" class="sp-col-act">Edit</th>
+        </tr>
+      </thead>
+      <tbody id="sp-rows"><!-- rendered by assets/js/pages/site-priority.js --></tbody>
+    </table>
+    <p id="sp-empty" class="sp-empty" hidden>No marketplace sites match these filters.</p>
+  </div>
+
+</div>

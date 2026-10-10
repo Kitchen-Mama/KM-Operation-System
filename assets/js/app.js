@@ -129,7 +129,7 @@ var KM_ROUTE_ASSETS_ = {
     'ops': {
         sectionId: 'ops-section',
         scripts: [
-            'assets/js/pages/inventory-replenishment.js?v=r49-prioritysendguard-20261010'
+            'assets/js/pages/inventory-replenishment.js?v=r50-sitepriority-20261010'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -151,16 +151,30 @@ var KM_ROUTE_ASSETS_ = {
             target: '#global-logistics-map-mount' },
         label: 'On the Way'
     },
+    // S8-B2-R1 — SITE PRIORITY. A ROUTE asset, not a boot script: the page is reachable only from its own
+    // menu entry, and the boot census is a bounded set this round has no reason to grow. It carries the
+    // canonical country owner with it, because the page BORROWS KMCID's single UK ≡ GB alias rather than
+    // restating a table that would then drift from the runtime's.
+    'site-priority': {
+        sectionId: 'site-priority-section',
+        scripts: [
+            'assets/js/core/supply-planning-country-identity.js?v=r50-sitepriority-20261010',
+            'assets/js/pages/site-priority.js?v=r50-sitepriority-20261010'
+        ],
+        partial: { key: 'site-priority', url: 'assets/html/pages/site-priority.html',
+            target: '#site-priority-mount' },
+        label: 'Site Priority'
+    },
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=r49-prioritysendguard-20261010',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r49-prioritysendguard-20261010',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r49-prioritysendguard-20261010',
-            'assets/js/product-strategy/psb-selectors.js?v=r49-prioritysendguard-20261010',
-            'assets/js/product-strategy/psb-chart-layout.js?v=r49-prioritysendguard-20261010',
-            'assets/js/product-strategy/psb-board-ui.js?v=r49-prioritysendguard-20261010',
-            'assets/js/pages/product-strategy-board.js?v=r49-prioritysendguard-20261010'
+            'assets/js/product-strategy/psb-data-contract.js?v=r50-sitepriority-20261010',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r50-sitepriority-20261010',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r50-sitepriority-20261010',
+            'assets/js/product-strategy/psb-selectors.js?v=r50-sitepriority-20261010',
+            'assets/js/product-strategy/psb-chart-layout.js?v=r50-sitepriority-20261010',
+            'assets/js/product-strategy/psb-board-ui.js?v=r50-sitepriority-20261010',
+            'assets/js/pages/product-strategy-board.js?v=r50-sitepriority-20261010'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },
@@ -651,6 +665,7 @@ function showSection(section) {
             'sku-regional-details': 'sku-regional-details-section',
             'global-logistics-map': 'global-logistics-map-section',
             'automation': 'automation-schedule-section',
+            'site-priority': 'site-priority-section',
             // P1-B8D - the lifecycle half. This is the entry that makes the partial load and the board
             // mount; without it the section below would be given `.active` and stay empty.
             'product-strategy': 'product-strategy-board-section'
@@ -685,6 +700,7 @@ function showSection(section) {
         'carrier-rate-card': 'carrier-rate-card-section',
         'sku-regional-details': 'sku-regional-details-section',
         'automation': 'automation-schedule-section',
+        'site-priority': 'site-priority-section',
         // P1-B8D - the display half. BOTH maps, because they are not one map read twice: the lifecycle
         // map decides what MOUNTS and this one decides what is VISIBLE, and a section in only one of them
         // either mounts into a hidden shell or is revealed with nothing in it. (They already disagree by

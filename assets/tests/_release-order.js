@@ -970,7 +970,13 @@ var ROUND_TOKENS = [
   // The series shape is `<round>-<name>-<yyyymmdd>` with exactly TWO segments before the date — the picker
   // suite asserts /^[a-z0-9]+-[a-z0-9]+-\d{8}$/ on whatever is current, so a three-segment name is not a
   // style preference but a contract break. 'prioritysendguard' is one segment by that rule.
-  'r49-prioritysendguard-20261010'];
+  'r49-prioritysendguard-20261010',
+  // S8-B2-R1. The frontend rotates because app.js ITSELF changed: the Site Priority route joins its section
+  // map, and app.js is served to browsers under this token. A returning browser holding app.js on the previous
+  // token would never fetch the router that knows the new page — the one failure mode a cache token exists to
+  // prevent. The three new files and the newly browser-loaded KMCID owner ride the same rotation; nothing is
+  // minted for them separately, because they are the same application family.
+  'r50-sitepriority-20261010'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

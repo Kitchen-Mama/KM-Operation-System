@@ -99,8 +99,11 @@ ok(/S8_BOOT_PAYLOAD_HEADROOM_AND_LOADING_ARCHITECTURE/.test(S4R5),
 // §1 — the durable claims S4 cared about, still live and now stronger.
 ok(/A1d4 NEW_ROUTE_SCRIPT_AT_BOOT_COUNT/.test(S4R5),
   'A3  A2_ROUTE_APPEND_GUARD is live, generalized from nine remembered names to the whole registry');
-ok(live.routeAssets.length === 16,
-  'A3a and that registry is 16 files, every one of which must stay off boot', live.routeAssets.length);
+// S8-B2-R1 — 16 → 18. Site Priority joins the ROUTE registry with the canonical country owner it borrows.
+// The number is a CENSUS, not a ceiling: it exists so a file cannot join the registry and the boot path at
+// the same time without someone saying so. Both new files are checked against boot by A1d4 like every other.
+ok(live.routeAssets.length === 18,
+  'A3a and that registry is 18 files, every one of which must stay off boot', live.routeAssets.length);
 
 // BOOT PAYLOAD: measured and reported, not gated.
 console.log('     BOOT_PAYLOAD_BYTES = ' + live.bytes + '   (pre-S4-R5 ' + MEAS.boot.pre.bytes + ')');

@@ -376,7 +376,20 @@ var R49_DELTA = [
   'assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs',
   'assets/specs/active/apps-script/66_api_v1_request_order_send.gs',
   'assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs'];
-var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).concat(R49_DELTA).sort();
+// S8-B1-R50 — R50_DELTA, the third named addition. ONE file joins:
+//
+//   43_  D-S8-B1 — it substituted 0 for an unresolved allocation_priority at the point of use, undoing the
+//                  omission its own map had preserved, so an unranked receiver competed for a shared pool.
+//                  It now carries the absence through and KMMSA refuses it before allocating.
+//
+// 63_ and 90_ are NOT repeated — 63_ is in AUTHORIZED_FLOOR and 90_ is already in R49_DELTA.
+//
+// WHY THIS ARRIVED A ROUND LATE, recorded because the lesson is reusable: CHANGED_SINCE_R42 reads
+// `R42_POST_SHA..HEAD`, which is COMMITTED history. The R50 sweep ran before R50 was committed, so 43_ was
+// not yet in HEAD and this equality still held. A pre-commit sweep cannot validate a gate that reads HEAD;
+// only a sweep run AFTER the commit can.
+var R50_DELTA = ['assets/specs/active/apps-script/43_api_v1_gap_materialization.gs'];
+var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).concat(R49_DELTA).concat(R50_DELTA).sort();
 var CHANGED_SINCE_R42 = runtimeGsBetween(R42_POST_SHA, 'HEAD');
 eq(CHANGED_SINCE_R42, AUTHORIZED_SINCE_R42,
   'H2e SINCE R42 ended, EXACTLY the authorized runtime files have changed — the R43/R44/R45 floor plus the '
