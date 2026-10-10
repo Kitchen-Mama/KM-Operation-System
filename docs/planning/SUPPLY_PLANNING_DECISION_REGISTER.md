@@ -1717,3 +1717,78 @@ mode as a valid success rather than a failure.
 `43_`'s `msaReceivers` passes no `survivalNeedQty` (MONTHLY decision 2 defaults it to 0), so the monthly
 overseas path reports `NORMAL_ALLOCATION` almost always. Sourcing a survival need for the Preview would be a
 further decision; reporting §40's mode verbatim is the honest alternative.
+
+---
+
+## D-S8-B3-8 / B3-10 / B3-11 / B3-7a — Preview async architecture and demand contract (S8-B3-D3, 2026-10-10)
+
+### D-S8-B3-8 — Async Preview — **ARCHITECTURE VERIFIED; one store question still OPEN**
+
+- **The job lifecycle is reusable as a PATTERN, not as a shared product.** `46_api_v1_gap_materialization_job.gs`
+  keeps job state in **Script Properties**, not a table:
+  `GAP_JOB_PROP_KEYS_ = { INVENTORY: ..., ORDER_PLANNING: ... }` with `gapJobReadState_` / `gapJobWriteState_`
+  over `env.props`. **So an async Preview needs NO new DB table for job state.**
+- **Do NOT extend the gap job's product enum.** Adding a Preview product would edit
+  `gapJobNormalizeProduct_`, `GAP_JOB_PROP_KEYS_`, `GAP_JOB_CONTINUATION_HANDLERS_`, `gapJobResultTableFor_`
+  (which assumes a result TABLE the Preview does not have) and the status handler's
+  `INVENTORY|ORDER_PLANNING` validation — i.e. it would change Gap Materialization to add a feature that is not
+  gap materialization. **A separate Preview job module mirroring the proven lifecycle is the isolated choice.**
+- **The script lock is GLOBAL.** `LockService.getScriptLock()` is per-script, so a Preview job and a gap job
+  contend on one lock. That is acceptable under the existing bounded-wait design
+  (`GAP_JOB_LOCK_MS_ = 10000`, `GAP_JOB_MAX_LOCK_WAITS_ = 8` then `RESCHEDULED_LOCKED`) but it means Preview and
+  Gap Materialization are **serialized, not concurrent**, and that must be stated rather than discovered.
+- **Proven budgets to inherit verbatim:** worker clean-exit budget `240000` ms (never relying on the ~6-min hard
+  kill as flow control); stale/reclaim `600000` ms; self-heal recovery delay `420000` ms (deliberately LONGER
+  than the hard kill, so it only fires on a kill); `MAX_RECOVERIES_ = 5`; `MAX_SLICE_ATTEMPTS_ = 3`.
+- **The Preview slice is NARROWER than Order Planning's.** OP expands any sub-company selection to the whole
+  company because the FACTORY pool competes company-wide. The overseas pool competes per
+  (company, canonicalCountry, sku), so **one Preview slice = one allocation group** - the smallest conserved
+  unit the frozen contract allows.
+- **OPEN: where the Preview RESULT lives.** Script Properties allow ~9216 bytes per value and the job's own safe
+  budget is 6912 (75%). A result with N receivers plus warehouse contributions can exceed that, and the existing
+  code treats an oversized partition as a truthful terminal
+  (`CONTENDED_FACTORY_PARTITION_SIZE_LIMIT`), never a silent fallback. `CacheService` is used **nowhere** in the
+  deployed Apps Script (`60_` states "NOTHING IS PERSISTED. No sheet row, no Cach[e]"), so adopting it would be
+  new infrastructure. A result table would be a new DB table. **This is a real decision and is not assumed.**
+
+### D-S8-B3-10 — Demand basis stays `allocatedForecastQty` — **FROZEN**
+
+- Produced by the LIVE Order Planning workspace calculation and read in `gapOpHarvestReceivers_` as
+  `demandQty = gapNum_(L.allocatedForecastQty)`; a line with no quantified demand is not competing.
+- **No existing materialized or cached output carries the same semantic value.** `order_planning_gap` persists
+  `t1_gap_qty` / `t1_suggested_qty`; `calculatedGap` is the §41 residual basis. None of them is
+  `allocatedForecastQty`. **No substitution** - `t1_gap_qty`, `t1_suggested_qty`, `requested_qty` and
+  `planned_qty` are all refused as stand-ins absent a separate business decision.
+- **Compute once per receiver, persist only a temporary Preview result.** The async job computes each receiver's
+  demand exactly once per run and keeps it only in the run's own result, which expires. Nothing is written into
+  a business table, and no second demand engine exists.
+
+### D-S8-B3-11 — Survival need — **report KMMSA's actual mode; do NOT synthesize one**
+
+- The authoritative inputs are §24.4 `minimum_18d_need = CEILING(daily_demand x 18)` for the survival-protected
+  paths; the MONTHLY overseas path **deliberately defaults it to 0** - KMMSA:
+  `survivalNeedQty: (qty(r.survivalNeedQty) === null ? 0 : ...)  // MONTHLY default 0 (decision 2)` and
+  `demandWeight` defaulting to `demandQty`. "Decision 2" is **D-F1-4B-FM5-R2A**, which **D-S8-B1 left
+  explicitly unchanged**.
+- **Consequence, measured:** because survival is 0 on this path, §40 selects `NORMAL_ALLOCATION` in cases a
+  demand-vs-pool reading would call a shortage. Supplying a survival need would therefore change **mode
+  selection and the allocated numbers**, not merely a response label - so it is an allocation-algorithm change,
+  not a presentation choice.
+- **Decision: the Preview reports `overseas.allocationMode` verbatim** and never reinterprets or recomputes it.
+  No 18-day survival calculation is invented inside Preview.
+
+### D-S8-B3-7a — `marketplace_sku_status` is **INFORMATIONAL** — **FROZEN**
+
+- No frozen eligibility rule exists: no planning spec makes it a filter, and IR's sibling-site filter does not
+  consult it. `marketplaces.status` has an eligibility precedent (the scope registry skips non-active);
+  `marketplace_sku_status` does not.
+- **Decision: retain every Master SKU member row and report `marketplace_sku_status` as metadata.** Excluding
+  inactive rows would invent eligibility semantics and move allocation denominators.
+
+### Action surface — larger than B3-1 assumed, but the VERSION is unchanged
+
+The proven async pattern is **Start / Status / Cancel**, with results served by a **separate read action** (the
+gap job writes `order_planning_gap`; `handleGetOrderPlanningGap_` reads it). A Preview therefore needs **3-4
+actions**, not the single action proposed in D-S8-B3-1. The contract VERSION still moves **18 -> 19**: the rule
+is one bump per release in which actions are added, not one per action. `SYS_REQUIRED_ACTIONS_` stays unchanged
+until a page depends on them.
