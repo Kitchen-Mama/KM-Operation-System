@@ -1792,3 +1792,117 @@ gap job writes `order_planning_gap`; `handleGetOrderPlanningGap_` reads it). A P
 actions**, not the single action proposed in D-S8-B3-1. The contract VERSION still moves **18 -> 19**: the rule
 is one bump per release in which actions are added, not one per action. `SYS_REQUIRED_ACTIONS_` stays unchanged
 until a page depends on them.
+
+---
+
+## D-S8-B3-12 / B3-13 / B3-14 / B3-15 — Preview result store, snapshot consistency, lock impact (S8-B3-D4, 2026-10-10)
+
+### D-S8-B3-12 — Preview result store = the EXISTING chunked Script-Property store — **FROZEN**
+
+- **Correction to D-S8-B3-8.** That entry recorded the result store as OPEN because
+  `46_api_v1_gap_materialization_job.gs:45-47` describes a ~9216 B per-value ceiling and a truthful terminal
+  `CONTENDED_FACTORY_PARTITION_SIZE_LIMIT`. **That comment is stale.** F1-7N-FA-3C-PRE1 superseded it with
+  `GAP_JOB_PARTITION_VERSION_ = 2` MULTI-PROPERTY chunked storage, and `CONTENDED_FACTORY_PARTITION_SIZE_LIMIT`
+  now appears **only in that comment** - it is thrown nowhere in the shipped source.
+  `SUPPLY_PLANNING_CALCULATION_RULES.md:2412` already records the supersession. **No new store is needed.**
+- **The existing mechanism already provides exactly the integrity the Preview requires:**
+  `gapJobPartitionWrite_` chunks under **generation-specific keys** and returns a META
+  (`version` / `generationId` / `chunkCount` / `byteLength` / `checksum`) that the caller persists **LAST** - an
+  atomic generation swap; `gapJobPartitionRead_` **FAILS CLOSED** on a missing chunk
+  (`..._CHUNK_MISSING`), a byte-length mismatch or an FNV-1a checksum mismatch (`..._CHECKSUM_MISMATCH`) - it can
+  never return a partial or mixed-generation result; `gapJobPartitionCleanup_` prunes stale generations bounded by
+  exact key prefix, `gapJobPartitionPurge_` clears on job end. Proven by
+  `assets/tests/contended-factory-partition-storage-f1-7n-fa-3c-pre1.test.js`.
+- **MEASURED capacity** (real `KMMSA.allocateMarketplaceReceiverSupply` + real `gapJobChunkString_` /
+  `gapJobUtf8Len_`; full envelope incl. run identity, scope, generation fingerprint, expiry, every receiver, every
+  warehouse contribution, unused supply, unallocated demand and issues - **nothing truncated**):
+
+  | receivers | warehouses | bytes | chunks | alloc records |
+  |---|---|---|---|---|
+  | 1 | 5 | 1,103 | 1 | 0 (singleReceiver) |
+  | 5 | 5 | 10,895 | 2 | 9 |
+  | 10 | 5 | 18,656 | 3 | 14 |
+  | 20 | 5 | 34,180 | 5 | 24 |
+  | 50 | 5 | 80,717 | 12 | 54 |
+  | 50 | 20 | 89,102 | 13 | 69 |
+  | 50 | 50 | 106,695 | 16 | 99 |
+
+- **Structural bound, verified in every case:** allocation records = **receivers + pools - 1** exactly. The pool
+  loop drains sequentially, so each record either exhausts a pool or satisfies a receiver. Result size is therefore
+  **linear in receivers**, not receivers x warehouses.
+- **MAX_SUPPORTED_GROUP_SIZE = 80 receivers**, from a declared `PREVIEW_RESULT_SAFE_BYTES_ = 131072` (128 KB =
+  25% of the ~500 KB total Script-Properties store), leaving 75% for gap-job state and its partition chunks. At
+  ~1,560 B/receiver this is ~84 receivers; 80 is the declared cap with a truthful terminal
+  `PREVIEW_RESULT_SIZE_LIMIT` above it - **never a silent truncation**. Headroom is large: §2412 records 228
+  receivers for an ENTIRE company across all scopes, and a Preview group is ONE (company, country, master SKU).
+- **The whole store is shared.** 300 receivers = 92% of the 500 KB store and 400 = 123%, so an uncapped Preview
+  could starve the gap job's own state. The cap is what prevents that, and it is the reason the cap is declared
+  rather than left implicit.
+
+### D-S8-B3-13 — Four actions, HOUSE naming — **FROZEN**
+
+The router convention is `<feature>.job.start` / `gapJob.status.get` / `<feature>.job.cancel` (01_router.gs:722-737),
+not the `overseasAllocation.preview.*` spelling proposed in the task. **Adopt the house convention:**
+`overseasAllocationPreview.job.start` · `overseasAllocationPreview.job.status` ·
+`overseasAllocationPreview.result.get` · `overseasAllocationPreview.job.cancel`.
+The results action is **not optional**: the proven pattern separates the job from its output (the gap job writes
+`order_planning_gap`; `handleGetOrderPlanningGap_` reads it). Status carries progress, never the result payload.
+
+### D-S8-B3-14 — Synchronous `overseasAllocation.preview.get` is **RETIRED**
+
+Superseded by the async surface. D-S8-B3-6 is closed.
+
+### D-S8-B3-15 — Global script lock — **AMENDED, cannot be accepted as proposed**
+
+- **Traced:** `gapJobContinue_` acquires the script lock at its top (`:432`) and releases it only in the closing
+  `finally` (`:603`) - **the lock spans the ENTIRE slice loop, up to `GAP_JOB_WORKER_BUDGET_MS_` = 240000 ms**
+  (longer if the worker is hard-killed). `LockService.getScriptLock()` is per-SCRIPT, so a Preview worker shares it.
+- **The bounded-wait budget cannot absorb that hold.** `GAP_JOB_MAX_LOCK_WAITS_` = 8 at
+  `GAP_JOB_CONTINUATION_DELAY_MS_` = 1000 ms is ~8 s nominal against a 240 s hold - two orders of magnitude short.
+  The loser does not degrade; it takes the truthful terminal `LOCK_UNAVAILABLE_TIMEOUT` -> **FAILED**.
+- **The asymmetry is the whole finding.** Preview losing to a gap job is tolerable (truthful BUSY, retryable).
+  **A gap job losing to Preview is a REGRESSION of a shipped production job**, because its 8x1 s budget would
+  expire against a long Preview hold. So the new entrant must never be the long holder.
+- **Smallest safe design change, confined to the new Preview module - no edit to `46_`:**
+  1. The Preview worker **holds the script lock only for brief state transitions** (the pattern START already
+     uses: *"a quick write that acquires the script lock ... and returns IMMEDIATELY (no calculation in the
+     request)"*, 01_router.gs:718-721). It is **never held across sheet reads or allocation computation**, so it
+     cannot starve a gap worker.
+  2. Preview-vs-Preview exclusion uses the **existing optimistic guard**, not a longer lock: re-read state before
+     committing and abort if `live.runId !== state.runId` (the proven check at `46_:563`).
+  3. A Preview-local lock-retry delay sized to outlast a gap worker (8 waits x 60000 ms = 480 s > 360 s), so
+     Preview waiting on Gap ends in a retry, not a FAILED.
+- **No new concurrency system is invented**; triggers stay isolated because `gapJobClearContinuationTriggers_`
+  deletes only its own exact handler name (`gapJobDeleteTriggersByHandler_`), so a Preview trigger is never
+  collected by the gap job and vice versa.
+
+### Snapshot consistency — A, B and C are NOT equivalent, and only C matters
+
+- **Traced:** `gapJobProcessSlice_` (`46_:648`) builds a **fresh io** and runs a **fresh**
+  `gapOpReadSupplyPoolFacts_(ss)` on **every continuation**. Only the calc context
+  (`calculationDate` / `calculationMonth` / `planningCycle`, frozen at START) and the persisted factory-contention
+  partition are carried across slices. **Receiver membership, marketplace priority, overseas inventory and forecast
+  demand are RE-READ per slice from the live spreadsheet.**
+- Therefore: **(A) same runId** is guaranteed by job state; **(B) same calculation generation** holds only for the
+  frozen calc context, not for the business inputs; **(C) an actual consistent source snapshot across slices is
+  NOT provided by the existing infrastructure.** No atomic snapshot isolation is claimed.
+- **Resolution, by construction rather than by validation:** a Preview **allocation group is indivisible** -
+  conservation requires the complete competing receiver set in one call, so a group can never be split across
+  slices. A Preview run scoped to ONE (company, canonicalCountry, masterSku) is therefore **one slice, one
+  execution, one read** - cross-slice drift cannot arise. Consistency C is achieved by scope, not by locking.
+- **Where C genuinely cannot be guaranteed** (a future multi-group Preview), each group carries its OWN
+  `snapshotGenerationId` + per-source `inputFingerprint`, groups are never summed across generations, and a result
+  whose inputs do not all attribute to one generation is reported **stale/void**, never served as a number.
+
+### Retry idempotency — **MEASURED, 13/13**
+
+Against the real allocator: three identical runs produce identical per-receiver allocation **and** identical
+contribution records; **reversed receiver input order** and **reversed pool input order** both produce identical
+output (a re-read may return rows in a different sheet order, so this is the property that matters); a duplicated
+receiver is **blocked** `RECEIVER_IDENTITY_CONFLICT`, never silently merged; a foreign company is **blocked**
+`CROSS_COMPANY_POOL_FORBIDDEN`; conservation holds on every run
+(`SUM(receivers) = totalAllocated`, `totalAllocated + totalUnused = totalSupply`); and the comparison is
+**non-vacuous** - a changed input does change the result, so drift is detectable. A retried slice recomputes a
+whole group from a fresh read and replaces the result atomically via the generation swap, so a retry can never
+produce a partial or duplicated result. **Frozen inputs are therefore NOT required for deterministic retries**, and
+no extra storage cost arises.
