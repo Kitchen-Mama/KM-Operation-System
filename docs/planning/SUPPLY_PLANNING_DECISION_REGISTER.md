@@ -1536,3 +1536,50 @@ Done as a frontend-only correction. No `.gs`, no DB, no router, no new API actio
 - **§45.B.1 remaining fabrication sites** are unaffected by this decision: `43_`, the Weekly Input Assembler and
   the Weekly Harvest Adapter were closed in R50; **KMMSA's frozen model-b adapter stands under D-F1-4B-FM5-R2A
   as narrowed by D-S8-B1**.
+
+---
+
+## D-S8-C2-1 / D-S8-C2-2 — §45.B.2 Producer Early Validation DEFERRED, scope fixed to both producers (USER-APPROVED 2026-10-10)
+
+S8-C2-R1 traced G14 / G15 / G16 and found **one root cause, not three**: every one of them goes through
+`projectRecommendationProductionSources` in `supply-planning-source-projection.js`, which stores
+`priorityByMktKey[k] = r.allocation_priority` verbatim and emits it unvalidated. `has()` already keeps a MISSING
+column missing and a canonical-identity CONFLICT already yields `undefined` + an issue; what is missing is a
+check on a value that is PRESENT but unusable — blank (G14), non-numeric text (G15), negative (G16).
+
+**The round STOPPED before implementation and was right to.** Both producers are compiled VERBATIM into
+`90_generated_supply_planning_bundle.gs`, whose content hash is pinned in `63_api_v1_system_health.gs`
+(`KM_BUNDLE_CONTENT_HASH_`). `build-apps-script-bundle.js --check` confirmed the bundle is currently in sync at
+`a113e56e…`, so one character in either producer forces a bundle rebuild, a `63_` manifest update, a new release
+identity and an Apps Script sync of two `.gs` files.
+
+### D-S8-C2-1 — DEFER (no standalone R51)
+
+- **Decision:** do NOT cut a release for this correction alone. Bundle it into the next backend release that is
+  independently justified.
+- **Why this is safe to defer:** no wrong number is produced today. `supply-planning-source-facts.js` refuses with
+  `MISSING_OR_INVALID_ALLOCATION_PRIORITY` and the fact-set reports `clean: false` / `ready: false`, so the
+  established fail-closed convention already holds. §45.B.2 describes the defect exactly — *"the refusal arrives
+  later than this contract intends"*. This is **hardening, not an active-bug fix**, and it does not earn its own
+  cut and manual sync.
+
+### D-S8-C2-2 — BOTH PRODUCERS
+
+- The correction must cover **`supply-planning-source-projection.js`** (emission sites `:457` receiverRows and
+  `:467` factoryRows, each with a `has(f,'allocationPriority')` caller bypass that must also be validated) **and
+  `supply-planning-production-assembly.js`** (`:190`, one emission site). The second carries the identical defect
+  and has no G number only because the characterization suite never exercised it.
+- **§45.B.2 stays OPEN until both producers pass their contract tests.** It may not be marked closed on the
+  strength of the G-numbered producer alone.
+
+### Constraints the future round inherits
+
+- Validate at the EMISSION point, not in the map build: filtering invalid values out of `priorityByMktKey` would
+  change canonical-identity conflict detection, which is R49-F / D-S8-A1 behaviour and is not authorized here.
+- **Numeric strings stay VALID and are emitted VERBATIM.** This producer's established parsing contract already
+  treats `100` and `'100'` as one answer (conflict comparison is on `str()` forms, with an in-source note that
+  preserving the TYPE is deliberate). The core KMMSA input contract must NOT be broadened to accept strings.
+- Blank/null → UNRESOLVED (§45.A.2), the same state as an absent column. Negative / non-numeric / non-finite →
+  INVALID (§45.A.3), recorded as its own issue so it is distinguishable from absent, with the emitted value
+  unresolved so nothing invalid travels.
+- KMCID identity needs no change — D-S8-A1 already routes both producers' `mktIdentityKey` through it.
