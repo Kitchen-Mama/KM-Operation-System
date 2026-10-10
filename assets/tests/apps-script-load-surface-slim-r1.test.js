@@ -113,7 +113,48 @@ eq(relocatedBytes, 808195,
   + 'size, only about where the bytes had to live');
 
 // C3 — the ceiling stays, and now it measures the thing it always meant to measure.
-ok(A.directoryBytes < 4500000, 'C3 the production runtime universe is under 4.5 MB', A.directoryBytes);
+//
+// S8-R49-L — THE BUDGET MOVES TO 4.6 MB, BY USER DECISION, AND THE REASON IS RECORDED RATHER THAN IMPLIED.
+//
+// This is a REPOSITORY SAFETY BUDGET, not a platform limit. R21's commit that set 4.5 MB said so in as many
+// words — "4.2 MB WAS NEVER A LIMIT. Apps Script does not impose one there" — and chose the number as the
+// measured size plus room for a few more owners, so that a runaway would still be caught.
+//
+// Measured with this same instrument, the budget ran out on authorized features rather than on waste:
+//
+//   main      4,495,143   under by 4,857
+//   61ca191   4,499,353   under by   647     S8-R49-D, the §14 Send refusal in 66_
+//   09d48bc   4,504,049   OVER  by 4,049     S8-R49-F, the rebuilt bundle — the crossing commit
+//   88ec21e   4,506,661   OVER  by 6,661     S8-R49-J
+//
+// WHY THE NUMBER MOVED INSTEAD OF THE FILES. The only non-required surface the audit can name is 26_, 27_
+// and 28_ — 10,031 bytes, no inbound file, no inbound string literal, no route, no trigger. Retiring the
+// two H_AMBIGUOUS ones leaves 4,500,860, still over, so the only SUFFICIENT deletion also takes 28_, which
+// the audit classifies C_MANUAL_OPERATOR_TOOL and whose own header says its three unsuffixed wrappers exist
+// to be "run from the Apps Script editor (no router)". A sufficient cut is therefore not a safe one, and
+// C3c below pins all three in place so that raising the budget cannot later be mistaken for retiring them.
+var SIZE_BUDGET = 4600000;
+ok(A.directoryBytes < SIZE_BUDGET, 'C3 the production runtime universe is under the 4.6 MB safety budget',
+  A.directoryBytes);
+// The gate stays load-bearing in BOTH directions: a budget raised so far above the tree that nothing could
+// ever cross it is not a guard. Headroom is reported, and bounded.
+var HEADROOM = SIZE_BUDGET - A.directoryBytes;
+console.log('   SIZE BUDGET ' + SIZE_BUDGET + '   MEASURED ' + A.directoryBytes + '   HEADROOM ' + HEADROOM);
+ok(HEADROOM > 0 && HEADROOM < 200000,
+  'C3b the headroom is real but BOUNDED — room for roughly three more owner files at 73_\'s 29.6 KB, not an '
+  + 'open budget', HEADROOM);
+// The raise was load-bearing: the tree is genuinely above the old number, so this is a recorded decision
+// about a real overrun and not a pre-emptive widening.
+ok(A.directoryBytes > 4500000,
+  'C3b1 and the raise was NEEDED — the tree is above the superseded 4.5 MB number, which is why the budget '
+  + 'moved rather than the files', A.directoryBytes);
+// THE THREE FILES THE BUDGET WAS RAISED INSTEAD OF DELETING. Pinned by name: a later round that wants
+// headroom must retire them deliberately, with live evidence, not quietly while doing something else.
+['26_recommendation_source_reader.gs', '27_recommendation_production_source.gs',
+ '28_recommendation_verification_diagnostics.gs'].forEach(function (f, i) {
+  ok(!!byFile[f], 'C3c.' + (i + 1) + ' ' + f + ' is STILL in the deployed set — the budget moved, the '
+    + 'deployment composition did not');
+});
 eq(A.report.filter(function (r) { return /^TEMP_/.test(r.file); }), [],
   'C3a and NO TEMP file remains in it — the directory IS the deployable set, so the two cannot drift apart '
   + 'again the way SLIM-R1 found them apart');
