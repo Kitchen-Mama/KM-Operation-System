@@ -2444,4 +2444,65 @@ The exact set of "other authoritative commitments" that Layer 2 aggregates again
 
 **44.19 FA-3C-DRAFT-MODEL-R1 — Request Order Allocation Draft FLATTEN authorized (design freeze, 2026-08-21).** DECISION (USER-authorized): the MONTHLY_ORDER decision workspace flattens to a single SKU-level `request_order_allocation_drafts` row with fixed `t1_/t2_/t3_` decision + provenance columns; `request_order_allocation_draft_lines` = `DEPRECATED_PENDING_MIGRATION` (retired after migration + runtime cutover). Calculation evidence stays in `order_planning_gap` + `recommendation_calculation_runs`; the Draft keeps only the decision snapshot (`tN_recommended_qty`/`tN_order_qty`/`tN_carton_qty`) + provenance pointer (`calculation_run_id`/`calculated_at`). The 14 former line snapshots + `category_snapshot`/`series_snapshot` + `request_allocation_line_id` are removed/retired. Per-tier independence (status/submit/user-edit/note) is preserved as `tN_*` columns; deterministic id `RD::MONTHLY_ORDER::<YYYY-MM>::<scopeKey>` with manual-create convergence; non-actionable (all-zero) AI drafts are not persisted. **No business-math change** (Net Order Need / Suggested / FLOOR / §41 / Ongoing PO / T1–T4 / formal Request Order + PO models all unchanged). **No live-DB / schema / runtime change this round** (`DB_CHANGE_READY = NO`; USER may not modify DB yet). Canonical contract: [`REQUEST_ORDER_ALLOCATION_DRAFT_V2_FLATTEN_DESIGN_FREEZE.md`](./REQUEST_ORDER_ALLOCATION_DRAFT_V2_FLATTEN_DESIGN_FREEZE.md). Supersedes the R0 "finish PRE3-R4 first" note: **stop repairing the retired `request_order_allocation_draft_lines` sheet**; keep only the PRE3-R3 type-scope code fix + `recommendation_calculation_runs` provisioning (both needed by V2).
 
+## 45. Marketplace Allocation Priority — Missing vs Zero Semantics (USER-APPROVED CONTRACT AMENDMENT, 2026-10-10)
+
+**Status:** CONTRACT AMENDMENT — documentation only. **This is a LATER, explicitly user-approved amendment; it does not rewrite §40, §20.4/§35 ordering, or any earlier frozen adapter decision, and it changes NO allocation algorithm.** It is also **not** an authorization to modify any runtime — see **45.C**. Owner of the underlying column: `DATABASE_RELATIONSHIP_MAP.md` (`marketplaces.allocation_priority`, numeric, higher = higher priority). Owner of the allocation function contract: **§40** (`allocateOverseasSharedPool` / `allocateFactoryDeterministic`), unchanged by this section.
+
+**Why this was needed.** The database already distinguishes an absent priority from a zero one — `03_master_data_handlers.gs` writes nothing when the value is blank — but several layers collapsed the two before any consumer could see the difference. That was never a neutral default: **§40 treats 0 as a VALID priority**, and under a shortage **§24.7 still serves a 0-priority receiver a weighted share** because the weight is clamped at `max(priority, 1)`. "Missing → 0" therefore granted a real priority, and a share of the pool, to a marketplace nobody had ranked — while making §40's own refusal of an unresolved priority unreachable in practice.
+
+---
+
+### 45.A USER-APPROVED TARGET CONTRACT (approved 2026-10-10; no longer an open question)
+
+**45.A.1 Priority 0 is a VALID priority — the lowest.** It is ranked last and it still receives its §24.7 weighted share. 0 is never a synonym for "excluded" and never a synonym for "unknown".
+
+**45.A.2 Missing / null / blank is UNRESOLVED.** It is a distinct state from 0 and must be preserved as such across every producer, transport and adapter boundary.
+
+**45.A.3 Negative or non-numeric is INVALID.** Not "lowest", not "unresolved" — invalid. This restates existing §40 behaviour (`requireQty` raises `RangeError` on a negative and `TypeError` on a non-number) rather than introducing a new rule.
+
+**45.A.4 A missing priority is NEVER silently converted to 0.** No layer may substitute a value the operator did not set. A layer that cannot resolve a priority reports it unresolved and leaves the refusal to the owner of the operation.
+
+**45.A.5 The four operation classes do NOT fail identically.**
+
+| Class | Required behaviour when a priority is unresolved |
+|---|---|
+| **A. Read-only Marketplace listing** | **Remains fully available.** The row is listed with a BLANK priority. A listing is not an allocation and must never be blocked by one. |
+| **B. Allocation Preview** | **Remains available and writes nothing.** It DISPLAYS every unresolved receiver and the remediation needed (set a priority on the marketplace row). A preview that refuses outright hides the diagnosis the operator needs in order to fix it. |
+| **C. Allocation Apply** | **FAILS CLOSED.** The affected allocation operation is refused **before any partial commit**. All-or-nothing: a partially applied allocation the operator never approved is the outcome this clause exists to prevent. |
+| **D. Planning calculations that do not require priority** | **Remain available.** Forecast, Gap, Demand, carton rounding and every other calculation that does not read `allocation_priority` are unaffected and must not be blocked. |
+
+**45.A.6 Identity is unchanged by this amendment.** A priority belongs to the canonical marketplace identity **company + country + marketplace** (the `marketplaces` upsert key; see §45.B). This amendment adds nothing to, and removes nothing from, that contract.
+
+---
+
+### 45.B CURRENT IMPLEMENTATION DEVIATIONS (as measured 2026-10-10 — NOT a compliance claim)
+
+**The runtime does NOT yet meet 45.A.** The following layers are **explicitly NOT compliant** and are recorded here so that no reader infers otherwise. Executable evidence: `assets/tests/marketplace-priority-null-zero-characterization-s8-r49-g.test.js`, where each behaviour is tagged `CONTRACT` or `DEVIATION` and the deviation count is printed.
+
+**45.B.1 Layers that FABRICATE a value (not compliant with 45.A.4):**
+- **KMMSA** `supply-planning-marketplace-supply-allocation.js` — defaults a null priority to 0 and ALLOCATES. This is a **frozen model-b DTO adapter** (D-F1-4B-FM5-R2A) and is **unchanged by this amendment**.
+- **`43_api_v1_gap_materialization.gs`** — correctly omits a missing priority from its map, then substitutes `0` at the point of use, so the omission never reaches a refusal.
+- **Weekly Input Assembler** `supply-planning-weekly-input-assembler.js` (`num0`) and **Weekly Harvest Adapter** `supply-planning-weekly-harvest-adapter.js` — both coerce a missing priority to 0.
+- **Inventory Replenishment page** `assets/js/pages/inventory-replenishment.js` — applies its own `|| 0` fallback. It is a **read-only preview** (class B), so this is a display decision rather than an Apply-path defect, but it is listed because it is the last place in the browser where missing silently becomes a real priority.
+
+**45.B.2 Layers that pass an INVALID value onward (not compliant with 45.A.3):** both core producers (`supply-planning-source-projection.js`, `supply-planning-production-assembly.js`) carry a blank, non-numeric or negative value through verbatim. §40 refuses it downstream, so no wrong number is produced, but the refusal arrives later than this contract intends.
+
+**45.B.3 Identity normalization divergence (open, and deliberately NOT settled here):** the core producers compare `country` as a raw trimmed, case-sensitive string, while `43_`, `71_` and KMMSA canonicalize it through `KMCID`. The same row can therefore resolve in one layer and not another. **Country canonicalization policy is NOT decided by this amendment.**
+
+**45.B.4 Layers that ARE already compliant** (stated so the boundary is unambiguous): the shared transport normalizer `operation-system-db-api.js` (R49-H1); the canonical composite identity in both core producers (R49-F) and in `61_api_v1_weekly_ai_plan.gs` (R49-I); **§40 itself**; `supply-planning-source-facts.js` and `supply-planning-allocation-facts.js` (`MISSING_OR_INVALID_ALLOCATION_PRIORITY`); and `71_api_v1_factory_stock_guard.gs` (`PRIORITY_UNRESOLVED` STOP).
+
+---
+
+### 45.C FUTURE IMPLEMENTATION AUTHORIZATION
+
+**45.C.1 This section is a CONTRACT, not an authorization.** Recording 45.A does not authorize any change to KMMSA, `43_`, the Weekly Input Assembler, the Weekly Harvest Adapter, the Inventory Replenishment fallback, or the country normalization policy. **Each requires its own explicitly authorized round**, and the frozen status of the model-b adapter decision (D-F1-4B-FM5-R2A) stands until such a round supersedes it by name.
+
+**45.C.2 §40 is untouched.** No allocation algorithm, ordering rule, weighting rule or conservation rule is changed by this amendment. §40 already implements 45.A.1 / 45.A.3; what is missing is upstream, not inside it.
+
+**45.C.3 Allocation Preview and Allocation Apply remain NOT ACTIVATED.** 45.A.5 describes how they must behave WHEN they are built. It is not a statement that they exist.
+
+**45.C.4 Sequencing.** The transport boundary is already compliant, so a missing priority now reaches the browser as `null`. The remaining work is, in dependency order: the adapter/assembler layers (45.B.1), then the Apply-path fail-closed behaviour (45.A.5 class C), then the read-only Marketplace Priority UI, which cannot display a blank priority correctly until 45.B.1 is settled.
+
+---
+
 **End of Document**
