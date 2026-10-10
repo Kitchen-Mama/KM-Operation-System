@@ -1583,3 +1583,55 @@ identity and an Apps Script sync of two `.gs` files.
   INVALID (§45.A.3), recorded as its own issue so it is distinguishable from absent, with the emitted value
   unresolved so nothing invalid travels.
 - KMCID identity needs no change — D-S8-A1 already routes both producers' `mktIdentityKey` through it.
+
+---
+
+## D-S8-B3-1 … D-S8-B3-6 — Overseas Allocation Preview (USER-APPROVED 2026-10-10; implementation BLOCKED at GATE A)
+
+**Approved and recorded:** action contract **18 → 19** (B3-1); one local **R51** cut (B3-2); **backend-first**
+deployment (B3-3); the deferred **C2** producer fixes ride in the same release (B3-4); Preview ships **INACTIVE**
+(B3-5); action name **`overseasAllocation.preview.get`** (B3-6).
+
+**S8-B3-R1 did NOT implement them.** GATE A ("if membership semantics are unresolved, STOP before
+implementation") fired on evidence, and §10's unresolved-architecture STOP with it. What the gate proved, and
+what it could not resolve, is recorded here so the next round starts from facts rather than from this analysis
+being redone.
+
+### What GATE A PROVED — the server-side contract already exists and is deployed
+
+`43_api_v1_gap_materialization.gs` is the existing server KMMSA caller, and the Preview must borrow it whole:
+
+- **Pools** — `gapOpReadSupplyPoolFacts_` keys overseas pools `company||canonicalCountry||sku`, joining
+  `overseas_inventory_snapshot` to `warehouses` on **3PL + active only** (FBA excluded), with missing ≠ 0 and a
+  negative quantity fail-closed. Already reused by `46_` and `61_`, so a third reader is ordinary.
+- **Group / receivers** — `gapOpBuildSupplyAllocation_` partitions `byCompanyCountrySku` and calls
+  `KMMSA.allocateMarketplaceReceiverSupply({overseasPools, receivers, eligiblePoolTypes:['THREE_PL']})`.
+- **UK/GB membership is ALREADY canonical on all three axes** — warehouse country
+  (`whById[id].country = gapCanonCountry_(…)`), receiver country (`cc = gapCanonCountry_(r.country)`) and the
+  priority key (`gapCanonCountry_(m.country)`) all resolve through KMCID. **This axis is NOT the blocker.**
+- **Priority** — already fail-closed since D-S8-B1: `priorityByMkt` omits an unresolved priority and the harvest
+  carries the absence through as `null`, so KMMSA refuses with `RECEIVER_PRIORITY_UNRESOLVED`.
+
+### What GATE A could NOT resolve — three open decisions
+
+1. **Receiver-set membership has no existing owner for this request shape.** `gapOpHarvestReceivers_(scopes, …)`
+   is handed its `scopes` by the caller; nothing maps `company + country + masterSku` → the competing marketplace
+   list. The two candidate sources give **different competing sets and therefore different allocations**:
+   `marketplaces` / `64_api_v1_scope_registry.gs` (every active marketplace in the scope) versus
+   `marketplace_skus` (only those carrying this Master SKU — the Inventory Replenishment convention, and the
+   grain KMMSA competes at). Choosing is a business decision, not an implementation detail.
+2. **Demand basis forces N live recommendation calculations per Preview.** Receiver `demandQty` is
+   `L.allocatedForecastQty` from `io.workspaceGet`, which is the **live Order Planning workspace calculation**,
+   explicitly "one workspaceGet/scope". Reusing it is mandatory (§2: no second demand engine) — but a Preview
+   over a group of N marketplaces therefore costs N full recommendation projections synchronously. That is a
+   first-load / latency architecture decision of the class that requires approval.
+3. **The enumeration source compares country RAW.** `64_api_v1_scope_registry.gs` projects `marketplaces` with
+   `scopeRegStr_(r.country)` and no KMCID, so a `UK`/`GB` split enumerates as two scopes while the pool and the
+   receiver group resolve as one. §45.B.3's open residue lands exactly on this action's front door.
+
+### Consequence
+
+The Preview's request schema `{company, country, masterSku, asOf}` carries no marketplace list and no demand, so
+the handler would have to **choose** 1 and **pay** 2. Both were refused rather than guessed. **R51 was not cut,
+no runtime was written, and the C2 fixes stay deferred with it** — they were to ride in this release, and there
+is now no release for them to ride in until the three questions above are answered.
