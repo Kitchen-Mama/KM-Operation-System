@@ -832,6 +832,15 @@ GS_OWNED_SINCE_R1['43_api_v1_gap_materialization.gs'] =
   'S8-B1-R50 the missing-priority fail-closed boundary. NO action added or removed, the router is untouched, '
   + 'no handler moved and the action-contract version stays 18. It stops fabricating 0 for an unresolved '
   + 'allocation priority and names the receivers of a blocked group';
+// S8-B3-R1A (R51) — the Overseas Allocation Preview joins this register. 01_, 00_, 63_ and 90_ are already
+// owned above; 74_ is a NEW file, and this line is exactly where a new routed handler file has to be declared.
+// Unlike most entries here it DOES move the action-contract version, 18 -> 19, because it genuinely ADDS four
+// actions. It adds nothing to SYS_REQUIRED_ACTIONS_: that list is the actions PAGES depend on, and no page
+// calls the Preview.
+GS_OWNED_SINCE_R1['74_api_v1_overseas_allocation_preview_job.gs'] =
+  'S8-B3-R1A the READ-ONLY async Overseas Allocation Preview job. Four actions ADDED (hence action contract '
+  + '18 -> 19), SYS_REQUIRED_ACTIONS_ unchanged because no page depends on them, and the feature ships staged '
+  + 'OFF. It owns no allocation formula and writes no business data';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

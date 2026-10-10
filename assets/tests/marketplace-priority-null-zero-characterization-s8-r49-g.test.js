@@ -87,8 +87,9 @@ obs(t(row({ allocation_priority: 'high' })), null,
     'G7 case 6 -- INVALID text is null, never a fabricated number', 'CONTRACT');
 // Negative is PRESERVED here by design (R49-H H1): §40 refuses it with a RangeError naming
 // allocationPriority (G34), and that refusal is the one that should be seen. Nulling or clamping it here would
-// hide a bad row instead of surfacing it. The layers that still pass a negative onward WITHOUT any downstream
-// refusal (G16, G27) remain tagged DEVIATION.
+// hide a bad row instead of surfacing it. This is the DB-OWNER layer and it is deliberately NOT the producer
+// layer: S8-B1-R1 closed G27 and S8-B3-R1A closed G14/G15/G16, so no layer passes an unusable priority onward
+// any more. This assertion stays as it is — the owner preserves, the producers refuse.
 obs(t(row({ allocation_priority: -5 })), -5,
     'G8 case 8 -- a NEGATIVE value is PRESERVED for §40 to refuse, not silently corrected here', 'CONTRACT');
 obs(t(row({ allocation_priority: '7' })), 7, 'G9 a numeric STRING is parsed to 7', 'CONTRACT');
@@ -153,19 +154,50 @@ function projPriority(mktRows) {
   if (!row2) throw new Error('FAIL-CLOSED: no receiver row produced');
   return row2.allocation_priority;
 }
+// The ISSUES channel of the same projection — what makes INVALID distinguishable from ABSENT.
+function projIssues(mktRows) {
+  var p = SP.projectRecommendationProductionSources(canonical(mktRows));
+  return (p && Array.isArray(p.issues)) ? p.issues : [];
+}
+function eq(actual, expected, label) {
+  if (j(actual) !== j(expected)) { fail++; console.log('FAIL ' + label + '\n      exp ' + j(expected) + '\n      got ' + j(actual)); }
+  else { pass++; }
+}
+function ok(cond, label) { if (!cond) { fail++; console.log('FAIL ' + label); } else { pass++; } }
 
 obs(projPriority([KM_US]), 10, 'G11 case 7 — a positive priority resolves to 10', 'CONTRACT');
 obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: 0 }]), 0,
     'G12 case 1 — an explicit 0 is preserved as 0', 'CONTRACT');
 obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon' }]), undefined,
     'G13 case 2 — a MISSING column stays MISSING (undefined), never fabricated as 0', 'CONTRACT');
-obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: '' }]), '',
-    'G14 case 3 — a BLANK string is carried through VERBATIM as empty string, not normalized and not refused '
-    + 'at this layer', 'DEVIATION');
-obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: 'high' }]), 'high',
-    'G15 case 6 — INVALID text is carried through verbatim; this producer validates nothing', 'DEVIATION');
-obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: -5 }]), -5,
-    'G16 case 8 — a NEGATIVE value is carried through verbatim here', 'DEVIATION');
+// S8-B3-R1A (§45.B.2, D-S8-C2-2) — these three were DEVIATION and are CONTRACT now. The producer validates at the
+// EMISSION point: a value that is PRESENT but unusable no longer travels. Blank is UNRESOLVED (the same answer as an
+// absent column, G13) and silent; invalid text and a negative are UNRESOLVED **and** raise their own issue, so
+// INVALID stays distinguishable from ABSENT rather than collapsing into it.
+obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: '' }]), undefined,
+    'G14 case 3 — a BLANK string is UNRESOLVED, the same state as an absent column', 'CONTRACT');
+obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: 'high' }]), undefined,
+    'G15 case 6 — INVALID text is UNRESOLVED, never carried onward and never fabricated as a number', 'CONTRACT');
+obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: -5 }]), undefined,
+    'G16 case 8 — a NEGATIVE priority is INVALID (§45.A.3) and is refused at this layer', 'CONTRACT');
+// A numeric STRING is still VALID and is still emitted VERBATIM — the type is preserved on purpose, and the core
+// KMMSA input contract was NOT broadened to accept strings (D-S8-C2-2).
+obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: '7' }]), '7',
+    'G16a a numeric STRING stays VALID and keeps its type', 'CONTRACT');
+obs(projPriority([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: 0 }]), 0,
+    'G16b an explicit 0 is still the valid LOWEST priority, not swept up by the new validation', 'CONTRACT');
+// NON-VACUOUS: the validation must DISTINGUISH invalid from absent, not merely blank both out. An absent column
+// raises NO issue; an invalid value raises exactly one naming the offending value.
+eq(projIssues([{ company: 'KM', country: 'US', marketplace: 'Amazon' }]).length, 0,
+   'G16c an ABSENT priority raises no issue — it is a state, not an error');
+eq(projIssues([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: '' }]).length, 0,
+   'G16d a BLANK priority raises no issue either — an empty cell is the same state as absent');
+ok(projIssues([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: -5 }])
+     .some(function (x) { return /INVALID_ALLOCATION_PRIORITY/.test(x.reason) && /-5/.test(x.reason); }),
+   'G16e a NEGATIVE priority raises an INVALID_ALLOCATION_PRIORITY issue naming the value');
+ok(projIssues([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: 'high' }])
+     .some(function (x) { return /INVALID_ALLOCATION_PRIORITY/.test(x.reason) && /high/.test(x.reason); }),
+   'G16f INVALID text raises an INVALID_ALLOCATION_PRIORITY issue naming the value');
 obs(projPriority([KM_US, RESUS_US]), 10,
     'G17 case 9 — SAME marketplace name, different COMPANY: KM keeps its own 10 (R49-F)', 'CONTRACT');
 obs(projPriority([KM_US, KM_CA]), 10,

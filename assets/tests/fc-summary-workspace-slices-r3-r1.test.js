@@ -469,8 +469,12 @@ ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').jo
 // which is the point of keeping the list: 13_ and 00_ genuinely have not changed. 72_ had, by R4G, changed
 // what its three price fields MEAN — they carry the resolved price now, resolved by calling 73_ — and a
 // read owner whose field changed meaning has changed as surely as one whose field changed name.
-[['13_procurement_handlers.gs', 'R6-R7-R12'],
- ['00_config.gs', 'R6-R7-R11']].forEach(function (p, i) {
+// S8-B3-R1A — 00_config.gs LEAVES THIS LIST, for exactly the reason the two paragraphs above give for 72_
+// and 01_. It held R11 for forty releases and the entry was true every time; R51 adds
+// OVERSEAS_ALLOCATION_PREVIEW_ENABLED_, which is a constant of record, so the file has genuinely changed and
+// its stamp moves with it. 13_ stays: it still genuinely has not changed, which is what keeps this list worth
+// having rather than a formality that empties itself one release at a time.
+[['13_procurement_handlers.gs', 'R6-R7-R12']].forEach(function (p, i) {
   var m = new RegExp("\\{ file: '" + p[0].replace(/\./g, '\\.') + "', symbol: '[A-Z_]+', expected: '([^']+)'").exec(HEALTH);
   ok(!!m && m[1].indexOf(p[1]) !== -1, 'E8.' + (i + 1) + '  ' + p[0] + ' still expects ' + p[1], m && m[1]);
 });

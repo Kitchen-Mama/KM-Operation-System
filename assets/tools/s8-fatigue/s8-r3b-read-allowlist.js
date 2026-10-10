@@ -251,7 +251,13 @@
     'inventoryReplenishmentGap.job.cancel', 'inventoryReplenishmentGap.job.start',
     'inventoryReplenishmentGap.recalculate.all', 'inventoryScope.registry.get', 'leadTime.raw.get',
     'openPoRemaining.raw.get', 'orderPlanningGap.get', 'orderPlanningGap.job.cancel',
-    'orderPlanningGap.job.start', 'orderPlanningGap.recalculate.all', 'overseasStock.workspace.get',
+    'orderPlanningGap.job.start', 'orderPlanningGap.recalculate.all',
+    // S8-B3-R1A (R51) — the four Overseas Allocation Preview actions. They belong in the VOCABULARY, which is
+    // the census of everything the router answers, and NOT in the read allowlist: the allowlist is about which
+    // reads may be redirected, and these are a job surface, not a redirectable read.
+    'overseasAllocationPreview.job.cancel', 'overseasAllocationPreview.job.start',
+    'overseasAllocationPreview.job.status', 'overseasAllocationPreview.result.get',
+    'overseasStock.workspace.get',
     'pricing.fxReconcile', 'pricing.update', 'pricing.write.status', 'productPricing.siteUniverse.get',
     'productPricing.workspace.get', 'purchaseOrder.workspace.get', 'rawInventory.get',
     'receivePurchaseOrderLines', 'recommendation.workspace.get', 'renderShipmentDocument',

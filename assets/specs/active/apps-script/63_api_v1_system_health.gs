@@ -340,7 +340,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //
 // NOTHING HERE CLAIMS A DEPLOYMENT. No Apps Script version exists for R50, Production still runs R49, and the
 // release log records R50 as NOT DEPLOYED until a user performs the sync and writes the version down.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -395,7 +395,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50';
 // S8-B1-R50 - moves WITH the release again, and for the ordinary reason: THIS FILE changed. The release above,
 // 66_'s row returning to a CARRIED stamp, this row, and the generated bundle's expected content hash all moved
 // in one commit, which is also what the stamp gate requires - a release stamp has to be minted by its own cut.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -466,7 +466,15 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // pricing.update but cannot answer whether a write committed, so a client that lost a response would be
 // unable to verify and would sit on OUTCOME_UNKNOWN forever. The two states have to be distinguishable
 // without calling the action to find out.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 18;
+// S8-B3-R1A (R51): 18 -> 19. 01_router.gs gained FOUR genuinely new routes —
+// overseasAllocationPreview.job.start / .job.status / .result.get / .job.cancel — and this number's rule is
+// "bump whenever a router ACTION is added or removed". It moves by ONE, not by four: the rule counts the
+// release in which the action surface changed, not the number of actions, which is why every prior bump is
+// +1 regardless of how many entries moved. A deployment at v18 routes none of the four and must be
+// distinguishable from one that routes all of them WITHOUT calling an action to find out — which matters
+// more than usual while the feature is staged OFF, because a disabled Preview and an unsynced deployment
+// both refuse, and only the version tells them apart.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 19;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
 // F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
@@ -666,7 +674,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -691,7 +699,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
-  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
+  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation and, from R51, OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ — the staged-OFF gate the four Preview actions check before any database is opened)' },
   // F1-7N-FC-1B-E3-R1 — 61_ owns the harvest, the canonical readiness decision and the K2 generation, and
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.
@@ -802,11 +810,15 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // Its absence is NOT loud. 13_ guards on typeof KMPD.resolveTargetRule and returns null when it is missing,
   // and a null target is a SKIPPED month, not an error: an old bundle makes the procurement forecast quietly
   // drop months. An old-but-present bundle is worse still -- it resolves by the retired first-row-wins rule.
-  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: 'a113e56e45985f1b974869616a6f70d2a3723a9270a39d3f25ba567a0f7cf2c1', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
+  // S8-B3-R1A (R51) — the Overseas Allocation Preview job. A NEW file is the partial-sync case this manifest
+  // exists for: without a row here, a project that copied 01_router.gs but not 47_ would route four actions to
+  // handlers that do not exist, and the only symptom would be a runtime error per click.
+  { file: '74_api_v1_overseas_allocation_preview_job.gs', symbol: 'OAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'the READ-ONLY async Overseas Allocation Preview job: lifecycle (start/status/result/cancel + continuation/self-heal), the short-lock discipline that keeps it from starving Gap Materialization on the shared script lock, and the generation-keyed chunked Script-Property result store. It owns NO allocation formula - eligibility comes from 43_, demand from allocatedForecastQty, distribution from KMMSA' },
+  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: '3de64364ba358468c39142aac212d663b41075f454dc6d86218fc066cdbc7e25', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment\'s DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read \u2014 it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed. R51 ADDS FOUR ACTIONS (the Overseas Allocation Preview job: start/status/result/cancel), which is why the action-contract version moves 18 -> 19 in this release' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was

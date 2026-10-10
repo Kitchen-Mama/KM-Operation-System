@@ -494,10 +494,19 @@ ok(RO_E2.stampAtOrAfter((G63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[
 // The floor has to bite in the other direction too, or 'at or after' is just 'anything'.
 ok(!RO_E2.stampAtOrAfter('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R43', R44),
   'J3a and a PRE-R44 stamp is still rejected — the floor is a floor, not a formality');
-eq((read(GS + '01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1],
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41', 'J4  01_ is UNCHANGED at R41 — no action and no route moved');
-eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1], '18',
-  'J5  ACTION_CONTRACT_VERSION stays 18 — the action set did not change');
+// S8-B3-R1A — THE INTERVAL WAS PINNED AT ONE END. This read the CURRENT router stamp and required it to
+// equal R41, conflating two claims: "this round did not change the router" (true, and still true) and "no
+// round since has changed it" (not this suite's business, and false from R51 on, which adds four routes).
+// The shared ledger exists to express the first without asserting the second — stampAtOrAfter compares
+// INDEXES — so the stamp must be at or after R41 and never behind it. The regression this guard was written
+// for is still caught: a router rolled BACK, or carrying an id the ledger has never heard of.
+ok(RO_E2.stampAtOrAfter((read(GS + '01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1],
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'),
+  'J4  01_ is at or after R41 — no action and no route moved in THIS round');
+// Same correction, same reason: the action set did not change in THIS round. It did in R51, which added
+// four Preview routes. A contract that goes BACKWARDS is the real fault, and that is still caught.
+ok(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]) >= 18,
+  'J5  ACTION_CONTRACT_VERSION is at or after 18 — the action set did not change in THIS round');
 
 var MANIFEST = JSON.parse(read(GS + 'appsscript.json'));
 var svcs = MANIFEST.dependencies.enabledAdvancedServices;

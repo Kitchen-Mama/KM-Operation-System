@@ -713,7 +713,17 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // DECLARED rather than filtered out, which is the whole method of this register: a visual round that
   // touched either of these would still be caught, because an undeclared file is still a failure.
   'assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs',
-  'assets/specs/active/apps-script/66_api_v1_request_order_send.gs'];
+  'assets/specs/active/apps-script/66_api_v1_request_order_send.gs',
+  // S8-B3-R1A (R51) — the Overseas Allocation Preview reaches this register. None of these is reachable from
+  // Product Strategy's read path: 74_ is a NEW file nothing else calls, 01_ only gains four routes that no
+  // page requests, and 00_ only gains OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ — PRODUCT_STRATEGY_ENABLED_ is
+  // untouched, no capability field moved, and the board's universe/workspace reads are byte-identical.
+  //
+  // DECLARED rather than filtered out, which is the whole method of this register: a visual round that touched
+  // any of these would still be caught, because an undeclared file is still a failure.
+  'assets/specs/active/apps-script/74_api_v1_overseas_allocation_preview_job.gs',
+  'assets/specs/active/apps-script/01_router.gs',
+  'assets/specs/active/apps-script/00_config.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

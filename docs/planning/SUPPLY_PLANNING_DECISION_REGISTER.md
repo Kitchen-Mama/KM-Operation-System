@@ -1906,3 +1906,67 @@ receiver is **blocked** `RECEIVER_IDENTITY_CONFLICT`, never silently merged; a f
 whole group from a fresh read and replaces the result atomically via the generation swap, so a retry can never
 produce a partial or duplicated result. **Frozen inputs are therefore NOT required for deterministic retries**, and
 no extra storage cost arises.
+
+---
+
+## S8-B3-R1A — R51 IMPLEMENTED: Overseas Allocation Preview + §45.B.2 producer closure (2026-10-10)
+
+**D-S8-B3-12 / B3-13 / B3-14 / B3-15 are APPROVED and IMPLEMENTED. D-S8-C2-1 / C2-2 are DISCHARGED.**
+
+### What landed
+
+- **`74_api_v1_overseas_allocation_preview_job.gs` (NEW)** — a READ-ONLY async Preview of the frozen §20/§24
+  overseas shared-pool allocation for ONE allocation group (company + canonical country + master SKU). It owns
+  **no formula**: pool eligibility from `gapOpReadSupplyPoolFacts_`, demand from `gapOpHarvestReceivers_`
+  (`allocatedForecastQty`), distribution from `KMMSA.allocateMarketplaceReceiverSupply`. Numbered 74_ and not 47_
+  because `47_api_v1_recommendation_generation.gs` already exists.
+- **Four router actions**, house naming: `overseasAllocationPreview.job.start` / `.job.status` / `.result.get` /
+  `.job.cancel`. **Action contract 18 → 19** (one bump; the rule counts releases, not actions).
+  `SYS_REQUIRED_ACTIONS_` and the list version do **not** move — no page depends on the Preview.
+- **`OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ = false`** in `00_config.gs`. The gate is checked **before** the env is
+  built, so a disabled Preview opens no spreadsheet, writes no job state and arms no trigger; the continuation
+  handler checks it too, so a stray trigger cannot work after a rollback. **EXECUTED, not asserted** (suite §A).
+- **§45.B.2 producer corrections** rode the same release, as D-S8-C2-1 deferred them to. Zero extra `.gs` files:
+  R51 already rebuilds `90_` and already moves `63_`.
+
+### D-S8-B3-15 — the short-lock contract, as implemented
+
+`gapJobContinue_` holds the shared per-script lock across its whole slice loop (≤ 240000 ms) while its bounded
+wait is 8 × 1000 ms. **Preview losing that race is tolerable; a Gap job losing it is a regression of a shipped
+job.** So the Preview is never the long holder:
+
+1. Lock held ONLY for short state transitions — **never** across a sheet read, a `workspaceGet`, a KMMSA
+   allocation or result serialization. **Executed**: the fake lock is instrumented and the expensive calls record
+   whether it was held; all three report `false`, and the run is proven to have acquired it at all (non-vacuous).
+2. Preview-vs-Preview exclusion is the **optimistic `runId` guard**, not a longer lock.
+3. `OAP_LOCK_RETRY_DELAY_MS_` (60000) × `OAP_MAX_LOCK_WAITS_` (8) = **480000 ms**, which outlasts both a Gap
+   worker's 240000 ms clean-exit hold and a ~360000 ms hard kill — so waiting ends in a RETRY, never a FAILED.
+4. **`46_` is NOT modified.** The chunk primitives (`gapJobChunkString_` / `gapJobUtf8Len_` / `gapJobFnv1a_` /
+   `gapJobPad4_`) are product-agnostic top-level functions and are called directly; the gap job's state keys,
+   state writer and partition writer are never reached into.
+
+### Snapshot consistency — by SCOPE, not by machinery
+
+An allocation group is **indivisible** (conservation needs the complete competing set in one KMMSA call), so a
+Preview run is one slice, one execution, one set of reads — cross-slice drift cannot arise. What a single
+execution still cannot rule out is drift **between the read and the publication**, so the inputs are
+fingerprinted at read time and **revalidated immediately before publishing**; a mismatch is `SOURCE_DRIFT`,
+bounded-retried, and never published. **No atomic spreadsheet snapshot is claimed.** The fingerprint is
+**order-independent**, so a re-read returning rows in a different order is not mistaken for drift.
+
+### Result store — the EXISTING mechanism
+
+Generation-keyed chunked Script Properties under a Preview-owned prefix; META committed LAST (atomic
+publication); fail-closed on a missing chunk, a byte-length mismatch or a checksum mismatch; cleanup bounded by
+exact prefix. **Enforcement is on serialized UTF-8 BYTES** (`OAP_RESULT_SAFE_BYTES_` = 131072), with the 80-receiver
+cap as a policy guard — both are truthful typed failures, never truncation. The 128 KB budget leaves 380928 B of
+the shared ~500 KB store for the Gap job, which is the reason the cap is declared rather than left implicit.
+
+### Deviations from the task spec, with reasons
+
+- **Module numbered 74_, not 47_** — `47_api_v1_recommendation_generation.gs` already exists and a duplicate
+  numeric prefix is a sync hazard.
+- **No frontend cache token was rotated.** The two corrected producers are **server-side only** — no page loads
+  them; they reach Apps Script through `90_` and the browser through nothing. The only browser file touched is
+  `operation-system-db-api.js`, whose contract pin moves 18 → 19 to stay EQUAL to the deployment. Rotating a token
+  would assert a frontend change that did not happen.

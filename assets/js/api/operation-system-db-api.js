@@ -4596,7 +4596,13 @@ function _kmWriterError_(json, fallbackMessage) {
 // S3-R10: 16 -> 17 — this build calls pricing.write.status to resolve a lost write outcome, so a
 // deployment that predates the action cannot serve it. The pin moves WITH the contract, because a client
 // that silently accepts an older deployment is a client that cannot verify a write and will not say so.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 18;      // the minimum deployed_action_contract_version this build needs
+// S8-B3-R1A (R51): 18 -> 19 — the deployment gained the four Overseas Allocation Preview actions. The pin moves
+// WITH the contract because the suite that polices them asserts equality, not merely "at least": a client pinned
+// below the deployment it ships with would make a half-synced project and a correctly synced one report the same
+// number. This build calls NONE of the four (the feature is staged OFF and has no page), so the pin is a SYNC
+// statement rather than a dependency — and the runtime check is `deployed < expected`, a MINIMUM, which is what
+// makes backend-first safe: the backend may lead, the frontend may not.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 19;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //

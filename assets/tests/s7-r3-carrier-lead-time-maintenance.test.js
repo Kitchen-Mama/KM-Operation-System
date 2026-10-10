@@ -431,10 +431,16 @@ ok(/function handleSeedSinotransCarrier_\(body\)/.test(G17) && /Idempotent one-t
   'F6  SINOTRANS_SEED_CLASSIFICATION = ONE_TIME_SEED — still present, not removed, not executed here');
 
 // §22 — release identity moved because two actions were added.
-ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 18;/.test(G63),
-  'F7  the action-contract version moved 17 → 18, as adding a router action requires');
-ok(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 18;/.test(API),
-  'F7a and the browser pin agrees, so this frontend refuses a deployment that predates the action');
+// S8-B3-R1A — PINNED AT ONE END. The fact this round established is that R39 moved the contract 17 → 18
+// because it added actions. Asserting the CURRENT value equals 18 turned that into a claim that no later
+// release may ever add one, which R51 does (four Preview routes, 18 → 19). The durable form is directional:
+// the contract is at or after 18, and the browser pin still AGREES with the deployment — which is the real
+// property, since a pin that lags refuses a healthy deployment and a pin that leads accepts a stale one.
+var _ac = Number((/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(G63) || [])[1]);
+var _pin = Number((/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(API) || [])[1]);
+ok(_ac >= 18, 'F7  the action-contract version is at or after the 18 this round moved it to (now ' + _ac + ')');
+ok(_pin === _ac,
+  'F7a and the browser pin AGREES with the deployment, so this frontend refuses one that predates the action');
 
 // ==========================================================================================================
 section('G  §25 MUTANTS');

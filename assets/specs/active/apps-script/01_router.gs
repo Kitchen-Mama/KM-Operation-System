@@ -49,7 +49,7 @@
 // its stamp moves with it. R40 was already CUT against a tree in which 01_ did not change - its owner set
 // is 63_ alone, and the ledger deliberately carries 01_ at R39 there - so joining R40 would make one id
 // name two trees. A new release is the only honest way to record a runtime change that arrives after a cut.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
@@ -734,6 +734,27 @@ function doPost(e) {
     }
     if (action === 'orderPlanningGap.job.cancel') {
       return jsonResponse_(handleCancelOrderPlanningGapJob_(body));
+    }
+
+    // S8-B3-R1A (R51) — API v1 · OVERSEAS ALLOCATION PREVIEW (owner = 74_). A READ-ONLY async preview of the
+    // frozen §20/§24 overseas shared-pool allocation for ONE allocation group (company + canonical country +
+    // master SKU). It owns NO formula: eligibility from 43_, demand from allocatedForecastQty, distribution from
+    // KMMSA. There is no Apply and no business write — its ONLY writes are its own Script Properties and its own
+    // continuation triggers. Four actions rather than one because the proven async pattern separates the job from
+    // its output (START is a quick write that returns immediately; the RESULT has its own read).
+    // STAGED OFF: each handler checks OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ before the spreadsheet is opened,
+    // before any job state is created and before any trigger is armed.
+    if (action === 'overseasAllocationPreview.job.start') {
+      return jsonResponse_(handleStartOverseasAllocationPreviewJob_(body));
+    }
+    if (action === 'overseasAllocationPreview.job.status') {
+      return jsonResponse_(handleGetOverseasAllocationPreviewJobStatus_(body));
+    }
+    if (action === 'overseasAllocationPreview.result.get') {
+      return jsonResponse_(handleGetOverseasAllocationPreviewResult_(body));
+    }
+    if (action === 'overseasAllocationPreview.job.cancel') {
+      return jsonResponse_(handleCancelOverseasAllocationPreviewJob_(body));
     }
 
     // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).

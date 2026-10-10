@@ -153,7 +153,8 @@ var DISP = dispatchedHandlers(ROUTER);
 
 // S7-R3 — 141 → 143. carrierLeadTime.upsert and carrierLeadTime.duplicateCensus are the first actions
 // routed since R25, and they are what closes the B5 finding below.
-eq(RACT.length, 143, 'A1  the router dispatches 143 distinct actions');
+// S8-B3-R1A — 143 -> 147: the four Overseas Allocation Preview routes.
+eq(RACT.length, 147, 'A1  the router dispatches 147 distinct actions');
 
 var missingRouter = CACT.filter(function (a) { return RACT.indexOf(a) === -1; });
 eq(missingRouter, [], 'A2  MISSING_ROUTER_ACTION_COUNT is 0 — every action the browser sends has a dispatch branch');

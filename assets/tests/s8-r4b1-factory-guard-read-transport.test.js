@@ -198,8 +198,12 @@ eq(rtrDecl, rtrExpect, 'E1 the router stamp and the health mirror agree — they
 // three places. R41 is the release this change actually belongs to.
 var R41_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
 var RO_ORDER = require('./_release-order.js').OWNER_STAMPS;
-eq(rtrDecl, R41_ID,
-   'E2 the router stamp advanced to R41, because 01_router.gs changed');
+// S8-B3-R1A — PINNED AT ONE END, exactly like E2a was before it. The fact R4B-1 earned is that the router
+// ADVANCED to R41 when its routing table changed. Requiring the CURRENT stamp to still EQUAL R41 turns that
+// into a claim that no later release may ever change the router again - and R51 does, adding four Overseas
+// Allocation Preview routes. The claim that survives is directional, and it still catches a rollback.
+ok(RO_ORDER.indexOf(rtrDecl) >= RO_ORDER.indexOf(R41_ID),
+   'E2 the router stamp is at or after R41, the round 01_router.gs changed', R41_ID + ' -> ' + rtrDecl);
 var headRelease = (HEALTH.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
 // S8-R4B-2D - E2a WAS A CLAIM ABOUT R4B-1, WRITTEN AS A CLAIM ABOUT EVERY RELEASE AFTER IT. "the router
 // stamp equals the HEAD release" is what OWNERSHIP looks like, and it was true for exactly as long as 01_
@@ -207,8 +211,9 @@ var headRelease = (HEALTH.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || []
 // a stamp that equals the head release while the file has not changed is the marched stamp this whole
 // ledger exists to forbid. The claim R4B-1 actually earned is pinned at BOTH ends instead: the router
 // declares R41, and R41 was the head release when it did.
-eq(rtrDecl, R41_ID,
-   'E2a 01_ declares R41 — the round its routing table really changed, which is what a module stamp is');
+ok(RO_ORDER.indexOf(rtrDecl) >= RO_ORDER.indexOf(R41_ID),
+   'E2a 01_ declares R41 or a LATER round its routing table really changed in, which is what a module '
+   + 'stamp is', rtrDecl);
 ok(headRelease === R41_ID || RO_ORDER.indexOf(headRelease) > RO_ORDER.indexOf(R41_ID),
    'E2a1 and the HEAD release is R41 or a LATER one — the router is an owner of R41, carried by whatever '
    + 'follows it, and never marched forward to look current', R41_ID + ' -> ' + headRelease);
@@ -218,8 +223,12 @@ ok(headRelease !== 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40',
 var fsgDecl = (GUARD.match(/var FSG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 eq(fsgDecl, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1',
    'E3 the Factory Guard stamp did NOT move — 71_ is untouched, and a stamp records the round a FILE changed');
-eq(Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]), 18,
-   'E4 the action-contract version stays at 18: this adds a ROUTE for an existing action, not an action');
+// Same correction: R4B-1 added a ROUTE for an existing action, so the contract did not move IN THIS ROUND.
+// R51 adds four genuinely new actions and moves it to 19. 'at or after 18' keeps the fact and drops the
+// claim about every release since; a contract going BACKWARDS is still a failure.
+ok(Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]) >= 18,
+   'E4 the action-contract version is at or after 18: THIS round adds a ROUTE for an existing action, '
+   + 'not an action');
 
 // ============================================================================================================
 section('F. FACTORY INVENTORY IS NOT INVOLVED');
@@ -281,21 +290,29 @@ mut('the router GET read table loses the action', ROUTER_F,
 // The anchor names the ROUTER entry in full. `expected: '…R40'` alone is ambiguous — SYS_BUILD_VERSION_'s
 // own entry already carries the same release string and appears first, so a bare replace mutates the wrong
 // line and the mutant survives while appearing to test the mirror. Found by this mutant surviving.
-var ROUTER_MIRROR = "{ file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'";
+// S8-B3-R1A — ANCHORED ON THE DECLARED VALUE, for the reason the S8-R4B-2D paragraph below already states
+// about a different literal: a mutant whose target is ABSENT injects no fault and reports a passing grade
+// for a tree it never changed. The literal R41 stopped being the router's mirrored expectation the moment
+// R51 moved it, so the anchor is built from what 63_ actually declares. The FAULT is unchanged - the mirror
+// drifting from the stamp - and the mutation stays a real one whatever the current release is.
+var ROUTER_MIRROR = "{ file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: '" + rtrDecl + "'";
+var ROUTER_MIRROR_BAD = ROUTER_MIRROR.replace(rtrDecl, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39');
 mut('the health mirror drifts from the router stamp', HEALTH_F,
-  ROUTER_MIRROR, ROUTER_MIRROR.replace('-R41', '-R39'),
+  ROUTER_MIRROR, ROUTER_MIRROR_BAD,
   function () {
-    var src = read(HEALTH_F).replace(ROUTER_MIRROR, ROUTER_MIRROR.replace('-R41', '-R39'));
+    var src = read(HEALTH_F).replace(ROUTER_MIRROR, ROUTER_MIRROR_BAD);
     return (src.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1] !== rtrDecl;
   });
 
 // S8-R4B-1A - THE RELEASE-CUT MUTANTS. Each is a way the R41 cut could be half-done and still look right.
+// Anchored on the DECLARED stamp for the same reason as the mirror above.
+var _RTR_LINE = "var RTR_BUILD_VERSION_ = '" + rtrDecl + "';";
+var _RTR_LINE_STALE = "var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R1';";
 mut('the router stamp is not rotated with the file it belongs to', ROUTER_F,
-  "var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';",
-  "var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';",
+  _RTR_LINE, _RTR_LINE_STALE,
   function () {
-    var src = read(ROUTER_F).replace("-R7-R41';", "-R7-R40';");
-    return (src.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== headRelease;
+    var src = read(ROUTER_F).replace(_RTR_LINE, _RTR_LINE_STALE);
+    return (src.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== rtrDecl;
   });
 // S8-R4B-2D - ANCHORED ON THE DECLARED HEAD RELEASE, NOT ON A LITERAL. The literal R41 stopped existing
 // in 63_ the moment R42 was cut, and a mutant whose target is absent injects no fault at all - it reports
@@ -310,13 +327,18 @@ mut('the release is cut but 63_ keeps the build stamp of the previous one', HEAL
     var own = (src.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1];
     return (src.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== own;
   });
+// S8-B3-R1A — the literal 18 -> 19 mutation became a NO-OP the moment R51 legitimately made the real value
+// 19: the search text was absent, so nothing was injected and the mutant reported a pass for an unchanged
+// tree. The fault being modelled is 'the contract was bumped although THIS round added no action', so the
+// mutation is now computed from whatever the contract actually is.
+var _AC_NOW = Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]);
+var _AC_LINE = 'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = ' + _AC_NOW + ';';
+var _AC_LINE_BUMPED = 'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = ' + (_AC_NOW + 1) + ';';
 mut('the action-contract version is bumped because the router changed', HEALTH_F,
-  'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 18;',
-  'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 19;',
+  _AC_LINE, _AC_LINE_BUMPED,
   function () {
-    var src = read(HEALTH_F).replace('var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 18;',
-      'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 19;');
-    return Number((src.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]) !== 18;
+    var src = read(HEALTH_F).replace(_AC_LINE, _AC_LINE_BUMPED);
+    return Number((src.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]) !== _AC_NOW;
   });
 mut('71_ is stamped R41 to make the release look complete, though it never changed', GUARD_F,
   "var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';",

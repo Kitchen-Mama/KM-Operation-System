@@ -451,8 +451,13 @@ section('§C — THE CANCELLATION AUTHORITY AUDIT, MEASURED');
   var owners = GS_FILES.filter(function (f) { return /function handleCancelShipmentDraft_\(/.test(GS_SRC[f]); });
   eq(owners, ['12_shipment_handlers.gs'], 'C6a defined exactly ONCE, in the shipment owner');
   var cancelActions = Object.keys(routerActions).filter(function (a) { return /cancel/i.test(a); }).sort();
+  // S8-B3-R1A — overseasAllocationPreview.job.cancel JOINS the census. It is a JOB cancel, like the three
+  // *.job.cancel entries beside it: it makes a Preview RUN terminal and never cancels a business document.
+  // The property this list defends is unchanged — cancelShipmentDraft is still the ONE authority that cancels
+  // a shipment draft, and nothing here duplicates it.
   eq(cancelActions, ['cancelRequestOrderTier', 'cancelShipmentDraft', 'cancelShippingAllocationDraft',
-    'inventoryReplenishmentGap.job.cancel', 'orderPlanningGap.job.cancel', 'requestOrderDraft.job.cancel'],
+    'inventoryReplenishmentGap.job.cancel', 'orderPlanningGap.job.cancel',
+    'overseasAllocationPreview.job.cancel', 'requestOrderDraft.job.cancel'],
     'C7  §C exactly ONE cancellation action was added — no duplicate of an existing authority');
 })();
 

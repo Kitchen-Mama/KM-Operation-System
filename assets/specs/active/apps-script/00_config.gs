@@ -138,6 +138,23 @@ function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GEN
 var PRODUCT_STRATEGY_ENABLED_ = true;
 function productStrategyEnabled_() { return PRODUCT_STRATEGY_ENABLED_ === true; }
 
+// S8-B3-R1A (R51) — OVERSEAS ALLOCATION PREVIEW, STAGED OFF.
+//
+// The Preview (74_api_v1_overseas_allocation_preview_job.gs) is a READ-ONLY async preview of the frozen §20/§24
+// overseas shared-pool allocation. It ships INACTIVE by decision (D-S8-B3-5): the backend lands first and the
+// feature is not reachable until this flag is flipped in a LATER, separately decided deployment.
+//
+// The refusal is checked in the four router handlers BEFORE the default env is built — so a disabled Preview
+// opens NO spreadsheet, creates NO Script-Property job state and arms NO trigger. That ordering is the same one
+// PRODUCT_STRATEGY_ENABLED_ uses above, and it is what makes "staged off" mean "inert" rather than "hidden".
+// The stray-trigger case is covered too: continueOverseasAllocationPreviewJob returns immediately when false.
+//
+// TO ENABLE: set true, save, create a NEW Apps Script version and update the EXISTING Web App deployment. An
+// edited file that is not deployed changes nothing. No frontend change accompanies this flag today — R51 ships
+// no Preview page and no navigation entry, so flipping it exposes the four actions and nothing else.
+var OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ = false;
+function overseasAllocationPreviewEnabled_() { return OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ === true; }
+
 // F1-7N-FC-1B-E3-R4-A2-R1 §9 — THE FLAG IS TOO BLUNT TO TURN ON.
 //
 // `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` is global. Flipping it to true does not enable a controlled
@@ -258,4 +275,4 @@ function inventoryAiPlanActivationAllowlist_() {
 // deployment that does not are two different trees, and `config_build` in system.health is how a reader
 // tells them apart WITHOUT having to trust the flag report from the same file - if the stamp is R7 the
 // flag is false whatever else the payload says.
-var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
+var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51';

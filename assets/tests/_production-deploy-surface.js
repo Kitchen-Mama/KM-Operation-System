@@ -120,6 +120,11 @@ var DECLARED_RUNTIME = [
   '71_api_v1_factory_stock_guard.gs',
   '72_api_v1_product_pricing_workspace.gs',
   '73_api_v1_pricing_write.gs',
+  // S8-B3-R1A (R51) — the Overseas Allocation Preview job. DECLARED here rather than discovered: a scan would
+  // ratify whatever it found, and the whole point of this list is that a new runtime .gs has to be put on it
+  // deliberately. Four router actions dispatch into this file, so a deploy set without it answers each of them
+  // with a reference error.
+  '74_api_v1_overseas_allocation_preview_job.gs',
   '90_generated_supply_planning_bundle.gs'
 ];
 

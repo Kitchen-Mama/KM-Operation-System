@@ -266,7 +266,8 @@ ok(/is not evidence that the namespace is clean/.test(census),
 var deployed = fs.readdirSync(path.join(ROOT, 'specs/active/apps-script'));
 ok(deployed.indexOf('TEMP_S8T_NAMESPACE_COLLISION_CENSUS.gs') === -1,
   'F7  the census is NOT in the deployed apps-script set');
-eq(deployed.filter(function (f) { return /\.gs$/.test(f); }).length, 77, 'F8  the deployed set is still 77 .gs files');
+// S8-B3-R1A — 77 -> 78: the Overseas Allocation Preview job joins the deployed set.
+eq(deployed.filter(function (f) { return /\.gs$/.test(f); }).length, 78, 'F8  the deployed set is 78 .gs files');
 // The 58 census tables must be exactly the 58 registered tables — one list, two files, no drift.
 var censusTables = (census.match(/S8T_CENSUS_TABLES_ = \[([\s\S]*?)\]/) || [])[1] || '';
 var censusList = (censusTables.match(/'[a-z0-9_]+'/g) || []).map(function (s) { return s.replace(/'/g, ''); }).sort();

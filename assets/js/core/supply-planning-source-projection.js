@@ -226,6 +226,28 @@
     // A conflicted identity has no single answer, so it reports none. Returning `undefined` is deliberate: it is
     // indistinguishable from "no row", which is precisely what an unresolvable identity means to a consumer.
     function priorityForMktKey(k) { return priorityKeyConflict[k] ? undefined : priorityByMktKey[k]; }
+    // S8-B3-R1A (§45.B.2, D-S8-C2-2) — EMISSION-POINT validation of an allocation priority that is PRESENT but
+    // unusable. Deliberately NOT done in the map build above: filtering values out of priorityByMktKey would change
+    // canonical-identity CONFLICT detection, which is R49-F / D-S8-A1 behaviour and is not in scope here.
+    //   • blank / null / undefined -> UNRESOLVED (§45.A.2), the SAME state as an absent column, and NOT an issue:
+    //     an operator leaving a cell empty is a known state, not a data error.
+    //   • negative / non-numeric / non-finite / non-scalar -> INVALID (§45.A.3): emitted UNRESOLVED so nothing
+    //     invalid travels downstream, AND recorded as its own issue so INVALID stays distinguishable from ABSENT.
+    //   • a numeric STRING stays VALID and is emitted VERBATIM. This producer's established parsing contract
+    //     already treats 100 and '100' as one answer (conflict comparison is on str() forms), and preserving the
+    //     TYPE is deliberate — the core KMMSA input contract is NOT broadened to accept strings.
+    function emitPriority(v, ref) {
+      if (v === undefined || v === null) return undefined;
+      if (typeof v !== 'number' && typeof v !== 'string') {
+        addIssue('RECEIVER', ref, 'INVALID_ALLOCATION_PRIORITY: non-scalar'); return undefined;
+      }
+      if (typeof v === 'string' && v.trim() === '') return undefined;              // blank == absent (§45.A.2)
+      var n = (typeof v === 'number') ? v : Number(v.trim());
+      if (!isFinite(n) || n < 0) {
+        addIssue('RECEIVER', ref, 'INVALID_ALLOCATION_PRIORITY: ' + JSON.stringify(v)); return undefined;
+      }
+      return v;                                                                     // VERBATIM — type preserved
+    }
     var ffByMskKey = {}; mskRows.forEach(function (r) { var k = [str(r.company), str(r.country), str(r.marketplace), str(r.sku)].join('|'); if (has(r, 'fulfillment_model')) ffByMskKey[k] = r.fulfillment_model; });
 
     // ---- destination ownership (D-3): caller/planning-scope-owned; never inferred ---------------------------
@@ -454,7 +476,7 @@
       var mskKey = [str(scope.company), str(scope.country), mkt, str(f.sku || scope.sku)].join('|');
       return { receiver_key: str(f.receiverKey), demand_source_ref: str(f.demandRef),
         eligible_pool_types: f.eligiblePoolTypes, survival_need_qty: f.survivalNeedQty, daily_demand: f.dailyDemand,
-        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityForMktKey(mktIdentityKey(scope.company, scope.country, mkt)),
+        allocation_priority: emitPriority(has(f, 'allocationPriority') ? f.allocationPriority : priorityForMktKey(mktIdentityKey(scope.company, scope.country, mkt)), str(f.demandRef)),
         demand_weight: f.demandWeight,
         fulfillment_model: nonEmpty(f.fulfillmentModel) ? f.fulfillmentModel : ffByMskKey[mskKey],
         marketplace: mkt, destination_warehouse_id: resolveDestination(str(f.demandRef), f.destinationWarehouseId) };
@@ -464,7 +486,7 @@
     var factoryRows = factoryInput.map(function (f) {
       var mkt = str(f.marketplace) || str(scope.marketplace);
       return { demand_source_ref: str(f.demandRef), eligible_factory_warehouse_ids: f.eligibleFactoryWarehouseIds,
-        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityForMktKey(mktIdentityKey(scope.company, scope.country, mkt)),
+        allocation_priority: emitPriority(has(f, 'allocationPriority') ? f.allocationPriority : priorityForMktKey(mktIdentityKey(scope.company, scope.country, mkt)), str(f.demandRef)),
         required_by_date: has(f, 'requiredByDate') ? f.requiredByDate : requiredByDate,
         marketplace: mkt, destination_warehouse_id: resolveDestination(str(f.demandRef), f.destinationWarehouseId) };
     });

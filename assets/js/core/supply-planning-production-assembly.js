@@ -166,6 +166,23 @@
       if (!has(prByMktKey, k)) prByMktKey[k] = r.allocation_priority;
     });
     function priorityForMktKey(k) { return prKeyConflict[k] ? undefined : prByMktKey[k]; }
+    // S8-B3-R1A (§45.B.2, D-S8-C2-2) — the IDENTICAL emission-point validation the sibling producer
+    // (supply-planning-source-projection.js) applies. This site carried the same defect and had no G number only
+    // because the characterization suite never exercised it. Same rules: blank/null -> UNRESOLVED and silent
+    // (§45.A.2, the state an empty cell actually produces); negative / non-numeric / non-finite / non-scalar ->
+    // INVALID (§45.A.3), emitted UNRESOLVED with its own issue; a numeric STRING stays VALID and VERBATIM.
+    function emitPriority(v, ref) {
+      if (v === undefined || v === null) return undefined;
+      if (typeof v !== 'number' && typeof v !== 'string') {
+        issues.push(issue('INVALID_ALLOCATION_PRIORITY', ref, 'allocation_priority is not a scalar value')); return undefined;
+      }
+      if (typeof v === 'string' && v.trim() === '') return undefined;
+      var n = (typeof v === 'number') ? v : Number(v.trim());
+      if (!isFinite(n) || n < 0) {
+        issues.push(issue('INVALID_ALLOCATION_PRIORITY', ref, 'allocation_priority is present but unusable: ' + JSON.stringify(v))); return undefined;
+      }
+      return v;
+    }
 
     var monthsYm = KMPCX._forecastWeightMonths(vr.calculationMonth); // [M+1..M+4] YYYY-MM (frozen D-F1-5B-3)
     var forecastMonthAbbrev = MONTHS[parseYM(monthsYm[0]).mo - 1]; // demand-ledger month = M+1 (single-month, matches source-projection)
@@ -187,7 +204,7 @@
         .filter(function (e) { return nonEmpty(e.eventStartDate); });
       kmpcxReceivers.push({ company: vr.scope.company, country: vr.scope.country, marketplace: vr.scope.marketplace, sku: sku, siteSku: str(m.site_sku),
         destinationWarehouseId: vr.destinationWarehouseId, regularForecastByMonth: fc.map, specialEventFacts: events });
-      recvMeta[sku] = { forecastId: fc.forecastId, upc: upcBySku[sku], priority: priorityForMktKey(mktIdentityKey(vr.scope.company, vr.scope.country, vr.scope.marketplace)), fulfillmentModel: str(m.fulfillment_model), siteSku: str(m.site_sku), fcMap: fc.map };
+      recvMeta[sku] = { forecastId: fc.forecastId, upc: upcBySku[sku], priority: emitPriority(priorityForMktKey(mktIdentityKey(vr.scope.company, vr.scope.country, vr.scope.marketplace)), sku), fulfillmentModel: str(m.fulfillment_model), siteSku: str(m.site_sku), fcMap: fc.map };
     });
 
     // KMPCX — destination / window / required-by / driver / forecast anchor+share (frozen decisions).

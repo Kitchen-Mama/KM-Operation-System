@@ -92,7 +92,10 @@ eq(S.undeclared, [], 'A1  UNDECLARED_RUNTIME_FILE_COUNT = 0 — no .gs has appea
   + 'without being declared; this is the gate a newly-added TEMP file hits');
 eq(S.missing, [], 'A2  and no declared runtime owner has silently left the folder');
 eq(S.declaredCount, S.liveCount, 'A3  the declared universe and the folder are the same size');
-eq(S.liveCount, 77, 'A4  FINAL_PRODUCTION_APPS_SCRIPT_RUNTIME_FILE_COUNT = 77', S.liveCount);
+// S8-B3-R1A — 77 -> 78: 74_api_v1_overseas_allocation_preview_job.gs is DECLARED in
+// _production-deploy-surface.js and therefore counted. A new runtime .gs has to be put on that list
+// deliberately; this number is what makes forgetting visible.
+eq(S.liveCount, 78, 'A4  FINAL_PRODUCTION_APPS_SCRIPT_RUNTIME_FILE_COUNT = 78', S.liveCount);
 ok(S.projectManifestPresent, 'A5  appsscript.json is present and is counted separately — it is the project '
   + 'manifest, not a .gs source file');
 
@@ -323,8 +326,12 @@ eq(runtimeGsBetween(POST_SHA, R41_POST_SHA),
   ['assets/specs/active/apps-script/01_router.gs',
    'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
   'H2a IN R41 - between R40 ending and R41 being cut - EXACTLY the two runtime files R41 owns changed');
-eq((read(GS + '01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R41_ID,
-  'H2b and the router still declares R41 - the round its routing table changed, not the newest id in the tree');
+// S8-B3-R1A — PINNED AT ONE END, like its siblings. H2a above asks GIT what changed between R40 and R41 and
+// is immutable history; this line asked the CURRENT tree, which turned a fact about R41 into a claim about
+// every release since. R51 adds four Preview routes, so the router's stamp legitimately moves to R51. The
+// invariant that survives is directional: the stamp is at or after R41 and never behind it.
+ok(require('./_release-order.js').stampAtOrAfter((read(GS + '01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R41_ID),
+  'H2b and the router declares R41 or later - the round its routing table changed, never earlier');
 // S8-R4B-2D - THE CURRENT-HEAD HALF, stated rather than inherited, which is the whole lesson of H2.
 // R42 gives the Inventory Replenishment workspace read a SITE SCOPE: 60_ changes, and the manifest that
 // carries its expected stamp changes with it. TWO runtime files, named - and 01_ is deliberately not
@@ -389,7 +396,16 @@ var R49_DELTA = [
 // not yet in HEAD and this equality still held. A pre-commit sweep cannot validate a gate that reads HEAD;
 // only a sweep run AFTER the commit can.
 var R50_DELTA = ['assets/specs/active/apps-script/43_api_v1_gap_materialization.gs'];
-var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).concat(R49_DELTA).concat(R50_DELTA).sort();
+// S8-B3-R1A — R51, and it arrived on time precisely BECAUSE of the paragraph above: the R51 pre-commit sweep
+// could not see this gate either, and the post-commit sweep is what reported it. 63_ is in AUTHORIZED_FLOOR
+// and 90_ is in R49_DELTA, so neither is repeated. 74_ is a NEW runtime file (the Overseas Allocation Preview
+// job), 01_ gains its four routes, and 00_ gains the staged-OFF flag that keeps the feature inert.
+var R51_DELTA = [
+  'assets/specs/active/apps-script/00_config.gs',
+  'assets/specs/active/apps-script/01_router.gs',
+  'assets/specs/active/apps-script/74_api_v1_overseas_allocation_preview_job.gs'];
+var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).concat(R49_DELTA).concat(R50_DELTA)
+  .concat(R51_DELTA).sort();
 var CHANGED_SINCE_R42 = runtimeGsBetween(R42_POST_SHA, 'HEAD');
 eq(CHANGED_SINCE_R42, AUTHORIZED_SINCE_R42,
   'H2e SINCE R42 ended, EXACTLY the authorized runtime files have changed — the R43/R44/R45 floor plus the '

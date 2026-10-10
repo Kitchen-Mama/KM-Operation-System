@@ -288,6 +288,39 @@ var RELEASE_OWNERS = {
   // no part in, and would erase the one fact its R45 row exists to carry  that R45 repaired what the R44
   // acceptance caught, so an acceptance can still tell which of the two it measured. The R43 paragraph
   // above is kept rather than deleted, for the same reason the R40 one was.
+  // S8-B3-R1A-R51 — THE TWENTY-SECOND SWAP, and the largest owner set this ledger has carried since R39.
+  // R51 is a genuinely new SURFACE, not a correction: a new routed module, the four actions that reach it,
+  // the flag that keeps it inert, and the deferred producer corrections that finally have a release to ride.
+  //
+  // 01_router.gs RETURNS TO OWNERSHIP from CARRIED at R41, the third time this pair of lists has swapped the
+  // router in nine releases — and, as before, that is not churn. R41 changed its routing table and R42..R50 did
+  // not, so the stamp held R41 and said something true for nine releases. R51 adds FOUR routes for real, which
+  // is also why SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moves 18 -> 19.
+  '01_router.gs':
+    'THE ROUTER. R51 adds the four Overseas Allocation Preview routes - overseasAllocationPreview.job.start, '
+    + '.job.status, .result.get and .job.cancel. Four actions rather than one because the proven async pattern '
+    + 'separates a job from its output: START is a quick write that returns immediately, STATUS carries progress '
+    + 'and never the payload, and the RESULT has its own read. A deployment carrying 74_ but not this file routes '
+    + 'none of them; one carrying this file but not 74_ dispatches four actions into a reference error.',
+  // 00_config.gs JOINS, and it is the reason the feature can ship INACTIVE at all. The flag is what makes
+  // "staged off" mean INERT rather than merely hidden: the four handlers check it BEFORE the default env is
+  // built, so a disabled Preview opens no spreadsheet, writes no job state and arms no trigger.
+  '00_config.gs':
+    'THE FEATURE FLAGS OF RECORD. R51 adds OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ (false) and its reader. The '
+    + 'Preview ships INACTIVE by decision D-S8-B3-5 - backend first, activation later and separately decided. '
+    + 'Without this file copied, overseasAllocationPreviewEnabled_ is undefined, 74_ reads that as NOT enabled '
+    + 'and every Preview action refuses - which fails CLOSED, but for a reason no probe could explain.',
+  // 74_ JOINS as a NEW FILE, which is the partial-sync case the stamped owner set exists for. It declares its
+  // own OAP_BUILD_VERSION_ precisely so a project that copied the router but not the module reports itself
+  // unsynced rather than answering four actions with a reference error.
+  '74_api_v1_overseas_allocation_preview_job.gs':
+    'THE OVERSEAS ALLOCATION PREVIEW JOB - a NEW file. A READ-ONLY async preview of the frozen 20/24 overseas '
+    + 'shared-pool allocation for ONE allocation group. It owns NO formula: pool eligibility comes from 43_, '
+    + 'demand from allocatedForecastQty, and the distribution from KMMSA. Its ONLY writes are its own Script '
+    + 'Properties and its own continuation triggers - no sheet, no business row, no Apply. It does NOT modify '
+    + '46_: the job lifecycle is reused as a PATTERN and the chunked-store primitives are called directly, '
+    + 'because extending the gap job would change Gap Materialization to add something that is not gap '
+    + 'materialization.',
   '63_api_v1_system_health.gs':
     'THE MANIFEST. R46 moves the release and its OWN build, and nothing else - which is the first time this '
     + 'file has moved WITHOUT a second owner\'s row moving beside it. The reason is that R46\'s runtime change '
@@ -380,7 +413,10 @@ var RELEASE_CARRIED = {
   // time this pair of lists has swapped the router in and out in three releases. That is not churn: R41
   // changed its routing table and R42 does not touch it, so the stamp records two different facts and the
   // ledger is able to say so. R42 adds no action and moves no route.
-  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41',
+  // S8-B3-R1A-R51 - AND 01_ HAS LEFT THIS LIST AGAIN, back to RELEASE_OWNERS above, because R51 adds four
+  // routes for real. The R40 and R42 paragraphs above are kept rather than deleted: they record WHY the router
+  // was held at R39 and then at R41 through releases that did not touch it, and that restraint is what makes
+  // this promotion evidence rather than drift.
   // S8-R5-B — THE TWENTY-FIRST SWAP. 60_ LEAVES OWNERSHIP AT R45 after one release as an owner and keeps
   // R45, the round its date-column conversion actually changed in. R46 is an Avg Sales round whose only
   // runtime edit is in 42_, so 60_ is carried, not marched. This matters more than the usual swap because
@@ -502,7 +538,11 @@ var RELEASE_UNMOVED = {
   // writing. R31 is the round that finally changes the READ owner: the scoped pricing projection is a new
   // slice on its own action, so its stamp moves to the round it actually changed in.
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
-  '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
+  // S8-B3-R1A - 00_config.gs LEFT THIS LIST AT R51 AND JOINED RELEASE_OWNERS, the twenty-second swap. It
+  // held R11 through forty releases on the rule that a release which changes no CONSTANT does not change
+  // this file - and that was true forty times. R51 is the round that finally changes it: the Preview ships
+  // INACTIVE, and the flag that makes it inactive is a constant of record, so the stamp moves to the round
+  // it actually changed in.
   // 72_ LEFT THIS LIST AT R24 — the eighth swap, and the one the previous three entries were building
   // towards without knowing it. It stayed at R10 through R21 ("a writer is not a reader") and through R22
   // ("the reconciliation changes what those fields CONTAIN, not which field is read"). Both were correct
@@ -759,8 +799,16 @@ section('C. EVERY OWNER THAT DID NOT CHANGE KEEPS ITS OLD STAMP');
 // destroys the only signal that can distinguish a synced file from an unsynced one.
 // PREV_RELEASE is the release BEFORE this one, which is not the same thing as the round a given
 // file last changed in — and conflating them is the very mistake this suite was rewritten to stop.
-eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE_UNMOVED['00_config.gs'],
-  'C1  00_config.gs stays on the round it last changed in, not on the latest release');
+// S8-B3-R1A - INVERTED, and the inversion is the assertion rather than the loss of one. For forty releases
+// this said 00_config.gs must NOT be marched to the current release, because it had not changed. R51 changes
+// it for real - OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ is a constant of record and the Preview cannot ship
+// INACTIVE without it - so the same rule now requires the opposite observation. The rule never moved: a stamp
+// names the round the file last changed in. What changed is which round that is.
+eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE,
+  'C1  00_config.gs IS at this release - it gained the Preview feature flag, so its stamp moved with it');
+ok(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '00_config.gs'],
+  { cwd: REPO, encoding: 'utf8' }).trim() !== '',
+  'C1a and git agrees it changed - the stamp is evidence, not an assertion about itself');
 // PRICING-R2 — R21 IS a vocabulary round, so this inverts: the router MOVED, because pricing.update
 // was routed. A router that gained an action and kept its stamp is the one partial sync the manifest
 // could not otherwise report — the deployment answers every action it knows and silently lacks one.
@@ -977,7 +1025,10 @@ eq(num(HEALTH, 'SYS_TRANSPORT_CONTRACT_VERSION_'), num(priorHealth, 'SYS_TRANSPO
 // changes the action set, not one per action — 63_'s own history says so (FB-4E-R2 moved the list version by
 // one for four new entries). R25..R38 contributed one: pricing.write.status. R39 contributes the second:
 // carrierLeadTime.upsert and carrierLeadTime.duplicateCensus, together, one bump.
-var ACTION_ADDING_RELEASES_SINCE_BASE = 2;
+// S8-B3-R1A - THE SPAN NOW HOLDS THREE. R51 contributes the third: the four Overseas Allocation Preview
+// actions, together, ONE bump. That is the same unit the two entries above used - one bump per RELEASE that
+// changes the action set, never one per action - and it is why four new routes move this number by one.
+var ACTION_ADDING_RELEASES_SINCE_BASE = 3;
 eq(Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
    - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')), ACTION_ADDING_RELEASES_SINCE_BASE,
   'H2  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moved once per action-adding release in this span');
@@ -1039,8 +1090,13 @@ var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 // lifecycle, which 12_ and 22_ call BY NAME — so an old 05_ beside a new 12_ throws inside a journalled
 // transaction, and a file with no manifest row cannot be reported as stale. Membership must move by exactly
 // that row and no other, which is the same strict statement R21 made when 73_ arrived.
-eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), ['05_overseas_inventory_handlers.gs'],
-  'H5  the manifest gained EXACTLY the rows this release declares — 05_, and only 05_');
+// S8-B3-R1A DECLARES ONE MORE: 74_ enters the manifest as a NEW FILE. This is the strictest version of the
+// case R21 made for 73_ and R33 made for 05_, because 74_ is not merely a new owner - it is a new file that
+// FOUR ROUTED ACTIONS dispatch into. A project that copied 01_router.gs and missed 74_ answers every Preview
+// call with a reference error, and without a manifest row no probe could name the missing file.
+eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }),
+   ['05_overseas_inventory_handlers.gs', '74_api_v1_overseas_allocation_preview_job.gs'],
+  'H5  the manifest gained EXACTLY the rows this release declares — 05_ and 74_, and only those');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none either — a probe silently dropped is a partial sync nobody can see');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
@@ -1152,8 +1208,13 @@ function mutant(id, label, predicate) {
   else { survived.push(id); console.error('SURVIVED: ' + id + '  ' + label); }
 }
 
-mutant('M1', 'a marched 00_config stamp is indistinguishable from a synced one', function () {
-  return runManifest({ CONFIG_BUILD_VERSION_: RELEASE }).stale_modules.length > 0;
+// S8-B3-R1A - RETARGETED, and the retarget is forced rather than chosen. This mutant proves a MARCHED stamp
+// is caught, so its subject must be a file that did NOT change this release. 00_config.gs genuinely moves to
+// R51 now (it gains the Preview flag), so setting it to RELEASE is no longer a mutation at all and the guard
+// would have passed while testing nothing. 13_procurement_handlers.gs is unchanged and stays on RELEASE_UNMOVED,
+// so it carries the property this mutant was written to check.
+mutant('M1', 'a marched 13_ stamp is indistinguishable from a synced one', function () {
+  return runManifest({ PROC_BUILD_VERSION_: RELEASE }).stale_modules.length > 0;
 });
 mutant('M2', '13_ left on its pre-F2 stamp', function () {
   return runManifest({ PROC_BUILD_VERSION_: 'F1-7N-FC-1A-R1' }).stale_modules.length > 0;
@@ -1347,8 +1408,19 @@ var vacuous = [];
  // unchecked, exactly as the proxy it replaced did. The fact is not 'the router is carried at whatever
  // came before', it is 'the router is carried at R41, the round it really changed in' - so that is what
  // is asserted, pinned at BOTH ends: it is R41, and it is not R40.
- ['M14', function () { return RELEASE_CARRIED['01_router.gs'] === 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'
-     && !/-R40$/.test(RELEASE_CARRIED['01_router.gs'] || ''); }],
+ // S8-B3-R1A - AND THE THIRD PROXY EXPIRED, for the third distinct reason, which is finally enough to say
+ // what the guard is actually about. "Carried at R41" was true only while the router was CARRIED; R51 makes it
+ // an OWNER again, so the lookup returns undefined and the mutant reported itself unchecked - the same failure
+ // the two paragraphs above describe, in a third costume. The fact M14 defends has never changed: the ledger
+ // places the router at the round it REALLY changed in, and that round is not R40. So read the declared round
+ // from WHEREVER it is declared - ownership and carriage are two ways of declaring it - and pin the R40 end.
+ // This version does not expire the next time the router swaps lists, because swapping lists is the one thing
+ // it now tolerates by construction.
+ ['M14', function () {
+   var declaredAt = Object.prototype.hasOwnProperty.call(RELEASE_OWNERS, '01_router.gs')
+     ? RELEASE : RELEASE_CARRIED['01_router.gs'];
+   return !!declaredAt && !/-R40$/.test(declaredAt);
+ }],
  ['M15', function () { return RELEASE_LOG.indexOf(RELEASE) !== -1; }],
  // M16/M17 must both be FALSE on the unmutated tree: the real partition agrees with both declarations.
  ['M16', function () { return JSON.stringify(partitionCopyList(I1_COPY_LIST, EDITOR_APPLIED_MEMBERS).editorApplied)

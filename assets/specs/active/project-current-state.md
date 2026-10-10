@@ -6563,3 +6563,45 @@ assertion preserved**. R49-G needed no change — it characterizes the two core 
 
 **Frontend-only.** Token rotated to `r50-irpriority-20261010` because `app.js` changed. **No `.gs`, no DB, no
 router, no new API action; release identity unchanged at R50 — no new cut, no Apps Script sync.**
+
+---
+
+# S8-B3-R1A — R51: the Overseas Allocation Preview, shipped inactive (2026-10-10)
+
+**A new READ-ONLY async backend surface that nothing can reach yet, plus the deferred §45.B.2 producer
+corrections finally riding a release.**
+
+**The Preview.** `74_api_v1_overseas_allocation_preview_job.gs` previews the frozen §20/§24 overseas shared-pool
+allocation for ONE group (company + canonical country + master SKU). It owns no formula: eligibility from `43_`,
+demand from `allocatedForecastQty`, distribution from KMMSA. Four actions — `overseasAllocationPreview.job.start`
+/ `.job.status` / `.result.get` / `.job.cancel` — because the proven async pattern separates a job from its
+output. **Numbered 74_, not 47_: `47_api_v1_recommendation_generation.gs` already exists.**
+
+**It ships OFF.** `OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ = false`, checked *before* the env is built — so a
+disabled Preview opens no spreadsheet, writes no job state and arms no trigger, and even a stray continuation
+trigger does nothing. There is no Preview page and no navigation entry.
+
+**The short-lock contract is the load-bearing guard.** The Preview shares one per-script lock with Gap
+Materialization, whose worker holds it for up to 240 s against its own 8 × 1000 ms wait. Preview losing that race
+is fine; **a Gap job losing it would be a regression of a shipped job**, so the Preview never holds the lock
+across a sheet read, a `workspaceGet`, a KMMSA allocation or result serialization — proven by instrumenting the
+lock and the expensive calls together, not by reading the source. Its own wait budget (8 × 60 s = 480 s)
+outlasts a Gap worker so contention ends in a retry, never a FAILED. **`46_` is not modified.**
+
+**Snapshot consistency is solved by scope.** An allocation group is indivisible, so a run is one execution and
+one set of reads. Drift between the read and the publish is caught by an order-independent input fingerprint that
+is revalidated before publishing; `SOURCE_DRIFT` is bounded-retried and never published. No atomic spreadsheet
+snapshot is claimed.
+
+**§45.B.2 is CLOSED.** Both core producers now refuse an allocation priority that is present but unusable, at the
+emission point: blank is UNRESOLVED and silent, negative/non-numeric/non-finite is INVALID with its own issue, a
+numeric string stays valid and verbatim. G14/G15/G16 flipped DEVIATION → CONTRACT, and the sibling producer that
+never had a G number is covered beside them.
+
+**Tests:** `overseas-allocation-preview-job-s8-b3-r1a.test.js` **133/0**;
+`producer-priority-emission-validation-s8-b3-r1a.test.js` **37/0**; R49-G **78/0** (6 added);
+release-stamp gate **111/0, 0 mutants survived, vacuity clean**.
+
+**Release R51 — action contract 18 → 19, `SYS_REQUIRED_ACTIONS_` unchanged, `90_` rebuilt
+(`3de64364…`). NOT SYNCED, NOT DEPLOYED. Production is still R49.** No frontend cache token was rotated: the two
+corrected producers are server-side only and no browser file changed except the contract pin.

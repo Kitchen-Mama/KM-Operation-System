@@ -333,6 +333,17 @@ var dWebapp = function (t) { return JSON.stringify(JSON.parse(t.manifest).webapp
 var dTimeZone = function (t) { return JSON.parse(t.manifest).timeZone !== preManifest.timeZone; };
 var B1_OWNER_ = '60_api_v1_inventory_replenishment_workspace.gs';
 function otherRuntime(t) { return Object.keys(t.runtime).filter(function (f) { return f !== B1_OWNER_; })[0]; }
+// S8-B3-R1A — M12 NEEDS A FILE THAT DOES NOT ALREADY CARRY THE RELEASE ID, for the same reason STAMPED_FILE
+// above needs one that does. dR44 catches a file that MENTIONS the release without DECLARING it, so pointing
+// the mutation at a file that already declares it adds a mention to a file already in BOTH lists — a silent
+// no-op, and a no-op reported as caught is a lie about coverage. otherRuntime returns the first non-60_
+// runtime file, which is 00_config.gs, and R51 gives 00_config.gs a real stamp. So M12 picks the first file
+// that neither declares nor mentions the id, and the mutation can diverge again.
+function unstampedRuntime(t) {
+  return Object.keys(t.runtime).filter(function (f) {
+    return f !== B1_OWNER_ && t.runtime[f].indexOf(RELEASE_ID_NOW) === -1;
+  })[0];
+}
 // EXACTLY ONE owner, named. 'none' stopped being the right answer at R44; 'exactly the declared one' is
 // stronger than either, because it still fails when a second file drifts onto the dependency.
 var dRuntimeConsumes = function (t) {
@@ -409,7 +420,7 @@ var MUTANTS = [
   { id: 'M11', why: 'a SECOND Product runtime file starts calling batchGet',
     det: dRuntimeBatchGet, mut: function (t) { t.runtime[otherRuntime(t)] += '\nfunction y_(){ return Sheets.Spreadsheets.Values.batchGet(id, {}); }\n'; } },
   { id: 'M12', why: 'a THIRD runtime file is marched to the release id to make it look complete',
-    det: dR44, mut: function (t) { t.runtime[otherRuntime(t)] += '\n// ' + RELEASE_ID_NOW + '\n'; } },
+    det: dR44, mut: function (t) { t.runtime[unstampedRuntime(t)] += '\n// ' + RELEASE_ID_NOW + '\n'; } },
   { id: 'M13', why: 'an unrelated manifest edit hides beside the service, so deletion no longer restores PRE',
     det: dRollback, mut: function (t) { t.manifest = t.manifest.replace('"STACKDRIVER"', '"NONE"'); } },
   // The §8 probe's own gates. It reaches Production, so its mutants run here rather than nowhere.

@@ -180,13 +180,22 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   // do NOT widen is the data a caller can enumerate — the census action reports only the duplicate pairs
   // already present in a table the read surface served before this round, and the upsert refuses anything
   // that would make the planner's lane resolution ambiguous. S9 owns closing this surface; S7 does not.
-  eq(s.all.length, 143, 'B1 143 actions are routed — the whole anonymous surface');
+  // S8-B3-R1A — 143 -> 147. The four Overseas Allocation Preview actions join the ANONYMOUS surface, which
+  // is the fact this section exists to keep visible: they are reachable without identity like every other
+  // action here. They are gated OFF by OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ and write only their own Script
+  // Properties and triggers — no business row — but the count moves because the SURFACE moved, and that is
+  // what gets counted.
+  eq(s.all.length, 147, 'B1 147 actions are routed — the whole anonymous surface');
   // S8-R4B-1 — 24 -> 25. factoryStockGuard.get moved off the write transport onto the GET read table; it
   // was already one of the 143 routed actions, so B1 and B3 are unchanged (it keeps its POST route, as
   // every other GET-routed read does). The count stays PINNED: a census that derives itself notices nothing.
   eq(s.readTable.length, 25, 'B2 25 of them on the GET read table');
-  eq(s.post.length, 141, 'B3 141 dispatched by doPost');
-  eq(s.mutations.length, 78, 'B4 and 78 are unambiguous MUTATIONS, every one reachable without identity');
+  eq(s.post.length, 145, 'B3 145 dispatched by doPost');
+  // 78 -> 80: .job.start and .job.cancel read as mutations by this census's own naming rule, and that is the
+  // honest classification — both DO write, to Script Properties and triggers. .job.status and .result.get are
+  // reads. The census does not distinguish technical state from business state, and should not: an action
+  // that writes anything reachable without identity belongs in this number.
+  eq(s.mutations.length, 80, 'B4 and 80 are unambiguous MUTATIONS, every one reachable without identity');
   ok(s.mutations.indexOf('pricing.update') !== -1,
     'B4a including pricing.update — PRICING-R2 added the first WRITE since this baseline was measured');
   ok(s.mutations.indexOf('pricing.fxReconcile') !== -1,

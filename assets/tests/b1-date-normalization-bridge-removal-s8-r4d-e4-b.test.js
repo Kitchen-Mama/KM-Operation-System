@@ -347,9 +347,16 @@ ok(RO.OWNER_STAMPS.indexOf(R45) !== -1
   'G5  R45 is registered in the shared ledger AFTER R44 — the list is append-only and stampAtOrAfter '
   + 'compares indexes, so what matters is its position relative to its predecessor, not that it is last');
 ok(RO.stampAtOrAfter(R45, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R44'), 'G5a and it orders after R44');
-// 01_ did not change: no action, no route, no request field moved.
-eq(/var RTR_BUILD_VERSION_ = '([^']*)'/.exec(read('assets/specs/active/apps-script/01_router.gs'))[1],
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41', 'G6  01_ keeps R41 — ROUTER_CHANGE = NO');
+// 01_ did not change IN THIS ROUND: no action, no route, no request field moved.
+// S8-B3-R1A — THE INTERVAL WAS PINNED AT ONE END. This read the CURRENT router stamp and required it to
+// equal R41, which conflates two claims: "this round did not change the router" (true, and still true) and
+// "no round since has changed it" (not this suite's business, and false from R51 on, which adds four routes).
+// The shared ledger exists to express the first without asserting the second — stampAtOrAfter compares
+// INDEXES — so the stamp must be at or after R41 and never behind it. That still catches what this guard was
+// written for: a router rolled BACK, or one carrying an id the ledger has never heard of.
+ok(RO.stampAtOrAfter(/var RTR_BUILD_VERSION_ = '([^']*)'/.exec(read('assets/specs/active/apps-script/01_router.gs'))[1],
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'),
+  'G6  01_ is at or after R41 — ROUTER_CHANGE = NO in this round, and the stamp never went backwards');
 
 // The two new diagnostics are REPORTED, because a guard that cannot be observed in Production is a guard
 // nobody can tell has failed open.

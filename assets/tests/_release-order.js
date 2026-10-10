@@ -1793,7 +1793,14 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // gates say the same thing from three directions — the manifest hash no longer matched the bundle, 43_
   // rode along in the copy list, and the deployment-uniformity probe reported a mixed tree — and none of
   // them is wrong. A runtime change that lands after a cut needs its OWN cut.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50',
+  // S8-B3-R1A-R51. The first cut since R50 and, like R50, one that could not ride an earlier release: the
+  // Overseas Allocation Preview is a NEW routed surface (47_ + four router actions, action contract 18 -> 19)
+  // and the deferred §45.B.2 producer corrections change two core modules that are compiled VERBATIM into 90_,
+  // so the bundle hash 63_ pins moves with them. D-S8-C2-1 deferred those corrections precisely so they could
+  // ride the next INDEPENDENTLY justified backend release rather than earning a cut of their own — this is it,
+  // and bundling them costs zero extra .gs files because R51 already rebuilds 90_ and already moves 63_.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
