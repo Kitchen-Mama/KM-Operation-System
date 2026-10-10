@@ -351,7 +351,10 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46';
 // S8-R4D-E4-B - and again: the release above, its own expected stamp and 60_'s. 90_'s hash is unchanged,
 // and so is the action contract - a handler that reaches the same Dates by cheaper arithmetic is not a new
 // vocabulary.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47';
+// S8-R49-J - moved because THIS FILE changed: 90_s manifest content hash below, which R49-F left at the
+// pre-rebuild value. The RELEASE above is deliberately NOT marched to it, on this rounds explicit
+// authorization - cutting one is the users act. 61_ did not change and keeps R47.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R48';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -622,7 +625,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R48', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -758,7 +761,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // Its absence is NOT loud. 13_ guards on typeof KMPD.resolveTargetRule and returns null when it is missing,
   // and a null target is a SKIPPED month, not an error: an old bundle makes the procurement forecast quietly
   // drop months. An old-but-present bundle is worse still -- it resolves by the retired first-row-wins rule.
-  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: '46ae3945061fefe45748f5fc7e8adf7624e20057da44b9ba9746be5a6eea5695', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
+  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: 'fafc1d8e0273cb170601b6481d56d07f35d2ab51660adaf41637e906f4258c41', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment\'s DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read \u2014 it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.

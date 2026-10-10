@@ -388,14 +388,27 @@ section('L8 DEPLOYMENT MANIFEST CONSISTENCY (S8-R49-I)');
       'G55 SYS_DEPLOYMENT_RELEASE_ is UNCHANGED at R46 -- a module stamp rotation is not a release cut, and '
       + 'the R46 Production acceptance baseline still refers to the id it was written against', 'CONTRACT');
   var R = require(path.join(__dirname, '_release-order.js'));
-  obs(R.stampAtOrAfter(wapDecl, sysDecl), true,
-      'G56 the rotated stamp is a KNOWN ledger entry (stampAtOrAfter compares indexes, so an unappended '
-      + 'stamp would be unanswerable)', 'CONTRACT');
+  // S8-R49-J: this asked whether WAP is at or after SYS, which held only because R49-I happened to leave
+  // both owners on R47. They are INDEPENDENT owners - 61_ did not change in R49-J and correctly keeps R47
+  // while 63_ moved to R48 - so an ordering between them was never the property worth asserting. What matters
+  // is that each stamp is ANSWERABLE: stampAtOrAfter compares indexes and returns false for an unappended
+  // stamp, so a stamp missing from the ledger is indistinguishable from an old one.
+  obs([wapDecl, sysDecl].map(function (st) { return R.OWNER_STAMPS.indexOf(st) !== -1; }), [true, true],
+      'G56 both rotated stamps are KNOWN ledger entries', 'CONTRACT');
   // 90_ is identified by CONTENT HASH and its expected value belongs to R49-F, not to this round.
   var bundleDecl = declared(gs('90_generated_supply_planning_bundle.gs'), 'KM_BUNDLE_CONTENT_HASH_');
-  obs(expected('90_generated_supply_planning_bundle.gs', 'KM_BUNDLE_CONTENT_HASH_') === bundleDecl, false,
-      'G57 the 90_ bundle hash in the manifest does NOT match the built bundle -- R49-F rebuilt it and did '
-      + 'not update the manifest. Recorded, not repaired: it is a different round0s contract.', 'DEVIATION');
+  obs(expected('90_generated_supply_planning_bundle.gs', 'KM_BUNDLE_CONTENT_HASH_'), bundleDecl,
+      'G57 the 90_ bundle hash in the manifest MATCHES the bundle that is on disk -- S8-R49-J repaired the row '
+      + 'R49-F left at the pre-rebuild value. The bundle itself was NOT touched: the builder --check proves the '
+      + 'declaration reproduces from the module sources.', 'CONTRACT');
+  // G58 - the price of rotating a module stamp without cutting a release, recorded where it can be seen rather
+  // than discovered later. R49-I introduced this divergence and R49-J widened it; neither round was authorized
+  // to move the release, and both said so.
+  obs(declared(G63, 'SYS_BUILD_VERSION_') === declared(G63, 'SYS_DEPLOYMENT_RELEASE_'), false,
+      'G58 63_ now carries a module stamp AHEAD of the release it declares (R48 vs R46). The deployment '
+      + 'uniformity suite asserts build_id EQUALS that stamp and FAILS on it -- see H8 of '
+      + 'forecast-missing-means-zero-and-ai-plan-unblock. ONLY a user-owned release cut can close it, and no '
+      + 'round so far has been authorized to cut one.', 'DEVIATION');
 })();
 
 var total = pass + fail;

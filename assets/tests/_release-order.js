@@ -1728,7 +1728,21 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // are not deployed, which is exactly what the deployment-uniformity check already reports for the 66_ and
   // 90_ changes still queued from R49-D and R49-F.
   // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47',
+  // S8-R49-J - R48. 63_s deployment manifest still expected the PRE-REBUILD content hash for 90_: R49-F
+  // rebuilt the generated bundle and did not move the manifest row with it, so every deployment report since
+  // has named a correctly-built bundle as stale and read the whole deployment as MIXED. The repair is one
+  // string - the hash the builder derives - and the bundle itself is untouched and reproducible.
+  //
+  // Owner set is 63_ ALONE. 90_ did not change in this round (its declared hash was already correct), 61_ did
+  // not change and keeps R47, 66_ did not change and keeps its own.
+  //
+  // STAMP ROTATION, NOT A RELEASE CUT. SYS_DEPLOYMENT_RELEASE_ stays at R46 by this rounds explicit
+  // authorization, so 63_s module stamp is now TWO rounds ahead of the release it declares. That divergence
+  // is visible and is NOT closed here: the deployment-uniformity suite asserts build_id == SYS_BUILD_VERSION_
+  // and still fails on it. Only a release cut can close it, and a cut is the users act.
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R48'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
