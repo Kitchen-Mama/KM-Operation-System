@@ -4884,7 +4884,7 @@ BUNDLE                       90_generated_supply_planning_bundle.gs IS part of t
                              06f4258c41, reproducible from the core modules via `--check`. Never hand-edited.
 EDITOR-APPLIED               none. appsscript.json is unchanged — no advanced service, no OAuth scope.
 FRONTEND                     SEPARATE RELEASE, prepared not published. Application-family cache token
-                             r49-priority-sendguard-20261010 is minted and every application reference in
+                             r49-prioritysendguard-20261010 is minted and every application reference in
                              index.html and app.js carries it. The map, Site-Inventory-CSS and method-
                              registry families are deliberately untouched — no byte of theirs moved.
 

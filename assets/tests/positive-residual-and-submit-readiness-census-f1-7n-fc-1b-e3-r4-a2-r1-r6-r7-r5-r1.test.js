@@ -15049,20 +15049,28 @@ function tmut(label, probe) {
   if (died) { neg.caught++; pass++; console.log('ok   TX ' + label + ' (caught)'); }
   else { neg.missed++; fail++; console.error('FAIL TX ' + label + ' SURVIVED'); }
 }
-// The world runs S1_WORLD (S1 with its frozen-baseline declaration neutralised), not the raw file. Building a
-// mutant on the raw source makes the world STOP for a reason that has nothing to do with the mutation — which
-// is what the positive control below exists to catch, and did.
+// The world runs S1_WORLD (S1 with its frozen-baseline declaration neutralised), not the raw file. Building a
+// mutant on the raw source makes the world STOP for a reason that has nothing to do with the mutation — which
+// is what the positive control below exists to catch, and did.
 var S1_SRC_ = S1_WORLD;
+// S8-R49-L — THE ANCHOR IS DERIVED, NOT RETYPED. Both mutants below used to name the pin's value as a
+// literal, so the round that moved the pin (R46 -> R49, when the release was finally cut) did not fail them
+// — it made them CRASH on a missing anchor, which is not a kill and was correctly reported as one. A mutant
+// that cannot find what it meant to mutate proves nothing, and a mutant whose anchor has to be hand-edited
+// every release will eventually be hand-edited wrong. Reading the pin out of the source keeps the mutation
+// real while making it independent of which release is current.
+var S1_PIN_ = (S1_SRC_.match(/var S1_BUILD_ = '([^']+)'/) || [])[1];
+var S1_PIN_DECL_ = "var S1_BUILD_ = '" + S1_PIN_ + "'";
 
 tmut('a stale S1_BUILD_ pin refuses a correctly synced project', function () {
-  var m = S1_SRC_.replace("var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46'",
-                          "var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20'");
+  if (!S1_PIN_) throw new Error('pin anchor absent');
+  var m = S1_SRC_.replace(S1_PIN_DECL_, "var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20'");
   if (m === S1_SRC_) throw new Error('pin anchor absent');
   return manifestP(pos({ s1: m })).res.verdict === 'STOP';
 });
 tmut('an incorrect release identifier is rejected, not merely a lagging one', function () {
-  var m = S1_SRC_.replace("var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46'",
-                          "var S1_BUILD_ = 'NOT-A-RELEASE'");
+  if (!S1_PIN_) throw new Error('pin anchor absent');
+  var m = S1_SRC_.replace(S1_PIN_DECL_, "var S1_BUILD_ = 'NOT-A-RELEASE'");
   if (m === S1_SRC_) throw new Error('pin anchor absent');
   return manifestP(pos({ s1: m })).res.verdict === 'STOP';
 });

@@ -384,10 +384,15 @@ section('L8 DEPLOYMENT MANIFEST CONSISTENCY (S8-R49-I)');
   var sysDecl = declared(G63, 'SYS_BUILD_VERSION_');
   obs(expected('63_api_v1_system_health.gs', 'SYS_BUILD_VERSION_'), sysDecl,
       'G54 63_ likewise declares the stamp its own manifest entry expects', 'CONTRACT');
-  obs(declared(G63, 'SYS_DEPLOYMENT_RELEASE_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46',
-      'G55 SYS_DEPLOYMENT_RELEASE_ is UNCHANGED at R46 -- a module stamp rotation is not a release cut, and '
-      + 'the R46 Production acceptance baseline still refers to the id it was written against', 'CONTRACT');
+  // S8-R49-L: this pinned R46 to record that R49-I and R49-J were rotations rather than cuts, which was
+  // true of those rounds and is no longer true of this tree -- R49-L cut the release they had run ahead of.
+  // The claim worth keeping is the one that was always underneath it: a release may move FORWARD and may
+  // never move back, and the R46 Production acceptance still names R46 rather than being re-dated by a
+  // later cut. An equality on R46 would now assert that no release may ever be cut again.
   var R = require(path.join(__dirname, '_release-order.js'));
+  obs(R.stampAtOrAfter(declared(G63, 'SYS_DEPLOYMENT_RELEASE_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46'), true,
+      'G55 SYS_DEPLOYMENT_RELEASE_ is at or after R46 -- a cut may move it forward, never back, and the R46 '
+      + 'Production acceptance baseline still refers to the id it was written against', 'CONTRACT');
   // S8-R49-J: this asked whether WAP is at or after SYS, which held only because R49-I happened to leave
   // both owners on R47. They are INDEPENDENT owners - 61_ did not change in R49-J and correctly keeps R47
   // while 63_ moved to R48 - so an ordering between them was never the property worth asserting. What matters
@@ -401,14 +406,14 @@ section('L8 DEPLOYMENT MANIFEST CONSISTENCY (S8-R49-I)');
       'G57 the 90_ bundle hash in the manifest MATCHES the bundle that is on disk -- S8-R49-J repaired the row '
       + 'R49-F left at the pre-rebuild value. The bundle itself was NOT touched: the builder --check proves the '
       + 'declaration reproduces from the module sources.', 'CONTRACT');
-  // G58 - the price of rotating a module stamp without cutting a release, recorded where it can be seen rather
-  // than discovered later. R49-I introduced this divergence and R49-J widened it; neither round was authorized
-  // to move the release, and both said so.
-  obs(declared(G63, 'SYS_BUILD_VERSION_') === declared(G63, 'SYS_DEPLOYMENT_RELEASE_'), false,
-      'G58 63_ now carries a module stamp AHEAD of the release it declares (R48 vs R46). The deployment '
-      + 'uniformity suite asserts build_id EQUALS that stamp and FAILS on it -- see H8 of '
-      + 'forecast-missing-means-zero-and-ai-plan-unblock. ONLY a user-owned release cut can close it, and no '
-      + 'round so far has been authorized to cut one.', 'DEVIATION');
+  // G58 - CLOSED BY S8-R49-L. This recorded 63_ carrying a module stamp AHEAD of the release it declared
+  // (R48 vs R46), the divergence R49-I introduced and R49-J widened because neither round was authorized to
+  // move the release. R49-L cut R49 and the two now agree. The assertion is KEPT rather than deleted: it is
+  // the shape the deployment-uniformity suite checks from the other side (H8), and a later rotation without
+  // a cut would reopen it here, which is exactly where a reader of this file would look.
+  obs(declared(G63, 'SYS_BUILD_VERSION_'), declared(G63, 'SYS_DEPLOYMENT_RELEASE_'),
+      'G58 63_ declares the SAME id as its own module stamp and as the release -- a cut makes those two '
+      + 'agree, and a rotation without a cut is what made them disagree', 'CONTRACT');
 })();
 
 var total = pass + fail;

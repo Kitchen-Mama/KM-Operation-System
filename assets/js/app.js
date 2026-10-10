@@ -129,7 +129,7 @@ var KM_ROUTE_ASSETS_ = {
     'ops': {
         sectionId: 'ops-section',
         scripts: [
-            'assets/js/pages/inventory-replenishment.js?v=r49-priority-sendguard-20261010'
+            'assets/js/pages/inventory-replenishment.js?v=r49-prioritysendguard-20261010'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -154,13 +154,13 @@ var KM_ROUTE_ASSETS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=r49-priority-sendguard-20261010',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r49-priority-sendguard-20261010',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r49-priority-sendguard-20261010',
-            'assets/js/product-strategy/psb-selectors.js?v=r49-priority-sendguard-20261010',
-            'assets/js/product-strategy/psb-chart-layout.js?v=r49-priority-sendguard-20261010',
-            'assets/js/product-strategy/psb-board-ui.js?v=r49-priority-sendguard-20261010',
-            'assets/js/pages/product-strategy-board.js?v=r49-priority-sendguard-20261010'
+            'assets/js/product-strategy/psb-data-contract.js?v=r49-prioritysendguard-20261010',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r49-prioritysendguard-20261010',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r49-prioritysendguard-20261010',
+            'assets/js/product-strategy/psb-selectors.js?v=r49-prioritysendguard-20261010',
+            'assets/js/product-strategy/psb-chart-layout.js?v=r49-prioritysendguard-20261010',
+            'assets/js/product-strategy/psb-board-ui.js?v=r49-prioritysendguard-20261010',
+            'assets/js/pages/product-strategy-board.js?v=r49-prioritysendguard-20261010'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },

@@ -967,7 +967,10 @@ var ROUND_TOKENS = [
   //
   // APPLICATION FAMILY ONLY. No stylesheet, map or method-registry byte moved, so those three series keep
   // their own current tokens rather than spending one on an unchanged file.
-  'r49-priority-sendguard-20261010'];
+  // The series shape is `<round>-<name>-<yyyymmdd>` with exactly TWO segments before the date — the picker
+  // suite asserts /^[a-z0-9]+-[a-z0-9]+-\d{8}$/ on whatever is current, so a three-segment name is not a
+  // style preference but a contract break. 'prioritysendguard' is one segment by that rule.
+  'r49-prioritysendguard-20261010'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
