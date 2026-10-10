@@ -6528,3 +6528,38 @@ draft-normalization task. Normalizing it moves a `.gs` and would require an Apps
 
 **No runtime, schema, router, frontend or `90_` bundle change. Release identity unchanged at R50 — no `.gs`
 moved, so no new cut and no Apps Script sync.**
+
+---
+
+## S8-C1-R1 — IR missing-priority group fail-closed + KMCID (2026-10-10; local only, NOT pushed, NOT deployed)
+
+**Decisions adopted: D-S8-C1-1 Option B, D-S8-C1-2, D-S8-C1-3.** The last §45.B.1 fabrication site is closed.
+`inventory-replenishment.js` no longer resolves a receiver priority as `(reg && reg.allocationPriority) || 0` —
+a form that collapsed four different facts (no registration / null / blank / a VALID explicit 0) into one number
+that §24.7's `MAX(priority, 1)` then weighted like a real priority of 1.
+
+**Fail closed at the group, not the page.** company + country + Master SKU is already the pool boundary, so one
+blocked group cannot touch another. A blocked group returns `PRIORITY_UNRESOLVED` with `sitePlanningAvailable:
+null`, every allocation-derived figure null, **no `byKey`**, and the unresolved receivers **named** — dropping
+them would hand their share to their competitors, which is the fabricated 0's error wearing a different hat.
+`_allocateShared` is not called, and its §24.7 weighting and largest-remainder tie-break are untouched.
+
+**Only SHORTAGE blocks.** §24.8 gives priority a role in NORMAL as well, but that role is §24.5 step 3 (the
+surplus above the 18-day floor), which this page has never implemented — so NORMAL and NO_DEMAND read no
+priority, and §45.A.5 class D forbids blocking a calculation that does not read one. **Forward obligation
+recorded:** when step 3 lands, NORMAL starts consuming a priority and the guard must widen.
+
+**Country identity:** the priority lookup resolves through KMCID (`UK` = `GB`, `EU` independent), loaded as an
+`ops` route asset ahead of the page. Company and marketplace comparisons are unchanged. Pool and receiver-set
+membership still compare country raw, deliberately — changing them would move displayed physical quantities.
+
+**Numerical parity is the load-bearing guard:** for all-valid priorities the §24.7 split is byte-identical
+(29/71 at the canonical fixture; an explicit 0 still earns 17 via `MAX(0,1)`), asserted against hand-computed
+literals rather than read back from the runtime under test.
+
+**Tests:** new `ir-missing-priority-fail-closed-s8-c1-r1.test.js` **82/0** across all 24 required cases. B2's
+H1 flipped from pinning the defect to pinning the correction (+2 assertions, 83 to 85); **H3's weighting
+assertion preserved**. R49-G needed no change — it characterizes the two core producers, not this page.
+
+**Frontend-only.** Token rotated to `r50-irpriority-20261010` because `app.js` changed. **No `.gs`, no DB, no
+router, no new API action; release identity unchanged at R50 — no new cut, no Apps Script sync.**

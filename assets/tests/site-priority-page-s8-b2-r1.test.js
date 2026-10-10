@@ -334,14 +334,20 @@ cDone.then(function () {
 .then(function () {
   section('H. The two things this round deliberately did NOT change');
 
-  // 15 — the IR display fallback is UNCHANGED, and this records why.
+  // 15 — the IR fallback: reported by B2, CORRECTED by S8-C1-R1.
   //
-  // §7 of the task authorized correcting `(reg && reg.allocationPriority) || 0` IF it were display-only. It is
-  // not. The object it builds is passed to `_allocateShared`, where allocationPriority is a WEIGHT in the §24.7
-  // shortage split (`Math.max(s.minNeed,0) * Math.max(s.allocationPriority,1)`) and a TIE-BREAK in the
-  // largest-remainder ordering. Editing it would change allocation numbers, which §7 forbids in the same breath.
-  ok(/allocationPriority: \(reg && reg\.allocationPriority\) \|\| 0/.test(IR_SRC),
-     'H1 the IR fallback is UNCHANGED — it feeds a calculation, so this round stopped and reported it');
+  // B2 was authorized to correct `(reg && reg.allocationPriority) || 0` only if it were display-only. It was
+  // not: the object it builds is passed to `_allocateShared`, where allocationPriority is a WEIGHT in the
+  // §24.7 shortage split and a TIE-BREAK in the largest-remainder ordering. B2 therefore stopped and reported
+  // it, which is what H1 used to pin. S8-C1-R1 then closed it under D-S8-C1-1 (group-level fail closed), so
+  // H1 now pins the CORRECTION — the fabricated 0 must not come back. Evidence:
+  // assets/tests/ir-missing-priority-fail-closed-s8-c1-r1.test.js.
+  ok(!/allocationPriority: \(reg && reg\.allocationPriority\) \|\| 0/.test(IR_SRC),
+     'H1 the IR `|| 0` fabrication is GONE — a missing priority is no longer silently turned into a real one');
+  ok(/allocationPriority: _pr/.test(IR_SRC) && /function _irResolvePriority\(reg\)/.test(IR_SRC),
+     'H1a it resolves through a named resolver that returns null for an unresolved priority');
+  ok(/state: 'PRIORITY_UNRESOLVED'/.test(IR_SRC),
+     'H1b and the group fails closed rather than allocating from a fabricated value');
   ok(/_allocateShared\(pool\.poolQty, sites\)/.test(IR_SRC),
      'H2 and the proof it is not display-only: the object carrying it is passed to the allocator');
   ok(/Math\.max\(s\.allocationPriority, 1\)/.test(IR_SRC),

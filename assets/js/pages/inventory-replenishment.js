@@ -308,6 +308,46 @@ window.IRMap = (function () {
       : eq(rowCountry, scopeCountry);
   }
 
+  // ===== S8-C1-R1 — canonical COUNTRY identity for the priority lookup (D-S8-C1-2) ==========================
+  // The marketplaces master and marketplace_skus can spell the same market differently (`UK` vs the ISO `GB`),
+  // and a raw comparison turns that into "no registration found", which is indistinguishable from "nobody set a
+  // priority". KMCID is the runtime owner used by KMMSA / 43_ / 71_, and it is itself a declared mirror of this
+  // page's own frozen IRCountry alias table — so borrowing it adds no second alias table. EU is a REGION in both
+  // owners and is never expanded into member countries here: this is identity, not aggregation.
+  // COUNTRY ONLY. Company and marketplace keep their existing comparison rules, untouched.
+  function _irCanonCountry(v) {
+    var K = (typeof window !== 'undefined')
+      ? (window.KMCID || (window.KM && window.KM.countryIdentity)) : null;
+    return (K && typeof K.canonicalCountryCode === 'function')
+      ? K.canonicalCountryCode(v)
+      : String(v == null ? '' : v).trim().toUpperCase();   // degrade to exact match, never to a guessed alias
+  }
+  function _irCountryIdentityEq(a, b) {
+    var A = _irCanonCountry(a), B = _irCanonCountry(b);
+    return A !== '' && A === B;
+  }
+
+  // ===== S8-C1-R1 — receiver priority resolution (§45.A, D-S8-C1-1) ========================================
+  // Returns a NUMBER for a resolved priority and null for an unresolved one. It never substitutes a value the
+  // operator did not set, which is the whole of §45.A.4.
+  //   VALID      numeric 0 (the lowest priority — §45.A.1, still weighted) and any finite number > 0.
+  //   UNRESOLVED no marketplace registration at all, null, undefined, blank/whitespace, negative,
+  //              non-numeric, non-finite, or any non-number/non-string type.
+  // A numeric STRING is accepted because the transport delivers sheet cells as text; `Number('')` is 0, so the
+  // blank guard runs BEFORE any conversion — otherwise an empty cell would resolve to the valid priority 0.
+  function _irResolvePriority(reg) {
+    if (!reg) return null;
+    var v = reg.allocationPriority;
+    if (typeof v === 'number') return (isFinite(v) && v >= 0) ? v : null;
+    if (typeof v === 'string') {
+      var t = v.trim();
+      if (t === '') return null;
+      var n = Number(t);
+      return (isFinite(n) && n >= 0) ? n : null;
+    }
+    return null;
+  }
+
   function todayYmd() {
     var d = new Date();
     var m = String(d.getMonth() + 1).padStart(2, '0');
@@ -665,7 +705,7 @@ window.IRMap = (function () {
   function _findMktReg(reg, scope) {
     return (reg || []).filter(function (m) {
       return (scope.marketplaceId && m.marketplaceId && m.marketplaceId === scope.marketplaceId) ||
-        (eq(m.country, scope.country) && eq(m.marketplace, scope.marketplace) && (!scope.company || eq(m.company, scope.company)));
+        (_irCountryIdentityEq(m.country, scope.country) && eq(m.marketplace, scope.marketplace) && (!scope.company || eq(m.company, scope.company)));
     })[0] || null;
   }
 
@@ -755,25 +795,72 @@ window.IRMap = (function () {
       } else {
         daily = avgSalesPerDay(ctx.weeklyRows, siteScope);               // §22 canonical Avg Sales/Day
       }
+      var _pr = _irResolvePriority(reg);
       sites.push({
         key: m.marketplaceId || (m.company + '|' + m.country + '|' + m.marketplace),
         marketplace: m.marketplace, company: m.company, country: m.country,
         demandMode: demandMode, dailyDemand: daily,
         minNeed: Math.ceil(daily * 18),                                  // §24.4 CEILING(daily × 18)
-        allocationPriority: (reg && reg.allocationPriority) || 0,
+        // S8-C1-R1 — RESOLVED OR null, never a fabricated 0. `|| 0` used to collapse four different facts
+        // (no registration / null / blank / an explicit 0) into one number, and §24.7's `MAX(priority,1)`
+        // then made all of them weigh the same as a real priority of 1.
+        allocationPriority: _pr,
+        priorityResolved: _pr !== null,
         isCurrent: eq(m.marketplace, scope.marketplace)
       });
     });
 
-    var alloc = _allocateShared(pool.poolQty, sites);
     var cur = sites.filter(function (s) { return s.isCurrent; })[0];
-    var curAlloc = cur ? (alloc.byKey[cur.key] || 0) : 0;
-    var allocatedTotal = Object.keys(alloc.byKey).reduce(function (s, k) { return s + alloc.byKey[k]; }, 0);
 
     var state = 'OK';
     if (!pool.hasEligibleWarehouse) state = 'NO_ELIGIBLE_3PL';
     else if (!pool.hasSnapshot) state = 'MISSING_SNAPSHOT';
     // (No NOT_SELF_FULFILLED state — platform-fulfilled sites participate in the shared 3PL reserve.)
+
+    // ===== S8-C1-R1 — GROUP-LEVEL FAIL-CLOSED (D-S8-C1-1 Option B) =======================================
+    //
+    // WHICH MODES BLOCK, and why only one. §24.8 gives allocation_priority a role in NORMAL too, but that
+    // role is §24.5 step 3 — distributing the surplus ABOVE the 18-day floor — and this page has never
+    // implemented step 3 (see the _allocateShared header: the surplus stays unallocated, a declared gap).
+    // So as implemented, NORMAL and NO_DEMAND never READ a priority, and §45.A.5 class D is explicit that a
+    // calculation which does not read allocation_priority must not be blocked by one. Blocking them would
+    // withhold a correct 18-day protection figure on account of a field it never consulted.
+    //
+    // FORWARD OBLIGATION: the day §24.5 step 3 is implemented, NORMAL starts consuming priority and this
+    // predicate must widen with it. It is written as "would this mode read a priority", not as "is this
+    // SHORTAGE", so that the reason stays visible at the point of change.
+    //
+    // sumNeed mirrors the allocator's own two early returns (NO_DEMAND: sumNeed <= 0; NORMAL: pool >=
+    // sumNeed). It is recomputed here rather than taken from a call, because a blocked group must not call
+    // _allocateShared at all — and a dedicated test pins this predicate against the allocator's real mode
+    // across the boundary cases, so the two cannot drift apart.
+    var sumNeed = sites.reduce(function (a, s) { return a + Math.max(s.minNeed, 0); }, 0);
+    var priorityRequired = sites.length > 0 && sumNeed > 0 && pool.poolQty < sumNeed;
+    var unresolvedReceivers = sites.filter(function (s) { return !s.priorityResolved; })
+      .map(function (s) { return { company: s.company, country: s.country, marketplace: s.marketplace }; });
+
+    if (state === 'OK' && priorityRequired && unresolvedReceivers.length) {
+      // Fail closed for THIS group only — company + country + Master SKU is one pool and one competing
+      // receiver set, so no other group is affected. Nothing is allocated, nothing is redistributed, and the
+      // unresolved receivers are NAMED rather than dropped: a silent exclusion would hand their share to
+      // their competitors, which is the same wrong answer as the fabricated 0, only harder to see.
+      return {
+        state: 'PRIORITY_UNRESOLVED', participates: participates,
+        sitePlanningAvailable: null,
+        physicalPool: pool.poolQty, minNeed: cur ? cur.minNeed : 0,
+        allocationMode: null,
+        allocationBasis: 'Allocation withheld: a competing receiver has no resolved allocation_priority',
+        allocatedToCurrent: null, allocatedToOthers: null, unallocatedPool: null,
+        contributions: pool.contributions, eligibleCount: pool.eligibleCount,
+        snapshotAt: pool.snapshotAt, coverageRate: null,
+        warn: 'Priority unresolved — set allocation_priority in Administration → Site Priority.',
+        siteCount: sites.length, priorityRequired: true, unresolvedReceivers: unresolvedReceivers
+      };
+    }
+
+    var alloc = _allocateShared(pool.poolQty, sites);
+    var curAlloc = cur ? (alloc.byKey[cur.key] || 0) : 0;
+    var allocatedTotal = Object.keys(alloc.byKey).reduce(function (s, k) { return s + alloc.byKey[k]; }, 0);
 
     return {
       state: state, participates: participates,
@@ -784,7 +871,10 @@ window.IRMap = (function () {
       unallocatedPool: Math.max(pool.poolQty - allocatedTotal, 0),
       contributions: pool.contributions, eligibleCount: pool.eligibleCount,
       snapshotAt: pool.snapshotAt, coverageRate: alloc.coverageRate, warn: alloc.warn || '',
-      siteCount: sites.length
+      siteCount: sites.length,
+      // Always present, so a consumer never has to tell "no unresolved receivers" from "this build predates
+      // the field". Empty here by construction: a non-empty list in a priority-consuming mode returned above.
+      priorityRequired: priorityRequired, unresolvedReceivers: unresolvedReceivers
     };
   }
 
@@ -968,11 +1058,28 @@ function _irRenderThirdPartyDetail(plan) {
   var bd = (window.IRWarehouse && window.IRWarehouse.buildPhysicalThirdPartyBreakdown)
     ? window.IRWarehouse.buildPhysicalThirdPartyBreakdown(plan)
     : { rows: (plan.contributions || []).map(function (c) { return { warehouseName: c.warehouseName || c.warehouseId, qty: Number(c.qty) || 0 }; }), total: 0, hasRows: (plan.contributions || []).length > 0 };
+  // S8-C1-R1 — the fail-closed diagnostic. It is APPENDED to the physical rows, never instead of them: the
+  // physical stock figure is still correct and withholding it would hide a fact to report a different one.
+  // What is withheld is the planning ALLOCATION, and this says so, names the receivers, and offers the one
+  // place the operator can fix it. `showSection` is the shell's existing navigator — the same call the
+  // Administration menu item makes — so this adds no router action and no event listener.
+  var diag = '';
+  if (plan.state === 'PRIORITY_UNRESOLVED') {
+    var who = (plan.unresolvedReceivers || []).map(function (r) {
+      return '<div class="replen-tp-unresolved__row">' + esc([r.company, r.country, r.marketplace].filter(Boolean).join(' / ')) + '</div>';
+    }).join('');
+    diag = '<div class="replen-tp-unresolved">'
+      + '<div class="replen-tp-unresolved__title">Priority unresolved — planning allocation withheld</div>'
+      + who
+      + '<div class="replen-tp-unresolved__hint">Set <code>allocation_priority</code> in '
+      + '<a href="#" class="replen-tp-unresolved__link" onclick="showSection(\'site-priority\'); return false;">Administration → Site Priority</a>.</div>'
+      + '</div>';
+  }
   var visible = bd.rows.filter(function (r) { return (Number(r.qty) || 0) > 0; });
-  if (!visible.length) return '<div class="replen-tp-empty">No 3rd Party Stock</div>';
+  if (!visible.length) return diag + '<div class="replen-tp-empty">No 3rd Party Stock</div>';
   var html = visible.map(function (r) { return whRow(r.warehouseName || r.warehouseId, r.qty); }).join('');
   html += '<div class="replen-card__row replen-tp-total"><span class="replen-card__label">Total</span><span class="replen-card__value">' + fmt(bd.total) + '</span></div>';
-  return html;
+  return html + diag;
 }
 
 // Persisted Recommendation Summary snapshot for a scope + SKU. Reads the active shipping_allocation_draft
@@ -998,10 +1105,18 @@ function _irThirdPartyTitle(plan) {
   // Simplified hover: list the contributing physical 3PL warehouses (name + qty). Allocation detail
   // stays on the plan object for the engine / Admin Debug, not surfaced here.
   if (!plan) return '';
+  // S8-C1-R1 — the same diagnostic in plain text, so the hover does not disagree with the expand card.
+  var pre = (plan.state === 'PRIORITY_UNRESOLVED')
+    ? ('Priority unresolved — planning allocation withheld:\n'
+       + (plan.unresolvedReceivers || []).map(function (r) {
+           return '  ' + [r.company, r.country, r.marketplace].filter(Boolean).join(' / ');
+         }).join('\n')
+       + '\nSet allocation_priority in Administration → Site Priority.\n\n')
+    : '';
   var contribs = (plan.contributions || []).filter(function (c) { return (Number(c.qty) || 0) > 0; })
     .sort(function (a, b) { return (Number(b.qty) - Number(a.qty)) || String(a.warehouseName || '').localeCompare(String(b.warehouseName || '')); });
-  if (!contribs.length) return 'No 3rd Party Stock in scope.';
-  return '3rd Party Stock (physical, by warehouse):\n' +
+  if (!contribs.length) return pre + 'No 3rd Party Stock in scope.';
+  return pre + '3rd Party Stock (physical, by warehouse):\n' +
     contribs.map(function (c) { return (c.warehouseName || c.warehouseId) + ': ' + Math.round(c.qty).toLocaleString(); }).join('\n');
 }
 

@@ -976,7 +976,8 @@ var ROUND_TOKENS = [
   // token would never fetch the router that knows the new page — the one failure mode a cache token exists to
   // prevent. The three new files and the newly browser-loaded KMCID owner ride the same rotation; nothing is
   // minted for them separately, because they are the same application family.
-  'r50-sitepriority-20261010'];
+  'r50-sitepriority-20261010',
+  'r50-irpriority-20261010'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

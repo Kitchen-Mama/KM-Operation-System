@@ -1481,3 +1481,58 @@ unilaterally, and the decision package (S8-B5-D1) put both readings to the owner
   `request_order_allocation_draft_lines`. It is **never read downstream** — `66_` forwards only `order_qty` and
   `units_per_carton`, so no fractional value can reach `request_order_lines` — which is why it was left alone
   rather than fixed in a documentation round. **Owner: a future bounded draft-normalization task. NOT closed.**
+
+---
+
+## D-S8-C1-1 / D-S8-C1-2 / D-S8-C1-3 — IR missing-priority fail-closed + canonical country (USER-APPROVED 2026-10-10, implemented S8-C1-R1)
+
+The last §45.B.1 fabrication site. `assets/js/pages/inventory-replenishment.js` resolved a receiver's priority
+as `(reg && reg.allocationPriority) || 0`, which collapsed FOUR different facts into one number — no marketplace
+registration, null, blank, and an explicit 0 that is a VALID lowest priority (§45.A.1) — and §24.7's
+`MAX(priority, 1)` then weighted all of them the same as a real priority of 1. The fabricated receiver took a
+share of the pool, shrank every sibling's share, and the group was reported as a complete `SHORTAGE_ALLOCATION`.
+
+### D-S8-C1-1 — fail closed at the independent allocation group (Option B)
+
+- **Boundary:** company + country + Master SKU. That is already the pool boundary — `sharedPhysicalPool` and the
+  sibling `marketplace_skus` filter use the same three keys — so one group is one pool and one competing
+  receiver set, and blocking one cannot touch another.
+- **Option A (block the whole operation) was REFUSED on contract grounds, not on effort.** Nothing exists above
+  the group except the page, so "the operation" could only mean the page, and §45.A.5 classes A and D forbid
+  withholding the listing and every priority-independent calculation.
+- **Blocked result:** `state: 'PRIORITY_UNRESOLVED'`, `sitePlanningAvailable: null`, `allocatedToCurrent: null`,
+  every allocation-derived figure null, **no `byKey`**, and `unresolvedReceivers: [{company, country,
+  marketplace}]`. `_allocateShared` is **not called**. Preserved: the physical pool, the 3PL contributions, the
+  18-day need and every non-priority figure.
+- **Named, never dropped.** Silently excluding the unresolved receiver would hand its share to its competitors —
+  the same wrong answer as the fabricated 0, only harder to see. A dedicated test proves the two differ.
+- **MODE GATE (the one judgement in this round).** Only `SHORTAGE_ALLOCATION` blocks. §24.8 gives priority a
+  role in NORMAL too, but that role is **§24.5 step 3** — distributing the surplus above the 18-day floor — and
+  this page has never implemented step 3 (the surplus stays unallocated, a long-declared gap). As implemented,
+  NORMAL and NO_DEMAND read no priority, and §45.A.5 class D is explicit that a calculation which does not read
+  one must not be blocked by one. **Forward obligation: when §24.5 step 3 lands, NORMAL starts consuming a
+  priority and the guard must widen with it.** The predicate is written as "would this mode read a priority"
+  so the reason is visible at the point of change.
+
+### D-S8-C1-2 — canonical country identity for the priority lookup
+
+- The lookup resolves country through **KMCID** (`UK` = `GB`; `EU` stays an independent region, never expanded).
+  Company and marketplace keep their existing comparison rules — **country only**.
+- KMCID is loaded as a route asset on `ops`, ahead of the page. It is not a second alias table: KMCID declares
+  itself a mirror of this page's own frozen `IRCountry.SAME_MARKET_ALIAS`, and a test asserts the two agree.
+- **Deliberately NOT canonicalized:** the eligible-3PL-warehouse filter and the sibling `marketplace_skus`
+  filter. Both decide **membership**, so changing them would move displayed physical quantities and the
+  allocation denominator, which is outside a missing-priority round. Recorded in §45.B.3 as an open residue.
+
+### D-S8-C1-3 — implement now
+
+Done as a frontend-only correction. No `.gs`, no DB, no router, no new API action, no release cut.
+
+### Still open after this round (deliberately NOT in scope)
+
+- **§24.5 step 3** on this page (surplus above the 18-day floor) remains unimplemented; see the forward
+  obligation above.
+- **Pool / receiver-set country membership** still compares raw (§45.B.3 residue).
+- **§45.B.1 remaining fabrication sites** are unaffected by this decision: `43_`, the Weekly Input Assembler and
+  the Weekly Harvest Adapter were closed in R50; **KMMSA's frozen model-b adapter stands under D-F1-4B-FM5-R2A
+  as narrowed by D-S8-B1**.

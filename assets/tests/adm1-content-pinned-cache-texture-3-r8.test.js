@@ -563,10 +563,58 @@ function indexOk(idx, appSrc) {
     var seen = {}, dup = 0, m;
     var re = /<script[^>]*\ssrc="([^"?]+)/g;
     while ((m = re.exec(idx))) { if (seen[m[1]]) dup++; seen[m[1]] = 1; }
-    var reR = /'(assets\/js\/[^'?]+)(?:\?v=[^']*)?'/g;
-    while ((m = reR.exec(APP_SRC))) { if (seen[m[1]]) dup++; seen[m[1]] = 1; }
-    return cur >= 1 && RO.misplacedReleaseTokens(idx, APP_SRC).length === 0 && app >= 1 && dup === 0;
+    // S8-C1-R1 — A SHARED ROUTE DEPENDENCY IS NOT A DOUBLE LOAD, and this predicate used to say it was.
+    // `script-loader.js` keys both `_loaded` and `_inflight` BY URL, so when a second route asks for a URL
+    // the first route already loaded (or is loading), it reuses that element and never injects another.
+    // S8-C1-R1 made the case real: supply-planning-country-identity.js is a genuine shared dependency of
+    // `site-priority` and `ops`. The scan below is narrowed to match the loader's actual behaviour, and the
+    // two things that ARE still double loads are still counted:
+    //   * the same URL in index.html AND in a route — a boot <script> is never recorded in the loader's
+    //     map, so the route fetches it a second time;
+    //   * the same URL twice inside ONE route's list — both elements are injected before either onload
+    //     fires, so `_loaded` cannot deduplicate them.
+    // The exemption rests on measured loader behaviour, not on assertion: D1 below pins that dedupe, so if
+    // it is ever removed this narrowing fails loudly instead of quietly covering a real defect.
+    var routeDup = 0, routeSeen = {};
+    (APP_SRC.match(/scripts:\s*\[[\s\S]*?\]/g) || []).forEach(function (block) {
+        var within = {}, mm, rr = /'(assets\/js\/[^'?]+)(?:\?v=[^']*)?'/g;
+        while ((mm = rr.exec(block))) {
+            if (within[mm[1]]) routeDup++;
+            within[mm[1]] = 1;
+            routeSeen[mm[1]] = 1;
+        }
+    });
+    Object.keys(routeSeen).forEach(function (u) { if (seen[u]) dup++; seen[u] = 1; });
+    return cur >= 1 && RO.misplacedReleaseTokens(idx, APP_SRC).length === 0
+        && app >= 1 && dup === 0 && routeDup === 0;
 }
+
+// ---- S8-C1-R1 — the premise the shared-dependency exemption in indexOk() rests on -------------------------
+// D1/D2 are the evidence for narrowing `dup`. D3/D4 prove the narrowing did not blind the predicate: the two
+// real double-load shapes still fail it.
+(function () {
+    var LOADER = read('assets/js/core/script-loader.js');
+    ok(/if \(_loaded\[url\]\) return Promise\.resolve\(true\);/.test(LOADER)
+        && /if \(_inflight\[url\]\) return _inflight\[url\];/.test(LOADER),
+        'D1 script-loader dedupes BY URL for both loaded and in-flight scripts — so a URL two routes share '
+        + 'is fetched once, which is why indexOk no longer counts it as a duplicate');
+    ok(/_loaded\[url\] = true;/.test(LOADER),
+        'D2 and a URL is recorded as loaded only on its own onload, never speculatively');
+    var APP = read('assets/js/app.js');
+    // D3 — the same URL twice inside ONE route still fails: both elements are injected before either settles.
+    var oneRouteTwice = APP.replace(/('assets\/js\/pages\/inventory-replenishment\.js\?v=[^']*')/,
+        '$1,\n            $1');
+    ok(indexOk(INDEX, oneRouteTwice) === false,
+        'D3 the narrowing did NOT blind it: the same file twice in ONE route is still a double load');
+    // D4 — a route URL that is also a boot <script> still fails: the boot tag is not in the loader's map.
+    var alsoBooted = INDEX.replace('</head>',
+        '    <script src="assets/js/core/supply-planning-country-identity.js?v='
+        + RO.currentAppToken() + '" defer></script>\n</head>');
+    ok(indexOk(alsoBooted, APP) === false,
+        'D4 and a file declared in index.html AND in a route is still a double load');
+    ok(indexOk(INDEX, APP) === true,
+        'D5 while the real tree — country-identity shared by site-priority and ops — is clean');
+})();
 
 // N1 — the query token removed altogether.
 mutate('N1 query token removed from the URL',
