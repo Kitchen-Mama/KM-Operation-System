@@ -1635,3 +1635,85 @@ The Preview's request schema `{company, country, masterSku, asOf}` carries no ma
 the handler would have to **choose** 1 and **pay** 2. Both were refused rather than guessed. **R51 was not cut,
 no runtime was written, and the C2 fixes stay deferred with it** — they were to ride in this release, and there
 is now no release for them to ride in until the three questions above are answered.
+
+---
+
+## D-S8-B3-7 / B3-8 / B3-9 — Preview receiver membership, performance, country enumeration (S8-B3-D2, 2026-10-10)
+
+### D-S8-B3-7 — Receiver membership = `marketplace_skus` — **VERIFIED, with one open sub-question**
+
+- **Source:** `marketplace_skus` (`marketplace_sku_id`, `marketplace_id`, `sku`, `company`, `country`,
+  `marketplace`, `site_sku`, `marketplace_sku_status`, `replenishment_model`, `fulfillment_model`), filtered
+  `sku = masterSku AND company = scope.company AND canonicalCountry(country) = canonicalCountry(scope.country)`.
+  This is the grain KMMSA competes at (per Master SKU) and the convention Inventory Replenishment already shows
+  operators, so it introduces no new membership idea.
+- **Fulfillment model must NOT filter.** `DATABASE_RELATIONSHIP_MAP.md` is explicit that a platform-fulfilled
+  marketplace MAY still participate in the shared 3PL reserve - *"participation in the reserve is a
+  warehouse-side question, not a fulfillment-model exclusion"* - and IR implements exactly that
+  (`participates = true`). A platform-fulfilled receiver stays in the competing set.
+- **Membership and missing data are DIFFERENT answers, and both are needed.** Not a member of the group -> the
+  row is simply absent. A member whose required data is unresolved -> the member is **named and the group fails
+  closed**, never dropped: dropping a receiver hands its share to its competitors, which is the same wrong
+  answer as a fabricated priority. Measured against the real KMMSA, an unresolved priority returns
+  `{blocked:true, ready:false, issues:[{code:'RECEIVER_PRIORITY_UNRESOLVED', ...}]}`.
+- **OPEN SUB-QUESTION - `marketplace_sku_status`.** `marketplaces.status` has an eligibility precedent (the
+  scope registry skips non-active), but **no existing contract filters the competing set on
+  `marketplace_sku_status`**: IR's sibling-site filter does not consult it. Excluding an inactive marketplace
+  SKU would be inventing eligibility semantics and would change allocation denominators, so it is NOT assumed.
+
+### D-S8-B3-8 — Performance architecture — **PROPOSED / BLOCKED. Synchronous is NOT authorized.**
+
+- **The call chain, traced:** `gapOpHarvestReceivers_(scopes, ...)` -> `io.workspaceGet` **once per scope** ->
+  the LIVE Order Planning recommendation calculation (`recommendationWorkspaceDefaultIo_`) ->
+  `L.allocatedForecastQty`. One scope = one marketplace, so an N-marketplace group is **N live recommendation
+  calculations**.
+- **Production already measured that this does not fit.** `46_api_v1_gap_materialization_job.gs` records that
+  *"a multi-scope slice risked exceeding the Apps Script continuation execution budget (~6 min) and being
+  KILLED mid-slice... One scope per slice keeps every continuation well inside budget."* The existing system
+  was redesigned to **one scope per execution** after a multi-scope execution was killed in production. A
+  Preview is a web request with a tighter bound still - the client read timeout is
+  `KM_READ_TIMEOUT_MS_ = 45000`.
+- **A real reuse opportunity exists and is partial.** `preReadSnapshots_` / `KMPS.readCanonicalSnapshots`
+  already share the raw snapshot sheet reads across scopes, so the I/O floor is paid once; what remains per
+  scope is the calculation. That lowers the slope but not the structure, and no trustworthy Apps Script latency
+  figure can be produced from a Node measurement.
+- **A materialized source exists but carries a DIFFERENT quantity.** `order_planning_gap` is already
+  materialized per `company|country|marketplace|sku` with a read action (`handleGetOrderPlanningGap_`) - one
+  bounded read, no recomputation. But its columns are `t1_gap_qty` / `t1_suggested_qty`, and the allocation
+  competes on `allocatedForecastQty`, which is **not persisted**. Previewing from the gap table would allocate
+  over a different demand basis than production did. That is a business-semantics choice, not a shortcut.
+- **Therefore, per the task's own rule, no reliable synchronous upper bound was established, so synchronous
+  implementation is NOT authorized.** This decision stays OPEN.
+
+### D-S8-B3-9 — Country enumeration through KMCID — **VERIFIED, via a Preview-specific adapter**
+
+- `64_api_v1_scope_registry.gs` compares country **raw** (`scopeRegStr_(r.country)`, no KMCID) and is consumed
+  by `km-data-access.js` and `assets/js/core/scope-registry.js`, which drive the **Inventory Replenishment
+  selectors**. Canonicalizing it in place would merge `UK` and `GB` in that page's Country selector and would
+  need a `SCOPEREG_PROJECTION_VERSION_` cache invalidation - a user-visible change to an unrelated caller.
+  **Decision: do NOT change `64_`; the Preview canonicalizes in its own adapter.**
+- **Canonicalization can CREATE a duplicate receiver, and that is handled fail-closed.** Measured: a `UK` row
+  and a `GB` row for the same company+marketplace+sku collapse to one canonical key and the real KMMSA returns
+  `{blocked:true, issues:[{code:'RECEIVER_IDENTITY_CONFLICT', message:'duplicate receiver KM||GB||amazon||S'}]}`.
+  No duplicate is silently merged and no pool is expanded.
+- EU stays independent, no alias is invented, company and marketplace identity are untouched, and the physical
+  pool eligibility contract (3PL + active, FBA excluded) is unchanged.
+
+### Response conservation — **VERIFIED against the real allocator**
+
+Deterministic fixture, pool 412 across three 3PL warehouses, run through
+`KMMSA.allocateMarketplaceReceiverSupply`: SHORTAGE 207/137/68 = 412; NORMAL 150/150 with 112 unused; single
+receiver 412; explicit priority 0 valid at 248/164. Every quantity an integer, and in every case
+`SUM(contributions) = poolQty`, `SUM(receivers) = allocatedTotal`, and `allocatedTotal + unallocated = poolQty`.
+
+**Response-schema corrections the real output requires** (the S8-B3-D1 draft was wrong on three points):
+`blockedCode` does not exist - the shape is `{ready, blocked, issues:[{code,message}]}`; `mode` is
+`overseas.allocationMode`; totals are `overseas.totalAllocatedQty` / `totalUnusedSupplyQty`; per-warehouse
+attribution is available in `overseas.allocations[]` (`sourceWarehouseId`, `allocatedQty`); and a
+**`singleReceiver: true`** success carries **no `overseas` object at all**, so the schema must treat an absent
+mode as a valid success rather than a failure.
+
+**Also surfaced:** `allocationMode` is §40's mode and is driven by `survivalNeedQty`, not by demand vs pool.
+`43_`'s `msaReceivers` passes no `survivalNeedQty` (MONTHLY decision 2 defaults it to 0), so the monthly
+overseas path reports `NORMAL_ALLOCATION` almost always. Sourcing a survival need for the Preview would be a
+further decision; reporting §40's mode verbatim is the honest alternative.
