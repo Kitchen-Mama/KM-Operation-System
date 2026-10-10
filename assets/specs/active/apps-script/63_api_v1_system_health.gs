@@ -326,9 +326,21 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // stated since R6-R6-R4-R2: a module stamp records the round the file last changed, never the release that
 // carries it.
 //
-// NOTHING HERE CLAIMS A DEPLOYMENT. No Apps Script version exists for R49, and the release log records it as
-// NOT DEPLOYED until a user performs the sync and writes the version down.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49';
+// S8-B1-R50 — R50, AND R49 IS NOW A DEPLOYED RELEASE THAT MUST NOT BE REOPENED.
+//
+// This is the first cut taken against a tree whose previous release is live: R49 was synced and a version was
+// published, and `system.health` reported build_id = deployment_release = R49, UNIFORM. S8-B1 then changed
+// production runtime — 43_ stopped substituting 0 for an unresolved allocation priority, and 90_ was rebuilt
+// because five bundled core modules changed with it. Folding those bytes into R49 would relabel work the
+// deployed project does not contain, and an acceptance could no longer say which tree it measured.
+//
+// THREE GATES CAUGHT IT INDEPENDENTLY, which is why the cut exists rather than a hash edit: the manifest's
+// expected bundle hash stopped matching the generated bundle, 43_ appeared in the copy list without being a
+// declared owner, and the deployment-uniformity probe reported a mixed tree. None of them was wrong.
+//
+// NOTHING HERE CLAIMS A DEPLOYMENT. No Apps Script version exists for R50, Production still runs R49, and the
+// release log records R50 as NOT DEPLOYED until a user performs the sync and writes the version down.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -380,7 +392,10 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49';
 // S8-R49-L - R49, and this time it moves WITH the release above rather than ahead of it. THIS FILE changed:
 // the release, 66_'s expected stamp, and its own row below. The two rounds in which this stamp ran ahead of
 // the release (R47, R48) were rotations without a cut, and this is the cut that absorbs them.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49';
+// S8-B1-R50 - moves WITH the release again, and for the ordinary reason: THIS FILE changed. The release above,
+// 66_'s row returning to a CARRIED stamp, this row, and the generated bundle's expected content hash all moved
+// in one commit, which is also what the stamp gate requires - a release stamp has to be minted by its own cut.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -651,7 +666,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -787,7 +802,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // Its absence is NOT loud. 13_ guards on typeof KMPD.resolveTargetRule and returns null when it is missing,
   // and a null target is a SKIPPED month, not an error: an old bundle makes the procurement forecast quietly
   // drop months. An old-but-present bundle is worse still -- it resolves by the retired first-row-wins rule.
-  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: 'fafc1d8e0273cb170601b6481d56d07f35d2ab51660adaf41637e906f4258c41', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
+  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: 'a113e56e45985f1b974869616a6f70d2a3723a9270a39d3f25ba567a0f7cf2c1', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment\'s DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read \u2014 it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.

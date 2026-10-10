@@ -346,7 +346,20 @@
         demandWeight: num(rf.demandWeight) === null ? 0 : num(rf.demandWeight),   // §7 site share, verbatim from KMAF
         fulfillmentModel: str(rf.fulfillmentModel),
         eligiblePoolTypes: Array.isArray(rf.eligiblePoolTypes) ? rf.eligiblePoolTypes.slice() : [],
-        allocationPriority: num(rf.allocationPriority) === null ? 0 : num(rf.allocationPriority)
+        // D-S8-B1 (§45.A.4) — this read `=== null ? 0`. An unresolved priority became a real one at the adapter
+        // boundary, so by the time the lane reached the assembler the absence was already gone and nothing
+        // downstream could tell a receiver ranked LAST from one never ranked at all. The unresolved value is now
+        // carried through as null and refused by the assembler, which owns the §40 boundary. An explicit 0 still
+        // passes through as 0 — `num` returns the number, not null, so a valid lowest priority is untouched.
+        // demandWeight above keeps its own `=== null ? 0` normalization: that is a §7 share, not a priority, and
+        // this decision does not reach it.
+        //
+        // `num` is NOT sufficient on its own here, and that is worth stating because it looks like it should be:
+        // Number('') and Number(null) are both 0, so num() answers 0 — a real priority — for a blank cell and for
+        // an explicit null. Using it alone would have moved the fabrication rather than removed it. The two empty
+        // forms are therefore tested before any numeric conversion.
+        allocationPriority: (rf.allocationPriority === null || rf.allocationPriority === undefined || rf.allocationPriority === '')
+          ? null : num(rf.allocationPriority)
       };
       if (!bySku[sku]) { bySku[sku] = []; skuOrder.push(sku); }
       bySku[sku].push(lane);

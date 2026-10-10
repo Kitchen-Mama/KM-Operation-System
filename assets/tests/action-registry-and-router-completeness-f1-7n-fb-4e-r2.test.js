@@ -817,6 +817,21 @@ GS_OWNED_SINCE_R1['42_api_v1_recommendation_workspace.gs'] =
   'S8-R5-B/R46 the Avg Sales contract correction. NO action added or removed, the router is untouched, no '
   + 'handler moved and the action-contract version stays 18. The resolver call left a planning-mode branch '
   + 'so the HISTORICAL rate can be displayed for both models; the planning basis did not move with it';
+
+// S8-B1-R50 — 43_ JOINS, declared for the same reason 42_ and appsscript.json above are. This line measures
+// ACTION/ROUTER completeness, and R50 touches neither: no action was added or removed, no route moved, no
+// request or response field changed, and the action-contract version stays 18.
+//
+// What changed is a REFUSAL BOUNDARY. D-S8-B1 stops 43_ substituting 0 for an unresolved allocation priority
+// at the point of use — the map it builds already omitted such a marketplace, so the substitution undid that
+// omission one line before KMMSA could refuse it, and an unranked receiver competed for a shared pool with a
+// priority nobody had set. The absence now survives to the refusal. A blocked group additionally names its
+// receivers, because a blocked allocation returns no byReceiver entries and those receivers would otherwise
+// read downstream as zero-covered rather than unresolved.
+GS_OWNED_SINCE_R1['43_api_v1_gap_materialization.gs'] =
+  'S8-B1-R50 the missing-priority fail-closed boundary. NO action added or removed, the router is untouched, '
+  + 'no handler moved and the action-contract version stays 18. It stops fabricating 0 for an unresolved '
+  + 'allocation priority and names the receivers of a blocked group';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

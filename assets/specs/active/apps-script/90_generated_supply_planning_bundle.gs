@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = fafc1d8e0273cb170601b6481d56d07f35d2ab51660adaf41637e906f4258c41
+// bundle_sha256 = a113e56e45985f1b974869616a6f70d2a3723a9270a39d3f25ba567a0f7cf2c1
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -27,23 +27,23 @@
 //   supply-planning-source-facts  1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88
 //   supply-planning-plan-bridge  c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18
 //   supply-planning-weekly-source-allocation  9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45
-//   supply-planning-weekly-input-assembler  c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d
+//   supply-planning-weekly-input-assembler  7231378631a778d56e0244e2a59b030eb98393339dc1e7a399c171be9229b9f9
 //   supply-planning-weekly-recommendation-draft  ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32
 //   supply-planning-weekly-recommendation-runtime  0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3
 //   supply-planning-weekly-recommendation-batch  8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b
-//   supply-planning-weekly-harvest-adapter  de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437
+//   supply-planning-weekly-harvest-adapter  20762b074c281fffbd069454385b830dcbebc4e3d21856dbbd290db150399c8b
 //   supply-planning-route-authority  c9cfa475b33229e6433f5a16eb3bd9245037f0950cbe9c031ebb911c2b751443
 //   supply-planning-method-recommendation  637b1ab94c1a3d02a1089888d5f34b9c0ebd828277d93d7348b528e35d29c9ed
 //   supply-planning-weekly-route-derivation  fb34cd4835959a45b8ede47029f42cf2bc8555d98f935869c326821254e76499
 //   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
 //   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
-//   supply-planning-source-projection  261fd491d1b7a5ed4e1acc99c53ae86ed61db7fe51cf07e91f79c06abfd6c066
+//   supply-planning-source-projection  7fedbe9165c2011de9d147624a91ea56393907150bd0b83170708329a37f4b7e
 //   supply-planning-allocation-facts  5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc
 //   supply-planning-planning-context  2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3
 //   supply-planning-demand-allocation  06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed
-//   supply-planning-marketplace-supply-allocation  3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16
-//   supply-planning-production-assembly  75599b030bd41c11cad59817fbf4a1390682c691fdcd8be7024135bae1ed2ac5
+//   supply-planning-marketplace-supply-allocation  d0495511c8cfc1a5ac1a02cc0f43645c7bd5e74df808fb95c02ff4c8dc2275b6
+//   supply-planning-production-assembly  4ac96a2a0bd9f0893661be30bce53da89a244e86e9629496778f5a8f0b1e8fa0
 //   supply-planning-destination-runtime  7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c
 //   supply-planning-planning-demand  d9eafe09082f743541990a1a6d1eb7243a27fbcfc23cc12ca48d268b3ff7cc1c
 //   supply-planning-time-phased-projection  327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947
@@ -6700,7 +6700,26 @@ function __kmRequire(p) {
       var totalInc = 0; activeIdx.forEach(function (i) { totalInc += inc[i]; });
       var canonicalWeight = num0(lane.demandWeight);
       var laneSurvival = num0(lane.survivalNeedQty);
-      var priority = num0(lane.allocationPriority);
+      // D-S8-B1 (§45.A.4) — this read `num0(lane.allocationPriority)`, and num0 answers 0 for ANYTHING it cannot
+      // turn into a finite number: missing, null, blank, a word, Infinity. A lane nobody had ranked therefore
+      // entered §40 carrying a real priority, and §40 ranks 0 last but still serves it a weighted share.
+      //
+      // WHY IT EXCLUDES RATHER THAN PASSES null ON. §40's requireQty throws a TypeError on a non-number, so simply
+      // forwarding the unresolved value would turn a business refusal into a crash inside a frozen module this
+      // round must not touch. The lane is therefore failed closed HERE, with an issue naming it — exactly the
+      // shape this loop already uses for MISSING_DESTINATION_WAREHOUSE, which is the same class of problem: a
+      // fact that must be set before the lane can be planned. Excluded WITH a named issue is not silent omission.
+      //
+      // A negative priority is unresolved too (§45.A.3: invalid is not "lowest"). An explicit 0 is VALID and
+      // passes through untouched — it is a number, finite and non-negative. num0 stays in use for the two
+      // QUANTITY fields above, whose normalization this decision does not touch.
+      var prRaw = lane.allocationPriority;
+      var prNum = (prRaw === null || prRaw === undefined || prRaw === '') ? null : Number(prRaw);
+      if (prNum === null || !isFinite(prNum) || prNum < 0) {
+        issues.push({ kind: 'DEMAND', key: laneSku + '|' + siteSku, reason: 'UNRESOLVED_ALLOCATION_PRIORITY' });
+        continue;
+      }
+      var priority = prNum;
       var eligiblePoolTypes = Array.isArray(lane.eligiblePoolTypes) ? lane.eligiblePoolTypes.slice() : [];
 
       for (var a = 0; a < activeIdx.length; a++) {
@@ -7593,7 +7612,20 @@ function __kmRequire(p) {
         demandWeight: num(rf.demandWeight) === null ? 0 : num(rf.demandWeight),   // §7 site share, verbatim from KMAF
         fulfillmentModel: str(rf.fulfillmentModel),
         eligiblePoolTypes: Array.isArray(rf.eligiblePoolTypes) ? rf.eligiblePoolTypes.slice() : [],
-        allocationPriority: num(rf.allocationPriority) === null ? 0 : num(rf.allocationPriority)
+        // D-S8-B1 (§45.A.4) — this read `=== null ? 0`. An unresolved priority became a real one at the adapter
+        // boundary, so by the time the lane reached the assembler the absence was already gone and nothing
+        // downstream could tell a receiver ranked LAST from one never ranked at all. The unresolved value is now
+        // carried through as null and refused by the assembler, which owns the §40 boundary. An explicit 0 still
+        // passes through as 0 — `num` returns the number, not null, so a valid lowest priority is untouched.
+        // demandWeight above keeps its own `=== null ? 0` normalization: that is a §7 share, not a priority, and
+        // this decision does not reach it.
+        //
+        // `num` is NOT sufficient on its own here, and that is worth stating because it looks like it should be:
+        // Number('') and Number(null) are both 0, so num() answers 0 — a real priority — for a blank cell and for
+        // an explicit null. Using it alone would have moved the fabrication rather than removed it. The two empty
+        // forms are therefore tested before any numeric conversion.
+        allocationPriority: (rf.allocationPriority === null || rf.allocationPriority === undefined || rf.allocationPriority === '')
+          ? null : num(rf.allocationPriority)
       };
       if (!bySku[sku]) { bySku[sku] = []; skuOrder.push(sku); }
       bySku[sku].push(lane);
@@ -9871,11 +9903,12 @@ function __kmRequire(p) {
   var api = factory(
     req ? req('./supply-planning-source-reader-production.js') : (root.KMSRP || (root.KM && root.KM.sourceReaderProduction)),
     req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts)),
-    req ? req('./supply-planning-shipment-line-source.js') : (root.KMSLS || (root.KM && root.KM.shipmentLineSource))
+    req ? req('./supply-planning-shipment-line-source.js') : (root.KMSLS || (root.KM && root.KM.shipmentLineSource)),
+    req ? req('./supply-planning-country-identity.js') : (root.KMCID || (root.KM && root.KM.countryIdentity))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceProjection = api; }
-})(this, function (KMSRP, KMSF, KMSLS) {
+})(this, function (KMSRP, KMSF, KMSLS, CID) {
   'use strict';
 
   // ---- primitives (fail-closed; no coercion of MISSING to a default) --------------------------------------
@@ -9899,14 +9932,30 @@ function __kmRequire(p) {
   // in a subtler form. Escaping the separator and the escape character makes the mapping one-to-one for any
   // input, so the key is safe without having to assume anything about what the data contains.
   //
-  // WHY IT DOES NOT CASE-FOLD. 03_'s upsert compares with trim() and is case-SENSITIVE, so 'Amazon' and 'amazon'
-  // are two different rows to the database. Upper-casing here would merge identities the canonical owner keeps
-  // apart — a new collision in place of the old one. trim() matches that authority exactly, and a lookup that
-  // does not match yields a MISSING priority, which is preserved rather than fabricated.
+  // WHY COMPANY AND MARKETPLACE DO NOT CASE-FOLD. 03_'s upsert compares with trim() and is case-SENSITIVE, so
+  // 'Amazon' and 'amazon' are two different rows to the database. Upper-casing them here would merge identities
+  // the canonical owner keeps apart — a new collision in place of the old one. trim() matches that authority
+  // exactly, and a lookup that does not match yields a MISSING priority, preserved rather than fabricated.
+  //
+  // D-S8-A1 — WHY COUNTRY IS THE EXCEPTION, AND ONLY COUNTRY. Country is the one component with a SECOND
+  // authority: KMCID, which exists because the database stores one market under two spellings — the domain/scope
+  // writes `UK` while `amazon_inventory_snapshot` stores the ISO code `GB`. `43_`, `71_` and KMMSA already resolve
+  // country through KMCID; this producer did not, so the same row resolved in one layer and not the other, and the
+  // miss then met the missing→0 fabrication downstream and became a real priority nobody had set. Canonicalizing
+  // HERE, on the country component only, puts one convention on both sides of every identity comparison.
+  //
+  // It is identity resolution, never a rewrite: stored and displayed country values are untouched. EU stays an
+  // independent region and is NEVER expanded into DE/FR/IT/ES — KMCID's own contract draws that line, and
+  // `sourceCountriesForScope` (which does expand EU for SALES source membership) is deliberately not used here.
+  // The fallback is a plain upper-case so a build without KMCID degrades to case-folding rather than GUESSING an
+  // alias it cannot know.
   var MKT_SEP = String.fromCharCode(124);   // |
   var MKT_ESC = String.fromCharCode(92);    // backslash
+  function canonCountry(v) {
+    return (CID && typeof CID.canonicalCountryCode === 'function') ? CID.canonicalCountryCode(v) : str(v).toUpperCase();
+  }
   function mktIdentityKey(company, country, marketplace) {
-    return [company, country, marketplace].map(function (v) {
+    return [str(company), canonCountry(country), str(marketplace)].map(function (v) {
       return str(v).split(MKT_ESC).join(MKT_ESC + MKT_ESC).split(MKT_SEP).join(MKT_ESC + MKT_SEP);
     }).join(MKT_SEP);
   }
@@ -10018,10 +10067,36 @@ function __kmRequire(p) {
     // identity, and the old marketplace_id fallback could never match a lookup keyed by name anyway, so nothing
     // that was reachable has been dropped. Such a row now yields a MISSING priority, which the consumers refuse
     // on (source-facts raises MISSING_OR_INVALID_ALLOCATION_PRIORITY) rather than silently guessing.
-    var priorityByMktKey = {}; mktRows.forEach(function (r) {
+    // D-S8-A1 — CANONICAL IDENTITY COLLISION IS REPORTED, NEVER RESOLVED BY ARRIVAL ORDER.
+    //
+    // Canonicalizing the country can make two rows that the database keeps apart — one `UK`, one `GB` — land on
+    // ONE key. Before this change they were simply two different keys and the scope matched at most one; now they
+    // compete, and `a = b` would let the LAST row read decide the priority. That is the exact defect S8-R49-F was
+    // opened for, in a new place, so it is refused in the same way: a conflicted key yields MISSING, and MISSING is
+    // the state the consumers already fail closed on (source-facts raises MISSING_OR_INVALID_ALLOCATION_PRIORITY).
+    //
+    // Equal values are NOT a conflict. Two spellings of one market carrying the same priority is the ordinary case
+    // and must keep working; comparison is on the string form so 100 and '100' are the same answer, not a dispute.
+    var priorityByMktKey = {}, priorityKeyConflict = {};
+    mktRows.forEach(function (r) {
       if (!nonEmpty(r.marketplace)) return;
-      if (has(r, 'allocation_priority')) priorityByMktKey[mktIdentityKey(r.company, r.country, r.marketplace)] = r.allocation_priority;
+      if (!has(r, 'allocation_priority')) return;
+      var k = mktIdentityKey(r.company, r.country, r.marketplace);
+      if (has(priorityByMktKey, k) && str(priorityByMktKey[k]) !== str(r.allocation_priority)) {
+        if (!priorityKeyConflict[k]) {
+          priorityKeyConflict[k] = 1;
+          addIssue('MARKETPLACE', k, 'CANONICAL_MARKETPLACE_IDENTITY_CONFLICT');
+        }
+        return;                                     // keep the first value out of reach rather than overwrite it
+      }
+      // FIRST ROW WINS on agreement. Assigning again would be harmless for the VALUE but not for its TYPE —
+      // a later '30' would replace an earlier 30 — and a lookup whose answer depends on row order is the exact
+      // thing this block exists to prevent, even when the two orders agree on the number.
+      if (!has(priorityByMktKey, k)) priorityByMktKey[k] = r.allocation_priority;
     });
+    // A conflicted identity has no single answer, so it reports none. Returning `undefined` is deliberate: it is
+    // indistinguishable from "no row", which is precisely what an unresolvable identity means to a consumer.
+    function priorityForMktKey(k) { return priorityKeyConflict[k] ? undefined : priorityByMktKey[k]; }
     var ffByMskKey = {}; mskRows.forEach(function (r) { var k = [str(r.company), str(r.country), str(r.marketplace), str(r.sku)].join('|'); if (has(r, 'fulfillment_model')) ffByMskKey[k] = r.fulfillment_model; });
 
     // ---- destination ownership (D-3): caller/planning-scope-owned; never inferred ---------------------------
@@ -10250,7 +10325,7 @@ function __kmRequire(p) {
       var mskKey = [str(scope.company), str(scope.country), mkt, str(f.sku || scope.sku)].join('|');
       return { receiver_key: str(f.receiverKey), demand_source_ref: str(f.demandRef),
         eligible_pool_types: f.eligiblePoolTypes, survival_need_qty: f.survivalNeedQty, daily_demand: f.dailyDemand,
-        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityByMktKey[mktIdentityKey(scope.company, scope.country, mkt)],
+        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityForMktKey(mktIdentityKey(scope.company, scope.country, mkt)),
         demand_weight: f.demandWeight,
         fulfillment_model: nonEmpty(f.fulfillmentModel) ? f.fulfillmentModel : ffByMskKey[mskKey],
         marketplace: mkt, destination_warehouse_id: resolveDestination(str(f.demandRef), f.destinationWarehouseId) };
@@ -10260,7 +10335,7 @@ function __kmRequire(p) {
     var factoryRows = factoryInput.map(function (f) {
       var mkt = str(f.marketplace) || str(scope.marketplace);
       return { demand_source_ref: str(f.demandRef), eligible_factory_warehouse_ids: f.eligibleFactoryWarehouseIds,
-        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityByMktKey[mktIdentityKey(scope.company, scope.country, mkt)],
+        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityForMktKey(mktIdentityKey(scope.company, scope.country, mkt)),
         required_by_date: has(f, 'requiredByDate') ? f.requiredByDate : requiredByDate,
         marketplace: mkt, destination_warehouse_id: resolveDestination(str(f.demandRef), f.destinationWarehouseId) };
     });
@@ -11337,6 +11412,14 @@ function __kmRequire(p) {
 //   5. eligiblePoolTypes defaults to [THREE_PL, FBA]; a caller may restrict per frozen eligibility.
 //   6. Country identity uses the canonical KMCID owner (UK ≡ GB) when composing receiver keys / grouping.
 //
+// D-S8-B1 (USER-APPROVED, supersedes D-F1-4B-FM5-R2A in ONE narrow respect: receiver priority normalization).
+// An unresolved allocationPriority — missing, null, blank, negative, non-numeric or non-finite — returns
+// blocked('RECEIVER_PRIORITY_UNRESOLVED') BEFORE any allocation, instead of defaulting to 0. An explicit numeric
+// 0 remains a VALID lowest priority and keeps its §24.7 weighted share. Deliberately UNCHANGED by that decision:
+// decision 2 (monthly protection mapping — survivalNeedQty 0 / demandWeight = demandQty), decision 3 (the
+// receiver-count rule and the independent, separately-conserved Overseas and Factory pools), decision 4 (company
+// isolation), and every §20/§24/§35/§40 formula — this adapter still owns no arithmetic.
+//
 // Lineage / no-double-count (§2): the caller supplies pools that are ALREADY lineage-net (quantities transitioned
 // to SHIPPED_IN_TRANSIT are excluded upstream via the canonical source-fact lifecycle); the adapter never re-derives
 // duplication by qty guessing. PURE / deterministic: no clock, RNG, I/O, or mutation.
@@ -11392,7 +11475,27 @@ function __kmRequire(p) {
       var r = receivers[i] || {};
       var d = qty(r.demandQty);
       if (d === null) return blocked('RECEIVER_DEMAND_INVALID', 'demandQty missing/invalid for ' + s(r.marketplace));
-      var pr = qty(r.allocationPriority); if (pr === null) pr = 0;
+      // D-S8-B1 (§45.A.4) — AN UNRESOLVED PRIORITY IS REFUSED, NOT INVENTED.
+      //
+      // This read `if (pr === null) pr = 0;`. That one line collapsed FIVE states into a real priority: missing,
+      // null, blank, negative and non-numeric all became 0 — and 0 is not a neutral placeholder here. §40 ranks 0
+      // last but still serves it a weighted share (`Math.max(allocationPriority, 1)`), so a receiver nobody had
+      // ranked was handed a genuine claim on the pool, and §45.A.5's refusal could never be reached.
+      //
+      // It is refused through the SAME blocked() the adapter already uses for every other unresolved input — a
+      // missing demandQty, a duplicate receiver, a cross-company receiver, an unresolved factory eligibility.
+      // Priority was the one input that opted out of that rule; it no longer does. All-or-nothing: the refusal
+      // happens here, before KMALLOC is called, so there is no partial allocation reported as success.
+      //
+      // EXPLICIT 0 IS STILL VALID and still ranks last with its §24.7 share — `qty` returns the number 0 for it,
+      // never null, so this branch never sees it. Only genuinely unresolved input reaches the refusal.
+      var pr = qty(r.allocationPriority);
+      if (pr === null) {
+        return blocked('RECEIVER_PRIORITY_UNRESOLVED',
+          'allocationPriority missing, blank, negative or non-numeric for ' +
+          [s(r.company) || company, canonCountry(r.country), s(r.marketplace), s(r.sku) || masterSku].join('/') +
+          ' — set a non-negative allocation_priority on the marketplace row; no value is assumed');
+      }
       var key = receiverKeyOf(Object.assign({ masterSku: masterSku }, r));
       if (keySeen[key]) return blocked('RECEIVER_IDENTITY_CONFLICT', 'duplicate receiver ' + key);
       keySeen[key] = 1;
@@ -11505,11 +11608,12 @@ function __kmRequire(p) {
   var api = factory(
     req ? req('./supply-planning-planning-context.js') : (root.KMPCX || (root.KM && root.KM.planningContext)),
     req ? req('./supply-planning-allocation-facts.js') : (root.KMAF || (root.KM && root.KM.allocationFacts)),
-    req ? req('./supply-planning-calculations.js') : (root.KMCALC || (root.KM && root.KM.core && root.KM.core.supplyPlanningCalculations))
+    req ? req('./supply-planning-calculations.js') : (root.KMCALC || (root.KM && root.KM.core && root.KM.core.supplyPlanningCalculations)),
+    req ? req('./supply-planning-country-identity.js') : (root.KMCID || (root.KM && root.KM.countryIdentity))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.productionAssembly = api; }
-})(this, function (KMPCX, KMAF, CALC) {
+})(this, function (KMPCX, KMAF, CALC, CID) {
   'use strict';
 
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
@@ -11522,12 +11626,22 @@ function __kmRequire(p) {
   // Identical rule and identical normalization to supply-planning-source-projection.js, deliberately: the two
   // producers feed the same allocator, so a receiver must resolve to the same priority through either path.
   // The separator is escaped so the join is injective (a bare join would let ('A','B|C','D') and
-  // ('A','B','C|D') collide — this defect in a subtler form), and it does NOT case-fold, because the canonical
-  // owner (03_master_data_handlers.gs) upserts on a trim()-only, case-SENSITIVE comparison.
+  // ('A','B','C|D') collide — this defect in a subtler form). Company and marketplace do NOT case-fold, because
+  // the canonical owner (03_master_data_handlers.gs) upserts on a trim()-only, case-SENSITIVE comparison.
+  //
+  // D-S8-A1 — the COUNTRY component, and only it, resolves through KMCID (UK ≡ GB, case/whitespace folded),
+  // because country is the one component with a second stored spelling: the scope writes `UK` while
+  // `amazon_inventory_snapshot` stores `GB`. `43_`, `71_` and KMMSA already canonicalize; this producer did not,
+  // so one layer matched a row the other missed. Identity only — stored and displayed values are never rewritten,
+  // and EU stays an independent region, never expanded into its member countries.
   var MKT_SEP = String.fromCharCode(124);   // |
   var MKT_ESC = String.fromCharCode(92);    // backslash
+  function canonCountry(v) {
+    return (CID && typeof CID.canonicalCountryCode === 'function') ? CID.canonicalCountryCode(v) : str(v).toUpperCase();
+  }
+  function sameCountry(a, b) { return canonCountry(a) === canonCountry(b); }
   function mktIdentityKey(company, country, marketplace) {
-    return [company, country, marketplace].map(function (v) {
+    return [str(company), canonCountry(country), str(marketplace)].map(function (v) {
       return str(v).split(MKT_ESC).join(MKT_ESC + MKT_ESC).split(MKT_SEP).join(MKT_ESC + MKT_SEP);
     }).join(MKT_SEP);
   }
@@ -11544,8 +11658,10 @@ function __kmRequire(p) {
     return snap.rows.map(function (r) { var o = {}; for (var c = 0; c < headers.length; c++) o[headers[c]] = r[c]; return o; });
   }
   function finiteNonNeg(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return (isFinite(n) && n >= 0) ? n : null; }
+  // D-S8-A1 — country is compared through the canonical form on BOTH operands. Applying it to one side only would
+  // make matching worse than leaving it alone, so there is a single helper and no inline comparison anywhere.
   function inScope(row, scope) {
-    return str(row.company) === scope.company && str(row.country) === scope.country &&
+    return str(row.company) === scope.company && sameCountry(row.country, scope.country) &&
       str(row.marketplace) === scope.marketplace && (scope.sku === null || str(row.sku) === scope.sku);
   }
 
@@ -11555,7 +11671,7 @@ function __kmRequire(p) {
     monthsYm.forEach(function (ym) {
       var p = parseYM(ym), abbrev = MONTHS[p.mo - 1];
       var matches = fcRows.filter(function (r) {
-        return str(r.company) === scope.company && str(r.country) === scope.country && str(r.marketplace) === scope.marketplace &&
+        return str(r.company) === scope.company && sameCountry(r.country, scope.country) && str(r.marketplace) === scope.marketplace &&
           str(r.sku) === sku && Number(r.year) === p.y;
       });
       if (!matches.length) return; // month missing → left out (KMPCX emits MISSING_FORECAST_WEIGHT_SOURCE; never 0)
@@ -11605,10 +11721,29 @@ function __kmRequire(p) {
     // LAST marketplaces row sharing a name decided every receiver's priority regardless of company or country.
     // The has() guard keeps a MISSING priority missing: a row whose sheet has no allocation_priority column no
     // longer writes an undefined over the map, so "absent" stays absent instead of being fabricated as a value.
-    var prByMktKey = {}; mktRows.forEach(function (r) {
+    // D-S8-A1 — a canonical identity collision is REPORTED, never settled by arrival order. Canonicalizing the
+    // country can put a `UK` row and a `GB` row on one key; `a = b` would then hand the receiver whichever row was
+    // read last — the S8-R49-F defect in a new place. A conflicted key therefore answers MISSING, which is the
+    // state the consumers already fail closed on. Equal values are not a conflict: two spellings of one market
+    // agreeing on a priority is the ordinary case, compared as strings so 100 and '100' are one answer.
+    var prByMktKey = {}, prKeyConflict = {};
+    mktRows.forEach(function (r) {
       if (!nonEmpty(r.marketplace)) return;
-      if (has(r, 'allocation_priority')) prByMktKey[mktIdentityKey(r.company, r.country, r.marketplace)] = r.allocation_priority;
+      if (!has(r, 'allocation_priority')) return;
+      var k = mktIdentityKey(r.company, r.country, r.marketplace);
+      if (has(prByMktKey, k) && str(prByMktKey[k]) !== str(r.allocation_priority)) {
+        if (!prKeyConflict[k]) {
+          prKeyConflict[k] = 1;
+          issues.push(issue('CANONICAL_MARKETPLACE_IDENTITY_CONFLICT', k,
+            'two marketplaces rows resolve to one canonical identity with different allocation_priority values'));
+        }
+        return;
+      }
+      // FIRST ROW WINS on agreement — see the sibling note in supply-planning-source-projection.js: an answer
+      // that depends on row order is the defect, even when both orders carry the same number.
+      if (!has(prByMktKey, k)) prByMktKey[k] = r.allocation_priority;
     });
+    function priorityForMktKey(k) { return prKeyConflict[k] ? undefined : prByMktKey[k]; }
 
     var monthsYm = KMPCX._forecastWeightMonths(vr.calculationMonth); // [M+1..M+4] YYYY-MM (frozen D-F1-5B-3)
     var forecastMonthAbbrev = MONTHS[parseYM(monthsYm[0]).mo - 1]; // demand-ledger month = M+1 (single-month, matches source-projection)
@@ -11630,7 +11765,7 @@ function __kmRequire(p) {
         .filter(function (e) { return nonEmpty(e.eventStartDate); });
       kmpcxReceivers.push({ company: vr.scope.company, country: vr.scope.country, marketplace: vr.scope.marketplace, sku: sku, siteSku: str(m.site_sku),
         destinationWarehouseId: vr.destinationWarehouseId, regularForecastByMonth: fc.map, specialEventFacts: events });
-      recvMeta[sku] = { forecastId: fc.forecastId, upc: upcBySku[sku], priority: prByMktKey[mktIdentityKey(vr.scope.company, vr.scope.country, vr.scope.marketplace)], fulfillmentModel: str(m.fulfillment_model), siteSku: str(m.site_sku), fcMap: fc.map };
+      recvMeta[sku] = { forecastId: fc.forecastId, upc: upcBySku[sku], priority: priorityForMktKey(mktIdentityKey(vr.scope.company, vr.scope.country, vr.scope.marketplace)), fulfillmentModel: str(m.fulfillment_model), siteSku: str(m.site_sku), fcMap: fc.map };
     });
 
     // KMPCX — destination / window / required-by / driver / forecast anchor+share (frozen decisions).
@@ -18354,7 +18489,7 @@ var KMFSG = __kmModules["supply-planning-factory-stock-guard"];
 // in this builder every round, and a stamp that is typed can be typed to look current -- which is the
 // one failure the manifest exists to prevent. This value is DERIVED from the module contents, so it
 // cannot be advanced without the bytes changing, and it cannot fail to advance when they do.
-var KM_BUNDLE_CONTENT_HASH_ = 'fafc1d8e0273cb170601b6481d56d07f35d2ab51660adaf41637e906f4258c41';
+var KM_BUNDLE_CONTENT_HASH_ = 'a113e56e45985f1b974869616a6f70d2a3723a9270a39d3f25ba567a0f7cf2c1';
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"fafc1d8e0273cb170601b6481d56d07f35d2ab51660adaf41637e906f4258c41","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"c9cfa475b33229e6433f5a16eb3bd9245037f0950cbe9c031ebb911c2b751443"},{"module":"supply-planning-method-recommendation","sha256":"637b1ab94c1a3d02a1089888d5f34b9c0ebd828277d93d7348b528e35d29c9ed"},{"module":"supply-planning-weekly-route-derivation","sha256":"fb34cd4835959a45b8ede47029f42cf2bc8555d98f935869c326821254e76499"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"261fd491d1b7a5ed4e1acc99c53ae86ed61db7fe51cf07e91f79c06abfd6c066"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"75599b030bd41c11cad59817fbf4a1390682c691fdcd8be7024135bae1ed2ac5"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"d9eafe09082f743541990a1a6d1eb7243a27fbcfc23cc12ca48d268b3ff7cc1c"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"aecace412b4332846a6dd67dead8ee70994a4c085ea6f7827218b9289f4ecb6f"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"a5b22d7012d22f8c2698d1434f25ef2d3c8ee320ea702b3631dddd59c52d33c4"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"52ca7a17175b16b37bcc7e0ce2488f928642399bb7bafad6a5c2c393ef2cce2b"},{"module":"supply-planning-active-route-classification","sha256":"09208a12661f0987aae81db783782a56d155860cd7cdde169b8bd2761ed3efaf"},{"module":"supply-planning-factory-stock-guard","sha256":"11783cebdf76504f8e0721a2b4336d2bb30e43eef37e1847e382a8085ba4ac90"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"a113e56e45985f1b974869616a6f70d2a3723a9270a39d3f25ba567a0f7cf2c1","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"7231378631a778d56e0244e2a59b030eb98393339dc1e7a399c171be9229b9f9"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"20762b074c281fffbd069454385b830dcbebc4e3d21856dbbd290db150399c8b"},{"module":"supply-planning-route-authority","sha256":"c9cfa475b33229e6433f5a16eb3bd9245037f0950cbe9c031ebb911c2b751443"},{"module":"supply-planning-method-recommendation","sha256":"637b1ab94c1a3d02a1089888d5f34b9c0ebd828277d93d7348b528e35d29c9ed"},{"module":"supply-planning-weekly-route-derivation","sha256":"fb34cd4835959a45b8ede47029f42cf2bc8555d98f935869c326821254e76499"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"7fedbe9165c2011de9d147624a91ea56393907150bd0b83170708329a37f4b7e"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"d0495511c8cfc1a5ac1a02cc0f43645c7bd5e74df808fb95c02ff4c8dc2275b6"},{"module":"supply-planning-production-assembly","sha256":"4ac96a2a0bd9f0893661be30bce53da89a244e86e9629496778f5a8f0b1e8fa0"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"d9eafe09082f743541990a1a6d1eb7243a27fbcfc23cc12ca48d268b3ff7cc1c"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"aecace412b4332846a6dd67dead8ee70994a4c085ea6f7827218b9289f4ecb6f"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"a5b22d7012d22f8c2698d1434f25ef2d3c8ee320ea702b3631dddd59c52d33c4"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"52ca7a17175b16b37bcc7e0ce2488f928642399bb7bafad6a5c2c393ef2cce2b"},{"module":"supply-planning-active-route-classification","sha256":"09208a12661f0987aae81db783782a56d155860cd7cdde169b8bd2761ed3efaf"},{"module":"supply-planning-factory-stock-guard","sha256":"11783cebdf76504f8e0721a2b4336d2bb30e43eef37e1847e382a8085ba4ac90"}]};

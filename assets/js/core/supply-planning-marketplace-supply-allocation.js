@@ -25,6 +25,14 @@
 //   5. eligiblePoolTypes defaults to [THREE_PL, FBA]; a caller may restrict per frozen eligibility.
 //   6. Country identity uses the canonical KMCID owner (UK ≡ GB) when composing receiver keys / grouping.
 //
+// D-S8-B1 (USER-APPROVED, supersedes D-F1-4B-FM5-R2A in ONE narrow respect: receiver priority normalization).
+// An unresolved allocationPriority — missing, null, blank, negative, non-numeric or non-finite — returns
+// blocked('RECEIVER_PRIORITY_UNRESOLVED') BEFORE any allocation, instead of defaulting to 0. An explicit numeric
+// 0 remains a VALID lowest priority and keeps its §24.7 weighted share. Deliberately UNCHANGED by that decision:
+// decision 2 (monthly protection mapping — survivalNeedQty 0 / demandWeight = demandQty), decision 3 (the
+// receiver-count rule and the independent, separately-conserved Overseas and Factory pools), decision 4 (company
+// isolation), and every §20/§24/§35/§40 formula — this adapter still owns no arithmetic.
+//
 // Lineage / no-double-count (§2): the caller supplies pools that are ALREADY lineage-net (quantities transitioned
 // to SHIPPED_IN_TRANSIT are excluded upstream via the canonical source-fact lifecycle); the adapter never re-derives
 // duplication by qty guessing. PURE / deterministic: no clock, RNG, I/O, or mutation.
@@ -80,7 +88,27 @@
       var r = receivers[i] || {};
       var d = qty(r.demandQty);
       if (d === null) return blocked('RECEIVER_DEMAND_INVALID', 'demandQty missing/invalid for ' + s(r.marketplace));
-      var pr = qty(r.allocationPriority); if (pr === null) pr = 0;
+      // D-S8-B1 (§45.A.4) — AN UNRESOLVED PRIORITY IS REFUSED, NOT INVENTED.
+      //
+      // This read `if (pr === null) pr = 0;`. That one line collapsed FIVE states into a real priority: missing,
+      // null, blank, negative and non-numeric all became 0 — and 0 is not a neutral placeholder here. §40 ranks 0
+      // last but still serves it a weighted share (`Math.max(allocationPriority, 1)`), so a receiver nobody had
+      // ranked was handed a genuine claim on the pool, and §45.A.5's refusal could never be reached.
+      //
+      // It is refused through the SAME blocked() the adapter already uses for every other unresolved input — a
+      // missing demandQty, a duplicate receiver, a cross-company receiver, an unresolved factory eligibility.
+      // Priority was the one input that opted out of that rule; it no longer does. All-or-nothing: the refusal
+      // happens here, before KMALLOC is called, so there is no partial allocation reported as success.
+      //
+      // EXPLICIT 0 IS STILL VALID and still ranks last with its §24.7 share — `qty` returns the number 0 for it,
+      // never null, so this branch never sees it. Only genuinely unresolved input reaches the refusal.
+      var pr = qty(r.allocationPriority);
+      if (pr === null) {
+        return blocked('RECEIVER_PRIORITY_UNRESOLVED',
+          'allocationPriority missing, blank, negative or non-numeric for ' +
+          [s(r.company) || company, canonCountry(r.country), s(r.marketplace), s(r.sku) || masterSku].join('/') +
+          ' — set a non-negative allocation_priority on the marketplace row; no value is assumed');
+      }
       var key = receiverKeyOf(Object.assign({ masterSku: masterSku }, r));
       if (keySeen[key]) return blocked('RECEIVER_IDENTITY_CONFLICT', 'duplicate receiver ' + key);
       keySeen[key] = 1;

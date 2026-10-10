@@ -146,7 +146,20 @@ var STAMPLESS_OWNERS = {
     + 'sales_driven-only, so recoWsBuildHorizons_ receives byte-identical inputs and no Forecast-Driven '
     + 'horizon can be mislabelled SALES_BASIS_UNAVAILABLE. horizonBasis gains four additive diagnostic '
     + 'fields that already existed on the resolver\'s own return — no normalization engine was added, no '
-    + 'formula moved, and no action, request field or response field changed.'
+    + 'formula moved, and no action, request field or response field changed.',
+  // S8-B1-R50 - 43_ JOINS, as the FOURTH stampless owner and for the same reason as the other three: it
+  // declares no build symbol and has no manifest row, so it is copied and stamped by nobody. Putting it in
+  // RELEASE_OWNERS would satisfy I1 and break C3, which is the trade this list was created to avoid, and
+  // minting a stamp for it would overturn a standing design decision from inside an unrelated round.
+  '43_api_v1_gap_materialization.gs':
+    'GAP MATERIALIZATION. D-S8-B1: it no longer substitutes 0 for an unresolved allocation priority at the '
+    + 'point of use. The map it builds already OMITTED a marketplace whose allocation_priority did not '
+    + 'resolve - precisely so the absence stayed visible - and the substitution threw that away one line '
+    + 'before the refusal could see it, so an unranked receiver competed for the pool with a priority nobody '
+    + 'had set. The absence is now carried through as null and KMMSA refuses it before any allocation runs. '
+    + 'A blocked group additionally NAMES its receivers, because a blocked allocation returns no byReceiver '
+    + 'entries and those receivers would otherwise be read downstream as zero-covered - indistinguishable '
+    + 'from a pool that had nothing for them. No formula, no action and no route changed.'
 };
 
 var GENERATED_OWNERS = {
@@ -336,13 +349,9 @@ var RELEASE_OWNERS = {
   // 61_ IS NOT HERE AND THAT IS NOT AN OMISSION. It changed in S8-R49-I under R47, a token minted as a
   // module-stamp rotation by a round forbidden to cut. It is CARRIED below at R47: it ships in this paste
   // set while still declaring the round it last changed in, which is what a per-module stamp is for.
-  '66_api_v1_request_order_send.gs':
-    'REQUEST ORDER SEND ORCHESTRATION. The §14/§17/§37 missing-units_per_carton refusal: a draft line whose '
-    + 'carton size is absent, blank, zero or non-numeric can no longer be Sent, and the refusal names the '
-    + 'SKU rather than defaulting the quantity to 1. ROSEND_DIAG_BUILD_VERSION_ deliberately does NOT move - '
-    + 'the send DIAGNOSTIC did not change, and marching a second stamp to look current is the churn the '
-    + 'manifest warns against. No action was added and no route changed, so the action-contract version is '
-    + 'untouched.',
+  // S8-B1-R50 - 66_ IS NO LONGER HERE. It owned R49 and did not change in R50, so it moves to
+  // RELEASE_CARRIED below at R49: it still ships in this paste set while declaring the round it last
+  // changed in. That is the twenty-first swap and the ordinary life of a module stamp.
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -352,6 +361,11 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
+  // S8-B1-R50 - 66_ JOINS, straight from ownership. R50 changes 43_ and the generated bundle, not the Send
+  // orchestration, so ROS_BUILD_VERSION_ correctly stays at R49 while the file still travels in the paste
+  // set. Marching it to R50 to look current is exactly the churn the manifest exists to catch: a stamp that
+  // is advanced to keep a gate green can no longer tell a synced copy from a stale one.
+  '66_api_v1_request_order_send.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49',
   // S7-R4 - THE TWENTIETH SWAP. 01_ LEFT OWNERSHIP AT R40 after ONE release as an owner and kept R39, the
   // round its routing table actually changed in. R40 moved no action and no handler; it was a deploy-
   // surface round whose only runtime edit was a corrected comment in 63_. Marching the router to R40 would

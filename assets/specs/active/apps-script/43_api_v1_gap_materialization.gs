@@ -458,6 +458,23 @@ function gapOpReadSupplyPoolFacts_(ss) {
 // UNCONTESTED sku (≤1 company has eligible Factory demand) the existing company-local KMMSA path is physically safe
 // (only one company can consume the pool). This function does NOT itself discover contention — the caller supplies it
 // (the resumable per-company slice from the persisted pre-pass; the monolithic path inline over its full receiver set).
+// D-S8-B1 — A BLOCKED GROUP NAMES ITS RECEIVERS, so none of them is silently omitted.
+//
+// A blocked allocation returns no byReceiver entries, so the affected receivers simply never appear in the
+// coverage map and every downstream reader sees them as ZERO COVERED — indistinguishable from "the pool had
+// nothing for you". With the §45 refusal now reachable, that distinction is the whole point: unresolved is not
+// zero. The issue therefore carries the receiver keys and the refusal message, so an operator can be told WHICH
+// marketplace rows to fix rather than being handed a silently short allocation.
+function gapBlockedIssue_(scope, res, fallbackCode, list, keyOf) {
+  var first = (res && res.issues && res.issues[0]) || null;
+  return {
+    scope: scope,
+    code: (first && first.code) || fallbackCode,
+    message: (first && first.message) || null,
+    receiverKeys: (list || []).map(keyOf)
+  };
+}
+
 function gapOpBuildSupplyAllocation_(receivers, poolFacts, contention) {
   var out = {}, issues = [];
   if (typeof KMMSA === 'undefined' || !KMMSA || typeof KMMSA.allocateMarketplaceReceiverSupply !== 'function') {
@@ -496,7 +513,7 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts, contention) {
       return;
     }
     var res = KMMSA.allocateMarketplaceReceiverSupply({ company: list[0].company, masterSku: sku, factoryPools: pools, eligibleFactoryWarehouseIds: poolFacts.eligibleFactoryWarehouseIds, receivers: msaReceivers(list) });
-    if (!res || res.blocked) { issues.push({ scope: cs, code: (res && res.issues && res.issues[0] && res.issues[0].code) || 'FACTORY_ALLOCATION_BLOCKED' }); return; }
+    if (!res || res.blocked) { issues.push(gapBlockedIssue_(cs, res, 'FACTORY_ALLOCATION_BLOCKED', list, recvKeyOf)); return; }
     for (var k in res.byReceiver) if (Object.prototype.hasOwnProperty.call(res.byReceiver, k)) ensure(k).factoryCoveredQty += (res.byReceiver[k].allocatedFactoryQty || 0);
     // FA-3B3b: preserve per-source-warehouse grain from the SAME KMMSA allocation (no rerun, no guess).
     if (res.factory && Array.isArray(res.factory.allocations)) {                                // multi-receiver: group the FIFO draws
@@ -511,7 +528,7 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts, contention) {
     var list = byCompanyCountrySku[ccs], pools = poolFacts.overseasPoolsByKey[ccs] || [];
     if (!pools.length) return;
     var res = KMMSA.allocateMarketplaceReceiverSupply({ company: list[0].company, masterSku: list[0].sku, overseasPools: pools, receivers: msaReceivers(list, ['THREE_PL']) });
-    if (!res || res.blocked) { issues.push({ scope: ccs, code: (res && res.issues && res.issues[0] && res.issues[0].code) || 'OVERSEAS_ALLOCATION_BLOCKED' }); return; }
+    if (!res || res.blocked) { issues.push(gapBlockedIssue_(ccs, res, 'OVERSEAS_ALLOCATION_BLOCKED', list, recvKeyOf)); return; }
     for (var k2 in res.byReceiver) if (Object.prototype.hasOwnProperty.call(res.byReceiver, k2)) ensure(k2).overseasCoveredQty += (res.byReceiver[k2].allocatedOverseasQty || 0);
   });
   return { byReceiverKey: out, issues: issues };
@@ -724,7 +741,12 @@ function gapOpHarvestReceivers_(scopes, io, ss, poolFacts, opts) {
       receivers.push({ company: scope.company, country: country, marketplace: scope.marketplace, sku: sku,
         demandQty: demandQty, requiredByDate: gapStr_(mp[0].month) + '-01',
         gapQty: gapNum_(L.calculatedGap),   // FA-3B3b: PASS-1 residual (demand − site stock) = §41 projectedRequirementQty basis
-        allocationPriority: (poolFacts.priorityByMkt[pkey] != null ? poolFacts.priorityByMkt[pkey] : 0),
+        // D-S8-B1 (§45.A.4) — this read `: 0`. The map above is already correct: gapCollectPoolFacts_ OMITS a
+        // marketplace whose allocation_priority does not resolve, precisely so the absence is visible. Substituting
+        // 0 here threw that away at the last moment, so the omission never reached a refusal and an unranked
+        // receiver competed for the pool with a priority nobody had set. The absence is now carried through as
+        // null; KMMSA refuses it with RECEIVER_PRIORITY_UNRESOLVED before any allocation runs.
+        allocationPriority: (poolFacts.priorityByMkt[pkey] != null ? poolFacts.priorityByMkt[pkey] : null),
         key: gapReceiverKey_(scope.company, country, scope.marketplace, sku) });
     });
   }

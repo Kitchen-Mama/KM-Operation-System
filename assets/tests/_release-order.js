@@ -1779,7 +1779,14 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   //
   // NOT DEPLOYED. No Apps Script version exists for R49; the sync and the version are the users act.
   // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49',
+  // S8-B1-R50. R49 was CUT, SYNCED and DEPLOYED before this work existed, so its bytes cannot absorb it:
+  // D-S8-A1 (canonical country identity in the core producers) and D-S8-B1 (KMMSA refuses an unresolved
+  // receiver priority instead of defaulting it to 0) changed 43_ and regenerated 90_ AFTER that cut. Three
+  // gates say the same thing from three directions — the manifest hash no longer matched the bundle, 43_
+  // rode along in the copy list, and the deployment-uniformity probe reported a mixed tree — and none of
+  // them is wrong. A runtime change that lands after a cut needs its OWN cut.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R50'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

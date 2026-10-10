@@ -32,11 +32,12 @@
   var api = factory(
     req ? req('./supply-planning-source-reader-production.js') : (root.KMSRP || (root.KM && root.KM.sourceReaderProduction)),
     req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts)),
-    req ? req('./supply-planning-shipment-line-source.js') : (root.KMSLS || (root.KM && root.KM.shipmentLineSource))
+    req ? req('./supply-planning-shipment-line-source.js') : (root.KMSLS || (root.KM && root.KM.shipmentLineSource)),
+    req ? req('./supply-planning-country-identity.js') : (root.KMCID || (root.KM && root.KM.countryIdentity))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceProjection = api; }
-})(this, function (KMSRP, KMSF, KMSLS) {
+})(this, function (KMSRP, KMSF, KMSLS, CID) {
   'use strict';
 
   // ---- primitives (fail-closed; no coercion of MISSING to a default) --------------------------------------
@@ -60,14 +61,30 @@
   // in a subtler form. Escaping the separator and the escape character makes the mapping one-to-one for any
   // input, so the key is safe without having to assume anything about what the data contains.
   //
-  // WHY IT DOES NOT CASE-FOLD. 03_'s upsert compares with trim() and is case-SENSITIVE, so 'Amazon' and 'amazon'
-  // are two different rows to the database. Upper-casing here would merge identities the canonical owner keeps
-  // apart — a new collision in place of the old one. trim() matches that authority exactly, and a lookup that
-  // does not match yields a MISSING priority, which is preserved rather than fabricated.
+  // WHY COMPANY AND MARKETPLACE DO NOT CASE-FOLD. 03_'s upsert compares with trim() and is case-SENSITIVE, so
+  // 'Amazon' and 'amazon' are two different rows to the database. Upper-casing them here would merge identities
+  // the canonical owner keeps apart — a new collision in place of the old one. trim() matches that authority
+  // exactly, and a lookup that does not match yields a MISSING priority, preserved rather than fabricated.
+  //
+  // D-S8-A1 — WHY COUNTRY IS THE EXCEPTION, AND ONLY COUNTRY. Country is the one component with a SECOND
+  // authority: KMCID, which exists because the database stores one market under two spellings — the domain/scope
+  // writes `UK` while `amazon_inventory_snapshot` stores the ISO code `GB`. `43_`, `71_` and KMMSA already resolve
+  // country through KMCID; this producer did not, so the same row resolved in one layer and not the other, and the
+  // miss then met the missing→0 fabrication downstream and became a real priority nobody had set. Canonicalizing
+  // HERE, on the country component only, puts one convention on both sides of every identity comparison.
+  //
+  // It is identity resolution, never a rewrite: stored and displayed country values are untouched. EU stays an
+  // independent region and is NEVER expanded into DE/FR/IT/ES — KMCID's own contract draws that line, and
+  // `sourceCountriesForScope` (which does expand EU for SALES source membership) is deliberately not used here.
+  // The fallback is a plain upper-case so a build without KMCID degrades to case-folding rather than GUESSING an
+  // alias it cannot know.
   var MKT_SEP = String.fromCharCode(124);   // |
   var MKT_ESC = String.fromCharCode(92);    // backslash
+  function canonCountry(v) {
+    return (CID && typeof CID.canonicalCountryCode === 'function') ? CID.canonicalCountryCode(v) : str(v).toUpperCase();
+  }
   function mktIdentityKey(company, country, marketplace) {
-    return [company, country, marketplace].map(function (v) {
+    return [str(company), canonCountry(country), str(marketplace)].map(function (v) {
       return str(v).split(MKT_ESC).join(MKT_ESC + MKT_ESC).split(MKT_SEP).join(MKT_ESC + MKT_SEP);
     }).join(MKT_SEP);
   }
@@ -179,10 +196,36 @@
     // identity, and the old marketplace_id fallback could never match a lookup keyed by name anyway, so nothing
     // that was reachable has been dropped. Such a row now yields a MISSING priority, which the consumers refuse
     // on (source-facts raises MISSING_OR_INVALID_ALLOCATION_PRIORITY) rather than silently guessing.
-    var priorityByMktKey = {}; mktRows.forEach(function (r) {
+    // D-S8-A1 — CANONICAL IDENTITY COLLISION IS REPORTED, NEVER RESOLVED BY ARRIVAL ORDER.
+    //
+    // Canonicalizing the country can make two rows that the database keeps apart — one `UK`, one `GB` — land on
+    // ONE key. Before this change they were simply two different keys and the scope matched at most one; now they
+    // compete, and `a = b` would let the LAST row read decide the priority. That is the exact defect S8-R49-F was
+    // opened for, in a new place, so it is refused in the same way: a conflicted key yields MISSING, and MISSING is
+    // the state the consumers already fail closed on (source-facts raises MISSING_OR_INVALID_ALLOCATION_PRIORITY).
+    //
+    // Equal values are NOT a conflict. Two spellings of one market carrying the same priority is the ordinary case
+    // and must keep working; comparison is on the string form so 100 and '100' are the same answer, not a dispute.
+    var priorityByMktKey = {}, priorityKeyConflict = {};
+    mktRows.forEach(function (r) {
       if (!nonEmpty(r.marketplace)) return;
-      if (has(r, 'allocation_priority')) priorityByMktKey[mktIdentityKey(r.company, r.country, r.marketplace)] = r.allocation_priority;
+      if (!has(r, 'allocation_priority')) return;
+      var k = mktIdentityKey(r.company, r.country, r.marketplace);
+      if (has(priorityByMktKey, k) && str(priorityByMktKey[k]) !== str(r.allocation_priority)) {
+        if (!priorityKeyConflict[k]) {
+          priorityKeyConflict[k] = 1;
+          addIssue('MARKETPLACE', k, 'CANONICAL_MARKETPLACE_IDENTITY_CONFLICT');
+        }
+        return;                                     // keep the first value out of reach rather than overwrite it
+      }
+      // FIRST ROW WINS on agreement. Assigning again would be harmless for the VALUE but not for its TYPE —
+      // a later '30' would replace an earlier 30 — and a lookup whose answer depends on row order is the exact
+      // thing this block exists to prevent, even when the two orders agree on the number.
+      if (!has(priorityByMktKey, k)) priorityByMktKey[k] = r.allocation_priority;
     });
+    // A conflicted identity has no single answer, so it reports none. Returning `undefined` is deliberate: it is
+    // indistinguishable from "no row", which is precisely what an unresolvable identity means to a consumer.
+    function priorityForMktKey(k) { return priorityKeyConflict[k] ? undefined : priorityByMktKey[k]; }
     var ffByMskKey = {}; mskRows.forEach(function (r) { var k = [str(r.company), str(r.country), str(r.marketplace), str(r.sku)].join('|'); if (has(r, 'fulfillment_model')) ffByMskKey[k] = r.fulfillment_model; });
 
     // ---- destination ownership (D-3): caller/planning-scope-owned; never inferred ---------------------------
@@ -411,7 +454,7 @@
       var mskKey = [str(scope.company), str(scope.country), mkt, str(f.sku || scope.sku)].join('|');
       return { receiver_key: str(f.receiverKey), demand_source_ref: str(f.demandRef),
         eligible_pool_types: f.eligiblePoolTypes, survival_need_qty: f.survivalNeedQty, daily_demand: f.dailyDemand,
-        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityByMktKey[mktIdentityKey(scope.company, scope.country, mkt)],
+        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityForMktKey(mktIdentityKey(scope.company, scope.country, mkt)),
         demand_weight: f.demandWeight,
         fulfillment_model: nonEmpty(f.fulfillmentModel) ? f.fulfillmentModel : ffByMskKey[mskKey],
         marketplace: mkt, destination_warehouse_id: resolveDestination(str(f.demandRef), f.destinationWarehouseId) };
@@ -421,7 +464,7 @@
     var factoryRows = factoryInput.map(function (f) {
       var mkt = str(f.marketplace) || str(scope.marketplace);
       return { demand_source_ref: str(f.demandRef), eligible_factory_warehouse_ids: f.eligibleFactoryWarehouseIds,
-        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityByMktKey[mktIdentityKey(scope.company, scope.country, mkt)],
+        allocation_priority: has(f, 'allocationPriority') ? f.allocationPriority : priorityForMktKey(mktIdentityKey(scope.company, scope.country, mkt)),
         required_by_date: has(f, 'requiredByDate') ? f.requiredByDate : requiredByDate,
         marketplace: mkt, destination_warehouse_id: resolveDestination(str(f.demandRef), f.destinationWarehouseId) };
     });

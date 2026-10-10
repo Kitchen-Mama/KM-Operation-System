@@ -30,11 +30,12 @@
   var api = factory(
     req ? req('./supply-planning-planning-context.js') : (root.KMPCX || (root.KM && root.KM.planningContext)),
     req ? req('./supply-planning-allocation-facts.js') : (root.KMAF || (root.KM && root.KM.allocationFacts)),
-    req ? req('./supply-planning-calculations.js') : (root.KMCALC || (root.KM && root.KM.core && root.KM.core.supplyPlanningCalculations))
+    req ? req('./supply-planning-calculations.js') : (root.KMCALC || (root.KM && root.KM.core && root.KM.core.supplyPlanningCalculations)),
+    req ? req('./supply-planning-country-identity.js') : (root.KMCID || (root.KM && root.KM.countryIdentity))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.productionAssembly = api; }
-})(this, function (KMPCX, KMAF, CALC) {
+})(this, function (KMPCX, KMAF, CALC, CID) {
   'use strict';
 
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
@@ -47,12 +48,22 @@
   // Identical rule and identical normalization to supply-planning-source-projection.js, deliberately: the two
   // producers feed the same allocator, so a receiver must resolve to the same priority through either path.
   // The separator is escaped so the join is injective (a bare join would let ('A','B|C','D') and
-  // ('A','B','C|D') collide — this defect in a subtler form), and it does NOT case-fold, because the canonical
-  // owner (03_master_data_handlers.gs) upserts on a trim()-only, case-SENSITIVE comparison.
+  // ('A','B','C|D') collide — this defect in a subtler form). Company and marketplace do NOT case-fold, because
+  // the canonical owner (03_master_data_handlers.gs) upserts on a trim()-only, case-SENSITIVE comparison.
+  //
+  // D-S8-A1 — the COUNTRY component, and only it, resolves through KMCID (UK ≡ GB, case/whitespace folded),
+  // because country is the one component with a second stored spelling: the scope writes `UK` while
+  // `amazon_inventory_snapshot` stores `GB`. `43_`, `71_` and KMMSA already canonicalize; this producer did not,
+  // so one layer matched a row the other missed. Identity only — stored and displayed values are never rewritten,
+  // and EU stays an independent region, never expanded into its member countries.
   var MKT_SEP = String.fromCharCode(124);   // |
   var MKT_ESC = String.fromCharCode(92);    // backslash
+  function canonCountry(v) {
+    return (CID && typeof CID.canonicalCountryCode === 'function') ? CID.canonicalCountryCode(v) : str(v).toUpperCase();
+  }
+  function sameCountry(a, b) { return canonCountry(a) === canonCountry(b); }
   function mktIdentityKey(company, country, marketplace) {
-    return [company, country, marketplace].map(function (v) {
+    return [str(company), canonCountry(country), str(marketplace)].map(function (v) {
       return str(v).split(MKT_ESC).join(MKT_ESC + MKT_ESC).split(MKT_SEP).join(MKT_ESC + MKT_SEP);
     }).join(MKT_SEP);
   }
@@ -69,8 +80,10 @@
     return snap.rows.map(function (r) { var o = {}; for (var c = 0; c < headers.length; c++) o[headers[c]] = r[c]; return o; });
   }
   function finiteNonNeg(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return (isFinite(n) && n >= 0) ? n : null; }
+  // D-S8-A1 — country is compared through the canonical form on BOTH operands. Applying it to one side only would
+  // make matching worse than leaving it alone, so there is a single helper and no inline comparison anywhere.
   function inScope(row, scope) {
-    return str(row.company) === scope.company && str(row.country) === scope.country &&
+    return str(row.company) === scope.company && sameCountry(row.country, scope.country) &&
       str(row.marketplace) === scope.marketplace && (scope.sku === null || str(row.sku) === scope.sku);
   }
 
@@ -80,7 +93,7 @@
     monthsYm.forEach(function (ym) {
       var p = parseYM(ym), abbrev = MONTHS[p.mo - 1];
       var matches = fcRows.filter(function (r) {
-        return str(r.company) === scope.company && str(r.country) === scope.country && str(r.marketplace) === scope.marketplace &&
+        return str(r.company) === scope.company && sameCountry(r.country, scope.country) && str(r.marketplace) === scope.marketplace &&
           str(r.sku) === sku && Number(r.year) === p.y;
       });
       if (!matches.length) return; // month missing → left out (KMPCX emits MISSING_FORECAST_WEIGHT_SOURCE; never 0)
@@ -130,10 +143,29 @@
     // LAST marketplaces row sharing a name decided every receiver's priority regardless of company or country.
     // The has() guard keeps a MISSING priority missing: a row whose sheet has no allocation_priority column no
     // longer writes an undefined over the map, so "absent" stays absent instead of being fabricated as a value.
-    var prByMktKey = {}; mktRows.forEach(function (r) {
+    // D-S8-A1 — a canonical identity collision is REPORTED, never settled by arrival order. Canonicalizing the
+    // country can put a `UK` row and a `GB` row on one key; `a = b` would then hand the receiver whichever row was
+    // read last — the S8-R49-F defect in a new place. A conflicted key therefore answers MISSING, which is the
+    // state the consumers already fail closed on. Equal values are not a conflict: two spellings of one market
+    // agreeing on a priority is the ordinary case, compared as strings so 100 and '100' are one answer.
+    var prByMktKey = {}, prKeyConflict = {};
+    mktRows.forEach(function (r) {
       if (!nonEmpty(r.marketplace)) return;
-      if (has(r, 'allocation_priority')) prByMktKey[mktIdentityKey(r.company, r.country, r.marketplace)] = r.allocation_priority;
+      if (!has(r, 'allocation_priority')) return;
+      var k = mktIdentityKey(r.company, r.country, r.marketplace);
+      if (has(prByMktKey, k) && str(prByMktKey[k]) !== str(r.allocation_priority)) {
+        if (!prKeyConflict[k]) {
+          prKeyConflict[k] = 1;
+          issues.push(issue('CANONICAL_MARKETPLACE_IDENTITY_CONFLICT', k,
+            'two marketplaces rows resolve to one canonical identity with different allocation_priority values'));
+        }
+        return;
+      }
+      // FIRST ROW WINS on agreement — see the sibling note in supply-planning-source-projection.js: an answer
+      // that depends on row order is the defect, even when both orders carry the same number.
+      if (!has(prByMktKey, k)) prByMktKey[k] = r.allocation_priority;
     });
+    function priorityForMktKey(k) { return prKeyConflict[k] ? undefined : prByMktKey[k]; }
 
     var monthsYm = KMPCX._forecastWeightMonths(vr.calculationMonth); // [M+1..M+4] YYYY-MM (frozen D-F1-5B-3)
     var forecastMonthAbbrev = MONTHS[parseYM(monthsYm[0]).mo - 1]; // demand-ledger month = M+1 (single-month, matches source-projection)
@@ -155,7 +187,7 @@
         .filter(function (e) { return nonEmpty(e.eventStartDate); });
       kmpcxReceivers.push({ company: vr.scope.company, country: vr.scope.country, marketplace: vr.scope.marketplace, sku: sku, siteSku: str(m.site_sku),
         destinationWarehouseId: vr.destinationWarehouseId, regularForecastByMonth: fc.map, specialEventFacts: events });
-      recvMeta[sku] = { forecastId: fc.forecastId, upc: upcBySku[sku], priority: prByMktKey[mktIdentityKey(vr.scope.company, vr.scope.country, vr.scope.marketplace)], fulfillmentModel: str(m.fulfillment_model), siteSku: str(m.site_sku), fcMap: fc.map };
+      recvMeta[sku] = { forecastId: fc.forecastId, upc: upcBySku[sku], priority: priorityForMktKey(mktIdentityKey(vr.scope.company, vr.scope.country, vr.scope.marketplace)), fulfillmentModel: str(m.fulfillment_model), siteSku: str(m.site_sku), fcMap: fc.map };
     });
 
     // KMPCX — destination / window / required-by / driver / forecast anchor+share (frozen decisions).

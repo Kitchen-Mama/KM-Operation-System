@@ -176,10 +176,18 @@ obs(projPriority([{ marketplace: 'Amazon', allocation_priority: 99 }]), undefine
 obs(projPriority([RESUS_US]), undefined,
     'G20 no matching marketplace record at all → MISSING, never another company\'s value', 'CONTRACT');
 
-// COUNTRY ALIASING — the core producer compares raw strings; the .gs layer canonicalizes. Same data, two answers.
+// COUNTRY ALIASING — S8-B1-R1 REPAIRED THIS LAYER under D-S8-A1. The producer now resolves country through the
+// same KMCID owner as 43_/71_/KMMSA, so one row no longer resolves in one layer and not the other.
+//
+// G21 STILL OBSERVES undefined, and that is the point: canonicalization is not invention. KMCID aliases exactly
+// one pair — UK ≡ GB, the spelling the database actually carries on both sides — and "USA" is not an alias of
+// "US" in any authority, so it must keep missing rather than be guessed into a match. The assertion is unchanged;
+// only its TAG and its reason change, because the behaviour is now the contract rather than a divergence.
 obs(projPriority([{ company: 'KM', country: 'USA', marketplace: 'Amazon', allocation_priority: 44 }]), undefined,
-    'G21 the core producer does NOT canonicalize country: a row recorded as "USA" does not match a "US" '
-    + 'receiver. 43_/71_/KMMSA canonicalize via KMCID, so the same row can resolve there and not here.', 'DEVIATION');
+    'G21 an unsupported country spelling ("USA" vs "US") still MISSES — KMCID resolves the one real alias and '
+    + 'never guesses a new one, so an unknown identity cannot silently attach to another receiver', 'CONTRACT');
+obs(projPriority([{ company: 'KM', country: 'us', marketplace: 'Amazon', allocation_priority: 44 }]), 44,
+    'G21a case/whitespace now resolves consistently: a "us" row answers a "US" receiver', 'CONTRACT');
 
 // =============================================================================================================
 section('L3 ALLOCATION ADAPTER — KMMSA (frozen model-b DTO adapter)');
@@ -197,16 +205,22 @@ function kmmsa(priority) {
 }
 obs(kmmsa(10), { ready: true, blocked: false, issues: [] }, 'G22 a positive priority allocates normally', 'CONTRACT');
 obs(kmmsa(0), { ready: true, blocked: false, issues: [] }, 'G23 case 1 — an explicit 0 is accepted and allocates', 'CONTRACT');
-obs(kmmsa(null), { ready: true, blocked: false, issues: [] },
-    'G24 case 4 — a NULL priority is silently defaulted to 0 and the allocation PROCEEDS. §40 would have '
-    + 'refused it; the adapter supplies the value that prevents the refusal.', 'DEVIATION');
-obs(kmmsa(undefined), { ready: true, blocked: false, issues: [] },
-    'G25 case 5 — undefined is likewise defaulted to 0 and proceeds', 'DEVIATION');
-obs(kmmsa('high'), { ready: true, blocked: false, issues: [] },
-    'G26 case 6 — INVALID text is also defaulted to 0 and proceeds', 'DEVIATION');
-obs(kmmsa(-5), { ready: true, blocked: false, issues: [] },
-    'G27 case 8 — a NEGATIVE priority is accepted here (qty() returns it, so the 0-default never fires) and '
-    + 'the allocation proceeds', 'DEVIATION');
+// S8-B1-R1 REPAIRED THIS LAYER under D-S8-B1. G24-G27 were DEVIATION and are CONTRACT now: the adapter no
+// longer supplies the value that prevented §40's refusal — it refuses first, through the same blocked()
+// mechanism it already used for a missing demandQty, a duplicate receiver and a cross-company receiver.
+var BLOCK = { ready: false, blocked: true, issues: ['RECEIVER_PRIORITY_UNRESOLVED'] };
+obs(kmmsa(null), BLOCK,
+    'G24 case 4 — a NULL priority is REFUSED before allocation, not defaulted to 0', 'CONTRACT');
+obs(kmmsa(undefined), BLOCK,
+    'G25 case 5 — a MISSING priority is refused the same way; absent and 0 are no longer the same input', 'CONTRACT');
+obs(kmmsa('high'), BLOCK,
+    'G26 case 6 — INVALID text is refused rather than becoming the lowest valid priority', 'CONTRACT');
+obs(kmmsa(-5), BLOCK,
+    'G27 case 8 — a NEGATIVE priority is INVALID (§45.A.3), not "lowest", and is refused here', 'CONTRACT');
+obs(kmmsa(''), BLOCK,
+    'G27a a BLANK cell is unresolved too — the state an operator actually produces by leaving it empty', 'CONTRACT');
+obs(kmmsa(Infinity), BLOCK,
+    'G27b a NON-FINITE priority is refused; isFinite is checked, not merely typeof number', 'CONTRACT');
 
 // =============================================================================================================
 section('L4/L5 FAIL-CLOSED LAYERS — §40 allocator and the facts validators');
@@ -303,8 +317,15 @@ obs(/var ap = fsgNum_\(m\.allocation_priority\); if \(ap === null\) return;/.tes
     'G39 71_ omits a missing priority from the map, so the guard STOPs with PRIORITY_UNRESOLVED — fail-closed', 'CONTRACT');
 obs(/if \(ap !== null\) priorityByMkt\[key\] = ap;/.test(G43), true,
     'G40 43_ also omits a missing priority from its map …', 'CONTRACT');
+// S8-B1-R1 REPAIRED THIS LAYER under D-S8-B1. G41 was DEVIATION and is CONTRACT now.
 obs(/allocationPriority: \(poolFacts\.priorityByMkt\[pkey\] != null \? poolFacts\.priorityByMkt\[pkey\] : 0\)/.test(G43),
-    true, 'G41 … but then substitutes 0 at the point of use, so the omission never reaches a refusal', 'DEVIATION');
+    false, 'G41 … and no longer substitutes 0 at the point of use — the omission the map preserves now survives '
+    + 'to the refusal instead of being undone one line before it', 'CONTRACT');
+obs(/allocationPriority: \(poolFacts\.priorityByMkt\[pkey\] != null \? poolFacts\.priorityByMkt\[pkey\] : null\)/.test(G43),
+    true, 'G41a 43_ carries the unresolved priority through as null, for KMMSA to refuse', 'CONTRACT');
+obs(/receiverKeys: \(list \|\| \[\]\)\.map\(keyOf\)/.test(G43), true,
+    'G41b and a blocked group NAMES its receivers, so none of them is silently omitted from the coverage map '
+    + 'and read downstream as zero-covered', 'CONTRACT');
 
 // =============================================================================================================
 // =============================================================================================================

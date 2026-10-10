@@ -557,6 +557,13 @@ ok(/PRODUCT_STRATEGY_ENABLED_/.test(read('assets/specs/active/apps-script/00_con
 // gate. Neither file is reachable from Product Strategy's read path, and a visual round that touched a
 // handler would still be caught.
 var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handlers.gs',
+  // S8-B1-R50 — 43_ joins, as the first GAP MATERIALIZATION entry. D-S8-B1 stops it substituting 0 for an
+  // unresolved allocation priority, so an unranked receiver can no longer compete for a shared pool. It is
+  // not reachable from Product Strategy's read path: no action was added or removed, no capability field
+  // changed, the feature flag is untouched, and the change is a refusal boundary rather than a new
+  // calculation. 63_ (carrying the R50 release identity) and 90_ (the regenerated bundle) are already
+  // declared in this register. DECLARED here rather than filtered out, for the reason the register exists.
+  'assets/specs/active/apps-script/43_api_v1_gap_materialization.gs',
   // S8-R5-B (R46) — the Avg Sales contract correction. 42_ stops gating the canonical §22 resolver on the
   // Planning Model so a Forecast-Driven SKU gets the historical rate a Sales-Driven one already got; 63_
   // carries the R46 release identity, as it does for every cut. Neither is reachable from Product

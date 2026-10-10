@@ -1363,3 +1363,72 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
 ### Round outcome
 - **SCHEMA_GAP = NONE. Formula impact = NONE. DB write = NONE.** Scarcity authority FROZEN (reuse existing); Factory cross-run conservation **HALTED** pending the user decision above.
 - **EXACT NEXT AUTHORIZED SLICE:** resolve the Factory cross-run decision (SKU-company cardinality → batch vs reservation), then **FM7-R2B** may implement the allocation runtime for OVERSEAS (fully frozen) + the scarcity/health/eligible-receiver contract; FACTORY runtime is blocked until cross-run conservation is frozen. FM6-R4 (AI Plan → DB → UI) may proceed in parallel regardless.
+
+---
+
+## D-S8-A1 / D-S8-B1 — country identity canonicalization + missing-priority fail-closed (USER-APPROVED 2026-10-10, implemented S8-B1-R1)
+
+Two narrowly-scoped decisions, recorded together because they repair ONE defect seen from two ends. A core
+producer that compared `country` as a raw trimmed string missed a row that `43_` / `71_` / KMMSA matched through
+KMCID; the miss presented downstream as "no priority"; and the missing-to-0 fabrication then turned that miss
+into a real priority nobody had set. Repairing either alone leaves the other able to produce the same wrong
+allocation. `SUPPLY_PLANNING_CALCULATION_RULES.md` §45.C.1 required a named round for each — this is it.
+
+### D-S8-A1 — canonical country identity in the two core producers
+
+- **Scope:** `supply-planning-source-projection.js` and `supply-planning-production-assembly.js` resolve country
+  identity through `KMCID.canonicalCountryCode`, applied to **both operands** of every comparison and to the
+  country component of `mktIdentityKey`. Company and marketplace are **unchanged** (trim-only, case-SENSITIVE),
+  because `03_master_data_handlers.gs` upserts that way and case-folding them would merge rows the canonical
+  owner keeps apart.
+- **UK is equivalent to GB** — the one alias KMCID owns, and the one the database actually carries on both sides
+  (`marketplaces` writes `UK`, `amazon_inventory_snapshot` stores `GB`). Case and whitespace fold.
+- **EU remains an independent region identity** and is NEVER expanded into IT/DE/ES/FR. KMCID's
+  `sourceCountriesForScope` does expand EU for SALES-source membership and is deliberately NOT used for identity.
+- **No alias is invented.** An unsupported spelling (`USA` against `US`) still MISSES rather than being guessed
+  into a match, so an unknown identity can never silently attach to another receiver.
+- **Stored and displayed country values are never rewritten.** This is identity resolution only; no DB migration.
+- **Canonical identity collisions are REPORTED, not resolved by arrival order.** Canonicalization can place a
+  `UK` row and a `GB` row on one key. When two such rows carry DIFFERENT priorities the key answers MISSING and
+  an issue is raised (`CANONICAL_MARKETPLACE_IDENTITY_CONFLICT`); MISSING is the state the consumers already fail
+  closed on. Rows that AGREE still resolve — agreement is the ordinary case, and first row wins so the answer
+  cannot depend on read order.
+
+### D-S8-B1 — KMMSA receiver priority normalization (supersedes D-F1-4B-FM5-R2A in this ONE respect)
+
+- An `allocationPriority` that is missing, null, blank, negative, non-numeric or non-finite returns
+  `blocked('RECEIVER_PRIORITY_UNRESOLVED')` **before any allocation**, naming company / country / marketplace /
+  sku. It replaces `if (pr === null) pr = 0;`, which collapsed five distinct states into a real priority.
+- **An explicit numeric 0 remains VALID** — the lowest priority, ranked last, keeping its share.
+- All-or-nothing: a blocked call allocates nothing and is never reported ready, so no partial allocation can be
+  mistaken for success.
+- The refusal uses the adapter's EXISTING `blocked()` mechanism — the same one already used for a missing
+  `demandQty`, a duplicate receiver, a cross-company receiver and an unresolved factory eligibility. Priority was
+  the only unresolved input that opted out of that rule.
+- **Explicitly UNCHANGED:** D-FM5-R2A-1 (monthly protection mapping — `survivalNeedQty` defaults 0,
+  `demandWeight` defaults to `demandQty`), D-FM5-R2A-2 (waterfall), D-FM5-R2A-3 (company isolation), the
+  supplemental receiver-count / independent-pool freeze, the 18-day survival rule, factory FC-ratio allocation,
+  and every §20/§24/§35/§40 formula. The adapter still owns no arithmetic.
+
+### Consequential layers repaired in the same round (all §45.B.1 fabrication sites except one)
+
+- **`43_api_v1_gap_materialization.gs`** no longer substitutes `0` at the point of use; the omission its map
+  already preserved now survives to the refusal. A blocked group additionally NAMES its receivers, so affected
+  receivers are not silently absent from the coverage map and read downstream as zero-covered.
+- **Weekly Harvest Adapter** carries an unresolved priority through as `null` instead of `0`. Note recorded
+  because it is easy to get wrong: `Number('')` and `Number(null)` are both `0`, so the file's own `num()` helper
+  answers `0` for a blank cell — the empty forms are tested before any numeric conversion.
+- **Weekly Input Assembler** fails the lane closed with an `UNRESOLVED_ALLOCATION_PRIORITY` issue rather than
+  coercing through `num0`. It EXCLUDES rather than forwarding `null`, because §40's `requireQty` throws a
+  TypeError on a non-number and §40 is do-not-touch this round; the exclusion follows the same shape the loop
+  already uses for `MISSING_DESTINATION_WAREHOUSE`. `num0` remains in use for the two QUANTITY fields.
+
+### Still open after this round (deliberately NOT in scope)
+
+- **§45.B.2** — both core producers still carry a blank, non-numeric or negative value through verbatim; §40
+  refuses it downstream, so no wrong number is produced, but later than §45.A.3 intends. Characterized as
+  deviations G14/G15/G16.
+- **The Inventory Replenishment page** `|| 0` fallback (class B display) is untouched; `inventory-replenishment.js`
+  was do-not-touch this round.
+- **Country canonicalization POLICY beyond identity** (for example whether any further alias should exist) is not
+  decided here; KMCID's table is used as-is and unchanged.

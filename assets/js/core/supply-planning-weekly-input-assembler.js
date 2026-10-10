@@ -173,7 +173,26 @@
       var totalInc = 0; activeIdx.forEach(function (i) { totalInc += inc[i]; });
       var canonicalWeight = num0(lane.demandWeight);
       var laneSurvival = num0(lane.survivalNeedQty);
-      var priority = num0(lane.allocationPriority);
+      // D-S8-B1 (§45.A.4) — this read `num0(lane.allocationPriority)`, and num0 answers 0 for ANYTHING it cannot
+      // turn into a finite number: missing, null, blank, a word, Infinity. A lane nobody had ranked therefore
+      // entered §40 carrying a real priority, and §40 ranks 0 last but still serves it a weighted share.
+      //
+      // WHY IT EXCLUDES RATHER THAN PASSES null ON. §40's requireQty throws a TypeError on a non-number, so simply
+      // forwarding the unresolved value would turn a business refusal into a crash inside a frozen module this
+      // round must not touch. The lane is therefore failed closed HERE, with an issue naming it — exactly the
+      // shape this loop already uses for MISSING_DESTINATION_WAREHOUSE, which is the same class of problem: a
+      // fact that must be set before the lane can be planned. Excluded WITH a named issue is not silent omission.
+      //
+      // A negative priority is unresolved too (§45.A.3: invalid is not "lowest"). An explicit 0 is VALID and
+      // passes through untouched — it is a number, finite and non-negative. num0 stays in use for the two
+      // QUANTITY fields above, whose normalization this decision does not touch.
+      var prRaw = lane.allocationPriority;
+      var prNum = (prRaw === null || prRaw === undefined || prRaw === '') ? null : Number(prRaw);
+      if (prNum === null || !isFinite(prNum) || prNum < 0) {
+        issues.push({ kind: 'DEMAND', key: laneSku + '|' + siteSku, reason: 'UNRESOLVED_ALLOCATION_PRIORITY' });
+        continue;
+      }
+      var priority = prNum;
       var eligiblePoolTypes = Array.isArray(lane.eligiblePoolTypes) ? lane.eligiblePoolTypes.slice() : [];
 
       for (var a = 0; a < activeIdx.length; a++) {
