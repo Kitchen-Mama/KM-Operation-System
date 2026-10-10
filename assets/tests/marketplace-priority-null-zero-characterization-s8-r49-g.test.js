@@ -277,7 +277,12 @@ section('L6 IDENTITY — who still keys priority by marketplace NAME alone');
 // R49-F repaired the two bundled core producers. The .gs layer was outside that authorization, so it is
 // characterized here rather than changed.
 
-function gs(rel) { return fs.readFileSync(path.join(__dirname, '../specs/active/apps-script/' + rel), 'utf8'); }
+// R49I_OVERRIDE_<nn> lets the mutant harness substitute a mutated COPY of one .gs file; absent it these are
+// the shipped files.
+function gs(rel) {
+  var ov = process.env['R49I_OVERRIDE_' + rel.split('_')[0]];
+  return fs.readFileSync(ov || path.join(__dirname, '../specs/active/apps-script/' + rel), 'utf8');
+}
 var G43 = gs('43_api_v1_gap_materialization.gs');
 var G61 = gs('61_api_v1_weekly_ai_plan.gs');
 var G71 = gs('71_api_v1_factory_stock_guard.gs');
@@ -287,9 +292,12 @@ obs(/priorityByMkt\[key\] = ap/.test(G43)
     true, 'G36 43_ gap-materialization keys priority by the COMPOSITE identity (company||country||marketplace)', 'CONTRACT');
 obs(/priorityByReceiver\[fsgStr_\(m\.company\) \+ '\|\|' \+ canon \+ '\|\|' \+ fsgStr_\(m\.marketplace\)\] = ap/.test(G71),
     true, 'G37 71_ factory-stock-guard also keys by the composite identity', 'CONTRACT');
-obs(/prByMkt\[weeklyAiPlanStr_\(r\.marketplace\)\] = r\.allocation_priority/.test(G61),
-    true, 'G38 61_ weekly-AI-plan STILL keys priority by the marketplace NAME ALONE — the same collision R49-F '
-    + 'repaired in the two core producers, in a file R49-F was not authorized to touch', 'DEVIATION');
+// S8-R49-I REPAIRED THIS LAYER. G38 was DEVIATION in R49-G and is CONTRACT now.
+obs(/prByMktKey\[weeklyAiPlanMktKey_\(r\.company, r\.country, r\.marketplace\)\] = r\.allocation_priority/.test(G61)
+    && /prByMktKey\[weeklyAiPlanMktKey_\(scope\.company, scope\.country, marketplace\)\]/.test(G61),
+    true, 'G38 61_ weekly-AI-plan now BUILDS AND LOOKS UP its priority map by the composite identity', 'CONTRACT');
+obs(/prByMkt\[/.test(G61), false,
+    'G38b and no name-only priority index or lookup remains in 61_', 'CONTRACT');
 
 obs(/var ap = fsgNum_\(m\.allocation_priority\); if \(ap === null\) return;/.test(G71), true,
     'G39 71_ omits a missing priority from the map, so the guard STOPs with PRIORITY_UNRESOLVED — fail-closed', 'CONTRACT');
@@ -299,6 +307,97 @@ obs(/allocationPriority: \(poolFacts\.priorityByMkt\[pkey\] != null \? poolFacts
     true, 'G41 … but then substitutes 0 at the point of use, so the omission never reaches a refusal', 'DEVIATION');
 
 // =============================================================================================================
+// =============================================================================================================
+section('L7 61_ WEEKLY AI PLAN -- the repaired identity, EXECUTED (S8-R49-I)');
+// The assertions above prove the composite key is WRITTEN. These execute it, and they execute the SHIPPED
+// producer and consumer rather than a replay of them: an earlier draft re-implemented both in the test and
+// three mutants walked straight through, because mutating 61_ cannot affect a copy living here. A mirror
+// proves the mirror. Both fragments are sliced out of the shipped file and evaluated.
+(function () {
+  var api = new Function(extractShipped(G61, 'weeklyAiPlanStr_') + String.fromCharCode(10)
+    + extractShipped(G61, 'weeklyAiPlanMktKey_')
+    + '; return { key: weeklyAiPlanMktKey_, str: weeklyAiPlanStr_ };')();
+  var K = api.key;
+  var prodStart = G61.indexOf('var prByMktKey = {};');
+  if (prodStart < 0) throw new Error('FAIL-CLOSED: 61_ priority map producer not found');
+  var prodEnd = G61.indexOf('});', prodStart);
+  if (prodEnd < 0) throw new Error('FAIL-CLOSED: 61_ producer end not found');
+  var PRODUCER_SRC = G61.slice(prodStart, prodEnd + 3);
+  var consAt = G61.indexOf('allocationPriority: prByMktKey');
+  if (consAt < 0) consAt = G61.indexOf('allocationPriority: (prByMktKey');
+  if (consAt < 0) throw new Error('FAIL-CLOSED: 61_ priority consumer not found');
+  var consLineEnd = G61.indexOf(String.fromCharCode(10), consAt);
+  // .trim() first: the file is CRLF, so the slice ends with a carriage return and a regex anchored at $
+  // never saw the trailing comma.
+  var CONSUMER_SRC = G61.slice(consAt + 'allocationPriority: '.length, consLineEnd).trim();
+  if (CONSUMER_SRC.charAt(CONSUMER_SRC.length - 1) === ',') CONSUMER_SRC = CONSUMER_SRC.slice(0, -1);
+  var resolveShipped = new Function('mkts', 'scope', 'marketplace', 'weeklyAiPlanStr_', 'weeklyAiPlanMktKey_',
+    PRODUCER_SRC + '; return (' + CONSUMER_SRC + ');');
+  function resolve(rows, sc) { return resolveShipped(rows, sc, sc.marketplace, api.str, K); }
+  var SC = { company: 'KM', country: 'US', marketplace: 'Amazon' };
+  var A = { company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: 10 };
+  var B = { company: 'ResUS', country: 'US', marketplace: 'Amazon', allocation_priority: 20 };
+  var C = { company: 'KM', country: 'CA', marketplace: 'Amazon', allocation_priority: 30 };
+  obs(resolve([A], SC), 10, 'G42 a unique-name row still resolves to its own 10', 'CONTRACT');
+  obs(resolve([A, B], SC), 10, 'G43 SAME name, different COMPANY: the KM site keeps 10, never ResUS 20', 'CONTRACT');
+  obs([resolve([A, B], SC), resolve([B, A], SC)], [10, 10], 'G44 ROW ORDER does not decide', 'CONTRACT');
+  obs(resolve([A, C], SC), 10, 'G45 SAME name, different COUNTRY: the US site never takes the CA row 30', 'CONTRACT');
+  obs([resolve([A, C], SC), resolve([C, A], SC)], [10, 10], 'G46 country isolation holds in both orders', 'CONTRACT');
+  obs(resolve([B], SC), undefined, 'G47 only another company row present -> MISSING, never a substitute', 'CONTRACT');
+  obs(resolve([{ company: 'KM', country: 'US', marketplace: 'Amazon', allocation_priority: 0 }], SC), 0,
+      'G48 PRIORITY 0 is preserved as 0', 'CONTRACT');
+  obs(resolve([{ company: 'KM', country: 'US', marketplace: 'Amazon' }], SC), undefined,
+      'G49 a MISSING priority column stays missing, never fabricated', 'CONTRACT');
+  var P1 = { company: 'A', country: 'B|C', marketplace: 'Amazon', allocation_priority: 11 };
+  var P2 = { company: 'A', country: 'B', marketplace: 'C|Amazon', allocation_priority: 22 };
+  obs([resolve([P1, P2], { company: 'A', country: 'B|C', marketplace: 'Amazon' }),
+       resolve([P1, P2], { company: 'A', country: 'B', marketplace: 'C|Amazon' })], [11, 22],
+      'G50 the composite key is INJECTIVE -- a separator in the data cannot forge a collision', 'CONTRACT');
+  obs(K('KM', 'US', 'Amazon'), K(' KM ', ' US ', ' Amazon '), 'G51 surrounding whitespace is trimmed', 'CONTRACT');
+  obs(K('KM', 'US', 'Amazon') === K('km', 'us', 'amazon'), false,
+      'G52 and case is NOT folded -- 03_ treats Amazon and amazon as different rows, so merging them here '
+      + 'would trade one collision for another', 'CONTRACT');
+})();
+
+// =============================================================================================================
+section('L8 DEPLOYMENT MANIFEST CONSISTENCY (S8-R49-I)');
+// 63_ pins an expected stamp per module owner. A rotated module stamp whose manifest entry was not updated is
+// the exact shape that produced a mixed deployment before, so the two are asserted against each other here.
+// Scoped to the owners THIS round rotated; 90_ is recorded separately because its expected value is a content
+// hash owned by a different round.
+(function () {
+  var G63 = gs('63_api_v1_system_health.gs');
+  function declared(src, symbol) {
+    var m = new RegExp('var ' + symbol + " = '([^']*)'").exec(src);
+    if (!m) throw new Error('FAIL-CLOSED: declaration not found: ' + symbol);
+    return m[1];
+  }
+  function expected(file, symbol) {
+    var m = new RegExp("\{ file: '" + file + "', symbol: '" + symbol + "', expected: '([^']*)'").exec(G63);
+    if (!m) throw new Error('FAIL-CLOSED: manifest entry not found: ' + file);
+    return m[1];
+  }
+  var wapDecl = declared(G61, 'WAP_BUILD_VERSION_');
+  obs(expected('61_api_v1_weekly_ai_plan.gs', 'WAP_BUILD_VERSION_'), wapDecl,
+      'G53 61_ declares the stamp its manifest entry expects -- a rotation without a manifest update is the '
+      + 'mixed deployment this gate exists to catch', 'CONTRACT');
+  var sysDecl = declared(G63, 'SYS_BUILD_VERSION_');
+  obs(expected('63_api_v1_system_health.gs', 'SYS_BUILD_VERSION_'), sysDecl,
+      'G54 63_ likewise declares the stamp its own manifest entry expects', 'CONTRACT');
+  obs(declared(G63, 'SYS_DEPLOYMENT_RELEASE_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46',
+      'G55 SYS_DEPLOYMENT_RELEASE_ is UNCHANGED at R46 -- a module stamp rotation is not a release cut, and '
+      + 'the R46 Production acceptance baseline still refers to the id it was written against', 'CONTRACT');
+  var R = require(path.join(__dirname, '_release-order.js'));
+  obs(R.stampAtOrAfter(wapDecl, sysDecl), true,
+      'G56 the rotated stamp is a KNOWN ledger entry (stampAtOrAfter compares indexes, so an unappended '
+      + 'stamp would be unanswerable)', 'CONTRACT');
+  // 90_ is identified by CONTENT HASH and its expected value belongs to R49-F, not to this round.
+  var bundleDecl = declared(gs('90_generated_supply_planning_bundle.gs'), 'KM_BUNDLE_CONTENT_HASH_');
+  obs(expected('90_generated_supply_planning_bundle.gs', 'KM_BUNDLE_CONTENT_HASH_') === bundleDecl, false,
+      'G57 the 90_ bundle hash in the manifest does NOT match the built bundle -- R49-F rebuilt it and did '
+      + 'not update the manifest. Recorded, not repaired: it is a different round0s contract.', 'DEVIATION');
+})();
+
 var total = pass + fail;
 console.log('\n----------------------------------------');
 console.log('CANDIDATE CONTRACT DEVIATIONS: ' + deviations.length + ' of ' + total + ' characterized behaviours');

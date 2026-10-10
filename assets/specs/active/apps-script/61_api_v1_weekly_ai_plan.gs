@@ -28,6 +28,18 @@ var WEEKLY_AI_PLAN_FACTORY_IDENTITY_ = { CN_YOUXIN: 'WH-TW-CN-FACTORY-YOUXIN', T
 var WEEKLY_AI_PLAN_SOURCE_PAGE_ = 'inventory_replenishment';
 
 function weeklyAiPlanStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+// S8-R49-I — the canonical marketplace identity: company + country + marketplace, the same composite
+// 03_master_data_handlers.gs upserts on and from which marketplace_id = MKT-{COMPANY}-{COUNTRY}-{MARKETPLACE}
+// is derived. Built with String.fromCharCode rather than literal escapes so the separator and escape character
+// cannot be mangled in transit, and escaped so the join is injective. No country alias normalization: the
+// frozen identity contract compares the raw trimmed value.
+function weeklyAiPlanMktKey_(company, country, marketplace) {
+  var SEP = String.fromCharCode(124);   // |
+  var ESC = String.fromCharCode(92);    // backslash
+  return [company, country, marketplace].map(function (v) {
+    return weeklyAiPlanStr_(v).split(ESC).join(ESC + ESC).split(SEP).join(ESC + SEP);
+  }).join(SEP);
+}
 // R5: a numeric coercion beside the string one. Non-numeric reads as 0 rather than NaN, so a missing
 // quantity can never poison a total by arithmetic.
 function weeklyAiPlanNum_(v) { var n = Number(v); return isFinite(n) ? n : 0; }
@@ -266,7 +278,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // valid-zero scope now returns before weeklyAiPlanBuildKmafReceivers_, KMAF.projectAllocationFacts and the
 // batch mapper instead of after all three. A deployment still answering the old 61_ spends the browser's
 // whole write budget arriving at the same answer.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -3388,7 +3400,24 @@ function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors, canonical, exp
   if (!mList.length) return sites;
 
   var mkts = (typeof gapReadObjects_ === 'function') ? gapReadObjects_(ss, 'marketplaces') : [];
-  var prByMkt = {}; mkts.forEach(function (r) { prByMkt[weeklyAiPlanStr_(r.marketplace)] = r.allocation_priority; });
+  // S8-R49-I — keyed by the CANONICAL marketplace identity, not the marketplace name. The name alone is not
+  // unique: keyed by name, every row sharing one overwrote the row before it, so with KM/US/Amazon at 10 and
+  // ResUS/US/Amazon at 20 a KM-scoped site was handed 20 — and reversing the two rows changed the answer.
+  // R49-F repaired exactly this in the two bundled core producers; this is the same defect in the file that
+  // round was not authorized to touch.
+  //
+  // weeklyAiPlanStr_ trims and is case-SENSITIVE, matching the DB owner's upsert comparison, and the separator
+  // is escaped so the join stays injective. Country is NOT canonicalized here: 43_/71_ canonicalize via KMCID,
+  // and reconciling that divergence is a policy decision this round is not authorized to make.
+  //
+  // The hasOwnProperty guard keeps a MISSING priority missing — a sheet with no allocation_priority column no
+  // longer writes undefined over the map — and an explicit 0 is preserved as 0.
+  var prByMktKey = {}; mkts.forEach(function (r) {
+    if (!weeklyAiPlanStr_(r.marketplace)) return;
+    if (Object.prototype.hasOwnProperty.call(r, 'allocation_priority')) {
+      prByMktKey[weeklyAiPlanMktKey_(r.company, r.country, r.marketplace)] = r.allocation_priority;
+    }
+  });
 
   for (var mi = 0; mi < mList.length; mi++) {
     var marketplace = mList[mi];
@@ -3417,7 +3446,11 @@ function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors, canonical, exp
         var _site = {
           marketplace: marketplace, sku: weeklyAiPlanStr_(line.sku), siteSku: weeklyAiPlanStr_(line.siteSku),
           destinationWarehouseId: dest, destinationType: d.destinationType, cumulativeGapByWindow: cum, requiredByByWindow: reqBy,
-          fulfillmentModel: weeklyAiPlanStr_(line.fulfillmentModel), allocationPriority: prByMkt[marketplace],
+          fulfillmentModel: weeklyAiPlanStr_(line.fulfillmentModel),
+          // The site's OWN identity. scope.company / scope.country are the scope this enumeration runs for, and
+          // mList was built by filtering `scopes` on exactly those two fields, so the composite is this site's
+          // and never another company's.
+          allocationPriority: prByMktKey[weeklyAiPlanMktKey_(scope.company, scope.country, marketplace)],
           unitsPerCarton: (upcBySku || {})[weeklyAiPlanStr_(line.sku)], sourceDataAsOf: line.sourceDataAsOf || null
         };
         // §E — QUANTITY from the materialized snapshot, or this site does not enter the plan. The live

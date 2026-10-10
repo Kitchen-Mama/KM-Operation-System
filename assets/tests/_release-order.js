@@ -1713,7 +1713,22 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // no part in. The two releases therefore travel together to Production as one paste set while
   // keeping separate identities - 60_ stays stamped R45, 63_ declares R46, and 42_ is stampless.
   // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R46',
+  // S8-R49-I - R47. 61_ stops keying marketplaces.allocation_priority by the marketplace NAME alone and uses
+  // the canonical company + country + marketplace identity, so a KM site can no longer be handed ResUS's
+  // priority because ResUS's row happened to be read last. R49-F repaired the same defect in the two bundled
+  // core producers; 61_ was outside that round's allowed files.
+  //
+  // Owner set is 61_ + 63_: 61_ carries the change, and 63_ carries it only because the deployment manifest
+  // pins 61_'s expected stamp, which makes 63_ a changed file and so an owner in its own right.
+  //
+  // THIS IS A STAMP ROTATION, NOT A RELEASE CUT. SYS_DEPLOYMENT_RELEASE_ stays at R46 and the live Production
+  // baseline is untouched - R46 Production Functional Acceptance remains OPEN against the same id it was
+  // written against. A module stamp ahead of the declared release is the honest reading of these bytes: they
+  // are not deployed, which is exactly what the deployment-uniformity check already reports for the 66_ and
+  // 90_ changes still queued from R49-D and R49-F.
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
