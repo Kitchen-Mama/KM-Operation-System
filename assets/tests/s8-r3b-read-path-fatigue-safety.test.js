@@ -27,7 +27,12 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ROOT = path.join(__dirname, '..');
-function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
+// S8-R49-M2 — LF-NORMALIZED AT THE READ BOUNDARY, because every anchor below is written with \n.
+// On a CRLF working copy `src.indexOf(from)` could not match, loadMutated threw MUTATION ANCHOR NOT FOUND,
+// and five mutants were reported NOT APPLIED — correctly refused as kills, but refused for a reason that
+// had nothing to do with the code under test. Normalizing here keeps every anchor, every mutation target
+// and every assertion exactly as written, and makes them mean the same thing in any checkout.
+function read(rel) { return require('./_read-source.js').readSource(ROOT, rel); }
 
 var TOOLS = 'tools/s8-fatigue/';
 var AL_F = TOOLS + 's8-r3b-read-allowlist.js';

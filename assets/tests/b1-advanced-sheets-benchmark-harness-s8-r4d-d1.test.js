@@ -29,7 +29,10 @@ var PRE_SHA = '4a4a7f8';           // the tree this round starts from
 var pass = 0, fail = 0, failures = [];
 function ok(c, m, extra) { if (c) { pass++; console.log('ok   ' + m); } else { fail++; failures.push(m); console.log('FAIL ' + m + (extra === undefined ? '' : '\n   ' + extra)); } }
 function eq(a, b, m) { var A = JSON.stringify(a), B = JSON.stringify(b); ok(A === B, m, A === B ? '' : 'expected ' + B + '\n   actual   ' + A); }
-function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
+// S8-R49-M2 — LF-NORMALIZED at the read boundary; see assets/tests/_read-source.js. M7/M11/M14 mutate
+// source read from disk through anchors written with \n, so on a CRLF checkout they could not apply and the
+// vacuity gate reported them VACUOUS rather than caught. The mutants and their targets are unchanged.
+function read(rel) { return require('./_read-source.js').readSource(ROOT, rel); }
 
 var STATE = require(path.join(ROOT, 'assets/tests/_advanced-services-state.js'));
 var MANIFEST_RAW = read(MANIFEST_REL);
