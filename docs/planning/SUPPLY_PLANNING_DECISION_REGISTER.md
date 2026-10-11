@@ -2145,3 +2145,91 @@ output**, never silently skipped, and both conditions carry non-vacuity assertio
 
 **Scope note:** this is a test-file change outside the Preview suites, admitted under the task's "release
 metadata: only if an actual release gate requires a correction". It was required, and the reason is recorded here.
+
+---
+
+## S8-B3-R2-RECHECK — R51 RE-AUDIT — **READY_FOR_DEPLOYMENT_AUTHORIZATION** (2026-10-11)
+
+Independent re-audit at `13729cce`, with its own harness and fixtures rather than a re-read of the fixing
+round's. Both findings are closed, the E4 exemption survives six negative tests, and the cumulative package is
+complete. **A READY classification does not authorize deployment.**
+
+### F1 — closed, re-proven independently
+
+The original race was reproduced from scratch — A starts, A cancelled, B starts, B writes chunks with no META,
+A resumes — and every §3 property holds: A deletes only its own generation (0 of its own keys remain), **B's two
+chunks survive**, B's state and its trigger are intact, B's META commits and its Result GET succeeds, A cannot
+serve under its own runId, and zero business writes are attempted. **The Gap job's state and partition chunks are
+byte-identical**, before and after. Against a de-patched pre-fix source the same harness destroys both of B's
+chunks, so the guard is load-bearing rather than decorative. (Pre-fix, the Gap job was never at risk either — the
+defect was always Preview-internal.)
+
+### F2 — closed, and the "missing context" question is answered with a measurement
+
+§4 asked whether a missing context can SILENTLY BYPASS F2 in production. It cannot.
+
+1. **`env.calcContext` is always present in production.** `oapDefaultEnv_` declares it, so the optional guard in
+   `oapReadGroup_` can never take the false branch there.
+2. **A context can still fail to RESOLVE.** `gapCalcResolveContext_` returns `{ok:false, code, message}` on an
+   invalid execution date — reachable only through a broken clock, since `gapCalcTaipeiYmd_` is pure arithmetic,
+   but structurally real.
+3. **Measured, that degrades rather than bypasses.** A healthy context key is
+   `2026-10-10~2026-10~RECO-2026-10~2026-10`; a broken one is `~~~2026-10`. The three resolver fields drop out,
+   **but the harvested calculation month remains**, so a month rollover is STILL caught. The degraded key is
+   deterministic, so it raises no false drift either. Each of the four fields was separately shown to move the
+   digest.
+
+**Therefore NOT blocked.** The classification question §4 posed has a measured answer rather than an argued one.
+
+### E4 exemption — six negative tests against the SHIPPED predicate
+
+The exemption's own text was lifted out of the suite and evaluated against mutated inputs, so what is under test
+is the shipped predicate and not a restatement of it. Exemption **GRANTED** only for the baseline (stamp = current
+release, ledger says NOT DEPLOYED); **REJECTED** when the release is marked DEPLOYED, for an R52 identity absent
+from the ledger, for a ledger entry with the status removed, for an unknown/garbled status, for a release missing
+from the ledger entirely, for a file stamped with an older (R41) release, for a future stamp, and for an empty
+stamp. After shipping, a future stamp is not exempt by default. The live ledger does record R51 as NOT DEPLOYED
+and Production as R49, so the baseline measures the real file.
+
+**The normal gate is not weakened for future releases.** The exemption requires a release to be BOTH current AND
+recorded unshipped — a deliberate act, never a default — and it cancels itself the moment the ledger says
+otherwise, with no further edit.
+
+### Cumulative package
+
+**Apps Script (6):** `00_config.gs` · `01_router.gs` · `43_api_v1_gap_materialization.gs` (carried from the
+unshipped R50) · `74_api_v1_overseas_allocation_preview_job.gs` · `90_generated_supply_planning_bundle.gs` ·
+**`63_api_v1_system_health.gs` LAST**.
+
+**Pending FRONTEND publication since R49 — six browser files**, and this is a SEPARATE claim from "R51 rotated no
+cache token", which is also true: `index.html`, `assets/js/app.js`, `assets/js/api/operation-system-db-api.js`,
+`assets/js/pages/inventory-replenishment.js`, `assets/js/pages/site-priority.js`,
+`assets/css/pages/inventory-replenishment.css`, `assets/css/pages/site-priority.css`. The five changed
+`assets/js/core/*` modules are **not** in this set — verified, not assumed: neither `index.html` nor `app.js`
+references any of them; they reach Apps Script through `90_` and the browser through nothing.
+
+### Backend-first compatibility
+
+The client check is `deployed < expected` — a MINIMUM — so an R49 frontend runs against an R51 backend. The R51
+frontend requires contract 19 and the deployment reports 19. No browser file references the Preview actions, no
+Preview page or navigation entry exists, the flag ships `false` and is checked before the env is built, and there
+is **no Apply action anywhere** in `74_` or `01_router.gs`. Gap Materialization (145/0), IR C1 and Site Priority
+B2 are unchanged.
+
+### Classification
+
+**READY_FOR_DEPLOYMENT_AUTHORIZATION.** Three operations remain distinct and user-owned: (A) backend source
+synchronisation, `63_` last; (B) Apps Script deployment version publication; (C) frontend publication of the six
+pending browser files. None of them is performed by this round.
+
+### Remaining deviations
+
+1. **Pre-existing, not a FIX1 regression, and out of this round's scope:** `workspaceIo` hard-codes `ok: true`
+   while copying `calculationDate` / `calculationMonth` / `planningCycle` from the resolved context, so a
+   `{ok:false}` resolution is laundered into a context `gapMaterializationDefaultIo_` accepts as valid. Verified
+   present at `8c0bd487` (R1A) and unchanged since, so FIX1 neither introduced nor worsened it — FIX1 in fact
+   improved the neighbourhood, because the fingerprint and the io now share ONE resolution and can no longer
+   disagree across a rollover. Worth a future round; it is not a Preview-specific defect and it is not reachable
+   without a broken clock.
+2. Carried and unchanged: module numbered `74_` (name collision with `47_api_v1_recommendation_generation.gs`);
+   the E4 exemption exists at all; the frontend publication backlog described above.
