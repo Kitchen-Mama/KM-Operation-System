@@ -68,22 +68,60 @@ function makeDom() {
 }
 
 // Load the page module against a fresh global. Returns { api, dom, calls }.
+// S8-B3-R3-CP2D — THE STUB MAY NOT BE RICHER THAN PRODUCTION.
+//
+// The previous stub supplied `refreshOperationDb`, a method that is defined NOWHERE in the shipped API, and
+// paired it with an `onRefresh` hook that mutated the row set. Between them they manufactured a re-read that
+// production could not perform, so this suite stayed green while the page's read-after-write compared a stale
+// cache slice against itself. Every DB method below is checked against the real `window.KM.DB.*` export list
+// in section J, so this class of fiction fails the suite instead of hiding in it.
+var API_SRC = read('assets/js/api/operation-system-db-api.js');
+var KM_DB_EXPORTS = {};
+(API_SRC.match(/window\.KM\.DB\.([A-Za-z0-9_]+)\s*=/g) || []).forEach(function (m) {
+  KM_DB_EXPORTS[/window\.KM\.DB\.([A-Za-z0-9_]+)/.exec(m)[1]] = 1;
+});
+
 function bootPage(opts) {
   opts = opts || {};
   var dom = makeDom();
-  var calls = { upsert: [], refresh: 0 };
+  var calls = { upsert: [], refLoads: 0, invalidate: [] };
   var win = {};
+  // A minimal KM.referenceCache with the SHIPPED semantics: get() shares one promise per key and retains only
+  // a SUCCESS; a failed load is never retained; invalidate(key) drops exactly that key and nothing else.
+  var rstore = {};
+  var refCache = {
+    get: function (key, loader) {
+      if (rstore[key]) return rstore[key];
+      var pr = Promise.resolve().then(loader).catch(function (e) { delete rstore[key]; throw e; });
+      rstore[key] = pr;
+      return pr;
+    },
+    invalidate: function (key) { calls.invalidate.push(key); delete rstore[key]; },
+    invalidateMany: function (ks) { (ks || []).forEach(function (k) { refCache.invalidate(k); }); },
+    clear: function () { rstore = {}; }
+  };
   win.KM = {
     lifecycle: { register: function (name, hooks) { win.KM._hooks = hooks; win.KM._registered = name; } },
     partialLoader: { loadPartial: function () { return Promise.resolve(true); } },
     countryIdentity: require(path.join(ROOT, 'assets', 'js', 'core', 'supply-planning-country-identity.js')),
+    referenceCache: refCache,
     DB: {
-      getMarketplaces: function () { return (opts.rows || []).slice(); },
-      refreshOperationDb: function () { calls.refresh++; if (opts.onRefresh) opts.onRefresh(); return Promise.resolve(true); },
+      // The REAL read owner. `calls.refLoads` counts LOADER invocations, not cache hits — that is how a test
+      // proves a genuine re-read happened rather than a second look at the same memoized answer.
+      getMarketplaceReference: function () {
+        return refCache.get('marketplaces', function () {
+          calls.refLoads++;
+          if (opts.readThrows) return Promise.reject(new Error(opts.readThrows));
+          return Promise.resolve((opts.rows || []).slice());
+        });
+      },
       upsertMarketplace: function (payload) {
         calls.upsert.push(payload);
+        // The shipped writer RETURNS (never throws) when the API is not configured.
+        if (opts.upsertReturnsFailure) return Promise.resolve({ success: false, error: opts.upsertReturnsFailure });
         if (opts.upsertThrows) return Promise.reject(new Error(opts.upsertThrows));
         if (opts.onUpsert) opts.onUpsert(payload);
+        refCache.invalidate('marketplaces');   // exactly what the shipped writer does after a confirmed write
         return Promise.resolve({ ok: true });
       }
     }
@@ -95,7 +133,7 @@ function bootPage(opts) {
   var code = fs.readFileSync(path.join(ROOT, 'assets/js/pages/site-priority.js'), 'utf8');
   var fn = new Function('window', 'document', 'console', 'CSS', 'KM', code);
   fn(win, dom.document, sandbox.console, null, win.KM);
-  return { win: win, dom: dom, calls: calls, api: win.KM.sitePriority, hooks: win.KM._hooks };
+  return { win: win, dom: dom, calls: calls, opts: opts, api: win.KM.sitePriority, hooks: win.KM._hooks };
 }
 
 // -------------------------------------------------------------------------------------------------------------
@@ -219,8 +257,12 @@ cDone.then(function () {
       eq(p.status, 'disabled', 'D4 the stored status is echoed — omitting it would silently REACTIVATE the marketplace');
       eq(p.currency, 'GBP', 'D5 the stored currency is echoed — the handler REFUSES a blank one');
       eq(p.marketplace_display_name, 'Amazon UK', 'D6 the stored display name is echoed — omitting it would blank it');
-      ok(b.calls.refresh >= 1, 'D7 the data is re-read after the write — read-after-write, not write-and-hope');
-      ok(/Saved\./.test(b.dom.byId['sp-status'].textContent), 'D8 and success is reported only after the re-read agreed');
+      eq(b.calls.invalidate.indexOf('marketplaces') !== -1, true,
+         'D7 the writer invalidated the marketplaces reference key — the page relies on that, it does not re-invalidate');
+      ok(b.calls.refLoads >= 2,
+         'D7a and the read-back actually LOADED again (' + b.calls.refLoads + ' loader calls) — not a second look at a memoized answer');
+      ok(/Saved and VERIFIED/.test(b.dom.byId['sp-status'].textContent),
+         'D8 success is claimed only after a fresh read agreed');
       eq(b.dom.byId['sp-status'].className.indexOf('sp-status--success') !== -1, true, 'D8a with the success state');
     });
   });
@@ -242,8 +284,13 @@ cDone.then(function () {
       var st = b.dom.byId['sp-status'];
       ok(st.className.indexOf('sp-status--error') !== -1, 'E1 a thrown write renders the ERROR state');
       ok(st.className.indexOf('success') === -1, 'E2 and never the success state');
-      ok(/nothing was written/i.test(st.textContent), 'E3 the message states the write posture truthfully');
-      ok(/500/.test(st.textContent), 'E4 and carries the underlying reason');
+      // CP2D — a THROWN write is UNDETERMINED, not proof that nothing was written. `upsertMarketplace`
+      // throws for a refused write AND for a transport failure, and a request that never got an answer may
+      // still have been applied. Claiming "nothing was written" here was the lie this assertion used to pin.
+      ok(/UNDETERMINED/i.test(st.textContent), 'E3 a thrown write is reported as UNDETERMINED, never as "nothing was written"');
+      ok(!/nothing was written/i.test(st.textContent), 'E3a and does not assert the absence of a write it cannot know');
+      ok(/500/.test(st.textContent), 'E4 while still carrying the underlying reason');
+      eq(b.calls.upsert.length, 1, 'E4a and NO automatic re-send was attempted');
 
       // A write that resolves but does not persist is also a failure.
       var store2 = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: null, currency: 'USD', status: 'active' }];
@@ -257,7 +304,7 @@ cDone.then(function () {
           var s2 = b2.dom.byId['sp-status'];
           ok(s2.className.indexOf('sp-status--error') !== -1,
              'E5 a write that is ACCEPTED but does not persist is reported as an error, not a success');
-          ok(/does not match/.test(s2.textContent), 'E5a and says the stored value disagrees');
+          ok(/NOT VERIFIED/.test(s2.textContent), 'E5a and says plainly that persistence is NOT verified');
         });
       });
     });
@@ -376,6 +423,154 @@ cDone.then(function () {
      'I3 and says so in the refusal, where an operator meets it');
   ok(/CLEAR A PRIORITY BACK TO MISSING/.test(PAGE_SRC),
      'I4 with the gap recorded in the source, not only in a report');
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
+  section('J. CP2D — the read owner, and the stub that may not out-promise production');
+
+  // The guard that would have caught the original defect on the round that introduced it.
+  var stubbed = Object.keys(bootPage({ rows: [] }).win.KM.DB);
+  var fictional = stubbed.filter(function (m) { return !KM_DB_EXPORTS[m]; });
+  eq(fictional.join(','), '', 'J1 every KM.DB method the stub provides EXISTS in the shipped API' +
+     (fictional.length ? ' — fictional: ' + fictional.join(', ') : ''));
+  eq(KM_DB_EXPORTS.refreshOperationDb, undefined, 'J1a and refreshOperationDb is confirmed absent from the real API');
+  eq(KM_DB_EXPORTS.getMarketplaceReference, 1, 'J1b while getMarketplaceReference is a real export');
+  ok(!/refreshOperationDb/.test(PAGE_SRC.replace(/^\s*\/\/.*$/gm, '')),
+     'J2 the page no longer CALLS refreshOperationDb outside its comments');
+  ok(/getMarketplaceReference/.test(PAGE_SRC), 'J3 and reads through the reference owner instead');
+  ok(!/getMarketplaces\(\)/.test(PAGE_SRC.replace(/^\s*\/\/.*$/gm, '')),
+     'J4 the _opDbCache slice getter is gone from the page body');
+  ok(/referenceCache[\s\S]{0,240}invalidate\('marketplaces'\)/.test(PAGE_SRC),
+     'J5 manual Refresh invalidates exactly ONE key — never clear(), never another consumer key');
+  ok(!/referenceCache[\s\S]{0,240}\.clear\(/.test(PAGE_SRC), 'J5a and never clears the whole reference cache');
+
+  // J6 — COLD START: no cache primed; the reference read still works, so the page is never stranded.
+  var cold = bootPage({ rows: [KM_US] });
+  return cold.hooks.mount().then(function () {
+    eq(cold.api._state().rows.length, 1, 'J6 cold start with no _opDbCache still loads rows through the reference owner');
+    eq(cold.calls.refLoads, 1, 'J6a with exactly one load');
+
+    // J7 — MANUAL REFRESH really re-reads: invalidate, then a second loader call.
+    cold.dom.byId['site-priority-section'].fire('click', (function () { var e = new El(''); e.id = 'sp-refresh'; return e; })());
+    return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+      eq(cold.calls.invalidate.indexOf('marketplaces') !== -1, true, 'J7 Refresh invalidates the marketplaces key');
+      eq(cold.calls.refLoads, 2, 'J7a and the loader runs again — a REAL re-read, not a memoized answer');
+
+      // J8 — READ FAILURE is not "no sites", and does not wipe the rows already on screen.
+      var rf = bootPage({ rows: [KM_US] });
+      return rf.hooks.mount().then(function () {
+        rf.opts.readThrows = 'getTable timed out';
+        rf.dom.byId['site-priority-section'].fire('click', (function () { var e = new El(''); e.id = 'sp-refresh'; return e; })());
+        return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+          var st = rf.dom.byId['sp-status'];
+          ok(/Could not read/.test(st.textContent), 'J8 a failed read says so');
+          ok(!/contains no sites/.test(st.textContent), 'J8a and is NOT reported as an empty table');
+          ok(/Nothing was changed/.test(st.textContent), 'J8b stating that nothing changed');
+          eq(rf.api._state().rows.length, 1, 'J8c the previously loaded rows are kept, not replaced by an empty grid');
+
+          // J9 — EMPTY is its own answer.
+          var em = bootPage({ rows: [] });
+          return em.hooks.mount().then(function () {
+            ok(/read successfully but contains no sites/.test(em.dom.byId['sp-status'].textContent),
+               'J9 a successful read of an empty table is reported as EMPTY, not as a failure');
+
+            // J10 — SAME OLD VALUE must not pass vacuously: the read-back must really have re-loaded.
+            var store = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: 50,
+                           currency: 'USD', status: 'active' }];
+            var same = bootPage({ rows: store, onUpsert: function (p) { store[0].allocationPriority = p.allocation_priority; } });
+            return same.hooks.mount().then(function () {
+              var i = new El(''); i._isInput = true; i._sel = '[data-sp-input]'; i.value = '50';
+              same.dom.extra.push(i);
+              var bt = new El(''); bt.setAttribute('data-sp-save', same.api.identityOf(store[0]));
+              same.dom.byId['site-priority-section'].fire('click', bt);
+              return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+                eq(same.calls.refLoads, 2,
+                   'J10 re-saving the value the page already held still performs a SECOND real load — no vacuous pass');
+                ok(/Saved and VERIFIED/.test(same.dom.byId['sp-status'].textContent),
+                   'J10a and only then reports verified');
+
+                // J11 — WRITE ACCEPTED but READ-BACK FAILS: not verified, not "nothing written", no re-send.
+                var st2 = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: null,
+                             currency: 'USD', status: 'active' }];
+                var rbf = bootPage({ rows: st2, onUpsert: function () { } });
+                return rbf.hooks.mount().then(function () {
+                  var i2 = new El(''); i2._isInput = true; i2._sel = '[data-sp-input]'; i2.value = '7';
+                  rbf.dom.extra.push(i2);
+                  rbf.opts.readThrows = 'read-back transport failure';
+                  var b2 = new El(''); b2.setAttribute('data-sp-save', rbf.api.identityOf(st2[0]));
+                  rbf.dom.byId['site-priority-section'].fire('click', b2);
+                  return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+                    var s3 = rbf.dom.byId['sp-status'];
+                    ok(/ACCEPTED but the read-back FAILED/.test(s3.textContent),
+                       'J11 an accepted write with a failed read-back is reported as NOT verified');
+                    ok(s3.className.indexOf('success') === -1, 'J11a never as success');
+                    ok(/Do not re-save/.test(s3.textContent), 'J11b and tells the operator not to re-save');
+                    eq(rbf.calls.upsert.length, 1, 'J11c with no automatic re-send');
+
+                    // J12 — API NOT CONFIGURED: the writer RETURNS success:false and must never look saved.
+                    var st3 = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: null,
+                                 currency: 'USD', status: 'active' }];
+                    var nc = bootPage({ rows: st3, upsertReturnsFailure: 'API not configured' });
+                    return nc.hooks.mount().then(function () {
+                      var i3 = new El(''); i3._isInput = true; i3._sel = '[data-sp-input]'; i3.value = '3';
+                      nc.dom.extra.push(i3);
+                      var b3 = new El(''); b3.setAttribute('data-sp-save', nc.api.identityOf(st3[0]));
+                      nc.dom.byId['site-priority-section'].fire('click', b3);
+                      return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+                        var s4 = nc.dom.byId['sp-status'];
+                        ok(/WRITE REFUSED/.test(s4.textContent), 'J12 an explicit success:false return is a REFUSAL');
+                        ok(/API not configured/.test(s4.textContent), 'J12a carrying the writer reason');
+                        ok(s4.className.indexOf('success') === -1, 'J12b and is never shown as success');
+
+                        // J13 — DOUBLE CLICK issues ONE write.
+                        var st4 = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: null,
+                                     currency: 'USD', status: 'active' }];
+                        var dc = bootPage({ rows: st4, onUpsert: function (p) { st4[0].allocationPriority = p.allocation_priority; } });
+                        return dc.hooks.mount().then(function () {
+                          var i4 = new El(''); i4._isInput = true; i4._sel = '[data-sp-input]'; i4.value = '8';
+                          dc.dom.extra.push(i4);
+                          var b4 = new El(''); b4.setAttribute('data-sp-save', dc.api.identityOf(st4[0]));
+                          var secEl = dc.dom.byId['site-priority-section'];
+                          secEl.fire('click', b4); secEl.fire('click', b4); secEl.fire('click', b4);
+                          return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+                            eq(dc.calls.upsert.length, 1, 'J13 three rapid clicks issue exactly ONE write');
+
+                            // J14 — a response landing AFTER unmount must not touch the banner.
+                            var st5 = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: null,
+                                         currency: 'USD', status: 'active' }];
+                            var um = bootPage({ rows: st5, onUpsert: function (p) { st5[0].allocationPriority = p.allocation_priority; } });
+                            return um.hooks.mount().then(function () {
+                              var i5 = new El(''); i5._isInput = true; i5._sel = '[data-sp-input]'; i5.value = '6';
+                              um.dom.extra.push(i5);
+                              var b5 = new El(''); b5.setAttribute('data-sp-save', um.api.identityOf(st5[0]));
+                              um.dom.byId['site-priority-section'].fire('click', b5);
+                              um.hooks.unmount();                     // leave while the save is in flight
+                              // whatever the NEXT page wrote to the shared status node after the operator left
+                              um.dom.byId['sp-status'].textContent = 'AFTER-UNMOUNT';
+                              return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+                                eq(um.dom.byId['sp-status'].textContent, 'AFTER-UNMOUNT',
+                                   'J14 a save settling after unmount does not overwrite the status of the page the operator is now on');
+                                eq(um.api._state().mounted, false, 'J14a and the page stays unmounted');
+                                return um.hooks.mount().then(function () {
+                                  eq(um.api._state().rows.length, 1, 'J15 re-mounting reads cleanly again');
+                                  eq(um.api._state().busy, false, 'J15a with no stuck busy flag');
+                                });
+                              });
+                            });
+                          });
+                        });
+                      });
+                    });
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  });
 })
 
 // -------------------------------------------------------------------------------------------------------------
