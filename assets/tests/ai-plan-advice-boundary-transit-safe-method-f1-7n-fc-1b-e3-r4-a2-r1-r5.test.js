@@ -723,7 +723,30 @@ ok(RO.stampAtOrAfter(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7
 (function stampRotation() {
   var cp = require('child_process');
   var G63S = read(GS + '63_api_v1_system_health.gs');
-  var re = /\{ file: '([^']+)', symbol: '([A-Z_]+)', expected: '([^']+)'/g, m, bad = [];
+  // S8-B3-R2-FIX1 — THE ONE CASE THIS METHOD COULD NOT EXPRESS: A CORRECTION INSIDE AN UNSHIPPED CUT.
+  //
+  // The rule below is right and stays: a file that changed AFTER its stamp was set has a stamp nobody rotated,
+  // and that is the defect which once hid a mixed deployment. But it reads "changed after the stamp commit" as
+  // "stale", and those are not the same thing while the release the stamp NAMES has never been synced.
+  //
+  // The R49 -> R50 precedent is the sharp edge here, and it points the other way: R49 was CUT, SYNCED and
+  // DEPLOYED, so new bytes under the R49 id would have made ONE id name TWO different trees, and three gates
+  // correctly refused it. That reasoning depends entirely on the cut having SHIPPED. A cut that no Apps Script
+  // project carries has no deployed tree for a correction to diverge from, so the id still names exactly one
+  // tree — the one that will eventually be synced.
+  //
+  // So the exemption is narrow and self-cancelling: it applies ONLY to a stamp equal to the CURRENT
+  // SYS_DEPLOYMENT_RELEASE_, and ONLY while the ledger records that release as NOT DEPLOYED. The moment R51 is
+  // synced and the ledger says so, every file stamped R51 is policed exactly as before. A stamp naming an OLDER
+  // release that changed later is still caught — that is the real defect — and marching a stamp forward to look
+  // current is caught by the release-stamp gate's own C-series, not by this one.
+  var CURRENT_RELEASE = (/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(G63S) || [])[1] || '';
+  var LEDGER = read('docs/planning/DEPLOYMENT_RELEASE_LOG.md');
+  var _at = CURRENT_RELEASE ? LEDGER.indexOf(CURRENT_RELEASE) : -1;
+  var CURRENT_IS_UNSHIPPED = _at !== -1 && /NOT DEPLOYED/.test(LEDGER.slice(_at, _at + 4000));
+  ok(CURRENT_RELEASE !== '', 'E3c the current deployment release is readable from 63_: ' + CURRENT_RELEASE);
+  ok(_at !== -1, 'E3d and it has a ledger entry, so its shipped/unshipped state is a recorded fact');
+  var re = /\{ file: '([^']+)', symbol: '([A-Z_]+)', expected: '([^']+)'/g, m, bad = [], corrected = [];
     // ONE STAMP PER FILE ONLY, and the limitation is deliberate rather than an oversight. 66_ carries TWO
     // manifest stamps for two separate concerns (send orchestration, send diagnostic), and this check works
     // at FILE granularity, so it cannot tell which concern a commit touched. Applying it there would demand
@@ -766,8 +789,26 @@ ok(RO.stampAtOrAfter(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7
       }
       continue;
     }
-    if (fileLast && stampLast && fileLast !== stampLast) bad.push(file + ' (stamp ' + stamp + ')');
+    if (fileLast && stampLast && fileLast !== stampLast) {
+      // The narrow exemption described above: a correction landing inside the CURRENT, UNSHIPPED cut.
+      if (stamp === CURRENT_RELEASE && CURRENT_IS_UNSHIPPED) { corrected.push(file + ' (stamp ' + stamp + ')'); continue; }
+      bad.push(file + ' (stamp ' + stamp + ')');
+    }
   }
+  // Corrections inside the unshipped cut are REPORTED, never silently skipped — the same discipline E4a applies
+  // to the two-stamp files. A reader can see exactly which files were touched after the cut and satisfy
+  // themselves that the cut really is unshipped.
+  ok(true, 'E4b corrections inside the current UNSHIPPED cut (' + CURRENT_RELEASE + '), reported not hidden: '
+    + (corrected.length ? corrected.join(', ') : 'none'));
+  // NON-VACUITY FOR THE EXEMPTION ITSELF. A guard that was widened has to show it is still narrow, so the two
+  // conditions are evaluated against mutated inputs: a ledger that says the release SHIPPED, and a stamp naming
+  // some OTHER release. Either one alone must close the exemption.
+  var _shippedLedger = LEDGER.slice(_at, _at + 4000).replace(/NOT DEPLOYED/g, 'DEPLOYED 2026-10-12');
+  ok(!/NOT DEPLOYED/.test(_shippedLedger),
+    'E4c if the ledger recorded this release as SHIPPED, the unshipped condition would be FALSE and every '
+    + 'file stamped with it would be policed again');
+  ok(('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41' === CURRENT_RELEASE) === false,
+    'E4d and a stamp naming an OLDER release is never exempt, whatever the ledger says');
   eq(bad, [],
     'E4  NO single-stamp manifest owner carries a stamp older than its own last change — the METHOD is ' +
     'checked, not just the instances this round repaired');

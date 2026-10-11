@@ -2122,3 +2122,26 @@ an optional guard and an env that lost `calcContext` would silently reinstate F2
 producers **37/0** · R49-G **78/0** · action registry **208/0** · deploy surface **106/0** · release stamp gate
 **111/0, 0 survived, vacuity clean** · Golden Registry **206/0, 40/40** · contended-partition storage **22/0** ·
 Gap Materialization job **145/0** (untouched by this patch, asserted).
+
+### Addendum — the release gate this correction had to teach a distinction
+
+The post-commit sweep flagged `E4` in
+`ai-plan-advice-boundary-transit-safe-method-f1-7n-fc-1b-e3-r4-a2-r1-r5.test.js`: *"no single-stamp manifest owner
+carries a stamp older than its own last change"*. `74_` declares R51 and changed again after R51 was cut, so by
+that method its stamp looked unrotated.
+
+**The method is right and was kept.** What it could not express is a CORRECTION INSIDE AN UNSHIPPED CUT. The
+R49 → R50 precedent is the sharp edge and it points the other way: R49 was CUT, **SYNCED and DEPLOYED**, so new
+bytes under the R49 id would have made one id name two different trees, and three gates correctly refused it.
+That reasoning depends entirely on the cut having SHIPPED. No Apps Script project carries R51, so there is no
+deployed tree for this correction to diverge from and the id still names exactly one tree.
+
+The exemption is therefore narrow and self-cancelling: it applies only to a stamp equal to the CURRENT
+`SYS_DEPLOYMENT_RELEASE_`, and only while the ledger records that release as `NOT DEPLOYED`. The moment R51 is
+synced and the ledger says so, every file stamped R51 is policed exactly as before. A stamp naming an OLDER
+release that changed later is still caught — that is the defect this gate exists for — and marching a stamp
+forward to look current is caught by the release-stamp gate's own C-series. Exempted files are **named in the
+output**, never silently skipped, and both conditions carry non-vacuity assertions (`E4c`, `E4d`).
+
+**Scope note:** this is a test-file change outside the Preview suites, admitted under the task's "release
+metadata: only if an actual release gate requires a correction". It was required, and the reason is recorded here.
