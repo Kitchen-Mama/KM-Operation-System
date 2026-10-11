@@ -1970,3 +1970,95 @@ the shared ~500 KB store for the Gap job, which is the reason the cap is declare
   them; they reach Apps Script through `90_` and the browser through nothing. The only browser file touched is
   `operation-system-db-api.js`, whose contract pin moves 18 → 19 to stay EQUAL to the deployment. Rotating a token
   would assert a frontend change that did not happen.
+
+---
+
+## S8-B3-R2 — R51 ACCEPTANCE AUDIT — **BLOCKED, ONE CORRECTIVE PATCH REQUIRED** (2026-10-11)
+
+Independent read-only audit of R51 at `8c0bd487`. **R51 is NOT accepted for deployment authorization.** One
+runtime defect reaches a required property; one coverage gap does not block but should ride the same patch.
+
+### F1 — BLOCKING — a superseded worker deletes a NEWER run's result chunks
+
+`oapJobContinue_` phase 3, superseded branch:
+
+```js
+oapResultPurge_(env, (live && live.resultMeta) ? live.resultMeta.generationId : null);
+```
+
+`oapResultPurge_` deletes **every** key under the Preview prefix except the one generation it is told to keep.
+When the newer run has written its chunks but has **not yet committed its META** — precisely the window the
+generation-keyed design exists to survive — `live.resultMeta` is `null`, the keep-set is empty, and the stale
+worker deletes the newer run's chunks.
+
+**Reachable by a plain operator action, EXECUTED, not reasoned:** Cancel, then Start again, while the previous
+worker is still inside its unlocked phase 2. Cancel makes the old run terminal instantly, which is what lets the
+new START succeed; the old worker then reaches phase 3, sees a different runId and purges. Staleness is NOT the
+path — a worker idle past `OAP_STALE_MS_` (600000) would have been hard-killed at ~360000 and never reach phase 3.
+
+**Consequence:** the new run commits a META pointing at chunks that no longer exist, and `result.get` answers
+`RESULT_INTEGRITY_FAILURE` / `PREVIEW_RESULT_CHUNK_MISSING`. It **fails closed** — no wrong number, no mixed
+generation, no business data touched — but a valid run is destroyed and the operator is shown an integrity error
+instead of a result. §7's required property *"Cleanup cannot delete a newer run's chunks"* does not hold.
+
+**Required corrective patch** (NOT applied by this round):
+
+```js
+// delete only the chunks THIS worker wrote; a superseded worker has no business
+// deciding which chunks belong to anyone else
+function oapResultPurgeGeneration_(env, generationId) {
+  if (!env.props.keys || !generationId) return 0;
+  var pfx = OAP_RESULT_PREFIX_ + ':' + generationId + ':';
+  var all = env.props.keys() || [], removed = 0;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].indexOf(pfx) === 0) { try { env.props.del(all[i]); removed++; } catch (_e) {} }
+  }
+  return removed;
+}
+```
+
+and in the superseded branch, `oapResultPurgeGeneration_(env, generationId)` in place of the keep-set call.
+
+**The DONE branch is correct as written and must NOT be changed.** There, the worker has already verified under
+the lock that it IS the live run, so every other generation is genuinely an orphan; and a competing START cannot
+interleave because START needs the same lock.
+
+### F2 — NON-BLOCKING — the calculation context is outside the input fingerprint
+
+`oapFingerprint_(receivers, pools)` takes two arguments. `calculationMonth` is read, published in
+`generation.calculationMonth`, and **never compared**. EXECUTED: a month rollover between the read and the
+revalidation does **not** raise `SOURCE_DRIFT`; the control case (a changed demand quantity) **does**, so the
+guard is live and the gap is specific.
+
+**Why this is not a correctness defect.** `calculationMonth` is never passed to KMMSA. It reaches the allocation
+only through `demandQty` and `requiredByDate`, both of which ARE fingerprinted — so no allocation-relevant input
+escapes the guard, and a published result's month always describes the numbers it accompanies. What can happen is
+a result published under month M while the system has moved to M+1; it is internally coherent and expires within
+`OAP_RESULT_TTL_MS_`. §6 nonetheless lists calculation month/context as required coverage, and the hardening is
+one line: thread the context into the digest and compare it with the rest.
+
+### Verified and holding
+
+- **§5 lock safety.** No blocking wait exists: `OAP_LOCK_RETRY_DELAY_MS_` is only ever passed to
+  `scheduleContinuation`, and the execution returns `RESCHEDULED_LOCKED` immediately. The 480000 ms budget is
+  wall-clock across eight separate executions, never a held wait. The lock is proven (by instrumentation, not
+  inspection) not held during the sheet read, the workspaceGet/harvest or scope enumeration.
+- **§8 transitive writes.** Code-only call graph is `KMCID.canonicalCountryCode`, `KMMSA.allocate…`,
+  `gapCalcResolveContext_`, `gapEnumerateScopes_`, `gapOpReadSupplyPoolFacts_`, `gapOpHarvestReceivers_`, the four
+  chunk primitives, `gapMaterializationDefaultIo_`, plus Properties/Lock/ScriptApp/Utilities. **None of the four
+  43_ helpers contains a write primitive**, and `gapOpHarvestReceivers_` touches `io.workspaceGet` and nothing
+  else. No business table is reachable for writing, directly or indirectly.
+- **§3 cumulative delta R49 → R51 is SIX Apps Script files** — `00_`, `01_`, `43_` (carried from the unshipped
+  R50), `63_`, `74_`, `90_` — which matches the reported sync list exactly, verified against git rather than
+  against the report.
+- **§7 everything except the cleanup property**: runId and cancellation checked at publication, META after chunks,
+  checksum and expiry both block reads (non-vacuously — restoring the chunk unblocks), result identity matches
+  the requested scope, no old run overwrites a newer one.
+- **§9 / §10** parity and the full C2 matrix hold; §11 gates are green and the bundle reproduces.
+
+### Note for whoever writes the deployment plan
+
+The cumulative **frontend** delta since R49 is **not empty** — `index.html`, `app.js`, two page scripts, two
+stylesheets and the API client all changed across the unshipped R50/B2/C1 rounds, and the cache token in the tree
+is `r50-irpriority-20261010`. R51 itself rotates no token and that remains correct, but a deployment plan that
+treats "R51 changed no frontend" as "no frontend publication is pending" would be wrong.
