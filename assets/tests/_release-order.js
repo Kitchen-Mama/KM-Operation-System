@@ -1213,7 +1213,18 @@ var IR_CSS_TOKEN_SERIES = [
   // height by the scrollbar whenever a site's category count overflows it — the exact instability this round
   // was asked to remove, on a page whose JS already stopped putting a banner in the gap. The page would look
   // half-repaired, which is worse than unrepaired because the remaining movement would have no visible cause.
-  'irrestinglayout-20261008'
+  'irrestinglayout-20261008',
+  // S8-C1 / S8-B3-R3-GATE1 — FOUR NEW RULES, AND THE ROUND THAT ADDED THEM ROTATED THE WRONG FAMILY.
+  // S8-C1 gave the fail-closed priority diagnostic its stylesheet: .replen-tp-unresolved and its __title,
+  // __row, __hint and __link. That same commit rotated the APPLICATION family to r50-irpriority-20261010 and
+  // left this one alone, so the stylesheet changed and its URL did not. A browser serving the cached copy has
+  // ZERO rules for all four, which renders the amber refusal box as unstyled body text sitting under the
+  // physical rows — the §45 refusal would be reachable at last and still arrive looking like a bug. That is
+  // the .replen-ai-plan-result defect for the third time, and the reason this family exists.
+  //
+  // The correction is this entry, NOT a move onto the application token: crossing the families is what three
+  // suites forbid, and a stylesheet borrowing the application token spends a rotation it does not own.
+  'irtpunresolved-20261011'
 ];
 // F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
 //

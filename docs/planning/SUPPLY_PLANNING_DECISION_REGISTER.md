@@ -2233,3 +2233,97 @@ pending browser files. None of them is performed by this round.
    without a broken clock.
 2. Carried and unchanged: module numbered `74_` (name collision with `47_api_v1_recommendation_generation.gs`);
    the E4 exemption exists at all; the frontend publication backlog described above.
+
+---
+
+## S8-B3-R3-GATE1 — R51 DEPLOYMENT ENVIRONMENT VERIFICATION & CACHE SAFETY (2026-10-11)
+
+Deployment prerequisites closed ahead of the R51 release. **No release identity, no runtime handler and no
+contract moved**: `index.html` carries one corrected cache token, one new test suite enforces the rule behind
+it, and the release runbook is now a permanent document rather than a scratchpad draft.
+
+### F-PD1 — CLOSED. One token, and the commit that should have rotated it
+
+`0172443e` (S8-C1) added the four `.replen-tp-unresolved*` rules to
+`assets/css/pages/inventory-replenishment.css` **and, in the same commit, rotated every other browser cache
+token** to `r50-irpriority-20261010` — leaving this one `index.html` line at `irrestinglayout-20261008`, the
+value set back in `230525a2`. So the file changed and its URL did not, and a browser holding the live
+stylesheet would never have refetched it: the S8-C1 fail-closed priority diagnostic would have rendered
+UNSTYLED for every returning operator.
+
+**The first correction was wrong, and the existing suites caught it.** Setting the stylesheet to the
+application token `r50-irpriority-20261010` looked right — it is the value its cohort received in the very
+commit that changed the file — and it broke 28 suites, because this stylesheet is deliberately NOT in the
+application series. `assets/css/pages/inventory-replenishment.css` owns an append-only family ledger
+(`IR_CSS_TOKEN_SERIES` in `assets/tests/_release-order.js`) and three suites assert the two families are
+never crossed, one by checking the token's SHAPE. The shipped correction is therefore a NEW member of the
+stylesheet's OWN family, **`irtpunresolved-20261011`**, appended to that ledger with its reason beside the
+six entries before it. **No stylesheet content was modified and no unrelated token was rotated.**
+
+The lesson is recorded rather than tidied away: a round that rotates a cache token must first ask WHICH
+FAMILY the asset belongs to, because the repository has four and the obvious value is frequently the wrong
+one.
+
+### The rule the gate actually enforces, and the rule it deliberately does not
+
+The obvious phrasing — every token must have been set at or after its file's last change — is true as a style
+rule and WRONG as a gate, because it fires on history that was published long ago and is therefore already
+correct in every cache. Measured at this commit it names three files and only ONE is a live risk:
+
+| file | since the live release | token | verdict |
+|---|---|---|---|
+| `assets/css/pages/inventory-replenishment.css` | CHANGED | IDENTICAL | **the real defect** |
+| `assets/js/api/operation-system-db-api.js` | CHANGED | ROTATED (r49 -> r50) | safe |
+| `assets/js/pages/overseas-ops-preview.js` | UNCHANGED | — | safe, long published |
+
+So the gate asks the question that actually decides whether a browser gets stale bytes: **did the CONTENT
+change since the bytes the live site is serving, and if so, did the URL change too?** The stricter census is
+still printed, named and non-failing, so drift is visible on the round that creates it without failing a
+release over bytes the world already has.
+
+The new gate COMPLEMENTS `cache-token-rotation-s8-r4c-p1.test.js` rather than replacing it. That suite owns
+the FAMILY rule — which series an asset belongs to, and that the families never cross. The new one owns the
+PUBLICATION rule — whether a file whose content changed since the live release actually reaches the browser.
+F-PD1 slipped between them precisely because the content changed while the family did not rotate, and no gate
+was asking that question.
+
+`assets/tests/frontend-cache-token-publication-s8-b3-r3-gate1.test.js` — 21 assertions, both hosts
+(`index.html` and `app.js`), both asset kinds. The baseline commit is pinned WITH self-checks (it must exist,
+be an ancestor of HEAD, declare R49, and the ledger must still record Production as R49), so a stale pin fails
+loudly instead of quietly measuring against the wrong tree. **Re-anchor that pin when R51 ships.**
+Non-vacuity is proven rather than asserted: de-patching the correction in memory makes the gate report exactly
+one stale publication and name the right file, while a changed asset WITH a rotated token stays classified
+safe — so green means something.
+
+### PAGES_SOURCE_UNCONFIRMED — and the push that does not publish
+
+The GitHub Pages publishing source is a repository SETTING, not a file, and `gh` is not installed on this
+machine, so no read-only API query was possible. What the repository can settle, it settles: **no GitHub
+Actions workflow is involved** (there is no `.github/` and no `*.yml` anywhere — a confirmed negative, not an
+inference); a `gh-pages` source is excluded (a read-only `git ls-remote` shows exactly three branches and none
+of them is `gh-pages`); and a `main /docs` source is excluded (`docs/` has no `index.html`). The working
+hypothesis is `main` + root, supported independently by operator-written ledger procedure. **It remains
+UNCONFIRMED and the user must read Settings -> Pages before any push.**
+
+The operational consequence is the useful part. In this repository a push to the publishing branch IS the
+frontend publication, which would collapse backend-first ordering into a single act. But
+`feature/product-strategy-board-p0` already exists on the remote and is not a Pages candidate under any
+surviving possibility — so **pushing there first puts the release commit on GitHub, making the deployment
+reproducible from a pushed hash, without publishing the frontend.** That is what makes true backend-first
+ordering achievable, and the runbook sequence is rebuilt around it.
+
+### `43_` — the file no probe can check
+
+`43_api_v1_gap_materialization.gs` declares no build symbol and has no row in `SYS_MODULE_BUILD_STAMPS_`, so
+`system.health` cannot report it missing, stale or absent. That is deliberate — a stamp would satisfy the copy
+ledger and break the stamp ledger — and this round does NOT modify the `43_` runtime merely to make it
+checkable. Instead the runbook carries a five-marker editor check (`gapBlockedIssue_` = 3 at R51 vs 0 at R49;
+`priorityByMkt[pkey] : null)` = 1 vs 0; `: 0)` = 0 vs 1; `receiverKeys` = 1 vs 0; 890 lines) to be run after
+pasting and recorded as positive evidence BEFORE the deployment version is created.
+
+### Two stop conditions the release now carries
+
+**ROLLBACK_TARGET_UNCONFIRMED** — the live Apps Script deployment version number cannot be recovered once a
+new version is created, so it must be recorded first or the backend rollback procedure does not exist.
+**PAGES_SOURCE_UNCONFIRMED** — see above. Both are user-side lookups; neither is derivable from the
+repository.
