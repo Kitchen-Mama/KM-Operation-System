@@ -4957,6 +4957,18 @@ FRONTEND                     NOT CHANGED, and no cache token was rotated. The tw
 
 STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries R51, no Web App
                              version exists for it, and Production is NOT R51 — Production is R49.
+
+CORRECTION (S8-B3-R2-FIX1, 2026-10-11, WITHIN R51 — no new identity)
+                             The S8-B3-R2 acceptance audit BLOCKED this cut on two findings in 74_, both now
+                             fixed: a SUPERSEDED worker could delete a NEWER run's result chunks (it now
+                             deletes only its own generation, and deletes nothing at all when it has no
+                             generation to name), and the CALCULATION CONTEXT was outside the input
+                             fingerprint (it is now part of it, resolved through the existing owner).
+                             74_ is the ONLY runtime file this correction touches. 90_ is NOT rebuilt — 74_ is
+                             not a bundled module — so KM_BUNDLE_CONTENT_HASH_ is unchanged, and so are the
+                             action contract (19), the client pin (19), the manifest and every cache token.
+                             A corrected file inside an UNSHIPPED cut is still that cut: nothing was synced
+                             from R51, so there is no deployed R51 for this to diverge from.
 ```
 
 ### Why the Preview ships turned off

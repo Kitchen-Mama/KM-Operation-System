@@ -162,7 +162,36 @@ function oapResultRead_(env, meta) {
   }
   return JSON.parse(json);
 }
+// S8-B3-R2-FIX1 (F1) — DELETE ONLY THIS GENERATION.
+//
+// THE DEFECT THIS EXISTS TO FIX: the superseded branch of oapJobContinue_ used oapResultPurge_ below, whose
+// contract is "delete everything under the prefix EXCEPT the generation you name". When the worker that
+// superseded us has written its chunks but has NOT yet committed its META — exactly the window the
+// generation-keyed design exists to survive — there is no generation to name, the keep-set is empty, and a
+// stale worker deletes the LIVE run's chunks. The live run then commits a META pointing at keys that are gone
+// and its result reads back as PREVIEW_RESULT_CHUNK_MISSING. It fails closed, but a valid run is destroyed.
+//
+// Reachable by a plain operator sequence: Cancel, then Start again while the previous worker is still inside
+// its unlocked phase 2. Cancel makes the old run terminal instantly, which is what lets the new START succeed.
+//
+// A superseded worker knows exactly one thing for certain: which generation IT wrote. It has no basis for an
+// opinion about anyone else's chunks, so it is given no way to express one. FAIL-SAFE: a missing or empty
+// generationId deletes NOTHING — the one thing a cleanup must never do when it has lost track of its subject
+// is fall back to deleting broadly.
+function oapResultPurgeGeneration_(env, generationId) {
+  if (!env.props.keys || !generationId) return 0;                 // no subject ⇒ no deletion, never a fallback
+  var exact = OAP_RESULT_PREFIX_ + ':' + generationId + ':';      // trailing ':' ⇒ one generation cannot prefix another
+  var all = env.props.keys() || [], removed = 0;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].indexOf(exact) === 0) { try { env.props.del(all[i]); removed++; } catch (_e) {} }
+  }
+  return removed;
+}
 // Bounded STRICTLY to this module's own key prefix — it can never touch a Gap job key or any other property.
+// USED ONLY BY THE DONE BRANCH, which has already verified UNDER THE LOCK that it is the live run: there every
+// other generation really is an orphan, and a competing START cannot interleave because START needs the same
+// lock. That ownership check is what makes the broad form safe, and it is why the superseded branch — which by
+// definition does NOT own the slot — must not use it.
 function oapResultPurge_(env, keepGenerationId) {
   if (!env.props.keys) return 0;
   var prefix = OAP_RESULT_PREFIX_ + ':', keep = keepGenerationId ? (prefix + keepGenerationId + ':') : null;
@@ -187,14 +216,32 @@ function oapResultExpired_(env, meta) {
 // cheap to recompute and it changes if and only if something the ALLOCATION depends on changed. Sorted so that a
 // re-read returning rows in a different order is NOT mistaken for drift — the output is order-independent, so the
 // fingerprint must be too.
-function oapFingerprint_(receivers, pools) {
+// S8-B3-R2-FIX1 (F2) — the CALCULATION CONTEXT is part of the fingerprint.
+//
+// It was previously read, published as generation.calculationMonth, and never compared, so a month rollover
+// between the read and the revalidation was not drift. That was not a wrong-number defect — the context reaches
+// the allocation only through demandQty and requiredByDate, both already fingerprinted, so a published result's
+// month always described the numbers beside it — but a result could be published under month M while the system
+// had moved to M+1, and "the inputs that decided this answer" plainly includes the window it was computed in.
+//
+// The values come from the EXISTING owner, gapCalcResolveContext_ (43_), through env.calcContext. No second
+// resolver is introduced. planningCycle is 'RECO-' + calculationMonth at that owner, so it is derived rather
+// than independent — it is included because the fingerprint should record what the context SAID, not a guess
+// about which of its fields can move on their own.
+function oapCalcContextKey_(ctx, harvestedMonth) {
+  return [oapStr_(ctx && ctx.calculationDate), oapStr_(ctx && ctx.calculationMonth),
+    oapStr_(ctx && ctx.planningCycle), oapStr_(harvestedMonth)].join('~');
+}
+function oapFingerprint_(receivers, pools, contextKey) {
   var r = (receivers || []).map(function (x) {
     return [oapStr_(x.key), oapStr_(x.marketplace), String(x.demandQty), String(x.allocationPriority), oapStr_(x.requiredByDate)].join('~');
   }).sort().join('|');
   var p = (pools || []).map(function (x) {
     return [oapStr_(x.poolKey), oapStr_(x.poolType), oapStr_(x.warehouseId), String(x.effectiveSupplyQty)].join('~');
   }).sort().join('|');
-  return gapJobFnv1a_('R:' + r + '#P:' + p);
+  // Receivers and pools are SORTED so a re-read returning rows in a different order is not mistaken for drift;
+  // the context is a fixed-shape tuple and is not.
+  return gapJobFnv1a_('C:' + oapStr_(contextKey) + '#R:' + r + '#P:' + p);
 }
 
 // ---- THE COMPUTATION (NO LOCK IS HELD HERE — this is the long part) -------------------------------------------
@@ -212,13 +259,19 @@ function oapReadGroup_(env, state) {
   var scopes = allScopes.filter(function (s) {
     return oapStr_(s.company) === company && oapCanonCountry_(s.country) === country;
   });
-  var io = env.workspaceIo(state);
+  var calcContext = env.calcContext ? env.calcContext() : null;      // the EXISTING owner; never a second resolver
+  var io = env.workspaceIo(state, calcContext);
   var skuFilter = {}; skuFilter[sku] = 1;
   var harvested = gapOpHarvestReceivers_(scopes, io, ss, poolFacts, { skuFilter: skuFilter });
   var receivers = (harvested.receivers || []).filter(function (r) { return oapStr_(r.sku) === sku; });
   var pools = poolFacts.overseasPoolsByKey[company + '||' + country + '||' + sku] || [];
+  var contextKey = oapCalcContextKey_(calcContext, harvested.calculationMonth);
   return { receivers: receivers, pools: pools, scopeCount: scopes.length,
-    calculationMonth: oapStr_(harvested.calculationMonth), fingerprint: oapFingerprint_(receivers, pools) };
+    calculationMonth: oapStr_(harvested.calculationMonth),
+    calculationDate: oapStr_(calcContext && calcContext.calculationDate),
+    planningCycle: oapStr_(calcContext && calcContext.planningCycle),
+    contextKey: contextKey,
+    fingerprint: oapFingerprint_(receivers, pools, contextKey) };
 }
 function oapAllocate_(state, read) {
   if (typeof KMMSA === 'undefined' || !KMMSA || typeof KMMSA.allocateMarketplaceReceiverSupply !== 'function') {
@@ -246,8 +299,9 @@ function oapBuildResult_(env, state, read, res) {
     schemaVersion: OAP_VERSION_,
     runId: state.runId,
     scope: { company: oapStr_(state.company), country: oapCanonCountry_(state.country), masterSku: oapStr_(state.masterSku) },
-    generation: { calculationMonth: read.calculationMonth || null, inputFingerprint: read.fingerprint,
-      scopeCount: read.scopeCount, readAt: env.timestamp() },
+    generation: { calculationMonth: read.calculationMonth || null,
+      calculationDate: read.calculationDate || null, planningCycle: read.planningCycle || null,
+      inputFingerprint: read.fingerprint, scopeCount: read.scopeCount, readAt: env.timestamp() },
     ready: res ? res.ready === true : false,
     blocked: res ? res.blocked === true : true,
     issues: (res && res.issues) ? res.issues : [],
@@ -450,7 +504,10 @@ function oapJobContinue_(env) {
     var live = oapReadState_(env);
     // THE GUARD THAT REPLACES A LONG LOCK: a newer run, or a cancellation, wins — this worker publishes nothing.
     if (!live || oapStr_(live.runId) !== oapStr_(claimed.runId) || oapIsTerminal_(live.status)) {
-      oapResultPurge_(env, (live && live.resultMeta) ? live.resultMeta.generationId : null);
+      // S8-B3-R2-FIX1 (F1) — clean up ONLY what THIS worker wrote. Previously this named the live run's
+      // generation as the keep-set, which is empty whenever the live run has not published yet, and the
+      // "delete everything else" form then destroyed that run's chunks.
+      oapResultPurgeGeneration_(env, generationId);
       try { env.clearContinuationTriggers(); } catch (_c4) {}
       return { status: 'SUPERSEDED', runId: claimed.runId, current: live ? live.runId : null };
     }
@@ -522,14 +579,18 @@ function oapDefaultEnv_() {
     newRunId: function () { return 'OAP-' + oapTimestamp_().replace(/[^0-9]/g, '') + '-' + Math.floor(Math.random() * 1e6); },
     openTarget: function () { return gapMaterializationDefaultIo_().openTarget(); },
     enumerateScopes: function (ss) { return gapEnumerateScopes_(ss); },
+    // S8-B3-R2-FIX1 (F2) — the ONE calculation-context resolver for this module. Both the fingerprint and the
+    // materialization io read from here, so the window the Preview FINGERPRINTS is by construction the window it
+    // CALCULATES in. Resolving it twice would let those two disagree across a rollover, which is the class of
+    // bug F2 is about.
+    calcContext: function () { return gapCalcResolveContext_('ORDER_PLANNING'); },
     // The materialization io, built on the job's frozen calc context — the SAME io the slice processor uses, so
     // the demand the Preview reads is the demand materialization would read.
-    workspaceIo: function (state) {
-      var ctx = gapCalcResolveContext_('ORDER_PLANNING');
+    workspaceIo: function (state, ctx) {
+      ctx = ctx || gapCalcResolveContext_('ORDER_PLANNING');
       var calcContext = { ok: true, jobType: 'ORDER_PLANNING', calculationDate: ctx.calculationDate,
         calculationMonth: ctx.calculationMonth, planningCycle: ctx.planningCycle, timezone: OAP_TZ_ };
-      var io = gapMaterializationDefaultIo_(calcContext);
-      return io;
+      return gapMaterializationDefaultIo_(calcContext);
     },
     scheduleContinuation: oapScheduleContinuation_,
     clearContinuationTriggers: oapClearContinuationTriggers_

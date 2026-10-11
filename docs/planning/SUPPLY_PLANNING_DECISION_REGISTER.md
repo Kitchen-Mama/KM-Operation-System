@@ -2062,3 +2062,63 @@ The cumulative **frontend** delta since R49 is **not empty** — `index.html`, `
 stylesheets and the API client all changed across the unshipped R50/B2/C1 rounds, and the cache token in the tree
 is `r50-irpriority-20261010`. R51 itself rotates no token and that remains correct, but a deployment plan that
 treats "R51 changed no frontend" as "no frontend publication is pending" would be wrong.
+
+---
+
+## S8-B3-R2-FIX1 — R51 CORRECTIVE PATCH — F1 and F2 CLOSED (2026-10-11)
+
+Both findings from the S8-B3-R2 acceptance audit are fixed inside R51. **No new release identity**: R51 keeps
+`F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51`, action contract stays 19, the client pin stays 19, `90_` is NOT rebuilt
+(`74_` is not a bundled module — verified, not assumed) and its hash still reproduces at `3de64364…`. No frontend
+cache token rotated. One runtime file changed.
+
+### F1 — CLOSED — a superseded worker may delete only its own generation
+
+**Root cause.** The superseded branch called `oapResultPurge_(env, live.resultMeta ? … : null)`, whose contract is
+*"delete everything under the prefix EXCEPT the generation you name"*. When the run that superseded us has written
+its chunks but has not yet committed its META — exactly the window the generation-keyed design exists to survive —
+there is no generation to name, the keep-set is empty, and the stale worker deletes the live run's chunks.
+
+**Fix.** A new `oapResultPurgeGeneration_(env, generationId)` deletes only keys under
+`OAP_PREVIEW_RESULT:<generationId>:` and the superseded branch calls it with its OWN `generationId`. A superseded
+worker knows exactly one thing for certain — which generation it wrote — so it is given no way to express an
+opinion about anyone else's. **FAIL-SAFE: a missing, null or empty generationId deletes NOTHING**; a cleanup that
+has lost track of its subject must never fall back to deleting broadly.
+
+**Generation ownership (§4), asserted rather than assumed.** `generationId` = `<runId>-<8 hex fingerprint>`, and
+the store key appends `:`. Neither a runId (`OAP-<digits>-<digits>`) nor a hex fingerprint can contain `:`, so
+`genA + ':'` can be a prefix of `genB + ':'` only if `genB` begins with `genA + ':'` — unrepresentable. Tested
+against a generation whose id EXTENDS ours, one that is a PREFIX of ours, a foreign generation, an
+already-deleted generation, an empty id, and a store with no `keys()`: in every case exactly the intended keys
+move, the Gap job's state and partition chunks are untouched, and the fail-safe cases delete nothing.
+
+**The DONE branch is unchanged, deliberately.** There the worker has already verified UNDER THE LOCK that it is
+the live run, so every other generation really is an orphan, and a competing START cannot interleave because
+START needs the same lock. That ownership check is what makes the broad form safe — and its absence is precisely
+what made the superseded branch unsafe. A regression assertion proves DONE cleanup still removes an eligible
+orphan generation.
+
+### F2 — CLOSED — the calculation context is part of the fingerprint
+
+`oapFingerprint_` now takes `(receivers, pools, contextKey)`, where `oapCalcContextKey_` composes
+`calculationDate`, `calculationMonth`, `planningCycle` and the harvested calculation month. The values come from
+the EXISTING owner `gapCalcResolveContext_` (43_) through a single `env.calcContext` — **no second resolver**, and
+the materialization io is built from that SAME resolved context, so the window the Preview fingerprints is by
+construction the window it calculates in. `planningCycle` is `'RECO-' + calculationMonth` at that owner, so it is
+derived rather than independent; it is included because the fingerprint should record what the context SAID
+rather than a guess about which of its fields can move alone.
+
+### Non-vacuity — both fixes are proven against the PRE-FIX code
+
+The suite de-patches the shipped source in memory and re-runs the same scenarios. **Pre-fix: run B's chunks are
+destroyed, 0 of 2 survive** (so the post-fix assertion is a real regression guard), and **pre-fix: a month
+rollover between the read and the revalidation publishes a result** (so the drift assertion is real too). A
+source-level section additionally pins the production wiring, because `oapReadGroup_` reads the context through
+an optional guard and an env that lost `calcContext` would silently reinstate F2.
+
+### Evidence
+
+`overseas-preview-superseded-cleanup-s8-b3-r2-fix1.test.js` **76/0** · Preview suite **133/0** (unchanged) ·
+producers **37/0** · R49-G **78/0** · action registry **208/0** · deploy surface **106/0** · release stamp gate
+**111/0, 0 survived, vacuity clean** · Golden Registry **206/0, 40/40** · contended-partition storage **22/0** ·
+Gap Materialization job **145/0** (untouched by this patch, asserted).
