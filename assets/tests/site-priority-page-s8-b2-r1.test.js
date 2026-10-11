@@ -84,7 +84,7 @@ var KM_DB_EXPORTS = {};
 function bootPage(opts) {
   opts = opts || {};
   var dom = makeDom();
-  var calls = { upsert: [], refLoads: 0, invalidate: [] };
+  var calls = { upsert: [], refLoads: 0, invalidate: [], pendingReads: [], pendingPartial: [] };
   var win = {};
   // A minimal KM.referenceCache with the SHIPPED semantics: get() shares one promise per key and retains only
   // a SUCCESS; a failed load is never retained; invalidate(key) drops exactly that key and nothing else.
@@ -102,7 +102,11 @@ function bootPage(opts) {
   };
   win.KM = {
     lifecycle: { register: function (name, hooks) { win.KM._hooks = hooks; win.KM._registered = name; } },
-    partialLoader: { loadPartial: function () { return Promise.resolve(true); } },
+    partialLoader: { loadPartial: function () {
+      // `opts.holdPartial` suspends the partial load so a test can unmount WHILE a mount is in flight.
+      if (opts.holdPartial) return new Promise(function (res) { calls.pendingPartial.push(function () { res(true); }); });
+      return Promise.resolve(true);
+    } },
     countryIdentity: require(path.join(ROOT, 'assets', 'js', 'core', 'supply-planning-country-identity.js')),
     referenceCache: refCache,
     DB: {
@@ -112,7 +116,14 @@ function bootPage(opts) {
         return refCache.get('marketplaces', function () {
           calls.refLoads++;
           if (opts.readThrows) return Promise.reject(new Error(opts.readThrows));
-          return Promise.resolve((opts.rows || []).slice());
+          var snapshot = (opts.rows || []).slice();   // the rows AS OF this load, so a late read is genuinely stale
+          // `opts.manualReads` hands the test the resolver, so two loads can be settled OUT OF ORDER.
+          if (opts.manualReads) {
+            return new Promise(function (res, rej) {
+              calls.pendingReads.push({ resolve: function () { res(snapshot); }, reject: rej, rows: snapshot });
+            });
+          }
+          return Promise.resolve(snapshot);
         });
       },
       upsertMarketplace: function (payload) {
@@ -568,6 +579,138 @@ cDone.then(function () {
             });
           });
         });
+      });
+    });
+  });
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
+  section('K. CP2E — out-of-order async: a late answer may never speak for the current one');
+
+  // K1 — A REFRESH STARTED BEFORE A SAVE MUST NOT LAND AFTER IT.
+  // Refresh reads the OLD rows; while that read is still in flight the operator saves; the save verifies the
+  // NEW value; then the stale Refresh finally resolves. If it is allowed to apply, the page silently reverts
+  // to the old number it just told the operator was saved — and the banner still says VERIFIED.
+  var store = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: 50,
+                 currency: 'USD', status: 'active' }];
+  var b = bootPage({ rows: store, manualReads: true,
+                     onUpsert: function (p) { store[0] = JSON.parse(JSON.stringify(store[0])); store[0].allocationPriority = p.allocation_priority; } });
+  var mounted = b.hooks.mount();
+  // settle the MOUNT read first
+  return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+    b.calls.pendingReads.shift().resolve();
+    return mounted;
+  }).then(function () {
+    eq(b.api._state().rows.length, 1, 'K0 the page mounted with one row');
+
+    // (a) start a Refresh and leave it unresolved — it captured the OLD rows
+    b.dom.byId['site-priority-section'].fire('click', (function () { var e = new El(''); e.id = 'sp-refresh'; return e; })());
+    return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+      var staleRead = b.calls.pendingReads.shift();
+      ok(!!staleRead, 'K1 a Refresh read is in flight and still unresolved');
+
+      // (b) save a new value while that Refresh is pending
+      var i = new El(''); i._isInput = true; i._sel = '[data-sp-input]'; i.value = '90';
+      b.dom.extra.push(i);
+      var bt = new El(''); bt.setAttribute('data-sp-save', b.api.identityOf(store[0]));
+      b.dom.byId['site-priority-section'].fire('click', bt);
+      return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+        var rb = b.calls.pendingReads.shift();
+        ok(!!rb, 'K1a the save issued its own read-back load');
+        rb.resolve();                                   // the read-back sees 90
+        return new Promise(function (r) { setTimeout(r, 0); });
+      }).then(function () {
+        ok(/Saved and VERIFIED/.test(b.dom.byId['sp-status'].textContent), 'K1b the save reports VERIFIED');
+        eq(b.api._state().rows[0].allocationPriority, 90, 'K1c and the page shows 90');
+
+        // (c) NOW the stale Refresh finally answers, carrying the OLD snapshot
+        staleRead.resolve();
+        return new Promise(function (r) { setTimeout(r, 0); });
+      }).then(function () {
+        eq(b.api._state().rows[0].allocationPriority, 90,
+           'K2 the late Refresh does NOT revert the rows to the value it read before the save');
+        ok(/Saved and VERIFIED/.test(b.dom.byId['sp-status'].textContent),
+           'K2a nor overwrite the save banner with its own loading/empty status');
+        eq(b.api._state().editingKey, null, 'K2b nor resurrect an edit state the save had closed');
+      });
+    });
+  });
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
+  // K3 — UNMOUNT DURING AN IN-FLIGHT MOUNT. The partial is still loading when the operator navigates away;
+  // the late `.then` must not re-mark the page mounted, must not start a read, and must not touch the DOM.
+  // `ensureMarkup` resolves in a MICROTASK, so a navigation away in the same turn lands before the mount's
+  // own `.then` runs. That is the real shape of the race: the init continuation is already queued.
+  var b = bootPage({ rows: [KM_US] });
+  var m = b.hooks.mount(7);                       // epoch 7, as lifecycle passes it to mount()
+  b.hooks.unmount(7);                             // navigate away before the continuation runs
+  b.dom.byId['sp-status'].textContent = 'OTHER-PAGE';
+  var loadsBefore = b.calls.refLoads;
+  return m.then(function () {
+    return new Promise(function (r) { setTimeout(r, 0); });
+  }).then(function () {
+    eq(b.api._state().mounted, false, 'K3 a mount that completes after unmount does NOT re-mark the page mounted');
+    eq(b.calls.refLoads, loadsBefore, 'K3a and starts no read');
+    eq(b.dom.byId['sp-status'].textContent, 'OTHER-PAGE', 'K3b and writes nothing to the shared status node');
+  });
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
+  // K4 — LOST WRITE RESPONSE. The write throws (answer lost), the forced fresh read still shows the OLD
+  // value, and the original write may still be applied by the server afterwards. The page may NOT claim the
+  // write did not take effect, and may NOT resend.
+  var store = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: 50,
+                 currency: 'USD', status: 'active' }];
+  var b = bootPage({ rows: store, upsertThrows: 'network connection lost' });
+  return b.hooks.mount().then(function () {
+    var i = new El(''); i._isInput = true; i._sel = '[data-sp-input]'; i.value = '70';
+    b.dom.extra.push(i);
+    var bt = new El(''); bt.setAttribute('data-sp-save', b.api.identityOf(store[0]));
+    b.dom.byId['site-priority-section'].fire('click', bt);
+    return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+      var st = b.dom.byId['sp-status'];
+      ok(/UNDETERMINED/.test(st.textContent), 'K4 a lost write response is reported as UNDETERMINED');
+      ok(!/did NOT take effect/i.test(st.textContent),
+         'K4a and does NOT claim the write did not take effect — the server may still apply it');
+      ok(!/nothing was written/i.test(st.textContent), 'K4b nor that nothing was written');
+      ok(/may still/i.test(st.textContent), 'K4c it says the write may still be applied');
+      ok(/Refresh/.test(st.textContent), 'K4d and points at Refresh rather than a retry');
+      eq(b.calls.upsert.length, 1, 'K4e exactly ONE write was sent — no automatic resend');
+      ok(st.className.indexOf('success') === -1, 'K4f and it is never shown as success');
+    });
+  });
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
+  // K5 — conservative mutual exclusion: Refresh does not run while a save is in flight.
+  var store = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: 50,
+                 currency: 'USD', status: 'active' }];
+  var b = bootPage({ rows: store, manualReads: true,
+                     onUpsert: function (p) { store[0] = JSON.parse(JSON.stringify(store[0])); store[0].allocationPriority = p.allocation_priority; } });
+  var m = b.hooks.mount();
+  return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+    b.calls.pendingReads.shift().resolve();
+    return m;
+  }).then(function () {
+    var i = new El(''); i._isInput = true; i._sel = '[data-sp-input]'; i.value = '60';
+    b.dom.extra.push(i);
+    var bt = new El(''); bt.setAttribute('data-sp-save', b.api.identityOf(store[0]));
+    b.dom.byId['site-priority-section'].fire('click', bt);
+    return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+      var before = b.calls.refLoads;
+      b.dom.byId['site-priority-section'].fire('click', (function () { var e = new El(''); e.id = 'sp-refresh'; return e; })());
+      return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+        eq(b.calls.refLoads, before, 'K5 Refresh issues no read while a save is in flight');
+        var rb = b.calls.pendingReads.shift();
+        if (rb) rb.resolve();
+        return new Promise(function (r) { setTimeout(r, 0); });
+      }).then(function () {
+        eq(b.api._state().busy, false, 'K5a and the save still completes cleanly');
       });
     });
   });

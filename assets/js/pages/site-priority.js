@@ -98,6 +98,7 @@
   var _reading = false;    // a read is in flight — Refresh does not stack
   var _mounted = false;    // false after unmount; no late response may touch status or DOM
   var _saveGen = 0;        // same idea for writes: a superseded save never writes the banner
+  var _mountGen = 0;       // bumped by unmount; a mount continuation from an older navigation bails out
 
   function setStatus(kind, text) {
     var el = $('sp-status');
@@ -158,6 +159,11 @@
 
   function refresh(opts) {
     opts = opts || {};
+    // CONSERVATIVE MUTUAL EXCLUSION. A Refresh that overlaps a Save is the race K1/K2 pin: the Refresh
+    // captured the OLD rows, the Save then verified the NEW one, and whichever answer lands LAST wins the
+    // screen. Rather than reconcile two truths, the page admits only one read at a time and lets the Save -
+    // which is the operator's own action and ends in a verified read anyway - finish first.
+    if (_busy && !opts.internal) return Promise.resolve(-1);      // never read across a write
     if (_reading && !opts.internal) return Promise.resolve(-1);   // Refresh does not stack
     if (opts.force) invalidateMarketplaceReference();
     var gen = ++_readGen;
@@ -310,6 +316,11 @@
     if (str(row.fulfillmentModel)) payload.fulfillment_model = str(row.fulfillmentModel);
 
     _busy = true;
+    // RETIRE EVERY READ ALREADY IN FLIGHT. A Refresh issued before this click is carrying a pre-write
+    // snapshot; bumping the read generation makes its late answer a no-op instead of a silent revert of the
+    // value this save is about to verify.
+    _readGen++;
+    _reading = false;
     var label = str(row.company) + ' / ' + str(row.country) + ' / ' + str(row.marketplace);
     var myGen = ++_saveGen;
     var liveSave = function () { return _mounted && myGen === _saveGen; };
@@ -386,16 +397,21 @@
           return done('success', 'The write outcome was undetermined, but a fresh read confirms ' + label
             + ' now has priority ' + v.value + '. No second save was sent.', true);
         }
+        // AN UNDETERMINED WRITE WHOSE VALUE IS NOT YET VISIBLE IS STILL UNDETERMINED. The answer was lost,
+        // not refused: the request may have reached the server and may be applied after this read. Saying it
+        // "did NOT take effect" would be a claim about the future, and it is exactly the claim that invites
+        // an operator to re-send a write that is already on its way.
         var prefix = (w.write === 'UNDETERMINED')
-          ? 'The write outcome was UNDETERMINED (' + w.why + ') and a fresh read shows it did NOT take effect — '
+          ? 'The write outcome is UNDETERMINED (' + w.why + ') and a fresh read does not show the new value '
+            + 'yet — it may still be applied. '
           : 'NOT VERIFIED — ';
         if (!rb.found) {
           return done('error', prefix + label + ' is no longer present in the marketplace reference. '
-            + 'Check the marketplaces sheet before retrying. Nothing was re-sent.', false);
+            + 'Do NOT re-save — press Refresh, then check the marketplaces sheet. Nothing was re-sent.', false);
         }
         return done('error', prefix + 'a fresh read shows '
           + (c.state === 'SET' ? c.value : c.state.toLowerCase()) + ' rather than ' + v.value
-          + '. Check the marketplaces sheet before retrying. Nothing was re-sent.', false);
+          + '. Do NOT re-save — press Refresh, then check the marketplaces sheet. Nothing was re-sent.', false);
       });
     }).then(function (r) {
       if (myGen === _saveGen) _busy = false;
@@ -442,9 +458,21 @@
     return Promise.resolve(false);
   }
 
-  function mount() {
+  // `mount(epoch)` receives the navigation epoch from KM.lifecycle, which passes it into mount()/unmount()
+  // exactly so an async mount can discard a late `.then`. We check BOTH authorities: the shell's own
+  // commitGuard when it is available, and a local mount generation that unmount bumps — the local one is what
+  // holds in any environment where the guard is absent, and neither invents a method the shell does not have.
+  function mount(epoch) {
+    var myMountGen = _mountGen;
     return ensureMarkup().then(function (ok) {
       if (!ok) return false;
+      var lc = window.KM && window.KM.lifecycle;
+      var superseded = (myMountGen !== _mountGen)
+        || (epoch !== undefined && lc && typeof lc.commitGuard === 'function'
+            && !lc.commitGuard(epoch, SECTION_ID));
+      // The operator navigated away while the markup was loading. Do not re-mark this page mounted, do not
+      // start a read, do not touch the DOM — the section on screen now belongs to someone else.
+      if (superseded) return false;
       var sec = $(SECTION_ID);
       if (sec) sec.classList.add('active');
       bind();
@@ -464,7 +492,7 @@
       // onto whatever page the operator is looking at now.
       unmount: function () {
         _mounted = false; _editingKey = null; _busy = false; _reading = false;
-        _readGen++; _saveGen++;
+        _readGen++; _saveGen++; _mountGen++;
       }
     });
   }

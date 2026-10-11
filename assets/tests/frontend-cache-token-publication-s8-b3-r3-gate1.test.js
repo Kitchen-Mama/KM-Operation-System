@@ -176,13 +176,24 @@ Object.keys(liveHosts).forEach(function (host) {
 });
 console.log('     drifting tokens: ' + (drift.length ? drift.join('; ') : 'none'));
 ok(true, 'C1 token-drift census recorded, not hidden: ' + (drift.length ? drift.join('; ') : 'none'));
-// Every drifting entry must be EXPLAINED — either it did not change since the live release, or its token did
-// rotate against the live release. A drifting token that is neither is exactly what B5 fails on.
+// Every drifting entry must be EXPLAINED by one of the FOUR baseline buckets. The first version of this
+// check knew only three and omitted ADDED — so an asset that did not exist at the live release and has since
+// been edited again drifted with nowhere to be accounted for, and C2 failed while describing a tree that is
+// correct. An ADDED asset carries no publication risk whatever its token: no browser can hold a cached copy
+// of a file the live site has never served. The drift is still REPORTED by C1; it only stops being
+// unexplained. B5 is untouched and remains the assertion that fails on a real stale publication.
 var staleNames = R.changedAndStale.map(function (e) { return e.file; });
 var unexplained = drift.filter(function (d) {
   var f = d.split(' ')[0];
-  return staleNames.indexOf(f) === -1 && R.unchanged.indexOf(f) === -1 && R.changedAndRotated.every(function (e) { return e.file !== f; });
+  return staleNames.indexOf(f) === -1
+    && R.unchanged.indexOf(f) === -1
+    && R.added.indexOf(f) === -1
+    && R.changedAndRotated.every(function (e) { return e.file !== f; });
 });
+// NON-VACUITY for the clause just added: if nothing is ever ADDED, that term is dead code pretending to work.
+ok(R.added.length > 0, 'C1a the ADDED bucket is populated (' + R.added.length + '), so C2 exercises it');
+ok(drift.some(function (d) { return R.added.indexOf(d.split(' ')[0]) !== -1; }),
+   'C1b and at least one ADDED asset actually drifts — the clause is load-bearing, not decorative');
 ok(unexplained.length === 0,
    'C2 every drifting token is accounted for by the baseline classification' + (unexplained.length ? ': ' + unexplained.join(', ') : ''));
 
