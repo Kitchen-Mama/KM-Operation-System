@@ -2327,3 +2327,62 @@ pasting and recorded as positive evidence BEFORE the deployment version is creat
 new version is created, so it must be recorded first or the backend rollback procedure does not exist.
 **PAGES_SOURCE_UNCONFIRMED** — see above. Both are user-side lookups; neither is derivable from the
 repository.
+
+---
+
+## S8-B3-R3-CP2A — R51 FINAL OPERATIONAL GATE — **PRODUCTION_PRIORITY_EXPOSURE_UNVERIFIED** (2026-10-11)
+
+Documentation only. No runtime file, no release identity, no contract, no production write.
+
+### The priority exposure audit could not be performed, and no number was invented
+
+R51 carries R50's D-S8-B1 correction, so an unresolved `allocation_priority` now fails closed. The question
+this gate exists to answer is how much live data that affects, and it is **answerable only from production**.
+
+The attempt was made and is recorded honestly. The production Web App endpoint IS configured in the shipped
+source, so a read-only `getOperationDb` query is structurally available; it was issued once, read-only, and
+the deployment answered an unauthenticated caller with Google's generic "page not found" page (HTTP 404, no
+sign-in prompt, no JSON). The Web App is not readable without a signed-in session, and this agent holds no
+credential and went looking for none. **Classification: `PRODUCTION_PRIORITY_EXPOSURE_UNVERIFIED`. No count
+is reported, because a fabricated count is worse than an absent one** — it would be used to size a blast
+radius.
+
+A corollary worth naming: the same wall means the operator check "the current frontend points at the
+deployment version 307 belongs to" cannot be verified from here either. It is a signed-in browser task.
+
+### What the exposure WOULD mean, which is why it is a stop condition rather than a note
+
+The refusal is **all-or-nothing by design** — KMMSA refuses before KMALLOC is called, so there is no partial
+allocation reported as success. **One unranked marketplace blocks the entire company + country + SKU
+allocation group**, not merely its own row. And the UI that sets a priority is the Site Priority page, which
+does not reach the browser until the frontend is published at step H. At R49 no live page writes
+`allocation_priority`: the existing "Add Marketplace" form writes seven fields and not that one.
+
+So between publishing the backend and publishing the frontend there is a window in which an unranked
+marketplace means blocked coverage with no browser-side remedy. That is intended behaviour meeting an
+ordering constraint, not a defect — but its size must be known BEFORE the sync, which is why it is now
+stop condition **S-4** rather than a paragraph someone might skim.
+
+One reassuring fact, checked rather than assumed: the live form cannot ERASE a priority.
+`03_master_data_handlers.gs:628` writes the column only when the supplied value is non-blank, so an omitted
+field is preserved on update. A marketplace CREATED during the window will have none, though.
+
+**No remediation was performed and none is proposed inside this round.** Backfilling priorities is a
+production data write; it needs its own authorization, its own evidence and its own rollback story. KMMSA is
+untouched and the fail-closed rule is not weakened.
+
+### Runbook aligned to the approved workflow
+
+The earlier draft proposed pushing the remote feature branch first, to get the commit onto GitHub without
+publishing the frontend. **Retracted by decision**: the approved workflow is the existing Kitchen Mama one,
+Sandbox -> Main -> Production Verification, with no additional branches and no feature-branch push. The
+reasoning behind the retracted step was not needed anyway, because no push is required before the sync at
+all — the Apps Script editor reads nothing from GitHub. The commit reaches the remote at step H, after the
+backend is live and verified: the same backend-first guarantee by a simpler route and one fewer remote write.
+The procedural worry it addressed (a deployment whose bytes exist in no pushed commit) is bounded and
+deliberate — the window is E to H, and the Git-commit-to-deployment-version pairing is recorded before the
+sync begins.
+
+The runbook now carries the approved A-I sequence, a step-B exposure measurement, stop condition S-4, a
+fourth rollback precondition (**P-8: the previous version must remain SELECTABLE, not merely recorded** — a
+number that cannot be chosen is not a rollback target), and `U-6` for the unverified exposure.

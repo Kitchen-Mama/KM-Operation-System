@@ -18,8 +18,9 @@
 | | Condition | If unmet |
 |---|---|---|
 | **S-1** | **The live Apps Script deployment version number has been recorded** (§5, step 2). | **`ROLLBACK_TARGET_UNCONFIRMED` — DO NOT PUBLISH.** It cannot be recovered after a new version is created, and without it the backend rollback in §9 does not exist. |
-| **S-2** | **The GitHub Pages publishing source has been confirmed** (§1). | **`PAGES_SOURCE_UNCONFIRMED` — do not push to any branch yet.** In this repository a push *is* the frontend publication, so pushing the wrong ref publishes the frontend before the backend. |
+| **S-2** | **The GitHub Pages publishing source has been confirmed** (§1). | **`PAGES_SOURCE_UNCONFIRMED` — do not push.** In this repository a push *is* the frontend publication, so the push at step H must be the deliberate publication of a backend that is already live. |
 | **S-3** | `43_api_v1_gap_materialization.gs` verified present in the editor by the §7 marker check. | A partial sync that drops `43_` is **invisible to `system.health`**. Do not create the deployment version. |
+| **S-4** | **Production priority exposure measured** (§6 step B). | R51 makes an unresolved `allocation_priority` fail closed **for the whole allocation group**, and the UI that sets it does not reach the browser until step H. Deploying without knowing the count means not knowing the blast radius. |
 
 ---
 
@@ -76,15 +77,19 @@ structure alone, the classification stands at **PAGES_SOURCE_UNCONFIRMED**.
 | Is publication triggered by push to `main`? | **UNCONFIRMED**, but it is what every ledger entry describes |
 | Is a GitHub Actions workflow involved? | **NO — confirmed.** No workflow file exists |
 | Can backend deployment occur before frontend publication? | **YES** — see §2 and §8 |
-| Can R51 be pushed to a non-publishing branch first? | **YES, almost certainly** — see below |
+| Can R51 be pushed to a non-publishing branch first? | Technically yes, **but NOT USED** — the approved workflow forbids it; see below |
 
-### The unlock: a non-publishing push
+### No feature-branch push — superseded by decision (S8-B3-R3-CP2A)
 
-`feature/product-strategy-board-p0` **already exists on the remote** and is not a Pages candidate under any
-surviving possibility — unless Pages is configured to serve that feature branch, which the user's §1 lookup
-will settle. Pushing there first puts the release commit on GitHub — so the deployment is reproducible from
-a pushed hash — **without publishing the frontend**. That is what makes true backend-first ordering
-achievable in a repository where a push to the publishing branch is itself the publication.
+An earlier draft of this runbook proposed pushing to `feature/product-strategy-board-p0` first, as a way to
+get the release commit onto GitHub without publishing the frontend. **That is retracted.** The approved
+workflow is the existing Kitchen Mama one — **Sandbox → Main → Production Verification** — with no additional
+branches and **no push to the remote feature branch**.
+
+The reasoning the retracted step rested on is not needed, because **no push is required before the backend
+sync at all** (see §6): the Apps Script editor reads nothing from GitHub. The release commit reaches the
+remote at step H, *after* the backend is live and verified, which is the same backend-first guarantee by a
+simpler route and one fewer remote write.
 
 ---
 
@@ -180,28 +185,58 @@ Tick every box **before** opening the editor for a paste.
       **existing** deployment. Creating a **new deployment** mints a different `/exec` and the frontend
       keeps talking to the old one.
 - [ ] **P-7 Never "Deploy latest automatically."** (Governance §3.)
+- [ ] **P-8 The previous version remains SELECTABLE for rollback.** In *Manage deployments → Edit →
+      Version*, confirm the recorded prior version still appears in the version list and can be chosen.
+      A recorded number that cannot be selected is not a rollback target.
 
 ---
 
 ## 6. BACKEND-FIRST SEQUENCE
 
+**The approved sequence. No new branch, and no push until H.**
+
 ```
-A1. Push to the NON-PUBLISHING branch        feature/product-strategy-board-p0   (§1, §2)
-B.  Apps Script source synchronisation       6 files, 63_ LAST                   (§4)
-C.  43_ marker verification                  BEFORE the version is published     (§7)
-D.  Apps Script deployment version           update the EXISTING deployment      (§5)
-E.  Backend health + compatibility checks    §10 A–D
-F.  Push main — THIS PUBLISHES THE FRONTEND  (§1 must be confirmed first)
-G.  Production smoke                         §10 E–K
+A. Record the rollback version               the LIVE version number, offline     (§5 P-4)
+B. Verify production priority exposure       read-only count of unresolved rows   (below)
+C. Synchronise six Apps Script files         63_ LAST                             (§4)
+D. Verify all six, including 43_ markers     BEFORE the version is published      (§4, §7)
+E. Publish a new version                     update the EXISTING deployment       (§5 P-6)
+F. Verify R51 health + R49 frontend          §10 A–D
+G. Sandbox → Main fast-forward               local ff-only merge, no push yet
+H. Push main                                 THIS PUBLISHES THE FRONTEND          (§1)
+I. Production smoke                          §10 E–K
 ```
+
+### Step B — production priority exposure
+
+R51 carries R50's D-S8-B1 correction: an unresolved `allocation_priority` is no longer fabricated as `0`.
+KMMSA refuses it with `RECEIVER_PRIORITY_UNRESOLVED`, and the refusal is **all-or-nothing by design** —
+*"the refusal happens here, before KMALLOC is called, so there is no partial allocation reported as
+success."* **One unranked marketplace blocks the entire company + country + SKU allocation group**, not just
+its own row.
+
+That is the intended fix. The operational catch is ordering: **the UI that sets a priority is the Site
+Priority page, which does not reach the browser until step H.** At R49 no live page writes
+`allocation_priority` — the existing "Add Marketplace" form writes seven fields and not that one. So between
+E and H, an unranked marketplace means blocked coverage with no browser-side remedy.
+
+**Before step C, from a signed-in browser, count the active `marketplaces` rows whose `allocation_priority`
+is missing, blank, negative, non-numeric or non-finite.** Zero means the window is harmless. Non-zero tells
+you the blast radius, and the mitigation is to keep E→H short — publishing the frontend is what hands you
+the fix. Checked and reassuring: the live form cannot *erase* a priority, because
+`03_master_data_handlers.gs:628` writes the column only when the value is non-blank, so omitted means
+preserved on update. A marketplace **created** during the window will have none, though.
 
 ### Is a push technically required before the sync? — **NO.**
 
 Checked, not assumed. The sync is a copy-paste of local file contents into the editor; nothing in that path
-reads GitHub. `clasp` is not configured, there is no Action, and the editor pulls from no remote. **Steps B
-and D are technically independent of any push.** It remains required *procedurally* — an Apps Script project
-carrying bytes that exist in no pushed commit is a deployment nobody can reproduce — which is exactly what
-step **A1** satisfies without publishing anything.
+reads GitHub. `clasp` is not configured, there is no Action, and the editor pulls from no remote. **Steps C
+and E are technically independent of any push.**
+
+The procedural concern — an Apps Script project carrying bytes that exist in no pushed commit is a deployment
+nobody can reproduce — is real but **bounded and deliberate here**: the window lasts from E to H, the commit
+hash is already fixed at `4d27f24d`, and that pairing is recorded in the ledger before the sync begins. A
+deployment whose commit is written down is reproducible whether or not the commit has reached the remote yet.
 
 ### Why backend-first is safe
 
@@ -216,8 +251,8 @@ step **A1** satisfies without publishing anything.
 The reverse is false: an R51 frontend against an R49 backend reports `DEPLOYMENT_CONTRACT_MISMATCH`.
 **Never publish the frontend before the backend.**
 
-> **If §1 confirms that Pages serves the feature branch**, step A1 is unavailable; skip it, run B–E, and
-> push only at step F.
+> **If §1 reveals that Pages serves something other than `main`**, step H must target that ref instead —
+> and `git merge --ff-only` at step G still applies. Confirm before pushing, not after.
 
 ---
 
@@ -452,21 +487,23 @@ token is still classified safe, so green means something.
 | **U-3** | **GitHub Pages publishing source** | A GitHub repository setting, not a file; `gh` unavailable here | §1, §6, §8, §9B — **`PAGES_SOURCE_UNCONFIRMED`** |
 | **U-4** | Whether the seven S7-R4 relocated tools are present in the live project | A prior probe found all seven absent; that is a past reading | Nothing — confirm and record |
 | **U-5** | R49's own deployment version number | Not recorded when R49 shipped | §9A, if U-2 is also missed |
+| **U-6** | **Production priority exposure** — how many active marketplaces carry an unresolved `allocation_priority` | **`PRODUCTION_PRIORITY_EXPOSURE_UNVERIFIED`.** The configured `/exec` answers an unauthenticated caller with Google's "page not found"; the deployment is not readable without a signed-in session, and no credential is held or sought | §6 step B / **S-4** — measure from a signed-in browser before step C |
 
 ---
 
 ## 14. USER AUTHORIZATION CHECKPOINTS
 
-Six checkpoints. **None is implied by any other, and none has been given.** Each is a separate decision with
-its own precondition.
+Six checkpoints, in the approved Sandbox → Main → Production Verification workflow. **None is implied by any
+other, and none has been given.** Each is a separate decision with its own precondition. **No additional
+branch is created and the remote feature branch is never pushed.**
 
 | | Checkpoint | Covers | Precondition |
 |---|---|---|---|
 | **CP-0** | **Confirm the Pages source** | the §1 lookup | — |
-| **CP-1** | **Push to the non-publishing branch** | `git push origin HEAD:refs/heads/feature/product-strategy-board-p0` (68 commits, fast-forward) | CP-0 confirms this branch does not publish |
-| **CP-2** | **Apps Script source sync** | the six files of §4, `63_` last | U-1 · **S-1 (§5 P-4) recorded first** |
+| **CP-1** | **Record the rollback version and measure priority exposure** | steps A and B | §5 P-1…P-8 |
+| **CP-2** | **Apps Script source sync** | the six files of §4, `63_` last | U-1 · **S-1 recorded** · **S-4 measured** |
 | **CP-3** | **Deployment version publication** | *Edit → New version* on the **existing** deployment | CP-2 complete · **§7 markers V-1…V-5 recorded** |
-| **CP-4** | **Push `main` — publishes the frontend** | `git push origin HEAD:main` (15 commits, fast-forward) | CP-0 · backend healthy (§10 A–D) |
+| **CP-4** | **Sandbox → Main fast-forward, then push `main`** — publishes the frontend | `git merge --ff-only` in the MAIN worktree, then `git push origin main` | CP-0 · backend healthy (§10 A–D) |
 | **CP-5** | **Preview activation** | flipping `OVERSEAS_ALLOCATION_PREVIEW_ENABLED_` to `true` | **A later, separate decision. Not part of this release.** It exposes four actions and no page |
 
 ---
