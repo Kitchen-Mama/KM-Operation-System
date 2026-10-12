@@ -1,241 +1,233 @@
-# SITE PRIORITY — DRAG-TO-REORDER DESIGN PROPOSAL (S8-B3-R3-CP2M)
+# SITE PRIORITY — DRAG-TO-REORDER DESIGN PROPOSAL (S8-B3-R3-CP2M-R1, REV 1)
 
 **STATUS: PROPOSAL ONLY. NOT IMPLEMENTED. AWAITING OWNER APPROVAL.**
-No weight conversion, batch save, auto-renumbering or new API has been built. Company grouping and the
-responsive presentation are implemented separately and do not depend on this proposal.
+No weight conversion, batch save, auto-renumbering, API or schema change has been built. Company grouping and
+the responsive layout shipped separately and do not depend on this document.
+
+> **REV 1 — three things in Rev 0 were wrong or unproven, and they change the design.** Reading the allocator
+> rather than describing it produced: (1) the screen's order is NOT the factory order, (2) every weight below
+> **1** is clamped to 1 and therefore weight-identical, which makes halving-toward-zero meaningless, and (3) a
+> flat `+10` means something completely different at weight 5 than at weight 500. Each is corrected below and
+> each raises a question only the Owner can settle.
 
 ---
 
-## 0. THE PROBLEM IN ONE SENTENCE
+## 1. THREE DIFFERENT ORDERS, AND THE SCREEN IS ONLY ONE OF THEM
 
-`allocation_priority` is a **weight**, and a drag expresses an **order** — so the whole design is the question
-*"what is the smallest, most honest weight change that produces the order the operator just drew?"*
+The one claim a drag UI must never make is "drag this to the top and it will be served first". Whether that is
+true depends on which allocator is asked, and they do not agree.
 
-The dishonest answers are easy and must be named so they are not drifted into later: renumbering the list
-`1, 2, 3…` destroys weights the allocator uses as magnitudes; filling Missing with a number invents a decision
-nobody made; and writing every visible row on every drag turns a one-row edit into a multi-row transaction the
-backend cannot perform.
+### 1.A The OVERSEAS shared pool — priority leads, and is also a multiplier
+`supply-planning-allocations.js` §40.13 orders receivers:
 
-**This proposal moves exactly one row per drag.** Everything else follows from that choice.
+```
+priority DESC → demandWeight DESC → marketplace ASC → receiverKey ASC
+```
+
+and §24.7 computes the weighted share as
+
+```
+weight = min(survivalNeedQty, demandQty) × Math.max(allocationPriority, 1)
+```
+
+So here priority does two jobs at once: it **sorts**, and it **scales the share**. Dragging a site above
+another genuinely promotes it in this pool — and also changes how much it gets, which a pure reordering UI
+would not lead anyone to expect.
+
+### 1.B The FACTORY / demand order — the date leads, priority only breaks ties
+§35 orders demand:
+
+```
+requiredByDate ASC → priority DESC → company ASC → marketplace ASC → destination ASC → demandKey ASC
+```
+
+**`requiredByDate` dominates.** A site dragged to the top of the screen is still served after any site with an
+earlier required date, no matter how high its weight. Priority decides only among demands sharing a date.
+
+### 1.C The SCREEN order — a view of the stored weight, and nothing more
+The page sorts by company, then by the stored weight. That is the right quantity in the right scope (the
+allocator blocks cross-company receiver sets), but it is **not a prediction of either allocator's output**: the
+competing set in any run is whichever sites have demand that run, and in the factory path the date outranks it.
+
+**Design consequence, and it is a UI obligation rather than a note:** the drag surface must say which order it
+is editing. The proposal is a single line above the list — *"Order here sets the overseas shared-pool priority
+weight. Factory demand is ordered by required date first."* — and **no language anywhere that promises a site
+will be 'served first'.**
 
 ---
 
-## 1. SCOPE — COMPANY SEPARATION IS CORRECTNESS, NOT LAYOUT
+## 2. THE RULE, CORRECTED
 
-`supply-planning-marketplace-supply-allocation.js` states the rule it enforces:
+**One drag moves exactly one row. The dragged row takes a weight strictly between its new neighbours.**
 
-> *"Company isolation: every receiver + pool in one call MUST share the company (cross-company → BLOCKED)"*
+| Position | Rev 0 said | **Rev 1 says** | Why it changed |
+|---|---|---|---|
+| Between `hi` and `lo` | `(hi+lo)/2` | `(hi+lo)/2` | unchanged |
+| At the top | `hi + 10` | **`hi × 1.1`, minimum `hi + 1`** | §2.2 |
+| At the bottom | `lo / 2` | **`(lo + 1)/2`, and REFUSED if `lo ≤ 1`** | §2.1 |
+| Minimum gap | `0.01` | **`1.0` for a weight-meaningful move; `0.01` only preserves sort order** | §2.1 |
 
-So a priority is only ever compared against **other sites of the same company**. A list that mixed companies
-would invite the operator to order two numbers that never meet, and a drag across that boundary would be a
-gesture with no meaning.
+### 2.1 THE FLOOR IS 1, NOT 0 — the correction that matters most
+`Math.max(allocationPriority, 1)` clamps the multiplier. Therefore:
 
-**Therefore: the ordering scope is ONE company.** Within a company, sites of different countries and
-marketplaces do compete (they are receivers of the same shared pool), so ordering across countries inside one
-company is meaningful and is what the drag list offers.
+| Stored weight | Multiplier used by §24.7 |
+|---|---|
+| 0 | **1** |
+| 0.5 | **1** |
+| 0.9 | **1** |
+| 1 | **1** |
+| 2 | 2 |
 
-**One honesty caveat, stated rather than hidden.** The set that actually competes in any given allocation run is
-whichever sites have demand *in that run*, which varies. The page orders by stored weight — the right quantity,
-compared in the right scope — but it is not a prediction of any particular run's outcome. The page says so.
+**Every weight at or below 1 produces an identical share.** Rev 0's halving rule walked straight into this:
+dragging below a site at 2 gave 1, then 0.5, then 0.25 — three visibly different positions that the allocator
+cannot tell apart. The sort key still separates them, so the *order* changes while the *share* does not.
 
-**Country filter.** Filtering to one country narrows what is *displayed*. Dragging while filtered would let an
-operator reorder against neighbours they cannot see, so **drag is disabled whenever a filter hides any row of
-the company being ordered**, with a one-line explanation and a "show all for this company" action. Refusing is
-better than computing a midpoint from a partial neighbourhood.
+**Rev 1 therefore refuses a drag that would place a weight at or below 1**, with: *"Priorities of 1 or less all
+receive the same share. To place a site below this one, raise the others first."* This is the same refusal as
+the stored-0 case in Rev 0, generalised to where the real boundary actually is.
+
+> **OWNER DECISION 1 — is 1.0 the floor, or is sort-only placement acceptable below it?** A site at 0.5 ranks
+> below one at 1 in §40.13 ordering while receiving the same weighted share. That is defensible (ordering still
+> decides leftover distribution) but it is a product judgement, not a UI one. **Rev 1 assumes the strict floor.**
+
+### 2.2 `+10` IS NOT SCALE-FREE
+Priority is a multiplier, so a constant increment means different things at different magnitudes:
+
+| Existing top weight | Rev 0 `+10` | Share change |
+|---|---|---|
+| 500 | 510 | +2% |
+| 100 | 110 | +10% |
+| 5 | 15 | **+200%** |
+
+A rule that triples a site's share on one dataset and moves it 2% on another is not a rule anyone can predict.
+**Rev 1 uses `hi × 1.1` with a `hi + 1` minimum** — proportional, so "drag to top" means the same thing
+everywhere: about 10% above the current leader.
+
+> **OWNER DECISION 2 — is +10% the right promotion?** It is a business choice about how much a top-drag should
+> be worth. Any constant is defensible; what is not defensible is a constant that silently varies in meaning.
+
+### 2.3 The `0.01` floor, restated honestly
+Two weights 0.01 apart differ in share by about 0.01%. They sort differently and allocate almost identically.
+So `0.01` is a **sort-order** floor, not a meaningful-weight floor. Rev 1 keeps it as the hard refusal
+threshold (below it, floating point stops being trustworthy) but **warns at any gap below 1.0**: *"these two
+sites will receive nearly the same share; the order only decides ties."*
 
 ---
 
-## 2. THE RULE, AND WORKED EXAMPLES
+## 3. DUPLICATE WEIGHTS — WORKED ON THE REAL CASE
 
-**Rule: the dragged row takes a weight strictly between its two new neighbours. No other row changes.**
-
-- Dropped between `hi` and `lo` → `new = (hi + lo) / 2`
-- Dropped at the TOP (above `hi`) → `new = hi + 10`
-- Dropped at the BOTTOM (below `lo`) → `new = lo / 2` when `lo > 0`
-
-Worked on one company, starting state (the "50–100 with duplicates, 0 and Missing" case):
+The live shape this must survive, from the fixture used in the viewport capture:
 
 | Site | Weight |
 |---|---|
 | Amazon US | 100 |
 | Amazon GB | 80 |
-| Amazon DE | 80 |
-| Amazon JP | 50 |
-| Amazon FR | 0 |
-| Amazon CA | *Missing* |
+| Amazon DE | **80** |
+| Rakuten JP | 0 |
+| Walmart CA | *Missing* |
+| eBay US (ResourceUS) | `7abc` → INVALID |
 
-| # | Drag | Computed | Result |
-|---|---|---|---|
-| **a** | JP between US (100) and GB (80) | (100+80)/2 = **90** | JP `50 → 90`. **US, GB, DE, FR, CA unchanged.** |
-| **b** | JP to the very top | 100 + 10 = **110** | JP `50 → 110`. Nothing else moves. |
-| **c** | FR between JP (50) and nothing below | — | FR is already last; no change proposed, no write. |
-| **d** | JP below FR (0) | would need `< 0` | **REFUSED** — see §2.1 |
-| **e** | GB between US (100) and DE (80) | (100+80)/2 = **90** | GB `80 → 90`. DE stays 80, so the tie is broken by raising ONE row. |
-| **f** | GB between DE (80) and JP (50) | (80+50)/2 = **65** | GB `80 → 65`. |
-| **g** | JP between GB (80) and DE (80) | no value strictly between | **REFUSED** — see §3 |
-| **h** | CA (Missing) between GB (80) and JP (50) | **65** | CA `Missing → 65`, a normal first-time set. See §4. |
-| **i** | repeated midpoints 80→70→75→72.5→71.25… | gap `< 0.01` | **REFUSED** — see §2.2 |
+| Drag | Result |
+|---|---|
+| JP between US (100) and GB (80) | **90.** Works. One row changes. |
+| JP between GB (80) and DE (80) | **REFUSED** — no value strictly between 80 and 80 |
+| GB above US | **110** (`100 × 1.1`). Works, and breaks the GB/DE tie by raising GB only. |
+| DE below JP (0) | **REFUSED** — would land at or below 1 (§2.1) |
+| JP to the very bottom | **REFUSED** — JP is already at 0; there is nothing below |
+| CA (Missing) between US and GB | **90**, as an explicit first set (§5) |
+| eBay (INVALID) anywhere | **not draggable** — its position is undefined until the cell is fixed |
 
-### 2.1 The bottom edge, and why 0 is a wall
-`0` is a **valid lowest weight** that still takes a §24.7 share; negative is INVALID and the R52 writer refuses
-it. So there is no valid weight below 0. A drag below a row holding 0 is **refused** with: *"0 is the lowest
-valid priority. To place a site below this one, raise the others first."* The alternative — quietly renumbering
-the column to make room — is exactly the auto-renumbering this design forbids.
-
-When the lowest weight is above 0 (say 50), dropping below it gives `50 / 2 = 25`, which stays strictly positive
-and never reaches 0 by halving. A drag can therefore always be placed at the bottom *except* against a stored 0.
-
-### 2.2 Precision exhaustion is refused, not papered over
-Repeated midpoint insertion between the same pair shrinks the gap geometrically. When the available gap falls
-below **0.01**, the drag is **refused** with *"these two sites are too close together to insert between. Set an
-explicit priority instead."* The alternative is a silent respread of neighbouring weights — a multi-row write
-this design does not do, and a change to numbers the operator did not touch.
+**So of the six drags an operator is most likely to try on this data, four work and two are refused with a
+reason they can act on.** The two refusals are both consequences of the data (a tie, and a floor), not of the
+design — and both are visible *before* the drag: tied rows carry a tie badge, and the region below weight 1 is
+drawn as a non-droppable zone.
 
 ---
 
-## 3. EQUAL WEIGHTS — THE "LOOKS REORDERED, ISN'T" TRAP
+## 4. NEIGHBOUR RACE, AND WHY IT CANNOT BE ENGINEERED AWAY HERE
 
-This is the failure mode the decision explicitly names, and it is the reason §2 rule (g) exists.
+The compare-and-set proves the **dragged row** has not changed since it was read. It proves nothing about the
+**neighbours** whose weights produced the midpoint.
 
-If GB and DE both hold **80** and the operator drags JP between them, there is **no number strictly between 80
-and 80**. A naive midpoint yields 80 — the list would redraw in the new order, the save would report success,
-and the stored data would be unchanged. The operator would believe they had changed a priority they had not.
+Sequence that loses:
+1. Operator reads US=100, GB=80. Drags JP between them → computes 90.
+2. Someone else sets GB=95.
+3. Operator saves. JP's own CAS passes (JP is unchanged). JP becomes 90 — now **below** GB, not above it.
 
-**Therefore: a drop between two equal weights is REFUSED before any preview is offered**, with text that names
-the real situation: *"Amazon GB and Amazon DE both have priority 80, so there is no position between them.
-Give one of them a different priority first."*
+**Mitigation, and its exact limit.** Before dispatching, the page re-reads and checks the neighbours still
+bracket the computed value; if not it refuses with *"the sites around this one changed — refresh and try
+again."* That check is a **read, so it is advisory**: a neighbour can still change between the check and the
+write. **It is not data loss and not a lost update** — JP's CAS still held, no other row was touched, and the
+next refresh shows the truth. It is a *placement* that no longer matches the preview.
 
-**Equal weights are also marked in the list itself** — a tie badge on every row sharing a weight with another —
-so the operator can see *before* dragging why a gap is not droppable. A refusal the operator could have
-predicted is better than one that surprises them.
-
-Dragging a tied row *itself* is allowed (example **e**): moving GB above DE gives GB a new, higher weight and
-breaks the tie by changing **one** row, which is a real change with a real effect.
-
----
-
-## 4. MISSING IS NEVER BACKFILLED
-
-Missing rows have **no weight**, so they are not in the ordered sequence. They render in a separate
-**"No priority set"** group below the ordered list, in their own area.
-
-- The system **never** assigns a weight to a Missing row on its own — not to make room, not to complete a
-  sequence, not as a side effect of another row's drag.
-- An operator **may** drag a Missing row into the ordered list. That is not backfilling; it is an explicit
-  per-row instruction, and it is written as a normal R52 compare-and-set with
-  `expected_allocation_priority_state: 'MISSING'`. If the cell has since acquired a value, the CAS refuses and
-  the operator refreshes — the same protection every other save gets.
-- There is **no** supported drag that returns a weighted row to Missing. R52 has no way to clear a priority, and
-  inventing one here would be a product decision, not a UI one.
-
-INVALID rows (a cell holding `7abc`) are likewise outside the ordered list, shown in their own group with their
-raw stored text, and are **not draggable** — their position is undefined, and an allocator refusal is the
-correct consequence until someone fixes the cell.
+Removing this residual requires reading and writing the neighbourhood atomically, which needs a multi-row
+transaction that does not exist (§6). **Rev 1 does not accept this risk on the Owner's behalf; it is listed in
+§8 as something to approve or reject.**
 
 ---
 
-## 5. PREVIEW FIRST — A DROP WRITES NOTHING
+## 5. MISSING — FIRST SET, AND WHAT HAPPENS WHEN IT FAILS
 
-Dragging mutates **local state only**. The page then shows an explicit, reviewable change:
+Missing rows have no weight and are not in the ordered list; they sit in a separate **"No priority set"** group.
+Nothing is ever auto-assigned — not to make room, not to complete a sequence, not as a side effect.
 
-```
-Pending change — 1 site
-  Amazon JP     50  →  90
-  Nothing else changes.
-                              [ Save ]  [ Cancel ]
-```
+Dragging a Missing row into the list is an **explicit first set**, dispatched as the normal R52 write with
+`expected_allocation_priority_state: 'MISSING'`.
 
-- The drop itself issues **no request**.
-- The preview names the **old and new weight** and states plainly that no other row changes.
-- Cancel restores the pre-drag order with no network activity at all.
-- Only **Save** dispatches, and it dispatches the existing single-row action.
+**Failure recovery, by outcome — and the four states keep their R52 meanings exactly:**
 
----
+| Outcome | What the row shows | What the operator may do |
+|---|---|---|
+| `CONFIRMED_COMMITTED` | the new weight, in place | nothing |
+| `CONFIRMED_REJECTED` (zero-write proven) | returns to **Missing**, with the server's reason | correct and retry — safe, because nothing was written |
+| `CONFIRMED_NOT_STARTED` | returns to **Missing** | retry |
+| **`OUTCOME_UNKNOWN`** | **stays where the drag put it, in the WARN state, labelled unconfirmed** | **Refresh. Never retry.** |
 
-## 6. THE R52 WRITE CONTRACT IS REUSED UNCHANGED
-
-Save calls `marketplace.allocationPriority.set` exactly as the Edit button does today:
-
-- **canonical identity** and `expected_marketplace_id` — the drag targets one already-identified row
-- **mandatory CAS** — `expected_allocation_priority_state` is `SET` (with the pre-drag weight) or `MISSING`
-- **fail-closed** — no fallback to `upsertMarketplace`, no retry, no resend
-- **`OUTCOME_UNKNOWN`** — handled exactly as now: the row is shown in the WARN state, the value is **not**
-  called verified, and the resolution is a fresh read, never a resend
-- **three columns only** — `allocation_priority`, `updated_by`, `updated_at`
-
-**No new API. No schema change. No change to the weight scale.** If the Owner later wants normalisation or a
-respread, that is a different feature and §7 explains why it needs a different backend.
+**The `OUTCOME_UNKNOWN` row is the one that must not be simplified.** The list may not silently snap back to
+Missing — that would assert a zero write nobody proved — and it may not show the new weight as settled either.
+It holds the proposed position, visibly unconfirmed, until a fresh read settles it. **A matching value after a
+refresh still does not prove this request committed**, and the WARN text says so, exactly as the single-row
+editor does today. **There is no automatic resend and no rollback.**
 
 ---
 
-## 7. MULTI-ROW: WHY THIS DESIGN AVOIDS IT, AND WHAT IT WOULD COST
+## 6. MULTI-ROW IS STILL NOT PROPOSED, AND THE REASON IS UNCHANGED
 
-**The single-row rule is not a simplification — it is what makes the design implementable on the existing
-backend.** One drag = one row = one CAS = one atomic cell write. There is no partial-failure state to design,
-because there is no second write.
+One drag = one row = one CAS = one atomic cell write. There is no partial-failure state to design because
+there is no second write.
 
-**The existing single-row CAS API is NOT a multi-row transaction, and must not be treated as one.** If a future
-feature writes N rows, it issues N independent requests; a failure at row 3 of 5 leaves rows 1–2 committed and
-4–5 untouched, and R52's `OUTCOME_UNKNOWN` means even "row 3 failed" may not be true. There is no rollback: the
-compensating writes would themselves be un-atomic, and the CAS values for them would already be stale.
-
-So, explicitly: **if the Owner ever approves an operation that must change several weights at once** (normalise,
-respread, "make room"), it requires
-1. a new backend action that writes the set under one lock with one all-or-nothing outcome, **or**
-2. an accepted, documented partial-failure model with a reconciliation procedure.
-
-**Neither is proposed here, and neither should be assumed to exist.**
-
-**Concurrency, stated honestly.** The CAS proves the *dragged* row has not changed since it was read. It proves
-nothing about the **neighbours** whose weights produced the midpoint. If someone else moves a neighbour between
-the operator's read and their save:
-
-- Save re-checks that the neighbours still bracket the computed value and refuses with *"the sites around this
-  one changed — refresh and try again"* if they do not.
-- That check is a **read, and therefore advisory**: a neighbour can still change between the check and the
-  write. The worst outcome is that the saved weight lands in a different relative position than previewed.
-  **It is not data loss, not a lost update of another row, and not a silent overwrite** — the dragged row's own
-  CAS still holds — and it is visible on the next refresh.
-- This residual is a direct consequence of there being no multi-row transaction, and it is recorded rather
-  than engineered around.
+**The single-row CAS API is not a multi-row transaction.** N rows means N independent requests; a failure at
+row 3 of 5 leaves 1–2 committed and 4–5 untouched, and `OUTCOME_UNKNOWN` means even "row 3 failed" may be
+false. There is no rollback: the compensating writes are themselves un-atomic and their CAS values are already
+stale. If normalisation, respreading or "make room" is ever wanted, it needs **a new backend action writing the
+set under one lock with one all-or-nothing outcome**, or an accepted and documented partial-failure model.
+**Neither exists and neither is proposed.**
 
 ---
 
-## 8. WHAT IS NOT TOUCHED
+## 7. UNCHANGED, AND RELIED UPON
 
-- **Allocation formula** — §24.7 `priority_factor = MAX(priority, 1)` is unchanged.
-- **Quantity conservation** — untouched; this writes one weight, not a quantity.
-- **Production data** — no migration, no backfill, no bulk edit, no cleanup.
-- **Weight scale** — no normalisation to 1..N, no rescaling, no cap. Existing weights keep their magnitudes.
-- **Schema** — no new column.
-- **§45.A states** — MISSING / INVALID / SET stay three distinct things.
-- **The allocator's refusal of an unresolved priority** — unchanged, and relied on.
+Allocation formula (§24.7) · demand ordering (§35) · overseas receiver ordering (§40.13) · quantity
+conservation · the weight scale (no normalisation, no rescale, no cap) · the schema · §45.A's three states ·
+the allocator's refusal of an unresolved priority · Production data.
 
----
-
-## 9. ACCESSIBILITY — THE KEYBOARD PATH IS THE SAME OPERATION
-
-Drag is a pointer convenience, never the only route. Every row exposes an equivalent that produces the identical
-single-row change, the identical preview and the identical save:
-
-- **Keyboard**: focus a row handle, `Space` to lift, `↑`/`↓` to move, `Space` to drop, `Esc` to cancel. Each
-  move announces *"Amazon JP, position 2 of 6, proposed priority 90"* via the existing live region.
-- **Touch**: long-press to lift, drag, release — plus **Move up / Move down** buttons, because a long-press drag
-  inside a scrolling list is unreliable on a phone and must not be the only way.
-- A refusal (§2.1, §2.2, §3) is announced identically on all three paths.
+Accessibility is unchanged from Rev 0: keyboard (`Space` lift, `↑`/`↓`, `Space` drop, `Esc` cancel) and touch
+(long-press plus explicit **Move up / Move down** buttons) produce the identical single-row change, the
+identical preview and the identical save, and announce refusals identically.
 
 ---
 
-## 10. WHAT OWNER IS APPROVING, IF APPROVED
+## 8. WHAT OWNER IS BEING ASKED
 
-1. **Midpoint insertion, one row per drag**, with `+10` at the top and halving at the bottom.
-2. **Refusals** for: equal neighbours (§3), below a stored 0 (§2.1), gap under 0.01 (§2.2), and dragging while
-   filtered (§1).
-3. **Missing** shown separately, never auto-filled, draggable into the list as an explicit first set (§4).
-4. **Preview-then-save**, no write on drop (§5).
-5. **Reuse of the R52 single-row contract** with no new API, schema or scale change (§6).
-6. **Acceptance of the documented neighbour-race residual** (§7), which cannot be removed without a multi-row
-   transaction that does not exist.
+**Approve or reject, individually:**
 
-**Not approved by this document, and not built:** multi-row writes, normalisation, respreading, auto-renumbering,
-Missing backfill, clearing a priority, and any change to the allocation formula.
+1. **Midpoint insertion, one row per drag** — the core rule.
+2. **DECISION 1 — the floor is weight 1.0**, because at or below it every share is identical (§2.1).
+3. **DECISION 2 — "drag to top" means `hi × 1.1`**, not `+10`, so its meaning does not vary with scale (§2.2).
+4. **Refusals**: equal neighbours, below the floor, gap under 0.01, and dragging while a filter hides rows.
+5. **Missing** never auto-filled; draggable in as an explicit first set, with the failure table in §5.
+6. **The neighbour-race residual** (§4) — this needs an explicit accept, not an assumption.
+7. **The UI must state which order it edits** (§1), and must never promise "served first".
+
+**Not covered and not built:** multi-row writes, normalisation, respreading, auto-renumbering, Missing
+backfill, clearing a priority, any new API or schema, and any change to the allocation formula.

@@ -307,7 +307,7 @@ window.stopWorldTimes = stopWorldTimes;
 // ========================================
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('home-section', {
-        mount() {
+        mount(epoch) {
             console.log('[Home] mount');
             // PHASE 1 — THE LOCAL UI FIRST, SYNCHRONOUSLY.
             // The world-time bar is static markup in index.html, so it is already in the DOM here. The
@@ -318,6 +318,14 @@ if (window.KM && window.KM.lifecycle) {
             // Ensure partial markup is injected before rendering (Phase 1). renderHomepage is
             // itself null-guarded, so the worst case (load failure) is an empty home, not a crash.
             _ensureHomeMarkup().then(function() {
+                // S8-B3-R3-CP2M-R1 — THE LATE PARTIAL MAY NOT REDRAW A PAGE THE OPERATOR HAS LEFT.
+                //
+                // This `.then` had no guard at all, so a Home partial landing after a navigation called
+                // setHomeShellVisible(true) and renderHomepage() over whatever was now on screen. Home is
+                // partial-loaded and takes the FIRST route of every boot, so it is the most likely page in
+                // the application to still be in flight when the operator picks something else.
+                var lc = window.KM && window.KM.lifecycle;
+                if (lc && typeof lc.commitGuard === 'function' && !lc.commitGuard(epoch, 'home-section')) return;
                 if (window.setHomeShellVisible) window.setHomeShellVisible(true);   // canonical Home entry restores the shell
                 renderHomepage();
             });
@@ -337,7 +345,10 @@ if (window.KM && window.KM.lifecycle) {
     // every other page. It is guarded because a deep link may name another section, and hijacking that
     // would be a worse bug than a slow clock.
     if (!location.hash || location.hash === '#' || location.hash === '#home-section') {
-        try { KM.lifecycle.switchTo('home-section'); }
+        // Phase 0 is a BOOT route like app.js's, and takes the page only if nobody has navigated yet.
+        // Called by its one name rather than through a fallback: the existing catch below already covers a
+        // lifecycle that does not have it, and app.js's boot then mounts Home exactly as it always did.
+        try { KM.lifecycle.switchToInitial('home-section'); }
         catch (e) { console.error('[Home] early mount failed; app.js boot will retry:', e); }
     }
 }

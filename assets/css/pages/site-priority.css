@@ -181,3 +181,11 @@
 /* Nothing on this page may push the viewport sideways at any width. */
 #site-priority-section .sp-table-wrap { max-width: 100%; }
 #site-priority-section .sp-table { table-layout: auto; }
+
+/* S8-B3-R3-CP2M-R1 — TOUCH TARGETS BELONG TO TABLETS TOO, which the 640px card breakpoint missed.
+   Measured at 768px: 36px controls on a device whose primary input is a finger. The CARD layout is still a
+   phone decision and stays at 640px; the SIZE of a control is a question about the input, not the layout. */
+@media (max-width: 1024px) {
+  #site-priority-section .sp-btn { min-height: 38px; padding: 8px 14px; }
+  #site-priority-section .sp-select { min-height: 38px; }
+}

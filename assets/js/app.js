@@ -711,6 +711,11 @@ function showSection(section) {
         const targetSectionId = sectionMap[section];
         if (targetSectionId) {
             KM.lifecycle.switchTo(targetSectionId, nav.token);
+        } else if (nav.token !== null && typeof KM.lifecycle.abandonNavigation === 'function') {
+            // A section this map does not know: the navigation was declared and will never commit. Releasing
+            // it matters because a pending intent freezes EVERY page out of committing — one mis-typed
+            // section id would otherwise stall the whole application until reload.
+            KM.lifecycle.abandonNavigation(nav.token);
         }
     }
 
@@ -990,7 +995,16 @@ window.addEventListener('DOMContentLoaded', () => {
     // Home markup is partial-loaded (Phase 1): switchTo('home-section') triggers the Home mount,
     // which loads the partial and renders. Running it first ensures a failure in any later init
     // below cannot abort startup and leave the homepage blank (only the world time bar showing).
-    if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchTo) {
+    // S8-B3-R3-CP2M-R1 — THE BOOT TAKES THE INITIAL ROUTE, IT DOES NOT OVERRIDE A CHOICE.
+    //
+    // This ran as a plain switchTo, which CP2M correctly reads as a FRESH navigation intent. For the Home
+    // logo that is right; for a boot step arriving at the end of a deferred script chain it is not. An
+    // operator who clicked a page while the remaining megabytes were still landing was dragged back to Home,
+    // and a lazy route they were waiting for was revoked on the way. switchToInitial takes the route ONLY if
+    // nobody has navigated yet, and does not count as a navigation itself.
+    if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchToInitial) {
+        KM.lifecycle.switchToInitial('home-section');
+    } else if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchTo) {
         KM.lifecycle.switchTo('home-section');
     } else if (window.renderHomepage) {
         renderHomepage();
@@ -1009,6 +1023,14 @@ window.addEventListener('DOMContentLoaded', () => {
     try { renderRecords(); } catch (e) { console.error('[App] renderRecords failed:', e); }
     // The world clock is NOT started here any more — the Home mount started it in Phase 0, long before
     // this event could fire. Calling it again would be the second authority §4 forbids.
-    try { renderHomepage(); } catch (e) { console.error('[App] renderHomepage failed:', e); }
+    // S8-B3-R3-CP2M-R1 — and the boot does not REDRAW Home either. This ran unconditionally, so an operator
+    // who had already navigated had the page they left re-rendered behind them. Home's own mount renders it
+    // when Home is actually entered; at an untouched boot that is this very moment, so nothing is lost.
+    try {
+        var _lcHome = window.KM && window.KM.lifecycle;
+        var _homeIsCurrent = !_lcHome || typeof _lcHome.getCurrentPage !== 'function'
+            || _lcHome.getCurrentPage() === 'home-section';
+        if (_homeIsCurrent) renderHomepage();
+    } catch (e) { console.error('[App] renderHomepage failed:', e); }
     try { initSkuUnifiedScroll(); } catch (e) { console.error('[App] initSkuUnifiedScroll failed:', e); }
 });

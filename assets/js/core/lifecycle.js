@@ -35,10 +35,43 @@
     // here because switchTo is the one function every navigation reaches, which lets the DEFAULT be
     // safe: a switchTo called WITHOUT a token is a fresh intent and supersedes whatever is in flight.
     let _navIntent = 0;
+    // S8-B3-R3-CP2M-R1 — THE INTENT THAT HAS ACTUALLY BEEN COMMITTED, which is what closes race C.
+    //
+    // A lazy route declares its intent and then spends its whole download before reaching switchTo. During
+    // that gap `_navEpoch` and `_activeSectionId` still name the OLD page, so the old page's own async `.then`
+    // passed commitGuard and painted over a navigation already under way. Comparing the declared intent with
+    // the committed one is the question nobody was asking: "is a newer navigation already running?"
+    let _committedIntent = 0;
+    // Whether the OPERATOR has navigated. The boot's Home route is not a navigation and must never override a
+    // choice already made — see switchToInitial.
+    let _userNavStarted = false;
+
     /** Begin a navigation. Returns the token to carry through async work and hand back to switchTo. */
-    KM.lifecycle.beginNavigation = function() { return ++_navIntent; };
+    KM.lifecycle.beginNavigation = function() { _userNavStarted = true; return ++_navIntent; };
     KM.lifecycle.currentNavigation = function() { return _navIntent; };
     KM.lifecycle.isCurrentNavigation = function(token) { return token === _navIntent; };
+    /** True while a navigation has been declared but has not yet committed. */
+    KM.lifecycle.navigationPending = function() { return _navIntent !== _committedIntent; };
+    /**
+     * Release a navigation that will never reach switchTo — showSection resolving to no section, for example.
+     * Without this a dead intent would leave navigationPending() true for ever and freeze EVERY page out of
+     * committing, turning a harmless mis-click into an application-wide stall.
+     */
+    KM.lifecycle.abandonNavigation = function(token) {
+        if (token === _navIntent) { _committedIntent = _navIntent; return true; }
+        return false;
+    };
+    /**
+     * The BOOT's route. It takes the page only when the operator has not already chosen one, and it does not
+     * count as a user navigation — so a later boot step can never revoke a route someone is waiting for, nor
+     * drag them back to Home from the page they picked while the script chain was still arriving.
+     */
+    KM.lifecycle.switchToInitial = function(pageName) {
+        if (_userNavStarted) return _navEpoch;
+        var r = KM.lifecycle.switchTo(pageName);
+        _userNavStarted = false;      // the boot took the initial route; the operator still has not navigated
+        return r;
+    };
     let _activeSectionId = null;       // the ONE section id permitted to be visible/active
     let _pendingNav = 0;               // navigations currently executing (transient; 0 between navigations)
     let _lastCommitted = null;         // { sectionId, epoch } of the most recent committed navigation
@@ -161,6 +194,7 @@
         // the newer navigation left it.
         if (navToken === undefined || navToken === null) {
             _navIntent++;
+            _userNavStarted = true;
         } else if (navToken !== _navIntent) {
             _lastDiscarded = { sectionId: pageName, epoch: null };
             return _navEpoch;
@@ -170,6 +204,9 @@
         // NOTE: the intent above is bumped BEFORE this returns, deliberately. Re-clicking the page you
         // are already on is still an instruction to be on it, so it must cancel a pending lazy route.
         if (currentPage === pageName) {
+            // The navigation resolved to "stay here", which IS a commit of that intent. Leaving it pending
+            // would freeze every page out of committing for the rest of the session.
+            _committedIntent = _navIntent;
             return _navEpoch;
         }
 
@@ -208,6 +245,7 @@
         }
 
         currentPage = pageName;
+        _committedIntent = _navIntent;
         _lastCommitted = { sectionId: pageName, epoch: my };
         enforceSingleActiveSection();   // synchronous first pass (the observer + page guards handle late arrivals)
         _pendingNav = Math.max(0, _pendingNav - 1);
@@ -216,7 +254,10 @@
 
     // ---- F1-7N-FA-3C-R6C navigation guards (used by async page mounts) ------------------------------
     KM.lifecycle.currentEpoch = function() { return _navEpoch; };
-    KM.lifecycle.isCurrent = function(epoch) { return epoch === _navEpoch; };
+    // S8-B3-R3-CP2M-R1: a DECLARED-but-uncommitted navigation makes every older epoch stale too. Without
+    // this the gap between declaring a lazy route and reaching switchTo was a window in which the page being
+    // replaced was still told it owned the screen.
+    KM.lifecycle.isCurrent = function(epoch) { return epoch === _navEpoch && _navIntent === _committedIntent; };
     KM.lifecycle.activeSectionId = function() { return _activeSectionId; };
     /**
      * A page's async mount `.then` calls this before committing DOM/init: returns true ONLY if this navigation is still
@@ -224,7 +265,8 @@
      * last-discarded stale nav and returns false so the page bails (no stale render, no wasteful re-init).
      */
     KM.lifecycle.commitGuard = function(epoch, sectionId) {
-        var ok = (epoch === _navEpoch) && (!sectionId || sectionId === _activeSectionId);
+        var ok = (epoch === _navEpoch) && (_navIntent === _committedIntent)
+            && (!sectionId || sectionId === _activeSectionId);
         if (!ok) _lastDiscarded = { sectionId: sectionId || null, epoch: (epoch == null ? null : epoch) };
         return ok;
     };

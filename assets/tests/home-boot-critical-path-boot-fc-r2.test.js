@@ -454,10 +454,18 @@ var HOMEC2 = codeOnly(read('assets/js/pages/home.js'));
 ok(HOMEC2.indexOf('addEventListener(\'popstate\'') === -1 && HOMEC2.indexOf('addEventListener("popstate"') === -1,
   'F6 §3 home.js did not add a second router (no popstate listener)');
 eq((HOMEC2.match(/KM\.lifecycle\.register\(/g) || []).length, 1, 'F7 it registers exactly one section');
-// Two call sites: showHome() (pre-existing, the logo) and this round's Phase 0 handoff. Both call the ONE
-// authority; neither implements navigation. Pinned so a third cannot appear unnoticed.
-eq((HOMEC2.match(/KM\.lifecycle\.switchTo\(/g) || []).length, 2,
+// Two call sites: showHome() (pre-existing, the logo) and the Phase 0 handoff. Both call the ONE authority;
+// neither implements navigation. Pinned so a third cannot appear unnoticed.
+//
+// S8-B3-R3-CP2M-R1 — the Phase 0 site now calls switchToInitial, which is the SAME authority entered by the
+// name that means "boot route, do not override a choice the operator has already made". Counting both names
+// keeps the pin exactly as strong: the total is still two, and a third site of EITHER kind still fails.
+var HOME_AUTHORITY_CALLS = (HOMEC2.match(/KM\.lifecycle\.switchTo\(/g) || []).length
+  + (HOMEC2.match(/KM\.lifecycle\.switchToInitial\(/g) || []).length;
+eq(HOME_AUTHORITY_CALLS, 2,
   'F8 §3 home.js calls the one lifecycle authority from exactly two known sites');
+eq((HOMEC2.match(/KM\.lifecycle\.switchToInitial\(/g) || []).length, 1,
+  'F8a and the BOOT route is the one that declares itself initial');
 ok(read('assets/js/core/lifecycle.js') === read('assets/js/core/lifecycle.js'),
   'F9 lifecycle.js is read, not modified (see H for the byte-identity assertion)');
 
