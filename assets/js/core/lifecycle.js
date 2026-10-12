@@ -22,6 +22,23 @@
 
     // ---- F1-7N-FA-3C-R6C navigation-authority state -------------------------------------------------
     let _navEpoch = 0;                 // monotonic navigation token (latest wins)
+    // S8-B3-R3-CP2M — THE NAVIGATION *INTENT* TOKEN, AND WHY IT IS NOT _navEpoch.
+    //
+    // _navEpoch is bumped by switchTo, which is the COMMIT. A lazy route spends its whole download
+    // before reaching switchTo, so during that window there was no token saying "a navigation has
+    // begun" — app.js kept a private one (`_kmRouteNavSeq_`) and bumped it in exactly ONE branch.
+    // Every PLAIN page, Home, and every direct switchTo call therefore left it untouched, so a route
+    // whose code was still in flight still believed it owned the screen when it landed and called
+    // switchTo on itself — pulling the operator back to the page they had already left.
+    //
+    // This counter is bumped at the START of every valid navigation, before any async work. It lives
+    // here because switchTo is the one function every navigation reaches, which lets the DEFAULT be
+    // safe: a switchTo called WITHOUT a token is a fresh intent and supersedes whatever is in flight.
+    let _navIntent = 0;
+    /** Begin a navigation. Returns the token to carry through async work and hand back to switchTo. */
+    KM.lifecycle.beginNavigation = function() { return ++_navIntent; };
+    KM.lifecycle.currentNavigation = function() { return _navIntent; };
+    KM.lifecycle.isCurrentNavigation = function(token) { return token === _navIntent; };
     let _activeSectionId = null;       // the ONE section id permitted to be visible/active
     let _pendingNav = 0;               // navigations currently executing (transient; 0 between navigations)
     let _lastCommitted = null;         // { sectionId, epoch } of the most recent committed navigation
@@ -130,8 +147,28 @@
      * @param {string} pageName - 目標頁面名稱
      * @returns {number} the navigation epoch assigned to this switch
      */
-    KM.lifecycle.switchTo = function(pageName) {
+    KM.lifecycle.switchTo = function(pageName, navToken) {
+        // S8-B3-R3-CP2M — THE INTENT CHECK, BEFORE ANYTHING ELSE, AND SAFE BY DEFAULT.
+        //
+        // No token = a fresh navigation (a plain page, Home, a direct call). It REVOKES whatever is
+        // still in flight, which is the behaviour every caller already assumed it had. This is why the
+        // default is the safe one: a future entry point that forgets to declare a token still cancels
+        // the pending route rather than silently racing it.
+        //
+        // A token = a navigation that began earlier and carried its claim through async work. If a
+        // newer intent has since arrived, this one has LOST and must not commit — not the unmount, not
+        // the mount, not the `.active` flag. Returning the current epoch leaves the screen exactly as
+        // the newer navigation left it.
+        if (navToken === undefined || navToken === null) {
+            _navIntent++;
+        } else if (navToken !== _navIntent) {
+            _lastDiscarded = { sectionId: pageName, epoch: null };
+            return _navEpoch;
+        }
+
         // 如果切換到相同頁面，不執行任何操作 — re-click current page must not duplicate mount/DOM/listeners.
+        // NOTE: the intent above is bumped BEFORE this returns, deliberately. Re-clicking the page you
+        // are already on is still an instruction to be on it, so it must cancel a pending lazy route.
         if (currentPage === pageName) {
             return _navEpoch;
         }

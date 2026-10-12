@@ -310,15 +310,17 @@ mutant('G1 a pilot script is restored to the boot list', T.index,
 // G2 — mount before the script is ready (§11 "mount before script ready").
 mutant('G2 the router mounts without waiting for the code', T.app,
   '        window.KM.scriptLoader.ensure(section, routeAssets.scripts).then(function (ok) {\r\n' +
-  '            if (myNav !== _kmRouteNavSeq_) return;           // a newer navigation owns the screen\r\n' +
+  '            if (_kmNavSuperseded_(nav)) return;           // a newer navigation owns the screen\r\n' +
   '            if (window.KM.lifecycle && window.KM.lifecycle.switchTo) {\r\n' +
-  '                window.KM.lifecycle.switchTo(routeAssets.sectionId);\r\n' +
+  '                // The token is handed back so switchTo can refuse independently: this check and that one\r\n' +
+  '                // are the same question asked at the two moments it can change answer.\r\n' +
+  '                window.KM.lifecycle.switchTo(routeAssets.sectionId, nav.token);\r\n' +
   '            }',
   '        if (window.KM.lifecycle && window.KM.lifecycle.switchTo) {\r\n' +
-  '            window.KM.lifecycle.switchTo(routeAssets.sectionId);\r\n' +
+  '            window.KM.lifecycle.switchTo(routeAssets.sectionId, nav.token);\r\n' +
   '        }\r\n' +
   '        window.KM.scriptLoader.ensure(section, routeAssets.scripts).then(function (ok) {\r\n' +
-  '            if (myNav !== _kmRouteNavSeq_) return;',
+  '            if (_kmNavSuperseded_(nav)) return;',
   'all',
   function (o) { var r = o.routes['product-strategy']; return !r || !r.cold.mounted || r.cold.useful === 0; });
 

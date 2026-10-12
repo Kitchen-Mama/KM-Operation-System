@@ -867,6 +867,68 @@ cDone.then(function () {
 
 // -------------------------------------------------------------------------------------------------------------
 .then(function () {
+  section('N. CP2M — companies are separated, because the allocator separates them');
+
+  // THE REASON THIS IS NOT A LAYOUT TEST. supply-planning-marketplace-supply-allocation.js enforces
+  // "every receiver + pool in one call MUST share the company (cross-company -> BLOCKED)", so a priority is
+  // only ever compared against other sites of the SAME company. A flat list invited an operator to read two
+  // numbers side by side that never meet. The group band is where one comparable set ends.
+  var b = bootPage({ rows: [KM_US, RESUS_US, KM_CA, RESTW_GB] });
+  return b.hooks.mount().then(function () {
+    var html = b.dom.byId['sp-rows'].innerHTML;
+
+    // 1 — every company present gets exactly one band.
+    ['KM', 'ResUS', 'ResTW'].forEach(function (co) {
+      var hits = html.split('data-sp-group="' + co + '"').length - 1;
+      eq(hits, 1, 'N1 ' + co + ' gets exactly ONE group header');
+    });
+
+    // 2 — and the rows of one company are contiguous: no company's band may appear twice, which is what
+    //     interleaving would produce.
+    var order = [];
+    html.replace(/data-sp-group="([^"]*)"/g, function (_m, co) { order.push(co); return ''; });
+    eq(order.length, new Set(order).size, 'N2 no company band repeats — rows are not interleaved');
+
+    // 3 — the band counts its own sites. KM has two (US + CA); the others one each.
+    ok(/data-sp-group="KM"[\s\S]*?sp-group__count">2 sites</.test(html),
+       'N3 the KM band states that it holds 2 sites');
+    ok(/data-sp-group="ResUS"[\s\S]*?sp-group__count">1 site</.test(html),
+       'N3a and a single-site band says "1 site", not "1 sites"');
+
+    // 4 — grouping did not cost the row contract. Every data row still carries its identity and its cells.
+    var rowCount = html.split('data-sp-row="').length - 1;
+    eq(rowCount, 4, 'N4 all four sites still render as rows');
+    ok(html.indexOf('data-label="Allocation priority"') !== -1,
+       'N5 each priority cell carries its column label for the narrow layout');
+    ok(html.indexOf('data-label="Country"') !== -1, 'N5a and so does the country cell');
+
+    // 5 — §45.A is untouched by the regrouping: MISSING is still not 0.
+    var b2 = bootPage({ rows: [KM_US, { company: 'KM', country: 'US', marketplace: 'EBay',
+      allocationPriority: null, currency: 'USD', status: 'active' }] });
+    return b2.hooks.mount().then(function () {
+      var h2 = b2.dom.byId['sp-rows'].innerHTML;
+      ok(h2.indexOf('sp-badge--missing') !== -1, 'N6 a MISSING row still renders MISSING inside a group');
+      ok(!/sp-pri">0</.test(h2), 'N6a and is still never drawn as 0');
+    });
+  }).then(function () {
+    // 6 — the stylesheet carries the narrow layout. Asserted on the SOURCE because a stub DOM has no
+    //     viewport: this proves the rules exist and are scoped to this page, not that they render.
+    var css = read('assets/css/pages/site-priority.css');
+    ok(/@media \(max-width: 640px\)/.test(css), 'N7 a phone breakpoint exists');
+    ok(css.indexOf('content: attr(data-label)') !== -1,
+       'N7a and the narrow layout labels each cell from data-label');
+    ok(css.indexOf('.sp-group__cell') !== -1, 'N7b the group band is styled');
+    var scoped = css.split('\n').filter(function (l) {
+      return /^[.#@a-zA-Z]/.test(l.trim()) && l.indexOf('{') !== -1
+        && l.indexOf('#site-priority-section') === -1 && l.trim().indexOf('@media') !== 0
+        && l.trim().indexOf('/*') !== 0;
+    });
+    eq(scoped.length, 0, 'N8 every rule stays scoped to #site-priority-section — no global bleed');
+  });
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
   if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }
   console.log('\n----------------------------------------');
   console.log('SITE PRIORITY PAGE (S8-B2-R1): ' + pass + ' passed, ' + fail + ' failed');

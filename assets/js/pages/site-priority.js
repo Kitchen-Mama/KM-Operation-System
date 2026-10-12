@@ -245,6 +245,24 @@
     });
   }
 
+  // S8-B3-R3-CP2M — COMPANIES ARE SEPARATED BECAUSE THE ALLOCATOR SEPARATES THEM.
+  //
+  // This is not a layout preference. supply-planning-marketplace-supply-allocation.js enforces
+  // "every receiver + pool in one call MUST share the company (cross-company -> BLOCKED)", so a
+  // priority is only ever compared against OTHER SITES OF THE SAME COMPANY. A flat list invited the
+  // operator to read two numbers side by side that never meet, and to conclude one outranks the other.
+  //
+  // The group header is a row of the SAME table rather than a second table: one <thead> keeps the
+  // column meanings in one place, and screen readers keep a single column context. visibleRows()
+  // already sorts by company first, so a change of company IS the group boundary.
+  function groupHeaderHtml(company, count) {
+    return '<tr class="sp-group" data-sp-group="' + esc(company) + '">'
+      + '<th scope="colgroup" colspan="6" class="sp-group__cell">'
+      + '<span class="sp-group__name">' + esc(company || '(no company)') + '</span>'
+      + '<span class="sp-group__count">' + count + (count === 1 ? ' site' : ' sites') + '</span>'
+      + '</th></tr>';
+  }
+
   function render() {
     var tbody = $('sp-rows');
     if (!tbody) return;
@@ -252,7 +270,17 @@
     var empty = $('sp-empty');
     if (empty) empty.hidden = rows.length > 0;
 
+    var counts = {};
+    rows.forEach(function (r) { var c = str(r.company); counts[c] = (counts[c] || 0) + 1; });
+    var lastCompany = null;
+
     tbody.innerHTML = rows.map(function (r) {
+      var groupHtml = '';
+      var thisCompany = str(r.company);
+      if (thisCompany !== lastCompany) {
+        lastCompany = thisCompany;
+        groupHtml = groupHeaderHtml(thisCompany, counts[thisCompany] || 0);
+      }
       var key = identityOf(r);
       var c = classify(r.allocationPriority);
       var editing = (_editingKey === key);
@@ -275,13 +303,17 @@
       var countryCell = esc(str(r.country))
         + (canon !== str(r.country).toUpperCase() || canon !== str(r.country)
             ? ' <span class="sp-canon" title="canonical identity">' + esc(canon) + '</span>' : '');
-      return '<tr data-sp-row="' + esc(key) + '" class="' + (editing ? 'sp-row--editing' : '') + '">'
-        + '<td>' + esc(str(r.company)) + '</td>'
-        + '<td>' + countryCell + '</td>'
-        + '<td>' + esc(str(r.marketplace)) + '</td>'
-        + '<td class="sp-col-pri">' + priorityCell + '</td>'
-        + '<td class="sp-col-state">' + stateCell + '</td>'
-        + '<td class="sp-col-act">' + actions + '</td>'
+      // data-label carries the column meaning into the narrow-width card layout, where the <thead> is
+      // not on screen. It is rendered once here rather than duplicated in CSS content strings, so the
+      // header and the card label can never drift apart.
+      return groupHtml
+        + '<tr data-sp-row="' + esc(key) + '" class="' + (editing ? 'sp-row--editing' : '') + '">'
+        + '<td data-label="Company" class="sp-cell-company">' + esc(str(r.company)) + '</td>'
+        + '<td data-label="Country">' + countryCell + '</td>'
+        + '<td data-label="Marketplace">' + esc(str(r.marketplace)) + '</td>'
+        + '<td data-label="Allocation priority" class="sp-col-pri">' + priorityCell + '</td>'
+        + '<td data-label="Status" class="sp-col-state">' + stateCell + '</td>'
+        + '<td data-label="Edit" class="sp-col-act">' + actions + '</td>'
         + '</tr>';
     }).join('');
   }

@@ -193,6 +193,32 @@ if (window.KM) { window.KM.routeAssets = KM_ROUTE_ASSETS_; }
 // for mounts it performs; this token covers the window BEFORE switchTo is reached.
 var _kmRouteNavSeq_ = 0;
 
+// S8-B3-R3-CP2M — EVERY VALID NAVIGATION DECLARES ITSELF, not just the lazy-route branch.
+//
+// The bug this closes: the bump below used to live INSIDE the lazy-route branch of showSection, so a
+// plain page, Home, or any direct switchTo never moved it. A lazy route still downloading therefore
+// matched the token when it landed and called switchTo on itself, taking the screen back from the page
+// the operator had actually chosen.
+//
+// The authority is KM.lifecycle (it is what switchTo also checks, so the two cannot drift). The local
+// counter is kept as a fallback for the case where lifecycle is not yet on the page — the shell loads
+// namespace.js and lifecycle.js first, so that is defence rather than an expected path.
+function _kmBeginNav_() {
+    _kmRouteNavSeq_++;
+    var lc = window.KM && window.KM.lifecycle;
+    var token = (lc && typeof lc.beginNavigation === 'function') ? lc.beginNavigation() : null;
+    return { seq: _kmRouteNavSeq_, token: token };
+}
+/** True when a NEWER navigation has started since `nav` began — the holder must not touch the screen. */
+function _kmNavSuperseded_(nav) {
+    if (!nav) return false;
+    var lc = window.KM && window.KM.lifecycle;
+    if (nav.token !== null && lc && typeof lc.isCurrentNavigation === 'function') {
+        return lc.isCurrentNavigation(nav.token) !== true;
+    }
+    return nav.seq !== _kmRouteNavSeq_;
+}
+
 /**
  * Show a truthful, route-scoped failure when a route’s own code could not be fetched.
  * The shell stays; the page is not mounted; every other route is untouched. No silent fall back to
@@ -591,6 +617,12 @@ function showSection(section) {
         return;
     }
 
+    // S8-B3-R3-CP2M — THE NAVIGATION IS DECLARED HERE, once, for BOTH branches below, and AFTER the
+    // two refusal guards above (a staged-off section and the disabled Overseas items are not valid
+    // navigations — they leave the operator exactly where they were, so they must not revoke anything).
+    // Everything past this line belongs to THIS navigation; anything older has lost its claim.
+    var nav = _kmBeginNav_();
+
     // ---- Normalize the shared shell BEFORE mounting the next page (UI lifecycle ownership) --------------
     // Remove the ENTIRE Home shell (mount wrapper + world-time bar + section) from layout — not just its inner
     // children — so no Home wrapper stays in flow between the header and the active page. Then clear `.active`
@@ -609,7 +641,6 @@ function showSection(section) {
     // as mounted-but-invisible, with its listeners still bound.
     var routeAssets = KM_ROUTE_ASSETS_[section];
     if (routeAssets && window.KM && window.KM.scriptLoader) {
-        var myNav = ++_kmRouteNavSeq_;
         var already = window.KM.scriptLoader.isLoaded(section);
         // The markup is small and independent of the code, so it goes out at the same time and the
         // shell is up long before 584 KB of JavaScript has landed.
@@ -618,16 +649,18 @@ function showSection(section) {
             shellFlight = window.KM.partialLoader
                 .loadPartial(routeAssets.partial.key, routeAssets.partial.url, routeAssets.partial.target)
                 .then(function (target) {
-                    if (myNav !== _kmRouteNavSeq_) return target;   // superseded: reveal nothing
+                    if (_kmNavSuperseded_(nav)) return target;   // superseded: reveal nothing
                     var sec = document.getElementById(routeAssets.sectionId);
                     if (sec) sec.classList.add('active');
                     return target;
                 });
         }
         window.KM.scriptLoader.ensure(section, routeAssets.scripts).then(function (ok) {
-            if (myNav !== _kmRouteNavSeq_) return;           // a newer navigation owns the screen
+            if (_kmNavSuperseded_(nav)) return;           // a newer navigation owns the screen
             if (window.KM.lifecycle && window.KM.lifecycle.switchTo) {
-                window.KM.lifecycle.switchTo(routeAssets.sectionId);
+                // The token is handed back so switchTo can refuse independently: this check and that one
+                // are the same question asked at the two moments it can change answer.
+                window.KM.lifecycle.switchTo(routeAssets.sectionId, nav.token);
             }
             if (ok) { _kmClearRouteScriptFailure_(section); return; }
             // THE REFUSAL WAITS FOR THE MARKUP, and that is not politeness. A blocked script fails
@@ -636,7 +669,7 @@ function showSection(section) {
             // failed route showed an empty shell and no message at all. Waiting costs nothing — the
             // partial is 1.4 KB — and it is the difference between a truthful refusal and a blank page.
             Promise.resolve(shellFlight).then(function () {
-                if (myNav !== _kmRouteNavSeq_) return;
+                if (_kmNavSuperseded_(nav)) return;
                 _kmRenderRouteScriptFailure_(section);
             });
         });
@@ -677,7 +710,7 @@ function showSection(section) {
         };
         const targetSectionId = sectionMap[section];
         if (targetSectionId) {
-            KM.lifecycle.switchTo(targetSectionId);
+            KM.lifecycle.switchTo(targetSectionId, nav.token);
         }
     }
 

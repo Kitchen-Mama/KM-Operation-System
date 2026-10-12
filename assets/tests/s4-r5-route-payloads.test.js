@@ -378,15 +378,17 @@ mutant('H2 km-globe.js is put back on the boot list', T.index,
 // with nothing behind it.
 mutant('H3 the router mounts without waiting for the code', T.app,
   '        window.KM.scriptLoader.ensure(section, routeAssets.scripts).then(function (ok) {\r\n' +
-  '            if (myNav !== _kmRouteNavSeq_) return;           // a newer navigation owns the screen\r\n' +
+  '            if (_kmNavSuperseded_(nav)) return;           // a newer navigation owns the screen\r\n' +
   '            if (window.KM.lifecycle && window.KM.lifecycle.switchTo) {\r\n' +
-  '                window.KM.lifecycle.switchTo(routeAssets.sectionId);\r\n' +
+  '                // The token is handed back so switchTo can refuse independently: this check and that one\r\n' +
+  '                // are the same question asked at the two moments it can change answer.\r\n' +
+  '                window.KM.lifecycle.switchTo(routeAssets.sectionId, nav.token);\r\n' +
   '            }',
   '        if (window.KM.lifecycle && window.KM.lifecycle.switchTo) {\r\n' +
-  '            window.KM.lifecycle.switchTo(routeAssets.sectionId);\r\n' +
+  '            window.KM.lifecycle.switchTo(routeAssets.sectionId, nav.token);\r\n' +
   '        }\r\n' +
   '        window.KM.scriptLoader.ensure(section, routeAssets.scripts).then(function (ok) {\r\n' +
-  '            if (myNav !== _kmRouteNavSeq_) return;',
+  '            if (_kmNavSuperseded_(nav)) return;',
   'routes',
   function (o) {
     return TARGET_KEYS.some(function (k) { return !o.routes[k] || o.routes[k].cold.mountedSections !== 1; });
