@@ -2496,3 +2496,59 @@ re-admitting it in a weaker form would undo the round that found it.
 invalidates nothing. An unknown outcome forces a fresh read through the existing `invalidate(key)` mechanism,
 because the writer never reached its own invalidation and a memoized answer would "prove" the value was not
 stored without ever asking the server.
+
+---
+
+### D-S8-B3-21 — A coercion is not a reading: `allocation_priority` is TYPE-checked — **FROZEN (R52, CP2I-R1)**
+
+**Decision.** `mpClassifyPriority_` admits only `typeof 'number'` and `typeof 'string'`. An array, object,
+boolean, Date or function is `INVALID` — never `MISSING`, and never a number. The compare-and-set **state** must
+be an actual string, and the client guard type-checks *before* it normalises so it cannot launder one either.
+
+**Why.** The classifier opened with `String(v).trim()`, and `String([5])` is `'5'`. An array arrived as a
+confident `SET 5` and was **written to the sheet**; `['SET']` satisfied the compare-and-set — the one guard that
+makes this action safe; `[50]` satisfied the staleness comparison. Every gate was present and every gate was
+reading a coercion rather than the value it was guarding. An object with `toString`/`valueOf` did the same.
+
+**An empty array is INVALID, not MISSING.** `String([])` is `''`, which used to make it indistinguishable from a
+blank cell. The caller *did* send something; §45.A exists to keep "no value" and "an unreadable value" apart.
+
+**What did NOT change**, and is asserted in both directions: numbers, numeric strings, padded strings, decimals
+and an explicit `0` still commit. A type gate that cost a legitimate weight would be a worse defect than the one
+it fixed. Sheet cells reach the same classifier and are unaffected — a Date or boolean cell was already INVALID
+by coercion and still is.
+
+---
+
+### D-S8-B3-22 — `updated_by` and `updated_at` are REQUIRED SCHEMA — **FROZEN (R52, CP2I-R1), Owner-confirmed**
+
+**Decision.** Both audit columns are mandatory for the priority writer. Absent, the write is refused with
+`SCHEMA_MISSING_COLUMN` and `zero_write: true`, **resolved with the rest of the schema** — before the identity
+gates and far before the first setter. The refusal names the missing columns. No provisioning, no header append,
+no auto-repair.
+
+**Why.** They were resolved at the write block and skipped when absent (`if (ubCol !== -1)`). That is the exact
+silent-skip shape this action was created to remove from the priority column itself: a save reporting success
+while storing less than it claimed — here, a shared planning weight changed with no record of who or when.
+Checking them upstream rather than at the setter is what makes the refusal *provably* zero-write instead of
+merely ordered before a write.
+
+**Scope.** This gate belongs to the priority writer. `upsertMarketplace` owns its own columns and is unaffected.
+
+---
+
+### D-S8-B3-23 — The dedicated action is PINNED and the DTO is BUILT — **FROZEN (R52, CP2I-R1)**
+
+**Decision.** `KM.DB.setMarketplaceAllocationPriority` constructs its request body field by field from the
+declared contract and pins `action: 'marketplace.allocationPriority.set'`. A caller-supplied `action` is ignored.
+No undeclared field reaches the wire. The expected CAS **value** is sent only in the `SET` state that defines it.
+
+**Why.** The body was `Object.assign({ action: FIXED }, payload)` — the caller came **last**, so a payload
+carrying its own `action` replaced the fixed one. This wrapper is the only path to one action and carries that
+action's CAS guard, its `site-priority` deployment preflight and its priority-shaped body; a payload could point
+all of that at a different action. Assigning the action after the spread would have fixed only half: the other
+half is that every undeclared field was forwarded, so the client could not state what it sends — including a
+`zero_write` a caller could try to plant, and the collateral columns R52 had just removed from this path.
+
+**Preserved deliberately**, and asserted: the deployment preflight still runs and still runs first (a foreign
+action cannot route around it), transport stays bounded, and there is still no automatic resend.

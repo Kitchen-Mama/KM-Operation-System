@@ -497,10 +497,12 @@ section('F. Bounded stress + fault injection — invariants hold across randomiz
     function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
     function pick(a) { return a[Math.floor(rnd() * a.length) % a.length]; }
 
-    var RUNS = 240;
+    var RUNS = 720;   // CP2I-R1: raised from 240. The malformed-type alphabet refuses early, so the write
+    // path needed more runs to keep its fault injection meaningfully populated rather than incidental.
     var violations = [];
     var outcomes = {};
     var committed = 0;
+    var schemaFaults = 0, malformed = 0;
 
     for (var n = 0; n < RUNS; n++) {
         var rows = baseRows();
@@ -510,19 +512,50 @@ section('F. Bounded stress + fault injection — invariants hold across randomiz
         if (rnd() < 0.10) rows[0][0] = '';                                                    // no marketplace_id
         if (rnd() < 0.12) rows[0][7] = pick(['', '   ', '7abc', -3, 0]);                      // odd stored value
 
+        // CP2I-R1 — AN INCOMPLETE AUDIT SCHEMA IS NOW A STRESS HAZARD TOO. The rows are REBUILT against the
+        // reduced header list rather than left to run long, because a misaligned grid would test column
+        // drift instead of the missing column this is meant to inject.
         var opts = {};
-        if (rnd() < 0.12) opts.failSetValue = 1 + Math.floor(rnd() * 3);
+        if (rnd() < 0.08) {
+            var dropped = pick(['updated_by', 'updated_at']);
+            opts.headers = HEADERS.filter(function (h) { return h !== dropped; });
+            rows = rows.map(function (r) {
+                return opts.headers.map(function (h) { return r[HEADERS.indexOf(h)]; });
+            });
+            schemaFaults++;
+        }
+
+        // CP2I-R1 - A MID-WRITE FAULT IS PAIRED WITH AN INPUT THAT CAN REACH THE WRITE. Drawing the two
+        // independently left the injection almost always landing on a run that had already refused at a
+        // gate, so the fault injection was being counted but not exercised. When this fires, the payload
+        // below is forced well-formed - which is the only way the setters are reached at all.
+        var injectWrite = rnd() < 0.14;
+        if (injectWrite) opts.failSetValue = 1 + Math.floor(rnd() * 3);
         if (rnd() < 0.06) opts.failFlush = true;
         if (rnd() < 0.08) opts.lockFails = true;
         if (rnd() < 0.05) opts.noKmcid = true;
 
         var p = okPayload({
-            allocation_priority: pick([0, 1, 50, 90, 1000, -1, 'x', '']),
-            expected_allocation_priority: pick([50, 0, 40, '']),
-            expected_allocation_priority_state: pick(['SET', 'MISSING', 'SET', 'SET']),
+            // CP2I-R1 — the malformed TYPES join the stress alphabet. They are the inputs that used to be
+            // coerced into confident numbers, so they belong in the randomized population and not only in a
+            // hand-written case.
+            // WEIGHTED, NOT UNIFORM. Malformed inputs refuse at the FIRST gate, so an even alphabet would
+            // starve the write path and quietly turn this stress into a validation test. The valid weights are
+            // repeated so most runs still reach the setters, where the fault injection lives.
+            allocation_priority: pick([0, 1, 50, 90, 1000, 50, 90, 0, 50, 90, 1, 50, -1, 'x', '', [5], { v: 1 }, true]),
+            expected_allocation_priority: pick([50, 50, 50, 50, 50, 0, 40, '', [50]]),
+            expected_allocation_priority_state: pick(['SET', 'MISSING', 'SET', 'SET', 'SET', 'SET', 'SET', ['SET']]),
             country: pick(['US', 'US', 'US', 'GB', 'us']),
             expected_marketplace_id: pick(['MKT-KM-US-AMAZON', 'MKT-KM-US-AMAZON', 'WRONG'])
         });
+
+        // A forced-valid payload for the paired write-fault runs. It must also defeat the structural
+        // hazards injected above, or it would refuse before the setters for a different reason.
+        if (injectWrite) {
+            rows = baseRows();
+            if (opts.headers) rows = rows.map(function (r) { return opts.headers.map(function (h) { return r[HEADERS.indexOf(h)]; }); });
+            p = okPayload();
+        }
 
         var a = makeAppsScript(rows, opts);
         var before = a.snapshot();
@@ -559,6 +592,27 @@ section('F. Bounded stress + fault injection — invariants hold across randomiz
         } else if (r.code === undefined) {
             violations.push('run ' + n + ': a refusal with no code');
         }
+        // INVARIANT 7 (CP2I-R1) — a COMMITTED write recorded ALL THREE required columns. The audit fields are
+        // mandatory, so a success that wrote fewer than three is a success that stored less than it claimed.
+        if (r.success) {
+            var cols = a.log.setValues.map(function (sv) { return sv.header; }).sort().join(',');
+            if (cols !== 'allocation_priority,updated_at,updated_by') {
+                violations.push('run ' + n + ': success wrote columns [' + cols + '], not all three');
+            }
+        }
+        // INVARIANT 8 (CP2I-R1) — a value that is not a number or a string can NEVER produce a commit, and
+        // neither can a non-string compare-and-set state. This is the coercion defect stated as a law.
+        var pt = typeof p.allocation_priority, et = typeof p.expected_allocation_priority_state;
+        if (pt !== 'number' && pt !== 'string') {
+            malformed++;
+            if (r.success) violations.push('run ' + n + ': committed a ' + pt + ' as a priority');
+            if (a.log.setValues.length) violations.push('run ' + n + ': a ' + pt + ' priority reached a setter');
+        }
+        if (et !== 'string') {
+            malformed++;
+            if (r.success) violations.push('run ' + n + ': committed on a ' + et + ' compare-and-set state');
+            if (a.log.setValues.length) violations.push('run ' + n + ': a ' + et + ' CAS state reached a setter');
+        }
         // INVARIANT 6 — rows belonging to other scopes are never collateral.
         if (String(a.cell(3, 'allocation_priority')) !== '70') violations.push('run ' + n + ': another company was modified');
     }
@@ -569,6 +623,11 @@ section('F. Bounded stress + fault injection — invariants hold across randomiz
     ok(Object.keys(outcomes).length >= 5,
         'F3 (non-vacuity) the stress exercised at least five distinct outcomes  [' + Object.keys(outcomes).join(' ') + ']');
     ok((outcomes.WRITE_OUTCOME_UNKNOWN || 0) > 0, 'F4 (non-vacuity) including injected mid-write failures');
+    ok(schemaFaults > 0, 'F5 (non-vacuity) the stress injected incomplete audit schemas  [' + schemaFaults + '/' + RUNS + ']');
+    ok(malformed > 0, 'F6 (non-vacuity) and malformed input TYPES  [' + malformed + ' occurrences]');
+    ok((outcomes.SCHEMA_MISSING_COLUMN || 0) > 0, 'F7 (non-vacuity) which were refused as SCHEMA_MISSING_COLUMN');
+    ok((outcomes.INVALID_PRIORITY || 0) > 0 && (outcomes.CAS_REQUIRED || 0) > 0,
+        'F8 (non-vacuity) and as INVALID_PRIORITY / CAS_REQUIRED');
 })();
 
 // =============================================================================================================
@@ -885,7 +944,320 @@ section('I. Two stale clients, and an old frontend meeting a new backend');
 })();
 
 // =============================================================================================================
-Promise.resolve(module.exports).then(function () {
+// =============================================================================================================
+section('J. CP2I-R1 — strict input types, complete audit schema, and an action that cannot be redirected');
+// =============================================================================================================
+// Three defects found after the R52 cut, all of the same family: a guard that accepted a COERCION in place of
+// the thing it was guarding. Each block below reproduced its defect against the pre-fix handler before the fix
+// was written, so every assertion here has been observed to fail for the right reason.
+
+// A row aligned to a CALLER-SUPPLIED header list, so a suite that deletes a column does not silently test a
+// misaligned grid instead of a missing column.
+function rowFor(headers, vals) {
+    return headers.map(function (h) {
+        if (Object.prototype.hasOwnProperty.call(vals, h)) return vals[h];
+        return (h === 'created_by') ? 'seed' : (h === 'created_at' ? '2026-01-01' : '');
+    });
+}
+var TARGET = { marketplace_id: 'MKT-KM-US-AMAZON', company: 'KM', country: 'US', marketplace: 'Amazon',
+    marketplace_display_name: 'Amazon', marketplace_alias: 'Amazon', fulfillment_model: 'platform_fulfilled',
+    allocation_priority: 50, currency: 'USD', status: 'active',
+    updated_by: 'seed-writer', updated_at: '2026-01-01' };
+
+// -------------------------------------------------------------------------------------------------------------
+// J-A. STRICT INPUT TYPES. String() is a coercion, not a reading.
+// -------------------------------------------------------------------------------------------------------------
+(function () {
+    // THE DEFECT, NAMED: String([5]) === '5'. An array arrived as a confident SET 5 and was WRITTEN. The sheet
+    // held 5, the response said success, and nothing anywhere recorded that the caller had sent a list.
+    [
+        ['J1  an array', [5]],
+        ['J2  a single-element string array', ['5']],
+        ['J3  an empty array', []],
+        ['J4  a nested array', [[5]]],
+        ['J5  a plain object', { v: 5 }],
+        ['J6  an object with toString', { toString: function () { return '5'; } }],
+        ['J7  an object with valueOf', { valueOf: function () { return 5; } }],
+        ['J8  boolean true', true],
+        ['J9  boolean false', false],
+        ['J10 a Date', new Date(2026, 0, 1)],
+        ['J11 a function', function () { return 5; }]
+    ].forEach(function (c) {
+        var a = makeAppsScript(baseRows());
+        var before = a.snapshot();
+        var r = a.setPriority(okPayload({ allocation_priority: c[1] }));
+        eq(r.success, false, c[0] + ' is REFUSED as allocation_priority');
+        eq(r.code, 'INVALID_PRIORITY', c[0] + ' — as INVALID_PRIORITY, never coerced');
+        eq(r.zero_write, true, c[0] + ' — proving zero write');
+        eq(a.snapshot(), before, c[0] + ' — and the sheet is byte-identical');
+        eq(a.log.setValues.length, 0, c[0] + ' — no setter ran');
+        eq(a.log.appends.length, 0, c[0] + ' — and nothing was appended');
+    });
+
+    // AN EMPTY ARRAY IS NOT A MISSING VALUE. String([]) is '', which used to make it indistinguishable from a
+    // blank cell. The caller DID send something; "unreadable" and "absent" are different answers and §45.A is
+    // the reason the distinction is kept.
+    var e = makeAppsScript(baseRows());
+    eq(e.setPriority(okPayload({ allocation_priority: [] })).received_state, 'INVALID',
+        'J12 an empty array is INVALID, not MISSING — the caller sent something unreadable');
+    var f = makeAppsScript(baseRows());
+    eq(f.setPriority(okPayload({ allocation_priority: undefined })).received_state, 'MISSING',
+        'J12a while an absent value is still MISSING');
+    var g = makeAppsScript(baseRows());
+    eq(g.setPriority(okPayload({ allocation_priority: 'abc' })).received_state, 'INVALID',
+        'J12b and an unreadable string is still INVALID');
+
+    // THE CAS STATE. String(['SET']) === 'SET' satisfied the one guard that makes this action safe.
+    [
+        ['J13 an array CAS state', ['SET']],
+        ['J14 an object CAS state', { toString: function () { return 'SET'; } }],
+        ['J15 a boolean CAS state', true],
+        ['J16 a numeric CAS state', 1]
+    ].forEach(function (c) {
+        var a = makeAppsScript(baseRows());
+        var before = a.snapshot();
+        var r = a.setPriority(okPayload({ expected_allocation_priority_state: c[1] }));
+        eq(r.success, false, c[0] + ' is REFUSED');
+        eq(r.code, 'CAS_REQUIRED', c[0] + ' — as CAS_REQUIRED');
+        eq(r.zero_write, true, c[0] + ' — proving zero write');
+        eq(a.snapshot(), before, c[0] + ' — leaving the sheet untouched');
+    });
+    var h = makeAppsScript(baseRows());
+    eq(h.setPriority(okPayload({ expected_allocation_priority_state: ['SET'] })).received_type, 'object',
+        'J17 and the refusal reports the TYPE it was handed, not a coerced string');
+
+    // THE EXPECTED VALUE in a SET compare-and-set. Same coercion, same consequence: an array satisfied the
+    // staleness check and the write proceeded against a value nobody had actually compared.
+    [
+        ['J18 an array expected value', [50]],
+        ['J19 an object expected value', { valueOf: function () { return 50; } }],
+        ['J20 a boolean expected value', true]
+    ].forEach(function (c) {
+        var a = makeAppsScript(baseRows());
+        var before = a.snapshot();
+        var r = a.setPriority(okPayload({ expected_allocation_priority: c[1] }));
+        eq(r.success, false, c[0] + ' is REFUSED');
+        eq(r.code, 'CAS_REQUIRED', c[0] + ' — as CAS_REQUIRED');
+        eq(r.zero_write, true, c[0] + ' — proving zero write');
+        eq(a.snapshot(), before, c[0] + ' — leaving the sheet untouched');
+    });
+
+    // AND NOW THE OTHER HALF, WHICH IS THE HALF A TYPE CHECK IS MOST LIKELY TO BREAK. Everything legitimate
+    // must still pass: §24.7 reads this weight as a number, decimals are real inputs, and an explicit 0 is the
+    // lowest VALID weight — not a missing one.
+    [
+        ['J21 a plain number', 90, 90],
+        ['J22 a numeric string', '90', 90],
+        ['J23 a decimal number', 7.5, 7.5],
+        ['J24 a decimal string', '7.5', 7.5],
+        ['J25 a padded numeric string', '  42  ', 42],
+        ['J26 an explicit zero', 0, 0],
+        ['J27 a zero string', '0', 0],
+        ['J28 a large weight', 100000, 100000]
+    ].forEach(function (c) {
+        var a = makeAppsScript(baseRows());
+        var r = a.setPriority(okPayload({ allocation_priority: c[1] }));
+        eq(r.success, true, c[0] + ' STILL COMMITS — the type gate must not cost a legitimate weight');
+        eq(a.cell(0, 'allocation_priority'), c[2], c[0] + ' — storing the number it read');
+    });
+    // The same latitude on the EXPECTED side of the compare-and-set.
+    var z = makeAppsScript([row('MKT-KM-US-AMAZON', 'KM', 'US', 'Amazon', 0)]);
+    eq(z.setPriority(okPayload({ allocation_priority: 5, expected_allocation_priority: '0' })).success, true,
+        'J29 a stored zero can still be compared against, as a string or a number');
+    var z2 = makeAppsScript([row('MKT-KM-US-AMAZON', 'KM', 'US', 'Amazon', 0)]);
+    eq(z2.setPriority(okPayload({ allocation_priority: 5, expected_allocation_priority: 0 })).success, true,
+        'J29a — a valid zero is a value, never an absence');
+    // And MISSING is still not zero, in either direction.
+    var z3 = makeAppsScript(baseRows());
+    eq(z3.setPriority(okPayload({ company: 'KM', country: 'DE', marketplace: 'Amazon',
+        expected_marketplace_id: 'MKT-KM-DE-AMAZON', expected_allocation_priority_state: 'SET',
+        expected_allocation_priority: 0 })).code, 'PRIORITY_CHANGED',
+        'J30 a blank cell does not satisfy an expectation of zero');
+    var z4 = makeAppsScript([row('MKT-KM-US-AMAZON', 'KM', 'US', 'Amazon', 0)]);
+    eq(z4.setPriority(okPayload({ expected_allocation_priority_state: 'MISSING' })).code, 'PRIORITY_CHANGED',
+        'J30a and a stored zero does not satisfy an expectation of MISSING');
+})();
+
+// -------------------------------------------------------------------------------------------------------------
+// J-B. THE AUDIT COLUMNS ARE REQUIRED SCHEMA. Owner: updated_by and updated_at are mandatory.
+// -------------------------------------------------------------------------------------------------------------
+(function () {
+    // THE DEFECT, NAMED: the write block resolved these columns and SKIPPED them when absent. That is the same
+    // silent-skip this action exists to remove from the priority column — a save reporting success while
+    // storing less than it claimed, with no record of who changed a shared planning weight or when.
+    [
+        ['J31 updated_by', 'updated_by'],
+        ['J32 updated_at', 'updated_at']
+    ].forEach(function (c) {
+        var hdrs = HEADERS.filter(function (h) { return h !== c[1]; });
+        var a = makeAppsScript([rowFor(hdrs, TARGET)], { headers: hdrs });
+        var before = a.snapshot();
+        var r = a.setPriority(okPayload());
+        eq(r.success, false, c[0] + ' absent — the write is REFUSED, not completed without it');
+        eq(r.code, 'SCHEMA_MISSING_COLUMN', c[0] + ' — as SCHEMA_MISSING_COLUMN');
+        eq(r.zero_write, true, c[0] + ' — proving zero write');
+        eq((r.missing_columns || []).join(','), c[1], c[0] + ' — naming the column the operator must provision');
+        eq(a.log.setValues.length, 0, c[0] + ' — NO setter ran, including the priority setter');
+        eq(a.log.appends.length, 0, c[0] + ' — and no column or row was provisioned');
+        eq(a.snapshot(), before, c[0] + ' — the sheet is byte-identical');
+    });
+
+    // BOTH ABSENT: both named. An operator fixing a schema should not have to discover the second fault by
+    // re-running and failing again.
+    var hdrs2 = HEADERS.filter(function (h) { return h !== 'updated_by' && h !== 'updated_at'; });
+    var b = makeAppsScript([rowFor(hdrs2, TARGET)], { headers: hdrs2 });
+    var rb = b.setPriority(okPayload());
+    eq(rb.code, 'SCHEMA_MISSING_COLUMN', 'J33 both audit columns absent is still SCHEMA_MISSING_COLUMN');
+    eq((rb.missing_columns || []).join(','), 'updated_by,updated_at', 'J33a with BOTH named in one answer');
+    eq(b.log.setValues.length, 0, 'J33b and nothing was written');
+
+    // THE CHECK IS TAKEN BEFORE THE IDENTITY GATES, WHICH IS WHAT MAKES zero_write PROVABLE. A request that
+    // would ALSO fail a later gate still answers SCHEMA_MISSING_COLUMN: the schema is resolved first, so the
+    // refusal is structurally upstream of every setter rather than merely ordered before one.
+    var hdrs3 = HEADERS.filter(function (h) { return h !== 'updated_by'; });
+    var c3 = makeAppsScript([rowFor(hdrs3, TARGET)], { headers: hdrs3 });
+    eq(c3.setPriority(okPayload({ expected_marketplace_id: 'MKT-WRONG' })).code, 'SCHEMA_MISSING_COLUMN',
+        'J34 a stale-target request against an incomplete schema fails on the SCHEMA, first');
+    var c4 = makeAppsScript([rowFor(hdrs3, TARGET)], { headers: hdrs3 });
+    eq(c4.setPriority(okPayload({ expected_allocation_priority: 999 })).code, 'SCHEMA_MISSING_COLUMN',
+        'J34a and so does a stale-value one');
+
+    // THE COMPLETE SCHEMA STILL WRITES ALL THREE, AND EXACTLY THREE. The fix must not have turned a skipped
+    // audit field into a skipped anything else.
+    var d = makeAppsScript(baseRows());
+    var rd = d.setPriority(okPayload());
+    eq(rd.success, true, 'J35 a complete schema still commits');
+    eq(d.log.setValues.map(function (s) { return s.header; }).join(','),
+        'allocation_priority,updated_by,updated_at',
+        'J35a writing all three required columns, in that order, and no fourth');
+    eq(d.cell(0, 'updated_by'), 'site-priority-page', 'J35b the actor is recorded');
+    eq(d.cell(0, 'updated_at'), '2026-10-12', 'J35c and so is the time');
+
+    // A MISSING AUDIT COLUMN IS A SCHEMA FAULT, NOT A PRIORITY FAULT: the legacy writer, which owns its own
+    // columns, is unaffected by this gate and still refuses only what it is supposed to refuse.
+    var e = makeAppsScript([rowFor(hdrs3, TARGET)], { headers: hdrs3 });
+    eq(e.upsert({ company: 'KM', country: 'US', marketplace: 'Amazon', currency: 'USD', status: 'disabled' }).success, true,
+        'J36 Add Marketplace is NOT subject to the priority writer’s audit-schema gate');
+})();
+
+// -------------------------------------------------------------------------------------------------------------
+// J-C. THE ACTION IS PINNED. A wrapper that is the only path to one action must not be redirectable by input.
+// -------------------------------------------------------------------------------------------------------------
+var JC = (function () {
+    var done = [];
+    function step(name, fn) { done.push(fn().catch(function (e) { fail++; console.log('FAIL ' + name + ' threw: ' + e.message); })); }
+
+    // THE DEFECT, NAMED: Object.assign({ action: FIXED }, payload) put the CALLER LAST. A payload carrying its
+    // own `action` replaced the fixed one, and this wrapper — with its CAS guard, its site-priority deployment
+    // gate and its priority-shaped body — dispatched whatever the caller named instead.
+    step('J-foreign-action', function () {
+        var c = makeClient();
+        var p = {}; for (var k in GOOD) p[k] = GOOD[k];
+        p.action = 'upsertMarketplace';
+        return c.DB.setMarketplaceAllocationPriority(p).then(function (r) {
+            var sent = JSON.parse(c.log.fetches[0].body);
+            eq(sent.action, 'marketplace.allocationPriority.set',
+                'J37 a caller-supplied action NEVER redirects this wrapper');
+            eq(r.outcome, 'CONFIRMED_COMMITTED', 'J37a and the request still completes normally');
+        });
+    });
+    step('J-foreign-action-variants', function () {
+        var variants = ['pricing.update', '', null, 0, ['upsertMarketplace'], { toString: function () { return 'x'; } }];
+        return Promise.all(variants.map(function (v, i) {
+            var c = makeClient();
+            var p = {}; for (var k in GOOD) p[k] = GOOD[k];
+            p.action = v;
+            return c.DB.setMarketplaceAllocationPriority(p).then(function () {
+                eq(JSON.parse(c.log.fetches[0].body).action, 'marketplace.allocationPriority.set',
+                    'J38.' + i + ' the pinned action survives a caller `action` of ' + JSON.stringify(v));
+            });
+        }));
+    });
+
+    // THE BODY IS BUILT FROM DECLARED FIELDS, so this client can state exactly what it sends. An undeclared
+    // field reaching the wire is a field no test covers and no handler expects.
+    step('J-declared-fields-only', function () {
+        var c = makeClient();
+        var p = {}; for (var k in GOOD) p[k] = GOOD[k];
+        p.rogue_field = 'passed straight through';
+        p.status = 'disabled';                       // the exact collateral the R52 contract removed
+        p.currency = 'EUR';
+        p.zero_write = true;                         // a caller must not be able to forge the evidence field
+        return c.DB.setMarketplaceAllocationPriority(p).then(function () {
+            var sent = JSON.parse(c.log.fetches[0].body);
+            eq(Object.keys(sent).sort().join(','),
+                'action,allocation_priority,company,country,expected_allocation_priority,'
+                + 'expected_allocation_priority_state,expected_marketplace_id,marketplace,updated_by',
+                'J39 the DTO carries the contract fields and nothing else');
+            ok(!Object.prototype.hasOwnProperty.call(sent, 'rogue_field'), 'J39a an undeclared field is dropped');
+            ok(!Object.prototype.hasOwnProperty.call(sent, 'status'), 'J39b and so is a collateral column');
+            ok(!Object.prototype.hasOwnProperty.call(sent, 'zero_write'),
+                'J39c and a caller cannot forge the zero-write evidence field');
+        });
+    });
+
+    // THE OPTIONAL FIELD IS OPTIONAL IN THE RIGHT DIRECTION: the expected VALUE belongs only to the state that
+    // defines it. Sending one alongside MISSING would be a comparison nobody asked for.
+    step('J-cas-shape', function () {
+        var c = makeClient();
+        var p = {}; for (var k in GOOD) p[k] = GOOD[k];
+        p.expected_allocation_priority_state = 'MISSING';
+        p.expected_allocation_priority = 50;         // meaningless here, and must not be forwarded
+        return c.DB.setMarketplaceAllocationPriority(p).then(function () {
+            var sent = JSON.parse(c.log.fetches[0].body);
+            eq(sent.expected_allocation_priority_state, 'MISSING', 'J40 a MISSING compare-and-set is sent as MISSING');
+            ok(!Object.prototype.hasOwnProperty.call(sent, 'expected_allocation_priority'),
+                'J40a WITHOUT an expected value, which that state does not have');
+        });
+    });
+    step('J-cas-set-shape', function () {
+        var c = makeClient();
+        return c.DB.setMarketplaceAllocationPriority(GOOD).then(function () {
+            var sent = JSON.parse(c.log.fetches[0].body);
+            eq(sent.expected_allocation_priority, 50, 'J41 a SET compare-and-set DOES carry its expected value');
+            eq(sent.updated_by, 'site-priority-page', 'J41a and an actor is always named');
+        });
+    });
+
+    // THE CLIENT MUST NOT LAUNDER WHAT THE HANDLER REFUSES. This guard upper-cases and trims, so a coerced
+    // array would have reached the wire as a string indistinguishable from a real one.
+    step('J-cas-type-not-laundered', function () {
+        return Promise.all([['SET'], { toString: function () { return 'SET'; } }, true, 1].map(function (v, i) {
+            var c = makeClient();
+            var p = {}; for (var k in GOOD) p[k] = GOOD[k];
+            p.expected_allocation_priority_state = v;
+            return c.DB.setMarketplaceAllocationPriority(p).then(function (r) {
+                eq(r.outcome, 'CONFIRMED_NOT_STARTED', 'J42.' + i + ' a non-string CAS state is refused locally');
+                eq(r.code, 'CAS_REQUIRED', 'J42.' + i + 'a as CAS_REQUIRED');
+                eq(c.log.fetches.length, 0, 'J42.' + i + 'b and NO request is dispatched');
+            });
+        }));
+    });
+
+    // The pin holds on the path that matters most: the preflight still runs, and still runs FIRST.
+    step('J-preflight-preserved', function () {
+        var c = makeClient({ gate: { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', missing: ['marketplace.allocationPriority.set'] } });
+        var p = {}; for (var k in GOOD) p[k] = GOOD[k];
+        p.action = 'upsertMarketplace';
+        return c.DB.setMarketplaceAllocationPriority(p).then(function (r) {
+            eq(r.outcome, 'CONFIRMED_NOT_STARTED', 'J43 a failed deployment gate still blocks the write');
+            eq(c.log.fetches.length, 0, 'J43a and a foreign action cannot route around the preflight');
+            eq(c.log.gateCalls, 1, 'J43b the gate was consulted exactly once');
+        });
+    });
+    // And the no-resend rule is untouched by the rebuild.
+    step('J-no-resend-preserved', function () {
+        var c = makeClient({ netThrows: true });
+        return c.DB.setMarketplaceAllocationPriority(GOOD).then(function (r) {
+            eq(r.outcome, 'OUTCOME_UNKNOWN', 'J44 a lost answer is still OUTCOME_UNKNOWN');
+            eq(c.log.fetches.length, 1, 'J44a dispatched exactly once — never automatically resent');
+        });
+    });
+
+    return Promise.all(done);
+})();
+
+Promise.all([module.exports, JC]).then(function () {
     console.log('\n----------------------------------------');
     console.log('MARKETPLACE PRIORITY WRITE CONTRACT (S8-B3-R3-CP2I): ' + pass + ' passed, ' + fail + ' failed');
     if (pass + fail === 0) { console.error('VACUOUS - no assertion executed'); process.exit(1); }

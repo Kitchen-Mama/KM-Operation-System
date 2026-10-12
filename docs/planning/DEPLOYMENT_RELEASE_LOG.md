@@ -5251,3 +5251,63 @@ means a sentinel value every reader would have to learn, which is a product deci
 inside a safety fix. The page states the limitation where an operator meets it.
 
 **STATUS: NOT DEPLOYED · NOT PUSHED · NOT SYNCED.**
+
+---
+
+### CP2I-R1 — three bounded corrections to R52, made BEFORE it shipped
+
+R52 was cut, committed and never synced: no Apps Script project carries it, no Web App version exists for it and
+Production is R49. These corrections therefore amend an **unshipped** release rather than rewriting a published
+one. **The release identity does not move** — this is still
+`F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52`, the `03_` module stamp still names R52, and no action is added or removed,
+so the deployed-action contract stays at **20** and the required-action list stays at **16**. The sync manifest
+is unchanged: the same seven files, `63_` last.
+
+All three defects are of one family — **a guard that accepted a coercion in place of the thing it was guarding**
+— and all three were reproduced against the shipped CP2I harness before any fix was written.
+
+```
+1  STRICT INPUT TYPES          mpClassifyPriority_ opened with String(v).trim(), and String([5]) is '5'. An
+                               ARRAY was therefore classified SET 5 and WRITTEN to the sheet. ['SET'] satisfied
+                               the compare-and-set state; [50] satisfied the staleness comparison. Every gate
+                               was present; every gate was reading a coercion. Now only typeof number|string is
+                               admitted, the CAS state must be an actual string, and the client type-checks
+                               BEFORE it normalises so it cannot launder one on the server's behalf.
+                               An empty array is INVALID, not MISSING: String([]) is '', which made it
+                               indistinguishable from a blank cell, and the caller did send something.
+                               UNCHANGED, asserted in both directions: numbers, numeric strings, padded
+                               strings, decimals and an explicit 0 still commit.
+
+2  COMPLETE AUDIT SCHEMA       updated_by and updated_at were resolved AT the write block and SKIPPED when
+                               absent. That is the same silent skip this action exists to remove from the
+                               priority column: a save reporting success while storing less than it claimed,
+                               here changing a shared planning weight with no record of who or when. Owner has
+                               made both mandatory. They are now resolved WITH the rest of the schema — before
+                               the identity gates, far before the first setter — so SCHEMA_MISSING_COLUMN is
+                               provably zero-write rather than merely ordered before a write. The refusal names
+                               the missing columns. No provisioning, no header append, no auto-repair.
+                               OPERATOR-VISIBLE: a marketplaces sheet missing an audit column will now REFUSE
+                               every priority save it previously half-completed in silence. See runbook §4.5.
+
+3  PINNED DEDICATED ACTION     The client body was Object.assign({ action: FIXED }, payload) — the caller came
+                               LAST, so a payload carrying its own `action` replaced the fixed one and pointed
+                               this wrapper's CAS guard, its site-priority preflight and its priority-shaped
+                               body at a different action. The DTO is now BUILT from the declared contract
+                               fields and the action is pinned; undeclared fields never reach the wire, a
+                               caller cannot plant a zero_write, and the expected CAS value is sent only in the
+                               SET state that defines it. Preflight, bounded transport and no-resend preserved.
+```
+
+**Also strengthened, not relaxed: the stress harness itself.** The malformed-type alphabet made most runs refuse
+at the first gate, and the mid-write fault — drawn independently of the payload — was landing almost entirely on
+runs that had already refused: **1** injected mid-write failure in 240 runs, counted but not exercised. The fault
+is now paired with an input that can reach the setters, and the run count raised to 720: **82** genuine
+`WRITE_OUTCOME_UNKNOWN` runs. Two invariants were added — a committed write recorded **all three** required
+columns, and a non-number/non-string value can **never** produce a commit or reach a setter.
+
+**DEPLOYMENT BYTES.** Re-measured, budget NOT raised, gate NOT weakened, `26_`/`27_`/`28_` retained per Owner.
+This round's `03_` growth is **+2,462 bytes** against **2,831** of headroom, leaving **+369**. The gate passes
+honestly. **This is now a release-blocking structural fact and is escalated to the Owner**: two consecutive
+rounds have had to condense their own comment prose to fit, and the next backend round of any size cannot.
+
+**STATUS: NOT DEPLOYED · NOT PUSHED · NOT SYNCED.**

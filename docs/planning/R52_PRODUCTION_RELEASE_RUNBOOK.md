@@ -103,6 +103,20 @@ backend may lead the frontend; the frontend may never lead the backend.
    older than R52 it refuses **before dispatching** and says so; it will not reach for `upsertMarketplace`.
 4. **Every priority save is a compare-and-set.** Two operators on stale pages can no longer overwrite each
    other silently — the second is refused and told to Refresh.
+5. **CP2I-R1 — `updated_by` and `updated_at` are REQUIRED COLUMNS on the `marketplaces` sheet.** Owner decision.
+   If either is absent the priority write is **refused** with `SCHEMA_MISSING_COLUMN`, `zero_write: true`,
+   before the first setter — it is no longer silently skipped. **This is a pre-deployment check an operator must
+   make, because it is a property of the SHEET and not of the deployment**: a sheet missing an audit column will
+   refuse every priority save after R52 that it silently half-completed before. The refusal names the missing
+   column(s) in `missing_columns`. This writer never provisions a column and never appends a header.
+6. **CP2I-R1 — malformed input TYPES are refused rather than coerced.** An array, object, boolean, Date or
+   function sent as `allocation_priority`, as `expected_allocation_priority`, or as the compare-and-set state is
+   `INVALID_PRIORITY` / `CAS_REQUIRED`, never a number read out of `String(value)` — `String([5])` is `'5'`, and
+   that is how an array used to be stored as a confident weight of 5. Numbers, numeric strings, decimals and an
+   explicit `0` are unchanged and still commit; MISSING stays distinct from INVALID and from a valid zero.
+7. **CP2I-R1 — the client dispatches a fixed action.** `KM.DB.setMarketplaceAllocationPriority` builds its
+   request body from the declared contract fields only and pins the action, so a caller-supplied `action` can no
+   longer redirect the wrapper and no undeclared field reaches the wire.
 
 ---
 

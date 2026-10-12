@@ -28,6 +28,16 @@ var MARKETPLACE_WRITE_LOCK_MS_ = 30000;
 // will refuse only moves the failure somewhere less useful.
 function mpClassifyPriority_(v) {
   if (v === undefined || v === null) return { state: 'MISSING', value: null, raw: '' };
+  // S8-B3-R3-CP2I-R1 - TYPE BEFORE TEXT. String() is a COERCION, not a reading: String([5]) is '5', so an
+  // array arrived as a confident SET 5, and an object with toString/valueOf does the same. Only a number or a
+  // string can be a number a caller MEANT; the rest is INVALID, never MISSING - the caller did send something,
+  // and that distinction is the whole of section 45.A. Sheet cells are unaffected: a Date or boolean cell was
+  // already INVALID by coercion and still is.
+  var ty = typeof v;
+  if (ty !== 'number' && ty !== 'string') {
+    return { state: 'INVALID', value: null, raw: (ty === 'boolean') ? String(v) : ('[' + ty + ']') };
+  }
+  if (ty === 'number' && !isFinite(v)) return { state: 'INVALID', value: null, raw: String(v) };
   var t = String(v).trim();
   if (t === '') return { state: 'MISSING', value: null, raw: '' };
   var n = Number(t);
@@ -809,7 +819,17 @@ function handleSetMarketplaceAllocationPriority_(body) {
   }
 
   // COMPARE-AND-SET. Mandatory; see the header.
-  var casState = s_(body.expected_allocation_priority_state).toUpperCase();
+  //
+  // S8-B3-R3-CP2I-R1 - A STRING, NOT SOMETHING THAT PRINTS LIKE ONE. s_() coerces and String(['SET']) is
+  // 'SET', so an array used to satisfy the one guard that makes this action safe.
+  var casRaw = body.expected_allocation_priority_state;
+  if (typeof casRaw !== 'string') {
+    return mpRefuse_('CAS_REQUIRED',
+      'expected_allocation_priority_state must be the string "SET" or "MISSING". A non-string value is refused '
+      + 'rather than coerced into one. Nothing was written.',
+      { received_type: (casRaw === null) ? 'null' : typeof casRaw });
+  }
+  var casState = s_(casRaw).toUpperCase();
   if (casState !== 'SET' && casState !== 'MISSING') {
     return mpRefuse_('CAS_REQUIRED',
       'expected_allocation_priority_state is required and must be SET or MISSING. This action has no unguarded '
@@ -882,6 +902,23 @@ function mpSetAllocationPriorityLocked_(company, country, marketplace, expectedI
     return mpRefuse_('SCHEMA_MISSING_COLUMN',
       'The marketplace_id column does not exist in the marketplaces sheet, so the target identity cannot be '
       + 'verified. Nothing was written.');
+  }
+
+  // S8-B3-R3-CP2I-R1 - THE AUDIT COLUMNS ARE REQUIRED SCHEMA. They were resolved at the write block and
+  // SKIPPED when absent, which is the same silent-skip this action exists to remove from the priority column:
+  // a save reporting success while storing less than it claimed. Owner has made both mandatory, so their
+  // absence is a REFUSAL, taken HERE - before the identity gates and far before the first setter - so the
+  // answer is provably zero-write. This writer never provisions a column; an incomplete schema is the
+  // operator's to fix.
+  var ubCol = col('updated_by'), uaCol = col('updated_at');
+  if (ubCol === -1 || uaCol === -1) {
+    var missAudit = [];
+    if (ubCol === -1) missAudit.push('updated_by');
+    if (uaCol === -1) missAudit.push('updated_at');
+    return mpRefuse_('SCHEMA_MISSING_COLUMN',
+      'The marketplaces sheet is missing a required audit column (' + missAudit.join(', ') + '), so this write '
+      + 'cannot record who changed the priority or when. Provision the column first. Nothing was written.',
+      { missing_columns: missAudit });
   }
 
   // GATES 2 + 3. One pass; a RAW match is always also a CANONICAL match, so both lists are built together.
@@ -957,11 +994,12 @@ function mpSetAllocationPriorityLocked_(company, country, marketplace, expectedI
   // are "the priority landed and the audit stamp may be stale" or "nothing landed" - never "the audit says
   // someone changed it and the value did not move".
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  var ubCol = col('updated_by'), uaCol = col('updated_at');
   try {
+    // All three were PROVED to exist above, so no conditional here: a skipped audit field is not a smaller
+    // write, it is a write that lied about what it recorded.
     sheet.getRange(rowNum, priCol + 1).setValue(newValue);
-    if (ubCol !== -1) sheet.getRange(rowNum, ubCol + 1).setValue(updatedBy);
-    if (uaCol !== -1) sheet.getRange(rowNum, uaCol + 1).setValue(now);
+    sheet.getRange(rowNum, ubCol + 1).setValue(updatedBy);
+    sheet.getRange(rowNum, uaCol + 1).setValue(now);
     // FLUSH BEFORE ACK. A success returned while writes are still pending is a success the caller cannot rely
     // on; this is the point at which the handler stops being able to say "it may not have landed".
     SpreadsheetApp.flush();

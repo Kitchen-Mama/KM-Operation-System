@@ -3727,6 +3727,19 @@ window.KM.DB.setMarketplaceAllocationPriority = async function (payload) {
     // authority; refusing here as well means a payload that cannot possibly succeed costs no round trip and,
     // more importantly, that there is no build of this client which dispatches a priority write without a
     // compare-and-set. "Mandatory" has to mean that, or it means nothing.
+    //
+    // S8-B3-R3-CP2I-R1: the TYPE is checked before the normalisation, and that order is the point. This guard
+    // upper-cases and trims, so String(['SET']) would have become a valid 'SET' here and gone to the wire as a
+    // string the server could no longer tell apart from a real one — the client would have LAUNDERED the exact
+    // input the handler was just taught to refuse. A guard that normalises must type-check first or it defeats
+    // the server's check on its behalf.
+    if (payload.expected_allocation_priority_state !== undefined
+        && payload.expected_allocation_priority_state !== null
+        && typeof payload.expected_allocation_priority_state !== 'string') {
+        return out('CONFIRMED_NOT_STARTED', 'CAS_REQUIRED',
+            'This save was not sent: expected_allocation_priority_state must be the string "SET" or "MISSING", '
+            + 'and a non-string value is refused rather than coerced into one. Nothing was written.');
+    }
     var casState = String(payload.expected_allocation_priority_state == null ? '' : payload.expected_allocation_priority_state).trim().toUpperCase();
     if (casState !== 'SET' && casState !== 'MISSING') {
         return out('CONFIRMED_NOT_STARTED', 'CAS_REQUIRED',
@@ -3763,7 +3776,26 @@ window.KM.DB.setMarketplaceAllocationPriority = async function (payload) {
     }
 
     var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
-    var dto = Object.assign({ action: 'marketplace.allocationPriority.set' }, payload);
+    // S8-B3-R3-CP2I-R1 - THE DTO IS BUILT, NOT MERGED, AND THE ACTION IS PINNED.
+    //
+    // `Object.assign({ action: FIXED }, payload)` put the caller LAST, so a payload carrying its own `action`
+    // silently replaced the fixed one and this wrapper - with its CAS guard, its site-priority deployment gate
+    // and its priority-shaped body - dispatched whatever the caller named. A wrapper whose whole purpose is to
+    // be the only path to ONE action must not be redirectable by its own input. Assigning the action after the
+    // spread would fix only that half; the other half is that every undeclared field reached the wire, so this
+    // client could not state what it sends. The body is now the CONTRACT FIELDS and nothing else, copied one at
+    // a time, with the optional CAS value included only in the state that defines it.
+    var dto = {
+        action: 'marketplace.allocationPriority.set',
+        company: payload.company,
+        country: payload.country,
+        marketplace: payload.marketplace,
+        expected_marketplace_id: payload.expected_marketplace_id,
+        allocation_priority: payload.allocation_priority,
+        expected_allocation_priority_state: casState,
+        updated_by: payload.updated_by || 'site-priority-page'
+    };
+    if (casState === 'SET') dto.expected_allocation_priority = payload.expected_allocation_priority;
 
     var resp, text = '';
     try {
