@@ -25,12 +25,19 @@
   border: 1px solid var(--border-medium, #d1d5db); border-radius: var(--filter-border-radius, 6px);
 }
 
-/* ---- status banner: ONE element, three states ---- */
+/* ---- status banner: ONE element, FOUR states ----
+   S8-B3-R3-CP2I (R52) adds `warn`, and it is a real outcome rather than a softer error. When a write's answer
+   is LOST and a fresh read then shows the intended value, the value is correct but the save is unconfirmed:
+   this request cannot be proved to be what stored it, and the audit columns may be incomplete. Green would
+   claim a confirmation that does not exist; red would tell an operator something is wrong with a number that
+   is right. A state with no rule at all would render as unstyled text, which is how a deliberate third answer
+   becomes invisible. */
 #site-priority-section .sp-status {
   margin: 0 0 14px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; border-radius: 6px; border: 1px solid;
 }
 #site-priority-section .sp-status--loading { color: #475569; background: #f8fafc; border-color: var(--border-light, #e5e7eb); }
 #site-priority-section .sp-status--success { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+#site-priority-section .sp-status--warn    { color: #854d0e; background: #fefce8; border-color: #fde68a; }
 #site-priority-section .sp-status--error   { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
 
 /* ---- table ---- */

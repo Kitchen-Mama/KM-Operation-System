@@ -3685,6 +3685,147 @@ window.KM.DB.upsertMarketplace = async function(payload) {
     return json.data;
 };
 
+
+// =============================================================================================================
+// S8-B3-R3-CP2I (R52) - THE BOUNDED allocation_priority WRITER, CLIENT SIDE.
+// -------------------------------------------------------------------------------------------------------------
+// IT RETURNS A TYPED OUTCOME AND NEVER THROWS, which is a deliberate departure from upsertMarketplace above.
+// That writer throws for a REFUSED write and for a LOST ANSWER alike, so its caller cannot tell "the server said
+// no" from "we never heard back" - and CP2C/CP2D proved what that costs: the page said "nothing was written"
+// about requests that may well have been applied. A rejected promise cannot carry that distinction without the
+// caller reconstructing it from an error message, so the distinction is the return value instead.
+//
+// THE FOUR STATES ARE THE ONES S3-R10 ALREADY ESTABLISHED FOR pricing.update, reused verbatim rather than
+// renamed, because two halves of one system must not hold two vocabularies for "nothing was written":
+//
+//   CONFIRMED_COMMITTED    the server answered success. The ONLY state that may invalidate the cache.
+//   CONFIRMED_REJECTED     the server answered no AND proved zero-write. Safe to correct and resubmit.
+//   CONFIRMED_NOT_STARTED  the request was never dispatched, or the deployment does not know the action.
+//   OUTCOME_UNKNOWN        anything else. The write MAY have been applied. Resolve by READING, never resending.
+//
+// THE ZERO-WRITE RULE, WHICH IS THE WHOLE REASON THIS IS NOT A ONE-LINE WRAPPER. `success: false` is NOT by
+// itself evidence that nothing changed. 01_router.gs's doPost catch returns `{ success:false, error }` with NO
+// zero_write field for ANY exception thrown anywhere inside a handler - including one thrown after a setValue
+// has already run. So only an EXPLICIT `zero_write === true` from the handler counts as proof; everything else
+// that is not a known unknown-action response is OUTCOME_UNKNOWN. Treating a bare success:false as a refusal is
+// how a partially-applied write gets reported to an operator as "nothing happened".
+// =============================================================================================================
+window.KM.DB.setMarketplaceAllocationPriority = async function (payload) {
+    payload = payload || {};
+    function out(outcome, code, message, extra) {
+        var o = { outcome: outcome, code: code, message: message || '' };
+        if (extra) { for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) o[k] = extra[k]; } }
+        return o;
+    }
+
+    if (!isOperationDbApiConfigured()) {
+        return out('CONFIRMED_NOT_STARTED', 'API_ENDPOINT_CONFIGURATION_INVALID',
+            'The Operation DB API endpoint is not configured, so no request was issued. Nothing was written.');
+    }
+
+    // A LOCAL GUARD ON THE ONE FIELD THAT MAKES THIS ACTION SAFE. The server requires it too and is the
+    // authority; refusing here as well means a payload that cannot possibly succeed costs no round trip and,
+    // more importantly, that there is no build of this client which dispatches a priority write without a
+    // compare-and-set. "Mandatory" has to mean that, or it means nothing.
+    var casState = String(payload.expected_allocation_priority_state == null ? '' : payload.expected_allocation_priority_state).trim().toUpperCase();
+    if (casState !== 'SET' && casState !== 'MISSING') {
+        return out('CONFIRMED_NOT_STARTED', 'CAS_REQUIRED',
+            'This save was not sent: a priority write must declare the value it expects to replace '
+            + '(expected_allocation_priority_state must be SET or MISSING). Nothing was written.');
+    }
+    if (!String(payload.expected_marketplace_id == null ? '' : payload.expected_marketplace_id).trim()) {
+        return out('CONFIRMED_NOT_STARTED', 'TARGET_IDENTITY_UNVERIFIABLE',
+            'This save was not sent: the marketplace row carries no identifier, so the write could not prove it '
+            + 'was changing the intended row. Nothing was written.');
+    }
+
+    // THE PRE-WRITE DEPLOYMENT GATE, THROUGH THE MECHANISM THAT ALREADY EXISTS. checkPageDeploymentContract
+    // reuses the ONE caller-driven probe (no second request shape, no new endpoint) and answers from the held
+    // verdict when this session already has one. An old backend, a backend missing 03_, and a partial sync all
+    // land here and the request is NEVER dispatched - rather than being dispatched and misread downstream.
+    //
+    // It is also the reason this client must never "try it and see": against a pre-R52 deployment the action is
+    // unknown, and an unknown action is one typo away from being interpreted as something else by a future
+    // router. Refusing before the fetch is the only version of this that stays true as the router changes.
+    try {
+        var gate = await window.KM.DB.checkPageDeploymentContract('site-priority');
+        if (!gate || gate.ok !== true) {
+            return out('CONFIRMED_NOT_STARTED', (gate && gate.code) || 'DEPLOYMENT_CONTRACT_MISMATCH',
+                (gate && gate.message) || 'The deployed Apps Script cannot serve this page\u2019s write contract.',
+                { missing: (gate && gate.missing) || [], next_action: (gate && gate.next_action) || null });
+        }
+    } catch (eGate) {
+        // The gate is designed never to reject; if it somehow does, that is still a fact about the deployment
+        // being unverifiable, and an unverifiable deployment does not get a write.
+        return out('CONFIRMED_NOT_STARTED', 'DEPLOYMENT_CONTRACT_MISMATCH',
+            'The deployment contract could not be verified, so no write was attempted. '
+            + ((eGate && eGate.message) ? String(eGate.message) : String(eGate)));
+    }
+
+    var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
+    var dto = Object.assign({ action: 'marketplace.allocationPriority.set' }, payload);
+
+    var resp, text = '';
+    try {
+        resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(dto) },
+            'write', 'marketplace.allocationPriority.set');
+    } catch (netErr) {
+        // DISPATCHED AND UNANSWERED. The server may have committed after we stopped listening.
+        return out('OUTCOME_UNKNOWN', (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR',
+            (netErr && netErr.kmTimeout)
+                ? 'No answer arrived before the client time limit.'
+                : 'The connection failed before an answer arrived.');
+    }
+    try { text = await resp.text(); } catch (e) { text = ''; }
+
+    var cls = _kmClassifyAnswer_('marketplace.allocationPriority.set', 'write', resp, text, url);
+    if (!cls.ok) {
+        // A redirect-404 / HTML / non-2xx answer proves only that WE did not receive the answer. It proves
+        // nothing whatsoever about the spreadsheet.
+        return out('OUTCOME_UNKNOWN', (cls.typed && cls.typed.code) || 'TRANSPORT_ERROR',
+            _kmTypedTransportMessage_('marketplace.allocationPriority.set', cls));
+    }
+
+    var json;
+    try { json = JSON.parse(String(text).trim()); }
+    catch (pe) {
+        return out('OUTCOME_UNKNOWN', 'TRANSPORT_NON_JSON_RESPONSE', 'The answer was not readable.');
+    }
+
+    if (json && json.success === true) {
+        // CONFIRMED. The handler flushed before answering, so this is a completed write and not a queued one.
+        // ONE KEY IS INVALIDATED - this page's own resource - and nothing else. No broad reload is triggered:
+        // a single weight on one marketplace row does not stale the whole database, and _kmWriterPostWrite_'s
+        // force-reload is both far larger than the change and a cache-strategy decision this round does not own.
+        if (window.KM && window.KM.referenceCache) window.KM.referenceCache.invalidate('marketplaces');
+        return out('CONFIRMED_COMMITTED', 'OK', '', { data: json.data || null });
+    }
+
+    var errText = (json && json.error) ? String(json.error) : 'The write was not accepted.';
+
+    // The router's own terminal "I do not know this action" answer. It is a DEPLOYMENT fact, not a business
+    // rejection, and it is checked FIRST because that response does carry zero_write and would otherwise be
+    // reported as a refusal the operator could fix by editing their input.
+    if (_kmIsUnknownActionResponse_(errText)) {
+        return out('CONFIRMED_NOT_STARTED', 'DEPLOYMENT_CONTRACT_MISMATCH',
+            'The deployed Apps Script Web App does not contain the action "marketplace.allocationPriority.set". '
+            + 'Publish a NEW deployment version, then reload. Nothing was written.');
+    }
+
+    // THE RULE THIS WRAPPER EXISTS FOR. Only the handler's explicit proof counts.
+    if (json && json.zero_write === true) {
+        return out('CONFIRMED_REJECTED', (json && json.code) || 'REJECTED', errText,
+            { detail: json || null });
+    }
+
+    // success:false WITHOUT zero-write proof. This is the router's generic exception path, and an exception can
+    // be thrown after a setValue has already run. It is NOT a refusal.
+    return out('OUTCOME_UNKNOWN', (json && json.code) || 'WRITE_OUTCOME_UNKNOWN',
+        'The server reported a failure but did not prove that nothing was written, so the outcome is UNKNOWN. '
+        + errText);
+};
+
 // F1-7N-D-2j — Site Inventory Warehouse Allocation writer. Scope-safe SAVE of the SELF_FULFILLED demand-allocation
 // rows for ONE (company,country,marketplace) into replenishment_demand_allocation_rules (the sole planning-membership
 // authority). payload = { company, country, marketplace, allocations:[{destination_warehouse_id, forecast_ratio,
@@ -4602,7 +4743,12 @@ function _kmWriterError_(json, fallbackMessage) {
 // number. This build calls NONE of the four (the feature is staged OFF and has no page), so the pin is a SYNC
 // statement rather than a dependency — and the runtime check is `deployed < expected`, a MINIMUM, which is what
 // makes backend-first safe: the backend may lead, the frontend may not.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 19;      // the minimum deployed_action_contract_version this build needs
+// S8-B3-R3-CP2I (R52): 19 -> 20. UNLIKE the R51 bump, this build CALLS the action the bump is about. Site
+// Priority dispatches marketplace.allocationPriority.set and has no second path - upsertMarketplace now refuses
+// allocation_priority outright - so against a v19 deployment there is no way to store a priority at all. The
+// check below stays `deployed < expected`, a MINIMUM, which is what keeps backend-first deployment safe: the
+// backend may lead this number, the frontend may not.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 20;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -4680,11 +4826,25 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     // F1-7N-FB-4G-A2-R3 §E.6 — the atomic writer is now the ONLY path that creates or edits a route ticket, and
     // the client fails closed rather than falling back to the two-call writer. A deployment without it cannot
     // save a route at all, so that must be a named deployment fact rather than a save that mysteriously refuses.
-    'upsertShippingAllocationDraftAtomic'
+    'upsertShippingAllocationDraftAtomic',
+    // S8-B3-R3-CP2I (R52) - BOTH `marketplaces` WRITERS, PROBED BEFORE EITHER IS CALLED.
+    //
+    // marketplace.allocationPriority.set is the only writer of allocation_priority from R52, and Site Priority
+    // fails CLOSED against it rather than falling back to upsertMarketplace - that fallback is the precise
+    // misinterpretation the dedicated action exists to prevent, so it must not exist as a code path at all.
+    //
+    // upsertMarketplace is probed too, and not merely for completeness: from R52 it carries a REFUSAL this
+    // frontend depends on. A deployment serving a pre-R52 copy would silently accept allocation_priority
+    // through the unguarded path, which is worse than not serving it.
+    'marketplace.allocationPriority.set', 'upsertMarketplace'
 ];
 // F1-7N-FB-4C-R1 §D — the actions each PAGE needs, so a mismatch can name the page rather than only the action.
 // The probe is still one request; this is the mapping used to phrase the message.
 var KM_PAGE_REQUIRED_ACTIONS_ = {
+    // S8-B3-R3-CP2I (R52) - Site Priority's whole write contract, named so a refusal can say WHICH PAGE cannot
+    // work rather than only which action is absent. Both entries are required: the page cannot save without the
+    // priority action, and it cannot trust a deployment whose upsertMarketplace still accepts the field.
+    'site-priority': ['marketplace.allocationPriority.set', 'upsertMarketplace'],
     'sku-details': ['skuDetails.workspace.get'],
     'sku-regional-details': ['skuDetails.workspace.get'],
     // F1-7N-FB-4D §E — Site Inventory is the page whose failure this round is closing, so it gets the same

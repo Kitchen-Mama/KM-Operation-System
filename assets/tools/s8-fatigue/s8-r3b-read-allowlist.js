@@ -250,6 +250,9 @@
     'inventoryReplenishment.workspace.get', 'inventoryReplenishmentGap.get',
     'inventoryReplenishmentGap.job.cancel', 'inventoryReplenishmentGap.job.start',
     'inventoryReplenishmentGap.recalculate.all', 'inventoryScope.registry.get', 'leadTime.raw.get',
+    // S8-B3-R3-CP2I (R52) - the bounded allocation_priority writer. It belongs in the VOCABULARY, which is the
+    // census of everything the router answers, and NOT in the read allowlist: it is a WRITE.
+    'marketplace.allocationPriority.set',
     'openPoRemaining.raw.get', 'orderPlanningGap.get', 'orderPlanningGap.job.cancel',
     'orderPlanningGap.job.start', 'orderPlanningGap.recalculate.all',
     // S8-B3-R1A (R51) — the four Overseas Allocation Preview actions. They belong in the VOCABULARY, which is

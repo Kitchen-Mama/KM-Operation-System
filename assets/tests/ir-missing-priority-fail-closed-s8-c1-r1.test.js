@@ -346,13 +346,25 @@ ok(/snapshot_suggested_qty: sd\.suggestedQty != null \? sd\.suggestedQty : ''/.t
 ok(!/PRIORITY_UNRESOLVED/.test(read('assets/js/core/supply-planning-allocations.js')),
   'H8 case 22 — the frozen §40 allocator gained nothing: this round is frontend-only');
 // Case 24 — route asset + token consistency.
-ok(/'assets\/js\/core\/supply-planning-country-identity\.js\?v=r50-irpriority-20261010',\s*\n\s*'assets\/js\/pages\/inventory-replenishment\.js\?v=r50-irpriority-20261010'/.test(APP_SRC),
+// S8-B3-R3-CP2I - H9 AND H12 WERE PINNED TO A LITERAL TOKEN, WHICH MADE THEM CLAIMS ABOUT EVERY FUTURE
+// ROUND RATHER THAN ABOUT THIS ONE. H9's subject is LOAD ORDER - KMCID must be declared before the page
+// that depends on it - and H12's is that the shipped hosts carry the REGISTERED current token rather than
+// one somebody typed. Neither subject mentions a particular token, and both would fail the first time a
+// later round legitimately rotated. R52 is that round. The token is now DERIVED from the series that owns
+// it, exactly as _release-order.js's own currentAppToken() comment prescribes and as s7-r4's H2b was
+// repaired to do. H10/H11 are untouched: a named STALE token must still be absent, which is a different
+// claim and still a true one.
+var RO = require(path.join(__dirname, '_release-order.js'));
+var CUR_TOKEN = RO.ROUND_TOKENS[RO.ROUND_TOKENS.length - 1];
+ok(new RegExp("'assets/js/core/supply-planning-country-identity\\.js\\?v=" + CUR_TOKEN
+    + "',\\s*\\n\\s*'assets/js/pages/inventory-replenishment\\.js\\?v=" + CUR_TOKEN + "'").test(APP_SRC),
   'H9 case 24 — KMCID is declared on the ops route BEFORE the page that depends on it');
 eq(APP_SRC.indexOf('r50-sitepriority-20261010'), -1, 'H10 app.js carries no stale token');
 eq(INDEX_SRC.indexOf('r50-sitepriority-20261010'), -1, 'H11 index.html carries no stale token');
-var RO = require(path.join(__dirname, '_release-order.js'));
-eq(RO.ROUND_TOKENS[RO.ROUND_TOKENS.length - 1], 'r50-irpriority-20261010',
-  'H12 and the new token is the registered current round token');
+ok(!!CUR_TOKEN && APP_SRC.indexOf(CUR_TOKEN) !== -1 && INDEX_SRC.indexOf(CUR_TOKEN) !== -1,
+  'H12 and BOTH hosts serve the registered current round token (' + CUR_TOKEN + ')');
+eq(RO.ROUND_TOKENS.filter(function (t) { return t === CUR_TOKEN; }).length, 1,
+  'H12a which appears exactly once in the series - a token is minted, never re-used');
 
 console.log('\n' + (fail ? 'FAIL ' : 'PASS ') + pass + ' passed, ' + fail + ' failed');
 process.exitCode = fail ? 1 : 0;

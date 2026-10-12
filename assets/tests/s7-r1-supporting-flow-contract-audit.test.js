@@ -154,7 +154,10 @@ var DISP = dispatchedHandlers(ROUTER);
 // S7-R3 — 141 → 143. carrierLeadTime.upsert and carrierLeadTime.duplicateCensus are the first actions
 // routed since R25, and they are what closes the B5 finding below.
 // S8-B3-R1A — 143 -> 147: the four Overseas Allocation Preview routes.
-eq(RACT.length, 147, 'A1  the router dispatches 147 distinct actions');
+// S8-B3-R3-CP2I (R52): 147 -> 148. ONE action joins the router, marketplace.allocationPriority.set. This
+// census is EXACT on purpose - an action arriving unnoticed is how a write surface grows without anyone
+// declaring it - so the number moves by exactly one and is not loosened to a floor.
+eq(RACT.length, 148, 'A1  the router dispatches 148 distinct actions');
 
 var missingRouter = CACT.filter(function (a) { return RACT.indexOf(a) === -1; });
 eq(missingRouter, [], 'A2  MISSING_ROUTER_ACTION_COUNT is 0 — every action the browser sends has a dispatch branch');
@@ -741,7 +744,9 @@ Object.keys(ACTION_HANDLER).sort().forEach(function (a) {
 
 // S7-R3 — 25 → 26. carrierLeadTime.upsert is the twenty-sixth supporting write flow, and the first one
 // this series ADDED rather than counted: every other entry already existed when R1 took the census.
-eq(supportingWrites.length, 26, 'L1  SUPPORTING_WRITE_FLOW_COUNT = 26', supportingWrites);
+// S8-B3-R3-CP2I (R52): 26 -> 27. The same single action, counted here as the supporting WRITE FLOW it is.
+// It writes exactly three cells of one already-identified marketplace row and can do nothing else.
+eq(supportingWrites.length, 27, 'L1  SUPPORTING_WRITE_FLOW_COUNT = 27', supportingWrites);
 eq(ownerDuplicates, [],
   'L2  SECOND_WRITE_OWNER_COUNT = 0 — no routed handler is defined in two modules');
 eq(unknownOwner, [],

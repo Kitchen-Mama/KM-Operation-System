@@ -305,22 +305,9 @@ var RELEASE_OWNERS = {
   // 00_config.gs JOINS, and it is the reason the feature can ship INACTIVE at all. The flag is what makes
   // "staged off" mean INERT rather than merely hidden: the four handlers check it BEFORE the default env is
   // built, so a disabled Preview opens no spreadsheet, writes no job state and arms no trigger.
-  '00_config.gs':
-    'THE FEATURE FLAGS OF RECORD. R51 adds OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ (false) and its reader. The '
-    + 'Preview ships INACTIVE by decision D-S8-B3-5 - backend first, activation later and separately decided. '
-    + 'Without this file copied, overseasAllocationPreviewEnabled_ is undefined, 74_ reads that as NOT enabled '
-    + 'and every Preview action refuses - which fails CLOSED, but for a reason no probe could explain.',
   // 74_ JOINS as a NEW FILE, which is the partial-sync case the stamped owner set exists for. It declares its
   // own OAP_BUILD_VERSION_ precisely so a project that copied the router but not the module reports itself
   // unsynced rather than answering four actions with a reference error.
-  '74_api_v1_overseas_allocation_preview_job.gs':
-    'THE OVERSEAS ALLOCATION PREVIEW JOB - a NEW file. A READ-ONLY async preview of the frozen 20/24 overseas '
-    + 'shared-pool allocation for ONE allocation group. It owns NO formula: pool eligibility comes from 43_, '
-    + 'demand from allocatedForecastQty, and the distribution from KMMSA. Its ONLY writes are its own Script '
-    + 'Properties and its own continuation triggers - no sheet, no business row, no Apply. It does NOT modify '
-    + '46_: the job lifecycle is reused as a PATTERN and the chunked-store primitives are called directly, '
-    + 'because extending the gap job would change Gap Materialization to add something that is not gap '
-    + 'materialization.',
   '63_api_v1_system_health.gs':
     'THE MANIFEST. R46 moves the release and its OWN build, and nothing else - which is the first time this '
     + 'file has moved WITHOUT a second owner\'s row moving beside it. The reason is that R46\'s runtime change '
@@ -385,6 +372,28 @@ var RELEASE_OWNERS = {
   // S8-B1-R50 - 66_ IS NO LONGER HERE. It owned R49 and did not change in R50, so it moves to
   // RELEASE_CARRIED below at R49: it still ships in this paste set while declaring the round it last
   // changed in. That is the twenty-first swap and the ordinary life of a module stamp.
+  //
+  // S8-B3-R3-CP2I-R52 - THE TWENTY-THIRD SWAP, AND IT MOVES TWO FILES OUT AND ONE IN.
+  //
+  // 00_config.gs and 74_ BOTH LEAVE. They owned R51 - the Preview feature flag and the Preview job itself -
+  // and R52 touches neither. They are carried below at R51: still in the paste set, still declaring the round
+  // they actually changed in. Marching them to R52 would erase the one fact a per-module stamp carries, and
+  // it would do so while R51 is still unshipped, which is the case where "stale" and "correct" are hardest to
+  // tell apart from the outside.
+  //
+  // 03_master_data_handlers.gs ARRIVES, and it arrives with a stamp it has never had. It has owned a
+  // master-table WRITE since this ledger began and was absent from the manifest the whole time, so a stale
+  // copy of it was invisible to mixed_deployment - the same omission R21 fixed for 73_ and R33 for 05_,
+  // discovered late for the same reason: nothing dispatched into it that a reference error would reveal.
+  // R52 changes that. The router now dispatches marketplace.allocationPriority.set here, so a pre-R52 03_
+  // beside an R52 01_ routes a live write into an undefined handler.
+  '03_master_data_handlers.gs':
+    'THE MASTER-DATA WRITE SURFACE. R52 adds handleSetMarketplaceAllocationPriority_ - the ONLY writer of '
+    + 'marketplaces.allocation_priority, with the canonical-collision refusal, the marketplace_id identity '
+    + 'guard, the mandatory compare-and-set and a three-column write limit - and makes handleUpsertMarketplace_ '
+    + 'REFUSE any payload carrying allocation_priority, so the unguarded path is closed rather than merely '
+    + 'unused. Both writers now take the shared script lock, which the sheet previously had NO writer taking. '
+    + 'No schema change: the live columns are unchanged and no column was invented.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -398,6 +407,13 @@ var RELEASE_CARRIED = {
   // orchestration, so ROS_BUILD_VERSION_ correctly stays at R49 while the file still travels in the paste
   // set. Marching it to R50 to look current is exactly the churn the manifest exists to catch: a stamp that
   // is advanced to keep a gate green can no longer tell a synced copy from a stale one.
+  // S8-B3-R3-CP2I-R52 - BOTH R51 OWNERS ARRIVE HERE TOGETHER, and under an UNSHIPPED release, which is the
+  // case this list exists for. R51's bytes are cut but no Apps Script project carries them, so these two
+  // files must still be PASTED while declaring R51 rather than R52. A carried stamp under an unshipped
+  // release is the one situation where a stale file and a correct one look identical from outside, and these
+  // rows are how an acceptance tells them apart.
+  '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51',
+  '74_api_v1_overseas_allocation_preview_job.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51',
   '66_api_v1_request_order_send.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49',
   // S7-R4 - THE TWENTIETH SWAP. 01_ LEFT OWNERSHIP AT R40 after ONE release as an owner and kept R39, the
   // round its routing table actually changed in. R40 moved no action and no handler; it was a deploy-
@@ -804,8 +820,14 @@ section('C. EVERY OWNER THAT DID NOT CHANGE KEEPS ITS OLD STAMP');
 // it for real - OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ is a constant of record and the Preview cannot ship
 // INACTIVE without it - so the same rule now requires the opposite observation. The rule never moved: a stamp
 // names the round the file last changed in. What changed is which round that is.
-eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE,
-  'C1  00_config.gs IS at this release - it gained the Preview feature flag, so its stamp moved with it');
+// S8-B3-R3-CP2I-R52 - AND IT INVERTS BACK, which is the rule holding still rather than bending. R51 changed
+// this file for real, so R51 required the opposite observation; R52 changes no constant of record, so the
+// stamp must STAY at R51 and not be marched. Asserted against RELEASE_CARRIED rather than a literal, so this
+// line cannot drift from the paste list that governs the same fact.
+eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE_CARRIED['00_config.gs'],
+  'C1  00_config.gs KEEPS the R51 stamp it earned - R52 changes no constant of record, so nothing marches it');
+ok(declares(CONFIG, 'CONFIG_BUILD_VERSION_') !== RELEASE,
+  'C1b  and it is explicitly NOT at the current release');
 ok(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '00_config.gs'],
   { cwd: REPO, encoding: 'utf8' }).trim() !== '',
   'C1a and git agrees it changed - the stamp is evidence, not an assertion about itself');
@@ -1028,7 +1050,10 @@ eq(num(HEALTH, 'SYS_TRANSPORT_CONTRACT_VERSION_'), num(priorHealth, 'SYS_TRANSPO
 // S8-B3-R1A - THE SPAN NOW HOLDS THREE. R51 contributes the third: the four Overseas Allocation Preview
 // actions, together, ONE bump. That is the same unit the two entries above used - one bump per RELEASE that
 // changes the action set, never one per action - and it is why four new routes move this number by one.
-var ACTION_ADDING_RELEASES_SINCE_BASE = 3;
+// S8-B3-R3-CP2I - THE SPAN NOW HOLDS FOUR. R52 contributes the fourth: marketplace.allocationPriority.set,
+// one action, one bump - the same unit as the three above, which is why four Preview routes moved it by one
+// and one priority route also moves it by one.
+var ACTION_ADDING_RELEASES_SINCE_BASE = 4;
 eq(Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
    - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')), ACTION_ADDING_RELEASES_SINCE_BASE,
   'H2  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moved once per action-adding release in this span');
@@ -1050,7 +1075,22 @@ eq(_listMoved, _listGrew,
 // S3-R10 — this release grew the registry by ONE, and unlike pricing.fxReconcile before it the new action is
 // one a PAGE calls: SKU Regional Details asks pricing.write.status whenever a pricing write loses its
 // response. H3 above already ties the version move to the registry growth, so this states which way it went.
-eq(_listGrew, 1, 'H3a and this release grew it by ONE: a page depends on the route it added');
+// S8-B3-R3-CP2I - TWO, and the second one is why this assertion is worth stating rather than loosening.
+// One entry is the NEW action a page depends on. The other is `upsertMarketplace`, which has been ROUTED
+// since before this registry existed and was never listed - so sysProbeRequested_, which resolves a
+// caller-named action ONLY through this table, reported it absent from deployments that served it correctly.
+// That is the F1-7N-FB-4E-R2 fault, found again in a different row. A registry repair and a registry
+// addition move this number the same way, and both must move it.
+// THE SPAN FIGURE, NOT THIS RELEASE'S. These coincided while BASE..HEAD held exactly one list change
+// (pricing.write.status) and the distinction could be ignored; R52 adds two more, so the span is three and
+// saying "this release" here would now be false. The per-release split is in DEPLOYMENT_RELEASE_LOG.md,
+// which is where a claim about one release belongs. H3 above already ties the version move to this growth,
+// so what this line adds is the DIRECTION and the magnitude.
+eq(_listGrew, 3, 'H3a the registry grew by THREE across this span: pricing.write.status, and R52’s two rows');
+ok(/\{ action: 'marketplace\.allocationPriority\.set', handler: 'handleSetMarketplaceAllocationPriority_'/.test(HEALTH),
+   'H3a1 the new route is registered under the handler the router dispatches to');
+ok(/\{ action: 'upsertMarketplace', handler: 'handleUpsertMarketplace_'/.test(HEALTH),
+   'H3a2 and the omitted one is now registered too');
 ok(/\{ action: 'pricing\.update', handler: 'handlePricingUpdate_'/.test(HEALTH), 'H3b which is pricing.update');
 // ASKED OF GIT, not by comparing bytes. The stored blob is line-ending normalised and the working copy
 // is not, so a direct byte compare reports a difference that does not exist. `git diff --name-only`
@@ -1094,9 +1134,15 @@ var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 // case R21 made for 73_ and R33 made for 05_, because 74_ is not merely a new owner - it is a new file that
 // FOUR ROUTED ACTIONS dispatch into. A project that copied 01_router.gs and missed 74_ answers every Preview
 // call with a reference error, and without a manifest row no probe could name the missing file.
+// S8-B3-R3-CP2I DECLARES A THIRD: 03_ enters the manifest, and unlike 73_, 05_ and 74_ it is not a new file
+// or a newly-important one. It has owned a master-table WRITE for its entire existence with no row here, so
+// a stale copy was invisible to the partial-sync detector the whole time. Nothing dispatched into it that a
+// reference error would have exposed, which is exactly why the omission survived. R52 ends that: the router
+// now routes a live write into this file.
 eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }),
-   ['05_overseas_inventory_handlers.gs', '74_api_v1_overseas_allocation_preview_job.gs'],
-  'H5  the manifest gained EXACTLY the rows this release declares — 05_ and 74_, and only those');
+   ['05_overseas_inventory_handlers.gs', '74_api_v1_overseas_allocation_preview_job.gs',
+    '03_master_data_handlers.gs'],
+  'H5  the manifest gained EXACTLY the rows this span declares — 05_, 74_ and 03_, in manifest order');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none either — a probe silently dropped is a partial sync nobody can see');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],

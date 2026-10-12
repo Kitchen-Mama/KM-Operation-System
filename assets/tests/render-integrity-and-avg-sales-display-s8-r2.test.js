@@ -123,13 +123,41 @@ section('T1d — allocation_priority: CREATE defaults to 100, UPDATE preserves')
 var mdCode = code(MD);
 ok(!/allocationPriority : 100/.test(mdCode),
   'D1  the CREATE default is NOT in this release — it needs its own backend cut (R43 is already cut)');
-ok(/if \(col\('allocation_priority'\) !== -1 && allocationPriority !== ''\) newRow/.test(mdCode),
-  'D2  the shipped CREATE branch still writes only a SUPPLIED priority (today: blank stays blank)');
-ok(/if \(allocationPriority !== '' && col\('allocation_priority'\) !== -1\) sheet\.getRange/.test(mdCode),
-  'D3  and the UPDATE branch writes only when a value was SUPPLIED — an existing priority is preserved');
-ok(/var allocationPriority = \(body\.allocation_priority !== undefined && body\.allocation_priority !== ''\) \? body\.allocation_priority : '';/.test(mdCode),
-  'D4  the variable defaults to BLANK — any future default must live in the created ROW, never here');
-ok(!/backfill|UPDATE .*SET .*allocation_priority/i.test(mdCode), 'D5  no backfill and no bulk write exists');
+// S8-B3-R3-CP2I (R52) — D2-D4 PINNED THE EXACT TEXT OF BRANCHES THAT NO LONGER EXIST, AND THE PROPERTY
+// THEY PROTECTED IS NOW ENFORCED MORE STRONGLY THAN THEY COULD ASSERT.
+//
+// They read: the CREATE branch writes only a SUPPLIED priority, the UPDATE branch writes only when one was
+// supplied, and the local defaults to BLANK. All three were ways of saying "this writer cannot turn a blank
+// into a number". R52 removes the question: `handleUpsertMarketplace_` no longer writes allocation_priority
+// on EITHER branch, and REFUSES outright any payload that even carries the key. Blank stays blank because
+// there is no code that could change it, not because a condition happens to be false.
+//
+// The claims are restated against that mechanism rather than deleted. Note the direction of travel: each of
+// these is strictly harder to satisfy than the line it replaces — an absent write cannot be made conditional
+// by accident, and a refusal is observable where a skipped branch was not.
+ok(!/newRow\[col\('allocation_priority'\)\]/.test(mdCode),
+  'D2  the CREATE branch cannot write a priority AT ALL — a new marketplace is unranked, never defaulted');
+ok(!/setValue\(allocationPriority\)/.test(mdCode),
+  'D3  and neither can the UPDATE branch — an existing priority is preserved by construction, not by a condition');
+ok(/Object\.prototype\.hasOwnProperty\.call\(body, 'allocation_priority'\)/.test(mdCode)
+   && /PRIORITY_WRITE_NOT_SUPPORTED_HERE/.test(mdCode),
+  'D4  a payload that CARRIES the field is refused rather than silently stripped — a silent strip is how a '
+  + 'save reports success and stores nothing');
+// AND THE NEW BOUNDED WRITER MUST NOT SMUGGLE THE WITHHELD DEFAULT IN EITHER. It is the only writer of this
+// column now, so D1's claim has to be made about it too or the gate has simply moved house.
+ok(!/allocation_priority[^\n]{0,40}\|\|\s*100/.test(mdCode) && !/:\s*100\b/.test(mdCode),
+  'D4a nor does the bounded writer invent a default — it refuses a missing value instead');
+ok(/INVALID_PRIORITY/.test(mdCode),
+  'D4b it names that refusal, so a missing value is a visible answer rather than an absence');
+// S8-B3-R3-CP2I - D5 TESTED PROSE AS WELL AS CODE, AND R52 IS WHERE THAT STOPPED BEING HARMLESS.
+// `code()` strips only `//` line comments, so a /** */ block survives it - and the R52 handler's own header
+// says, in so many words, that it NEVER appends, merges, renumbers or backfills. A documented promise not to
+// backfill is evidence FOR this claim, and D5 was reading it as a violation. Block comments are stripped for
+// this one check so the regex sees executable text, which is what the assertion was always about.
+var mdExec = mdCode.replace(/\/\*[\s\S]*?\*\//g, '');
+ok(!/backfill|UPDATE .*SET .*allocation_priority/i.test(mdExec), 'D5  no backfill and no bulk write exists');
+ok(/NEVER appends, merges, renumbers or backfills/.test(mdCode),
+  'D5a and the handler states that limit where a reader meets it, not only in a report');
 // Executed: the exact create-vs-update expression, so the claim is behavioural and not a regex.
 (function () {
   function createValue(supplied) { var ap = (supplied !== undefined && supplied !== '') ? supplied : ''; return (ap !== '') ? ap : 100; }

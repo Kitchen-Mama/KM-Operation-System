@@ -743,7 +743,23 @@ ok(RO.stampAtOrAfter(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7
   var CURRENT_RELEASE = (/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(G63S) || [])[1] || '';
   var LEDGER = read('docs/planning/DEPLOYMENT_RELEASE_LOG.md');
   var _at = CURRENT_RELEASE ? LEDGER.indexOf(CURRENT_RELEASE) : -1;
-  var CURRENT_IS_UNSHIPPED = _at !== -1 && /NOT DEPLOYED/.test(LEDGER.slice(_at, _at + 4000));
+  // S8-B3-R3-CP2I - THE EXEMPTION IS A PROPERTY OF THE RELEASE, NOT OF BEING THE LATEST ONE.
+  //
+  // This was `stamp === CURRENT_RELEASE && CURRENT_IS_UNSHIPPED`, which was right while exactly one unshipped
+  // cut existed. Three now do: R50, R51 and R52 are all cut, none is synced, and Production is R49. R51's own
+  // ledger entry records a correction made to 74_ AFTER that cut, with the reason stated - "a corrected file
+  // inside an UNSHIPPED cut is still that cut: nothing was synced from R51, so there is no deployed R51 for
+  // this to diverge from". The moment R52 became current, that still-true case started failing here, because
+  // the condition tested WHICH release rather than WHETHER IT SHIPPED.
+  //
+  // The rule is now stated as the comment above always stated it, and it stays self-cancelling: the exemption
+  // dies for a release the instant the ledger records it as deployed. A stamp naming a DEPLOYED release, or a
+  // release with no ledger entry at all, is never exempt - both proved below against mutated inputs.
+  function releaseIsUnshipped(rel, ledger) {
+    var at = rel ? ledger.indexOf(rel) : -1;
+    return at !== -1 && /NOT DEPLOYED/.test(ledger.slice(at, at + 4000));
+  }
+  var CURRENT_IS_UNSHIPPED = releaseIsUnshipped(CURRENT_RELEASE, LEDGER);
   ok(CURRENT_RELEASE !== '', 'E3c the current deployment release is readable from 63_: ' + CURRENT_RELEASE);
   ok(_at !== -1, 'E3d and it has a ledger entry, so its shipped/unshipped state is a recorded fact');
   var re = /\{ file: '([^']+)', symbol: '([A-Z_]+)', expected: '([^']+)'/g, m, bad = [], corrected = [];
@@ -791,7 +807,7 @@ ok(RO.stampAtOrAfter(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7
     }
     if (fileLast && stampLast && fileLast !== stampLast) {
       // The narrow exemption described above: a correction landing inside the CURRENT, UNSHIPPED cut.
-      if (stamp === CURRENT_RELEASE && CURRENT_IS_UNSHIPPED) { corrected.push(file + ' (stamp ' + stamp + ')'); continue; }
+      if (releaseIsUnshipped(stamp, LEDGER)) { corrected.push(file + ' (stamp ' + stamp + ', UNSHIPPED)'); continue; }
       bad.push(file + ' (stamp ' + stamp + ')');
     }
   }
@@ -803,12 +819,20 @@ ok(RO.stampAtOrAfter(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7
   // NON-VACUITY FOR THE EXEMPTION ITSELF. A guard that was widened has to show it is still narrow, so the two
   // conditions are evaluated against mutated inputs: a ledger that says the release SHIPPED, and a stamp naming
   // some OTHER release. Either one alone must close the exemption.
-  var _shippedLedger = LEDGER.slice(_at, _at + 4000).replace(/NOT DEPLOYED/g, 'DEPLOYED 2026-10-12');
-  ok(!/NOT DEPLOYED/.test(_shippedLedger),
-    'E4c if the ledger recorded this release as SHIPPED, the unshipped condition would be FALSE and every '
-    + 'file stamped with it would be policed again');
-  ok(('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41' === CURRENT_RELEASE) === false,
-    'E4d and a stamp naming an OLDER release is never exempt, whatever the ledger says');
+  // The predicate itself is run against mutated inputs, rather than a copy of its reasoning being asserted.
+  // The old E4c tested a mutated STRING and the old E4d an identity comparison; neither exercised the branch
+  // that actually grants the exemption, so both would have survived the widening above unchanged. These do not.
+  var _shippedLedger = LEDGER.replace(/NOT DEPLOYED/g, 'DEPLOYED 2026-10-12');
+  ok(releaseIsUnshipped(CURRENT_RELEASE, _shippedLedger) === false,
+    'E4c if the ledger recorded this release as SHIPPED, the exemption CLOSES and every file stamped with it '
+    + 'would be policed again');
+  ok(releaseIsUnshipped('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', _shippedLedger) === false,
+    'E4c1 and it closes for an EARLIER unshipped cut on the same evidence - the exemption is about shipping, '
+    + 'not about being the latest release');
+  ok(releaseIsUnshipped('F1-NO-SUCH-RELEASE-ID', LEDGER) === false,
+    'E4d a stamp naming a release with NO ledger entry is never exempt - an unrecorded release cannot buy one');
+  ok(releaseIsUnshipped(CURRENT_RELEASE, LEDGER) === true,
+    'E4d1 (non-vacuity) while the real ledger really does grant it for the current unshipped cut');
   eq(bad, [],
     'E4  NO single-stamp manifest owner carries a stamp older than its own last change — the METHOD is ' +
     'checked, not just the instances this round repaired');

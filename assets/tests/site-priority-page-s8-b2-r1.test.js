@@ -116,6 +116,16 @@ function bootPage(opts) {
         return refCache.get('marketplaces', function () {
           calls.refLoads++;
           if (opts.readThrows) return Promise.reject(new Error(opts.readThrows));
+          // S8-B3-R3-CP2I - EVERY PRODUCTION ROW CARRIES A marketplace_id, SO EVERY FIXTURE MUST TOO.
+          // The page refuses to save against a row without one (the identity guard cannot be satisfied), so a
+          // fixture that silently omitted it would be testing the guard in every single case rather than the
+          // save. A fixture that states one EXPLICITLY - including the empty string - is left exactly as it is,
+          // which is how the guard still gets tested on purpose.
+          (opts.rows || []).forEach(function (r) {
+            if (!Object.prototype.hasOwnProperty.call(r, 'marketplaceId')) {
+              r.marketplaceId = 'MKT-' + String(r.company) + '-' + String(r.country) + '-' + String(r.marketplace);
+            }
+          });
           var snapshot = (opts.rows || []).slice();   // the rows AS OF this load, so a late read is genuinely stale
           // `opts.manualReads` hands the test the resolver, so two loads can be settled OUT OF ORDER.
           if (opts.manualReads) {
@@ -126,14 +136,40 @@ function bootPage(opts) {
           return Promise.resolve(snapshot);
         });
       },
-      upsertMarketplace: function (payload) {
+      // S8-B3-R3-CP2I - THE BOUNDED WRITER, STUBBED AT ITS REAL CONTRACT.
+      //
+      // The shipped wrapper RETURNS A TYPED OUTCOME AND NEVER THROWS, and never returning is the half that
+      // matters: before R52 the page received a rejected promise for a REFUSED write and for a LOST ANSWER
+      // alike, and could not tell them apart. A stub that still rejected would let the page keep a branch
+      // production can no longer reach. The four states here are the shipped four, spelled the shipped way.
+      //
+      // `upsertMarketplace` IS DELIBERATELY ABSENT FROM THIS STUB. The page must have no way to reach it, and
+      // a stub that offered it would make a fallback look harmless in a test and be fatal in production.
+      setMarketplaceAllocationPriority: function (payload) {
         calls.upsert.push(payload);
-        // The shipped writer RETURNS (never throws) when the API is not configured.
-        if (opts.upsertReturnsFailure) return Promise.resolve({ success: false, error: opts.upsertReturnsFailure });
-        if (opts.upsertThrows) return Promise.reject(new Error(opts.upsertThrows));
+        if (opts.wrapperThrows) return Promise.reject(new Error(opts.wrapperThrows));
+        if (opts.writeOutcome) {
+          var o = opts.writeOutcome;
+          if (o.outcome === 'CONFIRMED_COMMITTED') {
+            if (opts.onUpsert) opts.onUpsert(payload);
+            refCache.invalidate('marketplaces');
+          }
+          return Promise.resolve(o);
+        }
+        // A lost answer. NOT a rejection, and NOT proof that nothing was written.
+        if (opts.upsertThrows) {
+          return Promise.resolve({ outcome: 'OUTCOME_UNKNOWN', code: 'HTTP_TRANSPORT_ERROR',
+            message: opts.upsertThrows });
+        }
+        // The request was never dispatched - what the real wrapper answers when the API is not configured or
+        // the deployment probe refuses.
+        if (opts.upsertReturnsFailure) {
+          return Promise.resolve({ outcome: 'CONFIRMED_NOT_STARTED', code: 'API_ENDPOINT_CONFIGURATION_INVALID',
+            message: opts.upsertReturnsFailure });
+        }
         if (opts.onUpsert) opts.onUpsert(payload);
-        refCache.invalidate('marketplaces');   // exactly what the shipped writer does after a confirmed write
-        return Promise.resolve({ ok: true });
+        refCache.invalidate('marketplaces');   // exactly what the shipped wrapper does after a CONFIRMED write
+        return Promise.resolve({ outcome: 'CONFIRMED_COMMITTED', code: 'OK', message: '' });
       }
     }
   };
@@ -239,7 +275,7 @@ var cDone = Promise.resolve(boot.hooks.mount()).then(function () {
 
 // -------------------------------------------------------------------------------------------------------------
 cDone.then(function () {
-  section('D. Save — the write echoes the stored row, and is verified by reading back');
+  section('D. Save — identity + compare-and-set, verified by reading back');
 
   // 9 — save + read-after-write.
   var store = [{ company: 'ResTW', country: 'UK', marketplace: 'Amazon', allocationPriority: null,
@@ -260,14 +296,29 @@ cDone.then(function () {
       eq(b.calls.upsert.length, 1, 'D1 exactly ONE write was issued');
       eq(p.action, undefined, 'D1a the page does not set the action itself — the DB wrapper owns it');
       eq(p.allocation_priority, 42, 'D2 the priority is sent as a NUMBER');
-      // The row is targeted by its STORED values. Sending canonical GB for a UK row would miss and INSERT.
-      eq(p.country, 'UK', 'D3 the RAW stored country is sent, never the canonical one — otherwise the handler inserts a duplicate row');
+      // The row is targeted by its STORED values. The handler compares company and marketplace RAW and
+      // case-sensitively and canonicalises only the country, so sending a canonical 'GB' for a row stored 'UK'
+      // would miss - and before R52 a miss meant an APPENDED DUPLICATE ROW rather than a refusal.
+      eq(p.country, 'UK', 'D3 the RAW stored country is sent, never the canonical one');
       eq(p.company, 'ResTW', 'D3a with the stored company');
       eq(p.marketplace, 'Amazon', 'D3b and the stored marketplace');
-      // The handler writes these three unconditionally and defaults status to 'active' when absent.
-      eq(p.status, 'disabled', 'D4 the stored status is echoed — omitting it would silently REACTIVATE the marketplace');
-      eq(p.currency, 'GBP', 'D5 the stored currency is echoed — the handler REFUSES a blank one');
-      eq(p.marketplace_display_name, 'Amazon UK', 'D6 the stored display name is echoed — omitting it would blank it');
+      eq(p.expected_marketplace_id, 'MKT-ResTW-UK-Amazon',
+         'D3c and the stored marketplace_id, so the handler can prove it is changing the intended ROW');
+
+      // THE ECHO IS GONE, AND ITS ABSENCE IS THE ASSERTION. The bounded handler writes three columns and
+      // reads none of these, so sending them would be meaningless at best; before R52 omitting them would
+      // have silently reactivated a disabled marketplace and blanked its display name.
+      eq(p.status, undefined, 'D4 the status is NOT sent — the handler cannot write it any more');
+      eq(p.currency, undefined, 'D5 nor the currency');
+      eq(p.marketplace_display_name, undefined, 'D6 nor the display name');
+      eq(p.marketplace_alias, undefined, 'D6a nor the alias, whose blank-only auto-fill was the quietest of them');
+      eq(p.fulfillment_model, undefined, 'D6b nor the fulfillment model');
+
+      // THE COMPARE-AND-SET. The stored priority here is null, so the page must say MISSING and must NOT
+      // invent a 0 for it.
+      eq(p.expected_allocation_priority_state, 'MISSING',
+         'D6c an unresolved stored priority is declared MISSING, never as an expected 0');
+      eq(p.expected_allocation_priority, undefined, 'D6d with no number attached to a MISSING expectation');
       eq(b.calls.invalidate.indexOf('marketplaces') !== -1, true,
          'D7 the writer invalidated the marketplaces reference key — the page relies on that, it does not re-invalidate');
       ok(b.calls.refLoads >= 2,
@@ -295,10 +346,10 @@ cDone.then(function () {
       var st = b.dom.byId['sp-status'];
       ok(st.className.indexOf('sp-status--error') !== -1, 'E1 a thrown write renders the ERROR state');
       ok(st.className.indexOf('success') === -1, 'E2 and never the success state');
-      // CP2D — a THROWN write is UNDETERMINED, not proof that nothing was written. `upsertMarketplace`
-      // throws for a refused write AND for a transport failure, and a request that never got an answer may
-      // still have been applied. Claiming "nothing was written" here was the lie this assertion used to pin.
-      ok(/UNDETERMINED/i.test(st.textContent), 'E3 a thrown write is reported as UNDETERMINED, never as "nothing was written"');
+      // CP2D/CP2I — A LOST ANSWER IS NOT PROOF THAT NOTHING WAS WRITTEN. The wrapper classifies a transport
+      // failure as OUTCOME_UNKNOWN precisely because the request may have reached the server and been applied
+      // after we stopped listening. Claiming "nothing was written" here was the lie this assertion pins.
+      ok(/UNKNOWN/i.test(st.textContent), 'E3 a lost answer is reported as UNKNOWN, never as "nothing was written"');
       ok(!/nothing was written/i.test(st.textContent), 'E3a and does not assert the absence of a write it cannot know');
       ok(/500/.test(st.textContent), 'E4 while still carrying the underlying reason');
       eq(b.calls.upsert.length, 1, 'E4a and NO automatic re-send was attempted');
@@ -360,13 +411,15 @@ cDone.then(function () {
   section('G. No second writer, no new API, and the shell is wired');
 
   // 13/14 — the existing API, and only it.
-  ok(/KM\.DB\.upsertMarketplace|db\.upsertMarketplace/.test(PAGE_SRC),
-     'G1 the page calls the EXISTING marketplace writer');
+  ok(/db\.setMarketplaceAllocationPriority/.test(PAGE_SRC),
+     'G1 the page calls the BOUNDED priority writer');
+  eq((PAGE_SRC.match(/db\.upsertMarketplace|KM\.DB\.upsertMarketplace/g) || []).length, 0,
+     'G1a and never the general marketplace upsert {EM} not as a fallback, not anywhere'.replace('{EM}', '\u2014'));
   ok(!/fetch\s*\(|XMLHttpRequest|navigator\.sendBeacon/.test(PAGE_SRC),
      'G2 and performs no transport of its own — no second writer');
   ok(!/action\s*:\s*['"]/.test(PAGE_SRC), 'G3 it declares no API action; the DB wrapper owns the action name');
-  eq((read('assets/specs/active/apps-script/01_router.gs').match(/upsertMarketplace/g) || []).length > 0, true,
-     'G4 upsertMarketplace is an action the router already serves — nothing was added for this page');
+  eq(read('assets/specs/active/apps-script/01_router.gs').indexOf("action === 'marketplace.allocationPriority.set'") !== -1, true,
+     'G4 the router dispatches the action this page calls');
   ok(!/upsertMarketplace/.test(APP_SRC), 'G5 and the shell did not grow a writer either');
 
   // The page must be reachable, and its assets must be declared where the gates look.
@@ -423,12 +476,16 @@ cDone.then(function () {
 .then(function () {
   section('I. The limitation this page states rather than hides');
 
-  // `handleUpsertMarketplace_` resolves an absent/empty allocation_priority to '' and then writes it only
-  // `if (allocationPriority !== '')`. A blank is a NO-OP, not a clear. There is no supported way to un-set a
-  // priority through the existing API, so the page offers no control that would silently do nothing.
+  // R52 CHANGED HOW THIS LIMITATION IS ENFORCED, NOT WHETHER IT EXISTS. The old writer resolved a blank
+  // allocation_priority to '' and then skipped the column, so a "clear" was a silent NO-OP. The bounded
+  // handler instead REFUSES a blank outright - the limitation is now stated by the server rather than
+  // absorbed by it - and clearing a priority back to MISSING still has no supported path, because inventing
+  // one means a sentinel every reader would have to learn. The page states the gap where an operator meets it.
   var MD = read('assets/specs/active/apps-script/03_master_data_handlers.gs');
-  ok(/allocationPriority !== '' && col\('allocation_priority'\)/.test(MD),
-     'I1 the writer skips the column when the value is blank — a clear is NOT persisted');
+  ok(/INVALID_PRIORITY/.test(MD),
+     'I1 the bounded writer REFUSES a blank priority rather than silently skipping the column');
+  ok(/There is no way to clear a priority back to MISSING/.test(MD),
+     'I1a and records that clearing remains unsupported, in the handler that would have to implement it');
   ok(P.validateInput('').ok === false, 'I2 so the page refuses a blank instead of pretending to clear');
   ok(/cannot be cleared here/.test(P.validateInput('').reason),
      'I3 and says so in the refusal, where an operator meets it');
@@ -513,10 +570,10 @@ cDone.then(function () {
                   rbf.dom.byId['site-priority-section'].fire('click', b2);
                   return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
                     var s3 = rbf.dom.byId['sp-status'];
-                    ok(/ACCEPTED but the read-back FAILED/.test(s3.textContent),
-                       'J11 an accepted write with a failed read-back is reported as NOT verified');
+                    ok(/CONFIRMED but the read-back FAILED/.test(s3.textContent),
+                       'J11 a confirmed write with a failed read-back is reported as NOT verified');
                     ok(s3.className.indexOf('success') === -1, 'J11a never as success');
-                    ok(/Do not re-save/.test(s3.textContent), 'J11b and tells the operator not to re-save');
+                    ok(/do not re-save/i.test(s3.textContent), 'J11b and tells the operator not to re-save');
                     eq(rbf.calls.upsert.length, 1, 'J11c with no automatic re-send');
 
                     // J12 — API NOT CONFIGURED: the writer RETURNS success:false and must never look saved.
@@ -530,8 +587,10 @@ cDone.then(function () {
                       nc.dom.byId['site-priority-section'].fire('click', b3);
                       return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
                         var s4 = nc.dom.byId['sp-status'];
-                        ok(/WRITE REFUSED/.test(s4.textContent), 'J12 an explicit success:false return is a REFUSAL');
+                        ok(/NOT SENT/.test(s4.textContent),
+                           'J12 a request that was never dispatched says so {EM} the ONE case where "nothing was written" is provable'.replace('{EM}', '\u2014'));
                         ok(/API not configured/.test(s4.textContent), 'J12a carrying the writer reason');
+                        ok(!/UNKNOWN/i.test(s4.textContent), 'J12c and is NOT softened into an unknown outcome');
                         ok(s4.className.indexOf('success') === -1, 'J12b and is never shown as success');
 
                         // J13 — DOUBLE CLICK issues ONE write.
@@ -673,7 +732,9 @@ cDone.then(function () {
     b.dom.byId['site-priority-section'].fire('click', bt);
     return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
       var st = b.dom.byId['sp-status'];
-      ok(/UNDETERMINED/.test(st.textContent), 'K4 a lost write response is reported as UNDETERMINED');
+      // R52 renames this state to the vocabulary S3-R10 already established for pricing.update, so that one
+      // system does not hold two words for "we did not hear back". The PROPERTY asserted is unchanged.
+      ok(/UNKNOWN/.test(st.textContent), 'K4 a lost write response is reported as OUTCOME_UNKNOWN');
       ok(!/did NOT take effect/i.test(st.textContent),
          'K4a and does NOT claim the write did not take effect — the server may still apply it');
       ok(!/nothing was written/i.test(st.textContent), 'K4b nor that nothing was written');
@@ -712,6 +773,94 @@ cDone.then(function () {
       }).then(function () {
         eq(b.api._state().busy, false, 'K5a and the save still completes cleanly');
       });
+    });
+  });
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
+  section('L. CP2I — a matching value after an UNKNOWN outcome is not a confirmed save');
+
+  // THE STATE THE TASK NAMES EXPLICITLY. The answer was lost; a forced fresh read then shows the intended
+  // value. The value is right, so this is not an error. But this request cannot be proved to be what stored
+  // it, and the audit columns may be incomplete — so it must not be dressed as a completed save either.
+  var store = [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: 50,
+                 currency: 'USD', status: 'active' }];
+  var b = bootPage({ rows: store, upsertThrows: 'answer lost in transit' });
+  // The write "landed" on the server even though the client never heard: the stored row carries the new value.
+  store[0].allocationPriority = 77;
+  return b.hooks.mount().then(function () {
+    var i = new El(''); i._isInput = true; i._sel = '[data-sp-input]'; i.value = '77';
+    b.dom.extra.push(i);
+    var bt = new El(''); bt.setAttribute('data-sp-save', b.api.identityOf(store[0]));
+    b.dom.byId['site-priority-section'].fire('click', bt);
+    return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+      var st = b.dom.byId['sp-status'];
+      ok(/UNKNOWN/.test(st.textContent), 'L1 the outcome is still reported as UNKNOWN');
+      ok(st.className.indexOf('sp-status--warn') !== -1, 'L1a in the WARN state, not success and not error');
+      ok(st.className.indexOf('success') === -1, 'L1b never the success state');
+      ok(!/Saved and VERIFIED/.test(st.textContent), 'L2 and is NOT labelled as a verified save');
+      ok(/does NOT prove/i.test(st.textContent), 'L2a it says what the read cannot prove');
+      ok(/audit fields may be incomplete/i.test(st.textContent), 'L2b including the audit columns');
+      ok(/unconfirmed/i.test(st.textContent), 'L2c and calls the save unconfirmed in so many words');
+      eq(b.calls.upsert.length, 1, 'L3 with NO automatic re-send');
+      ok(!/nothing was written/i.test(st.textContent), 'L3a and no claim that nothing was written');
+      ok(b.calls.invalidate.indexOf('marketplaces') !== -1,
+         'L4 the page forced a genuinely fresh read rather than trusting the memo');
+    });
+  });
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
+  section('M. CP2I — the identity-safe read-back rejects a value-shaped match');
+
+  // A read-back that asks only "does some row show 90?" is satisfied by a DIFFERENT row. After the save the
+  // reference comes back with the target renamed and a second marketplace carrying the requested value: the
+  // value exists, and the page must still refuse to call it verified.
+  var store = [{ marketplaceId: 'MKT-A', company: 'KM', country: 'US', marketplace: 'Amazon',
+                 allocationPriority: 50, currency: 'USD', status: 'active' }];
+  var b = bootPage({ rows: store, onUpsert: function () {
+    // the write "succeeds", but the row that comes back under this identity is a different record
+    store[0] = { marketplaceId: 'MKT-SOMETHING-ELSE', company: 'KM', country: 'US', marketplace: 'Amazon',
+                 allocationPriority: 90, currency: 'USD', status: 'active' };
+  } });
+  return b.hooks.mount().then(function () {
+    var i = new El(''); i._isInput = true; i._sel = '[data-sp-input]'; i.value = '90';
+    b.dom.extra.push(i);
+    var bt = new El(''); bt.setAttribute('data-sp-save', b.api.identityOf(store[0]));
+    b.dom.byId['site-priority-section'].fire('click', bt);
+    return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+      var st = b.dom.byId['sp-status'];
+      ok(!/Saved and VERIFIED/.test(st.textContent),
+         'M1 a correct VALUE on the wrong ROW is not a verified save');
+      ok(/DIFFERENT record/i.test(st.textContent), 'M1a and the refusal says which check failed');
+      ok(st.className.indexOf('success') === -1, 'M1b never shown as success');
+    });
+  });
+})
+
+// -------------------------------------------------------------------------------------------------------------
+.then(function () {
+  // M2 — a DUPLICATE appearing under the same canonical identity also fails the read-back.
+  var store = [{ marketplaceId: 'MKT-A', company: 'KM', country: 'US', marketplace: 'Amazon',
+                 allocationPriority: 50, currency: 'USD', status: 'active' }];
+  var b = bootPage({ rows: store, onUpsert: function () {
+    store[0].allocationPriority = 90;
+    store.push({ marketplaceId: 'MKT-B', company: 'KM', country: 'US', marketplace: 'Amazon',
+                 allocationPriority: 90, currency: 'USD', status: 'active' });
+  } });
+  return b.hooks.mount().then(function () {
+    var i = new El(''); i._isInput = true; i._sel = '[data-sp-input]'; i.value = '90';
+    b.dom.extra.push(i);
+    var bt = new El(''); bt.setAttribute('data-sp-save', b.api.identityOf(store[0]));
+    b.dom.byId['site-priority-section'].fire('click', bt);
+    return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+      var st = b.dom.byId['sp-status'];
+      ok(!/Saved and VERIFIED/.test(st.textContent),
+         'M2 a canonical duplicate appearing after the write is not a verified save');
+      ok(/2 rows/.test(st.textContent), 'M2a and the refusal counts them');
+      ok(st.className.indexOf('success') === -1, 'M2b never shown as success');
     });
   });
 })

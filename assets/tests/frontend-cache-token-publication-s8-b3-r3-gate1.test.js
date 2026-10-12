@@ -183,17 +183,36 @@ ok(true, 'C1 token-drift census recorded, not hidden: ' + (drift.length ? drift.
 // of a file the live site has never served. The drift is still REPORTED by C1; it only stops being
 // unexplained. B5 is untouched and remains the assertion that fails on a real stale publication.
 var staleNames = R.changedAndStale.map(function (e) { return e.file; });
-var unexplained = drift.filter(function (d) {
+// ONE predicate, named, so the live census and the constructed proofs below cannot diverge. A non-vacuity
+// check that re-implements the thing it is proving is proving its own copy.
+function isUnexplained(d) {
   var f = d.split(' ')[0];
   return staleNames.indexOf(f) === -1
     && R.unchanged.indexOf(f) === -1
     && R.added.indexOf(f) === -1
     && R.changedAndRotated.every(function (e) { return e.file !== f; });
-});
-// NON-VACUITY for the clause just added: if nothing is ever ADDED, that term is dead code pretending to work.
+}
+var unexplained = drift.filter(isUnexplained);
+
+// NON-VACUITY for the ADDED clause, BY CONSTRUCTION RATHER THAN BY ACCIDENT.
+//
+// S8-B3-R3-CP2I REPLACED THE PREVIOUS FORM OF C1b, AND THE REASON IS WORTH STATING BECAUSE IT IS A TRAP THIS
+// FILE EXISTS TO AVOID. C1b used to assert that at least one ADDED asset in the LIVE TREE actually drifts.
+// That held only as long as the tree happened to contain such an asset — and a CORRECT cache-token rotation
+// is precisely what removes it, because rotating publishes every reference at a commit at or after the file
+// it names, which is the healthy state this whole gate exists to produce. So the old C1b asserted that the
+// repository stays slightly unhealthy, and it would have failed on the first clean rotation after it was
+// written. R52 is that rotation.
+//
+// The clause is now proved directly, in BOTH directions, against the same predicate the census uses. This is
+// strictly stronger than the accident it replaces: the old form could pass while the predicate was broken
+// (any drift in an ADDED file satisfied it), whereas these two cannot.
+var _probeAdded = R.added.length ? R.added[0] : null;
 ok(R.added.length > 0, 'C1a the ADDED bucket is populated (' + R.added.length + '), so C2 exercises it');
-ok(drift.some(function (d) { return R.added.indexOf(d.split(' ')[0]) !== -1; }),
-   'C1b and at least one ADDED asset actually drifts — the clause is load-bearing, not decorative');
+ok(_probeAdded !== null && !isUnexplained(_probeAdded + ' (file @deadbeef, token @cafebabe)'),
+   'C1b an ADDED asset that DOES drift is classified as explained — the clause is load-bearing');
+ok(isUnexplained('assets/js/pages/__not-a-real-asset__.js (file @deadbeef, token @cafebabe)'),
+   'C1c while a drifting asset in NO bucket is still UNEXPLAINED — the clause did not swallow everything');
 ok(unexplained.length === 0,
    'C2 every drifting token is accounted for by the baseline classification' + (unexplained.length ? ': ' + unexplained.join(', ') : ''));
 

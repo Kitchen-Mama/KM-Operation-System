@@ -281,7 +281,13 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   // PRICING-R2: the canonical pricing writer owns handlePricingUpdate_, which 63_ registers for
   // pricing.update. The list's own note above warns that a new owner file must be added here or the probe
   // reads a registered handler as undefined — which is exactly what it did.
-  read('specs/active/apps-script/73_api_v1_pricing_write.gs')].join(String.fromCharCode(10));
+  read('specs/active/apps-script/73_api_v1_pricing_write.gs'),
+  // S8-B3-R3-CP2I (R52): the master-data write owner. 63_ now registers TWO handlers defined here -
+  // handleSetMarketplaceAllocationPriority_ for the new bounded priority writer, and handleUpsertMarketplace_,
+  // which has been ROUTED since before the registry existed and was never listed. The list's own note above
+  // warns that a new owner file must be added here or the probe reads a registered handler as undefined, and
+  // this time it is two at once, because one of the registry rows is a repair rather than an addition.
+  read('specs/active/apps-script/03_master_data_handlers.gs')].join(String.fromCharCode(10));
 (G63.match(/handler: '([A-Za-z0-9_]+)'/g) || []).forEach(function (m) {
   var h = m.replace(/handler: '|'/g, '');
   var n = (HANDLER_SOURCES.match(new RegExp('function ' + h + '\\(', 'g')) || []).length;

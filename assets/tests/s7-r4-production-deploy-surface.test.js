@@ -404,8 +404,14 @@ var R51_DELTA = [
   'assets/specs/active/apps-script/00_config.gs',
   'assets/specs/active/apps-script/01_router.gs',
   'assets/specs/active/apps-script/74_api_v1_overseas_allocation_preview_job.gs'];
+// S8-B3-R3-CP2I - R52, AND IT ARRIVED THE SAME WAY R51 DID, WHICH IS THE PARAGRAPH ABOVE PROVING ITSELF
+// AGAIN. The R52 pre-commit focused run could not see this gate - it reads COMMITTED history via
+// R42_POST_SHA..HEAD - and the post-commit sweep is what reported it. 01_ is already in R51_DELTA and 63_ is
+// in AUTHORIZED_FLOOR, so neither is repeated. 03_master_data_handlers.gs is the one addition: it gains the
+// bounded allocation_priority writer, the legacy priority refusal and the shared script lock.
+var R52_DELTA = ['assets/specs/active/apps-script/03_master_data_handlers.gs'];
 var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).concat(R49_DELTA).concat(R50_DELTA)
-  .concat(R51_DELTA).sort();
+  .concat(R51_DELTA).concat(R52_DELTA).sort();
 var CHANGED_SINCE_R42 = runtimeGsBetween(R42_POST_SHA, 'HEAD');
 eq(CHANGED_SINCE_R42, AUTHORIZED_SINCE_R42,
   'H2e SINCE R42 ended, EXACTLY the authorized runtime files have changed — the R43/R44/R45 floor plus the '

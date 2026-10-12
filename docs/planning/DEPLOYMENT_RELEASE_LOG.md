@@ -5143,3 +5143,111 @@ planning cycle 2026-10, so the guard had no data to fire on. An empty set is not
 the proof instead (`SEND_GUARD_MEASURED: missing_upc_send_blocked=true`).
 
 **R46 Production Functional Acceptance remains OPEN against R46** and is not closed or re-dated by this note.
+
+---
+
+## S8-B3-R3-CP2I — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52` — THE PRIORITY WRITE BECOMES A BOUNDED ACTION
+
+```
+BASE    aaf47499  S8-B3-R3-CP2E. R50 and R51 are CUT but NOT SYNCED and NOT DEPLOYED. Production is R49.
+BRANCH  feature/product-strategy-board-p0
+DATE    2026-10-12
+SCOPE   ONE new router action that writes ONE column, plus the refusal that closes the old door. No DB
+        schema, no new table, no formula change, no eligibility change, no allocation change. Transport
+        contract stays 1. The generated bundle is NOT rebuilt.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52
+PURPOSE                      Make marketplaces.allocation_priority writable ONLY through an action that
+                             cannot do anything else. Until now Site Priority saved through
+                             upsertMarketplace, which resolved its target by RAW case-sensitive
+                             company+country+marketplace, APPENDED A NEW ROW on no match, wrote five
+                             unrelated columns unconditionally, skipped the priority silently when the
+                             column was absent, and had no compare-and-set. Each of those is now either
+                             impossible or a named refusal.
+SUPERSEDES                   nothing. R50 and R51 are cut and unshipped; R52 follows them and all three
+                             travel in the SAME paste set. Production is R49.
+OWNERS                       03_master_data_handlers.gs                     (MD_BUILD_VERSION_)  — NEW STAMP
+                             01_router.gs                                   (RTR_BUILD_VERSION_)
+                             63_api_v1_system_health.gs                     (SYS_BUILD_VERSION_)
+STAMPLESS OWNERS             43_api_v1_gap_materialization.gs — unchanged in R52; carried from R50, which is
+                             also unshipped, so it still travels in this paste set and is stamped by nobody.
+CARRIED                      00_ stays R51. 74_ stays R51. 66_ stays R49. 61_ stays R47. 60_ stays R45.
+                             90_ is NOT rebuilt and its content hash is UNCHANGED.
+ACTION CONTRACT              19 -> 20. ONE new route, ONE bump. It matters more than usual: the new action is
+                             the ONLY way a priority can be written from R52, because upsertMarketplace now
+                             REFUSES the field outright. A v19 deployment cannot store a priority at all, and
+                             the frontend must be able to learn that without attempting a write to find out.
+REQUIRED ACTION LIST         14 -> 16, BY TWO, because two entries arrive. The release-stamp gate asserts
+                             this number moves exactly as far as the registry grows - specifically so it
+                             cannot be a number somebody typed - and nothing pins its absolute value, so a
+                             step of two distinguishes list versions exactly as well as a step of one.
+                             SYS_REQUIRED_ACTIONS_ gains TWO entries. The second is a REPAIR:
+                             upsertMarketplace has been routed since before this registry existed and was
+                             never listed, so sysProbeRequested_ — which resolves a caller-named action ONLY
+                             through that table — would report known_to_this_build false for an action the
+                             deployment serves correctly. That is the F1-7N-FB-4E-R2 fault exactly.
+MODULE MANIFEST              03_master_data_handlers.gs ENTERS SYS_MODULE_BUILD_STAMPS_ for the first time. It
+                             has owned a master-table write for its whole existence with no row here, so a
+                             stale copy was invisible to mixed_deployment. From R52 the router dispatches a
+                             NEW action into it, so a pre-R52 03_ beside an R52 01_ routes a live write into
+                             an undefined handler.
+BUNDLE                       90_ NOT REBUILT. No assets/js/core file changed; the two browser files this
+                             release touches live in assets/js/api and assets/js/pages, neither of which is a
+                             bundled module. KM_BUNDLE_CONTENT_HASH_ stays
+                             3de64364ba358468c39142aac212d663b41075f454dc6d86218fc066cdbc7e25.
+EDITOR-APPLIED               none. appsscript.json unchanged — no advanced service, no OAuth scope.
+FRONTEND                     CHANGED, AND THE CACHE TOKEN ROTATES — unlike R51, which deliberately did not.
+                             R51's only browser edit was the action-contract pin, and rotating for that would
+                             have asserted a frontend change that had not happened. R52 changes behaviour in
+                             three served files: operation-system-db-api.js gains the bounded writer and the
+                             pre-write deployment gate, site-priority.js stops echoing the old payload and now
+                             sends a compare-and-set, and site-priority.css gains a fourth status state.
+                             Application token r50-irpriority-20261010 -> r52-prioritywrite-20261012, appended
+                             to ROUND_TOKENS only. The MAP, IR_CSS and METHOD_REGISTRY series are untouched.
+
+LOCKING                      BOTH marketplaces writers now take the shared script lock at tryLock(30000).
+                             A lock taken by the new handler alone would have serialised it against itself and
+                             nothing else, because handleUpsertMarketplace_ was the sheet's ONLY writer and
+                             took no lock at all. This gives Add Marketplace ONE new refusal —
+                             LOCK_UNAVAILABLE, zero-write — which is a new instance of a behaviour ~20 other
+                             handlers across 11 files already have, not a new class of one.
+                             A BOUND THAT CAN BE EXCEEDED, SAID PLAINLY: gapJobContinue_ holds this same lock
+                             for up to 240000 ms, so a marketplace write landing inside a Gap Materialization
+                             run refuses rather than queues.
+
+STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries R52, no Web App
+                             version exists for it, and Production is NOT R52 — Production is R49.
+```
+
+### What the four write outcomes mean, and why they are not new words
+
+The client wrapper returns `CONFIRMED_COMMITTED`, `CONFIRMED_REJECTED`, `CONFIRMED_NOT_STARTED` and
+`OUTCOME_UNKNOWN`. These are the states S3-R10 established for `pricing.update`, reused rather than renamed,
+because two halves of one system must not hold two vocabularies for "nothing was written".
+
+The rule that makes them worth having: **`success: false` is not by itself evidence that nothing changed.**
+`01_router.gs`'s `doPost` catch returns `{ success:false, error }` with NO `zero_write` field for any exception
+thrown anywhere inside a handler — including one thrown after a `setValue` has already run. So only an explicit
+`zero_write === true` from the handler counts as proof, and everything else that is not a known unknown-action
+response is `OUTCOME_UNKNOWN`. Treating a bare `success:false` as a refusal is how a partially-applied write
+gets reported to an operator as "nothing happened".
+
+### The partial write is not hidden
+
+Apps Script has no multi-cell transaction, so the three `setValue` calls cannot be made atomic. The priority is
+written FIRST, deliberately: the two possible outcomes are then "the priority landed and the audit stamp may be
+stale" or "nothing landed" — never "the audit says someone changed it and the value did not move". Unrelated
+columns are never rewritten to simulate atomicity, because that would reintroduce exactly the collateral-write
+problem this release removes.
+
+A matching value read back after an `OUTCOME_UNKNOWN` is shown in a distinct WARN state and is explicitly NOT
+labelled a verified save: the read cannot attribute the stored value to that request rather than to a
+concurrent one, and it cannot say whether the audit fields completed.
+
+### What this release still cannot do
+
+Clearing a priority back to MISSING. There was no supported path before and there is none now; inventing one
+means a sentinel value every reader would have to learn, which is a product decision and not something to add
+inside a safety fix. The page states the limitation where an operator meets it.
+
+**STATUS: NOT DEPLOYED · NOT PUSHED · NOT SYNCED.**

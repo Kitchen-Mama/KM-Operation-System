@@ -340,7 +340,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //
 // NOTHING HERE CLAIMS A DEPLOYMENT. No Apps Script version exists for R50, Production still runs R49, and the
 // release log records R50 as NOT DEPLOYED until a user performs the sync and writes the version down.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -395,7 +395,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51';
 // S8-B1-R50 - moves WITH the release again, and for the ordinary reason: THIS FILE changed. The release above,
 // 66_'s row returning to a CARRIED stamp, this row, and the generated bundle's expected content hash all moved
 // in one commit, which is also what the stamp gate requires - a release stamp has to be minted by its own cut.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -474,7 +474,11 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // distinguishable from one that routes all of them WITHOUT calling an action to find out — which matters
 // more than usual while the feature is staged OFF, because a disabled Preview and an unsynced deployment
 // both refuse, and only the version tells them apart.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 19;
+// S8-B3-R3-CP2I (R52): 19 -> 20. ONE new route, marketplace.allocationPriority.set. It matters more than
+// usual because that action is the ONLY way a priority can be written from R52 - upsertMarketplace now
+// REFUSES the field outright - so a v19 deployment cannot store one by any route, and the frontend must be
+// able to learn that WITHOUT attempting a write to find out.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 20;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
 // F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
@@ -506,7 +510,15 @@ var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 19;
 // S3-R10: 13 -> 14. SYS_REQUIRED_ACTIONS_ gained pricing.write.status. Unlike pricing.fxReconcile, which
 // deliberately stayed out, a PAGE depends on this one: SKU Regional Details calls it whenever a pricing
 // write loses its response, which is exactly the partial-sync fault this registry exists to surface.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 14;
+// S8-B3-R3-CP2I (R52): 14 -> 16, BY TWO, because two entries arrive. The release-stamp gate asserts this
+// number moves EXACTLY as far as the list grows - so it cannot be a number somebody typed - and nothing
+// compares it for equality against a pin, so a step of two distinguishes list versions as well as a step of
+// one. The second entry is a REPAIR: `upsertMarketplace` has been routed since before this registry existed
+// and was never listed, so sysProbeRequested_ - which resolves a caller-named action ONLY through this table -
+// answered `known_to_this_build: false` for an action the deployment serves correctly. That is the
+// F1-7N-FB-4E-R2 fault exactly. The new action is listed in the SAME change that routes it, for R2's reason:
+// a write owner's absence must never be discoverable only by a save that silently fails.
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 16;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -610,7 +622,14 @@ var SYS_REQUIRED_ACTIONS_ = [
   // read that fails is visibly empty, whereas a price that did not save looks identical to one that did
   // until someone reloads the page.
   { action: 'pricing.update', handler: 'handlePricingUpdate_', used_by: 'SKU Regional Details — per-field price editor + price template import (owner = 73_)' },
-  { action: 'pricing.write.status', handler: 'handlePricingWriteStatus_', used_by: 'SKU Regional Details — read-only commit-receipt lookup after a lost write response (owner = 73_)' }
+  { action: 'pricing.write.status', handler: 'handlePricingWriteStatus_', used_by: 'SKU Regional Details — read-only commit-receipt lookup after a lost write response (owner = 73_)' },
+  // S8-B3-R3-CP2I (R52) - THE TWO `marketplaces` WRITERS, BOTH NAMED, FOR TWO DIFFERENT REASONS. The priority
+  // action is NEW and Site Priority fails closed against it (the page refuses to dispatch when the probe
+  // cannot confirm it), so its absence must be a named deployment fact. upsertMarketplace is NOT new - its
+  // absence here was the F1-7N-FB-4E-R2 defect - and from R52 it also carries a REFUSAL the frontend relies
+  // on, so a deployment serving a pre-R52 03_ is a correctness fault, not a missing feature.
+  { action: 'marketplace.allocationPriority.set', handler: 'handleSetMarketplaceAllocationPriority_', used_by: 'Site Priority — the bounded allocation_priority writer (canonical-collision refusal + marketplace_id identity guard + mandatory compare-and-set; owner = 03_)' },
+  { action: 'upsertMarketplace', handler: 'handleUpsertMarketplace_', used_by: 'Add Marketplace — the marketplace master upsert (owner = 03_)' }
   // PRICING-R3 — pricing.fxReconcile is DELIBERATELY ABSENT from this list, and that is the same restraint
   // recorded on SYS_REQUIRED_ACTION_LIST_VERSION_ above. This list is the actions PAGES depend on, probed so
   // that a partial sync stops looking like a transport fault; a reconciliation is run by an operator, and
@@ -674,7 +693,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -818,7 +837,14 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment\'s DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read \u2014 it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed. R51 ADDS FOUR ACTIONS (the Overseas Allocation Preview job: start/status/result/cancel), which is why the action-contract version moves 18 -> 19 in this release' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed. R51 ADDS FOUR ACTIONS (the Overseas Allocation Preview job: start/status/result/cancel), which is why the action-contract version moves 18 -> 19 in this release. R52 ADDS ONE MORE - marketplace.allocationPriority.set - moving the action contract 19 -> 20; a project holding a pre-R52 router cannot route a priority write at all, and because upsertMarketplace simultaneously stops accepting the field, that is a total loss of the capability rather than a degraded one' },
+  // S8-B3-R3-CP2I (R52) - 03_ JOINS THIS MANIFEST, HAVING OWNED A MASTER-TABLE WRITE WITHOUT A STAMP. 73_'s
+  // entry above states the rule: a WRITE owner is the worst partial sync. 03_ met that description for every
+  // round it has existed and had no row here, so a stale copy was invisible to mixed_deployment and
+  // discoverable only by a save behaving wrongly. From R52 the router dispatches a NEW action here, so a
+  // project holding a pre-R52 03_ beside an R52 01_ routes it into an undefined handler. The handler SYMBOL
+  // probe below is the independent second gate; this row names the FILE to re-copy.
+  { file: '03_master_data_handlers.gs', symbol: 'MD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52', owns: 'the master-data write surface: the marketplace upsert (Add Marketplace) and, from R52, the bounded marketplace.allocationPriority.set writer - the ONLY writer of marketplaces.allocation_priority, with the canonical-collision refusal, the marketplace_id identity guard, the mandatory compare-and-set and the three-column write limit. R52 also makes upsertMarketplace REFUSE any payload carrying allocation_priority, and puts both writers on the shared script lock the sheet previously had no writer taking' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was

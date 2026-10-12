@@ -213,9 +213,22 @@ section('B — THE FOUR ACTIONS ARE ROUTED AND THE CONTRACT MOVED ONCE');
     ok(F74.indexOf('function ' + handlers[i] + '(') !== -1, 'B' + (i + 1) + 'a and ' + handlers[i] + ' is DEFINED');
     ok(ROUTER.indexOf(handlers[i] + '(body)') !== -1, 'B' + (i + 1) + 'b and the route dispatches to it');
   });
-  ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 19;/.test(HEALTH), 'B5 the action contract is 19');
+  // S8-B3-R3-CP2I - EQUALITY-WITH-NOW, REPLACED BY THE TWO CLAIMS THIS ROUND ACTUALLY OWNS.
+  //
+  // These read `=== 19` and `=== 19`, which is the fault this repository has a name for: an assertion PINNED
+  // AT ONE END. The true statement R51 makes is that its four routes moved the contract to 19 and that the
+  // client pin agrees with the deployment. The literal 19 turned the first half into a claim that NO LATER
+  // RELEASE MAY EVER ADD A ROUTE - and R52 adds one, so a true statement about R51 would have failed here
+  // for a tree that is correct. Exactly the shape of s7-r4's H2b and _release-order.js's token series.
+  //
+  // What survives is directional plus relational, and the relational half is the one with teeth: a client
+  // pinned BELOW its deployment would make a half-synced project and a correctly synced one report the same
+  // number, which is the whole reason the pin is held to EQUALITY rather than to "at least".
+  var _ac = Number((/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(HEALTH) || [])[1]);
   var DBAPI = fs.readFileSync(path.join(REPO, 'assets/js/api/operation-system-db-api.js'), 'utf8');
-  ok(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 19;/.test(DBAPI), 'B6 and the client pin AGREES at 19');
+  var _pin = Number((/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(DBAPI) || [])[1]);
+  ok(_ac >= 19, 'B5 the action contract is at or after 19 - the round these four routes were added (' + _ac + ')');
+  eq(_pin, _ac, 'B6 and the client pin AGREES with the deployment contract, derived rather than restated');
   // SYS_REQUIRED_ACTIONS_ is the list of actions PAGES depend on. No page calls the Preview, so it must NOT grow.
   var reg = (/var SYS_REQUIRED_ACTIONS_ = \[[\s\S]*?\n\];/.exec(HEALTH) || [''])[0];
   ok(reg.indexOf('overseasAllocationPreview') === -1,

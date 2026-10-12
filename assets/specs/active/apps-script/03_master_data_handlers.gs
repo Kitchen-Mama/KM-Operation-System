@@ -6,6 +6,45 @@
 //       Structure-only split — no behavior change vs apps-script-web-app.gs.
 // ============================================================
 
+// S8-B3-R3-CP2I (R52) - MODULE BUILD STAMP. 03_ owns a master-table WRITE and had no manifest row, so a stale
+// copy was invisible to the partial-sync detector (73_'s entry states the rule: a WRITE owner is the worst
+// partial sync). From R52 the router dispatches marketplace.allocationPriority.set here. The SYMBOL probe in
+// 63_ is the independent second gate; this stamp names WHICH FILE to re-copy. It records the round this file
+// last changed in, never the release id.
+var MD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52';
+
+// Shared script-lock budget for BOTH `marketplaces` writers. getScriptLock() is ONE lock for the WHOLE project
+// (see 20_campaign_write_handlers.gs), so this names a bound, not a second lock. 30000 ms is what ~20 handlers
+// across 11 files already use. A BOUND THAT CAN BE EXCEEDED: gapJobContinue_ holds this same lock for up to
+// GAP_JOB_WORKER_BUDGET_MS_ = 240000 ms, so a marketplace write inside a Gap run REFUSES rather than queues -
+// already true of every other locked writer, and now also true of Add Marketplace, which was unlocked before.
+var MARKETPLACE_WRITE_LOCK_MS_ = 30000;
+
+// The section 45.A ladder, server side, in ONE place. MISSING, INVALID and a VALID ZERO are three different
+// answers. Mirrors normalizeMarketplaceRecord deliberately: trim() first so a whitespace-only cell is MISSING
+// and never Number(' ') === 0, then Number() rather than parseFloat() so '1,000' and '7abc' are INVALID rather
+// than confidently wrong numbers. A NEGATIVE is INVALID here rather than preserved - the browser normalizer
+// keeps one so section 40's RangeError surfaces, but this is a WRITE gate, and admitting a value the formula
+// will refuse only moves the failure somewhere less useful.
+function mpClassifyPriority_(v) {
+  if (v === undefined || v === null) return { state: 'MISSING', value: null, raw: '' };
+  var t = String(v).trim();
+  if (t === '') return { state: 'MISSING', value: null, raw: '' };
+  var n = Number(t);
+  if (!isFinite(n)) return { state: 'INVALID', value: null, raw: t };
+  if (n < 0) return { state: 'INVALID', value: null, raw: t };
+  return { state: 'SET', value: n, raw: t };
+}
+
+// A refusal that wrote nothing, and SAYS SO. `zero_write: true` is an assertion of EVIDENCE: the client treats
+// its absence as "this may have mutated", so it may only be set on a path that provably returned before the
+// first setValue.
+function mpRefuse_(code, error, extra) {
+  var out = { success: false, code: code, error: error, zero_write: true };
+  if (extra) { for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) out[k] = extra[k]; } }
+  return jsonResponse_(out);
+}
+
 // ========================================
 // Action Handlers
 // ========================================
@@ -571,6 +610,50 @@ function handleUpsertMarketplace_(body) {
   if (!marketplace) return jsonResponse_({ success: false, error: 'Missing marketplace' });
   if (!currency) return jsonResponse_({ success: false, error: 'Missing currency' });
 
+  // S8-B3-R3-CP2I (R52) - THIS WRITER NO LONGER SETS allocation_priority. AT ALL.
+  //
+  // It could, and that was the problem: it accepted a priority with NO canonical-collision check, NO
+  // marketplace_id guard and NO compare-and-set, and on no match APPENDED A NEW ROW carrying it. Every
+  // protection R52 adds would have had an unguarded door beside it, one field away on an action that has
+  // existed for rounds. So the door is CLOSED rather than guarded.
+  //
+  // `hasOwnProperty`, NOT a truthiness or `!== ''` test. 0 is a VALID priority, and '' and null are the shapes a
+  // half-built payload arrives in; every one of them means the caller believed it was setting a priority, and a
+  // caller who believed that must be told otherwise rather than have the field silently dropped - a silent drop
+  // is how a save reports success and stores nothing, which is the defect this whole sequence began with.
+  //
+  // NORMAL ADD MARKETPLACE IS UNTOUCHED: a payload with no allocation_priority key never reaches this branch.
+  if (Object.prototype.hasOwnProperty.call(body, 'allocation_priority')) {
+    return mpRefuse_('PRIORITY_WRITE_NOT_SUPPORTED_HERE',
+      'upsertMarketplace no longer writes allocation_priority. Use the marketplace.allocationPriority.set action, '
+      + 'which verifies canonical identity and requires a compare-and-set. Nothing was written.',
+      { action: 'upsertMarketplace', required_action: 'marketplace.allocationPriority.set' });
+  }
+
+  // THE SHARED LOCK. This was the sheet's ONLY writer and took no lock, so a lock on the new priority handler
+  // alone would have serialised that handler against itself and nothing else. The lock is per-SCRIPT; both
+  // writers taking it is what makes either mean anything.
+  //
+  // TAKEN AFTER THE PURE VALIDATION ABOVE: a zero-write refusal should not queue behind a shipment import to be
+  // told it is invalid (the FC-SUMMARY-R2B-A3-R6 lesson). NOT the full two-pass treatment that handler needed -
+  // this one does a SINGLE whole-sheet read of a small table and its common path writes.
+  var mpLock = LockService.getScriptLock();
+  if (!mpLock.tryLock(MARKETPLACE_WRITE_LOCK_MS_)) {
+    return mpRefuse_('LOCK_UNAVAILABLE',
+      'Could not acquire the script lock (another write is in progress). Nothing was written; please retry.');
+  }
+  try {
+    return upsertMarketplaceLocked_(body, company, country, marketplace, currency);
+  } finally {
+    try { mpLock.releaseLock(); } catch (_eUml) {}
+  }
+}
+
+// The body of handleUpsertMarketplace_, UNCHANGED, moved behind the lock. A separate function rather than an
+// indented block so the diff shows the lock and nothing else: every line below behaves as it did in R49,
+// including the blank-only marketplace_alias auto-fill and the unconditional display-name / currency / status
+// writes, which this round deliberately does not touch.
+function upsertMarketplaceLocked_(body, company, country, marketplace, currency) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('marketplaces');
   if (!sheet) return jsonResponse_({ success: false, error: 'marketplaces sheet not found' });
@@ -589,14 +672,14 @@ function handleUpsertMarketplace_(body) {
   var displayName = String(body.marketplace_display_name || '').trim() || marketplace;
   var marketplaceAlias = String(body.marketplace_alias || '').trim();
   var status = String(body.status || 'active').trim();
-  // Fulfillment model (platform_fulfilled | self_fulfilled | hybrid). Written only if the column
-  // exists. allocation_priority is optional (numeric; higher = higher priority).
+  // Fulfillment model (platform_fulfilled | self_fulfilled | hybrid). Written only if the column exists.
+  // (The allocation_priority sentence that used to sit here is gone with the write it described - R52.)
   var fulfillmentModel = String(body.fulfillment_model || '').trim();
   var VALID_FULFILLMENT_MODELS_ = ['platform_fulfilled', 'self_fulfilled', 'hybrid'];
   if (fulfillmentModel && VALID_FULFILLMENT_MODELS_.indexOf(fulfillmentModel) === -1) {
     return jsonResponse_({ success: false, error: 'Invalid fulfillment_model. Valid: ' + VALID_FULFILLMENT_MODELS_.join(', ') });
   }
-  var allocationPriority = (body.allocation_priority !== undefined && body.allocation_priority !== '') ? body.allocation_priority : '';
+  // allocation_priority is NOT read here any more - see the refusal in handleUpsertMarketplace_ above.
   var updatedBy = String(body.updated_by || 'operation-system').trim();
   var note = body.note !== undefined ? String(body.note).trim() : '';
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
@@ -625,7 +708,6 @@ function handleUpsertMarketplace_(body) {
     if (col('currency') !== -1) sheet.getRange(targetRow, col('currency') + 1).setValue(currency);
     if (col('status') !== -1) sheet.getRange(targetRow, col('status') + 1).setValue(status);
     if (fulfillmentModel && col('fulfillment_model') !== -1) sheet.getRange(targetRow, col('fulfillment_model') + 1).setValue(fulfillmentModel);
-    if (allocationPriority !== '' && col('allocation_priority') !== -1) sheet.getRange(targetRow, col('allocation_priority') + 1).setValue(allocationPriority);
     if (body.note !== undefined && col('note') !== -1) sheet.getRange(targetRow, col('note') + 1).setValue(note);
     if (col('updated_by') !== -1) sheet.getRange(targetRow, col('updated_by') + 1).setValue(updatedBy);
     if (col('updated_at') !== -1) sheet.getRange(targetRow, col('updated_at') + 1).setValue(now);
@@ -645,7 +727,6 @@ function handleUpsertMarketplace_(body) {
   // marketplace_alias defaults to marketplace when blank/not provided (MVP: alias == marketplace).
   if (col('marketplace_alias') !== -1) newRow[col('marketplace_alias')] = marketplaceAlias || marketplace;
   if (col('fulfillment_model') !== -1) newRow[col('fulfillment_model')] = fulfillmentModel;
-  if (col('allocation_priority') !== -1 && allocationPriority !== '') newRow[col('allocation_priority')] = allocationPriority;
   if (col('currency') !== -1) newRow[col('currency')] = currency;
   if (col('status') !== -1) newRow[col('status')] = status;
   if (col('created_by') !== -1) newRow[col('created_by')] = updatedBy;
@@ -656,6 +737,250 @@ function handleUpsertMarketplace_(body) {
   sheet.appendRow(newRow);
 
   return jsonResponse_({ success: true, data: { marketplace_id: id, status: 'created', company: company, country: country, marketplace: marketplace } });
+}
+
+
+/**
+ * S8-B3-R3-CP2I (R52) - marketplace.allocationPriority.set
+ * ---------------------------------------------------------------------------------------------------------------
+ * THE ONLY WRITER OF `marketplaces.allocation_priority`, AND BOUNDED BY CONSTRUCTION.
+ *
+ * WHAT IT FIXES. Site Priority saved through `upsertMarketplace`, which resolved its target by RAW TRIMMED
+ * company + country + marketplace (so UK and GB are different rows), APPENDED A NEW ROW on no match, wrote
+ * display_name / currency / status unconditionally and auto-filled a blank marketplace_alias, SKIPPED the
+ * priority silently when the column was absent while reporting success, and had no compare-and-set - so two
+ * operators on stale pages both "succeeded" and the later erased the earlier with no trace.
+ *
+ * THIS HANDLER DOES EXACTLY ONE THING: it sets `allocation_priority` on ONE row it has already proved is the
+ * row the caller meant, or it refuses and writes nothing. It NEVER appends, merges, renumbers or backfills,
+ * and touches no column other than allocation_priority, updated_by and updated_at.
+ *
+ * SIX GATES, ALL BEFORE THE FIRST setValue:
+ *   1. CANONICAL IDENTITY AVAILABLE. KMCID owns UK = GB and lives in 90_; a project missing it REFUSES. The
+ *      guarded toUpperCase() fallback producers use would fail OPEN here - it does not fold UK to GB, so the
+ *      collision gate would quietly become a weaker check that passes.
+ *   2. CANONICAL UNIQUENESS -> IDENTITY_COLLISION. Nothing written, nothing merged; raw spellings reported.
+ *   3. EXACTLY ONE RAW TARGET. Zero -> TARGET_NOT_FOUND. More than one -> DUPLICATE_TARGET.
+ *   4. marketplace_id MATCHES. No id at all -> TARGET_IDENTITY_UNVERIFIABLE: a guard that disables itself when
+ *      its input is missing is not a guard.
+ *   5. COMPARE-AND-SET, mandatory. `expected_allocation_priority_state` is required and must be SET or MISSING;
+ *      a bare null is indistinguishable from an absent field after a JSON round trip, and "mandatory" has to
+ *      mean there is no unguarded path. MISSING is not satisfied by an INVALID stored value - an unreadable
+ *      cell is not an empty one, and overwriting it would destroy the evidence of a bad row. SET compares
+ *      numerically, so a stored 0 satisfies an expected 0 while a stored blank does not.
+ *   6. A VALID PRIORITY. Missing, blank, whitespace, non-numeric, non-finite and negative are refused; an
+ *      explicit 0 is accepted, because 0 is the lowest VALID weight and not an absence.
+ *
+ * There is no way to clear a priority back to MISSING through this action, exactly as there was none before.
+ * A sentinel every reader would have to learn is a product decision, not something to invent in a safety fix.
+ *
+ * ZERO-WRITE IS AN ASSERTION OF EVIDENCE. Every refusal above returns `zero_write: true` from a path that
+ * provably ran before the first setValue. Once the write block is entered, failure returns `zero_write: false`
+ * and WRITE_OUTCOME_UNKNOWN - Apps Script has no multi-cell transaction, so a death between the priority write
+ * and the audit stamp leaves exactly the inconsistency this says it leaves. Claiming otherwise would be the
+ * guess-presented-as-fact S3-R10 removed from the pricing path.
+ */
+function handleSetMarketplaceAllocationPriority_(body) {
+  body = body || {};
+  function s_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+
+  var company = s_(body.company);
+  var country = s_(body.country);
+  var marketplace = s_(body.marketplace);
+  var expectedId = s_(body.expected_marketplace_id);
+  var updatedBy = s_(body.updated_by) || 'site-priority-page';
+
+  if (!company) return mpRefuse_('MISSING_SCOPE', 'Missing company. Nothing was written.');
+  if (!country) return mpRefuse_('MISSING_SCOPE', 'Missing country. Nothing was written.');
+  if (!marketplace) return mpRefuse_('MISSING_SCOPE', 'Missing marketplace. Nothing was written.');
+  if (!expectedId) {
+    return mpRefuse_('TARGET_IDENTITY_UNVERIFIABLE',
+      'expected_marketplace_id is required: without it this write cannot prove it is changing the row the '
+      + 'operator was looking at. Nothing was written.');
+  }
+
+  // THE VALUE. Refused before anything else is read, because an invalid request should cost no sheet access.
+  var want = mpClassifyPriority_(body.allocation_priority);
+  if (want.state !== 'SET') {
+    return mpRefuse_('INVALID_PRIORITY',
+      'allocation_priority must be a finite number greater than or equal to 0. A missing, blank or unreadable '
+      + 'value is NOT zero and is refused rather than coerced. Nothing was written.',
+      { received_state: want.state });
+  }
+
+  // COMPARE-AND-SET. Mandatory; see the header.
+  var casState = s_(body.expected_allocation_priority_state).toUpperCase();
+  if (casState !== 'SET' && casState !== 'MISSING') {
+    return mpRefuse_('CAS_REQUIRED',
+      'expected_allocation_priority_state is required and must be SET or MISSING. This action has no unguarded '
+      + 'write path. Nothing was written.');
+  }
+  var casExpected = null;
+  if (casState === 'SET') {
+    var casCls = mpClassifyPriority_(body.expected_allocation_priority);
+    if (casCls.state !== 'SET') {
+      return mpRefuse_('CAS_REQUIRED',
+        'expected_allocation_priority_state is SET, so expected_allocation_priority must be a finite number '
+        + 'greater than or equal to 0. Nothing was written.',
+        { received_state: casCls.state });
+    }
+    casExpected = casCls.value;
+  }
+
+  // CANONICAL IDENTITY OWNER - FAIL CLOSED. See gate 1 in the header.
+  if (typeof KMCID === 'undefined' || !KMCID || typeof KMCID.canonicalCountryCode !== 'function') {
+    return mpRefuse_('CANONICAL_IDENTITY_UNAVAILABLE',
+      'The canonical country identity owner (KMCID, provided by the generated bundle) is not available in this '
+      + 'deployment, so a canonical-collision check cannot be performed. Re-copy the generated bundle file and '
+      + 'publish a new deployment version. Nothing was written.');
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(MARKETPLACE_WRITE_LOCK_MS_)) {
+    return mpRefuse_('LOCK_UNAVAILABLE',
+      'Could not acquire the script lock (another write is in progress). Nothing was written; please retry.');
+  }
+  try {
+    return mpSetAllocationPriorityLocked_(company, country, marketplace, expectedId,
+      casState, casExpected, want.value, updatedBy);
+  } finally {
+    try { lock.releaseLock(); } catch (_eSap) {}
+  }
+}
+
+// The gates and the write, under the lock, on a read taken under the lock. Split out so the lock acquisition and
+// its `finally` are one readable unit and every `return` below is covered by that release.
+function mpSetAllocationPriorityLocked_(company, country, marketplace, expectedId,
+                                        casState, casExpected, newValue, updatedBy) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('marketplaces');
+  if (!sheet) return mpRefuse_('SHEET_NOT_FOUND', 'marketplaces sheet not found. Nothing was written.');
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 1) {
+    return mpRefuse_('SHEET_NOT_FOUND', 'marketplaces sheet has no header row. Nothing was written.');
+  }
+  var headers = data[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  function col(n) { return headers.indexOf(n); }
+
+  var companyCol = col('company'), countryCol = col('country'), mpCol = col('marketplace');
+  if (companyCol === -1 || countryCol === -1 || mpCol === -1) {
+    return mpRefuse_('SCHEMA_MISSING_COLUMN',
+      'Required columns (company, country, marketplace) not found in the marketplaces header. Nothing was written.');
+  }
+  // THE COLUMN THIS ACTION EXISTS TO WRITE. Its absence is a REFUSAL, never a silent skip - a skip is how the
+  // previous writer reported success for a save that stored nothing.
+
+  var priCol = col('allocation_priority');
+  if (priCol === -1) {
+    return mpRefuse_('SCHEMA_MISSING_COLUMN',
+      'The allocation_priority column does not exist in the marketplaces sheet, so this value cannot be stored. '
+      + 'Provision the column first. Nothing was written.');
+  }
+  var idCol = col('marketplace_id');
+  if (idCol === -1) {
+    return mpRefuse_('SCHEMA_MISSING_COLUMN',
+      'The marketplace_id column does not exist in the marketplaces sheet, so the target identity cannot be '
+      + 'verified. Nothing was written.');
+  }
+
+  // GATES 2 + 3. One pass; a RAW match is always also a CANONICAL match, so both lists are built together.
+  var canonWanted = KMCID.canonicalCountryCode(country);
+  var canonRows = [], rawRows = [];
+  for (var i = 1; i < data.length; i++) {
+    var rc = String(data[i][companyCol] === undefined || data[i][companyCol] === null ? '' : data[i][companyCol]).trim();
+    var rk = String(data[i][countryCol] === undefined || data[i][countryCol] === null ? '' : data[i][countryCol]).trim();
+    var rm = String(data[i][mpCol] === undefined || data[i][mpCol] === null ? '' : data[i][mpCol]).trim();
+    if (rc === '' && rk === '' && rm === '') continue;            // trailing filler row, not a marketplace
+    if (rc !== company || rm !== marketplace) continue;           // company + marketplace are RAW, case-sensitive
+    if (KMCID.canonicalCountryCode(rk) === canonWanted) canonRows.push({ i: i, country: rk });
+    if (rk === country) rawRows.push(i);
+  }
+
+  if (canonRows.length > 1) {
+    return mpRefuse_('IDENTITY_COLLISION',
+      'This marketplace exists more than once under canonical country identity, so a priority written to either '
+      + 'row would be ambiguous. Resolve the duplicate in the marketplaces sheet first. Nothing was written, '
+      + 'nothing was merged and nothing was renumbered.',
+      { canonical_country: canonWanted,
+        conflicting_country_values: canonRows.map(function (r) { return r.country; }) });
+  }
+  if (canonRows.length === 0 || rawRows.length === 0) {
+    return mpRefuse_('TARGET_NOT_FOUND',
+      'No marketplace row matches this company, country and marketplace. This action never creates a row. '
+      + 'Nothing was written.');
+  }
+  if (rawRows.length > 1) {
+    return mpRefuse_('DUPLICATE_TARGET',
+      'More than one marketplace row matches this company, country and marketplace exactly. Resolve the '
+      + 'duplicate in the marketplaces sheet first. Nothing was written.');
+  }
+
+  var rowIdx = rawRows[0];
+  var rowNum = rowIdx + 1;
+
+  // GATE 4. The row must carry an id, and it must be the id the operator's page was showing.
+  var storedId = String(data[rowIdx][idCol] === undefined || data[rowIdx][idCol] === null ? '' : data[rowIdx][idCol]).trim();
+  if (!storedId) {
+    return mpRefuse_('TARGET_IDENTITY_UNVERIFIABLE',
+      'The matching marketplace row carries no marketplace_id, so this write cannot prove it is changing the '
+      + 'intended row. Nothing was written.');
+  }
+  if (storedId !== expectedId) {
+    return mpRefuse_('TARGET_CHANGED',
+      'The marketplace row now stored under this identity is not the one this save was prepared against. '
+      + 'Refresh and try again. Nothing was written.',
+      { expected_marketplace_id: expectedId, stored_marketplace_id: storedId });
+  }
+
+  // GATE 5. Compare-and-set, on the value read under the lock.
+  var cur = mpClassifyPriority_(data[rowIdx][priCol]);
+  if (casState === 'MISSING') {
+    if (cur.state !== 'MISSING') {
+      return mpRefuse_('PRIORITY_CHANGED',
+        'This save expected no priority to be set, but the stored cell is no longer empty. Refresh to see the '
+        + 'current value before saving. Nothing was written.',
+        { expected_state: 'MISSING', stored_state: cur.state });
+    }
+  } else if (cur.state !== 'SET' || Number(cur.value) !== Number(casExpected)) {
+    return mpRefuse_('PRIORITY_CHANGED',
+      'The stored priority is not the value this save was prepared against - someone else may have changed it. '
+      + 'Refresh to see the current value before saving. Nothing was written.',
+      { expected_state: 'SET', expected_value: casExpected,
+        stored_state: cur.state, stored_value: cur.state === 'SET' ? cur.value : null });
+  }
+
+  // EVERYTHING ABOVE THIS LINE IS PROVABLY ZERO-WRITE. EVERYTHING BELOW IT IS NOT.
+  //
+  // Apps Script offers no multi-cell transaction, and rewriting unrelated columns to fake atomicity would be a
+  // worse lie than the one it hides. The ORDER is deliberate: the business value goes first, so the outcomes
+  // are "the priority landed and the audit stamp may be stale" or "nothing landed" - never "the audit says
+  // someone changed it and the value did not move".
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var ubCol = col('updated_by'), uaCol = col('updated_at');
+  try {
+    sheet.getRange(rowNum, priCol + 1).setValue(newValue);
+    if (ubCol !== -1) sheet.getRange(rowNum, ubCol + 1).setValue(updatedBy);
+    if (uaCol !== -1) sheet.getRange(rowNum, uaCol + 1).setValue(now);
+    // FLUSH BEFORE ACK. A success returned while writes are still pending is a success the caller cannot rely
+    // on; this is the point at which the handler stops being able to say "it may not have landed".
+    SpreadsheetApp.flush();
+  } catch (eW) {
+    // NO zero_write CLAIM HERE, AND THAT IS THE WHOLE POINT. We are past the first setValue, so the only honest
+    // answer is that the outcome is unknown. The client resolves this by READING, never by resending.
+    return jsonResponse_({ success: false, code: 'WRITE_OUTCOME_UNKNOWN', zero_write: false,
+      error: 'The priority write did not complete and its outcome is UNKNOWN - it may or may not have been '
+        + 'applied, and the audit fields may be incomplete. Do not re-save; refresh and check the stored value. '
+        + ((eW && eW.message) ? String(eW.message) : String(eW)) });
+  }
+
+  return jsonResponse_({ success: true, zero_write: false, data: {
+    marketplace_id: storedId,
+    company: company, country: country, marketplace: marketplace,
+    canonical_country: canonWanted,
+    allocation_priority: newValue,
+    updated_by: updatedBy, updated_at: now
+  } });
 }
 
 /**

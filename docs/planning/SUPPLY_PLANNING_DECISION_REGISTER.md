@@ -2386,3 +2386,113 @@ sync begins.
 The runbook now carries the approved A-I sequence, a step-B exposure measurement, stop condition S-4, a
 fourth rollback precondition (**P-8: the previous version must remain SELECTABLE, not merely recorded** — a
 number that cannot be chosen is not a rollback target), and `U-6` for the unverified exposure.
+
+---
+
+### D-S8-B3-16 — `marketplaces.allocation_priority` has exactly ONE writer — **FROZEN (R52)**
+
+**Decision.** `marketplace.allocationPriority.set`, owned by `03_master_data_handlers.gs`, is the only writer of
+`marketplaces.allocation_priority`. `upsertMarketplace` **REFUSES** any request containing that field — including
+`0`, `''` and `null` — before any mutation. A payload carrying no `allocation_priority` key at all is normal Add
+Marketplace and keeps every existing semantic.
+
+**Why a dedicated ACTION and not a guarded FIELD.** An old deployment *ignores* an unknown field but *cannot*
+ignore an unknown action. A guard field would be silently dropped by a pre-R52 project and the write would
+proceed down the unguarded path — the exact failure the guard exists to prevent. An unknown action falls through
+to `01_router.gs`'s terminal response and refuses before any sheet is opened.
+
+**Why the old door is CLOSED rather than guarded.** `upsertMarketplace` could write the column with no
+canonical-collision check, no `marketplace_id` identity guard and no compare-and-set, and on no match it
+**appended a new row**. Leaving that reachable would have placed an unguarded door beside every protection R52
+adds, one field away on an action that has existed for rounds.
+
+**What the bounded handler may touch.** `allocation_priority`, `updated_by`, `updated_at`. Three cells, one row,
+already identified. It never appends, merges, renumbers or backfills.
+
+---
+
+### D-S8-B3-17 — Compare-and-set is MANDATORY and carries its own STATE — **FROZEN (R52)**
+
+**Decision.** `expected_allocation_priority_state` is **required** and must be `SET` or `MISSING`; when `SET`,
+`expected_allocation_priority` must be a finite number ≥ 0. A request without it is refused with `CAS_REQUIRED`.
+"Mandatory" means **there is no unguarded path**, not "checked when supplied" — the client refuses to dispatch
+such a payload and the handler refuses to act on one.
+
+**Why a STATE and not a bare null.** After a JSON round trip an absent field and a null field are
+indistinguishable, and the difference between them is precisely the difference between "I believe this cell is
+empty" and "I forgot to say". MISSING is sent as a state and never as a number, because a blank cell is not a
+zero — the §45.A rule every layer beneath this has already been repaired for.
+
+**An INVALID stored value does not satisfy MISSING.** An unreadable cell is not an empty one; overwriting it
+silently would destroy the evidence of a bad row. It refuses with `PRIORITY_CHANGED`.
+
+**What this buys.** Two operators holding stale pages can no longer overwrite each other without trace. The
+second is refused and told to Refresh; after refreshing, the same save succeeds. The gate is staleness, not a
+lock-out.
+
+---
+
+### D-S8-B3-18 — Both `marketplaces` writers share the script lock — **FROZEN (R52)**
+
+**Decision.** `handleUpsertMarketplace_` and `handleSetMarketplaceAllocationPriority_` both take
+`LockService.getScriptLock()` at `tryLock(30000)` and release in `finally`.
+
+**Why the legacy writer had to change too.** The lock is per-SCRIPT. `handleUpsertMarketplace_` was the sheet's
+**only** writer and took no lock at all, so a lock added to the new handler alone would have serialised that
+handler against itself and against nothing else — security theatre.
+
+**The cost, accepted.** Add Marketplace gains one refusal it never had: `LOCK_UNAVAILABLE`, zero-write. This is a
+new *instance* of a behaviour ~20 handlers across 11 files already have, not a new *class* of one.
+
+**A bound that can be exceeded, recorded rather than discovered.** `gapJobContinue_` holds this same lock across
+its entire slice loop, up to `GAP_JOB_WORKER_BUDGET_MS_` = 240 000 ms. A marketplace write landing inside a Gap
+Materialization run therefore **refuses rather than queues**. Already true of every other locked writer; now also
+true of Add Marketplace.
+
+**What the lock does NOT do.** It serialises executions of *this Apps Script project only*. It does not prevent,
+and cannot detect, a human editing the sheet in the browser, another Apps Script project, a Sheets API write or
+an add-on. **No guarantee of detecting every external edit.**
+
+---
+
+### D-S8-B3-19 — `success: false` is not evidence of a zero write — **FROZEN (R52)**
+
+**Decision.** The four outcome states are the ones S3-R10 established for `pricing.update`, reused verbatim:
+`CONFIRMED_COMMITTED`, `CONFIRMED_REJECTED`, `CONFIRMED_NOT_STARTED`, `OUTCOME_UNKNOWN`. Two halves of one system
+must not hold two vocabularies for "nothing was written".
+
+**The rule.** `01_router.gs`'s `doPost` catch returns `{ success:false, error }` with **no `zero_write` field**
+for any exception thrown anywhere inside a handler — including one thrown *after* a `setValue` has run. So only
+an explicit `zero_write === true` from the handler counts as proof. Everything else that is not a recognised
+unknown-action response is `OUTCOME_UNKNOWN`. Treating a bare `success:false` as a refusal is how a
+partially-applied write gets reported to an operator as "nothing happened".
+
+**Partial writes are not hidden.** Apps Script has no multi-cell transaction. The priority is written **first**,
+deliberately: the outcomes are then "the priority landed and the audit stamp may be stale" or "nothing landed" —
+never "the audit says someone changed it and the value did not move". Unrelated columns are **never** rewritten
+to simulate atomicity.
+
+**A matching value after an UNKNOWN outcome is NOT a confirmed save.** The read cannot attribute the stored value
+to that request rather than to a concurrent one, and cannot say whether the audit columns completed. It is shown
+in a distinct WARN state and labelled unconfirmed. **No automatic resend, ever.**
+
+**OPEN, not closed by R52.** Closing the attribution gap needs a write-receipt store (`write_id` plus a status
+lookup, as `pricing.update` has). Deliberately not proposed this round: the CAS plus the identity-safe read-back
+is proportionate for a single weight on one row, and the residual limit is recorded here rather than papered over.
+
+---
+
+### D-S8-B3-20 — Read-back verifies IDENTITY, not just value — **FROZEN (R52)**
+
+**Decision.** After a save, the page re-reads through the reference owner and checks **four** things before the
+word "verified" is used: canonical uniqueness is still 1 · the raw company/country/marketplace are the ones sent ·
+the row's `marketplace_id` equals the one the save was prepared against · the stored priority equals the request.
+
+**Why.** A read-back that asks only "does some row now show 90?" is satisfied by a different marketplace, by a
+duplicate row, or by a value somebody else wrote. That is the vacuous check CP2D removed once already, and
+re-admitting it in a weaker form would undo the round that found it.
+
+**Cache invalidation is tied to CONFIRMED success only.** One key — `marketplaces` — and nothing else. A refusal
+invalidates nothing. An unknown outcome forces a fresh read through the existing `invalidate(key)` mechanism,
+because the writer never reached its own invalidation and a memoized answer would "prove" the value was not
+stored without ever asking the server.

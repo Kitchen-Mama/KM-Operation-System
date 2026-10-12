@@ -133,8 +133,8 @@ var KM_ROUTE_ASSETS_ = {
             // lookup resolves `UK` against the ISO `GB` through it (D-S8-C1-2). KMCID is the same owner
             // KMMSA / 43_ / 71_ use, and is itself a declared mirror of this page's frozen IRCountry alias
             // table, so this borrows one authority rather than introducing a second.
-            'assets/js/core/supply-planning-country-identity.js?v=r50-irpriority-20261010',
-            'assets/js/pages/inventory-replenishment.js?v=r50-irpriority-20261010'
+            'assets/js/core/supply-planning-country-identity.js?v=r52-prioritywrite-20261012',
+            'assets/js/pages/inventory-replenishment.js?v=r52-prioritywrite-20261012'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -163,8 +163,8 @@ var KM_ROUTE_ASSETS_ = {
     'site-priority': {
         sectionId: 'site-priority-section',
         scripts: [
-            'assets/js/core/supply-planning-country-identity.js?v=r50-irpriority-20261010',
-            'assets/js/pages/site-priority.js?v=r50-irpriority-20261010'
+            'assets/js/core/supply-planning-country-identity.js?v=r52-prioritywrite-20261012',
+            'assets/js/pages/site-priority.js?v=r52-prioritywrite-20261012'
         ],
         partial: { key: 'site-priority', url: 'assets/html/pages/site-priority.html',
             target: '#site-priority-mount' },
@@ -173,13 +173,13 @@ var KM_ROUTE_ASSETS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=r50-irpriority-20261010',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r50-irpriority-20261010',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r50-irpriority-20261010',
-            'assets/js/product-strategy/psb-selectors.js?v=r50-irpriority-20261010',
-            'assets/js/product-strategy/psb-chart-layout.js?v=r50-irpriority-20261010',
-            'assets/js/product-strategy/psb-board-ui.js?v=r50-irpriority-20261010',
-            'assets/js/pages/product-strategy-board.js?v=r50-irpriority-20261010'
+            'assets/js/product-strategy/psb-data-contract.js?v=r52-prioritywrite-20261012',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r52-prioritywrite-20261012',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r52-prioritywrite-20261012',
+            'assets/js/product-strategy/psb-selectors.js?v=r52-prioritywrite-20261012',
+            'assets/js/product-strategy/psb-chart-layout.js?v=r52-prioritywrite-20261012',
+            'assets/js/product-strategy/psb-board-ui.js?v=r52-prioritywrite-20261012',
+            'assets/js/pages/product-strategy-board.js?v=r52-prioritywrite-20261012'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },

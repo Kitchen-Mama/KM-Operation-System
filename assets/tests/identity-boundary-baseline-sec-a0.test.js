@@ -185,12 +185,14 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   // action here. They are gated OFF by OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ and write only their own Script
   // Properties and triggers — no business row — but the count moves because the SURFACE moved, and that is
   // what gets counted.
-  eq(s.all.length, 147, 'B1 147 actions are routed — the whole anonymous surface');
+  // S8-B3-R3-CP2I (R52): 147 -> 148. ONE action joins, marketplace.allocationPriority.set. The census is
+  // EXACT on purpose - an action arriving unnoticed is how the anonymous surface grows without review.
+  eq(s.all.length, 148, 'B1 148 actions are routed — the whole anonymous surface');
   // S8-R4B-1 — 24 -> 25. factoryStockGuard.get moved off the write transport onto the GET read table; it
   // was already one of the 143 routed actions, so B1 and B3 are unchanged (it keeps its POST route, as
   // every other GET-routed read does). The count stays PINNED: a census that derives itself notices nothing.
   eq(s.readTable.length, 25, 'B2 25 of them on the GET read table');
-  eq(s.post.length, 145, 'B3 145 dispatched by doPost');
+  eq(s.post.length, 146, 'B3 146 dispatched by doPost');
   // 78 -> 80: .job.start and .job.cancel read as mutations by this census's own naming rule, and that is the
   // honest classification — both DO write, to Script Properties and triggers. .job.status and .result.get are
   // reads. The census does not distinguish technical state from business state, and should not: an action

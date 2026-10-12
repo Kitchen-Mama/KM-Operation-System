@@ -977,7 +977,20 @@ var ROUND_TOKENS = [
   // prevent. The three new files and the newly browser-loaded KMCID owner ride the same rotation; nothing is
   // minted for them separately, because they are the same application family.
   'r50-sitepriority-20261010',
-  'r50-irpriority-20261010'];
+  'r50-irpriority-20261010',
+  // S8-B3-R3-CP2I (R52) - THE PRIORITY WRITE PATH CHANGED, SO THE APPLICATION TOKEN MOVES.
+  //
+  // R51 deliberately did NOT rotate: its only browser-side edit was the action-contract pin, and rotating for
+  // that would have asserted a frontend change that had not happened. R52 is the opposite case. Three served
+  // files change behaviour - operation-system-db-api.js gains the bounded writer and the pre-write deployment
+  // gate, site-priority.js stops echoing the old payload and now sends a compare-and-set, and
+  // site-priority.css gains the fourth status state - and a returning browser holding any of them on the
+  // previous token would run a build whose save path no longer matches the deployment it is talking to.
+  //
+  // It is appended to THIS series and to no other. The MAP, IR_CSS and METHOD_REGISTRY series are separate
+  // families on purpose, and F-PD1 is the round that proved what crossing them costs: setting a stylesheet to
+  // an application token broke 28 suites that exist to keep the families apart.
+  'r52-prioritywrite-20261012'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -1811,7 +1824,16 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // so the bundle hash 63_ pins moves with them. D-S8-C2-1 deferred those corrections precisely so they could
   // ride the next INDEPENDENTLY justified backend release rather than earning a cut of their own — this is it,
   // and bundling them costs zero extra .gs files because R51 already rebuilds 90_ and already moves 63_.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51',
+  // S8-B3-R3-CP2I-R52. The first cut since R51 and, like R50 and R51 before it, one that could not ride an
+  // earlier release: R51 is CUT but not synced and not deployed, so its bytes are frozen as a cut even though
+  // no Apps Script project carries them yet. R52 adds a router ACTION (marketplace.allocationPriority.set),
+  // which moves the action contract 19 -> 20, and makes 03_master_data_handlers.gs an owner for the first
+  // time - a file that had never carried a module stamp despite owning a master-table write.
+  //
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES. Inserting this anywhere but the end would
+  // silently re-order every floor written against this list.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

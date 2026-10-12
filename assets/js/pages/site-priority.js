@@ -8,19 +8,27 @@
 //
 // THREE RULES THIS FILE EXISTS TO KEEP
 //
-// 1. NO SECOND WRITER. `KM.DB.upsertMarketplace` is the one writer that mutates the `marketplaces` master, and
-//    it already invalidates the reference cache after a confirmed success. This page calls it and adds nothing.
+// 1. NO SECOND WRITER — AND, FROM R52, A WRITER THAT CAN DO NOTHING ELSE.
+//    `KM.DB.setMarketplaceAllocationPriority` is the only path by which this page changes anything, and the
+//    handler behind it (`marketplace.allocationPriority.set`, owner 03_) writes exactly three cells:
+//    allocation_priority, updated_by, updated_at. It never appends, merges, renumbers or backfills.
 //
-// 2. THE WRITE ECHOES THE STORED ROW, VERBATIM. `handleUpsertMarketplace_` finds its target by
-//    company + country + marketplace compared as RAW TRIMMED, CASE-SENSITIVE strings — it does not canonicalize.
-//    So a save must send the values the row actually holds. Sending a canonical 'GB' for a row stored 'UK' would
-//    not match, and the handler would INSERT A SECOND ROW. That is why canonical country is used for grouping and
-//    display ONLY, and never reaches the payload.
+// 2. THE ECHO PAYLOAD IS GONE, AND ITS ABSENCE IS THE POINT.
+//    Until R52 this page saved through `upsertMarketplace`, which resolved its target by RAW TRIMMED
+//    case-sensitive company + country + marketplace, APPENDED A NEW ROW when it matched nothing, and wrote
+//    `status`, `currency` and `marketplace_display_name` unconditionally while auto-filling a blank
+//    `marketplace_alias`. So a priority save had to echo five unrelated fields back verbatim just to avoid
+//    disturbing them — and a single stale field, or a country spelling the sheet had since changed, could
+//    reactivate a disabled marketplace, blank a display name, or create a duplicate marketplace outright.
 //
-//    The same handler writes `status`, `currency` and `marketplace_display_name` UNCONDITIONALLY on update, and
-//    defaults `status` to 'active' when absent. A payload carrying only a priority would therefore silently
-//    reactivate a disabled marketplace and blank its display name. Every save here echoes those fields back from
-//    the loaded row. This was measured in the handler, not assumed.
+//    None of that is defended against any more; it is simply unreachable. The payload carries the identity,
+//    the new value and the compare-and-set, and nothing else. `upsertMarketplace` now REFUSES any request that
+//    contains allocation_priority at all, so the old door is closed rather than merely unused.
+//
+// 2a. EVERY SAVE IS A COMPARE-AND-SET. The payload states what the page believes is stored — SET with a
+//    number, or MISSING — and the handler refuses if the sheet disagrees. Two operators holding stale pages
+//    can no longer silently overwrite each other: the second one is told to Refresh. MISSING and 0 are
+//    different expectations and are never folded together.
 //
 // 3. MISSING IS NOT ZERO, IN BOTH DIRECTIONS. A blank cell renders as MISSING and an explicit 0 renders as 0.
 //    The editor refuses a negative, a non-numeric and a non-finite value rather than coercing it.
@@ -296,24 +304,40 @@
     if (!v.ok) { setStatus('error', v.reason); return Promise.resolve(false); }
 
     var db = window.KM && window.KM.DB;
-    if (!db || typeof db.upsertMarketplace !== 'function') {
-      setStatus('error', 'The marketplace writer is unavailable. Nothing was saved.');
+    if (!db || typeof db.setMarketplaceAllocationPriority !== 'function') {
+      // NO FALLBACK TO upsertMarketplace. A frontend that cannot reach the bounded writer must refuse, because
+      // the writer it would fall back to is the unguarded one this round exists to stop using.
+      setStatus('error', 'The bounded priority writer is unavailable in this build. Nothing was saved, and this '
+        + 'page will not fall back to the general marketplace writer.');
       return Promise.resolve(false);
     }
 
-    // ECHO THE STORED ROW. See rule 2 in the header: status / currency / display name are written
-    // unconditionally by the handler, and an omitted status defaults to 'active'.
+    // THE TARGET MUST BE IDENTIFIABLE BEFORE ANYTHING IS SENT. A row with no marketplace_id cannot be the
+    // subject of an identity-guarded write, and guessing is exactly what the guard exists to prevent.
+    var expectedId = str(row.marketplaceId);
+    if (!expectedId) {
+      setStatus('error', 'This marketplace row has no identifier in the reference data, so a priority cannot be '
+        + 'saved against it safely. Nothing was sent. Add a marketplace_id to the row first.');
+      return Promise.resolve(false);
+    }
+
+    // THE COMPARE-AND-SET. `before` is what THIS page last read, and it is what the handler will require the
+    // sheet to still hold. MISSING is sent as a state and never as a number: a blank cell is not a zero, and
+    // encoding it as one is the §45.A failure every layer below this has already been repaired for.
+    var before = classify(row.allocationPriority);
     var payload = {
       company: str(row.company),
       country: str(row.country),                        // RAW, never canonical — this is the match key
       marketplace: str(row.marketplace),
-      currency: str(row.currency),                      // REQUIRED by the handler; a blank one is refused
-      status: str(row.status) || 'active',
-      marketplace_display_name: str(row.marketplaceDisplayName) || str(row.marketplace),
+      expected_marketplace_id: expectedId,
       allocation_priority: v.value,
+      expected_allocation_priority_state: (before.state === 'SET') ? 'SET' : 'MISSING',
       updated_by: 'site-priority-page'
     };
-    if (str(row.fulfillmentModel)) payload.fulfillment_model = str(row.fulfillmentModel);
+    if (before.state === 'SET') payload.expected_allocation_priority = before.value;
+    // An INVALID stored value is deliberately sent as MISSING=false rather than SET: the handler will refuse
+    // with PRIORITY_CHANGED, which is the correct answer. An unreadable cell is not an empty one, and this page
+    // must not be able to overwrite the evidence of a bad row without someone seeing it first.
 
     _busy = true;
     // RETIRE EVERY READ ALREADY IN FLIGHT. A Refresh issued before this click is carrying a pre-write
@@ -334,84 +358,129 @@
     }
     setStatus('loading', 'Saving ' + label + '…');
 
-    // READ-BACK through the reference owner. This is a GENUINE refetch, not the slice we read a moment ago:
-    // `upsertMarketplace` invalidates the 'marketplaces' reference key after a confirmed write, and a
-    // reference cache that is somehow absent makes `getMarketplaceReference` fall back to a raw load. We do
-    // NOT invalidate again here — doing so would mask a regression in the writer behind this page's own call.
-    // An UNDETERMINED write THREW BEFORE the writer reached its invalidation, so the key is still memoized
-    // and a read answered from that memo would "prove" the value was not stored without ever asking the
-    // server. That is the vacuous answer this round exists to remove, so that case forces the refetch itself.
-    // Still ONE key, still the existing API. An ACCEPTED write needs no such help - the writer invalidated.
+    // ---- READ-BACK: IDENTITY-SAFE, NOT VALUE-SHAPED --------------------------------------------------------
+    // A read-back that asks only "does some row now show 90?" proves almost nothing: it would be satisfied by a
+    // different marketplace, by a duplicate row, or by a value somebody else wrote. So it checks FOUR things,
+    // and all four have to hold before the word "verified" is used anywhere:
+    //
+    //   1. CANONICAL UNIQUENESS — exactly one row answers to this identity under canonical country. A second
+    //      one appearing between the save and the read is a collision, not a success.
+    //   2. RAW IDENTITY — that row's company / country / marketplace are the ones the save was sent for,
+    //      compared the way the sheet compares them.
+    //   3. marketplace_id — it is the SAME ROW, not a row that merely looks the same.
+    //   4. VALUE — the stored priority is numerically what was requested.
+    //
+    // The read goes through the reference owner. After a CONFIRMED write the wrapper has already invalidated
+    // the 'marketplaces' key, so the load refetches and this page does NOT invalidate again — doing so would
+    // mask a regression in that wrapper behind this page's own call. After an UNKNOWN outcome nothing
+    // invalidated anything, so a read could be answered from the memo and would "prove" the value was not
+    // stored without ever asking the server. That case forces the refetch itself. Still ONE key, still the
+    // existing mechanism.
     function readBack(forceFresh) {
       if (forceFresh) invalidateMarketplaceReference();
       return loadRows().then(function (rows) {
         if (!liveSave()) return { state: 'STALE' };
         _rows = rows;
         renderFilters();
-        var after = rowByKey(key);
-        return { state: 'READ_OK', found: !!after,
-          c: after ? classify(after.allocationPriority) : { state: 'MISSING', value: null } };
+        var canon = [];
+        for (var i = 0; i < rows.length; i++) if (identityOf(rows[i]) === key) canon.push(rows[i]);
+        if (canon.length === 0) return { state: 'READ_OK', verdict: 'ABSENT' };
+        if (canon.length > 1) return { state: 'READ_OK', verdict: 'COLLISION', n: canon.length };
+        var after = canon[0];
+        if (str(after.company) !== str(row.company)
+            || str(after.country) !== str(row.country)
+            || str(after.marketplace) !== str(row.marketplace)) {
+          return { state: 'READ_OK', verdict: 'IDENTITY_CHANGED' };
+        }
+        if (str(after.marketplaceId) !== expectedId) {
+          return { state: 'READ_OK', verdict: 'ROW_CHANGED', storedId: str(after.marketplaceId) };
+        }
+        var c = classify(after.allocationPriority);
+        if (c.state === 'SET' && Number(c.value) === Number(v.value)) {
+          return { state: 'READ_OK', verdict: 'MATCH' };
+        }
+        return { state: 'READ_OK', verdict: 'VALUE_MISMATCH', c: c };
       }).catch(function (e) { return { state: 'READ_FAILED', err: e }; });
     }
 
-    // SEVEN OUTCOMES, AND THE TWO SENTENCES THIS CODE MUST NEVER SAY.
-    //   (a) "nothing was written" after an exception — `upsertMarketplace` throws for a REFUSED write and for
-    //       a TRANSPORT failure alike, and a request that never got an answer may still have been applied.
-    //   (b) "verified" without a successful fresh read.
-    // So a throw becomes UNDETERMINED and is resolved by READING, never by resending.
+    // The sentence a failed read-back is allowed to end with. It never suggests saving again.
+    var ADVICE = ' Do NOT re-save — press Refresh, then check the marketplaces sheet. Nothing was re-sent.';
+
+    function describe(rb) {
+      if (rb.verdict === 'ABSENT') return label + ' is no longer present in the marketplace reference.';
+      if (rb.verdict === 'COLLISION') return label + ' now matches ' + rb.n + ' rows under canonical country '
+        + 'identity, so no single row can be confirmed.';
+      if (rb.verdict === 'IDENTITY_CHANGED') return 'the row answering to ' + label + ' no longer carries the '
+        + 'same company / country / marketplace values.';
+      if (rb.verdict === 'ROW_CHANGED') return 'the row answering to ' + label + ' is a DIFFERENT record than '
+        + 'the one this save was prepared against.';
+      return 'a fresh read shows ' + (rb.c && rb.c.state === 'SET' ? rb.c.value : String(rb.c && rb.c.state).toLowerCase())
+        + ' rather than ' + v.value + '.';
+    }
+
+    // ---- THE FOUR OUTCOMES ---------------------------------------------------------------------------------
+    // The wrapper returns a typed outcome and never throws, so there is no path on which a lost answer and a
+    // refusal arrive wearing the same shape. The two sentences this code may never say remain:
+    //   (a) "nothing was written" about anything the server did not PROVE was a zero-write;
+    //   (b) "verified" without a successful fresh read that passed all four identity checks.
     return Promise.resolve().then(function () {
-      return db.upsertMarketplace(payload);
-    }).then(function (res) {
-      // The writer RETURNS (does not throw) `{ success:false, error }` when the API is not configured.
-      // An explicit non-success return is a refusal and must never reach the success branch.
-      if (res && res.success === false) {
-        return { write: 'REFUSED', why: res.error ? String(res.error) : 'the writer reported success:false' };
-      }
-      return { write: 'ACCEPTED' };
-    }, function (err) {
-      return { write: 'UNDETERMINED', why: msgOf(err) };
-    }).then(function (w) {
+      return db.setMarketplaceAllocationPriority(payload);
+    }).then(function (w) { return w || { outcome: 'OUTCOME_UNKNOWN', code: 'NO_RESULT', message: '' }; },
+            function (err) {
+              // The wrapper is documented never to reject. If it somehow does, the request may already have been
+              // dispatched, so the only honest classification is UNKNOWN.
+              return { outcome: 'OUTCOME_UNKNOWN', code: 'WRAPPER_THREW', message: msgOf(err) };
+            })
+    .then(function (w) {
       if (!liveSave()) return false;
-      if (w.write === 'REFUSED') {
-        return done('error', 'WRITE REFUSED — nothing was written. ' + w.why, false);
+      var why = w.message ? String(w.message) : '';
+
+      // NOT STARTED — the request was never dispatched. This is the ONE failure class on which the page may
+      // state flatly that nothing was written, because nothing left the browser.
+      if (w.outcome === 'CONFIRMED_NOT_STARTED') {
+        return done('error', 'NOT SENT — nothing was written. ' + why
+          + (w.code === 'DEPLOYMENT_CONTRACT_MISMATCH'
+            ? ' This is a deployment problem, not a data problem: retrying cannot publish a deployment.' : ''), false);
       }
-      return readBack(w.write === 'UNDETERMINED').then(function (rb) {
+      // REJECTED — the server answered no AND proved it wrote nothing.
+      if (w.outcome === 'CONFIRMED_REJECTED') {
+        return done('error', 'REFUSED — the server rejected this save and confirmed nothing was written. '
+          + why + ' Refresh to see the current value before trying again.', false);
+      }
+
+      var unknown = (w.outcome !== 'CONFIRMED_COMMITTED');
+      return readBack(unknown).then(function (rb) {
         if (!liveSave() || rb.state === 'STALE') return false;
 
         if (rb.state === 'READ_FAILED') {
-          if (w.write === 'ACCEPTED') {
-            return done('error', 'The write was ACCEPTED but the read-back FAILED, so persistence is NOT '
-              + 'verified. Do not re-save — press Refresh, or check the marketplaces sheet. ' + msgOf(rb.err), false);
+          if (!unknown) {
+            return done('error', 'The write was CONFIRMED but the read-back FAILED, so persistence is not '
+              + 'verified.' + ADVICE + ' ' + msgOf(rb.err), false);
           }
-          return done('error', 'The write outcome is UNDETERMINED (' + w.why + ') and the read-back also '
-            + 'failed, so it is not known whether the value was stored. Do NOT re-save blindly — press '
-            + 'Refresh first. ' + msgOf(rb.err), false);
+          return done('error', 'The write outcome is UNKNOWN (' + why + ') and the read-back also failed, so it '
+            + 'is not known whether the value was stored.' + ADVICE + ' ' + msgOf(rb.err), false);
         }
 
-        var c = rb.c;
-        if (c.state === 'SET' && Number(c.value) === Number(v.value)) {
-          if (w.write === 'ACCEPTED') {
+        if (rb.verdict === 'MATCH') {
+          if (!unknown) {
             return done('success', 'Saved and VERIFIED by re-reading the reference. ' + label
               + ' now has priority ' + v.value + '.', true);
           }
-          return done('success', 'The write outcome was undetermined, but a fresh read confirms ' + label
-            + ' now has priority ' + v.value + '. No second save was sent.', true);
+          // A MATCH AFTER AN UNKNOWN OUTCOME IS NOT A CONFIRMED SAVE, AND IS NOT LABELLED AS ONE.
+          // The answer was lost, so this read cannot attribute the stored value to THIS request rather than to
+          // a concurrent one, and it cannot say whether updated_by / updated_at completed — the handler writes
+          // the priority first precisely so this case is recoverable rather than invisible.
+          return done('warn', 'The write outcome was UNKNOWN (' + why + '). A fresh read now shows ' + label
+            + ' at priority ' + v.value + ', which is the intended value — but this does NOT prove this request '
+            + 'is what stored it, and the audit fields may be incomplete. Nothing was re-sent. Treat the value '
+            + 'as correct and the save as unconfirmed.', true);
         }
-        // AN UNDETERMINED WRITE WHOSE VALUE IS NOT YET VISIBLE IS STILL UNDETERMINED. The answer was lost,
-        // not refused: the request may have reached the server and may be applied after this read. Saying it
-        // "did NOT take effect" would be a claim about the future, and it is exactly the claim that invites
-        // an operator to re-send a write that is already on its way.
-        var prefix = (w.write === 'UNDETERMINED')
-          ? 'The write outcome is UNDETERMINED (' + w.why + ') and a fresh read does not show the new value '
-            + 'yet — it may still be applied. '
+
+        var prefix = unknown
+          ? 'The write outcome is UNKNOWN (' + why + ') and the read-back does not confirm it — it may still be '
+            + 'applied. Specifically, '
           : 'NOT VERIFIED — ';
-        if (!rb.found) {
-          return done('error', prefix + label + ' is no longer present in the marketplace reference. '
-            + 'Do NOT re-save — press Refresh, then check the marketplaces sheet. Nothing was re-sent.', false);
-        }
-        return done('error', prefix + 'a fresh read shows '
-          + (c.state === 'SET' ? c.value : c.state.toLowerCase()) + ' rather than ' + v.value
-          + '. Do NOT re-save — press Refresh, then check the marketplaces sheet. Nothing was re-sent.', false);
+        return done('error', prefix + describe(rb) + ADVICE, false);
       });
     }).then(function (r) {
       if (myGen === _saveGen) _busy = false;
