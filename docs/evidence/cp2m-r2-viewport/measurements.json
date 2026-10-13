@@ -1,0 +1,2143 @@
+{
+ "ok": true,
+ "browser": "chrome.exe",
+ "capturedAt": "2026-10-13",
+ "fixtureRows": 7,
+ "shellIsReal": true,
+ "testCssOverrides": 0,
+ "sources": {
+  "index.html": "8bf3ce041afad94a",
+  "assets/css/layout.css": "0a016d4a74f3f88f",
+  "assets/css/base.css": "225902e388ea3260",
+  "assets/css/components.css": "8ae2cb34a3dcdb21",
+  "assets/css/responsive-foundation.css": "4c18889c313472eb",
+  "assets/css/pages/site-priority.css": "a703f2033756d78e",
+  "assets/js/pages/site-priority.js": "f825656fb648f883",
+  "assets/html/pages/site-priority.html": "92666dd9a61ee627",
+  "assets/js/app.js": "60081e98463326f6",
+  "assets/tests/_cp2m-r2-viewport-runner.js": "e73d92534cc228fa"
+ },
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/after3",
+ "results": [
+  {
+   "id": "360",
+   "width": 360,
+   "height": 780,
+   "touch": true,
+   "pngBytes": 49011,
+   "png": "site-priority-360.png",
+   "measurements": {
+    "viewport": 360,
+    "requestedViewport": 360,
+    "sectionPresent": true,
+    "rowCount": 7,
+    "groupCount": 2,
+    "groupTexts": [
+     "KitchenMama5 sites",
+     "ResourceUS2 sites"
+    ],
+    "buttonCount": 8,
+    "selectCount": 2,
+    "minButtonH": 38,
+    "minSelectH": 38,
+    "minFontSize": 13,
+    "shell": {
+     "sidebar": {
+      "box": {
+       "w": 240,
+       "h": 724,
+       "left": 0,
+       "right": 240,
+       "top": 56,
+       "bottom": 780
+      },
+      "display": "block",
+      "position": "fixed",
+      "width": "240px"
+     },
+     "mainContent": {
+      "box": {
+       "w": 120,
+       "h": 724,
+       "left": 240,
+       "right": 360,
+       "top": 56,
+       "bottom": 780
+      },
+      "marginLeft": "240px",
+      "overflowX": "hidden"
+     },
+     "contentArea": {
+      "box": {
+       "w": 105,
+       "h": 4324,
+       "left": 240,
+       "right": 345,
+       "top": 56,
+       "bottom": 4380
+      },
+      "padding": "16px"
+     },
+     "usableContentWidth": 105
+    },
+    "horizontalOverflow": false,
+    "docScrollWidth": 360,
+    "docClientWidth": 360,
+    "watched": [
+     {
+      "label": "country[0]",
+      "name": "select#sp-filter-country.sp-select",
+      "box": {
+       "w": 53,
+       "h": 38,
+       "left": 266,
+       "right": 319,
+       "top": 1435,
+       "bottom": 1473
+      },
+      "text": "All countriesCADEGBJPUS",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -41,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "company[0]",
+      "name": "select#sp-filter-company.sp-select",
+      "box": {
+       "w": 53,
+       "h": 38,
+       "left": 266,
+       "right": 319,
+       "top": 1367,
+       "bottom": 1405
+      },
+      "text": "All companiesKitchenMamaResour",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -41,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "refresh[0]",
+      "name": "button#sp-refresh.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 60,
+       "h": 38,
+       "left": 270,
+       "right": 330,
+       "top": 1485,
+       "bottom": 1523
+      },
+      "text": "Refresh",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -30,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[0]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 50,
+       "h": 38,
+       "left": 282,
+       "right": 332,
+       "top": 1921,
+       "bottom": 1959
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -28,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[1]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 50,
+       "h": 38,
+       "left": 282,
+       "right": 332,
+       "top": 2296,
+       "bottom": 2334
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -28,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[2]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 50,
+       "h": 38,
+       "left": 282,
+       "right": 332,
+       "top": 2713,
+       "bottom": 2751
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -28,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[3]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 50,
+       "h": 38,
+       "left": 282,
+       "right": 332,
+       "top": 3088,
+       "bottom": 3126
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -28,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[4]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 50,
+       "h": 38,
+       "left": 282,
+       "right": 332,
+       "top": 3463,
+       "bottom": 3501
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -28,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[5]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 50,
+       "h": 38,
+       "left": 282,
+       "right": 332,
+       "top": 3903,
+       "bottom": 3941
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -28,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[6]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 50,
+       "h": 38,
+       "left": 282,
+       "right": 332,
+       "top": 4278,
+       "bottom": 4316
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -28,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[0]",
+      "name": "th.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 35,
+       "left": 513,
+       "right": 659,
+       "top": 1547,
+       "bottom": 1582
+      },
+      "text": "Allocation priority",
+      "visibleFraction": 0,
+      "visuallyHidden": true,
+      "pastViewportBy": 299,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[1]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 51,
+       "h": 66,
+       "left": 267,
+       "right": 318,
+       "top": 1746,
+       "bottom": 1813
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[2]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 51,
+       "h": 66,
+       "left": 267,
+       "right": 318,
+       "top": 2121,
+       "bottom": 2188
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[3]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 51,
+       "h": 66,
+       "left": 267,
+       "right": 318,
+       "top": 2538,
+       "bottom": 2604
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[4]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 51,
+       "h": 66,
+       "left": 267,
+       "right": 318,
+       "top": 2913,
+       "bottom": 2979
+      },
+      "text": "0",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[5]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 51,
+       "h": 66,
+       "left": 267,
+       "right": 318,
+       "top": 3288,
+       "bottom": 3354
+      },
+      "text": "100",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[6]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 51,
+       "h": 66,
+       "left": 267,
+       "right": 318,
+       "top": 3728,
+       "bottom": 3795
+      },
+      "text": "50",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[7]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 51,
+       "h": 66,
+       "left": 267,
+       "right": 318,
+       "top": 4103,
+       "bottom": 4169
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     }
+    ],
+    "hardClippedCount": 0,
+    "partlyInvisibleCount": 0,
+    "fullyInvisibleCount": 0,
+    "pastViewportCount": 1,
+    "selfClippedCount": 0,
+    "lastRow": {
+     "scrollerName": "div.main-content",
+     "scrolledFrom": 0,
+     "scrolledTo": 3600,
+     "hScrollerName": null,
+     "hScrolledTo": null,
+     "neededHorizontalScroll": false,
+     "scrollHeight": 4324,
+     "clientHeight": 724,
+     "controlName": "button.sp-btn.sp-btn--ghost",
+     "controlBox": {
+      "w": 50,
+      "h": 38,
+      "left": 282,
+      "right": 332,
+      "top": 678,
+      "bottom": 716
+     },
+     "point": [
+      307,
+      697
+     ],
+     "elementAtPoint": "button.sp-btn.sp-btn--ghost",
+     "reachableAndOperable": true,
+     "visibleFraction": 1,
+     "clippedBy": []
+    }
+   }
+  },
+  {
+   "id": "390",
+   "width": 390,
+   "height": 844,
+   "touch": true,
+   "pngBytes": 53983,
+   "png": "site-priority-390.png",
+   "measurements": {
+    "viewport": 390,
+    "requestedViewport": 390,
+    "sectionPresent": true,
+    "rowCount": 7,
+    "groupCount": 2,
+    "groupTexts": [
+     "KitchenMama5 sites",
+     "ResourceUS2 sites"
+    ],
+    "buttonCount": 8,
+    "selectCount": 2,
+    "minButtonH": 38,
+    "minSelectH": 38,
+    "minFontSize": 13,
+    "shell": {
+     "sidebar": {
+      "box": {
+       "w": 240,
+       "h": 788,
+       "left": 0,
+       "right": 240,
+       "top": 56,
+       "bottom": 844
+      },
+      "display": "block",
+      "position": "fixed",
+      "width": "240px"
+     },
+     "mainContent": {
+      "box": {
+       "w": 150,
+       "h": 788,
+       "left": 240,
+       "right": 390,
+       "top": 56,
+       "bottom": 844
+      },
+      "marginLeft": "240px",
+      "overflowX": "hidden"
+     },
+     "contentArea": {
+      "box": {
+       "w": 135,
+       "h": 3940,
+       "left": 240,
+       "right": 375,
+       "top": 56,
+       "bottom": 3996
+      },
+      "padding": "16px"
+     },
+     "usableContentWidth": 135
+    },
+    "horizontalOverflow": false,
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "watched": [
+     {
+      "label": "country[0]",
+      "name": "select#sp-filter-country.sp-select",
+      "box": {
+       "w": 83,
+       "h": 38,
+       "left": 266,
+       "right": 349,
+       "top": 1051,
+       "bottom": 1089
+      },
+      "text": "All countriesCADEGBJPUS",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -41,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "company[0]",
+      "name": "select#sp-filter-company.sp-select",
+      "box": {
+       "w": 83,
+       "h": 38,
+       "left": 266,
+       "right": 349,
+       "top": 983,
+       "bottom": 1021
+      },
+      "text": "All companiesKitchenMamaResour",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -41,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "refresh[0]",
+      "name": "button#sp-refresh.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 75,
+       "h": 38,
+       "left": 270,
+       "right": 345,
+       "top": 1101,
+       "bottom": 1139
+      },
+      "text": "Refresh",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -45,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[0]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 51,
+       "h": 38,
+       "left": 282,
+       "right": 333,
+       "top": 1537,
+       "bottom": 1575
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -57,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[1]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 51,
+       "h": 38,
+       "left": 282,
+       "right": 333,
+       "top": 1912,
+       "bottom": 1950
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -57,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[2]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 51,
+       "h": 38,
+       "left": 282,
+       "right": 333,
+       "top": 2329,
+       "bottom": 2367
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -57,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[3]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 51,
+       "h": 38,
+       "left": 282,
+       "right": 333,
+       "top": 2704,
+       "bottom": 2742
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -57,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[4]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 51,
+       "h": 38,
+       "left": 282,
+       "right": 333,
+       "top": 3079,
+       "bottom": 3117
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -57,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[5]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 51,
+       "h": 38,
+       "left": 282,
+       "right": 333,
+       "top": 3519,
+       "bottom": 3557
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -57,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[6]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 51,
+       "h": 38,
+       "left": 282,
+       "right": 333,
+       "top": 3894,
+       "bottom": 3932
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -57,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[0]",
+      "name": "th.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 35,
+       "left": 513,
+       "right": 659,
+       "top": 1163,
+       "bottom": 1198
+      },
+      "text": "Allocation priority",
+      "visibleFraction": 0,
+      "visuallyHidden": true,
+      "pastViewportBy": 269,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[1]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 81,
+       "h": 66,
+       "left": 267,
+       "right": 348,
+       "top": 1362,
+       "bottom": 1428
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[2]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 81,
+       "h": 66,
+       "left": 267,
+       "right": 348,
+       "top": 1737,
+       "bottom": 1803
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[3]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 81,
+       "h": 66,
+       "left": 267,
+       "right": 348,
+       "top": 2154,
+       "bottom": 2220
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[4]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 81,
+       "h": 66,
+       "left": 267,
+       "right": 348,
+       "top": 2528,
+       "bottom": 2595
+      },
+      "text": "0",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[5]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 81,
+       "h": 66,
+       "left": 267,
+       "right": 348,
+       "top": 2903,
+       "bottom": 2970
+      },
+      "text": "100",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[6]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 81,
+       "h": 66,
+       "left": 267,
+       "right": 348,
+       "top": 3344,
+       "bottom": 3410
+      },
+      "text": "50",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[7]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 81,
+       "h": 66,
+       "left": 267,
+       "right": 348,
+       "top": 3719,
+       "bottom": 3785
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -42,
+      "selfClipped": false,
+      "clippedBy": []
+     }
+    ],
+    "hardClippedCount": 0,
+    "partlyInvisibleCount": 0,
+    "fullyInvisibleCount": 0,
+    "pastViewportCount": 1,
+    "selfClippedCount": 0,
+    "lastRow": {
+     "scrollerName": "div.main-content",
+     "scrolledFrom": 0,
+     "scrolledTo": 3152,
+     "hScrollerName": null,
+     "hScrolledTo": null,
+     "neededHorizontalScroll": false,
+     "scrollHeight": 3940,
+     "clientHeight": 788,
+     "controlName": "button.sp-btn.sp-btn--ghost",
+     "controlBox": {
+      "w": 51,
+      "h": 38,
+      "left": 282,
+      "right": 333,
+      "top": 742,
+      "bottom": 780
+     },
+     "point": [
+      308,
+      761
+     ],
+     "elementAtPoint": "button.sp-btn.sp-btn--ghost",
+     "reachableAndOperable": true,
+     "visibleFraction": 1,
+     "clippedBy": []
+    }
+   }
+  },
+  {
+   "id": "768",
+   "width": 768,
+   "height": 1024,
+   "touch": true,
+   "pngBytes": 81311,
+   "png": "site-priority-768.png",
+   "measurements": {
+    "viewport": 768,
+    "requestedViewport": 768,
+    "sectionPresent": true,
+    "rowCount": 7,
+    "groupCount": 2,
+    "groupTexts": [
+     "KitchenMama5 sites",
+     "ResourceUS2 sites"
+    ],
+    "buttonCount": 8,
+    "selectCount": 2,
+    "minButtonH": 38,
+    "minSelectH": 38,
+    "minFontSize": 13,
+    "shell": {
+     "sidebar": {
+      "box": {
+       "w": 240,
+       "h": 968,
+       "left": 0,
+       "right": 240,
+       "top": 56,
+       "bottom": 1024
+      },
+      "display": "block",
+      "position": "fixed",
+      "width": "240px"
+     },
+     "mainContent": {
+      "box": {
+       "w": 528,
+       "h": 968,
+       "left": 240,
+       "right": 768,
+       "top": 56,
+       "bottom": 1024
+      },
+      "marginLeft": "240px",
+      "overflowX": "hidden"
+     },
+     "contentArea": {
+      "box": {
+       "w": 528,
+       "h": 921,
+       "left": 240,
+       "right": 768,
+       "top": 56,
+       "bottom": 977
+      },
+      "padding": "16px"
+     },
+     "usableContentWidth": 528
+    },
+    "horizontalOverflow": false,
+    "docScrollWidth": 768,
+    "docClientWidth": 768,
+    "watched": [
+     {
+      "label": "country[0]",
+      "name": "select#sp-filter-country.sp-select",
+      "box": {
+       "w": 180,
+       "h": 38,
+       "left": 460,
+       "right": 640,
+       "top": 292,
+       "bottom": 330
+      },
+      "text": "All countriesCADEGBJPUS",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -128,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "company[0]",
+      "name": "select#sp-filter-company.sp-select",
+      "box": {
+       "w": 180,
+       "h": 38,
+       "left": 268,
+       "right": 448,
+       "top": 292,
+       "bottom": 330
+      },
+      "text": "All companiesKitchenMamaResour",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -320,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "refresh[0]",
+      "name": "button#sp-refresh.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 79,
+       "h": 38,
+       "left": 656,
+       "right": 735,
+       "top": 288,
+       "bottom": 326
+      },
+      "text": "Refresh",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -33,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[0]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 54,
+       "h": 38,
+       "left": 767,
+       "right": 821,
+       "top": 449,
+       "bottom": 487
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": 53,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[1]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 54,
+       "h": 38,
+       "left": 767,
+       "right": 821,
+       "top": 508,
+       "bottom": 546
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": 53,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[2]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 54,
+       "h": 38,
+       "left": 767,
+       "right": 821,
+       "top": 577,
+       "bottom": 615
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": 53,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[3]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 54,
+       "h": 38,
+       "left": 767,
+       "right": 821,
+       "top": 646,
+       "bottom": 684
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": 53,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[4]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 54,
+       "h": 38,
+       "left": 767,
+       "right": 821,
+       "top": 705,
+       "bottom": 743
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": 53,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[5]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 54,
+       "h": 38,
+       "left": 767,
+       "right": 821,
+       "top": 802,
+       "bottom": 840
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": 53,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[6]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 54,
+       "h": 38,
+       "left": 767,
+       "right": 821,
+       "top": 861,
+       "bottom": 899
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": 53,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[0]",
+      "name": "th.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 35,
+       "left": 537,
+       "right": 683,
+       "top": 366,
+       "bottom": 400
+      },
+      "text": "Allocation priority",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -85,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[1]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 59,
+       "left": 537,
+       "right": 683,
+       "top": 438,
+       "bottom": 497
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -85,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[2]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 59,
+       "left": 537,
+       "right": 683,
+       "top": 497,
+       "bottom": 556
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -85,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[3]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 79,
+       "left": 537,
+       "right": 683,
+       "top": 556,
+       "bottom": 636
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -85,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[4]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 59,
+       "left": 537,
+       "right": 683,
+       "top": 636,
+       "bottom": 695
+      },
+      "text": "0",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -85,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[5]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 59,
+       "left": 537,
+       "right": 683,
+       "top": 695,
+       "bottom": 754
+      },
+      "text": "100",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -85,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[6]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 59,
+       "left": 537,
+       "right": 683,
+       "top": 791,
+       "bottom": 850
+      },
+      "text": "50",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -85,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[7]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 146,
+       "h": 59,
+       "left": 537,
+       "right": 683,
+       "top": 850,
+       "bottom": 909
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -85,
+      "selfClipped": false,
+      "clippedBy": []
+     }
+    ],
+    "hardClippedCount": 0,
+    "partlyInvisibleCount": 0,
+    "fullyInvisibleCount": 0,
+    "pastViewportCount": 7,
+    "selfClippedCount": 0,
+    "lastRow": {
+     "scrollerName": "div.main-content",
+     "scrolledFrom": 0,
+     "scrolledTo": 0,
+     "hScrollerName": "div.sp-table-wrap",
+     "hScrolledTo": 93,
+     "neededHorizontalScroll": true,
+     "scrollHeight": 968,
+     "clientHeight": 968,
+     "controlName": "button.sp-btn.sp-btn--ghost",
+     "controlBox": {
+      "w": 54,
+      "h": 38,
+      "left": 674,
+      "right": 728,
+      "top": 861,
+      "bottom": 899
+     },
+     "point": [
+      701,
+      880
+     ],
+     "elementAtPoint": "button.sp-btn.sp-btn--ghost",
+     "reachableAndOperable": true,
+     "visibleFraction": 1,
+     "clippedBy": []
+    }
+   }
+  },
+  {
+   "id": "1280",
+   "width": 1280,
+   "height": 800,
+   "touch": false,
+   "pngBytes": 81256,
+   "png": "site-priority-1280.png",
+   "measurements": {
+    "viewport": 1280,
+    "requestedViewport": 1280,
+    "sectionPresent": true,
+    "rowCount": 7,
+    "groupCount": 2,
+    "groupTexts": [
+     "KitchenMama5 sites",
+     "ResourceUS2 sites"
+    ],
+    "buttonCount": 8,
+    "selectCount": 2,
+    "minButtonH": 36,
+    "minSelectH": 34,
+    "minFontSize": 13,
+    "shell": {
+     "sidebar": {
+      "box": {
+       "w": 240,
+       "h": 744,
+       "left": 0,
+       "right": 240,
+       "top": 56,
+       "bottom": 800
+      },
+      "display": "block",
+      "position": "fixed",
+      "width": "240px"
+     },
+     "mainContent": {
+      "box": {
+       "w": 1040,
+       "h": 744,
+       "left": 240,
+       "right": 1280,
+       "top": 56,
+       "bottom": 800
+      },
+      "marginLeft": "240px",
+      "overflowX": "hidden"
+     },
+     "contentArea": {
+      "box": {
+       "w": 1025,
+       "h": 863,
+       "left": 240,
+       "right": 1265,
+       "top": 56,
+       "bottom": 919
+      },
+      "padding": "20px"
+     },
+     "usableContentWidth": 1025
+    },
+    "horizontalOverflow": false,
+    "docScrollWidth": 1280,
+    "docClientWidth": 1280,
+    "watched": [
+     {
+      "label": "country[0]",
+      "name": "select#sp-filter-country.sp-select",
+      "box": {
+       "w": 180,
+       "h": 34,
+       "left": 476,
+       "right": 656,
+       "top": 263,
+       "bottom": 297
+      },
+      "text": "All countriesCADEGBJPUS",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -624,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "company[0]",
+      "name": "select#sp-filter-company.sp-select",
+      "box": {
+       "w": 180,
+       "h": 34,
+       "left": 284,
+       "right": 464,
+       "top": 263,
+       "bottom": 297
+      },
+      "text": "All companiesKitchenMamaResour",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -816,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "refresh[0]",
+      "name": "button#sp-refresh.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 83,
+       "h": 36,
+       "left": 672,
+       "right": 755,
+       "top": 257,
+       "bottom": 293
+      },
+      "text": "Refresh",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -525,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[0]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1064,
+       "right": 1122,
+       "top": 419,
+       "bottom": 455
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -158,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[1]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1064,
+       "right": 1122,
+       "top": 478,
+       "bottom": 514
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -158,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[2]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1064,
+       "right": 1122,
+       "top": 537,
+       "bottom": 573
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -158,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[3]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1064,
+       "right": 1122,
+       "top": 596,
+       "bottom": 632
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -158,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[4]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1064,
+       "right": 1122,
+       "top": 655,
+       "bottom": 691
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -158,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[5]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1064,
+       "right": 1122,
+       "top": 752,
+       "bottom": 788
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -158,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[6]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1064,
+       "right": 1122,
+       "top": 811,
+       "bottom": 847
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -158,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[0]",
+      "name": "th.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 37,
+       "left": 780,
+       "right": 940,
+       "top": 333,
+       "bottom": 369
+      },
+      "text": "Allocation priority",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -340,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[1]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 780,
+       "right": 940,
+       "top": 407,
+       "bottom": 466
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -340,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[2]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 780,
+       "right": 940,
+       "top": 466,
+       "bottom": 525
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -340,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[3]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 780,
+       "right": 940,
+       "top": 525,
+       "bottom": 584
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -340,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[4]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 780,
+       "right": 940,
+       "top": 584,
+       "bottom": 643
+      },
+      "text": "0",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -340,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[5]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 780,
+       "right": 940,
+       "top": 643,
+       "bottom": 702
+      },
+      "text": "100",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -340,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[6]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 780,
+       "right": 940,
+       "top": 740,
+       "bottom": 799
+      },
+      "text": "50",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -340,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[7]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 780,
+       "right": 940,
+       "top": 799,
+       "bottom": 858
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -340,
+      "selfClipped": false,
+      "clippedBy": []
+     }
+    ],
+    "hardClippedCount": 0,
+    "partlyInvisibleCount": 0,
+    "fullyInvisibleCount": 0,
+    "pastViewportCount": 0,
+    "selfClippedCount": 0,
+    "lastRow": {
+     "scrollerName": "div.main-content",
+     "scrolledFrom": 0,
+     "scrolledTo": 119,
+     "hScrollerName": null,
+     "hScrolledTo": null,
+     "neededHorizontalScroll": false,
+     "scrollHeight": 863,
+     "clientHeight": 744,
+     "controlName": "button.sp-btn.sp-btn--ghost",
+     "controlBox": {
+      "w": 58,
+      "h": 36,
+      "left": 1064,
+      "right": 1122,
+      "top": 692,
+      "bottom": 728
+     },
+     "point": [
+      1093,
+      710
+     ],
+     "elementAtPoint": "button.sp-btn.sp-btn--ghost",
+     "reachableAndOperable": true,
+     "visibleFraction": 1,
+     "clippedBy": []
+    }
+   }
+  },
+  {
+   "id": "1920",
+   "width": 1920,
+   "height": 1080,
+   "touch": false,
+   "pngBytes": 89954,
+   "png": "site-priority-1920.png",
+   "measurements": {
+    "viewport": 1920,
+    "requestedViewport": 1920,
+    "sectionPresent": true,
+    "rowCount": 7,
+    "groupCount": 2,
+    "groupTexts": [
+     "KitchenMama5 sites",
+     "ResourceUS2 sites"
+    ],
+    "buttonCount": 8,
+    "selectCount": 2,
+    "minButtonH": 36,
+    "minSelectH": 34,
+    "minFontSize": 13,
+    "shell": {
+     "sidebar": {
+      "box": {
+       "w": 240,
+       "h": 1024,
+       "left": 0,
+       "right": 240,
+       "top": 56,
+       "bottom": 1080
+      },
+      "display": "block",
+      "position": "fixed",
+      "width": "240px"
+     },
+     "mainContent": {
+      "box": {
+       "w": 1680,
+       "h": 1024,
+       "left": 240,
+       "right": 1920,
+       "top": 56,
+       "bottom": 1080
+      },
+      "marginLeft": "240px",
+      "overflowX": "hidden"
+     },
+     "contentArea": {
+      "box": {
+       "w": 1680,
+       "h": 867,
+       "left": 240,
+       "right": 1920,
+       "top": 56,
+       "bottom": 923
+      },
+      "padding": "32px"
+     },
+     "usableContentWidth": 1680
+    },
+    "horizontalOverflow": false,
+    "docScrollWidth": 1920,
+    "docClientWidth": 1920,
+    "watched": [
+     {
+      "label": "country[0]",
+      "name": "select#sp-filter-country.sp-select",
+      "box": {
+       "w": 180,
+       "h": 34,
+       "left": 488,
+       "right": 668,
+       "top": 256,
+       "bottom": 290
+      },
+      "text": "All countriesCADEGBJPUS",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -1252,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "company[0]",
+      "name": "select#sp-filter-company.sp-select",
+      "box": {
+       "w": 180,
+       "h": 34,
+       "left": 296,
+       "right": 476,
+       "top": 256,
+       "bottom": 290
+      },
+      "text": "All companiesKitchenMamaResour",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -1444,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "refresh[0]",
+      "name": "button#sp-refresh.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 83,
+       "h": 36,
+       "left": 684,
+       "right": 767,
+       "top": 250,
+       "bottom": 286
+      },
+      "text": "Refresh",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -1153,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[0]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1191,
+       "right": 1249,
+       "top": 411,
+       "bottom": 447
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -671,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[1]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1191,
+       "right": 1249,
+       "top": 470,
+       "bottom": 506
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -671,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[2]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1191,
+       "right": 1249,
+       "top": 529,
+       "bottom": 565
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -671,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[3]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1191,
+       "right": 1249,
+       "top": 588,
+       "bottom": 624
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -671,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[4]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1191,
+       "right": 1249,
+       "top": 647,
+       "bottom": 683
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -671,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[5]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1191,
+       "right": 1249,
+       "top": 744,
+       "bottom": 780
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -671,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "edit[6]",
+      "name": "button.sp-btn.sp-btn--ghost",
+      "box": {
+       "w": 58,
+       "h": 36,
+       "left": 1191,
+       "right": 1249,
+       "top": 803,
+       "bottom": 839
+      },
+      "text": "Edit",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -671,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[0]",
+      "name": "th.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 37,
+       "left": 907,
+       "right": 1067,
+       "top": 325,
+       "bottom": 362
+      },
+      "text": "Allocation priority",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -853,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[1]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 907,
+       "right": 1067,
+       "top": 400,
+       "bottom": 459
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -853,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[2]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 907,
+       "right": 1067,
+       "top": 459,
+       "bottom": 518
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -853,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[3]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 907,
+       "right": 1067,
+       "top": 518,
+       "bottom": 577
+      },
+      "text": "80",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -853,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[4]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 907,
+       "right": 1067,
+       "top": 577,
+       "bottom": 636
+      },
+      "text": "0",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -853,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[5]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 907,
+       "right": 1067,
+       "top": 636,
+       "bottom": 695
+      },
+      "text": "100",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -853,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[6]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 907,
+       "right": 1067,
+       "top": 733,
+       "bottom": 792
+      },
+      "text": "50",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -853,
+      "selfClipped": false,
+      "clippedBy": []
+     },
+     {
+      "label": "priority[7]",
+      "name": "td.sp-col-pri",
+      "box": {
+       "w": 160,
+       "h": 59,
+       "left": 907,
+       "right": 1067,
+       "top": 792,
+       "bottom": 850
+      },
+      "text": "—",
+      "visibleFraction": 1,
+      "visuallyHidden": false,
+      "pastViewportBy": -853,
+      "selfClipped": false,
+      "clippedBy": []
+     }
+    ],
+    "hardClippedCount": 0,
+    "partlyInvisibleCount": 0,
+    "fullyInvisibleCount": 0,
+    "pastViewportCount": 0,
+    "selfClippedCount": 0,
+    "lastRow": {
+     "scrollerName": "div.main-content",
+     "scrolledFrom": 0,
+     "scrolledTo": 0,
+     "hScrollerName": null,
+     "hScrolledTo": null,
+     "neededHorizontalScroll": false,
+     "scrollHeight": 1024,
+     "clientHeight": 1024,
+     "controlName": "button.sp-btn.sp-btn--ghost",
+     "controlBox": {
+      "w": 58,
+      "h": 36,
+      "left": 1191,
+      "right": 1249,
+      "top": 803,
+      "bottom": 839
+     },
+     "point": [
+      1220,
+      821
+     ],
+     "elementAtPoint": "button.sp-btn.sp-btn--ghost",
+     "reachableAndOperable": true,
+     "visibleFraction": 1,
+     "clippedBy": []
+    }
+   }
+  }
+ ]
+}

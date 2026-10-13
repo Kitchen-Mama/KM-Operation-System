@@ -2552,3 +2552,70 @@ half is that every undeclared field was forwarded, so the client could not state
 
 **Preserved deliberately**, and asserted: the deployment preflight still runs and still runs first (a foreign
 action cannot route around it), transport stays bounded, and there is still no automatic resend.
+
+---
+
+### D-S8-B3-24 — The responsive evidence is taken against the REAL shell — **FROZEN (CP2M-R2)**
+
+**Decision.** Any visual acceptance of a page is captured from `index.html` itself, with the shipped header,
+sidebar, `.main-content` and stylesheet order, reached by clicking the page's own menu item. A harness may
+substitute **data** and may **redirect business requests**; it may not restyle the layout under test. The
+evidence hash covers `index.html` and the shell's stylesheets, not only the page's own files.
+
+**Why.** The CP2M-R1 runner wrote its own shell — `nav.sidebar{display:none}`, `.main-content{margin-left:0}` —
+with a comment asserting the sidebar is "collapsed on phones". It is not: `layout.css` fixes it at 240px and no
+media query in the build changes that. So the real content column at a 360px viewport is **105px**, and the R1
+capture measured a 360px column. It reported "no overflow at every width" and passed 80 assertions about a page
+the application never produces.
+
+**What it hid**, now measured and fixed: the Country and Company selects cut off by 86px at 360px (a
+`min-width: 180px` that `width: 100%` cannot override), and at 768px the **entire Edit column invisible** behind
+`overflow: hidden`, with the last row impossible to operate at all. A hidden overflow has no visible edge, so
+nothing on screen said anything was missing.
+
+**Scope.** `.sp-table-wrap` now scrolls (`overflow-x: auto`, the `.km-table-scroll` pattern
+`responsive-foundation.css` already names canonical) and the narrow controls release their min-width. The
+application shell is **unchanged**; that it has no mobile breakpoint at all is recorded as a separate finding.
+
+---
+
+### D-S8-B3-25 — Performance observation is OFF by absence, and measures the SCREEN — **FROZEN (CP2M-R2)**
+
+**Decision.** `assets/js/core/perf-observer.js` is **not referenced by `index.html`**. A release candidate
+carries zero bytes of it, registers no listener and has nothing to switch off; the Sandbox harness injects it
+deliberately, and `enable()` must still be called. It issues no request, writes no storage, uploads nothing, and
+stores no URL query string, page text or field value. Its wrappers call through with `apply(this, arguments)`
+and `disable()` restores the original function objects **by identity**.
+
+**Why `apply(this, arguments)` is a contract and not a style.** `switchTo` reads `navToken === undefined` to
+mean "a fresh intent" (CP2M). A wrapper forwarding a fixed arity would turn every tokenless call into a tokened
+one and silently rewrite the navigation authority the previous two rounds were spent establishing.
+
+**Decision.** Every sample records **two** paint timestamps, both taken after a double `requestAnimationFrame`:
+`t_shell_visible` (any content, a spinner satisfies it) and `t_data_visible` (real content, no loading
+affordance). The summary reports the gap.
+
+**Why.** A promise resolving means the data is in a variable; the operator is not looking at a variable. One
+number conflating them is how "we added a skeleton" gets written up as "we fixed the latency". The gap is the
+part a loading state cannot move, so it is reported separately rather than averaged away.
+
+---
+
+### D-S8-B3-26 — The Map canvas is verified in pixels, with a noise floor — **FROZEN (CP2M-R2)**
+
+**Decision.** The globe is verified by decoding Chrome's screenshot, not by querying the DOM, and the experiment
+has **three** runs: two identical ones establish the noise floor, a third performs a real pointer drag.
+
+**Why the DOM cannot answer.** `km-globe.js` creates its context without `preserveDrawingBuffer`, so after
+compositing `toDataURL` and `drawImage` both return a blank image. The screenshot is the only place the pixels
+survive. And "WebGL is available" — the CP2M-R1 answer — is a fact about the browser, not about whether this
+application drew anything.
+
+**Why three runs.** Comparing a dragged frame with an undragged one proves nothing alone: if the scene were
+animated or clock-seeded, two identical runs would differ too and the drag would take the credit. Measured:
+noise floor **0.0000** changed pixels (desktop and mobile), drag effect **0.3731** desktop / **0.6718** mobile.
+The zero floor is also a test of the renderer's claim to consult neither a clock nor a PRNG.
+
+**Not claimed.** The shipment overlay is not exercised — the harness answers the scoped workspace read with a
+generic empty envelope rather than inventing a shape, so the page draws its formal empty state. The globe, its
+geometry, its texture and its zh-Hant labels are the shipped ones and do render.

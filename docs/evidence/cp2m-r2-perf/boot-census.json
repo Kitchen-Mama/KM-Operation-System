@@ -1,0 +1,346 @@
+{
+ "capturedAt": "2026-10-13",
+ "note": "Counted from index.html as it stands. The suite recounts every field from the live file and FAILS on a mismatch, so this cannot quietly describe a past build.",
+ "bootScriptCount": 67,
+ "bootScriptBytes": 4007712,
+ "bootScriptMB": 3.822,
+ "bootScriptTagsTotal": 69,
+ "externalCdnScripts": [
+  "https://cdn.jsdelivr.net/npm/chart.js",
+  "https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"
+ ],
+ "pageScriptCount": 22,
+ "pageScriptBytes": 2418203,
+ "pageScriptMB": 2.306,
+ "pageShareOfBoot": 0.603,
+ "routeOwnedAlready": 18,
+ "routeKeys": [
+  "global-logistics-map",
+  "ops",
+  "product-strategy",
+  "site-priority"
+ ],
+ "mechanicallyCleanCandidates": 10,
+ "mechanicallyCleanBytes": 545024,
+ "mechanicallyCleanMB": 0.52,
+ "mechanicallyCleanFiles": [
+  "assets/js/pages/overseas-stock.js",
+  "assets/js/pages/carrier-rate-card.js",
+  "assets/js/pages/request-order-draft.js",
+  "assets/js/pages/supplychain.js",
+  "assets/js/pages/sku-regional-pricing.js",
+  "assets/js/pages/purchase-order-list.js",
+  "assets/js/pages/overseas-ops-preview.js",
+  "assets/js/pages/automation-schedule.js",
+  "assets/js/pages/overseas-outbound.js",
+  "assets/js/pages/overseas-inbound.js"
+ ],
+ "blockedByCrossFileReference": 11,
+ "blockedByIndexHtmlHandler": 1,
+ "hasOwnDomContentLoaded": 4,
+ "largestBootPageScripts": [
+  {
+   "file": "assets/js/pages/fc-summary.js",
+   "bytes": 525628
+  },
+  {
+   "file": "assets/js/pages/request-order.js",
+   "bytes": 389641
+  },
+  {
+   "file": "assets/js/pages/sku-details.js",
+   "bytes": 158244
+  },
+  {
+   "file": "assets/js/pages/shipping-history.js",
+   "bytes": 136144
+  },
+  {
+   "file": "assets/js/pages/factory-stock.js",
+   "bytes": 134103
+  },
+  {
+   "file": "assets/js/pages/sku-regional-details.js",
+   "bytes": 126569
+  },
+  {
+   "file": "assets/js/pages/shipping-plan.js",
+   "bytes": 111844
+  },
+  {
+   "file": "assets/js/pages/overseas-stock.js",
+   "bytes": 108363
+  },
+  {
+   "file": "assets/js/pages/carrier-rate-card.js",
+   "bytes": 98329
+  },
+  {
+   "file": "assets/js/pages/campaign-risk.js",
+   "bytes": 85511
+  }
+ ],
+ "ownership": [
+  {
+   "file": "assets/js/pages/fc-summary.js",
+   "bytes": 525628,
+   "symbols": 534,
+   "externallyNamed": 3,
+   "externallyNamedSample": [
+    "_fcErrDetail_",
+    "_fcSyncFilterOptions",
+    "initFactoryDropdown"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 1
+  },
+  {
+   "file": "assets/js/pages/request-order.js",
+   "bytes": 389641,
+   "symbols": 344,
+   "externallyNamed": 12,
+   "externallyNamedSample": [
+    "__roDebug",
+    "_buildRequestOrderRowsFromDb",
+    "_opGetRecommendationOptIn",
+    "_opLoadRecommendation",
+    "_roDistinct",
+    "_roEventPrepMonth"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/sku-details.js",
+   "bytes": 158244,
+   "symbols": 189,
+   "externallyNamed": 7,
+   "externallyNamedSample": [
+    "handleSkuTaxRates",
+    "initSkuScroll",
+    "initSkuUnifiedScroll",
+    "openSkuMasterForm",
+    "renderSkuDetailsTable",
+    "selectSkuRow"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 1
+  },
+  {
+   "file": "assets/js/pages/shipping-history.js",
+   "bytes": 136144,
+   "symbols": 112,
+   "externallyNamed": 5,
+   "externallyNamedSample": [
+    "_glmPendingSelect",
+    "isSameDay",
+    "loadHistoryData",
+    "shDocumentPanelHtml",
+    "shRegisterDocumentRefresh"
+   ],
+   "namedByIndexHtml": 2,
+   "namedByIndexHtmlSample": [
+    "showShipmentDraft",
+    "showShipmentOverview"
+   ],
+   "domContentLoadedHandlers": 1
+  },
+  {
+   "file": "assets/js/pages/factory-stock.js",
+   "bytes": 134103,
+   "symbols": 146,
+   "externallyNamed": 4,
+   "externallyNamedSample": [
+    "_fmvEscapeHtml",
+    "_fsLoad",
+    "initFactoryDropdown",
+    "initFactoryStockPage"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/sku-regional-details.js",
+   "bytes": 126569,
+   "symbols": 40,
+   "externallyNamed": 1,
+   "externallyNamedSample": [
+    "srdPriceModeChanged"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/shipping-plan.js",
+   "bytes": 111844,
+   "symbols": 84,
+   "externallyNamed": 3,
+   "externallyNamedSample": [
+    "_spLineLogistics",
+    "markAsDone",
+    "renderShippingPlan"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/overseas-stock.js",
+   "bytes": 108363,
+   "symbols": 118,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/carrier-rate-card.js",
+   "bytes": 98329,
+   "symbols": 37,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/campaign-risk.js",
+   "bytes": 85511,
+   "symbols": 107,
+   "externallyNamed": 1,
+   "externallyNamedSample": [
+    "getCategories"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 1
+  },
+  {
+   "file": "assets/js/pages/request-order-draft.js",
+   "bytes": 82632,
+   "symbols": 26,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/supplychain.js",
+   "bytes": 76861,
+   "symbols": 5,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/forecast.js",
+   "bytes": 76596,
+   "symbols": 60,
+   "externallyNamed": 6,
+   "externallyNamedSample": [
+    "closeDateModal",
+    "fetchForecastSeries",
+    "handleFcUpdate",
+    "initFcSkuDecisionSection",
+    "isSameDay",
+    "openDateModal"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/sku-regional-pricing.js",
+   "bytes": 62248,
+   "symbols": 0,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/sku-handbook.js",
+   "bytes": 59566,
+   "symbols": 37,
+   "externallyNamed": 1,
+   "externallyNamedSample": [
+    "renderSkuHandbook"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/purchase-order-overview.js",
+   "bytes": 51562,
+   "symbols": 14,
+   "externallyNamed": 1,
+   "externallyNamedSample": [
+    "poToggleCard"
+   ],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/purchase-order-list.js",
+   "bytes": 50868,
+   "symbols": 10,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/overseas-ops-preview.js",
+   "bytes": 32779,
+   "symbols": 0,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/automation-schedule.js",
+   "bytes": 19826,
+   "symbols": 3,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/overseas-outbound.js",
+   "bytes": 7590,
+   "symbols": 0,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  },
+  {
+   "file": "assets/js/pages/overseas-inbound.js",
+   "bytes": 5528,
+   "symbols": 0,
+   "externallyNamed": 0,
+   "externallyNamedSample": [],
+   "namedByIndexHtml": 0,
+   "namedByIndexHtmlSample": [],
+   "domContentLoadedHandlers": 0
+  }
+ ]
+}

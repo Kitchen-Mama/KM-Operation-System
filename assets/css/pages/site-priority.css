@@ -41,7 +41,16 @@
 #site-priority-section .sp-status--error   { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
 
 /* ---- table ---- */
-#site-priority-section .sp-table-wrap { border: 1px solid var(--border-light, #e5e7eb); border-radius: 8px; overflow: hidden; background: #fff; }
+/* S8-B3-R3-CP2M-R2 — THE WRAPPER SCROLLS; IT DOES NOT AMPUTATE.
+   `overflow: hidden` was measured cutting the ENTIRE Edit column off at 768px: the table needs more width
+   than the tablet content column has, and what does not fit was simply not drawn. The buttons were 81px
+   past the wrapper, 0% visible, and the last row could not be operated at all -- on a device whose primary
+   input is a finger. Nothing on screen said anything was missing, because a hidden overflow has no edge.
+   `overflow-x: auto` is the pattern responsive-foundation.css already names canonical (`.km-table-scroll`:
+   "the scroller OWNS the overflow, never the outer page"), so the column becomes reachable and the page
+   still never pushes the viewport sideways. The Y axis stays clipped, which is what keeps the border
+   radius. */
+#site-priority-section .sp-table-wrap { border: 1px solid var(--border-light, #e5e7eb); border-radius: 8px; overflow-x: auto; overflow-y: hidden; background: #fff; }
 #site-priority-section .sp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 #site-priority-section .sp-table thead th {
   padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
@@ -136,11 +145,22 @@
   #site-priority-section { padding: 14px 10px; }
   #site-priority-section .sp-filters { gap: 8px; }
   #site-priority-section .sp-field { flex: 1 1 140px; min-width: 0; }
-  #site-priority-section .sp-select { width: 100%; }
+  /* S8-B3-R3-CP2M-R2 — `min-width: 0` IS THE WHOLE FIX, and `width: 100%` alone never was.
+     The base rule gives .sp-select `min-width: 180px`, and a min-width BEATS a width: the control stayed
+     180px wide inside a content column that the real shell makes 105px at 360px, so the Country and
+     Company selects were cut off by 86px -- 48% of each control, including its right edge and its arrow.
+     It was invisible to the CP2M-R1 capture because that harness replaced the shell with one that had no
+     sidebar, handing the page 360px where 180px fits comfortably. */
+  #site-priority-section .sp-select { width: 100%; min-width: 0; }
 
   #site-priority-section .sp-table-wrap { border: 0; border-radius: 0; background: transparent; overflow: visible; }
   #site-priority-section .sp-table,
   #site-priority-section .sp-table tbody { display: block; width: 100%; }
+  /* S8-B3-R3-CP2M-R2 — components.css gives EVERY `table` `overflow: hidden`, which on this card layout
+     silently cut 13px off each Edit button at 360px. That global rule stays untouched -- it belongs to
+     every other page in the application -- and is simply not inherited here, where a card layout has
+     nothing to clip and a wrapper above it is already `visible`. */
+  #site-priority-section .sp-table { overflow: visible; }
   /* The header row is removed from the visual flow but each cell keeps its label (data-label below), so no
      column meaning is lost — it moves rather than disappearing. */
   #site-priority-section .sp-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -158,6 +178,13 @@
   #site-priority-section .sp-table tbody tr[data-sp-row] td {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     width: auto; padding: 7px 12px; border-bottom: 1px solid #f1f5f9;
+    /* A card cell WRAPS rather than overflowing. At 360px the real shell leaves a 105px content column,
+       which is narrower than a label plus a control; without this the control simply left the card. */
+    flex-wrap: wrap;
+    /* S8-B3-R3-CP2M-R2 — a flex item's default `min-width: auto` refuses to shrink below its content, so
+       at 360px (a 105px content column) the card rows pushed 13px past the table and the Edit button lost
+       a quarter of itself. `min-width: 0` lets the row honour the width it was given. */
+    min-width: 0;
   }
   #site-priority-section .sp-table tbody tr[data-sp-row] td:last-child { border-bottom: 0; }
   #site-priority-section .sp-table tbody tr[data-sp-row] td::before {
@@ -173,6 +200,8 @@
   #site-priority-section .sp-col-state,
   #site-priority-section .sp-col-act { width: auto; white-space: normal; }
   #site-priority-section .sp-col-act { flex-wrap: wrap; }
+  /* And the control itself never exceeds the cell it sits in. */
+  #site-priority-section .sp-btn { max-width: 100%; }
   #site-priority-section .sp-input { width: 100%; max-width: 140px; }
   /* Touch targets: a 44px row is the smallest a finger reliably hits. */
   #site-priority-section .sp-btn { min-height: 38px; padding: 8px 14px; }

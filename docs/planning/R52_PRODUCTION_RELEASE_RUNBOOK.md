@@ -141,6 +141,33 @@ The `MAP_`, `IR_CSS_` and `METHOD_REGISTRY_` series are untouched — crossing t
 Publish **all five**. A partial publication that serves a new `site-priority.js` against an old
 `operation-system-db-api.js` has no bounded writer to call and will refuse every save.
 
+### 5.1 CP2M-R2 — `site-priority.css` CHANGED AGAIN, AND THE TOKEN QUESTION IS CONDITIONAL
+
+CP2M-R2 made three corrections to `assets/css/pages/site-priority.css` (the table wrapper scrolls instead of
+clipping; the narrow filter select releases its 180px `min-width`; the card cell wraps). The file is already in
+the package above, so the publication SET is unchanged — but the cache token is not automatically settled:
+
+> **A token may only be reused while nothing carrying it has been published.**
+
+- **If the R52 frontend package has NOT yet been published** — `r52-prioritywrite-20261012` may carry the new
+  bytes unchanged. Nothing is holding the old copy, so nothing can be stranded on it.
+- **If it HAS been published** (any browser has already been served
+  `site-priority.css?v=r52-prioritywrite-20261012`) — **a new token is REQUIRED**, appended to `ROUND_TOKENS`
+  and rotated across the application set. Reusing it would leave every one of those browsers on the copy with
+  the clipped Edit column, permanently.
+
+**This agent did not rotate the token**, for two stated reasons: the round's own condition for cutting a final
+candidate ("once stable") is not met while the cold-start finding in §5.2 is open, and the publication state
+above is a fact only the Owner holds. **Determining which branch applies is a release gate (§10).**
+
+### 5.2 CP2M-R2 — A COLD-START FINDING THAT IS NOT FIXED AND IS NOT A BLOCKER
+
+The bounded performance observation measured the boot payload at **67 scripts / 3.82 MB**, of which **2.31 MB
+(60%) is page code for pages that are not Home**. It is a pre-existing property of every release to date, it is
+NOT a regression introduced by R52, and nothing in this runbook depends on it. It is recorded here so the next
+release has the number, not to gate this one. See
+`docs/planning/NAVIGATION_PERFORMANCE_OBSERVATION_S8_B3_R3_CP2M_R2.md`.
+
 ---
 
 ## 6. ACCEPTANCE — run immediately after step E
@@ -224,6 +251,7 @@ by R52 except for the two facts below.
 | Gate | State |
 |---|---|
 | Pages publishing source | **UNVERIFIED** — owner reports unmodified, no view access (R51 runbook §1) |
+| **CP2M-R2 cache token branch (§5.1)** | **UNRESOLVED** — depends on whether the R52 frontend package has already been published. Reusing a published token strands browsers on the clipped layout. |
 | Rollback Version Candidate 307 | **UNVERIFIED** |
 | Seven-file backend sync | PENDING |
 | New Apps Script deployment version | PENDING |
