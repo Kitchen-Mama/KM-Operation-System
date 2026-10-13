@@ -65,6 +65,19 @@ const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 /** How long a page may hold its own load event before the server gives up on it. */
+
+/**
+ * Stamp a stub answer with the correlation a real deployment owes the client.
+ * Without this the transport reports RESPONSE_CORRELATION_UNPROVEN and the page refuses the answer.
+ */
+function withCorrelation(payload, action, rid) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const out = Object.assign({}, payload);
+  out.meta = Object.assign({}, out.meta || {}, { action: action, requestId: rid || undefined });
+  if (rid) out.request_id = rid;
+  return out;
+}
+
 const MAX_HOLD_MS = 25000;
 
 const BROWSERS = [
@@ -447,12 +460,18 @@ function startServer(pages, held, results) {
       req.on('end', () => {
         let action = u.searchParams.get('action') || '';
         let table = u.searchParams.get('table') || '';
-        if (!action && body) { try { const j = JSON.parse(body); action = j.action || ''; table = table || j.table || ''; } catch (e) {} }
+        let rid = u.searchParams.get('km_rid') || '';
+        if (!action && body) {
+          try { const j = JSON.parse(body); action = j.action || ''; table = table || j.table || ''; rid = rid || j.requestId || ''; }
+          catch (e) {}
+        }
+        if (!table) { try { const b = JSON.parse(u.searchParams.get('km_body') || '{}'); table = b.table || ''; } catch (e) {} }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-        if (action === 'getTable' && table === 'marketplaces') { res.end(JSON.stringify({ success: true, data: { rows: FIXTURE } })); return; }
-        if (action === 'getTable') { res.end(JSON.stringify({ success: true, data: { rows: [] } })); return; }
-        if (action === 'getClientCapabilities') { res.end(JSON.stringify({ success: true, data: { product_strategy_enabled: true } })); return; }
-        res.end(JSON.stringify({ success: true, data: { rows: [], marketplaces: [], countries: [] } }));
+        const send = (o) => res.end(JSON.stringify(withCorrelation(o, action, rid)));
+        if (action === 'getTable' && table === 'marketplaces') { send({ success: true, data: { rows: FIXTURE } }); return; }
+        if (action === 'getTable') { send({ success: true, data: { rows: [] } }); return; }
+        if (action === 'getClientCapabilities') { send({ success: true, data: { product_strategy_enabled: true } }); return; }
+        send({ success: true, data: { rows: [], marketplaces: [], countries: [] } });
       });
       return;
     }

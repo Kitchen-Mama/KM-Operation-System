@@ -87,6 +87,8 @@
     var samples = [];
     var current = null;            // the navigation sample being filled, or null
     var resObs = null;             // PerformanceObserver('resource')
+    var ltObs = null;              // PerformanceObserver('longtask') — real main-thread blocking
+    var longTasks = [];            // reduced long-task records, memory only
     var mutObs = null;             // MutationObserver on the active section
     var resources = [];            // reduced resource records for the open sample
     var originals = null;          // { ownerPath -> fn } captured at enable()
@@ -165,13 +167,13 @@
      * until that frame is done, which is the cheapest honest "it is on screen now" the platform offers.
      */
     function afterPaint(fn) {
-        if (typeof requestAnimationFrame !== 'function') { fn(); return; }
-        requestAnimationFrame(function () { requestAnimationFrame(function () { fn(); }); });
+        if (typeof requestAnimationFrame !== 'function') { fn(now()); return; }
+        requestAnimationFrame(function () { requestAnimationFrame(function () { fn(now()); }); });
     }
 
     // ---- sample lifecycle --------------------------------------------------------------------------
 
-    function openSample(label, cold) {
+    function openSample(label, cold, noClick) {
         closeSample('superseded');
         resources = [];
         current = {
@@ -182,6 +184,9 @@
             t_js_start: null, t_js_end: null,
             t_switch_start: null, t_switch_end: null,
             t_shell_visible: null, t_data_visible: null, t_settled: null,
+            /* DETECTED is when the DOM condition became true; VISIBLE is after the frame carrying it was
+               painted. Keeping both is what lets a reader see the frame this metric deliberately includes. */
+            t_shell_detected: null, t_data_detected: null,
             dataBasis: null,
             /* A NULL RENDER TIME MUST SAY WHY IT IS NULL. Without these, "never became visible" and
                "was never watched" are the same answer, and they call for opposite fixes. */
@@ -193,7 +198,14 @@
            than a second old is some other interaction -- a filter, a sort, a stray press -- and
            attributing it here would silently inflate every number by the operator's thinking time. An
            unclaimed sample falls back to t_nav and says so by leaving t_click null. */
-        if (pendingClick !== null && (Date.now() - pendingClickAt) < 1000) {
+        /* AND AN INTERACTION SAMPLE CLAIMS NO CLICK AT ALL, because its click has not happened yet.
+           markInteraction opens the sample BEFORE dispatching the interaction, so the most recent
+           pending click is the PREVIOUS interaction's -- within the one-second window and therefore
+           claimed. Measured: six Product Strategy view switches each reported ~935 ms, which was the
+           previous step's 900 ms wait plus the real cost, with Long Tasks reporting ZERO blocking the
+           whole time. An off-by-one click is the same fault as a stale callback, arriving from the
+           other direction. */
+        if (!noClick && pendingClick !== null && (Date.now() - pendingClickAt) < 1000) {
             current.t_click = pendingClick;
             pendingClick = null;
         }
@@ -234,43 +246,63 @@
            frames for a bounded window, and the watch begins the moment the element appears. */
         if (!sec) {
             var waited = 0;
-            var smp = current;
+            var pending = current;
             (function awaitSection() {
-                if (!current || current !== smp || waited++ > 180) return;
-                if (document.getElementById(sectionId)) { current.sectionFound = true; watchRender(sectionId); return; }
+                if (!pending || pending.closed !== null || current !== pending || waited++ > 180) return;
+                if (document.getElementById(sectionId)) { pending.sectionFound = true; watchRender(sectionId); return; }
                 if (typeof requestAnimationFrame === 'function') requestAnimationFrame(awaitSection);
             }());
             return;
         }
         if (mutObs) { try { mutObs.disconnect(); } catch (e) {} }
 
+        /* THE SAMPLE IS BOUND HERE, AND THAT IS A CORRECTION OF A REAL DEFECT.
+           Every callback below used to write to `current`. A double requestAnimationFrame takes two frames
+           to fire, and in that time the sample it was scheduled for can CLOSE and a newer navigation can
+           open its own. The late callback then stamped the NEW sample with the OLD sample's timestamp --
+           and the settle callback could close a navigation that had only just started. Binding the sample
+           object makes every write go where it was measured, and a closed sample absorbs nothing. */
+        var smp = current;
+
         function probe() {
-            if (!current) return;
+            if (!smp || smp.closed !== null) return;      // this watcher's sample is over; it owns nothing now
             var s = document.getElementById(sectionId);
             if (!s) return;
-            current.probes++;
-            current.lastShellCheck = hasShell(s);
-            if (current.t_shell_visible === null && hasShell(s)) {
-                var at = now();
-                afterPaint(function () { if (current && current.t_shell_visible === null) current.t_shell_visible = at; });
+            smp.probes++;
+            smp.lastShellCheck = hasShell(s);
+
+            /* THE TIMESTAMP IS TAKEN AFTER THE PAINT, NOT BEFORE IT.
+               It used to be read at DETECTION -- the instant the DOM condition became true -- and then
+               stored from inside the post-paint callback, which recorded when the markup changed while
+               claiming to describe when the screen did. The two are a frame apart, and that frame is
+               exactly the thing this metric exists to include. Both are now kept: `detected` is the DOM
+               instant, `visible` is after the frame carrying it has been painted. */
+            if (smp.t_shell_visible === null && hasShell(s)) {
+                var det = now();
+                afterPaint(function (painted) {
+                    if (!smp || smp.closed !== null || smp.t_shell_visible !== null) return;
+                    smp.t_shell_detected = det;
+                    smp.t_shell_visible = painted;
+                });
             }
-            if (current.t_data_visible === null) {
+            if (smp.t_data_visible === null) {
                 var d = hasData(s, sectionId);
                 if (d.ok) {
-                    var at2 = now();
-                    afterPaint(function () {
-                        if (current && current.t_data_visible === null) {
-                            current.t_data_visible = at2;
-                            current.dataBasis = d.basis;
-                        }
+                    var det2 = now();
+                    afterPaint(function (painted) {
+                        if (!smp || smp.closed !== null || smp.t_data_visible !== null) return;
+                        smp.t_data_detected = det2;
+                        smp.t_data_visible = painted;
+                        smp.dataBasis = d.basis;
                     });
                 }
             }
             if (quietTimer) clearTimeout(quietTimer);
             quietTimer = setTimeout(function () {
-                var at3 = now();
-                afterPaint(function () {
-                    if (current) { current.t_settled = at3; closeSample('settled'); }
+                afterPaint(function (painted) {
+                    if (!smp || smp.closed !== null) return;
+                    smp.t_settled = painted;
+                    if (current === smp) closeSample('settled');   // never close a sample that is not ours
                 });
             }, QUIET_MS);
         }
@@ -289,9 +321,9 @@
            wins. The window is bounded, so an idle page costs nothing once it closes. */
         var frames = 0;
         (function poll() {
-            if (!current || frames++ > 180) return;      // ~3s at 60fps, then it stops for good
+            if (!smp || smp.closed !== null || frames++ > 180) return;   // ~3s at 60fps, then it stops for good
             probe();
-            if (current && current.t_data_visible !== null) return;
+            if (smp.t_data_visible !== null) return;
             if (typeof requestAnimationFrame === 'function') requestAnimationFrame(poll);
         }());
 
@@ -430,6 +462,30 @@
             listeners.push({ target: document, type: 'click', handler: onClick, options: true });
         }
 
+        /* MAIN-THREAD BLOCKING, from the browser's own ledger.
+           This exists because of a correction: the interval between the last script byte and
+           scriptLoader.ensure resolving is NOT total JS CPU time, and must never be reported as it.
+           Scripts are inserted with async=false, so they EXECUTE AS THEY ARRIVE, in order -- execution of
+           the first file overlaps the download of the second, and what remains after the last byte is only
+           the tail that could not overlap. Total JS CPU is not observable from here at all. What IS
+           observable, and is what actually hurts an operator, is a task that blocked the main thread for
+           more than 50 ms; Long Tasks reports those directly. */
+        if (typeof PerformanceObserver === 'function') {
+            try {
+                ltObs = new PerformanceObserver(function (list) {
+                    var ents = list.getEntries();
+                    for (var i = 0; i < ents.length; i++) {
+                        var e = ents[i];
+                        var rec = { startAt: +e.startTime.toFixed(1), ms: +e.duration.toFixed(1) };
+                        longTasks.push(rec);
+                        if (longTasks.length > 200) longTasks.shift();
+                        if (current) (current.longTasks = current.longTasks || []).push(rec);
+                    }
+                });
+                ltObs.observe({ type: 'longtask', buffered: true });
+            } catch (e) { ltObs = null; }
+        }
+
         // THE NETWORK, read from the browser's own ledger. Nothing is intercepted.
         if (typeof PerformanceObserver === 'function') {
             try {
@@ -469,6 +525,8 @@
         }
         listeners = [];
         if (resObs) { try { resObs.disconnect(); } catch (e2) {} resObs = null; }
+        if (ltObs) { try { ltObs.disconnect(); } catch (e2b) {} ltObs = null; }
+        longTasks = [];
         if (mutObs) { try { mutObs.disconnect(); } catch (e3) {} mutObs = null; }
         if (quietTimer) { clearTimeout(quietTimer); quietTimer = null; }
         current = null;
@@ -500,7 +558,8 @@
 
         disable: function () {
             if (!enabled) return { wasEnabled: false, installed: 0 };
-            var n = (originals ? originals.length : 0) + listeners.length + (resObs ? 1 : 0) + (mutObs ? 1 : 0);
+            var n = (originals ? originals.length : 0) + listeners.length
+                + (resObs ? 1 : 0) + (ltObs ? 1 : 0) + (mutObs ? 1 : 0);
             uninstall();
             enabled = false;
             return { wasEnabled: true, installed: n, samples: samples.length };
@@ -508,7 +567,8 @@
 
         isEnabled: function () { return enabled; },
         installedCount: function () {
-            return (originals ? originals.length : 0) + listeners.length + (resObs ? 1 : 0) + (mutObs ? 1 : 0);
+            return (originals ? originals.length : 0) + listeners.length
+                + (resObs ? 1 : 0) + (ltObs ? 1 : 0) + (mutObs ? 1 : 0);
         },
 
         /**
@@ -521,7 +581,7 @@
          */
         markInteraction: function (label, sectionId) {
             if (!enabled) return false;
-            var smp = openSample(label, false);
+            var smp = openSample(label, false, true);
             smp.interaction = true;
             smp.sectionId = String(sectionId || '');
             watchRender(String(sectionId || ''));

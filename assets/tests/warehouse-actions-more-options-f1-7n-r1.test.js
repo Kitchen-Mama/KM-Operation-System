@@ -66,7 +66,12 @@ section('CSS parity (neutral #f1f5f9 / #334155 trigger) + cache tokens bumped');
 ok(/#factory-stock-section \.fs-actions-menu__trigger\s*\{[^}]*background:\s*#f1f5f9[^}]*color:\s*#334155/.test(FS_CSS.replace(/\n/g, ' ')), 'Factory trigger uses the neutral More Options palette');
 ok(/#overseas-stock-section \.ovs-actions-menu__trigger\s*\{[^}]*background:\s*#f1f5f9[^}]*color:\s*#334155/.test(OV_CSS.replace(/\n/g, ' ')), 'Overseas trigger uses the neutral More Options palette');
 ok(/#factory-stock-section \.fs-actions-menu__list\[hidden\] \{ display: none/.test(FS_CSS) && /#overseas-stock-section \.ovs-actions-menu__list\[hidden\] \{ display: none/.test(OV_CSS), 'both menu lists hide via [hidden] (JS-toggled)');
-var fjs = INDEX.match(/factory-stock\.js\?v=([A-Za-z0-9_-]+)/), ojs = INDEX.match(/overseas-stock\.js\?v=([A-Za-z0-9_-]+)/);
+// S8-B3-R3-CP2M-R3 — overseas-stock.js moved off the boot path into KM_ROUTE_ASSETS_, so its ?v= token is
+// written in app.js now, not index.html. The claim is unchanged (cache-busted, off the stale token); only
+// where the token lives moved, so both sources are searched.
+var APP_FOR_TOKENS = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
+var fjs = INDEX.match(/factory-stock\.js\?v=([A-Za-z0-9_-]+)/),
+    ojs = (INDEX + APP_FOR_TOKENS).match(/overseas-stock\.js\?v=([A-Za-z0-9_-]+)/);
 var fcss = INDEX.match(/factory-stock\.css\?v=([A-Za-z0-9_-]+)/), ocss = INDEX.match(/overseas-stock\.css\?v=([A-Za-z0-9_-]+)/);
 ok(fjs && fjs[1] !== 'whscope-20260820', 'factory-stock.js token bumped');
 ok(ojs && ojs[1] !== 'whscope-20260820', 'overseas-stock.js token bumped');

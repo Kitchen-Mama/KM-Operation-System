@@ -86,7 +86,10 @@ eq(topo.missing, [], 'A1a no declared boot script has stopped loading');
 eq(topo.setChangeCount, 0, 'A1b BOOT_SCRIPT_SET_UNEXPECTED_CHANGE_COUNT = 0');
 eq(topo.orderDriftCount, 0, 'A1c BOOT_ORDER_DRIFT_COUNT = 0');
 eq(topo.routeAtBoot, [], 'A1d NEW_ROUTE_SCRIPT_AT_BOOT_COUNT = 0');
-eq([topo.declaredCount, topo.liveCount], [67, 67], 'A1e the census and the shell agree on 67 boot scripts');
+// S8-B3-R3-CP2M-R3 — 67 → 65. carrier-rate-card.js and overseas-stock.js became ROUTE-owned, so they
+// left index.html AND the declaration in _boot-topology.js together. Both numbers are stated so a change
+// to either alone is a failure rather than a silently agreed drift.
+eq([topo.declaredCount, topo.liveCount], [65, 65], 'A1e the census and the shell agree on 65 boot scripts');
 
 // The old brittle floor is GONE from the gate, and that is asserted rather than assumed.
 eq(count(S4R5, /M\.boot\.pre\.bytes - 1500 \* 1024/g), 0,
@@ -100,10 +103,12 @@ ok(/S8_BOOT_PAYLOAD_HEADROOM_AND_LOADING_ARCHITECTURE/.test(S4R5),
 ok(/A1d4 NEW_ROUTE_SCRIPT_AT_BOOT_COUNT/.test(S4R5),
   'A3  A2_ROUTE_APPEND_GUARD is live, generalized from nine remembered names to the whole registry');
 // S8-B2-R1 — 16 → 18. Site Priority joins the ROUTE registry with the canonical country owner it borrows.
+// S8-B3-R3-CP2M-R3 — 18 → 20. Carrier Rate Card and Overseas Stock join it, one file each; neither borrows
+// a shared owner, because the dependency audit found neither names a symbol defined outside itself.
 // The number is a CENSUS, not a ceiling: it exists so a file cannot join the registry and the boot path at
 // the same time without someone saying so. Both new files are checked against boot by A1d4 like every other.
-ok(live.routeAssets.length === 18,
-  'A3a and that registry is 18 files, every one of which must stay off boot', live.routeAssets.length);
+ok(live.routeAssets.length === 20,
+  'A3a and that registry is 20 files, every one of which must stay off boot', live.routeAssets.length);
 
 // BOOT PAYLOAD: measured and reported, not gated.
 console.log('     BOOT_PAYLOAD_BYTES = ' + live.bytes + '   (pre-S4-R5 ' + MEAS.boot.pre.bytes + ')');
@@ -313,8 +318,13 @@ mut('D6 §4A2 — a route script swapped IN for an approved one (set size unchan
   var l = withLocal(function (x) { return x.file !== 'assets/js/core/state.js'; });
   l.push({ file: 'assets/js/pages/inventory-replenishment.js', bytes: 1, defer: true });
   var t = topoOf(l);
-  // The old gate compared COUNTS only (67 === 67) and would have passed this exactly.
-  return t.liveCount === 67 && (t.setChangeCount > 0 || t.routeAtBoot.length > 0);
+  /* The old gate compared COUNTS only and would have passed this exactly, so the size MUST be held
+     constant for the mutant to be meaningful. S8-B3-R3-CP2M-R3: that size was the literal 67, which
+     stopped being the boot count the moment two more scripts became route-owned -- the mutant then
+     "survived" because its own precondition was false, not because the gate had weakened. Derived from
+     the live surface, it states the invariant (one out, one in) instead of a number that expires. */
+  var sameSize = withLocal().length;
+  return t.liveCount === sameSize && (t.setChangeCount > 0 || t.routeAtBoot.length > 0);
 });
 
 // §4F — THE POINT OF THE RE-ENCODING. Ordinary growth inside an already-approved owner must NOT fail.

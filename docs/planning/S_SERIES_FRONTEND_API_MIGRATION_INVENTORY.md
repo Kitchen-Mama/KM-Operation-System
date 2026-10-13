@@ -2,7 +2,10 @@
 
 > **Round:** P1-B8D-R8 §9. **READ-ONLY CENSUS. No page runtime outside Product Strategy was modified.**
 > **Repo:** `Operation System` · **Branch:** `feature/product-strategy-board-p0` · **PRE HEAD:** `d7a6061`.
-> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 69**
+> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 67**
+> (69 before S8-B3-R3-CP2M-R3, which moved `pages/carrier-rate-card.js` (98 KB) and
+> `pages/overseas-stock.js` (106 KB) out of `index.html` into `KM_ROUTE_ASSETS_`. Both are still
+> production data paths and are still listed below; only how they are fetched changed.)
 > (77 before S4-R5, which moved the two largest route payloads out of `index.html` and into
 > `KM_ROUTE_ASSETS_` in `app.js`: `pages/inventory-replenishment.js` (947 KB) and the eight-file
 > On-the-Way map family (809 KB). All nine are still production data paths and are still listed below;

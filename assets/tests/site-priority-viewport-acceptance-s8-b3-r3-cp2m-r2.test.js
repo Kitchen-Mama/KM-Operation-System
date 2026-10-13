@@ -90,15 +90,27 @@ WANT.forEach(function (w) {
   ok(r.pngBytes > 20000, 'B7c a real screenshot was produced', r.pngBytes);
   // The shell as the application actually defines it.
   ok(mm.shell && mm.shell.sidebar, 'B7d the sidebar is present in the captured page');
-  eq(mm.shell.mainContent.marginLeft, '240px', 'B7e .main-content keeps its 240px margin at ' + w + 'px');
+  /* S8-B3-R3-CP2M-R3 — THE MARGIN IS NOW RESPONSIVE, AND THAT IS THE FIX.
+     CP2M-R2 asserted 240px at EVERY width, which is what the shell did and why a 360px phone was left a
+     105px column. Below the drawer breakpoint the sidebar leaves the flow and the margin goes to 0; at
+     desktop widths it is unchanged. Both halves are asserted, so neither can regress unnoticed. */
+  if (Number(w) <= 1024) {
+    eq(mm.shell.mainContent.marginLeft, '0px', 'B7e ' + w + 'px the content takes the full width (drawer layout)');
+  } else {
+    eq(mm.shell.mainContent.marginLeft, '240px', 'B7e ' + w + 'px the desktop 240px margin is unchanged');
+  }
   eq(mm.shell.mainContent.overflowX, 'hidden', 'B7f and its overflow-x is hidden at ' + w + 'px');
 });
 
-// The consequence, stated as a number so it cannot be argued with.
-ok(m(EV, '360').shell.usableContentWidth <= 120,
-  'B8 at 360px the real content column is ~105px, not 360px', m(EV, '360').shell.usableContentWidth);
+/* The consequence, stated as a number so it cannot be argued with.
+   CP2M-R2 measured 105px here and recorded it as the defect. CP2M-R3's drawer gives the page the
+   viewport back; the BEFORE capture still carries the 105px and section G asserts the delta. */
+ok(m(EV, '360').shell.usableContentWidth >= 320,
+  'B8 at 360px the content column is now most of the viewport', m(EV, '360').shell.usableContentWidth);
+ok(m(EV, '768').shell.usableContentWidth >= 700,
+  'B8a and a 768px tablet gets its full width', m(EV, '768').shell.usableContentWidth);
 ok(m(EV, '1920').shell.usableContentWidth > 1500,
-  'B8a and the same shell gives 1680px at 1920px', m(EV, '1920').shell.usableContentWidth);
+  'B8b while the desktop layout is unchanged at 1680px', m(EV, '1920').shell.usableContentWidth);
 
 // -------------------------------------------------------------------------------------------------------------
 section('C. the page renders, at every width');
@@ -137,11 +149,14 @@ WANT.forEach(function (w) {
   // elementFromPoint returning the control itself is what separates "in the DOM" from "usable".
   ok(/button/.test(String(lr.elementAtPoint || '')), 'E1a ' + w + 'px and the element at its centre IS the control', lr.elementAtPoint);
 });
-// At 768 the table is wider than the tablet column, so reaching the Edit column takes a sideways scroll.
-// That is recorded rather than smoothed over: it is the honest cost of the fix.
-eq((m(EV, '768').lastRow || {}).neededHorizontalScroll, true,
-  'E2 at 768px reaching it requires the table scroller — recorded, not hidden');
-eq((m(EV, '1920').lastRow || {}).neededHorizontalScroll, false, 'E2a and at 1920px it does not');
+/* S8-B3-R3-CP2M-R3 — THE SIDEWAYS SCROLL IS GONE AT 768px, and it went for the right reason.
+   CP2M-R2 made the table wrapper scroll so the Edit column stopped being amputated; that was the fix
+   available without touching the shell, and it cost a horizontal scroll on a tablet. With the shell
+   responsive the tablet now gets its whole 768px and the table fits, so the scroller is still there as
+   the safety net but nothing needs it. */
+eq((m(EV, '768').lastRow || {}).neededHorizontalScroll, false,
+  'E2 at 768px the table fits — no sideways scroll is needed any more');
+eq((m(EV, '1920').lastRow || {}).neededHorizontalScroll, false, 'E2a nor at 1920px');
 
 // -------------------------------------------------------------------------------------------------------------
 section('F. touch targets, by input rather than by layout');
@@ -193,10 +208,17 @@ section('H. (non-vacuity) the two captures are different measurements of differe
 
 ok(JSON.stringify(BEFORE.sources) !== JSON.stringify(EV.sources),
   'H1 before and after were taken against different sources — otherwise one of them is a copy');
-eq(BEFORE.sources['index.html'], EV.sources['index.html'],
-  'H1a but index.html did NOT change between them — the shell is not what was fixed');
+/* S8-B3-R3-CP2M-R3 — index.html DOES differ now, and the assertion is inverted deliberately.
+   In CP2M-R2 it had to be IDENTICAL, because that round fixed only the page's own stylesheet and the
+   claim was "the shell is not what was fixed". CP2M-R3 fixed the shell itself -- a drawer opener and a
+   backdrop in index.html, a breakpoint in layout.css -- so an unchanged index.html would now mean the
+   shell work never shipped. */
+ok(BEFORE.sources['index.html'] !== EV.sources['index.html'],
+  'H1a index.html DID change — the shell is what CP2M-R3 fixed');
+ok(BEFORE.sources['assets/css/layout.css'] !== EV.sources['assets/css/layout.css'],
+  'H1b and layout.css with it — the responsive rules live there');
 ok(BEFORE.sources['assets/css/pages/site-priority.css'] !== EV.sources['assets/css/pages/site-priority.css'],
-  'H1b and the page stylesheet DID — which is the only thing this round changed');
+  'H1c the page stylesheet also differs, from the CP2M-R2 clipping fix');
 ok((EV.results || []).every(r => r.png), 'H2 every width produced a screenshot file');
 ok(WANT.every(w => m(EV, w).watched && m(EV, w).watched.length >= 5),
   'H3 every width measured a real set of controls, not an empty one');

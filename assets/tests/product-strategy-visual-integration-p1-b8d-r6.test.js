@@ -822,14 +822,21 @@ if (BROWSER) {
   });
 
   /* H6 — mobile stops going single-column and the controls collide. */
-  /* H6 — mobile. THE ROW COUNT PROVES NOTHING AT 390: the shell's fixed 240px sidebar leaves a
-     content column narrower than a single control, so three controls sit on three rows whatever the
-     rule says. What the mobile rule actually buys is that a control FITS ITS CARD instead of
-     hanging out of it, and that is what breaks when the fixed basis comes back. */
+  /* H6 — mobile. THE ROW COUNT PROVES NOTHING AT 390: three controls sit on three rows whatever the
+     rule says. What the mobile rule actually buys is that a control FITS ITS CARD instead of hanging
+     out of it, and that is what breaks when the fixed basis comes back.
+
+     S8-B3-R3-CP2M-R3 — THE FORCED BASIS HAD TO GROW, AND THE REASON IS A FIX, NOT A WEAKENING.
+     This comment used to say the shell's fixed 240px sidebar left "a content column narrower than a
+     single control", and the mutant forced 260px to overflow it. The responsive shell gives a 390px
+     phone 375px of content instead of 135px, so 260px now FITS and the mutant stopped expressing its
+     own defect — it survived because its premise had been repaired, not because the guard had weakened.
+     The basis is raised past the width that is now available, so the mutant means again exactly what it
+     meant: a fixed basis wider than the card makes a control hang out of it. */
   mut('H6  a mobile control stops fitting its card', function () {
     /* SAME REASON AS H2: the panel's own mobile rule is later and wins, so the bar's was inert. */
     return withCss('  .psb-page .psb-filters .cmd-field--category { flex: 1 1 100%; min-width: 0; }',
-      '  .psb-page .psb-filters .cmd-field--category { flex: 0 0 260px; min-width: 260px; }',
+      '  .psb-page .psb-filters .cmd-field--category { flex: 0 0 520px; min-width: 520px; }',
       function () {
         var m = measure({ noSite: true }, 390, 844).visual;
         var bar = m.panel && m.panel.box;

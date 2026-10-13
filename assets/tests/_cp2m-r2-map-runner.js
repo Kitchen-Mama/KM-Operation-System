@@ -46,6 +46,7 @@ const os = require('os');
 const http = require('http');
 const crypto = require('crypto');
 const PNG = require('./_cp2m-r2-png.js');
+const FIXR3 = require('./_cp2m-r3-fixtures.js');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -115,9 +116,18 @@ ${DRAG}
     }
     return best;
   }
-  function report(extra){
+  function report(extra, attempt){
+    attempt = attempt || 1;
     var sec = document.getElementById('global-logistics-map-section');
     var cv = findCanvas();
+    /* THE GLOBE CAN VANISH BETWEEN THE WAIT AND THE REPORT. Measured: canvasAppeared true at 391 ms and
+       canvasCount 0 at report, on the desktop scene only -- the renderer tears down and rebuilds. One
+       sample therefore describes whichever side of that it happened to land on, which is how two
+       supposedly identical runs produced screenshots 274 KB and 438 KB apart. Re-checking for a bounded
+       number of frames reports the SETTLED state instead of a instant in the middle of a rebuild. */
+    if ((!cv || cv.getBoundingClientRect().width < 2) && attempt <= 40) {
+      return setTimeout(function(){ report(extra, attempt + 1); }, 100);
+    }
     var r = cv ? cv.getBoundingClientRect() : null;
     var out = {
       sectionPresent: !!sec,
@@ -127,6 +137,7 @@ ${DRAG}
       canvasCssBox: r ? { x:Math.round(r.left), y:Math.round(r.top), w:Math.round(r.width), h:Math.round(r.height) } : null,
       canvasBackingSize: cv ? { w: cv.width, h: cv.height } : null,
       canvasAriaLabel: cv ? (cv.getAttribute('aria-label')||'').slice(0,80) : null,
+      reportAttempts: attempt,
       devicePixelRatio: window.devicePixelRatio,
       webglSupported: (window.KMGlobe && typeof window.KMGlobe.isSupported==='function') ? window.KMGlobe.isSupported() : null,
       diagnostics: null
@@ -220,6 +231,19 @@ function buildPage(port, doDrag, capId) {
   return html;
 }
 
+
+/**
+ * Stamp a stub answer with the correlation a real deployment owes the client.
+ * Without this the transport reports RESPONSE_CORRELATION_UNPROVEN and the page refuses the answer.
+ */
+function withCorrelation(payload, action, rid) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const out = Object.assign({}, payload);
+  out.meta = Object.assign({}, out.meta || {}, { action: action, requestId: rid || undefined });
+  if (rid) out.request_id = rid;
+  return out;
+}
+
 const MAX_HOLD_MS = 40000;   // the globe needs real frames; this is the ceiling, not the expectation
 
 function startServer(pages, held, results) {
@@ -264,12 +288,21 @@ function startServer(pages, held, results) {
       req.on('end', () => {
         let action = u.searchParams.get('action') || '';
         let table = u.searchParams.get('table') || '';
-        if (!action && body) { try { const j = JSON.parse(body); action = j.action || ''; table = table || j.table || ''; } catch (e) {} }
+        let rid = u.searchParams.get('km_rid') || '';
+        if (!action && body) {
+          try { const j = JSON.parse(body); action = j.action || ''; table = table || j.table || ''; rid = rid || j.requestId || ''; }
+          catch (e) {}
+        }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-        if (action === 'getClientCapabilities') { res.end(JSON.stringify({ success: true, data: { product_strategy_enabled: true } })); return; }
-        if (action === 'getTable' && table === 'shipments') { res.end(JSON.stringify({ success: true, data: { rows: ships } })); return; }
-        if (action === 'getTable') { res.end(JSON.stringify({ success: true, data: { rows: [] } })); return; }
-        res.end(JSON.stringify({ success: true, data: { rows: ships, shipments: ships, items: ships, marketplaces: [], countries: [] } }));
+        const send = (o) => res.end(JSON.stringify(withCorrelation(o, action, rid)));
+        if (action === 'getClientCapabilities') { send({ success: true, data: { product_strategy_enabled: true } }); return; }
+        /* THE SHIPMENT OVERLAY, in its real shape. CP2M-R2 answered this generically and the map drew
+           its formal empty state, so the globe was verified with nothing on it. Every key comes from
+           KM.DB.adaptShipmentWorkspace's own normalizers -- see _cp2m-r3-fixtures.js. */
+        if (action === 'shipment.workspace.get') { send({ success: true, data: FIXR3.shipmentWorkspace(8) }); return; }
+        if (action === 'getTable' && table === 'shipments') { send({ success: true, data: { rows: ships } }); return; }
+        if (action === 'getTable') { send({ success: true, data: { rows: [] } }); return; }
+        send({ success: true, data: { rows: ships, shipments: ships, items: ships, marketplaces: [], countries: [] } });
       });
       return;
     }
@@ -378,7 +411,8 @@ function main() {
       const a = shots[sc.id + '-a'], b = shots[sc.id + '-b'], c = shots[sc.id + '-c'];
       const box = (a.measurements && a.measurements.canvasCssBox) || null;
       const out = { scene: sc.id, viewport: { w: sc.w, h: sc.h },
-        canvas: a.measurements || null, dragReport: c.measurements || null,
+        canvas: a.measurements || null, canvasB: b.measurements || null,
+        dragReport: c.measurements || null,
         pngBytes: { a: a.bytes, b: b.bytes, c: c.bytes } };
       if (!a.png || !b.png || !c.png) { out.error = 'MISSING_SCREENSHOT'; return out; }
       if (!box || box.w < 2 || box.h < 2) { out.error = 'NO_CANVAS_BOX'; return out; }

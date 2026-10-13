@@ -23,6 +23,12 @@ var vm = require('vm');
 var ROOT = path.join(__dirname, '..', '..');
 function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 
+// S8-B3-R3-CP2M-R3 — THE PLAIN-PAGE FIXTURE MOVED, AND THE SUITE DID NOT CHANGE WHAT IT TESTS.
+// These assertions need a page that mounts SYNCHRONOUSLY: no scriptLoader.ensure, no partial, nothing
+// asynchronous between the click and switchTo. carrier-rate-card was that page until CP2M-R3 moved it
+// into KM_ROUTE_ASSETS_, at which point it became a lazy route and "mounts at once" stopped being true
+// of it. fc-summary is still plain -- the census blocks it from route-ownership on cross-file
+// references and its own DOMContentLoaded handler -- and was already in this harness's section list.
 var pass = 0, fail = 0;
 function ok(cond, label) { if (cond) { pass++; } else { fail++; console.log('FAIL ' + label); } }
 function eq(a, b, label) { ok(a === b, label + '  (got ' + JSON.stringify(a) + ', expected ' + JSON.stringify(b) + ')'); }
@@ -57,7 +63,7 @@ function makeEl(id) {
 function makeHarness() {
     var sections = {};
     ['ops-section', 'global-logistics-map-section', 'site-priority-section',
-     'product-strategy-board-section', 'carrier-rate-card-section', 'fc-summary-section',
+     'product-strategy-board-section', 'carrier-rate-card-section', 'fc-summary-section', 'factory-stock-section',
      'home-section', 'forecast-section'].forEach(function (id) { sections[id] = makeEl(id); });
 
     var doc = {
@@ -138,7 +144,7 @@ function makeHarness() {
             unmount: function (epoch) { unmounts.push({ id: id, epoch: epoch }); }
         });
     }
-    ['ops-section', 'carrier-rate-card-section', 'home-section', 'site-priority-section',
+    ['ops-section', 'carrier-rate-card-section', 'home-section', 'site-priority-section', 'factory-stock-section',
      'product-strategy-board-section', 'global-logistics-map-section', 'fc-summary-section'].forEach(reg);
 
     return {
@@ -166,11 +172,11 @@ scenario('A. lazy route superseded by a PLAIN page', function () {
     var h = makeHarness();
     h.showSection('ops');
     eq(h.current(), null, 'A1 the lazy route has not mounted yet — its code is still in flight');
-    h.showSection('carrier-rate-card');
-    eq(h.current(), 'carrier-rate-card-section', 'A2 the plain route mounts at once and owns the screen');
+    h.showSection('fc-summary');
+    eq(h.current(), 'fc-summary-section', 'A2 the plain route mounts at once and owns the screen');
     h.flights['ops'](true);
     return tick().then(function () {
-        eq(h.current(), 'carrier-rate-card-section',
+        eq(h.current(), 'fc-summary-section',
             'A3 after the superseded route completes, the operator is STILL on the page they chose');
         eq(h.mounts.filter(function (m) { return m.id === 'ops-section'; }).length, 0,
             'A3a and the superseded route never mounted');
@@ -197,9 +203,9 @@ scenario('B. lazy superseded by ANOTHER lazy route', function () {
 scenario('C. A then B then A, with the first load landing last', function () {
     var h = makeHarness();
     h.showSection('ops');
-    h.showSection('carrier-rate-card');
+    h.showSection('fc-summary');
     h.showSection('ops');
-    eq(h.current(), 'carrier-rate-card-section', 'C1 A is still loading, so B is still on screen');
+    eq(h.current(), 'fc-summary-section', 'C1 A is still loading, so B is still on screen');
     h.flights['ops'](true);
     return tick().then(function () {
         eq(h.current(), 'ops-section', 'C2 A mounts, because the NEWEST intent is A');
@@ -234,35 +240,35 @@ scenario('E. Product Strategy board, superseded', function () {
 scenario('F. a superseded PARTIAL must not reveal its shell', function () {
     var h = makeHarness();
     h.showSection('global-logistics-map');
-    h.showSection('carrier-rate-card');
+    h.showSection('fc-summary');
     if (h.partialFlights['global-logistics-map']) h.partialFlights['global-logistics-map']();
     return tick().then(function () {
         eq(h.activeIds().indexOf('global-logistics-map-section'), -1,
             'F1 the superseded markup does not mark its section active');
-        eq(h.current(), 'carrier-rate-card-section', 'F1a and the chosen page still owns the screen');
+        eq(h.current(), 'fc-summary-section', 'F1a and the chosen page still owns the screen');
     });
 });
 
 scenario('G. a superseded route that FAILS paints no refusal', function () {
     var h = makeHarness();
     h.showSection('ops');
-    h.showSection('carrier-rate-card');
+    h.showSection('fc-summary');
     h.flights['ops'](false);
     return tick().then(function () {
-        eq(h.current(), 'carrier-rate-card-section', 'G1 the chosen page is untouched');
+        eq(h.current(), 'fc-summary-section', 'G1 the chosen page is untouched');
         eq(h.sections['ops-section'].children.length, 0, 'G1a and no refusal box was painted');
     });
 });
 
 scenario('H. re-clicking the current page revokes a pending route', function () {
     var h = makeHarness();
-    h.showSection('carrier-rate-card');
+    h.showSection('fc-summary');
     h.showSection('ops');
-    h.showSection('carrier-rate-card');
+    h.showSection('fc-summary');
     h.flights['ops'](true);
     return tick().then(function () {
-        eq(h.current(), 'carrier-rate-card-section', 'H1 the operator stays where they said to stay');
-        eq(h.mounts.filter(function (m) { return m.id === 'carrier-rate-card-section'; }).length, 1,
+        eq(h.current(), 'fc-summary-section', 'H1 the operator stays where they said to stay');
+        eq(h.mounts.filter(function (m) { return m.id === 'fc-summary-section'; }).length, 1,
             'H1a and the re-click did NOT mount it a second time');
     });
 });
@@ -280,17 +286,18 @@ scenario('I. a refused click is not a navigation and revokes nothing', function 
 
 scenario('J. a burst leaves one mount and no duplicates', function () {
     var h = makeHarness();
-    h.showSection('carrier-rate-card');
+    // TWO plain pages, alternating — the burst has to leave one mounted and the other fully unmounted.
+    h.showSection('factory-stock');
     h.showSection('fc-summary');
-    h.showSection('carrier-rate-card');
+    h.showSection('factory-stock');
     h.showSection('fc-summary');
     return tick().then(function () {
         eq(h.current(), 'fc-summary-section', 'J1 the last navigation wins');
         var fcM = h.mounts.filter(function (m) { return m.id === 'fc-summary-section'; }).length;
         var fcU = h.unmounts.filter(function (m) { return m.id === 'fc-summary-section'; }).length;
         eq(fcM - fcU, 1, 'J2 fc-summary is mounted exactly once, net');
-        var crM = h.mounts.filter(function (m) { return m.id === 'carrier-rate-card-section'; }).length;
-        var crU = h.unmounts.filter(function (m) { return m.id === 'carrier-rate-card-section'; }).length;
+        var crM = h.mounts.filter(function (m) { return m.id === 'factory-stock-section'; }).length;
+        var crU = h.unmounts.filter(function (m) { return m.id === 'factory-stock-section'; }).length;
         eq(crM - crU, 0, 'J2a and the page left behind is fully unmounted');
         ok(h.activeIds().length <= 1, 'J3 at most one section is active');
     });
@@ -303,10 +310,10 @@ scenario('K. the guard itself, exercised directly', function () {
     var t2 = lc.beginNavigation();
     eq(lc.isCurrentNavigation(t1), false, 'K1 an older intent is not current');
     eq(lc.isCurrentNavigation(t2), true, 'K1a the newest one is');
-    lc.switchTo('carrier-rate-card-section', t1);
+    lc.switchTo('fc-summary-section', t1);
     eq(h.current(), null, 'K2 switchTo with a STALE token commits nothing');
-    lc.switchTo('carrier-rate-card-section', t2);
-    eq(h.current(), 'carrier-rate-card-section', 'K2a switchTo with the current token commits');
+    lc.switchTo('fc-summary-section', t2);
+    eq(h.current(), 'fc-summary-section', 'K2a switchTo with the current token commits');
     var t3 = lc.currentNavigation();
     lc.switchTo('fc-summary-section');
     eq(lc.isCurrentNavigation(t3), false, 'K3 a tokenless switchTo bumps the intent — the safe default');

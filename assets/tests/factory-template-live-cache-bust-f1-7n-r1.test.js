@@ -20,7 +20,11 @@ var fjs = INDEX.match(/assets\/js\/pages\/factory-stock\.js\?v=([A-Za-z0-9_-]+)/
 ok(!!fjs, 'factory-stock.js is included with a ?v= cache token');
 ok(fjs && fjs[1] !== 'donenotice-20260811', 'factory-stock.js token bumped off the stale donenotice-20260811 (was serving old CN code)');
 // overseas-stock.js: FBA-exclusion (be64223) needs its own cache bust
-var ojs = INDEX.match(/assets\/js\/pages\/overseas-stock\.js\?v=([A-Za-z0-9_-]+)/);
+// S8-B3-R3-CP2M-R3 — overseas-stock.js moved off the boot path into KM_ROUTE_ASSETS_, so its ?v= token
+// now lives in app.js rather than index.html. The CLAIM here is unchanged -- the file is cache-busted
+// and not on a stale token -- only where that token is written moved. Both sources are searched.
+var APP_FOR_TOKENS = require('fs').readFileSync(require('path').join(__dirname,'..','js','app.js'),'utf8');
+var ojs = (INDEX + APP_FOR_TOKENS).match(/assets\/js\/pages\/overseas-stock\.js\?v=([A-Za-z0-9_-]+)/);
 ok(ojs && ojs[1] !== 'whimport-20260811', 'overseas-stock.js token bumped off the stale whimport-20260811 (FBA-exclusion deploys)');
 // factory-stock.css: select visual parity (dfac254)
 var fcss = INDEX.match(/assets\/css\/pages\/factory-stock\.css\?v=([A-Za-z0-9_-]+)/);

@@ -29,6 +29,12 @@ var vm = require('vm');
 var ROOT = path.join(__dirname, '..', '..');
 function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 
+// S8-B3-R3-CP2M-R3 — THE PLAIN-PAGE FIXTURE MOVED, AND THE SUITE DID NOT CHANGE WHAT IT TESTS.
+// These assertions need a page that mounts SYNCHRONOUSLY: no scriptLoader.ensure, no partial, nothing
+// asynchronous between the click and switchTo. carrier-rate-card was that page until CP2M-R3 moved it
+// into KM_ROUTE_ASSETS_, at which point it became a lazy route and "mounts at once" stopped being true
+// of it. fc-summary is still plain -- the census blocks it from route-ownership on cross-file
+// references and its own DOMContentLoaded handler -- and was already in this harness's section list.
 var pass = 0, fail = 0;
 function ok(cond, label) { if (cond) { pass++; } else { fail++; console.log('FAIL ' + label); } }
 function eq(a, b, label) { ok(a === b, label + '  (got ' + JSON.stringify(a) + ', expected ' + JSON.stringify(b) + ')'); }
@@ -193,12 +199,12 @@ scenario('A. the boot must not drag the operator back to Home', function () {
     // BEFORE the deferred script chain finishes and DOMContentLoaded fires.
     ok(h.bootHandlerCount() > 0,
        'A0 (non-vacuity) a boot handler was actually registered — otherwise every A assertion is empty');
-    h.showSection('carrier-rate-card');
-    eq(h.current(), 'carrier-rate-card-section', 'A1 the operator is on the page they chose');
+    h.showSection('fc-summary');
+    eq(h.current(), 'fc-summary-section', 'A1 the operator is on the page they chose');
 
     h.fireDomReady();          // app.js's boot handler, arriving late in the chain
     return tick().then(function () {
-        eq(h.current(), 'carrier-rate-card-section',
+        eq(h.current(), 'fc-summary-section',
             'A2 the boot does NOT force the operator back to Home');
         eq(h.domCalls.renderHomepage, 0, 'A2a and Home is not re-rendered over their page');
     });
@@ -231,15 +237,15 @@ scenario('B. a late Home partial must not redraw Home over the new page', functi
     eq(h.current(), 'home-section', 'B1 Home took the initial route');
     var shellCallsBefore = h.domCalls.setHomeShellVisible.length;
 
-    h.showSection('carrier-rate-card');        // the operator leaves before the markup lands
-    eq(h.current(), 'carrier-rate-card-section', 'B2 and is now on another page');
+    h.showSection('fc-summary');        // the operator leaves before the markup lands
+    eq(h.current(), 'fc-summary-section', 'B2 and is now on another page');
 
     if (h.partialFlights['home']) h.partialFlights['home']();   // the Home partial finally arrives
     return tick().then(function () {
         var revealed = h.domCalls.setHomeShellVisible.slice(shellCallsBefore).filter(function (v) { return v === true; });
         eq(revealed.length, 0, 'B3 the late partial does NOT reveal the Home shell');
         eq(h.domCalls.renderHomepage, 0, 'B3a and does NOT render Home');
-        eq(h.current(), 'carrier-rate-card-section', 'B3b the operator stays where they are');
+        eq(h.current(), 'fc-summary-section', 'B3b the operator stays where they are');
     });
 });
 
@@ -257,23 +263,23 @@ scenario('B2. a Home partial that lands while Home is STILL current does render'
 // =============================================================================================================
 scenario('C. the old page may not commit while a newer navigation is under way', function () {
     var h = makeHarness();
-    h.showSection('carrier-rate-card');
-    var myEpoch = h.lastEpoch['carrier-rate-card-section'];
+    h.showSection('fc-summary');
+    var myEpoch = h.lastEpoch['fc-summary-section'];
     var lc = h.sb.KM.lifecycle;
-    eq(lc.commitGuard(myEpoch, 'carrier-rate-card-section'), true,
+    eq(lc.commitGuard(myEpoch, 'fc-summary-section'), true,
         'C1 while it is the current page, its async work may commit');
 
     // The operator clicks a LAZY route: the intent is declared, but switchTo will not run until the code
     // lands. This is the gap — and during it the old page used to still be told "yes, you may paint".
     h.showSection('ops');
-    eq(lc.commitGuard(myEpoch, 'carrier-rate-card-section'), false,
+    eq(lc.commitGuard(myEpoch, 'fc-summary-section'), false,
         'C2 once a newer navigation has BEGUN, the old page may no longer commit');
     eq(lc.isCurrent(myEpoch), false, 'C2a and it is no longer current by the epoch test either');
 
     h.flights['ops'](true);
     return tick().then(function () {
         eq(h.current(), 'ops-section', 'C3 the new route mounts');
-        eq(lc.commitGuard(myEpoch, 'carrier-rate-card-section'), false,
+        eq(lc.commitGuard(myEpoch, 'fc-summary-section'), false,
             'C3a and the old page still may not commit afterwards');
         var opsEpoch = h.lastEpoch['ops-section'];
         eq(lc.commitGuard(opsEpoch, 'ops-section'), true,
@@ -283,16 +289,16 @@ scenario('C. the old page may not commit while a newer navigation is under way',
 
 scenario('C2. an abandoned navigation must not jam the guard shut forever', function () {
     var h = makeHarness();
-    h.showSection('carrier-rate-card');
-    var myEpoch = h.lastEpoch['carrier-rate-card-section'];
+    h.showSection('fc-summary');
+    var myEpoch = h.lastEpoch['fc-summary-section'];
     var lc = h.sb.KM.lifecycle;
     // A section with no route and no sectionMap entry: showSection declares an intent and then finds nothing
     // to switch to. If that intent were left pending, EVERY page would be frozen out of committing for ever.
     h.showSection('a-section-that-does-not-exist');
     return tick().then(function () {
-        eq(lc.commitGuard(myEpoch, 'carrier-rate-card-section'), true,
+        eq(lc.commitGuard(myEpoch, 'fc-summary-section'), true,
             'C4 an abandoned navigation releases the guard — the current page can still commit');
-        eq(h.current(), 'carrier-rate-card-section', 'C4a and the operator is still where they were');
+        eq(h.current(), 'fc-summary-section', 'C4a and the operator is still where they were');
     });
 });
 

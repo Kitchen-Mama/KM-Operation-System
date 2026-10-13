@@ -347,6 +347,84 @@
     padding: 2rem;
 }
 
+/* S8-B3-R3-CP2M-R3 — THE BASE RULE COMES FIRST, and that is not a style preference.
+   It was written AFTER the media query at the same specificity, so the later `display: none` won at
+   every width and the drawer opener never appeared -- the 360px capture showed a header with no way
+   to reach the menu at all. Cascade order IS the override here, because neither selector is more
+   specific than the other. */
+/* The header opener is a PHONE/TABLET control and must never appear on the desktop layout. */
+.km-nav-open {
+    display: none;
+    align-items: center; justify-content: center;
+    width: 40px; height: 40px; min-width: 40px;
+    margin-right: 0.25rem; padding: 0;
+    background: transparent; border: 1px solid #E2E8F0; border-radius: 6px;
+    font-size: 18px; line-height: 1; color: #334155; cursor: pointer;
+}
+.km-nav-open:hover { background: #f1f5f9; }
+.km-nav-open:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+/* ==================================================================================================
+   S8-B3-R3-CP2M-R3 — THE SHELL BECOMES RESPONSIVE, AND UNTIL NOW IT WAS NOT RESPONSIVE AT ALL.
+   --------------------------------------------------------------------------------------------------
+   `.sidebar` is a fixed 240px and `.main-content` carries a 240px margin at EVERY width, and no media
+   query in the build changed either -- the only responsive rules on the shell were two padding tweaks.
+   Measured against the real index.html: a 360px phone was left a 105px content column, and a 390px one
+   135px, inside a `.main-content` whose `overflow-x: hidden` meant anything past it could not even be
+   scrolled to. Site Priority's filter controls were cut off by 86px and the page's Edit column by more.
+
+   BELOW THE BREAKPOINT THE SIDEBAR LEAVES THE FLOW. It becomes an overlay drawer, so the content gets
+   the entire viewport rather than a sliver of it. Above the breakpoint NOTHING here applies and the
+   desktop layout is byte-for-byte what it was.
+
+   `visibility: hidden` IS LOAD-BEARING, not decoration. A drawer parked at translateX(-100%) is still
+   in the tab order, so a keyboard user would tab into a menu nobody can see. visibility removes it from
+   focus; it is restored on open, and the transition is delayed so the slide-out is still visible.
+   ================================================================================================== */
+@media (max-width: 1024px) {
+    .sidebar {
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform 200ms ease, visibility 0s linear 200ms;
+        z-index: 2400;                       /* above the scrim (2300), below a modal (9998) */
+    }
+    .sidebar.is-nav-open {
+        transform: translateX(0);
+        visibility: visible;
+        transition: transform 200ms ease, visibility 0s linear 0s;
+        box-shadow: 4px 0 16px rgba(0, 0, 0, 0.28);
+    }
+    /* The drawer is an overlay, so the content keeps the full width whether it is open or shut --
+       including when `.is-collapsed` is left over from a desktop session. */
+    .main-content,
+    .sidebar.is-collapsed ~ .main-content { margin-left: 0; }
+
+    /* The in-sidebar collapse control is a DESKTOP affordance: at this width the sidebar is either
+       fully open or entirely off screen, so a 64px rail is not a state that exists. */
+    .sidebar-toggle { display: none; }
+
+    .km-nav-scrim { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 2300; }
+    .km-nav-scrim.is-open { display: block; }
+
+    .km-nav-open { display: inline-flex; }
+
+    /* THE HEADER OVERLAP, AND ITS CAUSE. `.header-left` is `position:absolute; left:50%` so the logo is
+       centred OUT OF FLOW -- the flex row reserves no space for it, and at narrow widths the account
+       text was drawn straight through the logo. In flow it simply takes its share. */
+    .header-left { position: static; transform: none; }
+    .top-header { padding: 0.5rem 0.75rem; gap: 0.5rem; }
+    .top-header .header-left img, .top-header .logo-text img { max-height: 32px; }
+}
+
+
+
+@media (max-width: 640px) {
+    /* The account line is the first thing to give: it is informational, and the logo is the identity. */
+    .top-header .user-info { font-size: 11px; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top-header .notification-bell { display: none; }
+    .top-header .header-left img, .top-header .logo-text img { max-height: 28px; }
+}
+
 .module-section {
     display: none;
 }

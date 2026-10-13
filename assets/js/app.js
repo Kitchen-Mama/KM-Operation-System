@@ -133,8 +133,8 @@ var KM_ROUTE_ASSETS_ = {
             // lookup resolves `UK` against the ISO `GB` through it (D-S8-C1-2). KMCID is the same owner
             // KMMSA / 43_ / 71_ use, and is itself a declared mirror of this page's frozen IRCountry alias
             // table, so this borrows one authority rather than introducing a second.
-            'assets/js/core/supply-planning-country-identity.js?v=r52-prioritywrite-20261012',
-            'assets/js/pages/inventory-replenishment.js?v=r52-prioritywrite-20261012'
+            'assets/js/core/supply-planning-country-identity.js?v=r53-coldstartshell-20261013',
+            'assets/js/pages/inventory-replenishment.js?v=r53-coldstartshell-20261013'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -163,23 +163,57 @@ var KM_ROUTE_ASSETS_ = {
     'site-priority': {
         sectionId: 'site-priority-section',
         scripts: [
-            'assets/js/core/supply-planning-country-identity.js?v=r52-prioritywrite-20261012',
-            'assets/js/pages/site-priority.js?v=r52-prioritywrite-20261012'
+            'assets/js/core/supply-planning-country-identity.js?v=r53-coldstartshell-20261013',
+            'assets/js/pages/site-priority.js?v=r53-coldstartshell-20261013'
         ],
         partial: { key: 'site-priority', url: 'assets/html/pages/site-priority.html',
             target: '#site-priority-mount' },
         label: 'Site Priority'
     },
+    /* S8-B3-R3-CP2M-R3 — TWO MORE ROUTES OWN THEIR OWN CODE, and the reason is a measurement.
+       The boot payload is 3.82 MB across 67 scripts, of which 2.31 MB is page code for pages that are
+       not Home; every one of them parses and executes before DOMContentLoaded, which is where app.js
+       routes to Home. These two were chosen because the audit found nothing holding them at boot:
+       neither publishes a symbol any other file names, neither is named by an index.html inline
+       handler, neither registers a DOMContentLoaded handler, and each already loads its own partial
+       from its own literal. Their only load-time side effect is KM.lifecycle.register, and
+       load-before-mount performs that before switchTo by construction.
+
+       CARRIER RATE CARD, 98 KB. Its 37 globals are all consumed by its OWN partial's handlers, which
+       arrive with the route.
+       OVERSEAS STOCK, 108 KB. Same shape, 25 globals. Its one timer is inside
+       _bindOverseasScrollSync, reached from mount -- not a boot side effect.
+
+       Deliberately NOT extended further. The other nineteen page scripts are blocked by cross-file
+       references, an inline handler or a DOMContentLoaded handler, and each needs its own argument. */
+    'carrier-rate-card': {
+        sectionId: 'carrier-rate-card-section',
+        scripts: [
+            'assets/js/pages/carrier-rate-card.js?v=r53-coldstartshell-20261013'
+        ],
+        partial: { key: 'carrier-rate-card', url: 'assets/html/pages/carrier-rate-card.html',
+            target: '#carrier-rate-card-mount' },
+        label: 'Carrier Rate Card'
+    },
+    'overseas-stock': {
+        sectionId: 'overseas-stock-section',
+        scripts: [
+            'assets/js/pages/overseas-stock.js?v=r53-coldstartshell-20261013'
+        ],
+        partial: { key: 'overseas-stock', url: 'assets/html/pages/overseas-stock.html',
+            target: '#overseas-stock-mount' },
+        label: 'Overseas Inventory'
+    },
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=r52-prioritywrite-20261012',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r52-prioritywrite-20261012',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r52-prioritywrite-20261012',
-            'assets/js/product-strategy/psb-selectors.js?v=r52-prioritywrite-20261012',
-            'assets/js/product-strategy/psb-chart-layout.js?v=r52-prioritywrite-20261012',
-            'assets/js/product-strategy/psb-board-ui.js?v=r52-prioritywrite-20261012',
-            'assets/js/pages/product-strategy-board.js?v=r52-prioritywrite-20261012'
+            'assets/js/product-strategy/psb-data-contract.js?v=r53-coldstartshell-20261013',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r53-coldstartshell-20261013',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r53-coldstartshell-20261013',
+            'assets/js/product-strategy/psb-selectors.js?v=r53-coldstartshell-20261013',
+            'assets/js/product-strategy/psb-chart-layout.js?v=r53-coldstartshell-20261013',
+            'assets/js/product-strategy/psb-board-ui.js?v=r53-coldstartshell-20261013',
+            'assets/js/pages/product-strategy-board.js?v=r53-coldstartshell-20261013'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },
@@ -554,12 +588,93 @@ window.toggleMenu = toggleMenu;
 // ========================================
 // Sidebar Collapse/Expand
 // ========================================
+/* ==================================================================================================
+   S8-B3-R3-CP2M-R3 — ONE CONTROL, TWO LAYOUTS.
+   --------------------------------------------------------------------------------------------------
+   Above the breakpoint the sidebar is always on screen and this collapses it to a 64px rail, exactly as
+   before. Below it the sidebar is an overlay drawer and the same control opens and closes it, because a
+   64px rail is not a state that exists at that width.
+
+   The breakpoint is read from the SAME number layout.css uses. A second literal here would be a second
+   source of truth, and the two would drift the first time either moved.
+   ================================================================================================== */
+var KM_NAV_DRAWER_MAX_ = 1024;
+
+function kmNavIsDrawer_() {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: ' + KM_NAV_DRAWER_MAX_ + 'px)').matches
+        : (typeof window !== 'undefined' && window.innerWidth <= KM_NAV_DRAWER_MAX_);
+}
+
+var _kmNavReturnFocus_ = null;
+
+function kmNavSetOpen_(open) {
+    var sidebar = document.getElementById('appSidebar');
+    var scrim = document.getElementById('kmNavScrim');
+    var opener = document.getElementById('kmNavOpen');
+    if (!sidebar) return false;
+
+    if (open) {
+        _kmNavReturnFocus_ = (document.activeElement && document.activeElement !== document.body)
+            ? document.activeElement : opener;
+        sidebar.classList.add('is-nav-open');
+        if (scrim) { scrim.hidden = false; scrim.classList.add('is-open'); }
+        if (opener) opener.setAttribute('aria-expanded', 'true');
+        // Focus moves INTO the drawer, so the next Tab is inside the menu rather than behind it.
+        var first = sidebar.querySelector('.menu-item, .menu-parent, a, button');
+        if (first) { if (!first.hasAttribute('tabindex')) first.setAttribute('tabindex', '0'); try { first.focus(); } catch (e) {} }
+    } else {
+        sidebar.classList.remove('is-nav-open');
+        if (scrim) { scrim.classList.remove('is-open'); scrim.hidden = true; }
+        if (opener) opener.setAttribute('aria-expanded', 'false');
+        // Focus returns where it came from; a closed drawer must not leave focus on something invisible.
+        var back = _kmNavReturnFocus_ || opener;
+        _kmNavReturnFocus_ = null;
+        if (back && document.contains(back)) { try { back.focus(); } catch (e2) {} }
+    }
+    return true;
+}
+
+/** True while the drawer layout is active AND the drawer is open. */
+function kmNavIsOpen_() {
+    var sidebar = document.getElementById('appSidebar');
+    return !!(sidebar && sidebar.classList.contains('is-nav-open'));
+}
+
+/** Close the drawer if it is open. Safe at any width and on any page. */
+function kmNavClose_() {
+    if (kmNavIsOpen_()) kmNavSetOpen_(false);
+}
+window.kmNavClose = kmNavClose_;
+window.kmNavIsOpen = kmNavIsOpen_;
+
 function toggleSidebar() {
     const sidebar = document.getElementById('appSidebar');
     if (!sidebar) return;
+    if (kmNavIsDrawer_()) { kmNavSetOpen_(!kmNavIsOpen_()); return; }
     sidebar.classList.toggle('is-collapsed');
 }
 window.toggleSidebar = toggleSidebar;
+
+/* The three ways a drawer closes besides its own button: the backdrop, Escape, and leaving for another
+   page. The last one is not politeness -- a drawer left open over the page the operator just chose
+   hides the thing they asked for. Bound once, at module scope, on elements that outlive every route. */
+if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('click', function (ev) {
+        var scrim = document.getElementById('kmNavScrim');
+        if (scrim && ev.target === scrim) { kmNavClose_(); }
+    });
+    document.addEventListener('keydown', function (ev) {
+        if ((ev.key === 'Escape' || ev.key === 'Esc') && kmNavIsOpen_()) {
+            ev.preventDefault();
+            kmNavClose_();
+        }
+    });
+    if (typeof window !== 'undefined' && window.addEventListener) {
+        // Crossing back to the desktop layout must not strand an open drawer with no scrim semantics.
+        window.addEventListener('resize', function () { if (!kmNavIsDrawer_()) kmNavClose_(); });
+    }
+}
 
 // ========================================
 // ========================================
@@ -622,6 +737,10 @@ function showSection(section) {
     // navigations — they leave the operator exactly where they were, so they must not revoke anything).
     // Everything past this line belongs to THIS navigation; anything older has lost its claim.
     var nav = _kmBeginNav_();
+
+    // S8-B3-R3-CP2M-R3 — a VALID navigation closes the drawer. Placed after the refusal guards for the
+    // same reason the token is: a refused click is not a navigation and must change nothing.
+    try { kmNavClose_(); } catch (e) {}
 
     // ---- Normalize the shared shell BEFORE mounting the next page (UI lifecycle ownership) --------------
     // Remove the ENTIRE Home shell (mount wrapper + world-time bar + section) from layout — not just its inner

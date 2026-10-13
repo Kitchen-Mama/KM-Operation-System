@@ -61,9 +61,19 @@ ok(M.boot.removedBytes > 1500 * 1024, 'A1a over 1.5 MB removed', M.boot.removedK
 ok(M.boot.post.localScripts < M.boot.pre.localScripts, 'A1b and fewer script tags',
   [M.boot.pre.localScripts, M.boot.post.localScripts]);
 /* Re-derived from the tree, not read back: a census nobody recomputes drifts the first time someone
-   adds a script and forgets the document. */
+   adds a script and forgets the document.
+
+   S8-B3-R3-CP2M-R3 — AT OR BELOW, NOT EQUAL TO, AND THE REASON IS THE SHAPE OF THE CLAIM.
+   `M.boot.post` is the boot surface S4-R5 left behind. Asserting the live tree still EQUALS it turned a
+   statement about one past round into a veto on every later one: CP2M-R3 moved two more page scripts off
+   the boot path -- the very thing this suite exists to celebrate -- and the count fell 67 → 65, which
+   failed. Nothing is weakened by the change: a script REJOINING the boot path raises the count and still
+   fails here, an UNDECLARED script still fails A1d below, and the exact live census is asserted
+   separately in s7-r2b1 against the declaration whose job is to be current. */
 const live = RUN.bootSurface();
-eq(live.localCount, M.boot.post.localScripts, 'A1c the recorded count matches index.html as it stands');
+ok(live.localCount <= M.boot.post.localScripts,
+  'A1c index.html loads no MORE boot scripts than S4-R5 left behind',
+  [live.localCount, M.boot.post.localScripts]);
 /* S4-R6 — THIS WAS `eq(live.bytes, M.boot.post.bytes)`, AND IT FAILED THE FIRST TIME ANYBODY FIXED A BUG.
 
    The intent was right: a recorded census nobody recomputes drifts the moment someone adds a script and

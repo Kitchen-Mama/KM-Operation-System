@@ -814,7 +814,7 @@ mut('K16 an inventory number is changed with nothing to back it', function () {
      GAINED data/replenishment-mock-data.js. All ten are still production data paths and are still listed
      in the census. Anchor moved for the reason stated above. */
   return withSrc('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md',
-    'LOADED_SCRIPTS: 69', 'LOADED_SCRIPTS: 71', function () {
+    'LOADED_SCRIPTS: 67', 'LOADED_SCRIPTS: 71', function () {
       var c = read('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md');
       var n = /LOADED_SCRIPTS:\s*(\d+)/.exec(c);
       return !!n && Number(n[1]) !== scripts;

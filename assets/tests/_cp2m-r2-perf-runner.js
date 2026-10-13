@@ -57,6 +57,7 @@ const cp = require('child_process');
 const os = require('os');
 const http = require('http');
 const crypto = require('crypto');
+const FIX = require('./_cp2m-r3-fixtures.js');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -86,8 +87,10 @@ const ROUTES = [
     ready: '#global-logistics-map-section canvas' },
   { key: 'site-priority', sectionId: 'site-priority-section', kind: 'route',
     ready: '#site-priority-section tr[data-sp-row]' },
-  { key: 'carrier-rate-card', sectionId: 'carrier-rate-card-section', kind: 'plain',
+  { key: 'carrier-rate-card', sectionId: 'carrier-rate-card-section', kind: 'route',
     ready: '#carrier-rate-card-section table tbody tr, #carrier-rate-card-section .crc-row' },
+  { key: 'overseas-stock', sectionId: 'overseas-stock-section', kind: 'route',
+    ready: '#overseas-stock-section table tbody tr, #overseas-stock-section .ovs-tab-panel table tbody tr' },
   { key: 'product-strategy', sectionId: 'product-strategy-board-section', kind: 'route',
     ready: '#product-strategy-board-section .psb-view, #product-strategy-board-section canvas, #product-strategy-board-section table tbody tr',
     views: ['overview', 'category', 'risk', 'quality', 'workspace', 'advanced'] }
@@ -148,6 +151,15 @@ function apiAnswer(action, table) {
     return { success: true, data: { rows: TABLES[table] || [], table: table } };
   }
   if (action === 'getOperationDb') return { success: true, data: db };
+
+  /* THE THREE SCOPED READS CP2M-R2 ANSWERED GENERICALLY, now answered in their real shapes. Every key
+     below was read out of the consumer, never guessed -- see _cp2m-r3-fixtures.js. The difference is
+     not cosmetic: with a generic envelope the Product Strategy board rendered its no-data state, so
+     timing its six sub-pages measured switching an EMPTY board, and the map drew its formal empty
+     state, so the globe carried no shipment overlay. */
+  if (action === 'productPricing.workspace.get') return FIX.productPricingWorkspace(24);
+  if (action === 'productPricing.siteUniverse.get') return FIX.siteUniverse();
+  if (action === 'shipment.workspace.get') return { success: true, data: FIX.shipmentWorkspace(8) };
   /* THE CAPABILITY MIRROR TAKES THE LITERAL `true` AND NOTHING ELSE (km-product-pricing-workspace.js
      reads `caps.product_strategy_enabled` and treats undefined, null, "true" and 1 all as "this build
      cannot read the answer"). Without it the board renders a refusal state and every view measurement
@@ -177,6 +189,19 @@ function apiAnswer(action, table) {
   return { success: true, action: action,
     data: { rows: [], items: [], records: [], countries: [], marketplaces: [], tables: {},
             capabilities: {}, servedAction: action } };
+}
+
+
+/**
+ * Stamp a stub answer with the correlation a real deployment owes the client.
+ * Without this the transport reports RESPONSE_CORRELATION_UNPROVEN and the page refuses the answer.
+ */
+function withCorrelation(payload, action, rid) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const out = Object.assign({}, payload);
+  out.meta = Object.assign({}, out.meta || {}, { action: action, requestId: rid || undefined });
+  if (rid) out.request_id = rid;
+  return out;
 }
 
 // ---- the local server ----------------------------------------------------------------------------
@@ -217,9 +242,21 @@ function startServer(pageHtml, onResult, apiLog, beacons) {
       req.on('end', () => {
         let action = u.searchParams.get('action') || '';
         let table = u.searchParams.get('table') || '';
-        if (!action && body) { try { const j = JSON.parse(body); action = j.action || ''; table = table || j.table || ''; } catch (e) {} }
+        let rid = u.searchParams.get('km_rid') || '';
+        if (!action && body) {
+          try { const j = JSON.parse(body); action = j.action || ''; table = table || j.table || ''; rid = rid || j.requestId || ''; }
+          catch (e) {}
+        }
+        if (!table) { try { const b = JSON.parse(u.searchParams.get('km_body') || '{}'); table = b.table || ''; rid = rid || b.requestId || ''; } catch (e) {} }
         apiLog.push(table ? (action + ':' + table) : (action || '(none)'));
-        const payload = apiAnswer(action, table);
+        const payload = withCorrelation(apiAnswer(action, table), action, rid);
+        if (process.env.KM_API_DEBUG) {
+          const t = JSON.stringify(payload);
+          const LF = String.fromCharCode(10);
+          process.stderr.write(LF + '[api] ' + req.method + ' action=' + JSON.stringify(action)
+            + ' rid=' + JSON.stringify(rid) + ' bytes=' + (t ? t.length : -1)
+            + ' head=' + (t ? t.slice(0, 100) : 'UNDEFINED') + LF);
+        }
         setTimeout(() => {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
             'Timing-Allow-Origin': '*' });
@@ -391,6 +428,32 @@ function buildPage(port, program, routes) {
     return 'scoped:' + country.value + '/' + market.value;
   }
 
+  /* THE BOARD DRAWS ONE SITE AT A TIME, so until a company, a country and a marketplace are chosen it
+     has nothing to render and every view switch is a repaint of the same chooser. CP2M-R2 timed exactly
+     that and said so. This picks the first complete scope the way an operator does. */
+  async function selectPsbScope(){
+    var sec = document.getElementById('product-strategy-board-section');
+    if (!sec) return 'no-section';
+    /* THE THREE ARE SEQUENTIAL, and each is BUILT BY THE ONE BEFORE IT. Country does not exist until a
+       company is chosen, and Marketplace does not exist until a country is. Capturing the list once and
+       looping over it -- which is what the first version did -- set Company and then found nothing else,
+       so the board never had a complete scope and never issued productPricing.workspace.get at all. The
+       element is therefore looked up again at each step, by the id product-strategy-board.js builds:
+       'psbSite' + capitalised dimension. */
+    var ids = ['psbSiteCompany', 'psbSiteCountry', 'psbSiteMarketplace'];
+    var picked = [];
+    for (var i = 0; i < ids.length; i++) {
+      var sel = document.getElementById(ids[i]);
+      if (!sel) { picked.push(ids[i] + '=ABSENT'); break; }
+      if (sel.options.length < 2) { picked.push(ids[i] + '=NO_OPTIONS'); break; }
+      sel.selectedIndex = 1;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      picked.push(ids[i] + '=' + sel.value);
+      await sleep(450);
+    }
+    return 'psb-scope:' + picked.join(',');
+  }
+
   function clickView(viewId){
     KM.perf.markInteraction('psb-view:' + viewId, 'product-strategy-board-section');
     return clickViewInner(viewId);
@@ -461,7 +524,8 @@ function buildPage(port, program, routes) {
       KM.perf.flush();
       var sampleBase = KM.perf.samples().length;
       beacon('step' + i + ':' + step.phase + ':enter');
-      var how = step.scope ? await selectScope()
+      var how = step.psbScope ? await selectPsbScope()
+              : step.scope ? await selectScope()
               : step.view ? clickView(step.view)
               : clickRoute(step.key);
       beacon('step' + i + ':' + step.phase + ':acted:' + String(how).slice(0,24));
@@ -489,7 +553,15 @@ function buildPage(port, program, routes) {
         /* The section's own visible text, truncated. Every row on screen comes from the harness fixture,
            so this carries no real data -- and it is the difference between "slow" and "refused", which a
            timing number alone cannot make. */
-        sectionText: sec ? String(sec.innerText || sec.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 220) : '',
+        sectionText: sec ? String(sec.innerText || sec.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 600) : '',
+        /* What the page actually built, by element kind. A rows count of 0 can mean the page is empty
+           OR that the ready selector names something this page does not use; these tell them apart. */
+        domCensus: sec ? { svg: sec.querySelectorAll('svg').length,
+                           canvas: sec.querySelectorAll('canvas').length,
+                           tr: sec.querySelectorAll('tbody tr').length,
+                           psbView: sec.querySelectorAll('[class*="psb-view"],[data-view]').length,
+                           cards: sec.querySelectorAll('[class*="card"]').length,
+                           total: sec.querySelectorAll('*').length } : null,
         rows: r ? rows(r.ready) : -1,
         sectionActive: !!(sec && sec.classList && sec.classList.contains('active')),
         sectionHeight: sec ? Math.round(sec.getBoundingClientRect().height) : 0,
@@ -645,7 +717,8 @@ function warmProgram(key) {
 
 /** The six Product Strategy views, after the board itself is up. */
 function viewProgram(views) {
-  const p = [{ key: 'product-strategy', phase: 'prime', wait: 2200 }];
+  const p = [{ key: 'product-strategy', phase: 'prime', wait: 2200 },
+             { key: 'product-strategy', psbScope: true, phase: 'scope', wait: 2600 }];
   views.forEach(v => p.push({ key: 'product-strategy', view: v, phase: 'view:' + v, wait: 900 }));
   return p;
 }

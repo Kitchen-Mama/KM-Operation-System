@@ -1,31 +1,31 @@
 {
  "capturedAt": "2026-10-13",
  "note": "Counted from index.html as it stands. The suite recounts every field from the live file and FAILS on a mismatch, so this cannot quietly describe a past build.",
- "bootScriptCount": 67,
- "bootScriptBytes": 4007712,
- "bootScriptMB": 3.822,
- "bootScriptTagsTotal": 69,
+ "bootScriptCount": 65,
+ "bootScriptBytes": 3807486,
+ "bootScriptMB": 3.631,
+ "bootScriptTagsTotal": 67,
  "externalCdnScripts": [
   "https://cdn.jsdelivr.net/npm/chart.js",
   "https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"
  ],
- "pageScriptCount": 22,
- "pageScriptBytes": 2418203,
- "pageScriptMB": 2.306,
- "pageShareOfBoot": 0.603,
- "routeOwnedAlready": 18,
+ "pageScriptCount": 20,
+ "pageScriptBytes": 2211511,
+ "pageScriptMB": 2.109,
+ "pageShareOfBoot": 0.581,
+ "routeOwnedAlready": 20,
  "routeKeys": [
+  "carrier-rate-card",
   "global-logistics-map",
   "ops",
+  "overseas-stock",
   "product-strategy",
   "site-priority"
  ],
- "mechanicallyCleanCandidates": 10,
- "mechanicallyCleanBytes": 545024,
- "mechanicallyCleanMB": 0.52,
+ "mechanicallyCleanCandidates": 8,
+ "mechanicallyCleanBytes": 338332,
+ "mechanicallyCleanMB": 0.323,
  "mechanicallyCleanFiles": [
-  "assets/js/pages/overseas-stock.js",
-  "assets/js/pages/carrier-rate-card.js",
   "assets/js/pages/request-order-draft.js",
   "assets/js/pages/supplychain.js",
   "assets/js/pages/sku-regional-pricing.js",
@@ -68,16 +68,16 @@
    "bytes": 111844
   },
   {
-   "file": "assets/js/pages/overseas-stock.js",
-   "bytes": 108363
-  },
-  {
-   "file": "assets/js/pages/carrier-rate-card.js",
-   "bytes": 98329
-  },
-  {
    "file": "assets/js/pages/campaign-risk.js",
    "bytes": 85511
+  },
+  {
+   "file": "assets/js/pages/request-order-draft.js",
+   "bytes": 82632
+  },
+  {
+   "file": "assets/js/pages/supplychain.js",
+   "bytes": 76861
   }
  ],
  "ownership": [
@@ -185,26 +185,6 @@
     "markAsDone",
     "renderShippingPlan"
    ],
-   "namedByIndexHtml": 0,
-   "namedByIndexHtmlSample": [],
-   "domContentLoadedHandlers": 0
-  },
-  {
-   "file": "assets/js/pages/overseas-stock.js",
-   "bytes": 108363,
-   "symbols": 118,
-   "externallyNamed": 0,
-   "externallyNamedSample": [],
-   "namedByIndexHtml": 0,
-   "namedByIndexHtmlSample": [],
-   "domContentLoadedHandlers": 0
-  },
-  {
-   "file": "assets/js/pages/carrier-rate-card.js",
-   "bytes": 98329,
-   "symbols": 37,
-   "externallyNamed": 0,
-   "externallyNamedSample": [],
    "namedByIndexHtml": 0,
    "namedByIndexHtmlSample": [],
    "domContentLoadedHandlers": 0

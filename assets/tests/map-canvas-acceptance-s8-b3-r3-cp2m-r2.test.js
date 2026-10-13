@@ -148,9 +148,12 @@ section('H. what this does NOT claim');
 // here keeps a future reader from reading these numbers as proof that route drawing works.
 ok(EV.design && /noise floor/i.test(EV.design), 'H1 the evidence states its own experimental design');
 const mob = scene('mobile').canvas || {};
-// A finding, not a failure: the fixed 240px sidebar leaves a 390px phone ~150px, so the globe gets ~73px.
-ok(mob.canvasCssBox && mob.canvasCssBox.w < 200,
-  'H2 on a 390px phone the globe is squeezed into a narrow column — recorded as a shell finding',
+/* S8-B3-R3-CP2M-R3 — THE FINDING IS FIXED, SO THE ASSERTION IS INVERTED.
+   CP2M-R2 recorded that the fixed 240px sidebar left a 390px phone ~150px and the globe ~73px wide. The
+   responsive shell gives the phone its viewport back and the canvas is now ~313px -- better than four
+   times the area. An assertion that still demanded a narrow canvas would be defending the defect. */
+ok(mob.canvasCssBox && mob.canvasCssBox.w > 250,
+  'H2 on a 390px phone the globe now gets a usable width (was ~73px before the responsive shell)',
   mob.canvasCssBox && mob.canvasCssBox.w);
 const desk = scene('desktop').canvas || {};
 ok(desk.canvasCssBox && desk.canvasCssBox.w > 400,

@@ -990,7 +990,18 @@ var ROUND_TOKENS = [
   // It is appended to THIS series and to no other. The MAP, IR_CSS and METHOD_REGISTRY series are separate
   // families on purpose, and F-PD1 is the round that proved what crossing them costs: setting a stylesheet to
   // an application token broke 28 suites that exist to keep the families apart.
-  'r52-prioritywrite-20261012'];
+  'r52-prioritywrite-20261012',
+  // S8-B3-R3-CP2M-R3 — the cold-start split (carrier-rate-card.js and overseas-stock.js leave the
+  // boot path) and the responsive shell both change bytes a published browser already holds:
+  // index.html, app.js and layout.css. The R52 token is on origin and HAS been served, so reusing
+  // it would strand every one of those browsers on the pre-R3 shell permanently.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK. Several suites read the current token by matching
+  // quoted strings across this array text and taking the last one; a stray apostrophe in prose pairs
+  // with the opening quote of the entry below, and the parser returns a sentence instead of a token.
+  // Measured: writing R52 followed by an apostrophe and s made three suites report that the current
+  // application token was a fragment of this comment.
+  'r53-coldstartshell-20261013'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

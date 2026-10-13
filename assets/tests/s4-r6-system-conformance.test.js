@@ -292,7 +292,12 @@ ok(RO.ROUND_TOKENS.indexOf(R6_TOKEN) === RO.ROUND_TOKENS.lastIndexOf(R6_TOKEN),
   'I6-1 and it appears exactly once');
 ok(RO.ROUND_TOKENS.indexOf(RO.currentAppToken()) >= RO.ROUND_TOKENS.indexOf(R6_TOKEN),
   'I6-2 and the current token is this one or a later one');
-const idxTok = RO.parseIndexTokens(INDEX);
+/* S8-B3-R3-CP2M-R3 — READ THE TOKEN WHERE THE FILE NOW LIVES.
+   carrier-rate-card.js moved off the boot path into KM_ROUTE_ASSETS_, so an index-only reader
+   returned `undefined` for it -- the assertion's MEANING (this file carries the current token) is
+   unchanged, but the place it is written moved. parseReleaseTokens merges both sources and already
+   covers the four routes that were split out before this one. */
+const idxTok = RO.parseReleaseTokens(INDEX, APP);
 ['assets/js/pages/request-order.js', 'assets/js/pages/sku-handbook.js',
  'assets/js/pages/carrier-rate-card.js', 'assets/js/pages/campaign-risk.js',
  'assets/js/pages/automation-schedule.js', 'assets/css/pages/automation-schedule.css',

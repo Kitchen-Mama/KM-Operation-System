@@ -141,6 +141,23 @@ The `MAP_`, `IR_CSS_` and `METHOD_REGISTRY_` series are untouched — crossing t
 Publish **all five**. A partial publication that serves a new `site-priority.js` against an old
 `operation-system-db-api.js` has no bounded writer to call and will refuse every save.
 
+### 5.0 CP2M-R3 — THE TOKEN IS ROTATED, AND §5.1's CONDITION IS RESOLVED
+
+Owner has confirmed the R52 frontend **is published** and this fix candidate is **not**. §5.1 below asked which
+branch applied; the answer is the second one, so the application token has been rotated:
+
+`r52-prioritywrite-20261012` → **`r53-cp2mr3-coldstart-shell-20261013`**, appended to `ROUND_TOKENS` (123 → 124).
+54 references in `index.html` and 13 in `assets/js/app.js`. The `MAP_`, `IR_CSS_` and `METHOD_REGISTRY_` series
+are untouched.
+
+**`KM.RELEASE` is NOT bumped, and that is deliberate.** namespace.js's own comment says to bump it with the
+asset tokens; three suites pin it to `r6a1-request-send-20260822`, and the decision register records it as the
+frozen build id that per-round stamps must not be marched to. The comment is the outlier, not the suites.
+
+**The publication set grows by two files** — both already in the package, now reachable by route rather than at
+boot: `assets/js/pages/carrier-rate-card.js` and `assets/js/pages/overseas-stock.js`. `index.html`,
+`assets/js/app.js` and `assets/css/layout.css` all change.
+
 ### 5.1 CP2M-R2 — `site-priority.css` CHANGED AGAIN, AND THE TOKEN QUESTION IS CONDITIONAL
 
 CP2M-R2 made three corrections to `assets/css/pages/site-priority.css` (the table wrapper scrolls instead of
@@ -251,7 +268,9 @@ by R52 except for the two facts below.
 | Gate | State |
 |---|---|
 | Pages publishing source | **UNVERIFIED** — owner reports unmodified, no view access (R51 runbook §1) |
-| **CP2M-R2 cache token branch (§5.1)** | **UNRESOLVED** — depends on whether the R52 frontend package has already been published. Reusing a published token strands browsers on the clipped layout. |
+| **CP2M-R2 cache token branch (§5.1)** | **RESOLVED (§5.0)** — Owner confirmed R52 is published, so a new token was required and has been rotated. |
+| **CP2M-R3 responsive shell** | Below 1024px the sidebar becomes a drawer. Desktop is unchanged. Verify on a real phone that the menu opens, Escape and the backdrop close it, and choosing a page closes it. |
+| **CP2M-R3 cold-start split** | Carrier Rate Card and Overseas Stock load their code on first open. Verify both pages still open, render and re-open. |
 | Rollback Version Candidate 307 | **UNVERIFIED** |
 | Seven-file backend sync | PENDING |
 | New Apps Script deployment version | PENDING |

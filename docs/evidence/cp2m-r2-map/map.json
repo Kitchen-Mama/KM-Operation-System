@@ -4,14 +4,14 @@
  "capturedAt": "2026-10-13",
  "design": "A and B are identical runs (the noise floor); C performs a real pointer drag (the effect).",
  "sources": {
-  "index.html": "8bf3ce041afad94a",
+  "index.html": "d93cdd650e463869",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
   "assets/js/pages/global-logistics-map.js": "7e28d786c1d44bdc",
-  "assets/js/app.js": "60081e98463326f6",
-  "assets/tests/_cp2m-r2-map-runner.js": "774b75c167f4e5d4",
+  "assets/js/app.js": "9fc0477268ceb337",
+  "assets/tests/_cp2m-r2-map-runner.js": "242395960153a730",
   "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
  },
- "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/map3",
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/r3-mapf2",
  "scenes": [
   {
    "scene": "desktop",
@@ -35,11 +35,36 @@
      "h": 638
     },
     "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
     "devicePixelRatio": 1,
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 459,
+    "canvasWaitMs": 528,
+    "canvasAppeared": true
+   },
+   "canvasB": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 603,
+     "y": 113,
+     "w": 615,
+     "h": 638
+    },
+    "canvasBackingSize": {
+     "w": 615,
+     "h": 638
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 467,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -58,11 +83,12 @@
      "h": 638
     },
     "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
     "devicePixelRatio": 1,
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 449,
+    "canvasWaitMs": 473,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
@@ -76,9 +102,9 @@
     }
    },
    "pngBytes": {
-    "a": 411403,
-    "b": 411403,
-    "c": 388370
+    "a": 438001,
+    "b": 438001,
+    "c": 457155
    },
    "image": {
     "w": 1280,
@@ -92,9 +118,9 @@
      "h": 638
     },
     "sampled": 98252,
-    "distinctColours": 1050,
+    "distinctColours": 808,
     "backgroundColour": "1,2,4",
-    "nonBackgroundFraction": 0.8432,
+    "nonBackgroundFraction": 0.8606,
     "contentBox": {
      "x": 603,
      "y": 113,
@@ -102,10 +128,10 @@
      "h": 636
     },
     "centroid": {
-     "x": 932,
-     "y": 422
+     "x": 919,
+     "y": 418
     },
-    "centroidOffset": 0.054
+    "centroidOffset": 0.037
    },
    "noiseFloor": {
     "sampled": 98252,
@@ -115,14 +141,14 @@
    },
    "dragEffect": {
     "sampled": 98252,
-    "changedFraction": 0.3731,
-    "maxChannelDelta": 232,
+    "changedFraction": 0.4573,
+    "maxChannelDelta": 243,
     "tolerance": 8
    },
    "framing": {
     "fillWidthRatio": 0.998,
     "fillHeightRatio": 0.997,
-    "centroidOffset": 0.054,
+    "centroidOffset": 0.037,
     "touchesLeftEdge": true,
     "touchesRightEdge": true,
     "touchesTopEdge": true,
@@ -141,21 +167,46 @@
     "canvasCount": 2,
     "canvasPresent": true,
     "canvasCssBox": {
-     "x": 271,
+     "x": 31,
      "y": 200,
-     "w": 73,
+     "w": 313,
      "h": 606
     },
     "canvasBackingSize": {
-     "w": 73,
+     "w": 313,
      "h": 606
     },
     "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
     "devicePixelRatio": 1,
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 376,
+    "canvasWaitMs": 440,
+    "canvasAppeared": true
+   },
+   "canvasB": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 31,
+     "y": 200,
+     "w": 313,
+     "h": 606
+    },
+    "canvasBackingSize": {
+     "w": 313,
+     "h": 606
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 430,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -164,37 +215,38 @@
     "canvasCount": 2,
     "canvasPresent": true,
     "canvasCssBox": {
-     "x": 271,
+     "x": 31,
      "y": 200,
-     "w": 73,
+     "w": 313,
      "h": 606
     },
     "canvasBackingSize": {
-     "w": 73,
+     "w": 313,
      "h": 606
     },
     "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
     "devicePixelRatio": 1,
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 388,
+    "canvasWaitMs": 433,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
-      308,
+      188,
       502
      ],
      "to": [
-      420,
+      300,
       518
      ]
     }
    },
    "pngBytes": {
-    "a": 102980,
-    "b": 102980,
-    "c": 104998
+    "a": 299494,
+    "b": 299494,
+    "c": 298896
    },
    "image": {
     "w": 560,
@@ -202,43 +254,43 @@
    },
    "content": {
     "region": {
-     "x": 271,
+     "x": 31,
      "y": 200,
-     "w": 73,
+     "w": 313,
      "h": 606
     },
-    "sampled": 11211,
-    "distinctColours": 376,
-    "backgroundColour": "1,2,4",
-    "nonBackgroundFraction": 0.8412,
+    "sampled": 47571,
+    "distinctColours": 828,
+    "backgroundColour": "0,1,2",
+    "nonBackgroundFraction": 0.8851,
     "contentBox": {
-     "x": 271,
+     "x": 31,
      "y": 200,
-     "w": 72,
+     "w": 312,
      "h": 604
     },
     "centroid": {
-     "x": 308,
-     "y": 505
+     "x": 187,
+     "y": 489
     },
-    "centroidOffset": 0.006
+    "centroidOffset": 0.04
    },
    "noiseFloor": {
-    "sampled": 11211,
+    "sampled": 47571,
     "changedFraction": 0,
     "maxChannelDelta": 0,
     "tolerance": 8
    },
    "dragEffect": {
-    "sampled": 11211,
-    "changedFraction": 0.6718,
-    "maxChannelDelta": 205,
+    "sampled": 47571,
+    "changedFraction": 0.7291,
+    "maxChannelDelta": 212,
     "tolerance": 8
    },
    "framing": {
-    "fillWidthRatio": 0.986,
+    "fillWidthRatio": 0.997,
     "fillHeightRatio": 0.997,
-    "centroidOffset": 0.006,
+    "centroidOffset": 0.04,
     "touchesLeftEdge": true,
     "touchesRightEdge": true,
     "touchesTopEdge": true,

@@ -104,14 +104,17 @@ ok(withResources.length >= 3, 'D3 script resource timings were captured by the b
 // scriptLoader resolves on the element's onload (AFTER the file has run) and Resource Timing says when its
 // last byte landed. The difference is execution.
 const DEC = JSON.parse(read('docs/evidence/cp2m-r2-perf/phase-decomposition.json'));
+/* THE SECOND HALF IS A TAIL, NOT TOTAL CPU. async=false means scripts execute as they arrive, so
+   execution overlaps download and what remains after the last byte is only the part that could not
+   overlap. The field is named for what it measures; `jsExecMs` invited exactly the wrong reading. */
 const split = Object.keys(DEC).filter(k => typeof DEC[k].jsDownloadMs === 'number'
-                                        && typeof DEC[k].jsExecMs === 'number');
-ok(split.length >= 3, 'D4 and the decomposition separates JS download from JS execution', split);
+                                        && typeof DEC[k].jsTailAfterLastByteMs === 'number');
+ok(split.length >= 3, 'D4 and the decomposition separates JS download from the post-last-byte execution tail', split);
 split.forEach(function (k) {
   const v = DEC[k];
-  ok(v.jsDownloadMs >= 0 && v.jsExecMs >= 0, 'D4a ' + k + ' both halves are non-negative', [v.jsDownloadMs, v.jsExecMs]);
-  ok(v.jsDownloadMs + v.jsExecMs <= v.jsTotalMs + 2,
-    'D4b ' + k + ' and they account for the whole JS phase', [v.jsDownloadMs, v.jsExecMs, v.jsTotalMs]);
+  ok(v.jsDownloadMs >= 0 && v.jsTailAfterLastByteMs >= 0, 'D4a ' + k + ' both halves are non-negative', [v.jsDownloadMs, v.jsTailAfterLastByteMs]);
+  ok(v.jsDownloadMs + v.jsTailAfterLastByteMs <= v.jsTotalMs + 2,
+    'D4b ' + k + ' and they account for the whole JS phase', [v.jsDownloadMs, v.jsTailAfterLastByteMs, v.jsTotalMs]);
   ok(v.scriptBytes > 0, 'D4c ' + k + ' with the bytes that were actually fetched', v.scriptBytes);
 });
 // The loopback caveat, asserted so no reader can take the download figure for a production one.

@@ -861,14 +861,16 @@ function layoutAt(vw, vh, count) {
   });
   eq(illegible, [], 'I7 no layout shrinks a label below 3 characters or an image below 24px');
 
-  /* ===== 390x844, AND THE REASON IT FAILS IS NOT THIS PAGE =====
-     `.sidebar` is a fixed 240px with NO breakpoint anywhere in assets/css, and `.main-content`
-     carries `margin-left: 240px` unconditionally. On a 390px phone that leaves 86px of content for
-     EVERY page in the application. The board degrades honestly into it — overview density, the
-     chart scrolling inside itself, no page overflow — but 40px of chart is not a usable page, and
-     no rule in this stylesheet can widen it. Fixing it means giving the shell a breakpoint, which
-     changes all twenty-odd pages, and §2 forbids rewriting the sidebar for one page.
-     THE MEASUREMENT IS RECORDED SO THE CLAIM IS NOT "IT PASSES". */
+  /* ===== 390x844 — THE SHELL DEFECT THIS RECORDED HAS BEEN FIXED (S8-B3-R3-CP2M-R3) =====
+     This asserted the ABSENCE of any responsive rule, deliberately: `.sidebar` was a fixed 240px with
+     no breakpoint anywhere in assets/css and `.main-content` carried `margin-left: 240px`
+     unconditionally, leaving a 390px phone a sliver of content for EVERY page. The note said fixing it
+     "means giving the shell a breakpoint, which changes all twenty-odd pages", and that §2 forbids
+     rewriting the sidebar for ONE page.
+     That is exactly what CP2M-R3 did — as a SHARED shell change, not a per-page one, under its own
+     authorisation. Below 1024px the sidebar leaves the flow and becomes a drawer, and the content takes
+     the viewport. So the assertion is INVERTED rather than deleted: the breakpoint must now EXIST, and
+     must be owned by the shell's own stylesheet. An empty list here would mean the fix had been lost. */
   var mobileRules = [];
   ['base.css', 'components.css', 'layout.css', 'responsive-foundation.css'].forEach(function (f) {
     var css = readRoot('assets/css/' + f);
@@ -884,8 +886,10 @@ function layoutAt(vw, vh, count) {
       if (/\.sidebar\b|\.main-content\b/.test(blk)) mobileRules.push(f + ' ' + mm[0].trim());
     }
   });
-  eq(mobileRules, [],
-    'I8 THE SHELL HAS NO RESPONSIVE SIDEBAR AT ALL — no breakpoint in any stylesheet touches it');
+  ok(mobileRules.length > 0,
+    'I8 THE SHELL NOW HAS A RESPONSIVE BREAKPOINT — the defect this used to record is fixed', mobileRules);
+  ok(mobileRules.some(function (r) { return r.indexOf('layout.css') === 0; }),
+    'I8a and it is owned by layout.css, which owns .sidebar and .main-content', mobileRules);
   var phone = layoutAt(390, 844, 12);
   eq(phone.measured.containerWidth, 40,
     'I9 so at 390x844 the chart is handed 40px, and that is the shell\'s arithmetic');

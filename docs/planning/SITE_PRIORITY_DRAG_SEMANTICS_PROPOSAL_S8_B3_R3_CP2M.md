@@ -1,17 +1,21 @@
-# SITE PRIORITY — DRAG-TO-REORDER DESIGN PROPOSAL (S8-B3-R3-CP2M-R2, REV 2)
+# SITE PRIORITY — DRAG-TO-REORDER DESIGN PROPOSAL (S8-B3-R3-CP2M-R3, REV 3)
 
 > **STATUS: PROPOSAL. NOTHING IS IMPLEMENTED.** No weight conversion, no drag handler, no batch save, no
-> renumbering and no schema change exists in the code. This document is for review.
+> renumbering and no schema change exists in the code. Rev 3 records decisions; it does not build them.
 >
-> **WHAT OWNER HAS CONFIRMED** (CP2M-R2 covering note) is the SAVE PROTOCOL, and only that:
-> 1. the target **and its neighbours** are re-read and verified immediately before saving;
-> 2. after saving, the UI shows the **actual read-back weight and ordering** and does not claim the
->    previewed position held atomically;
-> 3. R52 CAS, audit partial failure and `OUTCOME_UNKNOWN` are preserved, with **no auto-resend, no
->    backfill, no rollback and no renumbering**.
+> **DECIDED, AND NOT RE-ASKED HERE.**
 >
-> Those three are product direction. They are **not** approval of this document, of the midpoint rule, of
-> any threshold in it, or of building the feature. Rev 2 still requires review.
+> | # | Decision | Where it lands |
+> |---|---|---|
+> | D1 | the save protocol: re-read target **and neighbours** before saving; after saving show the **actual read-back** weight and ordering; never claim the preview held atomically | §4.A, §3.5 |
+> | D2 | R52 CAS, audit **partial failure** and `OUTCOME_UNKNOWN` preserved — no auto-resend, no backfill, no rollback, no renumbering | §3.5, §5 |
+> | D3 | **"drag to top" is `hi × 1.1`, with the `+1` minimum REMOVED** | §2.2 |
+> | D4 | **non-negative weights are allowed, including the whole 0–1 range.** There is no floor refusal above 0 | §2.1 |
+> | D5 | the neighbour-race residual (§4) is **ACCEPTED** | §4 |
+>
+> **STILL UNAPPROVED, AND THEREFORE NOT BUILT:** the midpoint insertion rule itself, the bottom rule, the
+> precision/depletion rule, and the drag implementation. They are gathered in §8 so the boundary between
+> "decided" and "proposed" is visible rather than implied.
 
 ---
 
@@ -93,14 +97,17 @@ it does not scale anything — it only decides who receives the integer leftover
 
 **One drag moves exactly one row. The dragged row takes a weight strictly between its new neighbours.**
 
-| Position | Rev 1 said | **Rev 2 says** | Why |
+| Position | Rev 2 said | **Rev 3** | State |
 |---|---|---|---|
-| Between `hi` and `lo` | `(hi+lo)/2` | `(hi+lo)/2` | unchanged |
-| At the top | `hi × 1.1`, min `hi + 1` | **`hi + max(1, hi × 0.1)`** | §2.2 — same intent, stated so the number matches the sentence |
-| At the bottom | `lo / 2`, refused if `lo ≤ 1` | **`lo − max(1, lo × 0.1)`, floor `0`; refused only if `lo` is already `0`** | §2.1 |
-| Minimum gap | `1.0` meaningful, `0.01` hard | **`0.01` hard refusal; `1.0` is a WARNING, not a refusal** | §2.1 |
+| At the top | `hi + max(1, hi × 0.1)` | **`hi × 1.1`** — the `+1` minimum is removed | **DECIDED (D3)** |
+| Top, where `hi = 0` or there is no comparison basis | — | **`1.0`**, a named constant | **DECIDED (D3), §2.2** |
+| Any weight in `0 … 1` | refused / warned | **allowed, no refusal** | **DECIDED (D4)** |
+| Negative weight | — | **never produced, never accepted** | **DECIDED (D4)** |
+| Between `hi` and `lo` | `(hi+lo)/2` | `(hi+lo)/2` | **proposed, §8** |
+| At the bottom | `lo − max(1, lo × 0.1)` | *unchanged proposal* | **proposed, §8** |
+| Minimum gap / rounding | `0.01` hard refusal | *unchanged proposal* | **proposed, §8** |
 
-### 2.1 THE FLOOR IS NOT 1 — Rev 1's biggest error
+### 2.1 THERE IS NO FLOOR ABOVE ZERO — DECIDED (D4)
 
 Rev 1 said: *"every weight at or below 1 produces an identical share"*, and refused any drag landing
 there. **That is false**, for two independent reasons from §1:
@@ -120,34 +127,62 @@ So what is actually true is narrower, and it is a *warning*, not a prohibition:
 | 2 | 2 | above 1 |
 
 > **Two sites both at or below 1 receive the same MULTIPLIER in a shortage, and are still ordered
-> differently.** The warning text is therefore: *"Below 1, a higher weight no longer increases this
-> site's share when supply is short — it only decides which site is served first."*
+> differently.** Owner has decided that this is acceptable and that the 0–1 range is usable. The UI
+> therefore **does not refuse** a weight there; it states the consequence once, as information rather
+> than as an obstacle: *"Below 1, a higher weight no longer increases this site's share when supply is
+> short — it only decides which site is served first."*
 
-**The only hard refusal at the bottom is `lo = 0`**, because `0` is the lowest valid weight and there is
-nothing below it. Negative weights are not proposed and are not in §45.A.
+**Weights are NON-NEGATIVE (D4).** `0` remains the lowest valid weight and `0 … 1` is a usable range.
+A negative weight is never produced by any rule here and is never accepted from one: §45.A has no state
+for it, and the three comparators would order it below a site that is explicitly switched off. The only
+structural refusal left at the bottom is a drag below a site that is **already at 0**, because there is
+no non-negative value strictly below zero.
 
-### 2.2 THE TOP FORMULA, AND THE RATIO CLAIM THAT DID NOT MATCH IT
+### 2.2 THE TOP FORMULA IS PURE `hi × 1.1` — DECIDED (D3)
 
-Rev 1 wrote **`hi × 1.1`, minimum `hi + 1`** and described it as *"about 10% above the current leader …
-so it means the same thing everywhere."* **Those two statements contradict each other.**
+Rev 1 wrote `hi × 1.1` but described it as "+10% everywhere" while a `+1` minimum silently took over
+below `hi = 10` (+20% at 5, +100% at 1). Rev 2 kept the behaviour and fixed the sentence. **Owner has
+now removed the `+1` instead**, so the rule and the sentence agree without a special case:
 
-| `hi` | `hi × 1.1` | `hi + 1` | Rule takes | Actual increase |
-|---|---|---|---|---|
-| 500 | 550 | 501 | 550 | **+10%** |
-| 100 | 110 | 101 | 110 | **+10%** |
-| 10 | 11 | 11 | 11 | **+10%** |
-| 5 | 5.5 | **6** | **6** | **+20%** |
-| 2 | 2.2 | **3** | **3** | **+50%** |
-| 1 | 1.1 | **2** | **2** | **+100%** |
-| 0 | 0 | **1** | **1** | — (from nothing) |
+| `hi` | `hi × 1.1` | increase |
+|---|---|---|
+| 500 | 550 | +10% |
+| 100 | 110 | +10% |
+| 10 | 11 | +10% |
+| 5 | 5.5 | +10% |
+| 2 | 2.2 | +10% |
+| 1 | 1.1 | +10% |
+| 0.5 | 0.55 | +10% |
+| **0** | **0** | **— multiplication cannot escape zero** |
 
-Below `hi = 10` the `+1` minimum takes over and the increase is **not** 10%. Rev 1's "+10% everywhere"
-was wrong in exactly the small-magnitude range where Rev 1 criticised `+10` for being wrong.
+**"Ten percent above the leader" is now true at every magnitude**, and the 0–1 range it reaches is
+usable by D4.
 
-**Rev 2 keeps the behaviour and fixes the sentence.** Written as `hi + max(1, hi × 0.1)`, which is the
-same number, the rule reads honestly: *"ten percent above the leader, or one whole point, whichever is
-larger."* The `+1` is there because a 10% step on a weight of 2 is 0.2, and a 0.2 gap is below the
-meaningfulness warning in §2.1 — so the minimum is a **usability** floor, not a proportionality claim.
+#### 2.2.1 `hi = 0`, and "no comparison basis" — the two cases a multiplier cannot answer
+
+`0 × 1.1 = 0`, which is not strictly above `0`. Multiplication has no way out of zero, so the value must
+be **named rather than derived**. The same is true when there is no `hi` at all: the list is empty, the
+dragged row is the only one, or every other row is MISSING or INVALID and so has no position.
+
+> **`TOP_FROM_ZERO = 1.0`** — a named constant, used for both cases.
+
+**Why 1.0 and not 0.1 or 10.** It is the smallest weight that is distinguishable in **both** of the
+roles §1 separates: it is strictly above `0` in all three comparators, and it is the exact point at
+which `Math.max(priority, 1)` stops clamping, so it is also the smallest weight that is not identical
+to its neighbours as a shortage multiplier. Anything smaller is distinguishable only in ordering;
+anything larger asserts a magnitude the operator did not express by dragging to the top of a list that
+had nothing in it.
+
+#### 2.2.2 Where `hi × 1.1` meets the rounding rule — flagged, NOT decided
+
+Rev 2's §2.3 rounds a computed weight to 2 decimal places before the bracket check. Pure `hi × 1.1`
+collapses back onto `hi` under that rounding for **`hi ≤ 0.04`** (`0.04 × 1.1 = 0.044 → 0.04`). D4 makes
+that range reachable, so the interaction is real rather than theoretical.
+
+It is **listed in §8 and not resolved here**, because the rounding rule itself is unapproved and
+choosing a fix now would be deciding the unapproved rule by implication. The three candidates, for the
+Owner's eventual review: raise the stored precision for small weights; apply `TOP_FROM_ZERO` whenever
+`hi × 1.1` fails to round strictly above `hi`; or refuse the drag and say the gap is exhausted.
 
 ### 2.3 THE PRECISION REASON, CORRECTED
 
@@ -197,6 +232,10 @@ Companies are separate scopes (§3.6). A ResourceUS row can never be dropped amo
 | T4 | DE between JP 0 and nothing below | handled by §3.2 | — |
 | T5 | eBay (INVALID) anywhere | position undefined | **NOT DRAGGABLE** |
 | T6 | ResourceUS US 50 between KM 100 and KM 80 | cross-company | **REFUSE — different company** |
+| **T26** | **drag to top where the leader is `hi = 0`** (JP) | `0 × 1.1 = 0`, not above — so `TOP_FROM_ZERO` | **ACCEPT at `1.00`** (§2.2.1) |
+| **T27** | **drag to top of an EMPTY ordered list** (every other row Missing/Invalid) | no `hi` exists | **ACCEPT at `1.00`** (§2.2.1) |
+| **T28** | **drag to top where `hi = 0.5`** | `0.5 × 1.1 = 0.55` | **ACCEPT** — the 0–1 range is usable (D4) |
+| **T29** | **drag to top where `hi = 0.04`** | `0.044` rounds to `0.04` — not above `hi` | **UNRESOLVED** — §2.2.2, listed in §8 |
 
 ### 3.2 BOTTOM
 
@@ -289,9 +328,10 @@ That is a **backend contract change**: a new field on the request, a new refusal
 branch. **It is not proposed here and is not costed here.** It is named so the two options are not
 confused with each other: 4.A narrows the window, 4.B removes it.
 
-> **Rev 2 does not accept the 4.A residual on Owner's behalf.** Owner's confirmed direction requires the
-> re-read and the read-back display; it does not state that the remaining window is acceptable. That is
-> listed in §8.
+> **THE RESIDUAL IS ACCEPTED (D5).** Owner has accepted the one-round-trip window that 4.A leaves open.
+> So 4.A is the design, 4.B is not commissioned, and the acceptance is recorded here rather than being
+> re-raised each round. What the residual costs is unchanged and stays on screen: the PLACEMENT may not
+> match the preview, the read-back (D1) is what the operator is shown, and no row is lost in any case.
 
 ---
 
@@ -325,42 +365,48 @@ identical preview, the identical save and the identical refusals.
 
 ---
 
-## 7. THE WORKABLE-CASE COUNT, RECOUNTED
+## 7. THE CASE COUNT, RECOUNTED FOR REV 3
 
 Rev 1 claimed *"of the six drags an operator is most likely to try, four work and two are refused"* — from
-a table that listed **seven**, under a floor rule that §2.1 has now removed.
+a table that listed **seven**, under a floor rule §2.1 has since removed. Rev 2 recounted 21. D3 and D4
+add four more cases at the top of the range, so the count moves again — which is the point of recording
+it rather than asserting it.
 
-Recounted against §3 on the same fixture, **21 cases, with company separation enforced**:
+Recounted against §3 on the same fixture, **25 drag cases, with company separation enforced**:
 
 | | Count | Cases |
 |---|---|---|
-| **Accept** | **9** | T1, T3, T9, T10, T14, T15, T17, T18, T20 |
-| **Refuse, with an actionable reason** | **9** | T2, T6, T7, T8, T11, T13, T19, T21, T5 (not draggable) |
-| **Behaviour statements, not drags** | **3** | T12, T16, T4 |
+| **Accept** | **12** | T1, T3, T9, T10, T14, T15, T17, T18, T20, **T26, T27, T28** |
+| **Refuse, with an actionable reason** | **9** | T2, T5 (not draggable), T6, T7, T8, T11, T13, T19, T21 |
+| **Behaviour statements, not drags** | **3** | T4, T12, T16 |
+| **UNRESOLVED pending §8** | **1** | **T29** (`hi ≤ 0.04` under the rounding rule) |
 | Outcome-handling cases (§3.5) | 4 | T22–T25 |
 
 **Every refusal is visible before the drop**, not after it: tied pairs carry a badge and a non-droppable
 gap, a cross-company boundary is not a drop target, an INVALID row has no drag handle, and an exhausted
-gap is drawn as full.
+gap is drawn as full. **T29 is the one case with no answer yet**, and it is drawn as unavailable rather
+than guessed at.
 
 ---
 
-## 8. WHAT OWNER IS BEING ASKED NOW
+## 8. WHAT IS STILL UNAPPROVED
 
-Owner's three confirmed directions are **adopted** and are not re-asked: the pre-save re-read of target
-and neighbours (§4.A), the post-save read-back display (§4.A), and R52 CAS / partial failure /
-`OUTCOME_UNKNOWN` with no auto-resend, backfill, rollback or renumbering (§3.5, §5).
+**Nothing in D1–D5 is re-asked.** The save protocol, the CAS and partial-failure handling, the pure
+`hi × 1.1` top rule, the non-negative range and the accepted neighbour residual are settled and are
+recorded at the top of this document.
 
-**Still requiring review, because Rev 1's answers to all four were wrong:**
+**These four are listed because they are NOT decided, and no code may assume them:**
 
-1. **§2.1 — the floor.** Rev 1 refused everything at or below weight 1. Rev 2 refuses only `lo = 0` and
-   **warns** below 1. Confirm the warning is the right strength.
-2. **§2.2 — the top step.** `hi + max(1, hi × 0.1)`: ten percent, or one whole point, whichever is larger.
-   The behaviour is Rev 1's; only the description is corrected. Confirm the business intent.
-3. **§2.3 — depletion.** ~7 insertions between the same pair exhausts the gap and the next is refused.
-   The alternative is respreading, which is multi-row (§5). Confirm refusal is preferred.
-4. **§4 — the residual.** 4.A narrows the window to one round trip; only 4.B removes it, and 4.B is a
-   backend contract change that is not proposed. **Accept the residual, or commission 4.B.**
+| # | Rule | Status |
+|---|---|---|
+| U1 | **Midpoint insertion**, `(hi+lo)/2`, one row per drag | proposed, §2, §3.1 |
+| U2 | **The bottom rule**, `lo − max(1, lo × 0.1)` floored at 0 | proposed, §3.2 — note it still carries a `max(1, …)` term of the kind D3 removed from the top rule, and Owner has not said whether the same simplification applies here |
+| U3 | **Rounding to 2dp and the `0.01` depletion refusal** (~7 midpoints exhaust a gap of 1) | proposed, §2.3, §3.4 |
+| U4 | **T29** — `hi × 1.1` rounding back onto `hi` for `hi ≤ 0.04`, which D4 made reachable | **unresolved**, §2.2.2 — three candidate fixes listed there, none chosen |
+
+U2, U3 and U4 are entangled: the bottom rule and the rounding rule together decide what happens at the
+small end of the range D4 opened, and choosing any one of them in isolation decides the others by
+implication. **Rev 3 therefore proposes none of them**, and the drag feature is not built.
 
 **Not covered and not built:** multi-row writes, normalisation, respreading, auto-renumbering, Missing
 backfill, clearing a priority, any new API or schema, any change to the allocation formula, and the drag

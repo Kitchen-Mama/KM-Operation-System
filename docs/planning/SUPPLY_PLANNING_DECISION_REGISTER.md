@@ -2619,3 +2619,78 @@ The zero floor is also a test of the renderer's claim to consult neither a clock
 **Not claimed.** The shipment overlay is not exercised — the harness answers the scoped workspace read with a
 generic empty envelope rather than inventing a shape, so the page draws its formal empty state. The globe, its
 geometry, its texture and its zh-Hant labels are the shipped ones and do render.
+
+---
+
+### D-S8-B3-27 — Two routes leave the boot path, and the clock is not the evidence — **FROZEN (CP2M-R3)**
+
+**Decision.** `carrier-rate-card.js` and `overseas-stock.js` become route-owned. The boot payload drops from
+67 scripts / 4,007,712 B to **65 / 3,803,037 B** — **204,675 bytes and two requests removed**.
+
+**Why only two.** Each was cleared BY NAME, not by heuristic: neither publishes a symbol any other file
+references, neither is named by an `index.html` inline handler, neither registers a `DOMContentLoaded` handler,
+and each already loads its own partial from its own literal. Their one load-time side effect is
+`KM.lifecycle.register`, which load-before-mount performs before `switchTo` by construction. The CP2M-R2 census
+listed `KM_SCOPED_PAGE_READS` as a shared global both of them published; it is neither — the detecting regex
+matched the `=` inside `!==`, and the only assignment-shaped lines are COMMENTS describing an operator kill
+switch. The other nineteen page scripts remain blocked and each still needs its own argument.
+
+**And the wall clock did not improve.** 63 runs each side: DOMContentLoaded **+9.2 ms**, first contentful paint
+**+8.0 ms** — the wrong direction, inside spreads of 256–406 ms and 261–521 ms. That is noise. **No cold-start
+speed-up is claimed.** On loopback 200 KB costs nothing to transfer; the benefit is bytes over a real link and
+is modelled, not measured. This is the S4-R1 failure mode — a delta inside its own spread — and recording the
+byte census instead of a timing claim is the whole point.
+
+**Four guards fired and were corrected at the declaration, never at the gate:** the token reader now follows the
+file into the route registry; a mutant's hardcoded set size is derived; two declared censuses moved 67→65 and
+18→20. The fifth, S4-R5's `A1c`, pinned the live tree to that round's post-state — a claim about one round
+acting as a veto on every later one — and is now *at or below*: a script rejoining boot still fails, undeclared
+drift still fails `A1d`, and the exact census is still asserted in `s7-r2b1`.
+
+---
+
+### D-S8-B3-28 — The shell is responsive, and the drawer is a behaviour — **FROZEN (CP2M-R3)**
+
+**Decision.** Below **1024px** the sidebar leaves the flow and becomes an overlay drawer. Above it, nothing
+changes: the fixed 240px rail and its collapse control are byte-for-byte what they were.
+
+**Why.** `.sidebar` was a fixed 240px and `.main-content` carried a 240px margin at EVERY width, with no media
+query in the build changing either. Measured against the real `index.html`: a 360px phone got a **105px**
+content column, a 390px one 135px, inside an `overflow-x: hidden` that made anything past it unreachable. After:
+**345px** and **375px**; a 768px tablet goes from 528px to its full 768px.
+
+**The header overlap had the same shape.** `.header-left` is `position: absolute; left: 50%`, so the logo is
+centred OUT OF FLOW and the flex row reserves no space for it — at narrow widths the account text was drawn
+straight through the logo. In flow below the breakpoint, it simply takes its share.
+
+**A drawer is a behaviour, so it is tested as one** (50 assertions, mutation-verified): the control opens and
+shuts it, focus moves INTO it and RETURNS to the opener, Escape closes it and is not swallowed when it is shut,
+the backdrop closes it and a click inside does not, a valid navigation closes it and a REFUSED one leaves it
+exactly as it was, and crossing back to desktop does not strand it open. A closed drawer is `visibility: hidden`
+so it is out of the tab order. The breakpoint is ONE number, asserted identical in `layout.css` and `app.js`.
+
+**And the cascade order is the override.** The base `.km-nav-open { display: none }` was written AFTER the media
+query that reveals it; at equal specificity the later rule won and the opener never rendered — a header with no
+way to reach the menu. The suite now asserts the base rule precedes the override.
+
+---
+
+### D-S8-B3-29 — A fixture is derived from its consumer, never guessed — **FROZEN (CP2M-R3)**
+
+**Decision.** Every synthetic envelope is built from the code that READS it, and validated against that code
+before it is used. `_cp2m-r3-fixtures.js` carries the derivation for each field.
+
+**Why, with the receipts.** Five plausible-looking shapes were wrong, and each would have produced a confident
+measurement of the wrong thing:
+
+| what looked right | what the consumer requires |
+|---|---|
+| no `request_id` echo | the transport correlates every read; not echoing is `RESPONSE_CORRELATION_UNPROVEN`, which surfaces as *"the answer belonged to a different request"* |
+| `data.rows` | `data.normalizedRows` — the first attempt returned `sourceState: OK` with **zero rows**, an empty board reporting success |
+| `filterOptions` as string arrays; no `analysis_permitted` | arrays of objects with a string `value`; a boolean flag. Both surface as the SAME generic `RESPONSE_NOT_READABLE` panel, so the symptom named neither cause |
+| `sourceState: 'OK'` | `'READY'` — `OK` is the live adapter's VERDICT vocabulary, not the server's |
+| `lifecycle_status` | the adapter reads `live.lifecycle`; the other is its OUTPUT name |
+
+**The consequence of getting this right** is that the Product Strategy board renders (37 → 184–417 elements per
+view) and the map draws 8 shipments instead of its formal empty state — so both are now measured as pages an
+operator would see, rather than as refusal panels.

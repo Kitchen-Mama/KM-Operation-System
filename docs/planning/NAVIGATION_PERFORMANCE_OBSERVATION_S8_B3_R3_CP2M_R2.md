@@ -100,11 +100,34 @@ boot path, so it has no JS phase to measure — which is itself the finding in �
 **313.3**, load **316.9**, first contentful paint **312.0**. As a *return* destination (25 samples) Home is
 visible **4.8 ms** after the click.
 
-**Product Strategy — all six sub-pages.** `overview`, `category`, `risk`, `quality`, `workspace`, `advanced`
-were each driven through the board's own view rail, 3 runs each. Every switch repainted in **0–0.1 ms**.
-**This figure is honest and nearly meaningless**: the board is in its no-data state (the harness answers the
-scoped `productPricing.workspace.get` with a generic empty envelope rather than inventing its shape), so what
-was timed is the cost of switching an **empty** board. A populated-board view switch is **NOT MEASURED**.
+**Product Strategy — all six sub-pages, now on a POPULATED board (CP2M-R3).**
+
+CP2M-R2 timed these at 0–0.1 ms and said the figure was "honest and nearly meaningless", because the board was
+in its no-data state. CP2M-R3 supplies a lawful `productPricing.workspace.get`, `productPricing.siteUniverse.get`
+and capability envelope, every field taken from the consumer that reads it (`_cp2m-r3-fixtures.js`), and drives
+the scope chooser the way an operator does. The board renders: the DOM census rises from 37 elements to
+**184–417 per view**, with 6 SVG charts and 35 table rows on Advanced Details.
+
+| view | repaint to next painted frame | long tasks |
+|---|---|---|
+| overview | 16.5 ms | 0 |
+| category | 17.6 ms | 0 |
+| risk | 16.9 ms | 0 |
+| quality | 26.6 ms | 0 |
+| workspace | 32.9 ms | 0 |
+| advanced | 21.8 ms | 0 |
+
+**AND THE FIRST POPULATED RUN REPORTED ~935 ms FOR EVERY ONE OF THESE, WHICH WAS AN INSTRUMENT FAULT.**
+`markInteraction` opens its sample BEFORE dispatching the interaction, so the most recent pending click was the
+PREVIOUS view's — inside the one-second claim window, and therefore claimed. Each sample was measured from the
+previous step's click: its 900 ms wait plus the real cost. Long Tasks reporting **zero** blocking throughout is
+what exposed it; a 900 ms repaint that blocks nothing is not a repaint. An off-by-one click is the same fault as
+a stale callback, arriving from the other direction.
+
+**WHAT THESE NUMBERS DO NOT SAY.** For an in-page view switch the section and a `.psb-view` element are present
+both before and after, so the shell and data predicates are already satisfied and cannot isolate "the new view's
+own content appeared". What is evidenced is the next painted frame, zero main-thread blocking, and a DOM census
+that demonstrably differs per view. A precise per-view render time is **NOT MEASURED**.
 
 ### The three findings in that table
 
@@ -112,10 +135,19 @@ was timed is the cost of switching an **empty** board. A populated-board view sw
 every route (37.4→3.6, 19.4→3.4, 13.4→3.0, 25.9→1.6, 22.0→1.5). The second visit pays for neither the download
 nor the execution. S4-R3's split is doing exactly what it was built to do.
 
-**2. Execution, not download, is the larger half — and this is the separation S4-R1 called NOT_OBSERVABLE.**
-Site Inventory's 1,012 KB takes **5.2 ms to arrive and 11.6 ms to run** over loopback. The ratio inverts in
-production (§5), but the execution cost is real wherever the bytes come from, and it is now a measured number
-instead of an assumption.
+**2. The post-last-byte tail is the larger half — and this is the separation S4-R1 called NOT_OBSERVABLE.**
+Site Inventory's 1,012 KB takes **~5 ms to arrive and ~10 ms more before `ensure` resolves** over loopback.
+
+> **CP2M-R3 CORRECTION — THIS IS NOT TOTAL JS CPU TIME, AND MUST NEVER BE REPORTED AS IT.**
+> Scripts are inserted with `async = false`, which means they EXECUTE AS THEY ARRIVE, in document order: the
+> first file is already running while the second is still downloading. The interval between the LAST byte and
+> `scriptLoader.ensure` resolving is therefore only the execution **tail** — the part that could not overlap a
+> download. Total JS CPU is not observable from here at all. The field is now named `jsTailAfterLastByteMs`;
+> it was `jsExecMs`, which invited exactly the wrong reading.
+>
+> What IS observable, and is what actually hurts an operator, is a task that blocks the main thread for more
+> than 50 ms. The observer now watches **Long Tasks** for that. Across the whole CP2M-R3 matrix the count is
+> **zero** — no route entry and no view switch blocked the main thread.
 
 **3. "The request finished" is not "the screen changed", and the map proves it by 349 ms.** The map's API
 answered at ~128 ms and the globe was on screen **349.4 ms later** — 69% of the whole 504 ms wait happens
@@ -125,7 +157,30 @@ the brief forbids claiming a latency fix on the strength of one.
 
 ---
 
-## 4. THE COLD-START BOTTLENECK — measured, and NOT FIXED
+## 4. THE COLD-START BOTTLENECK — measured, and PARTLY addressed in CP2M-R3
+
+> **CP2M-R3 moved two routes off the boot path.** Carrier Rate Card (98 KB) and Overseas Stock (106 KB) now own
+> their own code, under the same `KM_ROUTE_ASSETS_` mechanism the previous four routes use.
+>
+> | | before | after |
+> |---|---|---|
+> | boot scripts | 67 | **65** |
+> | boot JavaScript | 4,007,712 B | **3,803,037 B** |
+> | removed | — | **204,675 B** |
+> | browser-observed requests | 99 | **97** |
+>
+> **AND THE WALL CLOCK DID NOT IMPROVE, WHICH IS REPORTED RATHER THAN BURIED.** Across 63 runs each side the
+> medians moved the WRONG way — DOMContentLoaded +9.2 ms, first contentful paint +8.0 ms — inside spreads of
+> 256–406 ms (before) and 261–521 ms (after). That is noise, and the after-run spread is wider, so the machine
+> was busier. **This is the S4-R1 trap and it is not being walked into twice: a delta inside the spread is not
+> a result.** On loopback with a warm cache 200 KB costs essentially nothing to transfer, so there is nothing
+> for the clock to show. The benefit is a property of BYTES OVER A REAL LINK (§5): about 16 ms at 100 Mbit,
+> about 390 ms at 4 Mbit, modelled from the byte count and **not measured**.
+>
+> Evidence: `docs/evidence/cp2m-r3-coldstart/{before,after}.json`, captured around the change only. The byte
+> census itself is recomputed from `index.html` on every test run, so it cannot drift.
+
+### The remaining bottleneck, unchanged in shape
 
 Recomputed from `index.html` on every test run, so it cannot quietly describe a past build.
 
@@ -170,7 +225,9 @@ DOMContentLoaded handler* — mechanically to all 21 non-Home page scripts:
 
 | | Files | Bytes |
 |---|---|---|
-| **Mechanically clean today** | **10** | **545,024 (0.52 MB, 13.6% of boot)** |
+| Mechanically clean at CP2M-R2 | 10 | 545,024 |
+| **Taken by CP2M-R3** | **2** | **204,675** |
+| **Mechanically clean remaining** | **8** | **340,349** |
 | Blocked by a cross-file reference | 11 | — |
 | Blocked by an `index.html` inline handler | 1 | — |
 | Carrying their own DOMContentLoaded handler | 4 | — |
