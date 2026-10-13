@@ -6477,7 +6477,11 @@ adapter layers stopped inventing 0 for one — R50 settled that, so the page ren
   marketplace. The row is targeted by its RAW stored country, since a canonical one would miss and insert a
   duplicate row.
 - **Read-after-write** on every save; a write that resolves but does not persist is reported as an error.
-- **Spec:** `docs/planning/SITE_PRIORITY_MANAGEMENT_SPEC.md`. **Tests:** `site-priority-page-s8-b2-r1.test.js`.
+- **Drag to reorder (S8-B3-R3-CP2M-R4):** weight DESC within a company, identity breaking ties; one drag
+  computes ONE weight and saves it through the existing R52 compare-and-set. A drop only proposes; Save
+  re-reads the target and both neighbours first and reports the read-back weight AND position.
+- **Spec:** `docs/planning/SITE_PRIORITY_MANAGEMENT_SPEC.md`. **Tests:** `site-priority-page-s8-b2-r1.test.js`,
+  `site-priority-drag-s8-b3-r3-cp2m-r4.test.js`, `site-priority-viewport-acceptance-s8-b3-r3-cp2m-r2.test.js` (§J).
 
 ### Two things this round did NOT do, by instruction
 

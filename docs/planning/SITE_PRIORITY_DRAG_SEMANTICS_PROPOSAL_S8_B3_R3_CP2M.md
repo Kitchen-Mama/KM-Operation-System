@@ -1,21 +1,30 @@
-# SITE PRIORITY — DRAG-TO-REORDER DESIGN PROPOSAL (S8-B3-R3-CP2M-R3, REV 3)
+# SITE PRIORITY — DRAG-TO-REORDER (S8-B3-R3-CP2M-R4, REV 4 — **IMPLEMENTED**)
 
-> **STATUS: PROPOSAL. NOTHING IS IMPLEMENTED.** No weight conversion, no drag handler, no batch save, no
-> renumbering and no schema change exists in the code. Rev 3 records decisions; it does not build them.
+> **STATUS: BUILT IN THE SANDBOX, NOT RELEASED.** Rev 1–3 were proposals. Rev 4 is the first revision
+> whose rules exist as code: `assets/js/pages/site-priority.js` (route-loaded, not at boot), its partial
+> and its stylesheet. Still absent, and still not proposed: any multi-row write, any renumbering, any
+> schema change, any new API, and any change to the allocation formula.
 >
-> **DECIDED, AND NOT RE-ASKED HERE.**
+> **WHAT REV 4 SETTLED, including one REVERSAL of Rev 3.**
 >
-> | # | Decision | Where it lands |
+> | # | Decision | Where |
 > |---|---|---|
-> | D1 | the save protocol: re-read target **and neighbours** before saving; after saving show the **actual read-back** weight and ordering; never claim the preview held atomically | §4.A, §3.5 |
+> | D1 | save protocol: re-read target **and neighbours** before saving; afterwards show the **actual read-back** weight **and position**; never claim the preview held atomically | §4.A, §3.5 |
 > | D2 | R52 CAS, audit **partial failure** and `OUTCOME_UNKNOWN` preserved — no auto-resend, no backfill, no rollback, no renumbering | §3.5, §5 |
-> | D3 | **"drag to top" is `hi × 1.1`, with the `+1` minimum REMOVED** | §2.2 |
-> | D4 | **non-negative weights are allowed, including the whole 0–1 range.** There is no floor refusal above 0 | §2.1 |
-> | D5 | the neighbour-race residual (§4) is **ACCEPTED** | §4 |
+> | D3 | "drag to top" is `hi × 1.1`, the `+1` minimum REMOVED | §2.2 |
+> | D4 | non-negative weights allowed, including the whole 0–1 range | §2.1 |
+> | D5 | the neighbour-race residual is **ACCEPTED** | §4 |
+> | **D6** | **display order is weight DESC within a company, ties broken by canonical identity** — a total order, so the list cannot reshuffle when an unrelated row is inserted | §2.0 |
+> | **D7** | **midpoint insertion is APPROVED** (Rev 3's U1), computed as `lo + (hi−lo)/2` — overflow-safe, because the naive form overflows on two large legal weights | §2.4 |
+> | **D8** | **the bottom rule is pure `lo × 0.9`** (Rev 3's U2), REPLACING `lo − max(1, lo × 0.1)`. Rev 3's bottom still carried the `max(1, …)` term D3 had removed from the top; both ends now use one factor | §3.2 |
+> | **D9** | **`hi = 0` and "no comparison basis" are REFUSED, and the operator is asked to set a value explicitly.** This **REVERSES** Rev 3's `TOP_FROM_ZERO = 1.0`: a weight that cannot be derived from a comparison is not invented | §2.2.1 |
+> | **D10** | **no 2dp rounding and no 0.01 minimum gap** (Rev 3's U3 is **NOT adopted**). The computed double is what is stored | §2.3 |
+> | **D11** | a save is refused when the value is **non-finite**, **indistinguishable** from a neighbour, between **equal** neighbours, **cross-company**, or when a **filter hides** a neighbour | §2.5 |
 >
-> **STILL UNAPPROVED, AND THEREFORE NOT BUILT:** the midpoint insertion rule itself, the bottom rule, the
-> precision/depletion rule, and the drag implementation. They are gathered in §8 so the boundary between
-> "decided" and "proposed" is visible rather than implied.
+> **AND D10 DISSOLVED U4 RATHER THAN RESOLVING IT.** Rev 3's one unresolved case — `hi × 1.1` rounding back
+> onto `hi` for `hi ≤ 0.04` — existed *only because of the rounding rule that created it*. Unrounded,
+> `0.04 × 1.1` is `0.044000000000000004`, strictly above `0.04`, and the case simply accepts. None of U4's
+> three candidate fixes was chosen. §8 records what remains genuinely out of scope.
 
 ---
 
@@ -97,15 +106,58 @@ it does not scale anything — it only decides who receives the integer leftover
 
 **One drag moves exactly one row. The dragged row takes a weight strictly between its new neighbours.**
 
-| Position | Rev 2 said | **Rev 3** | State |
+| Position | Rev 3 said | **Rev 4 — BUILT** | State |
 |---|---|---|---|
-| At the top | `hi + max(1, hi × 0.1)` | **`hi × 1.1`** — the `+1` minimum is removed | **DECIDED (D3)** |
-| Top, where `hi = 0` or there is no comparison basis | — | **`1.0`**, a named constant | **DECIDED (D3), §2.2** |
-| Any weight in `0 … 1` | refused / warned | **allowed, no refusal** | **DECIDED (D4)** |
-| Negative weight | — | **never produced, never accepted** | **DECIDED (D4)** |
-| Between `hi` and `lo` | `(hi+lo)/2` | `(hi+lo)/2` | **proposed, §8** |
-| At the bottom | `lo − max(1, lo × 0.1)` | *unchanged proposal* | **proposed, §8** |
-| Minimum gap / rounding | `0.01` hard refusal | *unchanged proposal* | **proposed, §8** |
+| At the top | `hi × 1.1` | `hi × 1.1` | **D3, implemented** |
+| Top, where `hi = 0`, or no comparison basis | `1.0`, a named constant | **REFUSED — set a value explicitly** | **D9, REVERSES Rev 3** |
+| Any weight in `0 … 1` | allowed | allowed | **D4, implemented** |
+| Negative weight | never produced or accepted | never produced or accepted | **D4, implemented** |
+| Between `hi` and `lo` | `(hi+lo)/2`, *unapproved* | **`lo + (hi−lo)/2`** — overflow-safe | **D7, implemented** |
+| At the bottom | `lo − max(1, lo × 0.1)`, *unapproved* | **`lo × 0.9`** | **D8, implemented** |
+| Bottom, where `lo = 0` | — | **REFUSED — nothing is below zero** | **D8, implemented** |
+| Minimum gap / rounding | `0.01` + 2dp, *unapproved* | **none — the computed double is stored** | **D10, implemented** |
+
+### 2.0 THE DISPLAY ORDER — D6
+
+Within a company: **weight descending**, ties broken by **canonical identity** (country, then marketplace).
+MISSING and INVALID rows have no position at all and are drawn below, under their own *"No priority set"*
+heading.
+
+**Why identity and not "whatever order the read returned".** `Array.prototype.sort` is only guaranteed
+stable from ES2019, and stability would anchor two equal weights to the sheet's row order — which moves the
+moment anyone inserts a row above them. Two sites at `80` would swap on screen for a reason that has nothing
+to do with either of them. Canonical identity is a **total** order, so the comparator never returns 0 for two
+different rows and the list is reproducible.
+
+> **This is a DISPLAY decision and is not the allocator's.** §1.C records that equal priority falls through
+> to `demandWeight`, then marketplace, then receiverKey inside the allocator. The screen's tiebreak is not
+> that tiebreak, and the page may not imply it is.
+
+### 2.4 THE MIDPOINT IS COMPUTED AS `lo + (hi − lo) / 2` — D7
+
+Not `(hi + lo) / 2`, and the difference is not stylistic. The obvious form builds a **sum** that is
+unrepresentable while the **answer** is perfectly representable: for two large legal weights `hi + lo`
+overflows to `Infinity` and the midpoint becomes `Infinity / 2 = Infinity`. `lo + (hi − lo) / 2` never forms
+a quantity larger than `hi`, so it cannot overflow for any non-negative pair. Verified against
+`Number.MAX_VALUE`, where the naive form returns `Infinity` and the shipped one lands strictly between.
+
+### 2.5 THE REFUSALS — D11
+
+Every one is a numeric or structural fact, not a policy, and every one is **visible before the drop**:
+
+| Code | When |
+|---|---|
+| `NO_BASIS` | no other site in the company has a weight |
+| `TOP_FROM_ZERO` | the leader is `0`; multiplication cannot escape zero (D9) |
+| `BOTTOM_AT_ZERO` | the last place is `0`; nothing is below it |
+| `EQUAL_NEIGHBOURS` | the two neighbours hold the same weight |
+| `INDISTINGUISHABLE` | the computed value rounds onto a neighbour — adjacent doubles, or a denormal |
+| `NOT_FINITE` | `hi × 1.1` overflowed |
+| `NO_CHANGE` | dropped where it already was |
+| *(no handle)* | the row is INVALID, is the only weighted site in its company, or its company has rows hidden by a filter |
+
+**`INDISTINGUISHABLE` is what replaces Rev 3's `0.01` depletion floor.** The floor was a guess at where
+usefulness ends; this is the point at which the number system actually runs out, and it needs no constant.
 
 ### 2.1 THERE IS NO FLOOR ABOVE ZERO — DECIDED (D4)
 
@@ -158,51 +210,69 @@ now removed the `+1` instead**, so the rule and the sentence agree without a spe
 **"Ten percent above the leader" is now true at every magnitude**, and the 0–1 range it reaches is
 usable by D4.
 
-#### 2.2.1 `hi = 0`, and "no comparison basis" — the two cases a multiplier cannot answer
+#### 2.2.1 `hi = 0`, and "no comparison basis" — REFUSED, NOT DEFAULTED (D9, reverses Rev 3)
 
-`0 × 1.1 = 0`, which is not strictly above `0`. Multiplication has no way out of zero, so the value must
-be **named rather than derived**. The same is true when there is no `hi` at all: the list is empty, the
-dragged row is the only one, or every other row is MISSING or INVALID and so has no position.
+`0 × 1.1 = 0`, which is not strictly above `0`. Multiplication has no way out of zero. The same holds when
+there is no `hi` at all: the list is empty, the dragged row is the only one, or every other row is MISSING
+or INVALID and so has no position.
 
-> **`TOP_FROM_ZERO = 1.0`** — a named constant, used for both cases.
+**Rev 3 answered this with a named constant, `TOP_FROM_ZERO = 1.0`. Owner has reversed that.** A weight that
+cannot be derived from a comparison is **required explicitly** and is never filled in:
 
-**Why 1.0 and not 0.1 or 10.** It is the smallest weight that is distinguishable in **both** of the
-roles §1 separates: it is strictly above `0` in all three comparators, and it is the exact point at
-which `Math.max(priority, 1)` stops clamping, so it is also the smallest weight that is not identical
-to its neighbours as a shortage multiplier. Anything smaller is distinguishable only in ordering;
-anything larger asserts a magnitude the operator did not express by dragging to the top of a list that
-had nothing in it.
+> *"The highest site in this company is at 0, and multiplying 0 cannot produce a weight above it. Set this
+> site a priority explicitly with Edit — it will not be filled in automatically."*
 
-#### 2.2.2 Where `hi × 1.1` meets the rounding rule — flagged, NOT decided
+**Why the reversal is the better answer.** Rev 3's argument for `1.0` was that it is the smallest weight
+distinguishable in both of the roles §1 separates. That argument is sound and still does not reach the
+conclusion: it establishes which value a system would pick, not that the system should pick one. Dragging a
+row to the top of a list expresses **a position**, and where no arithmetic can turn that position into a
+weight, the only honest thing the screen can do is say so. The constant is **gone from the code**, not
+merely defaulted differently — `TOP_FROM_ZERO` survives as the name of the refusal.
 
-Rev 2's §2.3 rounds a computed weight to 2 decimal places before the bracket check. Pure `hi × 1.1`
-collapses back onto `hi` under that rounding for **`hi ≤ 0.04`** (`0.04 × 1.1 = 0.044 → 0.04`). D4 makes
-that range reachable, so the interaction is real rather than theoretical.
+#### 2.2.2 Rev 3's U4 — DISSOLVED BY D10, NOT RESOLVED
 
-It is **listed in §8 and not resolved here**, because the rounding rule itself is unapproved and
-choosing a fix now would be deciding the unapproved rule by implication. The three candidates, for the
-Owner's eventual review: raise the stored precision for small weights; apply `TOP_FROM_ZERO` whenever
-`hi × 1.1` fails to round strictly above `hi`; or refuse the drag and say the gap is exhausted.
+Rev 2/Rev 3 rounded a computed weight to 2 decimal places before the bracket check, under which pure
+`hi × 1.1` collapsed back onto `hi` for **`hi ≤ 0.04`** (`0.04 × 1.1 = 0.044 → 0.04`). D4 had made that
+range reachable, so the interaction was real.
 
-### 2.3 THE PRECISION REASON, CORRECTED
+**D10 does not adopt the rounding, so the case stops existing.** Unrounded, `0.04 × 1.1` is
+`0.044000000000000004`, which is strictly above `0.04`, and the drag accepts. None of the three candidate
+fixes Rev 3 listed was chosen — the rule that created the problem was simply not adopted.
 
-Rev 1 justified the `0.01` floor as the point where *"floating point stops being trustworthy."*
-**That is not true.** IEEE-754 doubles carry ~15–16 significant decimal digits; `0.01` is nowhere near
-any limit, and midpoints of realistic weights are exact to far more precision than anyone needs.
+> The test suite asserts the exact double, and also asserts that rounding it to 2dp **would** have collapsed
+> it. The reproduction of the old defect is kept beside its absence, so "it works now" cannot be mistaken for
+> the rounding having been got right.
 
-The real constraints are two, and neither is about the arithmetic:
+**What genuinely limits precision is the number system, and it is checked rather than guessed.** Every
+computed weight — top, bottom and midpoint alike — is re-compared against the neighbours it came from, and
+refused as `INDISTINGUISHABLE` if it did not land strictly between them. That catches adjacent doubles, and
+it catches the trap at the very bottom of the range: **`Number.MIN_VALUE × 1.1 === Number.MIN_VALUE`**, so
+even "multiply by 1.1" cannot be trusted to have increased anything.
 
-1. **Repeated midpointing halves the gap each time.** Starting from a gap of 1, successive insertions at
-   the same place give 0.5, 0.25, 0.125, … After ~7 insertions between the same pair the gap is under
-   0.01. This is a **depletion** limit, not a precision limit, and it is why a hard floor exists at all.
-2. **The value round-trips through a spreadsheet cell as text.** A weight of `80.00000000000001` is a
-   correct double and a terrible cell. Rev 2 therefore **rounds the computed weight to 2 decimal places
-   before writing**, and the refusal fires when that rounded value is not strictly between the
-   neighbours. Rounding happens *before* the check, so the value checked is the value stored.
+### 2.3 PRECISION — NO ROUNDING IS IMPOSED (D10)
 
-> **Consequence, stated plainly:** about **7 consecutive insertions between the same two adjacent sites**
-> will exhaust the gap, and the 8th is refused with *"there is no room between these two sites; change
-> one of their weights first."* No automatic respreading — that would be a multi-row write (§6).
+Rev 1 justified a `0.01` floor as the point where *"floating point stops being trustworthy."* That was never
+true: IEEE-754 doubles carry ~15–16 significant decimal digits, and midpoints of realistic weights are exact
+to far more precision than anyone needs. Rev 2 and Rev 3 replaced the bad reason with two better ones and
+kept the rule. **Rev 4 keeps the reasoning and drops the rule**, because neither constraint is the page's to
+impose:
+
+1. **Repeated midpointing halves the gap.** From a gap of 1, successive insertions at the same place give
+   0.5, 0.25, 0.125, … This is real, and it is **depletion, not imprecision**. But the point at which it
+   actually becomes impossible is not `0.01` — it is the point at which no double lies strictly between the
+   two neighbours, and that point is **detected** (`INDISTINGUISHABLE`) rather than predicted by a constant.
+   A gap of `0.001` is perfectly usable, and a floor at `0.01` would have refused it for no reason.
+2. **The value round-trips through a spreadsheet cell as text.** `80.00000000000001` is a correct double and
+   an ugly cell. That is a presentation concern, and it is **not worth the cost of rounding**: rounding a
+   computed weight changes the value that is stored, and a value that is changed after it was checked can
+   land outside the position it was checked for. That is exactly how Rev 3's U4 came to exist.
+
+> **So no weight is rounded, and there is no minimum gap.** A midpoint is stored as computed, and a drag is
+> refused only when the arithmetic genuinely cannot produce a value that holds the position — which the code
+> establishes by re-comparing the result against the neighbours it was derived from, never by trusting the
+> formula.
+
+---
 
 ---
 
@@ -226,46 +296,54 @@ Companies are separate scopes (§3.6). A ResourceUS row can never be dropped amo
 
 | # | Drag | Computed | Verdict |
 |---|---|---|---|
-| T1 | JP between US 100 and GB 80 | `(100+80)/2 = 90.00` | **ACCEPT** |
-| T2 | JP between GB 80 and DE 80 | no value strictly between | **REFUSE — equal neighbours** |
-| T3 | CA (Missing) between US 100 and GB 80 | `90.00` | **ACCEPT as first set** (§3.5) |
-| T4 | DE between JP 0 and nothing below | handled by §3.2 | — |
-| T5 | eBay (INVALID) anywhere | position undefined | **NOT DRAGGABLE** |
-| T6 | ResourceUS US 50 between KM 100 and KM 80 | cross-company | **REFUSE — different company** |
-| **T26** | **drag to top where the leader is `hi = 0`** (JP) | `0 × 1.1 = 0`, not above — so `TOP_FROM_ZERO` | **ACCEPT at `1.00`** (§2.2.1) |
-| **T27** | **drag to top of an EMPTY ordered list** (every other row Missing/Invalid) | no `hi` exists | **ACCEPT at `1.00`** (§2.2.1) |
-| **T28** | **drag to top where `hi = 0.5`** | `0.5 × 1.1 = 0.55` | **ACCEPT** — the 0–1 range is usable (D4) |
-| **T29** | **drag to top where `hi = 0.04`** | `0.044` rounds to `0.04` — not above `hi` | **UNRESOLVED** — §2.2.2, listed in §8 |
+| T1 | JP between US 100 and GB 80 | `(100+80)/2 = 90` | **ACCEPT** |
+| T2 | JP between GB 80 and DE 80 | no value strictly between | **REFUSE — `EQUAL_NEIGHBOURS`** |
+| T3 | CA (Missing) between US 100 and GB 80 | `90` | **ACCEPT as first set** (§3.5) |
+| T4 | DE below the last row | handled by §3.2 | — |
+| T5 | eBay (INVALID) anywhere | position undefined | **NOT DRAGGABLE — no handle** |
+| T6 | ResourceUS US 50 between KM 100 and KM 80 | cross-company | **NOT A DROP TARGET** |
+| **T26** | drag to top where the leader is `hi = 0` | `0 × 1.1 = 0`, not above | **REFUSE — `TOP_FROM_ZERO`** (D9; Rev 3 accepted at 1.00) |
+| **T27** | drag to top of an EMPTY ordered list | no `hi` exists | **REFUSE — `NO_BASIS`** (D9; Rev 3 accepted at 1.00) |
+| **T28** | drag to top where `hi = 0.5` | `0.55` | **ACCEPT** — the 0–1 range is usable (D4) |
+| **T29** | drag to top where `hi = 0.04` | `0.044000000000000004` | **ACCEPT** — U4 dissolved by D10 |
+| **T30** | drag to top where `hi = Number.MAX_VALUE` | `hi × 1.1` overflows | **REFUSE — `NOT_FINITE`** |
+| **T31** | drag to top where `hi = Number.MIN_VALUE` | `MIN_VALUE × 1.1 === MIN_VALUE` | **REFUSE — `INDISTINGUISHABLE`** |
+| **T32** | insert between two ADJACENT doubles | midpoint rounds onto `lo` | **REFUSE — `INDISTINGUISHABLE`** |
+| **T33** | insert between two very large weights | naive `(hi+lo)/2` is `Infinity`; `lo+(hi−lo)/2` is not | **ACCEPT** (D7) |
+| **T34** | drop a row where it already was | nothing to store | **NO_CHANGE — Save not offered** |
+| **T35** | any drag while a filter hides a sibling of that company | neighbours unknowable | **NOT DRAGGABLE — the band says why** |
+| **T36** | drag the only weighted site in a company | nothing to compare against | **NOT DRAGGABLE — no handle** |
 
 ### 3.2 BOTTOM
 
 | # | Drag | Computed | Verdict |
 |---|---|---|---|
-| T7 | DE 80 below JP 0 | `0 − max(1, 0) = −1` → clamped to `0`; not strictly below `0` | **REFUSE — JP is already at the lowest weight** |
-| T8 | GB 80 below ResourceUS 50 *(same company only)* | n/a — different company | **REFUSE** |
-| T9 | Bottom drag where `lo = 20` | `20 − max(1, 2) = 18.00` | **ACCEPT** |
-| T10 | Bottom drag where `lo = 0.5` | `0.5 − max(1, 0.05)` → below 0 → clamp `0` | **ACCEPT at 0, with the §2.1 warning** |
-| T11 | Bottom drag where `lo = 0` | nothing below 0 | **REFUSE** |
+| T7 | DE 80 below JP 0 | `lo = 0` | **REFUSE — `BOTTOM_AT_ZERO`** |
+| T8 | GB 80 below ResourceUS 50 | different company | **NOT A DROP TARGET** |
+| T9 | bottom where `lo = 20` | `20 × 0.9 = 18` | **ACCEPT** |
+| T10 | bottom where `lo = 0.5` | `0.45` | **ACCEPT** — Rev 3 clamped this to 0; D8 does not |
+| T11 | bottom where `lo = 0` | nothing below 0 | **REFUSE — `BOTTOM_AT_ZERO`** |
+| **T37** | bottom where `lo = Number.MIN_VALUE` | `MIN_VALUE × 0.9 === MIN_VALUE` | **REFUSE — `INDISTINGUISHABLE`** |
 
 ### 3.3 DUPLICATE WEIGHTS
 
 | # | Case | Behaviour |
 |---|---|---|
-| T12 | GB 80 and DE 80 displayed | both carry a **tie badge**; the gap between them is **not a drop target** |
-| T13 | Drop *between* the tied pair | **REFUSE — equal neighbours.** Stated before the drop, by the non-droppable zone |
-| T14 | Drag GB above US | `100 + max(1,10) = 110.00`. **ACCEPT** — and this also breaks the tie, by raising GB only |
-| T15 | Drag a third row between US 100 and the tied pair | `(100+80)/2 = 90.00`. **ACCEPT** — the tie is untouched |
+| T12 | GB 80 and DE 80 displayed | both keep their weight; the ORDER between them is canonical identity (D6), not arrival order |
+| T13 | Drop *between* the tied pair | **REFUSE — `EQUAL_NEIGHBOURS`**, shown on the move bar before Save is ever offered |
+| T14 | Drag GB above US | `100 × 1.1 = 110.00000000000001`. **ACCEPT** — and this breaks the tie, by raising GB only |
+| T15 | Drag a third row between US 100 and the tied pair | `90`. **ACCEPT** — the tie is untouched |
 | T16 | Does a tie reorder the allocator? | **No.** Equal priority falls through to `demandWeight`, then marketplace, then receiverKey (§1.C) — the screen's row order is **not** the tiebreak |
 
 ### 3.4 PRECISION / DEPLETION
 
 | # | Case | Behaviour |
 |---|---|---|
-| T17 | Insert between 80 and 81 | `80.50` | **ACCEPT** |
-| T18 | Insert again between 80 and 80.5 | `80.25` | **ACCEPT**, with the §2.1 sub-1-gap warning |
-| T19 | …repeated until the gap < 0.01 | **REFUSE — no room between these two sites** |
-| T20 | Computed `80.333333…` | rounded to `80.33` **before** the bracket check and before the write | the value checked is the value stored |
-| T21 | Rounding would equal a neighbour | **REFUSE** — caught by the post-rounding check, never written |
+| T17 | insert between 80 and 81 | `80.5` | **ACCEPT** |
+| T18 | insert again between 80 and 80.5 | `80.25` | **ACCEPT** |
+| T19 | repeated until no double lies between | **REFUSE — `INDISTINGUISHABLE`**, at the real limit rather than at `0.01` |
+| T20 | computed `80.33333333333333` | **stored exactly as computed** — no rounding (D10) |
+| T21 | a value that would equal a neighbour | **REFUSE** — caught by the strict re-check, never written |
 
 ### 3.5 MISSING — FIRST SET
 
@@ -359,55 +437,98 @@ Allocation formula and mode selection (§24.7) · demand ordering (§35) · over
 (§40.13) · quantity conservation · Production data · the weight scale (no normalisation, no rescale, no
 cap) · the schema · §45.A's three states · the allocator's refusal of an unresolved priority.
 
-Accessibility is unchanged: keyboard (`Space` lift, `↑`/`↓`, `Space` drop, `Esc` cancel) and touch
-(long-press plus explicit **Move up / Move down** buttons) produce the identical single-row change, the
-identical preview, the identical save and the identical refusals.
+Accessibility, as built: the handle is a real `<button>`, so it is in the tab order and announced as
+operable. **Space** or **Enter** lifts, **↑ / ↓** move, **Home / End** jump to the ends, **Space** drops and
+**Esc** cancels; focus is restored to the handle after every re-render, because each slot change rebuilds the
+row. Touch and mouse go through **Pointer Events** — not HTML5 drag-and-drop, which never fires for touch —
+so one handler serves mouse, pen and finger, and the handle carries `touch-action: none` without which the
+browser claims the gesture as a scroll and touch silently does nothing. All three inputs call the same
+lift / move / drop functions, so they produce the identical draft, preview, refusals and save.
 
 ---
 
-## 7. THE CASE COUNT, RECOUNTED FOR REV 3
+## 7. THE CASE COUNT, RECOUNTED FOR REV 4
 
-Rev 1 claimed *"of the six drags an operator is most likely to try, four work and two are refused"* — from
-a table that listed **seven**, under a floor rule §2.1 has since removed. Rev 2 recounted 21. D3 and D4
-add four more cases at the top of the range, so the count moves again — which is the point of recording
-it rather than asserting it.
+Rev 1 claimed *"of the six drags an operator is most likely to try, four work and two are refused"* — from a
+table that listed **seven**, under a floor rule §2.1 has since removed. Rev 2 recounted 21, Rev 3 recounted
+25. Rev 4 moves it again, and in a direction worth noticing: **the refusals grew faster than the accepts**,
+because building the rule turned three decisions (D9, D7, D10) into seven boundary cases the proposals had
+not separated.
 
-Recounted against §3 on the same fixture, **25 drag cases, with company separation enforced**:
+Recounted against §3 on the same fixture, **30 drag cases**:
 
 | | Count | Cases |
 |---|---|---|
-| **Accept** | **12** | T1, T3, T9, T10, T14, T15, T17, T18, T20, **T26, T27, T28** |
-| **Refuse, with an actionable reason** | **9** | T2, T5 (not draggable), T6, T7, T8, T11, T13, T19, T21 |
-| **Behaviour statements, not drags** | **3** | T4, T12, T16 |
-| **UNRESOLVED pending §8** | **1** | **T29** (`hi ≤ 0.04` under the rounding rule) |
+| **Accept** | **12** | T1, T3, T9, T10, T14, T15, T17, T18, T20, T28, T29, T33 |
+| **Refuse, with an actionable reason** | **17** | T2, T5, T6, T7, T8, T11, T13, T19, T21, T26, T27, T30, T31, T32, T35, T36, T37 |
+| **Nothing to save** | **1** | T34 (dropped where it already was) |
+| Behaviour statements, not drags | 3 | T4, T12, T16 |
 | Outcome-handling cases (§3.5) | 4 | T22–T25 |
 
-**Every refusal is visible before the drop**, not after it: tied pairs carry a badge and a non-droppable
-gap, a cross-company boundary is not a drop target, an INVALID row has no drag handle, and an exhausted
-gap is drawn as full. **T29 is the one case with no answer yet**, and it is drawn as unavailable rather
-than guessed at.
+**Two cases changed verdict between Rev 3 and Rev 4, and both moved from ACCEPT to REFUSE**: T26 and T27,
+the `hi = 0` and no-basis cases Rev 3 would have filled in with `1.0` (D9). **One moved the other way**: T29,
+which Rev 3 could not answer at all and which D10 made ordinary.
+
+**Every refusal is visible before the drop.** A row that cannot move has no handle and says why in its place;
+a cross-company boundary is not a drop target; a slot with no legal weight draws the row where it was dropped
+with **no number at all** and withdraws Save. Nothing is refused only after the operator has committed to it.
 
 ---
 
-## 8. WHAT IS STILL UNAPPROVED
+## 8. WHAT REMAINS OUT OF SCOPE
 
-**Nothing in D1–D5 is re-asked.** The save protocol, the CAS and partial-failure handling, the pure
-`hi × 1.1` top rule, the non-negative range and the accepted neighbour residual are settled and are
-recorded at the top of this document.
+U1, U2 and U3 were approved in Rev 4 as D7, D8 and D10. **U4 was not resolved — it was dissolved**, because
+D10 did not adopt the rounding rule that created it (§2.2.2).
 
-**These four are listed because they are NOT decided, and no code may assume them:**
+What is still not built, and still not proposed:
 
-| # | Rule | Status |
-|---|---|---|
-| U1 | **Midpoint insertion**, `(hi+lo)/2`, one row per drag | proposed, §2, §3.1 |
-| U2 | **The bottom rule**, `lo − max(1, lo × 0.1)` floored at 0 | proposed, §3.2 — note it still carries a `max(1, …)` term of the kind D3 removed from the top rule, and Owner has not said whether the same simplification applies here |
-| U3 | **Rounding to 2dp and the `0.01` depletion refusal** (~7 midpoints exhaust a gap of 1) | proposed, §2.3, §3.4 |
-| U4 | **T29** — `hi × 1.1` rounding back onto `hi` for `hi ≤ 0.04`, which D4 made reachable | **unresolved**, §2.2.2 — three candidate fixes listed there, none chosen |
+| | Why |
+|---|---|
+| **Multi-row writes**, normalisation, respreading, auto-renumbering | §5: a multi-row write has no all-or-nothing story on this backend. A lock serialises; it does not roll back |
+| **Missing backfill** | nothing is ever auto-assigned — §3.5 |
+| **Clearing a priority back to MISSING** | there is no supported API for it; the page states the limitation where an operator meets it |
+| **Repairing an INVALID row by dragging it** | placing it would mean choosing what its unreadable value was meant to be |
+| **§4.B — closing the neighbour race inside the server's lock** | a backend contract change; D5 accepted the residual instead |
 
-U2, U3 and U4 are entangled: the bottom rule and the rounding rule together decide what happens at the
-small end of the range D4 opened, and choosing any one of them in isolation decides the others by
-implication. **Rev 3 therefore proposes none of them**, and the drag feature is not built.
+### 8.1 ONE THING FOUND WHILE BUILDING, AND NOT FIXED HERE
 
-**Not covered and not built:** multi-row writes, normalisation, respreading, auto-renumbering, Missing
-backfill, clearing a priority, any new API or schema, any change to the allocation formula, and the drag
-implementation itself.
+**An unparseable priority cell never reaches this page as INVALID.** The shipped reader
+(`operation-system-db-api.js`) normalises `allocation_priority` with `Number()` and stores `null` when the
+result is not finite — deliberately, so a malformed cell does not become a confident wrong number. The
+consequence is that `'7abc'` arrives as `null` and the page draws it as **Missing**, offering a first set,
+while only a **negative** value (which that normaliser preserves on purpose) presents as INVALID.
+
+This is pre-existing and applies to the Edit path exactly as it does to the drag; it is **not** introduced by
+Rev 4. It is recorded here because it was found by capturing the real page rather than by reading the code:
+the first browser capture drew a drag handle on a row the test suite believed had none. **Changing it would
+mean changing the reader's contract, which this round is not authorised to touch.**
+
+---
+
+## 9. WHAT WAS BUILT, AND WHERE IT IS CHECKED
+
+| | |
+|---|---|
+| The rule, as arithmetic | `proposeWeight(upper, lower)` and `midpoint(lo, hi)` in `assets/js/pages/site-priority.js` — pure functions of their arguments, exported so the boundary cases are tested as numbers |
+| The order | `displayOrder` (D6), in the same file |
+| The gesture | Pointer Events for mouse, pen and touch; a `<button>` handle with Space / Enter / ↑ / ↓ / Home / End / Esc |
+| The draft | a drop produces a preview and a move bar; **Cancel is a zero write**; Save dispatches at most one row |
+| The save | `preflightMove` re-reads the target and both neighbours (invalidating the shared key first, so it cannot be answered from the snapshot the preview came from), then the **existing** R52 writer with its compare-and-set — there is exactly one dispatch site in the file, shared with the Edit path |
+| The report | the read-back **weight and position**, from a fresh read (D1) |
+
+**Checked by:**
+
+- `assets/tests/site-priority-drag-s8-b3-r3-cp2m-r4.test.js` — the rule, the order, the draft, the preflight,
+  the four write outcomes, repeated Save, a late answer, and the source invariants (one writer, one payload,
+  no renumbering, no multi-row loop). Mutation-probed: 21 mutations of the shipped rules, all killed.
+- `assets/tests/site-priority-viewport-acceptance-s8-b3-r3-cp2m-r2.test.js` §J — the **gesture**, driven as
+  real PointerEvents and KeyboardEvents in a real browser at 360 / 390 / 768 / 1280 / 1920, asserting that
+  mouse, touch and keyboard land the same row in the same slot at the same weight, that `touch-action`
+  **computes** to `none`, and that **no gesture dispatched a write**.
+- `assets/tests/site-priority-page-s8-b2-r1.test.js` — unchanged, and still passing: the save contract this
+  round reused rather than replaced.
+
+**What the node suite cannot prove, and does not claim:** a headless DOM has no layout, so
+`getBoundingClientRect` returns zeros and no pointer path can be driven there. The node suite drives
+lift / move / drop through the same functions the handlers call; the browser capture drives the handlers.
+Neither stands in for the other.

@@ -277,6 +277,166 @@ env.win.showSection('site-priority');
 env.win.showSection('ops');
 eq(env.listeners.keydown.length, before, 'I6 and navigating does NOT add more of them');
 
+// =============================================================================================================
+// S8-B3-R3-CP2M-R4 — THE HALF OF THE MODAL CONTRACT CP2M-R3 DID NOT FINISH
+// -------------------------------------------------------------------------------------------------------------
+// R3 moved focus INTO the drawer on open and RETURNED it on close, and this suite asserted both. What neither
+// did was KEEP it there. With the scrim covering the page, Tab from the last menu item walked out of the menu
+// and into controls behind a backdrop that exists to say they are unreachable — so a keyboard user ended up
+// somewhere invisible with no way back but Escape. These sections are the supplement, and the trap they test
+// is new code rather than a re-assertion of old.
+//
+// The shim's sidebar has no children, so the drawer is given a realistic menu here: four reachable items and
+// one buried in a COLLAPSED submenu, which must not be reachable at all.
+function withMenu(width) {
+    const e = build(width);
+    const items = [];
+    for (let i = 0; i < 4; i++) {
+        const it = makeEl('', 'div');
+        it._cls['menu-item'] = 1;
+        it.setAttribute('tabindex', '0');
+        it.parentNode = e.els.appSidebar;
+        items.push(it);
+    }
+    const shut = makeEl('', 'div');
+    shut._cls['menu-children'] = 1;
+    shut.parentNode = e.els.appSidebar;
+    const buried = makeEl('', 'div');
+    buried.setAttribute('tabindex', '0');
+    buried.parentNode = shut;
+    const all = items.concat([buried]);
+    e.els.appSidebar.querySelectorAll = () => all;
+    e.els.appSidebar.querySelector = (sel) => (String(sel).indexOf('menu-item') >= 0 ? items[0] : null);
+    e.els.appSidebar.contains = (n) => all.indexOf(n) !== -1;
+    e.menu = items; e.buried = buried;
+    return e;
+}
+function key(k, shift) {
+    const ev = { key: k, shiftKey: !!shift, prevented: false, preventDefault() { this.prevented = true; } };
+    fire('keydown', ev);
+    return ev;
+}
+
+section('J. TAB IS CONTAINED while the drawer is open');
+
+withMenu(390);
+env.win.toggleSidebar();
+eq(isOpen(), true, 'J1 the drawer is open');
+eq(env.doc.activeElement, env.menu[0], 'J1a with focus on the first menu item');
+
+env.doc.activeElement = env.menu[3];
+let ev = key('Tab');
+eq(ev.prevented, true, 'J2 Tab from the LAST item is intercepted');
+eq(env.doc.activeElement, env.menu[0], 'J2a and wraps to the first — it does not escape behind the scrim');
+
+env.doc.activeElement = env.menu[0];
+ev = key('Tab', true);
+eq(ev.prevented, true, 'J3 Shift+Tab from the FIRST item is intercepted');
+eq(env.doc.activeElement, env.menu[3], 'J3a and wraps to the last');
+
+// IN THE MIDDLE OF THE LIST THE BROWSER IS LEFT ALONE. A trap that preventDefault()s every Tab would have to
+// reimplement ordinary forward movement, and would get it wrong for anything it had not thought of.
+env.doc.activeElement = env.menu[1];
+ev = key('Tab');
+eq(ev.prevented, false, 'J4 Tab in the MIDDLE of the menu is NOT intercepted — the browser moves focus');
+eq(env.doc.activeElement, env.menu[1], 'J4a and nothing was moved by hand');
+
+// FOCUS THAT IS ALREADY OUTSIDE IS PULLED BACK — the state a stray click on the scrim can leave behind.
+env.doc.activeElement = env.els.kmNavOpen;
+ev = key('Tab');
+eq(ev.prevented, true, 'J5 Tab from OUTSIDE the open drawer is intercepted');
+eq(env.doc.activeElement, env.menu[0], 'J5a and brings focus back into the menu');
+env.doc.activeElement = env.els.kmNavOpen;
+key('Tab', true);
+eq(env.doc.activeElement, env.menu[3], 'J5b Shift+Tab brings it back to the END of the menu');
+
+// A COLLAPSED SUBMENU IS NOT A PLACE TO LAND. Its items are in the DOM and carry tabindex="0"; what makes
+// them unreachable is that their parent is shut, which is a fact about the markup rather than about layout.
+env.doc.activeElement = env.menu[3];
+key('Tab');
+ok(env.doc.activeElement !== env.buried, 'J6 an item inside a COLLAPSED submenu is never focused');
+env.buried.parentNode._cls['is-open'] = 1;
+env.doc.activeElement = env.buried;
+ev = key('Tab');
+eq(ev.prevented, true, 'J6a but once that submenu is OPEN its item is the last stop');
+eq(env.doc.activeElement, env.menu[0], 'J6b and wraps from there');
+
+// AND THE DESKTOP IS NOT TRAPPED, which is the other half of being right. There the sidebar is part of the
+// page: Tab SHOULD leave it, and holding focus inside would be the defect.
+withMenu(1440);
+env.win.toggleSidebar();                       // collapses the rail; no drawer at this width
+eq(isOpen(), false, 'J7 (no drawer at desktop width)');
+env.doc.activeElement = env.menu[3];
+ev = key('Tab');
+eq(ev.prevented, false, 'J7a Tab is NOT intercepted at desktop width');
+eq(env.doc.activeElement, env.menu[3], 'J7b and focus is left exactly where the browser will take it');
+
+// -------------------------------------------------------------------------------------------------------------
+section('K. HOME and END jump to the ends of the menu — and only from inside it');
+
+withMenu(390);
+env.win.toggleSidebar();
+env.doc.activeElement = env.menu[2];
+ev = key('End');
+eq(ev.prevented, true, 'K1 End is claimed while focus is in the drawer');
+eq(env.doc.activeElement, env.menu[3], 'K1a and lands on the last item');
+ev = key('Home');
+eq(ev.prevented, true, 'K2 Home is claimed too');
+eq(env.doc.activeElement, env.menu[0], 'K2a and lands on the first');
+
+// NOT CLAIMED FROM OUTSIDE. Home means "scroll to the top" to the page underneath, and a drawer that stole it
+// whenever it was open would break the page it is sitting over rather than serve its own menu.
+env.doc.activeElement = env.els.kmNavOpen;
+ev = key('Home');
+eq(ev.prevented, false, 'K3 Home from OUTSIDE the drawer is left alone');
+eq(env.doc.activeElement, env.els.kmNavOpen, 'K3a and moves nothing');
+
+withMenu(390);
+env.doc.activeElement = env.menu[1];
+ev = key('Home');
+eq(ev.prevented, false, 'K4 and Home is not claimed at all while the drawer is CLOSED');
+
+// -------------------------------------------------------------------------------------------------------------
+section('L. DIRECT NAVIGATION — every refusal guard leaves the drawer alone');
+
+// E covers a valid navigation and the named Overseas refusal. The OTHER refusal — a staged section that is
+// switched off — returns from an earlier line still, and the close sits after both. A guard placed before
+// only ONE of them would pass E and fail here.
+const stagedBlock = (APP.match(/KM_STAGED_SECTIONS_\s*=\s*\{([\s\S]*?)\n\};/) || [])[1] || '';
+const offSection = (stagedBlock.match(/'([\w-]+)':\s*\{[^}]*enabled:\s*false/) || [])[1];
+ok(stagedBlock.length > 0, 'L1 the staged-section registry was found in app.js');
+// EVERY staged section is currently switched ON, so there is no refusal of this kind to DRIVE. That is a
+// fact about today's registry rather than about the guard, so the claim is made where it stays durable: the
+// staged refusal returns BEFORE the line that closes the drawer. Position in the function is what makes "a
+// refused click changes nothing" true, and it remains checkable when nothing is switched off.
+const guardAt = APP.indexOf('if (staged && staged.enabled !== true) {');
+const closeAt = APP.indexOf('try { kmNavClose_(); } catch (e) {}');
+ok(guardAt > 0, 'L1a the staged refusal guard exists');
+ok(closeAt > 0, 'L1b and the drawer close exists');
+ok(guardAt < closeAt, 'L1c and the refusal returns BEFORE the drawer is closed');
+if (offSection) {
+    build(360);
+    env.win.toggleSidebar();
+    eq(isOpen(), true, 'L2 open');
+    env.win.showSection(offSection);
+    eq(isOpen(), true, 'L2a a STAGED-OFF section is refused and the drawer is untouched');
+} else {
+    ok(/enabled:\s*true/.test(stagedBlock),
+      'L2 (every staged section is currently ON, so L1c carries this claim instead)');
+}
+// A navigation to the page already on screen is still a navigation, and still closes the drawer — otherwise
+// re-choosing the current page from the menu leaves the menu covering it.
+build(360);
+env.win.showSection('site-priority');
+env.win.toggleSidebar();
+eq(isOpen(), true, 'L3 open, while already on that page');
+env.win.showSection('site-priority');
+eq(isOpen(), false, 'L3a choosing the SAME page again still closes the drawer');
+
+// And the close is reached through the shipped helper rather than by this suite poking the class.
+ok(/try \{ kmNavClose_\(\); \} catch \(e\) \{\}/.test(APP), 'L4 showSection closes the drawer through kmNavClose_');
+ok(typeof env.win.kmNavIsOpen === 'function', 'L4a which is the same helper the rest of the shell uses');
+
 // -------------------------------------------------------------------------------------------------------------
 console.log('\n----------------------------------------');
 console.log('RESPONSIVE SHELL DRAWER (S8-B3-R3-CP2M-R3): ' + pass + ' passed, ' + fail + ' failed');

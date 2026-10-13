@@ -2694,3 +2694,181 @@ measurement of the wrong thing:
 **The consequence of getting this right** is that the Product Strategy board renders (37 → 184–417 elements per
 view) and the map draws 8 shipments instead of its formal empty state — so both are now measured as pages an
 operator would see, rather than as refusal panels.
+---
+
+### D-S8-B3-30 — The drag stores a WEIGHT, and the weight is the only thing stored — **FROZEN (CP2M-R4)**
+
+**Decision.** Reordering Site Priority by dragging computes **one number** that sits strictly where the row
+was dropped, and saves it through the **existing** R52 single-row compare-and-set. No rank column, no
+sequence, no renumbering, and **no neighbour is written**. One drag is one row, which is what makes it
+incapable of a cross-row partial failure (D-S8-B3-xx / §5 of the proposal).
+
+**The rules, as built:**
+
+| Position | Rule |
+|---|---|
+| top | `hi × 1.1` — pure, no `+1` minimum |
+| bottom | `lo × 0.9` — pure. **Replaces** Rev 3's `lo − max(1, lo × 0.1)`, which still carried the term the top rule had already dropped |
+| between | `lo + (hi − lo) / 2` |
+| `hi = 0`, or no comparison basis | **REFUSED** — the operator is asked to set a value explicitly |
+| `lo = 0` | **REFUSED** — nothing is below zero |
+| precision | **none imposed**: no 2dp rounding, no minimum gap. The computed double is stored |
+
+**Display order** is weight DESC within a company, ties broken by **canonical identity** — a total order, so
+the list cannot reshuffle because an unrelated row was inserted above two equal weights. This is a DISPLAY
+decision and is explicitly *not* the allocator's tiebreak (§1.C).
+
+**Why the midpoint is `lo + (hi − lo) / 2` and not `(hi + lo) / 2`.** The obvious form builds a SUM that is
+unrepresentable while the ANSWER is perfectly representable: for two large legal weights it overflows to
+`Infinity`. Verified against `Number.MAX_VALUE`, where the naive form returns `Infinity` and the shipped one
+lands strictly between.
+
+**Why every computed weight is re-checked against its neighbours.** Because "multiplying a positive number by
+1.1 increases it" is **false** at the bottom of the double range: `Number.MIN_VALUE * 1.1 === Number.MIN_VALUE`.
+The arithmetic is never trusted to have moved; top, bottom and midpoint alike are re-compared against the
+neighbours they came from and refused as `INDISTINGUISHABLE` if they did not land strictly between.
+
+---
+
+### D-S8-B3-31 — A weight that cannot be DERIVED is REQUIRED, not invented — **FROZEN (CP2M-R4)**
+
+**Decision.** Where no arithmetic can turn a dropped position into a weight — the leader is `0`, or the
+ordered list is empty — the drag is **REFUSED** and the operator is told to set a value explicitly with Edit.
+
+**This REVERSES Rev 3's `TOP_FROM_ZERO = 1.0`.** Rev 3's argument for `1.0` was that it is the smallest weight
+distinguishable in both of the roles priority plays — strictly above `0` in all three comparators, and exactly
+where `Math.max(priority, 1)` stops clamping. That argument is sound **and it does not reach the conclusion**:
+it establishes which value a system would pick, not that the system should pick one. Dragging a row to the top
+expresses a POSITION; where that position has no derivable weight, the honest answer is to say so.
+
+The constant is **gone from the code**, not defaulted differently. `TOP_FROM_ZERO` survives only as the NAME
+OF THE REFUSAL, and the suite asserts it is never assigned a value.
+
+---
+
+### D-S8-B3-32 — The rounding rule was not adopted, so its unresolved case stopped existing — **FROZEN (CP2M-R4)**
+
+**Decision.** No computed weight is rounded, and there is no minimum gap. Rev 3's U3 (2dp + a `0.01` floor) is
+**not adopted**.
+
+**And that DISSOLVED Rev 3's U4 rather than resolving it.** U4 was `hi × 1.1` collapsing back onto `hi` for
+`hi ≤ 0.04` — a case that existed **only because of the rounding that created it**: `0.04 × 1.1 = 0.044`
+rounded back to `0.04`. Unrounded, the value is `0.044000000000000004`, strictly above `0.04`, and the drag
+accepts. **None of U4's three candidate fixes was chosen.**
+
+**What replaces the `0.01` floor** is `INDISTINGUISHABLE`: the drag is refused when no double lies strictly
+between the two neighbours. The floor was a guess at where usefulness ends and would have refused a perfectly
+usable gap of `0.001`; this is the point at which the number system actually runs out, and it needs no
+constant. The depletion argument Rev 1–3 made is still true — repeated midpointing halves the gap — it is
+simply **detected rather than predicted**.
+
+**The second reason for rounding is also rejected, on its own terms.** A weight round-trips through a
+spreadsheet cell as text, and `80.00000000000001` is an ugly cell. That is a presentation concern, and
+rounding costs more than it buys: it changes the value AFTER it was checked, and a value changed after the
+check can land outside the position it was checked for. That is precisely how U4 came to exist.
+
+---
+
+### D-S8-B3-33 — A drop is a PROPOSAL; only Save writes — **FROZEN (CP2M-R4)**
+
+**Decision.** Dropping a row produces a **draft and a preview**, never a write. Cancel is a zero write from
+every stage. Save dispatches **at most one row**, and it is the only thing that dispatches.
+
+**Before dispatching, the page re-reads the target AND both neighbours — really re-reads.** `loadRows()` goes
+through the shared reference cache, which would happily answer from the memo the preview itself was computed
+from; a "re-read" answered from that snapshot proves nothing. The page invalidates its own key first — one
+key, this page's own resource, the existing mechanism. The preflight then checks four things, each for a
+reason the others do not cover:
+
+1. the target is still a single row, still the same record, still holding the value the CAS will claim
+2. each neighbour still exists, in the same company, at the weight the proposal was computed from
+3. the two neighbours are still **ADJACENT** — a third row inserted between them changes the position even
+   when both their weights are untouched, which no weight comparison would catch
+4. the computed value still strictly brackets
+
+**Its exact limit, stated where it is implemented:** a read is not a latch. A neighbour can change between the
+check and the write. The window narrows from "however long the operator deliberated" to one round trip. That
+residual is ACCEPTED (D5) and is not closed here.
+
+**After the write settles, the operator is shown the READ-BACK weight AND the READ-BACK position**, never the
+previewed one — a weight alone does not answer "where did it land" when the whole intent was a position.
+
+**`OUTCOME_UNKNOWN` holds the dragged position, visibly unconfirmed, and withdraws Save.** It may not snap
+back (that asserts a zero write nobody proved) and it may not show the value as stored. No automatic resend,
+no backfill, no rollback. Dismissing the marker undoes nothing, because nothing here knows whether there is
+anything to undo.
+
+---
+
+### D-S8-B3-34 — A refusal belongs BEFORE the gesture — **FROZEN (CP2M-R4)**
+
+**Decision.** A row that cannot be moved does not get a handle that refuses on drop; it gets a **disabled
+handle carrying the reason**. Three rows are in that state, for three different reasons:
+
+| | Why |
+|---|---|
+| an INVALID row | it has no position to move from, and placing it would mean guessing what its unreadable value was meant to be |
+| the only weighted site in its company | there is nothing to position it against — every drop would be `NO_BASIS` |
+| **any row of a company with siblings hidden by a filter** | the rows that LOOK adjacent may not be, and a midpoint computed from the wrong pair would save perfectly happily |
+
+The last one is measured per company, not assumed from which select is set: the **Company** filter removes
+whole companies and can never split one; the **Country** filter can, and does.
+
+**And a filter change or a Refresh while a draft is pending is neither obeyed nor ignored** — the control is
+put back and the operator is asked to Save or Cancel. Both would re-derive the list the preview was computed
+against, so the preview would silently come to mean something else.
+
+**The guards live where they are enforced, not in the markup.** Withholding a handle is a rendering decision;
+the keyboard path, a stale handle left by a re-render, and the exported test hook all reach the lift directly,
+so the same rules are restated in `beginLift`. A mutation that removed the renderer's check alone was caught
+by a suite that could reach past it.
+
+---
+
+### D-S8-B3-35 — The gesture is verified in a browser, because it cannot be verified anywhere else — **FROZEN (CP2M-R4)**
+
+**Decision.** The RULE is tested as arithmetic in node. The GESTURE is tested in a real browser, at five
+widths, with real `PointerEvent`s and `KeyboardEvent`s. **Neither stands in for the other, and the split is
+recorded rather than blurred:** a headless DOM has no layout, so `getBoundingClientRect` returns zeros and a
+pointer path driven there would be measuring the shim.
+
+**Mouse, touch and keyboard are one implementation.** Pointer Events — not HTML5 drag-and-drop, which never
+fires for touch on any mobile browser and would have been a desktop feature wearing a general name. All three
+inputs call the same lift / move / drop functions, and the capture asserts all three land the same row in the
+same slot at the same weight at 360, 390, 768, 1280 and 1920.
+
+**`touch-action: none` is read as COMPUTED, not as written.** Without it the browser claims the gesture as a
+scroll and cancels the pointer stream, so the drag would work with a mouse, do nothing on a phone, and look
+correct in every desktop test. A declaration that is present in the stylesheet but overridden would pass a
+source grep and fail a finger.
+
+**The probe counts writes.** The write wrapper is replaced by a counter for its duration, so a gesture that
+dispatched a save would appear as a number rather than as a changed fixture nobody looked at. It is **0** at
+every width.
+
+**Two defects were found by LOOKING at the capture, not by reading the code:**
+
+1. an **empty bordered box** on every width — `#sp-draft` sets `display: flex`, which beats the UA stylesheet's
+   `[hidden] { display: none }` on specificity, so the move bar was drawn whenever there was no move. The
+   sibling `.sp-status` escaped this only because it never sets `display` at all.
+2. a **drag handle on a row the suite believed had none** — see D-S8-B3-36.
+
+---
+
+### D-S8-B3-36 — An unparseable priority never reaches the page as INVALID — **RECORDED, NOT FIXED (CP2M-R4)**
+
+**Finding.** The shipped reader (`operation-system-db-api.js`) normalises `allocation_priority` with
+`Number()` and stores **`null`** when the result is not finite — deliberately, so a malformed cell does not
+become a confident wrong number. The consequence is that `'7abc'` arrives at Site Priority as `null` and is
+drawn as **Missing**, offering a first set. Only a **negative** value — which that normaliser preserves on
+purpose, so §40's refusal is the one that is seen — presents as **INVALID**.
+
+**This is pre-existing** and applies to the Edit path exactly as it does to the drag. It is **not** introduced
+by CP2M-R4, and it is **not fixed here**: changing it would change the reader's contract, which this round is
+not authorised to touch.
+
+**How it was found matters more than the finding.** Two test fixtures used `'7abc'` as their INVALID row —
+a value `classify()` does read as INVALID, and which **no real read can produce**. The node suite asserted the
+row had no drag handle and passed; the browser capture, going through the real normaliser, drew one. Both
+fixtures now use a negative, and the suite pins the normaliser's two lines so they cannot drift back to a
+shape the application does not have.

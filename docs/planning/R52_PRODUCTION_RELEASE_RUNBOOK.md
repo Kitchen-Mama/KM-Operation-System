@@ -141,6 +141,22 @@ The `MAP_`, `IR_CSS_` and `METHOD_REGISTRY_` series are untouched — crossing t
 Publish **all five**. A partial publication that serves a new `site-priority.js` against an old
 `operation-system-db-api.js` has no bounded writer to call and will refuse every save.
 
+### 5.-1 CP2M-R4 — THE DRAG IS BUILT, AND THE TOKEN IS REUSED RATHER THAN ROTATED AGAIN
+
+CP2M-R4 implements the approved Site Priority drag. The files it changes are
+`assets/js/pages/site-priority.js` (route-loaded, NOT at boot), `assets/html/pages/site-priority.html`,
+`assets/css/pages/site-priority.css` and `assets/js/app.js` (the drawer's Tab containment).
+
+**THE TOKEN IS NOT ROTATED AGAIN, AND THAT IS DELIBERATE.** §5.0 rotated the application series to
+`r53-coldstartshell-20261013` for the CP2M-R3 candidate, and **that candidate has not been published**. A
+token's job is to stop a returning browser running a mix of old and new bytes; a token that has never been
+served cannot have stranded anyone, so reusing it is correct and rotating twice before one release would
+only make the series harder to read. **If the R3 candidate is published before this one, the series MUST
+rotate again before R4 ships** — that is the same conditional §5.1 raised, and it is live again.
+
+**The backend is untouched.** `r53-…` is a FRONT-END CACHE MARKER ONLY: the server remains R52 /
+Version 308, no `.gs` file changed, no action contract changed, and no GS sync is required by this round.
+
 ### 5.0 CP2M-R3 — THE TOKEN IS ROTATED, AND §5.1's CONDITION IS RESOLVED
 
 Owner has confirmed the R52 frontend **is published** and this fix candidate is **not**. §5.1 below asked which
@@ -271,6 +287,8 @@ by R52 except for the two facts below.
 | **CP2M-R2 cache token branch (§5.1)** | **RESOLVED (§5.0)** — Owner confirmed R52 is published, so a new token was required and has been rotated. |
 | **CP2M-R3 responsive shell** | Below 1024px the sidebar becomes a drawer. Desktop is unchanged. Verify on a real phone that the menu opens, Escape and the backdrop close it, and choosing a page closes it. |
 | **CP2M-R3 cold-start split** | Carrier Rate Card and Overseas Stock load their code on first open. Verify both pages still open, render and re-open. |
+| **CP2M-R4 Site Priority drag** | The list is now ordered by weight within each company and rows carry a drag handle. Verify on a real device that a row can be moved by mouse, by finger and by keyboard; that dropping only PROPOSES (the bar says "Proposed, not saved"); that Cancel writes nothing; and that after Save the banner reports the READ-BACK weight and position. |
+| **CP2M-R4 token reuse** | `r53-coldstartshell-20261013` is REUSED, not rotated — valid only while the CP2M-R3 candidate is still unpublished. If R3 shipped first, rotate before publishing R4 (§5.-1). |
 | Rollback Version Candidate 307 | **UNVERIFIED** |
 | Seven-file backend sync | PENDING |
 | New Apps Script deployment version | PENDING |

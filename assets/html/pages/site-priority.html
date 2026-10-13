@@ -19,6 +19,8 @@
     <p class="sp-sub">
       Shared-pool allocation priority per marketplace site. Higher wins. A site with no priority is
       <strong>Missing</strong>, which is not the same as 0 — 0 is a valid lowest priority that still takes a share.
+      Sites are listed <strong>highest weight first, within their own company</strong>; sites at the same weight
+      are ordered by name so the list does not shuffle on its own.
     </p>
   </div>
 
@@ -26,6 +28,17 @@
     Priority is read by the overseas shared-pool allocator. A <strong>Missing</strong> priority is refused by the
     allocator rather than treated as 0, so a site left blank here is not silently ranked last — it is unresolved
     and its allocation will not run.
+  </div>
+
+  <!-- S8-B3-R3-CP2M-R4 — WHAT A WEIGHT ACTUALLY DOES, stated where it is edited.
+       The proposal's §1 separates four jobs `allocation_priority` performs, and the screen may not collapse
+       them: it is NOT true that a higher weight means "served first". In the normal mode the distribution
+       weight is demand, not priority; in the factory order the required date leads; and the multiplier only
+       exists when supply is short. Both halves are said, in that order. -->
+  <div class="sp-note sp-note--weight">
+    A higher weight is <strong>compared earlier</strong> when sites are ranked, and <strong>increases a site's
+    share only when supply is short</strong>. Below a weight of 1 the share stops changing — 0, 0.5 and 1 all
+    receive the same multiplier — but they remain three different positions in the ordering.
   </div>
 
   <div class="sp-filters" role="group" aria-label="Site filters">
@@ -44,10 +57,26 @@
        they cannot be shown at once and a stale success cannot sit above a fresh failure. -->
   <div id="sp-status" class="sp-status" role="status" aria-live="polite" hidden></div>
 
+  <!-- THE MOVE BAR. A dropped row is a PROPOSAL: it is drawn in place, the weight it would store is named,
+       and nothing is written until Save. It is a separate live region from #sp-status because a proposal and
+       the outcome of the last save are two facts that can be true at once, and one banner would have to
+       choose which of them to discard. -->
+  <div id="sp-draft" class="sp-draft" role="status" aria-live="polite" hidden></div>
+
+  <!-- Referenced by every grip's aria-describedby, so the gesture is announced once rather than repeated into
+       each row's accessible name. -->
+  <p id="sp-drag-help" class="sp-drag-help">
+    To reorder a site: press <kbd>Space</kbd> or <kbd>Enter</kbd> on its handle to lift it,
+    <kbd>&#8593;</kbd> <kbd>&#8595;</kbd> to move it, <kbd>Home</kbd> or <kbd>End</kbd> for the ends,
+    <kbd>Space</kbd> to drop, <kbd>Esc</kbd> to cancel. Dropping only proposes a weight — nothing is saved
+    until you choose Save.
+  </p>
+
   <div class="sp-table-wrap">
     <table class="sp-table">
       <thead>
         <tr>
+          <th scope="col" class="sp-col-grip"><span class="sp-sr">Reorder</span></th>
           <th scope="col">Company</th>
           <th scope="col">Country</th>
           <th scope="col">Marketplace</th>

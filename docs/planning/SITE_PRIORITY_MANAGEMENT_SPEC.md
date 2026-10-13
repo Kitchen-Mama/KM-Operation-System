@@ -111,6 +111,44 @@ paths render the error state with the underlying reason.
 
 ---
 
+## 7A. Reordering by dragging (S8-B3-R3-CP2M-R4)
+
+Sites are listed **highest weight first, within their own company**; equal weights are ordered by canonical
+identity, so the list does not reshuffle when an unrelated row is inserted. MISSING and INVALID rows have no
+position and sit below, under **"No priority set"**.
+
+A drag computes **one weight** and saves it through the **existing** R52 single-row compare-and-set. It
+writes no neighbour, renumbers nothing and adds no API.
+
+| Position | Weight |
+|---|---|
+| top | `hi x 1.1` |
+| bottom | `lo x 0.9` |
+| between | `lo + (hi - lo) / 2` |
+
+**Refused, and the refusal is visible before the drop:** the leader is `0` or there is no comparison basis
+(set a value explicitly - nothing is filled in automatically); the last place is `0`; the two neighbours hold
+equal weights; no double lies strictly between them; the value overflows. A row has **no handle** when it is
+INVALID, when it is the only weighted site in its company, or when a filter hides a sibling of that company -
+because the rows that look adjacent would not be.
+
+**No weight is rounded and there is no minimum gap.** The computed double is what is stored, and every
+computed value is re-compared against the neighbours it came from rather than trusted.
+
+**A drop only PROPOSES.** Cancel writes nothing. Save re-reads the target and both neighbours first - really
+re-reads, invalidating this page's own cache key, since a check answered from the snapshot the preview came
+from checks nothing - and then reports the **read-back weight and position**. `OUTCOME_UNKNOWN` holds the
+dragged position visibly unconfirmed and withdraws Save; it is never described as saved, and nothing is
+automatically re-sent.
+
+Mouse, touch and keyboard are one implementation (Pointer Events plus Space / Enter / arrows / Home / End /
+Esc on a real `<button>` handle).
+
+Full rationale, decisions and test cases: `SITE_PRIORITY_DRAG_SEMANTICS_PROPOSAL_S8_B3_R3_CP2M.md` (Rev 4),
+decision register D-S8-B3-30 to D-S8-B3-36.
+
+---
+
 ## 8. Known gap, recorded rather than worked around
 
 `assets/js/pages/inventory-replenishment.js` still carries `(reg && reg.allocationPriority) || 0`. It was

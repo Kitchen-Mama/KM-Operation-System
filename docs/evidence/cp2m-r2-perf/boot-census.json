@@ -2,8 +2,8 @@
  "capturedAt": "2026-10-13",
  "note": "Counted from index.html as it stands. The suite recounts every field from the live file and FAILS on a mismatch, so this cannot quietly describe a past build.",
  "bootScriptCount": 65,
- "bootScriptBytes": 3807486,
- "bootScriptMB": 3.631,
+ "bootScriptBytes": 3811071,
+ "bootScriptMB": 3.635,
  "bootScriptTagsTotal": 67,
  "externalCdnScripts": [
   "https://cdn.jsdelivr.net/npm/chart.js",
@@ -12,7 +12,7 @@
  "pageScriptCount": 20,
  "pageScriptBytes": 2211511,
  "pageScriptMB": 2.109,
- "pageShareOfBoot": 0.581,
+ "pageShareOfBoot": 0.58,
  "routeOwnedAlready": 20,
  "routeKeys": [
   "carrier-rate-card",

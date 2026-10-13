@@ -11,30 +11,34 @@
   "assets/css/base.css": "225902e388ea3260",
   "assets/css/components.css": "8ae2cb34a3dcdb21",
   "assets/css/responsive-foundation.css": "4c18889c313472eb",
-  "assets/css/pages/site-priority.css": "a703f2033756d78e",
-  "assets/js/pages/site-priority.js": "f825656fb648f883",
-  "assets/html/pages/site-priority.html": "92666dd9a61ee627",
-  "assets/js/app.js": "9fc0477268ceb337",
-  "assets/tests/_cp2m-r2-viewport-runner.js": "ce3caaccd5d5ecb9"
+  "assets/css/pages/site-priority.css": "d3e193b0d29a6643",
+  "assets/js/pages/site-priority.js": "7b677a1ca6bd759c",
+  "assets/html/pages/site-priority.html": "fa9138bb31b04807",
+  "assets/js/app.js": "a53f074d533d1023",
+  "assets/tests/_cp2m-r2-viewport-runner.js": "5fac8da9ae1faa93"
  },
- "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/r3-vpfinal2",
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/r4shots",
  "results": [
   {
    "id": "360",
    "width": 360,
    "height": 780,
    "touch": true,
-   "pngBytes": 36061,
+   "pngBytes": 47506,
    "png": "site-priority-360.png",
    "measurements": {
     "viewport": 360,
     "requestedViewport": 360,
     "sectionPresent": true,
     "rowCount": 7,
-    "groupCount": 2,
+    "groupCount": 4,
+    "companyGroupCount": 2,
+    "unsetGroupCount": 2,
     "groupTexts": [
      "KitchenMama5 sites",
-     "ResourceUS2 sites"
+     "No priority set1 siteNo position in the ",
+     "ResourceUS2 sites",
+     "No priority set1 siteNo position in the "
     ],
     "buttonCount": 8,
     "selectCount": 2,
@@ -70,11 +74,11 @@
      "contentArea": {
       "box": {
        "w": 345,
-       "h": 2115,
+       "h": 2998,
        "left": 0,
        "right": 345,
        "top": 56,
-       "bottom": 2171
+       "bottom": 3054
       },
       "padding": "16px"
      },
@@ -92,8 +96,8 @@
        "h": 38,
        "left": 177,
        "right": 319,
-       "top": 345,
-       "bottom": 383
+       "top": 541,
+       "bottom": 579
       },
       "text": "All countriesCADEGBJPUS",
       "visibleFraction": 1,
@@ -110,8 +114,8 @@
        "h": 38,
        "left": 26,
        "right": 169,
-       "top": 345,
-       "bottom": 383
+       "top": 541,
+       "bottom": 579
       },
       "text": "All companiesKitchenMamaResour",
       "visibleFraction": 1,
@@ -128,8 +132,8 @@
        "h": 38,
        "left": 30,
        "right": 109,
-       "top": 395,
-       "bottom": 433
+       "top": 591,
+       "bottom": 629
       },
       "text": "Refresh",
       "visibleFraction": 1,
@@ -146,8 +150,8 @@
        "h": 38,
        "left": 249,
        "right": 303,
-       "top": 662,
-       "bottom": 700
+       "top": 1037,
+       "bottom": 1075
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -164,8 +168,8 @@
        "h": 38,
        "left": 249,
        "right": 303,
-       "top": 889,
-       "bottom": 927
+       "top": 1322,
+       "bottom": 1360
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -182,8 +186,8 @@
        "h": 38,
        "left": 249,
        "right": 303,
-       "top": 1116,
-       "bottom": 1154
+       "top": 1607,
+       "bottom": 1645
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -200,8 +204,8 @@
        "h": 38,
        "left": 249,
        "right": 303,
-       "top": 1343,
-       "bottom": 1381
+       "top": 1892,
+       "bottom": 1930
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -218,8 +222,8 @@
        "h": 38,
        "left": 249,
        "right": 303,
-       "top": 1570,
-       "bottom": 1608
+       "top": 2261,
+       "bottom": 2299
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -236,8 +240,8 @@
        "h": 38,
        "left": 249,
        "right": 303,
-       "top": 1842,
-       "bottom": 1880
+       "top": 2587,
+       "bottom": 2625
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -254,8 +258,8 @@
        "h": 38,
        "left": 249,
        "right": 303,
-       "top": 2069,
-       "bottom": 2107
+       "top": 2952,
+       "bottom": 2990
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -270,15 +274,15 @@
       "box": {
        "w": 146,
        "h": 35,
-       "left": 273,
-       "right": 419,
-       "top": 457,
-       "bottom": 492
+       "left": 290,
+       "right": 436,
+       "top": 774,
+       "bottom": 809
       },
       "text": "Allocation priority",
       "visibleFraction": 0,
       "visuallyHidden": true,
-      "pastViewportBy": 59,
+      "pastViewportBy": 76,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -290,10 +294,10 @@
        "h": 37,
        "left": 27,
        "right": 318,
-       "top": 576,
-       "bottom": 613
+       "top": 951,
+       "bottom": 988
       },
-      "text": "—",
+      "text": "100",
       "visibleFraction": 1,
       "visuallyHidden": false,
       "pastViewportBy": -42,
@@ -308,8 +312,8 @@
        "h": 37,
        "left": 27,
        "right": 318,
-       "top": 803,
-       "bottom": 840
+       "top": 1236,
+       "bottom": 1273
       },
       "text": "80",
       "visibleFraction": 1,
@@ -326,8 +330,8 @@
        "h": 37,
        "left": 27,
        "right": 318,
-       "top": 1030,
-       "bottom": 1067
+       "top": 1521,
+       "bottom": 1558
       },
       "text": "80",
       "visibleFraction": 1,
@@ -344,8 +348,8 @@
        "h": 37,
        "left": 27,
        "right": 318,
-       "top": 1257,
-       "bottom": 1294
+       "top": 1806,
+       "bottom": 1843
       },
       "text": "0",
       "visibleFraction": 1,
@@ -362,10 +366,10 @@
        "h": 37,
        "left": 27,
        "right": 318,
-       "top": 1484,
-       "bottom": 1521
+       "top": 2175,
+       "bottom": 2212
       },
-      "text": "100",
+      "text": "—",
       "visibleFraction": 1,
       "visuallyHidden": false,
       "pastViewportBy": -42,
@@ -380,8 +384,8 @@
        "h": 37,
        "left": 27,
        "right": 318,
-       "top": 1756,
-       "bottom": 1792
+       "top": 2501,
+       "bottom": 2537
       },
       "text": "50",
       "visibleFraction": 1,
@@ -398,8 +402,8 @@
        "h": 37,
        "left": 27,
        "right": 318,
-       "top": 1983,
-       "bottom": 2019
+       "top": 2866,
+       "bottom": 2902
       },
       "text": "—",
       "visibleFraction": 1,
@@ -417,11 +421,11 @@
     "lastRow": {
      "scrollerName": "div.main-content",
      "scrolledFrom": 0,
-     "scrolledTo": 1391,
+     "scrolledTo": 2274,
      "hScrollerName": null,
      "hScrolledTo": null,
      "neededHorizontalScroll": false,
-     "scrollHeight": 2115,
+     "scrollHeight": 2998,
      "clientHeight": 724,
      "controlName": "button.sp-btn.sp-btn--ghost",
      "controlBox": {
@@ -440,6 +444,245 @@
      "reachableAndOperable": true,
      "visibleFraction": 1,
      "clippedBy": []
+    },
+    "drag": {
+     "gripCount": 5,
+     "gripKeys": [
+      "KitchenMama/US/Amazon",
+      "KitchenMama/DE/Amazon",
+      "KitchenMama/GB/Amazon Marketplace Europe",
+      "KitchenMama/JP/Rakuten",
+      "KitchenMama/CA/Walmart"
+     ],
+     "offGripKeys": [
+      "ResourceUS/US/Amazon",
+      "ResourceUS/US/eBay"
+     ],
+     "barAtRest": {
+      "hiddenAttr": true,
+      "display": "none",
+      "h": 0
+     },
+     "gripBox": {
+      "w": 38,
+      "h": 38
+     },
+     "touchAction": "none",
+     "gripIsButton": true,
+     "gripTabbable": true,
+     "targetKey": "KitchenMama\u0001JP\u0001Rakuten",
+     "keyboard": {
+      "focused": true,
+      "liftPrevented": true,
+      "afterLift": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterOneUp": {
+       "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 2,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterTwoUp": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "dropPrevented": true,
+      "afterDrop": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "focusKept": true,
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "mouse": {
+      "kind": "mouse",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": -333,
+       "mid1": -48,
+       "ty": -190
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "touch": {
+      "kind": "touch",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": -333,
+       "mid1": -48,
+       "ty": -190
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "tiedPair": {
+      "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+      "key": "KitchenMama\u0001JP\u0001Rakuten",
+      "weight": "—",
+      "slot": 2,
+      "order": [
+       "KitchenMama\u0001US\u0001Amazon",
+       "KitchenMama\u0001DE\u0001Amazon",
+       "KitchenMama\u0001JP\u0001Rakuten",
+       "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+       "ResourceUS\u0001US\u0001Amazon"
+      ]
+     },
+     "tiedPairOffersSave": false,
+     "writesDispatched": 0,
+     "restored": {
+      "scrollTop": 0,
+      "scrollY": 0
+     }
     }
    }
   },
@@ -448,17 +691,21 @@
    "width": 390,
    "height": 844,
    "touch": true,
-   "pngBytes": 39398,
+   "pngBytes": 50322,
    "png": "site-priority-390.png",
    "measurements": {
     "viewport": 390,
     "requestedViewport": 390,
     "sectionPresent": true,
     "rowCount": 7,
-    "groupCount": 2,
+    "groupCount": 4,
+    "companyGroupCount": 2,
+    "unsetGroupCount": 2,
     "groupTexts": [
      "KitchenMama5 sites",
-     "ResourceUS2 sites"
+     "No priority set1 siteNo position in the ",
+     "ResourceUS2 sites",
+     "No priority set1 siteNo position in the "
     ],
     "buttonCount": 8,
     "selectCount": 2,
@@ -494,11 +741,11 @@
      "contentArea": {
       "box": {
        "w": 375,
-       "h": 2115,
+       "h": 2961,
        "left": 0,
        "right": 375,
        "top": 56,
-       "bottom": 2171
+       "bottom": 3017
       },
       "padding": "16px"
      },
@@ -516,8 +763,8 @@
        "h": 38,
        "left": 192,
        "right": 349,
-       "top": 345,
-       "bottom": 383
+       "top": 524,
+       "bottom": 562
       },
       "text": "All countriesCADEGBJPUS",
       "visibleFraction": 1,
@@ -534,8 +781,8 @@
        "h": 38,
        "left": 26,
        "right": 184,
-       "top": 345,
-       "bottom": 383
+       "top": 524,
+       "bottom": 562
       },
       "text": "All companiesKitchenMamaResour",
       "visibleFraction": 1,
@@ -552,8 +799,8 @@
        "h": 38,
        "left": 30,
        "right": 109,
-       "top": 395,
-       "bottom": 433
+       "top": 574,
+       "bottom": 612
       },
       "text": "Refresh",
       "visibleFraction": 1,
@@ -570,8 +817,8 @@
        "h": 38,
        "left": 279,
        "right": 333,
-       "top": 662,
-       "bottom": 700
+       "top": 1001,
+       "bottom": 1039
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -588,8 +835,8 @@
        "h": 38,
        "left": 279,
        "right": 333,
-       "top": 889,
-       "bottom": 927
+       "top": 1286,
+       "bottom": 1324
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -606,8 +853,8 @@
        "h": 38,
        "left": 279,
        "right": 333,
-       "top": 1116,
-       "bottom": 1154
+       "top": 1571,
+       "bottom": 1609
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -624,8 +871,8 @@
        "h": 38,
        "left": 279,
        "right": 333,
-       "top": 1343,
-       "bottom": 1381
+       "top": 1856,
+       "bottom": 1894
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -642,8 +889,8 @@
        "h": 38,
        "left": 279,
        "right": 333,
-       "top": 1570,
-       "bottom": 1608
+       "top": 2225,
+       "bottom": 2263
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -660,8 +907,8 @@
        "h": 38,
        "left": 279,
        "right": 333,
-       "top": 1842,
-       "bottom": 1880
+       "top": 2550,
+       "bottom": 2588
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -678,8 +925,8 @@
        "h": 38,
        "left": 279,
        "right": 333,
-       "top": 2069,
-       "bottom": 2107
+       "top": 2915,
+       "bottom": 2953
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -694,15 +941,15 @@
       "box": {
        "w": 146,
        "h": 35,
-       "left": 273,
-       "right": 419,
-       "top": 457,
-       "bottom": 492
+       "left": 290,
+       "right": 436,
+       "top": 737,
+       "bottom": 772
       },
       "text": "Allocation priority",
       "visibleFraction": 0,
       "visuallyHidden": true,
-      "pastViewportBy": 29,
+      "pastViewportBy": 46,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -714,10 +961,10 @@
        "h": 37,
        "left": 27,
        "right": 348,
-       "top": 576,
-       "bottom": 613
+       "top": 914,
+       "bottom": 951
       },
-      "text": "—",
+      "text": "100",
       "visibleFraction": 1,
       "visuallyHidden": false,
       "pastViewportBy": -42,
@@ -732,8 +979,8 @@
        "h": 37,
        "left": 27,
        "right": 348,
-       "top": 803,
-       "bottom": 840
+       "top": 1199,
+       "bottom": 1236
       },
       "text": "80",
       "visibleFraction": 1,
@@ -750,8 +997,8 @@
        "h": 37,
        "left": 27,
        "right": 348,
-       "top": 1030,
-       "bottom": 1067
+       "top": 1484,
+       "bottom": 1521
       },
       "text": "80",
       "visibleFraction": 1,
@@ -768,8 +1015,8 @@
        "h": 37,
        "left": 27,
        "right": 348,
-       "top": 1257,
-       "bottom": 1294
+       "top": 1769,
+       "bottom": 1806
       },
       "text": "0",
       "visibleFraction": 1,
@@ -786,10 +1033,10 @@
        "h": 37,
        "left": 27,
        "right": 348,
-       "top": 1484,
-       "bottom": 1521
+       "top": 2138,
+       "bottom": 2175
       },
-      "text": "100",
+      "text": "—",
       "visibleFraction": 1,
       "visuallyHidden": false,
       "pastViewportBy": -42,
@@ -804,8 +1051,8 @@
        "h": 37,
        "left": 27,
        "right": 348,
-       "top": 1756,
-       "bottom": 1792
+       "top": 2464,
+       "bottom": 2501
       },
       "text": "50",
       "visibleFraction": 1,
@@ -822,8 +1069,8 @@
        "h": 37,
        "left": 27,
        "right": 348,
-       "top": 1983,
-       "bottom": 2019
+       "top": 2829,
+       "bottom": 2866
       },
       "text": "—",
       "visibleFraction": 1,
@@ -841,11 +1088,11 @@
     "lastRow": {
      "scrollerName": "div.main-content",
      "scrolledFrom": 0,
-     "scrolledTo": 1327,
+     "scrolledTo": 2173,
      "hScrollerName": null,
      "hScrolledTo": null,
      "neededHorizontalScroll": false,
-     "scrollHeight": 2115,
+     "scrollHeight": 2961,
      "clientHeight": 788,
      "controlName": "button.sp-btn.sp-btn--ghost",
      "controlBox": {
@@ -864,6 +1111,245 @@
      "reachableAndOperable": true,
      "visibleFraction": 1,
      "clippedBy": []
+    },
+    "drag": {
+     "gripCount": 5,
+     "gripKeys": [
+      "KitchenMama/US/Amazon",
+      "KitchenMama/DE/Amazon",
+      "KitchenMama/GB/Amazon Marketplace Europe",
+      "KitchenMama/JP/Rakuten",
+      "KitchenMama/CA/Walmart"
+     ],
+     "offGripKeys": [
+      "ResourceUS/US/Amazon",
+      "ResourceUS/US/eBay"
+     ],
+     "barAtRest": {
+      "hiddenAttr": true,
+      "display": "none",
+      "h": 0
+     },
+     "gripBox": {
+      "w": 38,
+      "h": 38
+     },
+     "touchAction": "none",
+     "gripIsButton": true,
+     "gripTabbable": true,
+     "targetKey": "KitchenMama\u0001JP\u0001Rakuten",
+     "keyboard": {
+      "focused": true,
+      "liftPrevented": true,
+      "afterLift": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterOneUp": {
+       "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 2,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterTwoUp": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "dropPrevented": true,
+      "afterDrop": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "focusKept": true,
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "mouse": {
+      "kind": "mouse",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": -302,
+       "mid1": -17,
+       "ty": -159
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "touch": {
+      "kind": "touch",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": -302,
+       "mid1": -17,
+       "ty": -159
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "tiedPair": {
+      "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+      "key": "KitchenMama\u0001JP\u0001Rakuten",
+      "weight": "—",
+      "slot": 2,
+      "order": [
+       "KitchenMama\u0001US\u0001Amazon",
+       "KitchenMama\u0001DE\u0001Amazon",
+       "KitchenMama\u0001JP\u0001Rakuten",
+       "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+       "ResourceUS\u0001US\u0001Amazon"
+      ]
+     },
+     "tiedPairOffersSave": false,
+     "writesDispatched": 0,
+     "restored": {
+      "scrollTop": 0,
+      "scrollY": 0
+     }
     }
    }
   },
@@ -872,17 +1358,21 @@
    "width": 768,
    "height": 1024,
    "touch": true,
-   "pngBytes": 56553,
+   "pngBytes": 80123,
    "png": "site-priority-768.png",
    "measurements": {
     "viewport": 768,
     "requestedViewport": 768,
     "sectionPresent": true,
     "rowCount": 7,
-    "groupCount": 2,
+    "groupCount": 4,
+    "companyGroupCount": 2,
+    "unsetGroupCount": 2,
     "groupTexts": [
      "KitchenMama5 sites",
-     "ResourceUS2 sites"
+     "No priority set1 siteNo position in the ",
+     "ResourceUS2 sites",
+     "No priority set1 siteNo position in the "
     ],
     "buttonCount": 8,
     "selectCount": 2,
@@ -917,16 +1407,16 @@
      },
      "contentArea": {
       "box": {
-       "w": 768,
-       "h": 849,
+       "w": 753,
+       "h": 1151,
        "left": 0,
-       "right": 768,
+       "right": 753,
        "top": 56,
-       "bottom": 905
+       "bottom": 1207
       },
       "padding": "16px"
      },
-     "usableContentWidth": 768
+     "usableContentWidth": 753
     },
     "horizontalOverflow": false,
     "docScrollWidth": 768,
@@ -940,8 +1430,8 @@
        "h": 38,
        "left": 220,
        "right": 400,
-       "top": 255,
-       "bottom": 293
+       "top": 361,
+       "bottom": 399
       },
       "text": "All countriesCADEGBJPUS",
       "visibleFraction": 1,
@@ -958,8 +1448,8 @@
        "h": 38,
        "left": 28,
        "right": 208,
-       "top": 255,
-       "bottom": 293
+       "top": 361,
+       "bottom": 399
       },
       "text": "All companiesKitchenMamaResour",
       "visibleFraction": 1,
@@ -976,8 +1466,8 @@
        "h": 38,
        "left": 416,
        "right": 495,
-       "top": 251,
-       "bottom": 289
+       "top": 357,
+       "bottom": 395
       },
       "text": "Refresh",
       "visibleFraction": 1,
@@ -992,15 +1482,15 @@
       "box": {
        "w": 54,
        "h": 38,
-       "left": 671,
-       "right": 726,
-       "top": 412,
-       "bottom": 450
+       "left": 659,
+       "right": 713,
+       "top": 575,
+       "bottom": 613
       },
       "text": "Edit",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -42,
+      "pastViewportBy": -55,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1010,15 +1500,15 @@
       "box": {
        "w": 54,
        "h": 38,
-       "left": 671,
-       "right": 726,
-       "top": 471,
-       "bottom": 509
+       "left": 659,
+       "right": 713,
+       "top": 634,
+       "bottom": 672
       },
       "text": "Edit",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -42,
+      "pastViewportBy": -55,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1028,15 +1518,15 @@
       "box": {
        "w": 54,
        "h": 38,
-       "left": 671,
-       "right": 726,
-       "top": 530,
-       "bottom": 568
+       "left": 659,
+       "right": 713,
+       "top": 703,
+       "bottom": 741
       },
       "text": "Edit",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -42,
+      "pastViewportBy": -55,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1046,15 +1536,15 @@
       "box": {
        "w": 54,
        "h": 38,
-       "left": 671,
-       "right": 726,
-       "top": 589,
-       "bottom": 627
+       "left": 659,
+       "right": 713,
+       "top": 772,
+       "bottom": 810
       },
       "text": "Edit",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -42,
+      "pastViewportBy": -55,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1064,15 +1554,15 @@
       "box": {
        "w": 54,
        "h": 38,
-       "left": 671,
-       "right": 726,
-       "top": 648,
-       "bottom": 686
+       "left": 659,
+       "right": 713,
+       "top": 890,
+       "bottom": 928
       },
       "text": "Edit",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -42,
+      "pastViewportBy": -55,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1082,15 +1572,15 @@
       "box": {
        "w": 54,
        "h": 38,
-       "left": 671,
-       "right": 726,
-       "top": 745,
-       "bottom": 783
+       "left": 659,
+       "right": 713,
+       "top": 987,
+       "bottom": 1025
       },
       "text": "Edit",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -42,
+      "pastViewportBy": -55,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1100,15 +1590,15 @@
       "box": {
        "w": 54,
        "h": 38,
-       "left": 671,
-       "right": 726,
-       "top": 804,
-       "bottom": 842
+       "left": 659,
+       "right": 713,
+       "top": 1106,
+       "bottom": 1144
       },
       "text": "Edit",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -42,
+      "pastViewportBy": -55,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1118,15 +1608,15 @@
       "box": {
        "w": 160,
        "h": 35,
-       "left": 391,
-       "right": 551,
-       "top": 329,
-       "bottom": 363
+       "left": 380,
+       "right": 540,
+       "top": 492,
+       "bottom": 526
       },
       "text": "Allocation priority",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -217,
+      "pastViewportBy": -228,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1136,15 +1626,15 @@
       "box": {
        "w": 160,
        "h": 59,
-       "left": 391,
-       "right": 551,
-       "top": 401,
-       "bottom": 460
+       "left": 380,
+       "right": 540,
+       "top": 564,
+       "bottom": 623
       },
-      "text": "—",
+      "text": "100",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -217,
+      "pastViewportBy": -228,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1154,15 +1644,15 @@
       "box": {
        "w": 160,
        "h": 59,
-       "left": 391,
-       "right": 551,
-       "top": 460,
-       "bottom": 519
+       "left": 380,
+       "right": 540,
+       "top": 623,
+       "bottom": 682
       },
       "text": "80",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -217,
+      "pastViewportBy": -228,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1171,16 +1661,16 @@
       "name": "td.sp-col-pri",
       "box": {
        "w": 160,
-       "h": 59,
-       "left": 391,
-       "right": 551,
-       "top": 519,
-       "bottom": 578
+       "h": 79,
+       "left": 380,
+       "right": 540,
+       "top": 682,
+       "bottom": 762
       },
       "text": "80",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -217,
+      "pastViewportBy": -228,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1190,15 +1680,15 @@
       "box": {
        "w": 160,
        "h": 59,
-       "left": 391,
-       "right": 551,
-       "top": 578,
-       "bottom": 637
+       "left": 380,
+       "right": 540,
+       "top": 762,
+       "bottom": 821
       },
       "text": "0",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -217,
+      "pastViewportBy": -228,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1208,15 +1698,15 @@
       "box": {
        "w": 160,
        "h": 59,
-       "left": 391,
-       "right": 551,
-       "top": 637,
-       "bottom": 696
+       "left": 380,
+       "right": 540,
+       "top": 880,
+       "bottom": 939
       },
-      "text": "100",
+      "text": "—",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -217,
+      "pastViewportBy": -228,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1226,15 +1716,15 @@
       "box": {
        "w": 160,
        "h": 59,
-       "left": 391,
-       "right": 551,
-       "top": 734,
-       "bottom": 793
+       "left": 380,
+       "right": 540,
+       "top": 977,
+       "bottom": 1036
       },
       "text": "50",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -217,
+      "pastViewportBy": -228,
       "selfClipped": false,
       "clippedBy": []
      },
@@ -1244,15 +1734,15 @@
       "box": {
        "w": 160,
        "h": 59,
-       "left": 391,
-       "right": 551,
-       "top": 793,
-       "bottom": 852
+       "left": 380,
+       "right": 540,
+       "top": 1095,
+       "bottom": 1154
       },
       "text": "—",
       "visibleFraction": 1,
       "visuallyHidden": false,
-      "pastViewportBy": -217,
+      "pastViewportBy": -228,
       "selfClipped": false,
       "clippedBy": []
      }
@@ -1265,29 +1755,268 @@
     "lastRow": {
      "scrollerName": "div.main-content",
      "scrolledFrom": 0,
-     "scrolledTo": 0,
+     "scrolledTo": 183,
      "hScrollerName": null,
      "hScrolledTo": null,
      "neededHorizontalScroll": false,
-     "scrollHeight": 968,
+     "scrollHeight": 1151,
      "clientHeight": 968,
      "controlName": "button.sp-btn.sp-btn--ghost",
      "controlBox": {
       "w": 54,
       "h": 38,
-      "left": 671,
-      "right": 726,
-      "top": 804,
-      "bottom": 842
+      "left": 659,
+      "right": 713,
+      "top": 923,
+      "bottom": 961
      },
      "point": [
-      698,
-      823
+      686,
+      942
      ],
      "elementAtPoint": "button.sp-btn.sp-btn--ghost",
      "reachableAndOperable": true,
      "visibleFraction": 1,
      "clippedBy": []
+    },
+    "drag": {
+     "gripCount": 5,
+     "gripKeys": [
+      "KitchenMama/US/Amazon",
+      "KitchenMama/DE/Amazon",
+      "KitchenMama/GB/Amazon Marketplace Europe",
+      "KitchenMama/JP/Rakuten",
+      "KitchenMama/CA/Walmart"
+     ],
+     "offGripKeys": [
+      "ResourceUS/US/Amazon",
+      "ResourceUS/US/eBay"
+     ],
+     "barAtRest": {
+      "hiddenAttr": true,
+      "display": "none",
+      "h": 0
+     },
+     "gripBox": {
+      "w": 38,
+      "h": 38
+     },
+     "touchAction": "none",
+     "gripIsButton": true,
+     "gripTabbable": true,
+     "targetKey": "KitchenMama\u0001JP\u0001Rakuten",
+     "keyboard": {
+      "focused": true,
+      "liftPrevented": true,
+      "afterLift": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterOneUp": {
+       "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 2,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterTwoUp": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "dropPrevented": true,
+      "afterDrop": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "focusKept": true,
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "mouse": {
+      "kind": "mouse",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": 667,
+       "mid1": 726,
+       "ty": 696
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "touch": {
+      "kind": "touch",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": 667,
+       "mid1": 726,
+       "ty": 696
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "tiedPair": {
+      "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+      "key": "KitchenMama\u0001JP\u0001Rakuten",
+      "weight": "—",
+      "slot": 2,
+      "order": [
+       "KitchenMama\u0001US\u0001Amazon",
+       "KitchenMama\u0001DE\u0001Amazon",
+       "KitchenMama\u0001JP\u0001Rakuten",
+       "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+       "ResourceUS\u0001US\u0001Amazon"
+      ]
+     },
+     "tiedPairOffersSave": false,
+     "writesDispatched": 0,
+     "restored": {
+      "scrollTop": 0,
+      "scrollY": 0
+     }
     }
    }
   },
@@ -1296,17 +2025,21 @@
    "width": 1280,
    "height": 800,
    "touch": false,
-   "pngBytes": 81256,
+   "pngBytes": 94934,
    "png": "site-priority-1280.png",
    "measurements": {
     "viewport": 1280,
     "requestedViewport": 1280,
     "sectionPresent": true,
     "rowCount": 7,
-    "groupCount": 2,
+    "groupCount": 4,
+    "companyGroupCount": 2,
+    "unsetGroupCount": 2,
     "groupTexts": [
      "KitchenMama5 sites",
-     "ResourceUS2 sites"
+     "No priority set1 siteNo position in the ",
+     "ResourceUS2 sites",
+     "No priority set1 siteNo position in the "
     ],
     "buttonCount": 8,
     "selectCount": 2,
@@ -1342,11 +2075,11 @@
      "contentArea": {
       "box": {
        "w": 1025,
-       "h": 863,
+       "h": 1123,
        "left": 240,
        "right": 1265,
        "top": 56,
-       "bottom": 919
+       "bottom": 1179
       },
       "padding": "20px"
      },
@@ -1364,8 +2097,8 @@
        "h": 34,
        "left": 476,
        "right": 656,
-       "top": 263,
-       "bottom": 297
+       "top": 352,
+       "bottom": 386
       },
       "text": "All countriesCADEGBJPUS",
       "visibleFraction": 1,
@@ -1382,8 +2115,8 @@
        "h": 34,
        "left": 284,
        "right": 464,
-       "top": 263,
-       "bottom": 297
+       "top": 352,
+       "bottom": 386
       },
       "text": "All companiesKitchenMamaResour",
       "visibleFraction": 1,
@@ -1400,8 +2133,8 @@
        "h": 36,
        "left": 672,
        "right": 755,
-       "top": 257,
-       "bottom": 293
+       "top": 346,
+       "bottom": 382
       },
       "text": "Refresh",
       "visibleFraction": 1,
@@ -1418,8 +2151,8 @@
        "h": 36,
        "left": 1064,
        "right": 1122,
-       "top": 419,
-       "bottom": 455
+       "top": 561,
+       "bottom": 597
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1436,8 +2169,8 @@
        "h": 36,
        "left": 1064,
        "right": 1122,
-       "top": 478,
-       "bottom": 514
+       "top": 620,
+       "bottom": 656
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1454,8 +2187,8 @@
        "h": 36,
        "left": 1064,
        "right": 1122,
-       "top": 537,
-       "bottom": 573
+       "top": 679,
+       "bottom": 715
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1472,8 +2205,8 @@
        "h": 36,
        "left": 1064,
        "right": 1122,
-       "top": 596,
-       "bottom": 632
+       "top": 738,
+       "bottom": 774
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1490,8 +2223,8 @@
        "h": 36,
        "left": 1064,
        "right": 1122,
-       "top": 655,
-       "bottom": 691
+       "top": 856,
+       "bottom": 892
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1508,8 +2241,8 @@
        "h": 36,
        "left": 1064,
        "right": 1122,
-       "top": 752,
-       "bottom": 788
+       "top": 953,
+       "bottom": 989
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1526,8 +2259,8 @@
        "h": 36,
        "left": 1064,
        "right": 1122,
-       "top": 811,
-       "bottom": 847
+       "top": 1071,
+       "bottom": 1107
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1544,8 +2277,8 @@
        "h": 37,
        "left": 780,
        "right": 940,
-       "top": 333,
-       "bottom": 369
+       "top": 475,
+       "bottom": 512
       },
       "text": "Allocation priority",
       "visibleFraction": 1,
@@ -1562,10 +2295,10 @@
        "h": 59,
        "left": 780,
        "right": 940,
-       "top": 407,
-       "bottom": 466
+       "top": 549,
+       "bottom": 608
       },
-      "text": "—",
+      "text": "100",
       "visibleFraction": 1,
       "visuallyHidden": false,
       "pastViewportBy": -340,
@@ -1580,8 +2313,8 @@
        "h": 59,
        "left": 780,
        "right": 940,
-       "top": 466,
-       "bottom": 525
+       "top": 608,
+       "bottom": 667
       },
       "text": "80",
       "visibleFraction": 1,
@@ -1598,8 +2331,8 @@
        "h": 59,
        "left": 780,
        "right": 940,
-       "top": 525,
-       "bottom": 584
+       "top": 667,
+       "bottom": 726
       },
       "text": "80",
       "visibleFraction": 1,
@@ -1616,8 +2349,8 @@
        "h": 59,
        "left": 780,
        "right": 940,
-       "top": 584,
-       "bottom": 643
+       "top": 726,
+       "bottom": 785
       },
       "text": "0",
       "visibleFraction": 1,
@@ -1634,10 +2367,10 @@
        "h": 59,
        "left": 780,
        "right": 940,
-       "top": 643,
-       "bottom": 702
+       "top": 845,
+       "bottom": 904
       },
-      "text": "100",
+      "text": "—",
       "visibleFraction": 1,
       "visuallyHidden": false,
       "pastViewportBy": -340,
@@ -1652,8 +2385,8 @@
        "h": 59,
        "left": 780,
        "right": 940,
-       "top": 740,
-       "bottom": 799
+       "top": 942,
+       "bottom": 1001
       },
       "text": "50",
       "visibleFraction": 1,
@@ -1670,8 +2403,8 @@
        "h": 59,
        "left": 780,
        "right": 940,
-       "top": 799,
-       "bottom": 858
+       "top": 1060,
+       "bottom": 1118
       },
       "text": "—",
       "visibleFraction": 1,
@@ -1689,11 +2422,11 @@
     "lastRow": {
      "scrollerName": "div.main-content",
      "scrolledFrom": 0,
-     "scrolledTo": 119,
+     "scrolledTo": 379,
      "hScrollerName": null,
      "hScrolledTo": null,
      "neededHorizontalScroll": false,
-     "scrollHeight": 863,
+     "scrollHeight": 1123,
      "clientHeight": 744,
      "controlName": "button.sp-btn.sp-btn--ghost",
      "controlBox": {
@@ -1712,6 +2445,245 @@
      "reachableAndOperable": true,
      "visibleFraction": 1,
      "clippedBy": []
+    },
+    "drag": {
+     "gripCount": 5,
+     "gripKeys": [
+      "KitchenMama/US/Amazon",
+      "KitchenMama/DE/Amazon",
+      "KitchenMama/GB/Amazon Marketplace Europe",
+      "KitchenMama/JP/Rakuten",
+      "KitchenMama/CA/Walmart"
+     ],
+     "offGripKeys": [
+      "ResourceUS/US/Amazon",
+      "ResourceUS/US/eBay"
+     ],
+     "barAtRest": {
+      "hiddenAttr": true,
+      "display": "none",
+      "h": 0
+     },
+     "gripBox": {
+      "w": 50,
+      "h": 28
+     },
+     "touchAction": "none",
+     "gripIsButton": true,
+     "gripTabbable": true,
+     "targetKey": "KitchenMama\u0001JP\u0001Rakuten",
+     "keyboard": {
+      "focused": true,
+      "liftPrevented": true,
+      "afterLift": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterOneUp": {
+       "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 2,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterTwoUp": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "dropPrevented": true,
+      "afterDrop": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "focusKept": true,
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "mouse": {
+      "kind": "mouse",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": 231,
+       "mid1": 290,
+       "ty": 260
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "touch": {
+      "kind": "touch",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": 231,
+       "mid1": 290,
+       "ty": 260
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "tiedPair": {
+      "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+      "key": "KitchenMama\u0001JP\u0001Rakuten",
+      "weight": "—",
+      "slot": 2,
+      "order": [
+       "KitchenMama\u0001US\u0001Amazon",
+       "KitchenMama\u0001DE\u0001Amazon",
+       "KitchenMama\u0001JP\u0001Rakuten",
+       "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+       "ResourceUS\u0001US\u0001Amazon"
+      ]
+     },
+     "tiedPairOffersSave": false,
+     "writesDispatched": 0,
+     "restored": {
+      "scrollTop": 0,
+      "scrollY": 0
+     }
     }
    }
   },
@@ -1720,17 +2692,21 @@
    "width": 1920,
    "height": 1080,
    "touch": false,
-   "pngBytes": 89954,
+   "pngBytes": 118691,
    "png": "site-priority-1920.png",
    "measurements": {
     "viewport": 1920,
     "requestedViewport": 1920,
     "sectionPresent": true,
     "rowCount": 7,
-    "groupCount": 2,
+    "groupCount": 4,
+    "companyGroupCount": 2,
+    "unsetGroupCount": 2,
     "groupTexts": [
      "KitchenMama5 sites",
-     "ResourceUS2 sites"
+     "No priority set1 siteNo position in the ",
+     "ResourceUS2 sites",
+     "No priority set1 siteNo position in the "
     ],
     "buttonCount": 8,
     "selectCount": 2,
@@ -1765,16 +2741,16 @@
      },
      "contentArea": {
       "box": {
-       "w": 1680,
-       "h": 867,
+       "w": 1665,
+       "h": 1128,
        "left": 240,
-       "right": 1920,
+       "right": 1905,
        "top": 56,
-       "bottom": 923
+       "bottom": 1184
       },
       "padding": "32px"
      },
-     "usableContentWidth": 1680
+     "usableContentWidth": 1665
     },
     "horizontalOverflow": false,
     "docScrollWidth": 1920,
@@ -1788,8 +2764,8 @@
        "h": 34,
        "left": 488,
        "right": 668,
-       "top": 256,
-       "bottom": 290
+       "top": 344,
+       "bottom": 378
       },
       "text": "All countriesCADEGBJPUS",
       "visibleFraction": 1,
@@ -1806,8 +2782,8 @@
        "h": 34,
        "left": 296,
        "right": 476,
-       "top": 256,
-       "bottom": 290
+       "top": 344,
+       "bottom": 378
       },
       "text": "All companiesKitchenMamaResour",
       "visibleFraction": 1,
@@ -1824,8 +2800,8 @@
        "h": 36,
        "left": 684,
        "right": 767,
-       "top": 250,
-       "bottom": 286
+       "top": 338,
+       "bottom": 374
       },
       "text": "Refresh",
       "visibleFraction": 1,
@@ -1842,8 +2818,8 @@
        "h": 36,
        "left": 1191,
        "right": 1249,
-       "top": 411,
-       "bottom": 447
+       "top": 553,
+       "bottom": 589
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1860,8 +2836,8 @@
        "h": 36,
        "left": 1191,
        "right": 1249,
-       "top": 470,
-       "bottom": 506
+       "top": 612,
+       "bottom": 648
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1878,8 +2854,8 @@
        "h": 36,
        "left": 1191,
        "right": 1249,
-       "top": 529,
-       "bottom": 565
+       "top": 671,
+       "bottom": 707
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1896,8 +2872,8 @@
        "h": 36,
        "left": 1191,
        "right": 1249,
-       "top": 588,
-       "bottom": 624
+       "top": 730,
+       "bottom": 766
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1914,8 +2890,8 @@
        "h": 36,
        "left": 1191,
        "right": 1249,
-       "top": 647,
-       "bottom": 683
+       "top": 849,
+       "bottom": 885
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1932,8 +2908,8 @@
        "h": 36,
        "left": 1191,
        "right": 1249,
-       "top": 744,
-       "bottom": 780
+       "top": 946,
+       "bottom": 982
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1950,8 +2926,8 @@
        "h": 36,
        "left": 1191,
        "right": 1249,
-       "top": 803,
-       "bottom": 839
+       "top": 1064,
+       "bottom": 1100
       },
       "text": "Edit",
       "visibleFraction": 1,
@@ -1968,8 +2944,8 @@
        "h": 37,
        "left": 907,
        "right": 1067,
-       "top": 325,
-       "bottom": 362
+       "top": 467,
+       "bottom": 504
       },
       "text": "Allocation priority",
       "visibleFraction": 1,
@@ -1986,10 +2962,10 @@
        "h": 59,
        "left": 907,
        "right": 1067,
-       "top": 400,
-       "bottom": 459
+       "top": 542,
+       "bottom": 601
       },
-      "text": "—",
+      "text": "100",
       "visibleFraction": 1,
       "visuallyHidden": false,
       "pastViewportBy": -853,
@@ -2004,8 +2980,8 @@
        "h": 59,
        "left": 907,
        "right": 1067,
-       "top": 459,
-       "bottom": 518
+       "top": 601,
+       "bottom": 660
       },
       "text": "80",
       "visibleFraction": 1,
@@ -2022,8 +2998,8 @@
        "h": 59,
        "left": 907,
        "right": 1067,
-       "top": 518,
-       "bottom": 577
+       "top": 660,
+       "bottom": 719
       },
       "text": "80",
       "visibleFraction": 1,
@@ -2040,8 +3016,8 @@
        "h": 59,
        "left": 907,
        "right": 1067,
-       "top": 577,
-       "bottom": 636
+       "top": 719,
+       "bottom": 778
       },
       "text": "0",
       "visibleFraction": 1,
@@ -2058,10 +3034,10 @@
        "h": 59,
        "left": 907,
        "right": 1067,
-       "top": 636,
-       "bottom": 695
+       "top": 837,
+       "bottom": 896
       },
-      "text": "100",
+      "text": "—",
       "visibleFraction": 1,
       "visuallyHidden": false,
       "pastViewportBy": -853,
@@ -2076,8 +3052,8 @@
        "h": 59,
        "left": 907,
        "right": 1067,
-       "top": 733,
-       "bottom": 792
+       "top": 934,
+       "bottom": 993
       },
       "text": "50",
       "visibleFraction": 1,
@@ -2094,8 +3070,8 @@
        "h": 59,
        "left": 907,
        "right": 1067,
-       "top": 792,
-       "bottom": 850
+       "top": 1052,
+       "bottom": 1111
       },
       "text": "—",
       "visibleFraction": 1,
@@ -2113,11 +3089,11 @@
     "lastRow": {
      "scrollerName": "div.main-content",
      "scrolledFrom": 0,
-     "scrolledTo": 0,
+     "scrolledTo": 104,
      "hScrollerName": null,
      "hScrolledTo": null,
      "neededHorizontalScroll": false,
-     "scrollHeight": 1024,
+     "scrollHeight": 1128,
      "clientHeight": 1024,
      "controlName": "button.sp-btn.sp-btn--ghost",
      "controlBox": {
@@ -2125,17 +3101,256 @@
       "h": 36,
       "left": 1191,
       "right": 1249,
-      "top": 803,
-      "bottom": 839
+      "top": 960,
+      "bottom": 996
      },
      "point": [
       1220,
-      821
+      978
      ],
      "elementAtPoint": "button.sp-btn.sp-btn--ghost",
      "reachableAndOperable": true,
      "visibleFraction": 1,
      "clippedBy": []
+    },
+    "drag": {
+     "gripCount": 5,
+     "gripKeys": [
+      "KitchenMama/US/Amazon",
+      "KitchenMama/DE/Amazon",
+      "KitchenMama/GB/Amazon Marketplace Europe",
+      "KitchenMama/JP/Rakuten",
+      "KitchenMama/CA/Walmart"
+     ],
+     "offGripKeys": [
+      "ResourceUS/US/Amazon",
+      "ResourceUS/US/eBay"
+     ],
+     "barAtRest": {
+      "hiddenAttr": true,
+      "display": "none",
+      "h": 0
+     },
+     "gripBox": {
+      "w": 50,
+      "h": 28
+     },
+     "touchAction": "none",
+     "gripIsButton": true,
+     "gripTabbable": true,
+     "targetKey": "KitchenMama\u0001JP\u0001Rakuten",
+     "keyboard": {
+      "focused": true,
+      "liftPrevented": true,
+      "afterLift": {
+       "bar": "Moving Rakuten KitchenMama. Thi   ite i  already in that po ition. Nothing ha  been changed and nothing will be  aved. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 3,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterOneUp": {
+       "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 2,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterTwoUp": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "dropPrevented": true,
+      "afterDrop": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "focusKept": true,
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "mouse": {
+      "kind": "mouse",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 2,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": 644,
+       "mid1": 703,
+       "ty": 674
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "touch": {
+      "kind": "touch",
+      "afterThreshold": {
+       "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "—",
+       "slot": 2,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "otherRows": 4,
+      "aim": {
+       "mid0": 644,
+       "mid1": 703,
+       "ty": 674
+      },
+      "afterMove": {
+       "bar": "Moving Rakuten KitchenMama. Drop here to propo e 90. U e the arrow key  to move, Space or Enter to drop, E cape to cancel.",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterUp": {
+       "bar": "Propo ed, not  aved. Rakuten KitchenMama would be  tored a  90 — between 100 and 80. No other  ite i  changed.Save thi  moveCancel",
+       "key": "KitchenMama\u0001JP\u0001Rakuten",
+       "weight": "90",
+       "slot": 1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      },
+      "afterCancel": {
+       "bar": "",
+       "key": null,
+       "weight": null,
+       "slot": -1,
+       "order": [
+        "KitchenMama\u0001US\u0001Amazon",
+        "KitchenMama\u0001DE\u0001Amazon",
+        "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+        "KitchenMama\u0001JP\u0001Rakuten",
+        "ResourceUS\u0001US\u0001Amazon"
+       ]
+      }
+     },
+     "tiedPair": {
+      "bar": "Moving Rakuten KitchenMama. The two  ite  here hold the SAME weight (80),  o no weight lie   trictly between them. Change one of their weight  fir t. U e the arrow key  to move, Space or Enter to drop",
+      "key": "KitchenMama\u0001JP\u0001Rakuten",
+      "weight": "—",
+      "slot": 2,
+      "order": [
+       "KitchenMama\u0001US\u0001Amazon",
+       "KitchenMama\u0001DE\u0001Amazon",
+       "KitchenMama\u0001JP\u0001Rakuten",
+       "KitchenMama\u0001GB\u0001Amazon Marketplace Europe",
+       "ResourceUS\u0001US\u0001Amazon"
+      ]
+     },
+     "tiedPairOffersSave": false,
+     "writesDispatched": 0,
+     "restored": {
+      "scrollTop": 0,
+      "scrollY": 0
+     }
     }
    }
   }

@@ -218,3 +218,122 @@
   #site-priority-section .sp-btn { min-height: 38px; padding: 8px 14px; }
   #site-priority-section .sp-select { min-height: 38px; }
 }
+/* =============================================================================================================
+   S8-B3-R3-CP2M-R4 — REORDER BY DRAGGING
+   -------------------------------------------------------------------------------------------------------------
+   THE GRIP CARRIES `touch-action: none`, AND THAT ONE LINE IS WHY TOUCH WORKS. Without it the browser treats a
+   finger on the handle as a scroll gesture, swallows the pointermove stream and fires `pointercancel` — so the
+   drag would work with a mouse, do nothing on a phone, and look correct in every desktop test.
+
+   THE PREVIEW IS STYLED TO LOOK UNFINISHED ON PURPOSE. A dropped row is a proposal that has not been written;
+   if it rendered like a stored value the operator would have no way to tell a saved weight from one that is
+   about to be thrown away by a Cancel. The dashed outline and the "was ..." trailer are the difference.
+============================================================================================================= */
+
+#site-priority-section .sp-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+#site-priority-section .sp-col-grip { width: 64px; white-space: nowrap; }
+
+#site-priority-section .sp-grip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 1px solid var(--border-color, #d7dee8); border-radius: 6px;
+  background: var(--bg-secondary, #f8fafc); color: var(--text-secondary, #64748b);
+  font-size: 13px; line-height: 1; letter-spacing: -2px;
+  cursor: grab;
+  /* THE LOAD-BEARING DECLARATION — see the header. */
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+}
+#site-priority-section .sp-grip:hover { background: var(--bg-hover, #eef2f7); color: var(--text-primary, #1e293b); }
+#site-priority-section .sp-grip:focus-visible { outline: 2px solid var(--accent-color, #2563eb); outline-offset: 2px; }
+#site-priority-section .sp-grip[aria-pressed="true"] {
+  cursor: grabbing; background: var(--accent-color, #2563eb); border-color: var(--accent-color, #2563eb); color: #fff;
+}
+/* A row that cannot be moved keeps the control's SPACE and loses its affordance, so the column does not
+   jump between rows and the reason is still reachable as a tooltip. */
+#site-priority-section .sp-grip--off { opacity: 0.3; cursor: not-allowed; }
+
+#site-priority-section .sp-rank {
+  display: inline-block; min-width: 18px; margin-left: 6px;
+  font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-secondary, #64748b);
+}
+
+#site-priority-section tr.sp-row--lifted > td { background: var(--bg-hover, #eef2f7); }
+#site-priority-section tr.sp-row--preview > td {
+  background: color-mix(in srgb, var(--accent-color, #2563eb) 7%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-color, #2563eb);
+}
+#site-priority-section .sp-pri--preview { font-weight: 700; color: var(--accent-color, #2563eb); }
+#site-priority-section .sp-pri--refused { color: var(--danger-color, #dc2626); }
+#site-priority-section .sp-prev-was {
+  display: block; font-size: 11px; color: var(--text-secondary, #64748b);
+}
+
+#site-priority-section .sp-badge--preview {
+  background: color-mix(in srgb, var(--accent-color, #2563eb) 14%, transparent);
+  color: var(--accent-color, #2563eb);
+}
+#site-priority-section .sp-badge--unconfirmed {
+  background: color-mix(in srgb, var(--warning-color, #d97706) 16%, transparent);
+  color: var(--warning-color, #b45309);
+}
+#site-priority-section .sp-badge--nopos {
+  background: color-mix(in srgb, var(--danger-color, #dc2626) 12%, transparent);
+  color: var(--danger-color, #dc2626);
+}
+
+#site-priority-section .sp-group__locked,
+#site-priority-section .sp-group__hint {
+  display: block; margin-top: 4px;
+  font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0;
+  color: var(--text-secondary, #64748b); white-space: normal;
+}
+#site-priority-section .sp-group--unset .sp-group__name { color: var(--text-secondary, #64748b); }
+
+/* `hidden` MUST STILL HIDE IT, and it did not. The UA stylesheet's `[hidden] { display: none }` is a
+   single attribute selector; `#site-priority-section .sp-draft { display: flex }` is an id plus a class
+   and wins outright, so the empty move bar was drawn as a bordered box on every width whenever there was
+   no move. `.sp-status` escaped this only because it never sets `display` at all. The 360px capture is
+   what showed it: an empty outlined rectangle sitting between Refresh and the keyboard instructions. */
+#site-priority-section .sp-draft[hidden] { display: none; }
+
+#site-priority-section .sp-draft {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin: 0 0 12px; padding: 10px 14px;
+  border: 1px solid var(--border-color, #d7dee8); border-radius: 8px;
+  background: var(--bg-secondary, #f8fafc);
+}
+#site-priority-section .sp-draft__msg { margin: 0; flex: 1 1 260px; min-width: 0; font-size: 13px; line-height: 1.5; }
+#site-priority-section .sp-draft__co { color: var(--text-secondary, #64748b); }
+#site-priority-section .sp-draft__no { color: var(--danger-color, #dc2626); }
+#site-priority-section .sp-draft--live { border-color: var(--accent-color, #2563eb); }
+#site-priority-section .sp-draft--ready { border-color: var(--accent-color, #2563eb); border-left-width: 4px; }
+#site-priority-section .sp-draft--warn { border-color: var(--warning-color, #d97706); border-left-width: 4px; }
+#site-priority-section .sp-draft--error { border-color: var(--danger-color, #dc2626); border-left-width: 4px; }
+
+#site-priority-section .sp-drag-help {
+  margin: 0 0 12px; font-size: 12px; line-height: 1.6; color: var(--text-secondary, #64748b);
+}
+#site-priority-section .sp-drag-help kbd {
+  display: inline-block; padding: 1px 5px; border: 1px solid var(--border-color, #d7dee8);
+  border-bottom-width: 2px; border-radius: 4px; background: var(--bg-primary, #fff);
+  font-family: inherit; font-size: 11px; color: var(--text-primary, #1e293b);
+}
+#site-priority-section .sp-note--weight { font-size: 12px; }
+
+/* THE CARD LAYOUT KEEPS THE HANDLE. The grip is the only way to reorder, so hiding it below 640px would make
+   the feature desktop-only on exactly the devices the drag gesture suits best. The cell becomes a normal card
+   row with its label, and the control keeps a finger-sized target. */
+@media (max-width: 640px) {
+  #site-priority-section .sp-col-grip { width: auto; }
+  #site-priority-section .sp-grip { width: 38px; height: 38px; font-size: 15px; }
+}
+
+/* Finger-sized on tablets too, for the same reason the buttons are (§CP2M-R1). */
+@media (max-width: 1024px) {
+  #site-priority-section .sp-grip { min-width: 38px; min-height: 38px; }
+}

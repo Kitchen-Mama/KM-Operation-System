@@ -7,11 +7,11 @@
   "index.html": "d93cdd650e463869",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
   "assets/js/pages/global-logistics-map.js": "7e28d786c1d44bdc",
-  "assets/js/app.js": "9fc0477268ceb337",
+  "assets/js/app.js": "a53f074d533d1023",
   "assets/tests/_cp2m-r2-map-runner.js": "242395960153a730",
   "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
  },
- "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/r3-mapf2",
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/r4map2",
  "scenes": [
   {
    "scene": "desktop",
@@ -40,7 +40,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 528,
+    "canvasWaitMs": 489,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -64,7 +64,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 467,
+    "canvasWaitMs": 529,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -88,7 +88,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 473,
+    "canvasWaitMs": 493,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
@@ -182,7 +182,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 440,
+    "canvasWaitMs": 495,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -206,7 +206,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 430,
+    "canvasWaitMs": 501,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -230,7 +230,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 433,
+    "canvasWaitMs": 488,
     "canvasAppeared": true,
     "dragPath": {
      "from": [

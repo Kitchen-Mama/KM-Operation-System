@@ -635,6 +635,34 @@ function kmNavSetOpen_(open) {
     return true;
 }
 
+/* The drawer's focusable children, in document order.
+
+   A COLLAPSED SUBMENU IS NOT FOCUSABLE, and leaving its items in would make Shift+Tab land on something
+   that is not on screen. `.menu-children` without `.is-open` is the shipped way a submenu is shut, so that
+   is what is read here rather than a computed style the shim cannot produce. An element explicitly removed
+   from the tab order with tabindex="-1" is honoured for the same reason. */
+function kmNavFocusables_(sidebar) {
+    if (!sidebar || typeof sidebar.querySelectorAll !== 'function') return [];
+    var all = sidebar.querySelectorAll('a[href], button, input, select, textarea, [tabindex]');
+    var out = [];
+    for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        if (el.getAttribute && el.getAttribute('tabindex') === '-1') continue;
+        if (el.hasAttribute && el.hasAttribute('disabled')) continue;
+        if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') continue;
+        if (el.hidden) continue;
+        var shut = false;
+        for (var p = el.parentNode; p && p !== sidebar; p = p.parentNode) {
+            if (p.classList && p.classList.contains('menu-children') && !p.classList.contains('is-open')) {
+                shut = true; break;
+            }
+        }
+        if (shut) continue;
+        out.push(el);
+    }
+    return out;
+}
+
 /** True while the drawer layout is active AND the drawer is open. */
 function kmNavIsOpen_() {
     var sidebar = document.getElementById('appSidebar');
@@ -668,6 +696,39 @@ if (typeof document !== 'undefined' && document.addEventListener) {
         if ((ev.key === 'Escape' || ev.key === 'Esc') && kmNavIsOpen_()) {
             ev.preventDefault();
             kmNavClose_();
+            return;
+        }
+        /* S8-B3-R3-CP2M-R4 - TAB IS CONTAINED, BECAUSE THE DRAWER IS MODAL AND WAS NOT ACTING LIKE IT.
+           CP2M-R3 moved focus INTO the drawer on open and RETURNED it on close, which is half of the
+           contract. The other half was missing: with the scrim covering the page, Tab from the last menu
+           item walked straight out of the menu and into controls the operator could not see, behind a
+           backdrop that exists precisely to say they are unreachable. A keyboard user had no way back
+           except Escape, and no way to know where they were.
+
+           Only the drawer layout is affected. On the desktop the sidebar is part of the page and Tab
+           SHOULD leave it - trapping focus there would be the defect, not the fix. */
+        if (ev.key === 'Tab' && kmNavIsOpen_()) {
+            var sb = document.getElementById('appSidebar');
+            var f = kmNavFocusables_(sb);
+            if (!sb || !f.length) return;
+            var first = f[0], last = f[f.length - 1];
+            var active = document.activeElement;
+            var inside = !!(sb.contains && active && sb.contains(active));
+            if (!inside) { ev.preventDefault(); (ev.shiftKey ? last : first).focus(); return; }
+            if (ev.shiftKey && active === first) { ev.preventDefault(); last.focus(); }
+            else if (!ev.shiftKey && active === last) { ev.preventDefault(); first.focus(); }
+            return;
+        }
+        /* Home and End jump to the ends of the menu - but ONLY while focus is already inside it. Claiming
+           them whenever the drawer is open would steal the ordinary "scroll to top" from the page the
+           drawer is sitting over. */
+        if ((ev.key === 'Home' || ev.key === 'End') && kmNavIsOpen_()) {
+            var sb2 = document.getElementById('appSidebar');
+            if (!sb2 || !sb2.contains || !document.activeElement || !sb2.contains(document.activeElement)) return;
+            var f2 = kmNavFocusables_(sb2);
+            if (!f2.length) return;
+            ev.preventDefault();
+            (ev.key === 'Home' ? f2[0] : f2[f2.length - 1]).focus();
         }
     });
     if (typeof window !== 'undefined' && window.addEventListener) {

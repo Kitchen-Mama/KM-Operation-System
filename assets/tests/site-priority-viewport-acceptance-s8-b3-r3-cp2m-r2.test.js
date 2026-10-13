@@ -110,7 +110,16 @@ ok(m(EV, '360').shell.usableContentWidth >= 320,
 ok(m(EV, '768').shell.usableContentWidth >= 700,
   'B8a and a 768px tablet gets its full width', m(EV, '768').shell.usableContentWidth);
 ok(m(EV, '1920').shell.usableContentWidth > 1500,
-  'B8b while the desktop layout is unchanged at 1680px', m(EV, '1920').shell.usableContentWidth);
+  'B8b while the desktop layout is unchanged', m(EV, '1920').shell.usableContentWidth);
+/* AND IT IS 1665 NOW, NOT 1680, WHICH IS REPORTED RATHER THAN ROUNDED PAST. CP2M-R4 added a column, a
+   move bar and two paragraphs of explanation, so the page is taller -- tall enough at 768 and 1920 to
+   need a vertical scrollbar it did not need before, and a scrollbar costs 15px of content column. The
+   same 15px was already being paid at 360, 390 and 1280, which is why only those two widths moved.
+   Nothing is clipped at any width and no row became unreachable (sections D and E), so this is a cost
+   worth naming rather than a defect, and naming it is what stops it being read as one later. */
+eq(m(EV, '1920').shell.usableContentWidth, 1665, 'B8c exactly 1665 - 1680 less a 15px vertical scrollbar');
+eq(m(EV, '768').shell.usableContentWidth, 753, 'B8d and 753 at 768px, for the same 15px');
+eq(m(EV, '1280').shell.usableContentWidth, 1025, 'B8e while 1280px is unchanged - it already had one');
 
 // -------------------------------------------------------------------------------------------------------------
 section('C. the page renders, at every width');
@@ -118,7 +127,13 @@ section('C. the page renders, at every width');
 WANT.forEach(function (w) {
   const mm = m(EV, w);
   eq(mm.rowCount, 7, 'C1 ' + w + 'px draws all seven fixture rows');
-  eq(mm.groupCount, 2, 'C2 ' + w + 'px draws both company bands');
+  /* S8-B3-R3-CP2M-R4 - THE BAND COUNT SPLIT, because a second kind of band now exists. The ordered
+     rows sit under their company; the rows §45.A gives no position to -- MISSING and INVALID -- sit
+     under "No priority set" below them. `groupCount` counts both kinds, so pinning it to 2 would read
+     the new structure as the old one having regressed. Each kind is asserted on its own instead. */
+  eq(mm.companyGroupCount, 2, 'C2 ' + w + 'px draws both company bands');
+  eq(mm.unsetGroupCount, 2, 'C2a ' + w + 'px and an unordered band under each, for the Missing and Invalid rows');
+  eq(mm.groupCount, 4, 'C2b ' + w + 'px four band headers in total');
   eq(mm.sectionPresent, true, 'C3 ' + w + 'px reached the section by clicking its menu item');
 });
 ok((EV.fixtureRows || 0) >= 7, 'C4 the fixture carried enough rows to fill two companies', EV.fixtureRows);
@@ -222,6 +237,91 @@ ok(BEFORE.sources['assets/css/pages/site-priority.css'] !== EV.sources['assets/c
 ok((EV.results || []).every(r => r.png), 'H2 every width produced a screenshot file');
 ok(WANT.every(w => m(EV, w).watched && m(EV, w).watched.length >= 5),
   'H3 every width measured a real set of controls, not an empty one');
+
+// =============================================================================================================
+section('J. S8-B3-R3-CP2M-R4 — THE DRAG GESTURE, IN A REAL BROWSER, AT EVERY WIDTH');
+// -------------------------------------------------------------------------------------------------------------
+// The node suite proves the RULE by calling the same functions the handlers call. It cannot prove the GESTURE:
+// a headless DOM has no layout, getBoundingClientRect returns zeros, and a pointer path driven there would be
+// measuring the shim. These assertions are taken from real PointerEvents and real KeyboardEvents dispatched
+// against the shipped page and the shipped stylesheet.
+
+WANT.forEach(function (w) {
+  const d = (m(EV, w) || {}).drag || {};
+  ok(!d.error, 'J0 ' + w + 'px the probe ran without error', d.error);
+
+  // FIVE HANDLES, AND THE TWO ROWS THAT MAY NOT MOVE DO NOT GET ONE. ResourceUS has a single weighted
+  // site — nothing to reorder it against — and an INVALID one, which has no position to move from.
+  eq(d.gripCount, 5, 'J1 ' + w + 'px five rows carry a drag handle');
+  eq((d.offGripKeys || []).length, 2, 'J1a ' + w + 'px and two carry a DISABLED one with the reason');
+  ok((d.offGripKeys || []).indexOf('ResourceUS/US/eBay') !== -1,
+    'J1b ' + w + 'px the INVALID row is one of them', d.offGripKeys);
+  ok((d.offGripKeys || []).indexOf('ResourceUS/US/Amazon') !== -1,
+    'J1c ' + w + 'px and so is the only weighted site in its company', d.offGripKeys);
+
+  /* THE MOVE BAR IS NOT DRAWN WHEN THERE IS NO MOVE. It sets `display: flex`, which beats the UA's
+     `[hidden] { display: none }` on specificity, so for one capture it was an empty bordered rectangle on
+     every width. This asserts the COMPUTED display rather than the attribute, because the attribute was
+     set correctly the whole time -- it just was not winning. */
+  ok(d.barAtRest, 'J1d ' + w + 'px the move bar was measured at rest', d.barAtRest);
+  eq((d.barAtRest || {}).hiddenAttr, true, 'J1e ' + w + 'px it carries the hidden attribute');
+  eq((d.barAtRest || {}).display, 'none', 'J1f ' + w + 'px and that attribute actually hides it');
+  eq((d.barAtRest || {}).h, 0, 'J1g ' + w + 'px so it occupies no height');
+
+  // THE HANDLE IS A BUTTON, so it is in the tab order and announced as operable.
+  eq(d.gripIsButton, true, 'J2 ' + w + 'px the handle is a real button');
+  eq(d.gripTabbable, true, 'J2a ' + w + 'px and reachable by keyboard');
+
+  // TOUCH-ACTION IS READ AS COMPUTED, NOT AS WRITTEN. A declaration that is present in the stylesheet and
+  // overridden by anything else would pass a source grep and fail a finger; without it the browser claims
+  // the gesture as a scroll and cancels the pointer stream, so touch silently does nothing.
+  eq(d.touchAction, 'none', 'J3 ' + w + 'px the handle computes touch-action: none');
+  if (Number(w) <= 1024) {
+    ok(d.gripBox && d.gripBox.w >= 38 && d.gripBox.h >= 38,
+      'J3a ' + w + 'px and is a finger-sized target below the drawer breakpoint', d.gripBox);
+  }
+
+  // THREE INPUTS, ONE RESULT. Mouse, touch and keyboard put the same row in the same slot at the same
+  // weight. If any one of them diverged, one of the three has its own code path — which is the thing the
+  // single lift/nudge/drop implementation exists to prevent.
+  const kb = (d.keyboard || {}).afterDrop || {};
+  const mo = (d.mouse || {}).afterUp || {};
+  const to = (d.touch || {}).afterUp || {};
+  eq(kb.slot, 1, 'J4 ' + w + 'px KEYBOARD drops the row in slot 1');
+  eq(mo.slot, 1, 'J4a ' + w + 'px MOUSE lands in the same slot');
+  eq(to.slot, 1, 'J4b ' + w + 'px TOUCH lands in the same slot');
+  eq(kb.weight, '90', 'J5 ' + w + 'px KEYBOARD proposes 90 — the midpoint of 100 and 80');
+  eq(mo.weight, '90', 'J5a ' + w + 'px MOUSE proposes the same weight');
+  eq(to.weight, '90', 'J5b ' + w + 'px TOUCH proposes the same weight');
+  eq(kb.key, d.targetKey, 'J5c ' + w + 'px and it is the dragged row that moved');
+
+  // THE KEYBOARD CLAIMS ITS KEYS, so Space does not scroll the page out from under the lift.
+  eq((d.keyboard || {}).liftPrevented, true, 'J6 ' + w + 'px Space is claimed when it lifts');
+  eq((d.keyboard || {}).dropPrevented, true, 'J6a ' + w + 'px and when it drops');
+  // FOCUS SURVIVES THE RE-RENDER. Every slot change rebuilds the row, so without deliberate restoration
+  // the handle the operator is holding is destroyed under them and focus falls back to the body.
+  eq((d.keyboard || {}).focusKept, true, 'J7 ' + w + 'px focus stays on the handle across the re-render');
+
+  // A REFUSAL IS VISIBLE BEFORE THE DROP, drawn where it was dropped and with NO invented weight.
+  eq((d.tiedPair || {}).weight, '—', 'J8 ' + w + 'px between two equal weights the preview shows no number');
+  eq(d.tiedPairOffersSave, false, 'J8a ' + w + 'px and Save is not offered');
+
+  // CANCEL RESTORES THE LIST — `slot: -1` means no preview row is left anywhere in the table.
+  eq(((d.keyboard || {}).afterCancel || {}).slot, -1, 'J9 ' + w + 'px cancelling a keyboard move clears the preview');
+  eq(((d.mouse || {}).afterCancel || {}).slot, -1, 'J9a ' + w + 'px and a mouse move');
+  eq(((d.touch || {}).afterCancel || {}).slot, -1, 'J9b ' + w + 'px and a touch move');
+
+  // AND THE WHOLE PROBE WROTE NOTHING. The write wrapper was replaced by a counter for its duration, so a
+  // gesture that dispatched a save would be a number here rather than a changed fixture nobody looked at.
+  eq(d.writesDispatched, 0, 'J10 ' + w + 'px NOT ONE write was dispatched by any gesture');
+});
+
+// The probe is not vacuous: it really found a row, and really had rows to move it past.
+ok((m(EV, '360').drag || {}).targetKey, 'J11 the probe identified the row it moved',
+  (m(EV, '360').drag || {}).targetKey);
+ok(((m(EV, '360').drag || {}).mouse || {}).otherRows >= 2, 'J11a with other rows to position against');
+ok(((m(EV, '360').drag || {}).mouse || {}).aim, 'J11b and aimed at a measured point, not a guessed one',
+  ((m(EV, '360').drag || {}).mouse || {}).aim);
 
 // -------------------------------------------------------------------------------------------------------------
 console.log('\n----------------------------------------');

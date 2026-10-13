@@ -105,7 +105,12 @@ const FIXTURE = [
   { marketplace_id: 'M4', company: 'KitchenMama', country: 'JP', marketplace: 'Rakuten', allocation_priority: 0, currency: 'JPY', status: 'active', updated_by: 'fixture', updated_at: '2026-10-13T00:00:00Z' },
   { marketplace_id: 'M5', company: 'KitchenMama', country: 'CA', marketplace: 'Walmart', allocation_priority: '', currency: 'CAD', status: 'active', updated_by: 'fixture', updated_at: '2026-10-13T00:00:00Z' },
   { marketplace_id: 'M6', company: 'ResourceUS', country: 'US', marketplace: 'Amazon', allocation_priority: 50, currency: 'USD', status: 'active', updated_by: 'fixture', updated_at: '2026-10-13T00:00:00Z' },
-  { marketplace_id: 'M7', company: 'ResourceUS', country: 'US', marketplace: 'eBay', allocation_priority: '7abc', currency: 'USD', status: 'active', updated_by: 'fixture', updated_at: '2026-10-13T00:00:00Z' }
+  /* INVALID IS A NEGATIVE, NOT '7abc', AND THE DIFFERENCE IS NOT COSMETIC. This fixture goes through the
+     SHIPPED normalizer, which collapses an unparseable cell to null -- so '7abc' reached the page as
+     MISSING and was drawn with a drag handle, as a row waiting for its first value. The normalizer
+     PRESERVES a negative on purpose (its own comment says so: the §40 refusal is the one that should be
+     seen), so a negative is the only INVALID the real read path can deliver. */
+  { marketplace_id: 'M7', company: 'ResourceUS', country: 'US', marketplace: 'eBay', allocation_priority: -5, currency: 'USD', status: 'active', updated_by: 'fixture', updated_at: '2026-10-13T00:00:00Z' }
 ];
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -238,6 +243,173 @@ const MEASURE = `
     return null;
   }
 
+
+  /* ---- S8-B3-R3-CP2M-R4: THE GESTURE, DRIVEN FOR REAL --------------------------------------------
+     The node suite drives lift / move / drop by calling the same functions the handlers call, which
+     proves the RULE and proves nothing about the GESTURE: a headless DOM has no layout, so
+     getBoundingClientRect returns zeros and a pointer path cannot be driven there at all. This runs in
+     a real browser, against the real stylesheet, and dispatches real PointerEvents and KeyboardEvents.
+
+     THREE INPUTS, ONE EXPECTED RESULT. Mouse, touch and keyboard must each put the same row in the same
+     place with the same proposed weight. Touch is the one that silently does not work if
+     "touch-action: none" is missing, so the COMPUTED value is read here rather than the stylesheet
+     text -- a declaration that is present but overridden would pass a source grep and fail a finger.
+
+     NOTHING IS SAVED. The write wrapper is replaced with a counter, so a gesture that dispatched a
+     write would be visible as a number rather than as a changed fixture. */
+  function dragProbe(sec){
+    var out={};
+    /* THE PROBE MUST LEAVE THE PAGE AS IT FOUND IT, because the screenshot is taken after it. Calling
+       focus() on a handle SCROLLS IT INTO VIEW, so the first capture of this round showed the table
+       half-way down with a focus ring on row four -- a picture of the measurement rather than of the
+       page. The scroll offsets and the focused element are both restored at the end. */
+    var _sc=document.querySelector('.main-content');
+    var _st=_sc?_sc.scrollTop:0, _wy=window.scrollY||0;
+    try{
+      var grips=sec.querySelectorAll('[data-sp-grip]');
+      out.gripCount=grips.length;
+      out.gripKeys=Array.prototype.map.call(grips,function(g){
+        return String(g.getAttribute('data-sp-grip')||'').replace(//g,'/'); });
+      out.offGripKeys=Array.prototype.map.call(sec.querySelectorAll('.sp-grip--off'),function(g){
+        var tr=g.closest?g.closest('tr'):null;
+        return tr?String(tr.getAttribute('data-sp-row')||'').replace(//g,'/'):'?'; });
+      if(!grips.length){ out.reason='NO_GRIPS'; return out; }
+      /* THE MOVE BAR AT REST. Measured BEFORE any gesture, because the hidden attribute is set by the
+         page and must actually hide: a bordered box with no content reads as a control that failed. */
+      var _bar=document.getElementById('sp-draft');
+      out.barAtRest=_bar?{ hiddenAttr:!!_bar.hidden, display:String(getComputedStyle(_bar).display),
+        h:Math.round(_bar.getBoundingClientRect().height) }:null;
+      var gb=grips[0].getBoundingClientRect();
+      out.gripBox={w:Math.round(gb.width),h:Math.round(gb.height)};
+      out.touchAction=String(getComputedStyle(grips[0]).touchAction||'');
+      out.gripIsButton=(grips[0].tagName.toLowerCase()==='button');
+      out.gripTabbable=(grips[0].tabIndex>=0);
+
+      // THE WRITE PATH IS REPLACED BY A COUNTER for the duration of the probe.
+      var writes=0, realWriter=null;
+      try{ realWriter=window.KM.DB.setMarketplaceAllocationPriority;
+           window.KM.DB.setMarketplaceAllocationPriority=function(){ writes++;
+             return Promise.resolve({outcome:'CONFIRMED_NOT_STARTED',code:'PROBE',message:'probe'}); };
+      }catch(e){ out.writerSwapError=String(e.message); }
+
+      function ordered(){ return Array.prototype.slice.call(sec.querySelectorAll('tr[data-sp-ordered="1"]')); }
+      function others(key){ return ordered().filter(function(t){ return t.getAttribute('data-sp-row')!==key; }); }
+      function barText(){ var b=document.getElementById('sp-draft');
+        return (b && !b.hidden) ? String(b.textContent||'').replace(/\s+/g,' ').trim().slice(0,200) : ''; }
+      function previewKey(){ var t=sec.querySelector('tr[data-sp-preview="1"]');
+        return t?String(t.getAttribute('data-sp-row')):null; }
+      function previewWeight(){ var e=sec.querySelector('tr[data-sp-preview="1"] .sp-pri--preview');
+        return e?String(e.textContent||'').trim():null; }
+      function slotOfPreview(){ var o=ordered(); for(var i=0;i<o.length;i++){
+        if(o[i].getAttribute('data-sp-preview')==='1') return i; } return -1; }
+      function clearMove(){ var c=document.querySelector('[data-sp-move-cancel]');
+        if(c){ c.click(); return; }
+        try{ sec.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})); }catch(e){} }
+
+      // The row to move: Rakuten is the lowest weighted KitchenMama site (0), so it starts LAST in its
+      // band and has somewhere to go. Found by its identity rather than by an index, which would move.
+      var targetKey=null;
+      ordered().forEach(function(t){ var k=t.getAttribute('data-sp-row')||'';
+        if(k.indexOf('Rakuten')>=0) targetKey=k; });
+      out.targetKey=targetKey;
+      if(!targetKey){ out.reason='NO_TARGET'; return out; }
+      function gripOf(k){ var t=sec.querySelector('tr[data-sp-row="'+k.replace(/"/g,'')+'"]');
+        return t?t.querySelector('[data-sp-grip]'):null; }
+
+      function snapshot(){ return { bar:barText(), key:previewKey(), weight:previewWeight(),
+        slot:slotOfPreview(), order:ordered().map(function(t){return t.getAttribute('data-sp-row');}) }; }
+
+      // ---- KEYBOARD: Space to lift, ArrowUp twice, Space to drop -------------------------------
+      try{
+        var g=gripOf(targetKey); g.focus();
+        out.keyboard={focused:(document.activeElement===g)};
+        function k(key){ g=gripOf(targetKey);
+          if(!g) return false;
+          var ev=new KeyboardEvent('keydown',{key:key,bubbles:true,cancelable:true});
+          g.dispatchEvent(ev); return ev.defaultPrevented; }
+        out.keyboard.liftPrevented=k(' ');
+        out.keyboard.afterLift=snapshot();
+        k('ArrowUp');
+        out.keyboard.afterOneUp=snapshot();
+        k('ArrowUp');
+        out.keyboard.afterTwoUp=snapshot();
+        out.keyboard.dropPrevented=k(' ');
+        out.keyboard.afterDrop=snapshot();
+        out.keyboard.focusKept=!!(gripOf(targetKey)&&document.activeElement===gripOf(targetKey));
+        clearMove();
+        out.keyboard.afterCancel=snapshot();
+      }catch(e){ out.keyboard={error:String(e.message)}; }
+
+      // ---- POINTER: the same move, with mouse and then with touch ------------------------------
+      function pointerDrag(kind){
+        var r={kind:kind};
+        try{
+          var g=gripOf(targetKey);
+          var gr=g.getBoundingClientRect();
+          var x=gr.left+gr.width/2, y0=gr.top+gr.height/2;
+          function pe(type,cy,opts){
+            var init={bubbles:true,cancelable:true,composed:true,pointerId:7,pointerType:kind,
+              isPrimary:true,clientX:x,clientY:cy,buttons:(type==='pointerup'?0:1)};
+            if(opts) for(var kk in opts) init[kk]=opts[kk];
+            var ev;
+            try{ ev=new PointerEvent(type,init); }
+            catch(e){ ev=new MouseEvent(type,init); ev.pointerId=7; ev.pointerType=kind; }
+            return ev;
+          }
+          g.dispatchEvent(pe('pointerdown',y0));
+          // THE FIRST MOVE CROSSES THE 4px THRESHOLD AND LIFTS. The target Y is computed AFTER it, and
+          // that ordering is the whole correctness of this probe: lifting makes the move bar appear,
+          // which pushes every row of the table DOWN by its height. A Y measured before the lift points
+          // at a row that is no longer there -- which is exactly what the first version of this did, and
+          // it landed one slot high at 768 and 1920 while looking correct at the other three widths.
+          document.dispatchEvent(pe('pointermove',y0+12));
+          r.afterThreshold=snapshot();
+          var o=others(targetKey);
+          r.otherRows=o.length;
+          if(o.length<2){ r.reason='TOO_FEW_ROWS'; return r; }
+          // Slot 1 needs exactly ONE row of this company above the pointer, so aim strictly between the
+          // midpoints of the first and second rows as they sit NOW.
+          var b0=o[0].getBoundingClientRect(), b1=o[1].getBoundingClientRect();
+          var mid0=b0.top+b0.height/2, mid1=b1.top+b1.height/2;
+          var ty=(mid0+mid1)/2;
+          r.aim={mid0:Math.round(mid0),mid1:Math.round(mid1),ty:Math.round(ty)};
+          document.dispatchEvent(pe('pointermove',ty));
+          r.afterMove=snapshot();
+          document.dispatchEvent(pe('pointerup',ty));
+          r.afterUp=snapshot();
+          clearMove();
+          r.afterCancel=snapshot();
+        }catch(e){ r.error=String(e.message); }
+        return r;
+      }
+      out.mouse=pointerDrag('mouse');
+      out.touch=pointerDrag('touch');
+
+      // ---- A REFUSED SLOT IS VISIBLE BEFORE THE DROP -------------------------------------------
+      // Slot 2 lands between the two sites that share a weight of 80. The row is drawn where it was
+      // dropped with NO weight, and Save is never offered.
+      try{
+        var g2=gripOf(targetKey); g2.focus();
+        function k2(key){ var gg=gripOf(targetKey); if(!gg) return;
+          gg.dispatchEvent(new KeyboardEvent('keydown',{key:key,bubbles:true,cancelable:true})); }
+        k2(' '); k2('ArrowUp');
+        out.tiedPair=snapshot();
+        out.tiedPairOffersSave=!!document.querySelector('[data-sp-move-save]');
+        clearMove();
+      }catch(e){ out.tiedPair={error:String(e.message)}; }
+
+      out.writesDispatched=writes;
+      try{ if(realWriter) window.KM.DB.setMarketplaceAllocationPriority=realWriter; }catch(e){}
+    }catch(e){ out.error=String(e.message); }
+    try{
+      if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      if(_sc) _sc.scrollTop=_st;
+      window.scrollTo(0,_wy);
+      out.restored={scrollTop:_sc?_sc.scrollTop:null, scrollY:window.scrollY||0};
+    }catch(e){ out.restoreError=String(e.message); }
+    return out;
+  }
+
   function measure(){
     var vw=document.documentElement.clientWidth;
     var sec=document.getElementById('site-priority-section');
@@ -251,6 +423,12 @@ const MEASURE = `
     var cells=sec.querySelectorAll('tr[data-sp-row] td');
 
     out.rowCount=rows.length; out.groupCount=groups.length;
+    /* S8-B3-R3-CP2M-R4 - TWO KINDS OF BAND, COUNTED APART. The company band and the "No priority set"
+       band are both .sp-group__cell, so one total silently merged them the moment the second kind
+       existed - and an assertion pinned to that total would have read a new structure as a regression
+       in the old one. */
+    out.companyGroupCount=sec.querySelectorAll('tr[data-sp-group]').length;
+    out.unsetGroupCount=sec.querySelectorAll('tr[data-sp-unset]').length;
     out.groupTexts=Array.prototype.map.call(groups,function(g){return String(g.textContent||'').replace(/\\s+/g,' ').trim().slice(0,40);});
     out.buttonCount=buttons.length; out.selectCount=selects.length;
     out.minButtonH=buttons.length?Math.min.apply(null,Array.prototype.map.call(buttons,function(b){return Math.round(b.getBoundingClientRect().height);})):null;
@@ -347,6 +525,10 @@ const MEASURE = `
       var hsc = hScroller(last.querySelector('.sp-col-act .sp-btn') || last);
       if (hsc) hsc.scrollLeft = 0;
     }
+
+    /* The drag probe runs LAST and cancels itself, so every layout number above was taken from the
+       page in its resting state. A probe that ran first would measure a table with a preview row in it. */
+    out.drag = dragProbe(sec);
 
     return out;
   }
