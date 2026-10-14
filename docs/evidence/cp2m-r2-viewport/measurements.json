@@ -6,7 +6,7 @@
  "shellIsReal": true,
  "testCssOverrides": 0,
  "sources": {
-  "index.html": "b6c9d44a441d2649",
+  "index.html": "8c8a2e0ec53dd528",
   "assets/css/layout.css": "69f17688580a60f2",
   "assets/css/base.css": "225902e388ea3260",
   "assets/css/components.css": "8ae2cb34a3dcdb21",
@@ -14,7 +14,7 @@
   "assets/css/pages/site-priority.css": "d3e193b0d29a6643",
   "assets/js/pages/site-priority.js": "6aa99fcbaf8672c5",
   "assets/html/pages/site-priority.html": "343c543b5e734d4c",
-  "assets/js/app.js": "19aa183e823b631f",
+  "assets/js/app.js": "951a01f7c7c2c56a",
   "assets/tests/_cp2m-r2-viewport-runner.js": "5fac8da9ae1faa93"
  },
  "shotsDir": "C:/Users/viczh/Desktop/KM/品牌資源/Vibe Coding/Operation System/wt-product-strategy-board-p0/docs/evidence/cp2m-r2-viewport",
