@@ -209,6 +209,28 @@
   }
   var _glmReadModel = null;   // adapted shipment workspace arrays, or null = Legacy (broad cache)
   var _glmReadSeq = 0;
+
+  /* ---- S8-B3-R3-CP2M-R4-R1 / TEXTURE-3-R12 — GLOBE LIFECYCLE DIAGNOSTICS (observation only) ----------
+     The map canvas is reported to disappear during loading, on re-render and on leave-and-return. Before
+     anything is changed, the page has to be able to say WHICH of those happened, because the symptom is
+     the same in every case and the causes are not:
+       * the HOST removed from the document but kept alive (detachGlobe does exactly this on purpose)
+       * the globe INSTANCE destroyed and rebuilt
+       * the WebGL context lost
+       * a late response rendering over a page the operator has left
+     "The canvas is gone" distinguishes none of them. `detachGlobe` keeps the host and keeps `state.globe`,
+     so a disappearance is NOT evidence that the engine was rebuilt, and this counts both separately so the
+     difference is measured rather than assumed. */
+  var _glmInstanceSeq = 0;
+  var _glmNavGen = 0;
+  var _glmDiag = {
+    renders: 0, boots: 0,
+    attaches: 0, detaches: 0,
+    globeCreates: 0, globeDestroys: 0,
+    contextLost: 0,
+    staleRendersBlocked: 0, teardownsAvoided: 0,
+    everRendered: false
+  };
   function ensureDb(force, cb) {
     if (_glmEffectiveWorkspace()) {
       if (!force && _glmReadModel) { cb(true); return; }
@@ -458,8 +480,37 @@
   }
 
   // ---------- render shell ----------
+  /* A non-destructive busy indicator. It touches only an aria attribute and the meta line, so there is no
+     new element, no new stylesheet rule and no layout change — the workspace underneath is left exactly as
+     the operator left it. */
+  function setRefreshing(on) {
+    var r = root(); if (!r) return;
+    try { if (on) r.setAttribute('aria-busy', 'true'); else r.removeAttribute('aria-busy'); } catch (e) {}
+    var meta = r.querySelector('[data-glm="meta"]');
+    if (meta && on) meta.textContent = 'Refreshing\u2026';
+  }
+
   function render() {
     var b = body(); if (!b) return;
+    _glmDiag.renders++;
+
+    /* S8-B3-R3-CP2M-R4-R1 — A REFRESH MUST NOT TEAR THE MAP DOWN.
+       MEASURED, not inferred: during a forced refresh the lifecycle probe found the globe host REMOVED
+       FROM THE DOCUMENT in 13 of 40 samples — exactly the 13 samples where `state.loading` was true, i.e.
+       the whole server round trip — while globeCreates stayed 1, globeDestroys 0 and contextLost 0. The
+       engine was never rebuilt and the context was never lost; the host was simply taken off the page and
+       not put back, because `detachGlobe()` ran before the `state.loading` early-return and only the FULL
+       render path calls `attachGlobe()` again.
+       The operator sees the map vanish and a spinner take the workspace, for as long as the read takes.
+       So a load that has something to preserve no longer replaces anything: the previous workspace stays,
+       with a quiet busy marker, and the full render happens when the data actually arrives. The first load
+       still gets the spinner, because then there genuinely is nothing to show. */
+    if (state.loading && _glmDiag.everRendered) {
+      _glmDiag.teardownsAvoided++;
+      setRefreshing(true);
+      return;
+    }
+    setRefreshing(false);
     detachGlobe();                              // preserve the persistent WebGL host across the innerHTML rewrite
     var r = root(); var meta = r.querySelector('[data-glm="meta"]');
     if (state.loading) { b.innerHTML = '<div class="glm-state"><div class="glm-spinner"></div><p>Loading shipment runtime…</p></div>'; return; }
@@ -485,6 +536,7 @@
       renderDrawerShell();
     attachGlobe();
     bindRuntime();
+    _glmDiag.everRendered = true;
   }
 
   var MODE_TABS = [{ id: 'runtime', label: 'On the Way' }, { id: 'template', label: 'Route Template' }, { id: 'global', label: 'Global Reference' }];
@@ -940,19 +992,27 @@
   }
 
   // ---------- globe management (persist across re-renders) ----------
-  function detachGlobe() { if (state.globeHost && state.globeHost.parentNode) { try { state.globeHost.parentNode.removeChild(state.globeHost); } catch (e) {} } }
+  function detachGlobe() { if (state.globeHost && state.globeHost.parentNode) { _glmDiag.detaches++; try { state.globeHost.parentNode.removeChild(state.globeHost); } catch (e) {} } }
   function attachGlobe() {
     var r = root(); if (!r) return;
     var slot = r.querySelector('[data-glm="globe-slot"]'); if (!slot) return;
     if (!state.globeHost) { state.globeHost = document.createElement('div'); state.globeHost.className = 'glm-globe-host'; bindGlobeTooltip(state.globeHost); }
     slot.appendChild(state.globeHost);
+    _glmDiag.attaches++;
     if (!state.globe && !state.globeError) {
       if (!(window.KMGlobe && window.KMGlobe.isSupported && window.KMGlobe.isSupported())) {
         state.globeError = 'This browser/GPU does not support WebGL, so the 3D Earth cannot be rendered.';
       } else {
+        _glmDiag.globeCreates++;
+        state.globeInstanceId = ++_glmInstanceSeq;
         state.globe = window.KMGlobe.create(state.globeHost, {
           reducedMotion: prefersReducedMotion(),
-          onError: function (kind, msg) { state.globe = null; state.globeError = globeErrText(kind, msg); showGlobeError(); },
+          onError: function (kind, msg) {
+            if (kind === 'contextlost') _glmDiag.contextLost++;
+            _glmDiag.globeDestroys++;
+            state.globe = null; state.globeInstanceId = 0;
+            state.globeError = globeErrText(kind, msg); showGlobeError();
+          },
           onMarkerClick: function (id) { onPinClick(id); },
           onMarkerHover: function (id) { showTip(id); },
           admin1Borders: state.admin1BordersMode,
@@ -979,7 +1039,7 @@
       '<p class="glm-globe-err__title">3D globe unavailable</p>' +
       '<p class="glm-globe-err__msg">' + (state.globeError || 'Unknown error.') + '</p>' +
       '<button type="button" class="glm-btn" data-act="globe-retry">Retry</button></div>';
-    var b = host.querySelector('[data-act="globe-retry"]'); if (b) b.onclick = function () { state.globeError = ''; state.globe = null; host.innerHTML = ''; attachGlobe(); };
+    var b = host.querySelector('[data-act="globe-retry"]'); if (b) b.onclick = function () { if (state.globe) _glmDiag.globeDestroys++; state.globeError = ''; state.globe = null; state.globeInstanceId = 0; host.innerHTML = ''; attachGlobe(); };
   }
   // Build the marker + arc sets for the current mode and push them to the globe.
   function updateGlobeLayers() {
@@ -1621,14 +1681,22 @@
 
   // ---------- boot / lifecycle ----------
   function boot(force) {
+    _glmDiag.boots++;
+    // THE NAVIGATION THIS LOAD BELONGS TO. `ensureDb` already drops a superseded READ (`_glmReadSeq`), but
+    // nothing stopped a load that survived a navigation from rendering onto the page the operator went to
+    // next — including calling attachGlobe() against a section that is no longer the active one.
+    var myNav = _glmNavGen;
     state.loading = true; state.error = ''; render();
     ensureDb(!!force, function (ok) {
+      if (myNav !== _glmNavGen) { _glmDiag.staleRendersBlocked++; return; }
       state.loading = false;
       // Fail-closed: ensureDb sets a specific state.error in Workspace mode; preserve it (no silent broad fallback).
       if (!ok) { if (!state.error) state.error = 'Operation database is not loaded.'; render(); return; }
+      if (myNav !== _glmNavGen) { _glmDiag.staleRendersBlocked++; return; }
       state.sourceMode = (window.KM.DB && window.KM.DB.getDataSourceMode) ? window.KM.DB.getDataSourceMode() : 'unknown';
       state.diag = (window.KM.DB && window.KM.DB.getDataDiagnostics) ? window.KM.DB.getDataDiagnostics() : null;
       try { buildReadModel(); } catch (e) { state.error = String(e && e.message || e); render(); return; }
+      if (myNav !== _glmNavGen) { _glmDiag.staleRendersBlocked++; return; }
       state.didFocus = false;
       render();
       if (window._glmPendingSelect && state.vms && state.vms[window._glmPendingSelect]) { var sid = window._glmPendingSelect; window._glmPendingSelect = ''; selectShipment(sid); }
@@ -1642,8 +1710,46 @@
     }
     return Promise.resolve(false);
   }
+  /* The observation surface. Read-only: it reports what the page already knows and changes nothing. The
+     runner reads it before, during and after a load, and across a navigation, so "the canvas vanished" can
+     be attributed rather than merely noticed. */
+  window.KM = window.KM || {};
+  window.KM.glmDiag = function () {
+    var host = state.globeHost || null;
+    var inDoc = !!(host && (document.contains ? document.contains(host) : host.parentNode));
+    var canvas = host ? host.querySelector('canvas') : null;
+    var box = (canvas && canvas.getBoundingClientRect) ? canvas.getBoundingClientRect() : null;
+    return {
+      navGen: _glmNavGen,
+      renders: _glmDiag.renders, boots: _glmDiag.boots,
+      attaches: _glmDiag.attaches, detaches: _glmDiag.detaches,
+      globeCreates: _glmDiag.globeCreates, globeDestroys: _glmDiag.globeDestroys,
+      contextLost: _glmDiag.contextLost,
+      staleRendersBlocked: _glmDiag.staleRendersBlocked,
+      teardownsAvoided: _glmDiag.teardownsAvoided,
+      hostExists: !!host,
+      hostInDocument: inDoc,
+      hostParentClass: (host && host.parentNode && host.parentNode.className) ? String(host.parentNode.className) : null,
+      canvasPresent: !!canvas,
+      canvasW: box ? Math.round(box.width) : 0,
+      canvasH: box ? Math.round(box.height) : 0,
+      globeAlive: !!state.globe,
+      globeInstanceId: state.globeInstanceId || 0,
+      globeError: String(state.globeError || ''),
+      loading: !!state.loading,
+      error: String(state.error || ''),
+      dataReady: !!_glmReadModel,
+      shipments: (state.rm && state.rm.shipments) ? state.rm.shipments.length : 0
+    };
+  };
+
   KM.lifecycle.register('global-logistics-map-section', {
     mount: function () { ensureMarkup().then(function (loaded) { var sec = root(); if (sec) sec.classList.add('active'); if (!loaded || !sec) return; boot(); if (state.globe) state.globe.resize(); }); },
-    unmount: function () { closeDrawer(); }
+    /* Leaving retires the navigation AND the in-flight read. Without the first, a load started before the
+       operator left still rendered on return; without the second, `ensureDb`'s own sequence guard was the
+       only thing dropping the response, and it does not run until the promise settles. The globe instance
+       and its host are deliberately NOT destroyed — they are what makes coming back cheap, and the probe
+       shows the engine is created exactly once across a full leave-and-return. */
+    unmount: function () { _glmNavGen++; _glmReadSeq++; closeDrawer(); }
   });
 })();

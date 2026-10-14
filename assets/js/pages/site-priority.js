@@ -107,16 +107,18 @@
   // than a policy: the question is always "is there a representable non-negative weight that STRICTLY
   // satisfies the position just dropped into", and when there is not, the drag is refused.
   //
-  // THE APPROVED RULES (S8-B3-R3-CP2M-R4). Four replace what Rev 3 listed as unapproved, and one REVERSES a
-  // Rev 3 decision, which is called out here rather than quietly applied:
+  // THE APPROVED RULES (S8-B3-R3-CP2M-R4). Four replace what Rev 3 listed as unapproved, and one WITHDRAWS
+  // an entry Rev 3 listed as decided WITHOUT EVER HAVING BEEN APPROVED — called out here rather than quietly
+  // applied, and corrected in CP2M-R4-R1 from the "reversal" this comment used to claim:
   //
   //   top          hi x 1.1          pure. No `+1`, no minimum increment (Rev 3 D3).
   //   bottom       lo x 0.9          pure. REPLACES Rev 3's `lo - max(1, lo x 0.1)`, which still carried the
   //                                  `max(1, ...)` term D3 had removed from the top. Both ends now agree.
   //   middle       lo + (hi-lo)/2    the midpoint of the two NEW neighbours. One drag moves one row.
-  //   hi = 0       REFUSED           Rev 3 named a constant `TOP_FROM_ZERO = 1.0` for this case. OWNER HAS
-  //                                  SINCE REVERSED THAT: a weight that cannot be derived from a comparison
-  //                                  must be set EXPLICITLY. The constant is gone, not defaulted.
+  //   hi = 0       REFUSED           Rev 3 named a constant `TOP_FROM_ZERO = 1.0` for this case and listed
+  //                                  it as DECIDED. IT WAS NEVER APPROVED — the proposal claimed an approval
+  //                                  it did not have. A weight that cannot be derived from a comparison must
+  //                                  be set EXPLICITLY. The constant is gone, not defaulted.
   //   lo = 0       REFUSED           there is no non-negative weight below zero.
   //   precision    none imposed      no 2dp rounding and no 0.01 minimum gap — Rev 3's U3 is NOT adopted.
   //                                  The computed double is the value stored.
@@ -196,6 +198,9 @@
       basis = 'MIDDLE';
     }
 
+    // (Note on wording: a weight of 0 does NOT switch a site off. It is the lowest VALID weight — the site
+    //  still participates, still receives a share, and in a shortage receives the SAME multiplier as a site
+    //  at 1, because Math.max(priority, 1) clamps both to 1. What 0 does is rank last among its company.)
     // THE RESULT IS RE-DERIVED FROM THE NEIGHBOURS, NOT FROM THE FORMULA'S INTENT. Three distinct ways the
     // arithmetic can fail to deliver what the formula promised, and each one ends the drag:
     //   NOT_FINITE        `hi x 1.1` overflowed, with `hi` near Number.MAX_VALUE
@@ -207,7 +212,7 @@
     }
     if (value < 0) {
       return { ok: false, code: 'NEGATIVE', reason: 'That position would need a negative weight, which is not '
-        + 'a priority.' };
+        + 'a priority. 0 is the lowest a weight goes, and it still takes a share.' };
     }
     if ((hasUpper && !(value < upper)) || (hasLower && !(value > lower))) {
       return { ok: false, code: 'INDISTINGUISHABLE', reason: 'The weights on either side are so close '
@@ -599,8 +604,18 @@
             draggable: !locked[co] && st === 'MISSING' && view.ordered.length > 0,
             notDraggable: locked[co] ? locked[co]
               : (st === 'INVALID'
-                  ? 'This row holds a value that cannot be read as a priority. Fix it with Edit first — a '
-                    + 'drag would have to guess what it was meant to be.'
+                  // S8-B3-R3-CP2M-R4-R1 — AND IT NO LONGER SENDS THE OPERATOR TO EDIT, because Edit
+                  // cannot succeed here either. Every save from this page states an expected PRIOR state,
+                  // and the contract has only two: SET and MISSING. An unreadable cell is neither, so the
+                  // page sends MISSING, the handler compares it against a cell it reads as INVALID, and
+                  // refuses with PRIORITY_CHANGED — correctly, and every single time. The refusal is the
+                  // right answer and the advice was the wrong one: the value has to be corrected where it
+                  // is stored.
+                  ? 'This site holds a value that cannot be read as a priority, so it has no position in '
+                    + 'the order. It cannot be repaired from this page: every save here states the value '
+                    + 'it expects to replace, and there is no way to say "I expect an unreadable one" — so '
+                    + 'the server refuses, correctly, without writing anything. Correct the cell in the '
+                    + 'marketplaces spreadsheet, then Refresh.'
                   : 'There are no sites with a priority in this company yet. Use Edit to set the first one.')
           });
         });
@@ -634,6 +649,31 @@
   var _focusGrip = null;     // grip to re-focus after a re-render, so the keyboard does not lose the row
   var _filterState = { co: '', ct: '' };
   var _pointer = null;       // in-flight pointer gesture, before it becomes a lift
+
+  // ---- S8-B3-R3-CP2M-R4-R1 — WHICH OPERATION IS THIS ANSWER FOR? -----------------------------------------
+  //
+  // CP2M-R4's save continuation asked ONE question when its preflight resolved: `if (!_mounted)`. That is a
+  // question about the PAGE, and every race here is a question about the OPERATION:
+  //
+  //   * Cancel leaves the page mounted. The write went out anyway, after the operator cancelled it.
+  //   * Leaving and coming back sets `_mounted` true again, so a preflight that spanned the round trip
+  //     dispatched a write for an operation the operator had walked away from.
+  //   * A newer draft is also "mounted", so the stale continuation cleared its `_busy`, dropped it with
+  //     `_move = null`, and wrote its banner over it.
+  //
+  // THREE IDENTITIES ARE NEEDED AND NONE OF THEM IS A BOOLEAN: the operation (a save attempt), the draft it
+  // belongs to, and the mount generation it started in. Each draft carries an id, each save carries the id of
+  // the draft it is saving, and `_op` names the one operation currently allowed to act. Anything else that
+  // resolves is a late answer with no claim on the page.
+  var _moveSeq = 0;          // identity per draft
+  var _opSeq = 0;            // identity per save attempt
+  var _op = null;            // the operation permitted to proceed, or null
+
+  // The whole gate, in one place, so "is this answer still wanted" has exactly one definition.
+  function opIsLive(op) {
+    return !!(op && _mounted && _op === op && _mountGen === op.mountGen
+              && _move && _move.id === op.moveId);
+  }
 
   function moveRow() { return _move ? rowByKey(_move.key) : null; }
 
@@ -731,6 +771,22 @@
         + '<button type="button" class="sp-btn sp-btn--ghost" data-sp-move-cancel="1">Dismiss</button>';
       return;
     }
+    // SENT: the request is out and cannot be recalled, so no Cancel is offered here at all.
+    if (_move.phase === 'sent') {
+      bar.className = 'sp-draft sp-draft--warn';
+      bar.innerHTML = '<p class="sp-draft__msg"><strong>Sent.</strong> ' + label + ' has been dispatched to '
+        + 'the server and <strong>cannot be cancelled</strong> \u2014 nothing here can call a request back. '
+        + 'The result will be reported as saved, refused, or unconfirmed.</p>';
+      return;
+    }
+    // CHECKING: nothing has been dispatched yet, so Cancel still genuinely prevents the write.
+    if (_move.phase === 'checking') {
+      bar.className = 'sp-draft sp-draft--live';
+      bar.innerHTML = '<p class="sp-draft__msg">Checking the sites around ' + label + ' before saving. '
+        + 'Nothing has been sent yet.</p>'
+        + '<button type="button" class="sp-btn sp-btn--ghost" data-sp-move-cancel="1">Cancel</button>';
+      return;
+    }
     if (_move.live) {
       bar.className = 'sp-draft sp-draft--live';
       bar.innerHTML = '<p class="sp-draft__msg">Moving ' + label + '. '
@@ -776,8 +832,10 @@
     // AN INVALID ROW HAS NO POSITION, so it cannot be given one by moving it. Placing it would mean choosing
     // a weight for a cell whose stored value nobody can read -- which is the guess §3.5 forbids.
     if (classify(row.allocationPriority).state === 'INVALID') {
-      setStatus('error', 'This site holds a value that cannot be read as a priority, so it has no position in '
-        + 'the order. Fix it with Edit first \u2014 moving it would mean guessing what it was meant to be.');
+      setStatus('error', 'This site holds a value that cannot be read as a priority, so it has no position '
+        + 'in the order. It cannot be repaired from this page either \u2014 every save states the value it '
+        + 'expects to replace, and there is no way to express an unreadable one, so the server refuses '
+        + 'without writing. Correct the cell in the marketplaces spreadsheet, then Refresh.');
       return false;
     }
     // A FILTERED COMPANY CANNOT BE REORDERED, for the reason hiddenCompanyNotes states: the rows that look
@@ -797,8 +855,11 @@
       var full = visibleRows().filter(function (r) { return str(r.company) === company && isOrdered(r); });
       for (var i = 0; i < full.length; i++) if (identityOf(full[i]) === key) { origRank = i; break; }
     }
-    _move = { key: key, company: company, slot: origRank >= 0 ? origRank : ordered.length,
-              live: true, unconfirmed: false, origRank: origRank };
+    // `phase` is what Cancel has to read. 'draft' and 'checking' are both cancellable and both genuinely
+    // prevent a write; 'sent' is not, because the request has left the browser and nothing here can call it
+    // back. Conflating them is how a page comes to claim it undid something it cannot undo.
+    _move = { id: ++_moveSeq, key: key, company: company, slot: origRank >= 0 ? origRank : ordered.length,
+              live: true, unconfirmed: false, origRank: origRank, phase: 'draft' };
     _editingKey = null;
     setStatus(null);
     if (keyboard) _focusGrip = key;
@@ -835,8 +896,23 @@
   // an unconfirmed hold does not undo anything, because nothing here knows whether there is anything to undo.
   function cancelMove() {
     if (!_move) return;
+    // ONCE THE WRITER HAS BEEN DISPATCHED THERE IS NOTHING TO CANCEL, and saying otherwise would be the
+    // worst sentence this page could print: the request is on its way, its outcome may be
+    // OUTCOME_UNKNOWN, and "cancelled" would assert a zero write nobody can prove. The control is not
+    // offered in this phase (renderDragBar), and reaching it another way still refuses.
+    if (_move.phase === 'sent') {
+      setStatus('warn', 'This save has already been sent to the server, so it cannot be cancelled. Nothing '
+        + 'here can call a request back. Wait for the result \u2014 it will be reported as saved, refused, or '
+        + 'unconfirmed, and nothing will be re-sent either way.');
+      return;
+    }
     var key = _move.key;
+    // RETIRE THE OPERATION, not just the draft. A preflight may be in flight for it; dropping `_op` is what
+    // makes that answer a no-op instead of a write.
+    var wasChecking = (_move.phase === 'checking');
+    _op = null;
     _move = null;
+    if (wasChecking) _busy = false;     // the operation it belonged to is over
     _focusGrip = key;
     setStatus(null);
     render();
@@ -858,9 +934,13 @@
   // ITS EXACT LIMIT, restated where it is implemented: a read is not a latch (§4.A). A neighbour can change
   // between this check and the write. The window narrows from "however long the operator deliberated" to one
   // round trip. That residual is ACCEPTED (D5) and is not closed here.
-  function preflightMove(intent) {
+  function preflightMove(intent, op) {
     invalidateMarketplaceReference();
     return loadRows().then(function (fresh) {
+      // REJECT BEFORE COMMITTING ANYTHING. This function used to assign `_rows` and redraw the filters as
+      // its first two acts, so a read belonging to a cancelled or superseded operation replaced the table
+      // the operator was looking at before anyone asked whether it was still wanted.
+      if (!opIsLive(op)) return { ok: false, stale: true, reason: 'superseded' };
       _rows = fresh;
       renderFilters();
       var mine = fresh.filter(function (r) { return identityOf(r) === intent.key; });
@@ -916,13 +996,16 @@
       }
       return { ok: true, row: target };
     }).catch(function (e) {
+      if (!opIsLive(op)) return { ok: false, stale: true, reason: 'superseded' };
       return { ok: false, reason: 'The check before saving could not read the marketplace reference. '
         + ((e && e.message) ? e.message : String(e)) };
     });
   }
 
   function saveMove() {
-    if (_busy || !_move || _move.live || _move.unconfirmed) return Promise.resolve(false);
+    if (_busy || !_move || _move.live || _move.unconfirmed || _move.phase !== 'draft') {
+      return Promise.resolve(false);
+    }
     var row = moveRow();
     var p = currentProposal();
     if (!row || !p || !p.ok) return Promise.resolve(false);
@@ -941,21 +1024,36 @@
     }
     // An INVALID stored value cannot be the subject of a drag at all (it has no position and no grip), so the
     // only states that reach here are SET and MISSING — which are exactly the two the CAS can express.
+    // THE OPERATION IS NAMED BEFORE IT STARTS, and everything downstream is checked against this object
+    // rather than against the page's liveness.
+    var op = { id: ++_opSeq, moveId: _move.id, mountGen: _mountGen };
+    _op = op;
+    _move.phase = 'checking';
     _busy = true;
-    setStatus('loading', 'Checking the sites around this one before saving…');
-    return preflightMove(intent).then(function (pre) {
+    setStatus('loading', 'Checking the sites around this one before saving\u2026');
+    render();
+    return preflightMove(intent, op).then(function (pre) {
+      // A SUPERSEDED ANSWER TOUCHES NOTHING — not `_busy`, not `_move`, not the banner. Clearing `_busy`
+      // here unconditionally is what used to unwedge a NEWER save's flag from an older operation.
+      if (!opIsLive(op)) return false;
       _busy = false;
-      if (!_mounted) return false;
       if (!pre.ok) {
         // THE LIST ON SCREEN IS NOW THE FRESH ONE — the preflight already replaced it — so the operator is
         // looking at what the server actually holds while reading why the move was dropped.
+        _op = null;
         _move = null;
         render();
-        setStatus('error', 'NOT SAVED — nothing was sent. ' + pre.reason
+        setStatus('error', 'NOT SAVED \u2014 nothing was sent. ' + pre.reason
           + ' The list now shows what the reference currently holds; drag again if you still want the move.');
         return false;
       }
-      return commitPriority(pre.row, intent.value, { source: 'drag' });
+      // CHECKED AGAIN, IMMEDIATELY BEFORE THE WRITER. Everything between the gate above and this line is
+      // synchronous today, and that is exactly the kind of fact that stops being true when someone adds an
+      // await. The dispatch is the irreversible step, so it gets its own check.
+      if (!opIsLive(op)) return false;
+      _move.phase = 'sent';
+      render();
+      return commitPriority(pre.row, intent.value, { source: 'drag', op: op });
     });
   }
 
@@ -1051,9 +1149,16 @@
     function done(kind, text, ret, hold) {
       if (!liveSave()) return ret;
       _editingKey = null;
+      // A DRAG OUTCOME MAY ONLY TOUCH THE DRAFT IT WAS DISPATCHED FOR. Matching on the row key alone would
+      // let a late answer re-open an unconfirmed hold on a DIFFERENT draft that happens to be the same row.
+      if (opts.op && (!_move || _move.id !== opts.op.moveId)) {
+        render();
+        setStatus(kind, text);
+        return ret;
+      }
       if (_move && _move.key === key) {
-        if (hold) { _move.live = false; _move.unconfirmed = true; }
-        else { _move = null; }
+        if (hold) { _move.live = false; _move.unconfirmed = true; _move.phase = 'draft'; }
+        else { _move = null; _op = null; }
       }
       render();
       setStatus(kind, text);
@@ -1416,7 +1521,7 @@
       // UNCONFIRMED hold goes with it — it is a marker, and the fresh read on return is what settles it.
       unmount: function () {
         _mounted = false; _editingKey = null; _busy = false; _reading = false;
-        _move = null; _pointer = null; _focusGrip = null;
+        _move = null; _pointer = null; _focusGrip = null; _op = null;
         _readGen++; _saveGen++; _mountGen++;
       }
     });
@@ -1436,8 +1541,10 @@
     _state: function () {
       return { rows: _rows.slice(), editingKey: _editingKey, busy: _busy,
         reading: _reading, mounted: _mounted, readGen: _readGen, saveGen: _saveGen,
-        move: _move ? { key: _move.key, company: _move.company, slot: _move.slot, live: _move.live,
-                        unconfirmed: _move.unconfirmed, origRank: _move.origRank } : null };
+        move: _move ? { id: _move.id, key: _move.key, company: _move.company, slot: _move.slot,
+                        live: _move.live, unconfirmed: _move.unconfirmed, origRank: _move.origRank,
+                        phase: _move.phase } : null,
+        opId: _op ? _op.id : null };
     },
     // THE GESTURE, EXPORTED FOR THE NODE SUITE ONLY — and the BROWSER evidence does not use it. A headless
     // DOM has no layout, so `getBoundingClientRect` returns zeros and a pointer path cannot be driven there

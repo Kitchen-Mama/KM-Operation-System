@@ -5,7 +5,14 @@
 > and its stylesheet. Still absent, and still not proposed: any multi-row write, any renumbering, any
 > schema change, any new API, and any change to the allocation formula.
 >
-> **WHAT REV 4 SETTLED, including one REVERSAL of Rev 3.**
+> **CORRECTION (S8-B3-R3-CP2M-R4-R1).** Rev 4 described D9 as *"reversing"* an Owner decision. **It was not
+> a reversal, because there was no decision to reverse.** Rev 3 printed `TOP_FROM_ZERO = 1.0` in its own
+> DECIDED table under D3, and Owner has since confirmed that **auto-filling 1.0 was never approved**. The
+> entry was the proposal claiming an approval it did not have. Rev 4's refusal is therefore the CORRECTION
+> OF A MIS-RECORDED DECISION, not a change of direction — and the difference matters, because a register
+> that shows an Owner reversing themselves is a false record of how this was decided.
+>
+> **WHAT REV 4 SETTLED.**
 >
 > | # | Decision | Where |
 > |---|---|---|
@@ -17,7 +24,7 @@
 > | **D6** | **display order is weight DESC within a company, ties broken by canonical identity** — a total order, so the list cannot reshuffle when an unrelated row is inserted | §2.0 |
 > | **D7** | **midpoint insertion is APPROVED** (Rev 3's U1), computed as `lo + (hi−lo)/2` — overflow-safe, because the naive form overflows on two large legal weights | §2.4 |
 > | **D8** | **the bottom rule is pure `lo × 0.9`** (Rev 3's U2), REPLACING `lo − max(1, lo × 0.1)`. Rev 3's bottom still carried the `max(1, …)` term D3 had removed from the top; both ends now use one factor | §3.2 |
-> | **D9** | **`hi = 0` and "no comparison basis" are REFUSED, and the operator is asked to set a value explicitly.** This **REVERSES** Rev 3's `TOP_FROM_ZERO = 1.0`: a weight that cannot be derived from a comparison is not invented | §2.2.1 |
+> | **D9** | **`hi = 0` and "no comparison basis" are REFUSED, and the operator is asked to set a value explicitly.** A weight that cannot be derived from a comparison is not invented. Rev 3's `TOP_FROM_ZERO = 1.0` was **never approved** and is withdrawn as mis-recorded, not reversed | §2.2.1 |
 > | **D10** | **no 2dp rounding and no 0.01 minimum gap** (Rev 3's U3 is **NOT adopted**). The computed double is what is stored | §2.3 |
 > | **D11** | a save is refused when the value is **non-finite**, **indistinguishable** from a neighbour, between **equal** neighbours, **cross-company**, or when a **filter hides** a neighbour | §2.5 |
 >
@@ -109,7 +116,7 @@ it does not scale anything — it only decides who receives the integer leftover
 | Position | Rev 3 said | **Rev 4 — BUILT** | State |
 |---|---|---|---|
 | At the top | `hi × 1.1` | `hi × 1.1` | **D3, implemented** |
-| Top, where `hi = 0`, or no comparison basis | `1.0`, a named constant | **REFUSED — set a value explicitly** | **D9, REVERSES Rev 3** |
+| Top, where `hi = 0`, or no comparison basis | `1.0`, a named constant *(never approved)* | **REFUSED — set a value explicitly** | **D9; Rev 3's entry withdrawn as mis-recorded** |
 | Any weight in `0 … 1` | allowed | allowed | **D4, implemented** |
 | Negative weight | never produced or accepted | never produced or accepted | **D4, implemented** |
 | Between `hi` and `lo` | `(hi+lo)/2`, *unapproved* | **`lo + (hi−lo)/2`** — overflow-safe | **D7, implemented** |
@@ -178,6 +185,13 @@ So what is actually true is narrower, and it is a *warning*, not a prohibition:
 | 1 | 1 | above 0.5 |
 | 2 | 2 | above 1 |
 
+> **A WEIGHT OF 0 DOES NOT SWITCH A SITE OFF**, and nothing in this page or its proposal may say or imply
+> that it does. `0` is the lowest VALID weight: the site still participates, still receives a share, and in
+> a shortage receives **exactly the same multiplier as a site at 1**, because `Math.max(priority, 1)` clamps
+> both to 1. What `0` does is rank it last among its company. The thing that genuinely stops an allocation
+> is a **MISSING** priority, which the allocator refuses rather than treating as 0 — a different state, and
+> the distinction §45.A exists for.
+>
 > **Two sites both at or below 1 receive the same MULTIPLIER in a shortage, and are still ordered
 > differently.** Owner has decided that this is acceptable and that the 0–1 range is usable. The UI
 > therefore **does not refuse** a weight there; it states the consequence once, as information rather
@@ -216,13 +230,15 @@ usable by D4.
 there is no `hi` at all: the list is empty, the dragged row is the only one, or every other row is MISSING
 or INVALID and so has no position.
 
-**Rev 3 answered this with a named constant, `TOP_FROM_ZERO = 1.0`. Owner has reversed that.** A weight that
-cannot be derived from a comparison is **required explicitly** and is never filled in:
+**Rev 3 answered this with a named constant, `TOP_FROM_ZERO = 1.0`, and listed it among its DECIDED items.
+IT WAS NEVER APPROVED.** Owner has confirmed that auto-filling 1.0 was not a decision they made, so it is
+withdrawn as a mis-record rather than reversed. A weight that cannot be derived from a comparison is
+**required explicitly** and is never filled in:
 
 > *"The highest site in this company is at 0, and multiplying 0 cannot produce a weight above it. Set this
 > site a priority explicitly with Edit — it will not be filled in automatically."*
 
-**Why the reversal is the better answer.** Rev 3's argument for `1.0` was that it is the smallest weight
+**Why refusing is the better answer.** Rev 3's argument for `1.0` was that it is the smallest weight
 distinguishable in both of the roles §1 separates. That argument is sound and still does not reach the
 conclusion: it establishes which value a system would pick, not that the system should pick one. Dragging a
 row to the top of a list expresses **a position**, and where no arithmetic can turn that position into a

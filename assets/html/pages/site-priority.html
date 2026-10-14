@@ -37,8 +37,13 @@
        exists when supply is short. Both halves are said, in that order. -->
   <div class="sp-note sp-note--weight">
     A higher weight is <strong>compared earlier</strong> when sites are ranked, and <strong>increases a site's
-    share only when supply is short</strong>. Below a weight of 1 the share stops changing — 0, 0.5 and 1 all
-    receive the same multiplier — but they remain three different positions in the ordering.
+    share only when supply is short</strong>. At or below 1 the share stops changing — <strong>0, 0.5 and 1
+    all receive the same shortage multiplier</strong>, because the allocator clamps the multiplier at 1 — but
+    they remain three different positions in the ordering.
+    <br><strong>A weight of 0 does not switch a site off.</strong> It is the lowest valid weight: the site still
+    takes its share, and still receives the same multiplier as a site at 1. What 0 does is rank it last among
+    its company. A site with <strong>no</strong> priority is a different thing again — it is unresolved, and
+    the allocator refuses it rather than treating it as 0.
   </div>
 
   <div class="sp-filters" role="group" aria-label="Site filters">

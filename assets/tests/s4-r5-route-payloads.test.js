@@ -312,13 +312,45 @@ ok(/NOT SUPPORTED BY THE APP/.test(M.directRoute['B hard reload while the target
   'G3  the hard-reload case is recorded as not supported rather than as measured');
 ok(!/location\.hash|hashchange/.test(APP), 'G3a and app.js has no hash route to reload into');
 
-/* Map fidelity: asserted as the thing that IS true, rather than as the thing that cannot be measured. */
+/* Map fidelity: asserted as the thing that IS true, rather than as the thing that cannot be measured.
+   -------------------------------------------------------------------------------------------------------
+   S8-B3-R3-CP2M-R4-R1 — G4's FORM IS CORRECTED, AND IT IS THE SECOND TIME THIS SUITE HAS NEEDED IT.
+   CP2M-R3 corrected A1c here for the same reason: it pinned the live tree to one round's post-state, so a
+   statement about THAT round became a veto on every round after it. G4 did it again, with `git diff HEAD`
+   over the map files asserted EMPTY — "not one byte of any map file changed this round". True when it was
+   written; false for any later round that legitimately touches a map file, which CP2M-R4-R1 does, with
+   measured before/after evidence.
+
+   It also only ever looked at UNCOMMITTED work: once a round commits, the diff is empty again and the
+   assertion passes whatever changed. A gate that fires only before a commit and never after is not
+   protecting the thing it names.
+
+   WHAT IT WAS REALLY FOR is kept, because it was a good point: this runner does NOT measure map fidelity,
+   so it must not be read as evidence that icons, tooltips or multi-leg behaviour still work. That is G4a,
+   and it is unchanged. What replaces the frozen diff is the invariant that actually protects an operator —
+   a map file that changes must rotate the MAP token, or returning browsers run new code on an old token. */
 section('G2. MAP FIDELITY — by the only evidence that exists');
 const changed = cp.spawnSync('git', ['diff', '--name-only', 'HEAD', '--'].concat(MAP_FILES),
   { cwd: ROOT, encoding: 'utf8' });
 if (changed.status === 0) {
-  eq(String(changed.stdout || '').trim(), '',
-    'G4  not one byte of any map file changed this round — which is why icons, tooltips and multi-leg behaviour cannot have');
+  const touched = String(changed.stdout || '').trim().split('\n').filter(Boolean);
+  if (touched.length) {
+    // A map file changed. This runner cannot speak to fidelity, so the requirement is that the change is
+    // SERVED correctly and that the fidelity evidence is somewhere else by name.
+    const RO = require('./_release-order.js');
+    const mapTok = RO.currentMapToken();
+    ok(RO.isMapToken(mapTok), 'G4  a map file changed, so the MAP series must own the current token', mapTok);
+    const appSrc = read('assets/js/app.js') + read('index.html');
+    ok(appSrc.indexOf(mapTok) !== -1,
+      'G4a1 and the current MAP token is actually served', mapTok);
+    ok(appSrc.indexOf(RO.currentAppToken()) !== -1,
+      'G4a2 while the application token is still served for application assets');
+    ok(mapTok !== RO.currentAppToken(),
+      'G4a3 and the two families are not crossed');
+    console.log('   (map files changed this round: ' + touched.join(', ') + ')');
+  } else {
+    ok(true, 'G4  no map file changed in the working tree');
+  }
 } else {
   console.log('   (git unavailable — G4 skipped)');
 }

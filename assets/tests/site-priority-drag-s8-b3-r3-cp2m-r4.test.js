@@ -246,7 +246,8 @@ eq(PW(null, 0).ok, false, 'A6 TOP from a leader of 0 is REFUSED — 0 x 1.1 is 0
 eq(PW(null, 0).code, 'TOP_FROM_ZERO', 'A6a with its own code');
 ok(/explicitly/i.test(PW(null, 0).reason), 'A6b and it says to set a value explicitly');
 // AND THE REFUSAL IS THE POINT. Rev 3 decided a named constant TOP_FROM_ZERO = 1.0 for this case; Owner
-// reversed that in R4. A page that filled in 1.0 here would be inventing a weight nobody expressed.
+// withdrawn in R4 as never having been approved. A page that filled in 1.0 here would be inventing a weight
+// nobody expressed — and Rev 3 listing it as decided did not make it one.
 // TOP_FROM_ZERO SURVIVES AS THE NAME OF THE REFUSAL, which is the exact opposite of what Rev 3 named it:
 // there it was a constant holding 1.0, here it is the code for declining to invent one. The assertion is
 // therefore about what it is ASSIGNED, not about whether the string appears.
@@ -527,7 +528,7 @@ test('F. A TOP PLACEMENT ABOVE A LEADER OF 0 IS REFUSED, NOT FILLED IN', functio
     b.api._drag.dropLift();
     eq(b.calls.upsert.length, 0, 'F3 dropping it writes nothing');
     ok(bar(b).indexOf('Save this move') === -1, 'F3a and Save is never offered');
-    // THE WHOLE POINT OF THE REVERSAL: no 1.0 appears from nowhere.
+    // THE WHOLE POINT OF THE WITHDRAWAL: no 1.0 appears from nowhere.
     // THE RANK CELL ALSO RENDERS ">1</span>", so the check is made on the PRIORITY cell alone.
     var pris = (html(b).match(/class="sp-pri[^"]*">([^<]*)</g) || []).map(function (m) {
       return m.replace(/.*">/, '').replace(/</, '');

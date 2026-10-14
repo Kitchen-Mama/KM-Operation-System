@@ -2,7 +2,7 @@
  "capturedAt": "2026-10-13",
  "note": "Counted from index.html as it stands. The suite recounts every field from the live file and FAILS on a mismatch, so this cannot quietly describe a past build.",
  "bootScriptCount": 65,
- "bootScriptBytes": 3811071,
+ "bootScriptBytes": 3811075,
  "bootScriptMB": 3.635,
  "bootScriptTagsTotal": 67,
  "externalCdnScripts": [

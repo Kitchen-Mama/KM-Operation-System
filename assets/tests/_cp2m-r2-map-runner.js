@@ -206,7 +206,10 @@ ${DRAG}
 `;
 }
 
-function buildPage(port, doDrag, capId) {
+/* `scriptOverride` lets a different runner inject its own measuring script into the SAME page the pixel
+   capture uses — same index.html, same stubs, same correlation. A second copy of this builder would drift
+   from it, and then the two runners would stop describing the same application. */
+function buildPage(port, doDrag, capId, scriptOverride) {
   let html = read('index.html');
   html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/[^"']+/g, 'http://127.0.0.1:' + port + '/__stub.js');
   const preamble = `
@@ -227,7 +230,7 @@ function buildPage(port, doDrag, capId) {
 </script>`;
   const first = html.indexOf('<script');
   html = html.slice(0, first) + preamble + '\n' + html.slice(first);
-  html = html.replace('</body>', '<script>' + measureScript(doDrag) + '</script>\n</body>');
+  html = html.replace('</body>', '<script>' + (scriptOverride || measureScript(doDrag)) + '</script>\n</body>');
   return html;
 }
 
@@ -246,7 +249,12 @@ function withCorrelation(payload, action, rid) {
 
 const MAX_HOLD_MS = 40000;   // the globe needs real frames; this is the ceiling, not the expectation
 
-function startServer(pages, held, results) {
+/* `opts.readDelayMs` answers the shipment workspace read LATE. That is not a widened wait: in
+   production this read is an Apps Script round trip measured in seconds, and on loopback it returns
+   in under a millisecond, which makes the loading window too narrow to sample. Slowing the SERVER
+   makes an existing window observable; it does not create one. Default 0 = unchanged. */
+function startServer(pages, held, results, opts) {
+  var _readDelay = (opts && opts.readDelayMs) || 0;
   const ships = fixtureShipments(14);
   return http.createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
@@ -299,7 +307,11 @@ function startServer(pages, held, results) {
         /* THE SHIPMENT OVERLAY, in its real shape. CP2M-R2 answered this generically and the map drew
            its formal empty state, so the globe was verified with nothing on it. Every key comes from
            KM.DB.adaptShipmentWorkspace's own normalizers -- see _cp2m-r3-fixtures.js. */
-        if (action === 'shipment.workspace.get') { send({ success: true, data: FIXR3.shipmentWorkspace(8) }); return; }
+        if (action === 'shipment.workspace.get') {
+          var _payload = { success: true, data: FIXR3.shipmentWorkspace(8) };
+          if (_readDelay > 0) setTimeout(function () { send(_payload); }, _readDelay); else send(_payload);
+          return;
+        }
         if (action === 'getTable' && table === 'shipments') { send({ success: true, data: { rows: ships } }); return; }
         if (action === 'getTable') { send({ success: true, data: { rows: [] } }); return; }
         send({ success: true, data: { rows: ships, shipments: ships, items: ships, marketplaces: [], countries: [] } });
@@ -456,4 +468,5 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { SCENES, findBrowser, buildPage, fixtureShipments };
+module.exports = { SCENES, findBrowser, buildPage, fixtureShipments, startServer, wrapperFor,
+  runChromeAsync, withCorrelation };

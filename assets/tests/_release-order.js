@@ -1118,7 +1118,19 @@ var MAP_TOKEN_SERIES = [
   // touched (the label is page-side, the globe paints what it is given) and neither was the stylesheet, so
   // both keep the tokens they have. A new token rather than a reuse, by the rule this series records: R10
   // is published, so its bytes have been served and its token is spent.
-  'map-carriername-r11-20261001'
+  'map-carriername-r11-20261001',
+  // S8-B3-R3-CP2M-R4-R1 — THE MAP STOPS DISAPPEARING DURING A REFRESH. render() called detachGlobe()
+  // before the state.loading early-return and only the full render path re-attaches, so for the whole
+  // of a forced refresh the globe host was off the page — measured at 13 of 40 samples, exactly the
+  // samples where loading was true, with the engine created once and never destroyed.
+  //
+  // ONE FILE ROTATES: global-logistics-map.js, which carries the TEXTURE-3-R12 marker. km-globe.js was
+  // NOT touched (the fix is about when the host is on the page, not about what is drawn on it) and
+  // neither was the stylesheet, so both keep the tokens they have. A new token rather than a reuse,
+  // by this series' own rule: R11 is published, so its bytes have been served and its token is spent.
+  // The APPLICATION token is deliberately NOT used here — crossing the families is the misplaced-token
+  // defect the release-order rules check in both directions.
+  'map-canvaslifecycle-r12-20261013'
 ];
 
 // The newest entry is the current round's token, by construction rather than by restatement.

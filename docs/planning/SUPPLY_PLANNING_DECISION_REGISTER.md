@@ -2730,19 +2730,32 @@ neighbours they came from and refused as `INDISTINGUISHABLE` if they did not lan
 
 ---
 
-### D-S8-B3-31 — A weight that cannot be DERIVED is REQUIRED, not invented — **FROZEN (CP2M-R4)**
+### D-S8-B3-31 — A weight that cannot be DERIVED is REQUIRED, not invented — **FROZEN (CP2M-R4, corrected CP2M-R4-R1)**
 
 **Decision.** Where no arithmetic can turn a dropped position into a weight — the leader is `0`, or the
 ordered list is empty — the drag is **REFUSED** and the operator is told to set a value explicitly with Edit.
 
-**This REVERSES Rev 3's `TOP_FROM_ZERO = 1.0`.** Rev 3's argument for `1.0` was that it is the smallest weight
-distinguishable in both of the roles priority plays — strictly above `0` in all three comparators, and exactly
+> **CORRECTION (CP2M-R4-R1): THIS WAS NOT A REVERSAL, AND RECORDING IT AS ONE WAS WRONG.** CP2M-R4 wrote
+> that Owner had "reversed" `TOP_FROM_ZERO = 1.0`. Owner has since confirmed that **auto-filling 1.0 was
+> never approved at all**. Rev 3 listed it in its own DECIDED table under D3; that entry was the proposal
+> claiming an approval it did not have. What CP2M-R4 did is therefore **withdraw a mis-recorded decision**,
+> not change an Owner direction — and the distinction is not pedantry: a register showing the Owner
+> reversing themselves misrepresents who decided what, and not misrepresenting that is the register's job.
+
+**Rev 3's argument for `1.0`** was that it is the smallest weight distinguishable in both of the roles
+priority plays — strictly above `0` in all three comparators, and exactly
 where `Math.max(priority, 1)` stops clamping. That argument is sound **and it does not reach the conclusion**:
 it establishes which value a system would pick, not that the system should pick one. Dragging a row to the top
 expresses a POSITION; where that position has no derivable weight, the honest answer is to say so.
 
 The constant is **gone from the code**, not defaulted differently. `TOP_FROM_ZERO` survives only as the NAME
 OF THE REFUSAL, and the suite asserts it is never assigned a value.
+
+**AND A WEIGHT OF 0 DOES NOT SWITCH A SITE OFF.** Recorded here because the page's own comments had drifted
+towards implying it. `0` is the lowest VALID weight — the site still takes a share, and in a shortage it
+receives the **same multiplier as a site at 1**, since `Math.max(priority, 1)` clamps both. `0` ranks a site
+last; it does not disable it. What stops an allocation is a **MISSING** priority, which the allocator refuses
+outright rather than treating as 0.
 
 ---
 
@@ -2872,3 +2885,166 @@ a value `classify()` does read as INVALID, and which **no real read can produce*
 row had no drag handle and passed; the browser capture, going through the real normaliser, drew one. Both
 fixtures now use a negative, and the suite pins the normaliser's two lines so they cannot drift back to a
 shape the application does not have.
+---
+
+### D-S8-B3-37 — A late answer is identified by its OPERATION, not by whether the page is still open — **FROZEN (CP2M-R4-R1)**
+
+**Decision.** A save whose preflight is still in flight is identified by three things — the **operation**, the
+**draft** it belongs to, and the **mount generation** it started in. `opIsLive(op)` is the single definition,
+and every continuation consults it: before committing data, before writing a banner, and again immediately
+before dispatching the writer.
+
+**What it replaces.** CP2M-R4's continuation asked `if (!_mounted)`. That is a question about the PAGE, and
+every failure here was a question about the OPERATION:
+
+| | What happened |
+|---|---|
+| Cancel | leaves the page mounted, so the write went out **after the operator cancelled it** |
+| Leave and return | sets `_mounted` true again, so a preflight spanning the round trip dispatched a write for an abandoned operation |
+| A newer draft | is also "mounted", so the stale continuation cleared its `_busy`, dropped it with `_move = null`, and wrote its banner over it |
+| The data and the DOM | `preflightMove` assigned `_rows` and redrew **before** anything was checked |
+
+Each is covered by a test written to FAIL first (`site-priority-save-cancellation-s8-b3-r3-cp2m-r4-r1.test.js`,
+54 assertions), driven through the real Cancel control rather than the exported helper.
+
+**HONEST LIMIT, measured by mutation.** The three identities are **mutually redundant by construction**:
+`cancelMove` and `unmount` both clear `_op` AND `_move`, so either alone recognises every superseded
+operation this page can currently produce. Dropping ALL THREE is caught; keeping only the mount generation is
+caught; keeping only `_op`, or only the draft id, is NOT. The pre-dispatch re-check and the draft-id guard in
+`done` are unreachable today and are kept as defence in depth. **This is recorded rather than presented as
+six killed mutants**, because a count that quietly included the unreachable ones would be the worse number.
+
+---
+
+### D-S8-B3-38 — Cancel means two different things, and the page says which — **FROZEN (CP2M-R4-R1)**
+
+**Decision.** A move carries a `phase`:
+
+| phase | Cancel does | The page may say |
+|---|---|---|
+| `draft` | prevents a write that was never dispatched | "nothing was sent" |
+| `checking` | same — the preflight is a read | "nothing has been sent yet" |
+| `sent` | **nothing** | *"This save has already been sent and cannot be cancelled. Nothing here can call a request back."* |
+
+In the `sent` phase the Cancel control is **not offered**, and reaching it another way refuses. The move
+**survives** the click, because the request is outstanding and its outcome may be `OUTCOME_UNKNOWN` — the row
+has to stay on screen to receive that answer. CAS, partial failure, `OUTCOME_UNKNOWN` and the no-auto-resend
+rule are all unchanged.
+
+**A mutation found the gap in the first version of this test.** It asserted only that nothing was written and
+that no sentence said "undone" — both of which stay true if Cancel simply drops the draft. What must be true
+is that the move SURVIVES.
+
+---
+
+### D-S8-B3-39 — The map canvas vanished because the host left the document, not because the engine was rebuilt — **FROZEN (CP2M-R4-R1)**
+
+**Decision.** `render()` called `detachGlobe()` **before** the `state.loading` early-return, and only the full
+render path calls `attachGlobe()` again. For the whole of a forced refresh the globe host was therefore off
+the page. A load that has something to preserve no longer replaces anything: the previous workspace stays,
+with a non-destructive busy marker, and the full render happens when the data arrives. The first load still
+shows the spinner, because then there genuinely is nothing to show.
+
+**MEASURED, NOT INFERRED.** A lifecycle probe was added FIRST, with no behaviour change, so the before capture
+came from the same code path the operator runs:
+
+| | before | after |
+|---|---|---|
+| samples with the host OUT of the document, during a forced refresh | **13 of 40** | **0** |
+| samples where `state.loading` was true | 13 | 13 *(the wait was not hidden)* |
+| globe instances created / destroyed / contexts lost | 1 / 0 / 0 | 1 / 0 / 0 |
+
+**The engine was never rebuilt and no context was ever lost** — which is exactly why the probe was built
+before the fix. `detachGlobe` keeps the host AND `state.globe`, so "the canvas is gone" is not evidence of a
+renderer fault, and the fix would have been aimed at the wrong layer. **No wait limit was raised and no run
+was cherry-picked.**
+
+**LEAVE-AND-RETURN DID NOT REPRODUCE, and that is recorded rather than quietly fixed anyway.** On re-entry the
+read model is cached, so `ensureDb` calls back synchronously: `state.loading` is true and false inside one
+tick and the detach never survives a frame. The reachable teardown is the FORCED refresh.
+
+**Also added:** a navigation generation. `ensureDb` already dropped a superseded READ, but nothing stopped a
+load that outlived a navigation from rendering onto the next page; `unmount` now retires both.
+
+**Not changed:** the globe engine, the geometry, the textures, the transport, and `detachGlobe` itself — the
+fix is about WHEN the host is on the page, not about what is drawn on it. The MAP token family rotated
+(`map-canvaslifecycle-r12-20261013`); the application token was NOT used, because crossing the families is the
+misplaced-token defect the release-order rules check in both directions.
+
+---
+
+### D-S8-B3-40 — An unreadable priority is refused by the server, and the page stops sending operators to a control that cannot work — **FROZEN (CP2M-R4-R1)**
+
+**Verified end to end, through both REAL implementations** — the shipped reader sliced out of
+`operation-system-db-api.js` and the shipped classifier sliced out of `03_master_data_handlers.gs`:
+
+| raw cell | normalised | page reads | page sends | server reads | verdict |
+|---|---|---|---|---|---|
+| `7abc`, `high`, `1,000`, `Infinity` | `null` | MISSING | MISSING | **INVALID** | **PRIORITY_CHANGED — zero write** |
+| `-5` (text or number) | `-5` | INVALID | MISSING | **INVALID** | **PRIORITY_CHANGED — zero write** |
+| `''`, whitespace | `null` | MISSING | MISSING | MISSING | writes |
+| `0`, `'0'`, `80` | number | SET | SET | SET | writes |
+
+**An unreadable cell is never overwritten.** The refusal lands above the line the handler itself marks
+*"EVERYTHING ABOVE THIS LINE IS PROVABLY ZERO-WRITE"*.
+
+**AND THE CONSEQUENCE THAT HAD TO CHANGE.** Because the contract has only SET and MISSING, the page can never
+express "I expect an unreadable value" — so **every** save against such a row is refused, from the editor
+exactly as from the drag. CP2M-R4's text told the operator to *"fix it with Edit first"*, which is advice to
+use a control whose save fails every time. Both messages now say the value must be corrected where it is
+stored, and explain why this page cannot do it.
+
+**The reader's contract is NOT changed this round** (D-S8-B3-36 stands): an unparseable cell still normalises
+to `null`.
+
+**Also corrected, as instructed: a weight of 0 does not switch a site off.** It is the lowest VALID weight —
+the site still takes a share, and in a shortage receives the **same multiplier as a weight of 1**, because
+`Math.max(priority, 1)` clamps both. `0` ranks a site last. What stops an allocation is **MISSING**.
+
+---
+
+### D-S8-B3-41 — A warm/cold gate with no resolution, corrected at the GATE and said so — **FROZEN (CP2M-R4-R1)**
+
+**The gate's FORM changed, which is called out rather than slipped in.** `E2` compared warm and cold MEDIANS
+and allowed any one route to flip anonymously. It has no resolution: the capture CP2M-R4 shipped passed it
+with a map route whose warm median sat **1.6 ms** below its cold median inside ranges spanning **18 ms** and
+**10 ms**. Across four captures this round the "flipped" set changed every time — carrier-rate-card, then
+site-priority, then site-priority — and two of those routes were touched by nothing.
+
+**The corrected form asks whether the difference is distinguishable at all:** warm median above cold median
+**and the two ranges not overlapping**. It is **stricter where it matters** — the old form let one arbitrary
+route fail silently every run; the new one names the only genuinely slower route and fails if a second joins
+it or a different one replaces it.
+
+> **OPEN, NOT CLOSED: `global-logistics-map` IS genuinely slower on a return visit** — warm and cold ranges
+> disjoint in the later captures. The obvious reading is that this round's map change caused it, and that
+> reading was **tested rather than assumed**: a counterfactual capture with this round's render guard disabled
+> and everything else identical shows the same result (warm 44.0 vs cold 36.1, ranges still disjoint).
+> **The finding predates the change and is NOT attributed to it — and it is not fixed.**
+> Evidence: `docs/evidence/cp2m-r4r1-perf/warm-cold-counterfactual.json`.
+
+---
+
+### D-S8-B3-42 — The same frozen-tree gate, in the same suite, a second time — **FROZEN (CP2M-R4-R1)**
+
+**`s4-r5-route-payloads` G4 asserted `git diff HEAD` over the map files was EMPTY** — *"not one byte of any
+map file changed this round"*. True for the round that wrote it; a **veto on every round after it**. CP2M-R3
+corrected `A1c` in this same suite for exactly this shape, and this is the second instance.
+
+**It was also weaker than it looked.** `git diff HEAD` sees only UNCOMMITTED work, so the moment a round
+commits, the diff is empty again and the assertion passes whatever changed. A gate that can only fire before
+a commit, and never after, is not protecting the thing it names.
+
+**What it was really for is kept:** this runner does not measure map fidelity, and must not be read as
+evidence that icons, tooltips or multi-leg behaviour still work. That assertion is unchanged.
+
+**What replaces the frozen diff** is the invariant that actually protects an operator: a map file that
+changes must rotate the **MAP** token, that token must be served, the application token must still be served
+for application assets, and the two families must not be crossed. A map file rejoining boot on a stale token
+still fails; the exact map-fidelity evidence still lives in the map suites, by name.
+
+> **Two gate FORMS changed this round — E2 (D-S8-B3-41) and G4 — and both are named here rather than
+> adjusted quietly.** Both were corrected because the gate could not support the claim it made, not because
+> this round's work was inconvenient to them: E2 passed its previous capture on a 1.6 ms difference across an
+> 18 ms spread, and G4 passes trivially after any commit.
+
