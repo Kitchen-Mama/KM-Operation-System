@@ -3140,3 +3140,39 @@ execution died mid-write, and deleting it as housekeeping destroys the only dura
 **Everything not re-read is now marked UNVERIFIED**, which is a different statement from "absent".
 Status-transition legality remains unenumerated except for `cancelShipmentDraft`, whose three sets ARE now
 recorded, and remains the first item of next-round work.
+
+---
+
+### D-S8-B3-46 — A matrix that holds the real cause constant answers confidently about everything else — **FROZEN (CP2O-R2)**
+
+**Decision.** The map pixel capture is taken by `assets/tests/_cp2o-r2-map-capture.js`, which runs the
+existing capture flow **without** the forced `--use-gl=swiftshader`. `_cp2m-r2-map-runner.js` stays
+byte-identical. The evidence now records the renderer it was produced on.
+
+**What was actually blocking it.** The software rasteriser on the capture machine creates a WebGL context
+and loses it after roughly 1.3 s. A capture needs about four seconds. The canvas was therefore built,
+measured as present, and gone before the screenshot. The machine has a working GPU — measured, under five
+launch configurations, holding a context for 9.8-11.0 s with 304-538 real frames.
+
+**The method error, which is the part worth freezing.** CP2O-R1 ruled out the fixture, the selector,
+scheduling and host detach with a fixed 2x2 matrix, and confirmed that the context is lost. All of that
+stands. It then attributed the loss to the host machine degrading — and **every cell of that matrix passed
+`--use-gl=swiftshader`.** The experiment varied the branch and the viewport and held the rasteriser fixed,
+so it had no power to say anything about the rasteriser. A confident conclusion about everything else is
+exactly what such a design produces.
+
+| was | is |
+|---|---|
+| "the host cannot hold a WebGL context" | the **software rasteriser** cannot; the GPU holds one for 10 s |
+| "re-capture cannot succeed on this machine" | it succeeds on both viewports, noise floor **0** |
+| "why the host degrades is outside this repository" | still **UNVERIFIED**, and no longer load-bearing |
+
+**Why the pinned runner was not simply edited.** Its SHA is hashed against disk by two sibling suites
+through `cp2m-r4r1-map/after.json` and `cp2m-r4r2-mount/after.json`, and `map-canvas-lifecycle-...-r4-r1`
+additionally pins a sample count equal between its "after" run and a "before" run that cannot be re-taken.
+A one-line edit would have traded one blocked suite for two, with one of them unrecoverable. The launch
+parameters moved to a new entry point instead; the shared builder, fixture, server, scenes and page frame
+are used **by reference**, so the two entry points cannot drift apart in anything they share.
+
+**No threshold was loosened, no SHA pin edited, no hash faked, no gate cancelled, no browser terminated.**
+The suite's assertions are the ones that were failing before the re-capture.

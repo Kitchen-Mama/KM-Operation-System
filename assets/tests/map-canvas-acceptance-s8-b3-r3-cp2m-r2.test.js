@@ -18,8 +18,16 @@
 //     C  render, then a real pointer drag  -> A vs C is the EFFECT
 // The finding only means something if the effect is far above the floor, and BOTH are asserted here.
 //
-// Re-capture with:  node assets/tests/_cp2m-r2-map-runner.js <shotsDir>
-//                   (then copy map.json into docs/evidence/cp2m-r2-map/)
+// Re-capture with:  node assets/tests/_cp2o-r2-map-capture.js docs/evidence/cp2m-r2-map
+//
+// S8-B3-R3-CP2O-R2 — WHY THAT IS NOT `_cp2m-r2-map-runner.js` ANY MORE. The runner hard-codes
+// `--use-gl=swiftshader`, and on the capture machine the software rasteriser LOSES the WebGL context
+// about 1.3 s after creating it, which empties the canvas mid-capture. `_cp2o-r2-map-capture.js` is the
+// same flow -- the runner's own SCENES, page frame, builder, fixture and server, by reference -- launched
+// without that flag, so Chrome selects the real adapter. The runner itself is left byte-identical because
+// its SHA is pinned inside two sibling captures that cannot be re-taken. Check the environment first with
+// `node assets/tests/_cp2o-r2-gl-probe.js`; if no configuration reports HELD, a capture taken here would
+// be a description of a broken rasteriser and must not be committed.
 // =============================================================================================================
 'use strict';
 
