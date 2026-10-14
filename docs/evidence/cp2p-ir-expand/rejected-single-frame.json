@@ -1,0 +1,84 @@
+{
+ "variant": "single-rAF",
+ "verdict": "REJECTED",
+ "capturedAt": "2026-10-14",
+ "why": "A single requestAnimationFrame runs BEFORE the browser lays out the frame the shell was inserted in, so the build's first DOM read forced that layout anyway. First paint improved and TOTAL completion roughly doubled, which is the trade this round forbids.",
+ "method_caveat": "These passes were taken as two consecutive BLOCKS (three before, then three after), not interleaved. The within-block comparison is what rejected the variant; the absolute values are not comparable with the interleaved before-*/after-* captures.",
+ "perCallMeanMs": {
+  "before": 27.0,
+  "after": 43.5
+ },
+ "runs": {
+  "before": [
+   {
+    "label": "block-before-1",
+    "getCalls": 33,
+    "totalMs": 930,
+    "meanMs": 28.2,
+    "execResolvedMs": {
+     "cold": 473.2,
+     "warm": 301.2,
+     "warm2": 232.6
+    }
+   },
+   {
+    "label": "block-before-2",
+    "getCalls": 34,
+    "totalMs": 919,
+    "meanMs": 27.0,
+    "execResolvedMs": {
+     "cold": 426.8,
+     "warm": 260.3,
+     "warm2": 255.9
+    }
+   },
+   {
+    "label": "block-before-3",
+    "getCalls": 34,
+    "totalMs": 873,
+    "meanMs": 25.7,
+    "execResolvedMs": {
+     "cold": 422.4,
+     "warm": 252.8,
+     "warm2": 242.1
+    }
+   }
+  ],
+  "singleFrame": [
+   {
+    "label": "block-after-1",
+    "getCalls": 32,
+    "totalMs": 1378,
+    "meanMs": 43.0,
+    "execResolvedMs": {
+     "cold": 952.5,
+     "warm": 454.6,
+     "warm2": 486.8
+    }
+   },
+   {
+    "label": "block-after-2",
+    "getCalls": 33,
+    "totalMs": 1395,
+    "meanMs": 42.3,
+    "execResolvedMs": {
+     "cold": 961.8,
+     "warm": 464.0,
+     "warm2": 457.4
+    }
+   },
+   {
+    "label": "block-after-3",
+    "getCalls": 32,
+    "totalMs": 1445,
+    "meanMs": 45.2,
+    "execResolvedMs": {
+     "cold": 1196.5,
+     "warm": 675.2,
+     "warm2": 516.2
+    }
+   }
+  ]
+ },
+ "shipped_instead": "two frames - see _irScheduleExpandBuild_ and docs/evidence/cp2p-ir-expand/after-*.json"
+}

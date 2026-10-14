@@ -3176,3 +3176,72 @@ are used **by reference**, so the two entry points cannot drift apart in anythin
 
 **No threshold was loosened, no SHA pin edited, no hash faked, no gate cancelled, no browser terminated.**
 The suite's assertions are the ones that were failing before the re-capture.
+
+---
+
+### D-S8-B3-47 — The expand latency is nine full-table assemblies; the obvious fix was measured and withdrawn — **FROZEN (CP2P)**
+
+**Decision.** No change was made to the expand path. The measurement, the withdrawn variant and the cache
+proposal go to the Owner.
+
+**Where the time goes, on the real page at 100 SKUs.** The dispatch was never the cost: click to handler
+entry is under a millisecond. `toggleReplenRow` builds the panel synchronously, and the panel needs
+`getReplenishmentData()` — which re-assembles EVERY row of the station from twelve source tables. Three
+callers do it (the handler, `_irRevealSkuData_`, `_irRecoRerenderSummariesRender_`), so one expand pays for
+it about nine times at ~20 ms each. Median click to first paint **83 ms**; click to a resolved Execution
+panel **241 ms**.
+
+**The variant that was built and withdrawn.** A loading shell inserted in the click pass, the panel built
+two frames later. First paint **83 ms -> 8 ms**. Total completion **later in TEN of TEN interleaved pairs**,
+median **+39.5 ms (+15%)**. The round forbids buying a first paint with a later finish, so it was withdrawn
+rather than shipped against the rule. Deferring by a frame costs a frame by construction; no variant of the
+approach escapes it.
+
+**THE METHOD IS THE PART WORTH FREEZING.** An earlier comparison — four runs per side, **pooled** rather
+than paired — showed the variant **22% FASTER**, and on that basis it was already implemented, committed to
+in a token rotation, and three map captures had been re-taken to match. The shipped side alone varies run to
+run by 216-279 ms, which is larger than the effect. **A pooled comparison across a drifting machine is not a
+measurement of the change.** Only interleaved pairs, each its own control, separated them. An earlier
+single-frame variant had been rejected for a different measured reason: one `requestAnimationFrame` runs
+before the browser lays out the frame the shell was inserted in, so the build still forced that layout and
+identical calls went from a 23 ms mean to a 43 ms mean.
+
+**What is offered instead, and why it is not taken unilaterally.** The nine assemblies are redundant: the
+same array, rebuilt nine times inside one interaction with no data change between them. Removing the
+redundancy means memoising a data assembly — a CACHE change, and a cache that serves a stale station is a
+worse defect than a slow one. It would improve first paint AND total completion rather than trading one for
+the other. It needs the Owner.
+
+**Not reproduced:** the ~1 s the Owner reports. The worst first paint measured on the shipped handler is
+about 106 ms, at 100 SKUs, on one machine, over loopback. The production figure stays UNVERIFIED.
+
+### D-S8-B3-48 — The Recommendation Summary timeout is the scoped-read bound, not the transport bound — **FROZEN (CP2P)**
+
+**Traced, and nothing on this path was changed.**
+
+`loadInventoryGap_` -> `KM.DB.getInventoryReplenishmentGap` -> `_kmGapRead_('inventoryReplenishmentGap.get')`
+-> `_kmFetchBounded_(url, init, 'read')`, whose bound is **`KM_READ_TIMEOUT_MS_` = 45 000 ms** — NOT the
+shared transport's 60 000 ms. On expiry `_kmTimeoutError_` returns `REQUEST_TIMEOUT`; `loadInventoryGap_`
+stores `READ_ERROR`; `classifyReadFailure` sees a code containing TIMEOUT and returns the readiness code
+`REQUEST_TIMEOUT`; `_irRevealErrorHtml_` prints that code. That is the string the Owner reported.
+
+| what happened | `_irMatState.status` | `error.code` | transport sample |
+|---|---|---|---|
+| no scope yet | `CONTEXT_NOT_READY` | none | none |
+| still in flight | `LOADING` | none | **none — samples are recorded on settle** |
+| the 45 s bound elapsed | `READ_ERROR` | `REQUEST_TIMEOUT` | `REQUEST_TIMEOUT`, ms near 45 000 |
+| transport/contract failure | `READ_ERROR` | the typed transport code | phase not SUCCESS |
+| server answered `success:false` | `READ_ERROR` | the server code | **phase SUCCESS** |
+| read fine, no rows | `EMPTY` | none | phase SUCCESS |
+
+**Two of those rows are measured, not reasoned.** A refused read records phase **SUCCESS** — the sample
+describes the pipe, not the answer — and a read still in flight records **nothing at all**, so "no sample"
+must never be read as "never dispatched".
+
+**Checked and clear:** one gap read per confirmed Search (`_irRecoTrigger` is reached only from
+`_irApplySearch_`; two searches produced exactly two reads), no dispatch from expanding a row, no auto-retry
+of a timeout, and `ERROR` is never degraded into `EMPTY` or a zero — those are separate branches of
+`recommendationReadiness`.
+
+**Still UNVERIFIED:** whether the production read actually ran the full 45 s. Only the Owner-side sample can
+say, and the one-line passive command for it is in the acceptance list.
