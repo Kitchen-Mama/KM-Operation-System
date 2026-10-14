@@ -251,7 +251,16 @@ var cDone = Promise.resolve(boot.hooks.mount()).then(function () {
 
   ok(rendered.indexOf('sp-badge--missing') !== -1, 'C1 a null priority renders the MISSING badge');
   ok(rendered.indexOf('sp-pri--none') !== -1, 'C2 and its value cell is the "no value" marker, not a number');
-  ok(/sp-pri">50</.test(rendered), 'C3 a set priority renders its number');
+  /* S8-B3-R3-CP2O - THE FORM OF C3/C7 IS CORRECTED, AND IT IS NAMED RATHER THAN QUIETLY WIDENED.
+     Both pinned the literal `sp-pri">50<`, which is a statement about ATTRIBUTE ORDER, not about the number
+     in the cell. CP2O adds `title="<raw value>"` to the same span so the exact stored weight can be read
+     without entering Edit, and that inserts an attribute between the class and the `>`. The sentence each
+     assertion makes - "a set priority renders its number" - is still exactly true.
+     The replacement is NOT looser where it matters: it still requires the number to be the cell's text
+     content, and C3a below additionally requires the raw value to be carried, which the old form did not
+     check at all. */
+  ok(/sp-pri"[^>]*>50</.test(rendered), 'C3 a set priority renders its number');
+  ok(/sp-pri" title="50"/.test(rendered), 'C3a and the cell carries the raw stored value for inspection');
   ok(rendered.indexOf('sp-badge--set') !== -1, 'C4 and the SET badge');
   // The defect this page exists to make impossible: a MISSING row rendered as 0.
   ok(!/sp-pri">0</.test(rendered), 'C5 no MISSING row is rendered as 0');
@@ -267,7 +276,8 @@ var cDone = Promise.resolve(boot.hooks.mount()).then(function () {
     var b3 = bootPage({ rows: [{ company: 'KM', country: 'US', marketplace: 'Amazon', allocationPriority: 0, currency: 'USD', status: 'active' }] });
     return b3.hooks.mount().then(function () {
       var h = b3.dom.byId['sp-rows'].innerHTML;
-      ok(/sp-pri">0</.test(h), 'C7 an explicit 0 renders as 0');
+      ok(/sp-pri"[^>]*>0</.test(h), 'C7 an explicit 0 renders as 0');
+      ok(/sp-pri" title="0"/.test(h), 'C7a with 0 as its raw value too - never blank, never a dash');
       ok(h.indexOf('sp-badge--set') !== -1, 'C8 and is badged SET, not Missing');
     });
   });

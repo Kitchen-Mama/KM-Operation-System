@@ -1001,7 +1001,21 @@ var ROUND_TOKENS = [
   // with the opening quote of the entry below, and the parser returns a sentence instead of a token.
   // Measured: writing R52 followed by an apostrophe and s made three suites report that the current
   // application token was a fragment of this comment.
-  'r53-coldstartshell-20261013'];
+  'r53-coldstartshell-20261013',
+  // S8-B3-R3-CP2O - THE SECOND-LAYER SETTLEMENT FIX AND THE PRIORITY DISPLAY FORMAT. Two route-owned page
+  // files change bytes a published browser already holds: inventory-replenishment.js (the Execution panel
+  // completion notification was ordered before the state change it announces, so the panel held its skeleton
+  // for the life of the row) and site-priority.js (a weight is printed exactly instead of as a raw double).
+  //
+  // R53 IS ON ORIGIN AND HAS BEEN SERVED - it went out with the seven-commit CP2M publication - so reusing it
+  // would strand every browser holding it on the unfixed page permanently. That is the same rule R53 itself
+  // records about R52, applied to R53.
+  //
+  // THE MAP SERIES IS DELIBERATELY NOT TOUCHED: no map file changed this round, and rotating a family whose
+  // bytes did not move is the misplaced-token defect these rules check in both directions.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r54-settlement-20261014'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

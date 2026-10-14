@@ -6435,9 +6435,33 @@ function _irHydrateDraftForAppliedScope_(opts) {
             }
             // F1-7N-FB-4G-A1-R1 - hydration is one of the EXECUTION panel's four readiness inputs and none of
             // the Recommendation's, so only that gate is told.
+            //
+            // S8-B3-R3-CP2O - THE FLAG IS CLEARED FIRST, AND THAT ORDER IS THE WHOLE FIX.
+            //
+            // `done()` is what sets `_irDraftHydrateInFlight` false, and this pump was called BEFORE it. So the
+            // one notification the Execution panel ever receives about this hydrate carried
+            // `hydrationInFlight: true`; `executionReadiness` reads that as its second input and answers
+            // LOADING; `report` accepts it; `settle()` declines because LOADING is not terminal. THEN the flag
+            // was cleared, and nothing reported again - so the panel held its skeleton for the rest of the
+            // row's life. `_irOnExposureSettled_` says in its own comment that this pump "is what releases that
+            // panel from its skeleton", and one line of ordering was the difference between that being true and
+            // being false.
+            //
+            // Not a race: the notification was strictly ordered before the state change it exists to announce,
+            // so it announced the state that was already on screen. It also suppressed the FAILED case - an
+            // exposure read that failed could not surface its named error and its Retry, because the
+            // in-flight check short-circuits ahead of the exposure branch.
+            //
+            // Nothing else moves. The pump still consults the gate's own generation / sku / scope / search /
+            // row guards, so a superseded answer still paints nothing; the scope guard above still returns
+            // WITHOUT notifying, because the panel on screen then belongs to a different station.
+            var settled = done(ok);
             if (typeof _irRevealPumpExec_ === 'function') { try { _irRevealPumpExec_(); } catch (eP) {} }
-            return done(ok);
-        })['catch'](function () { if (typeof _irRevealPumpExec_ === 'function') { try { _irRevealPumpExec_(); } catch (eP2) {} } return done(false); });
+            return settled;
+            // The trailing catch keeps the same order for the same reason. It is UNREACHABLE with the body
+            // above - every statement that could throw is already inside its own try - so it is defence in
+            // depth and is reported as such rather than counted as a fixed path.
+        })['catch'](function () { var settledE = done(false); if (typeof _irRevealPumpExec_ === 'function') { try { _irRevealPumpExec_(); } catch (eP2) {} } return settledE; });
 }
 window._irHydrateDraftForAppliedScope_ = _irHydrateDraftForAppliedScope_;
 function _clearAllocationDraft() {

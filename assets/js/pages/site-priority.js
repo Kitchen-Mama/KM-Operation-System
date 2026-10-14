@@ -87,6 +87,43 @@
     return { state: 'SET', value: n };
   }
 
+  /* S8-B3-R3-CP2O - HOW A WEIGHT IS SHOWN. DISPLAY ONLY.
+     ----------------------------------------------------------------------------------------------------
+     `String(n)` put `0.30000000000000004` and `0.04400000000000001` in a table cell, because the drag rule
+     is arithmetic on IEEE doubles and midpoints land on float tails. Rounding everything to two decimals
+     would fix the width and introduce something far worse: two DIFFERENT stored weights printing the same
+     string. A fake tie on this page is not cosmetic - the order IS the meaning, and two rows that read
+     identically while ranking differently is the one thing the table must never show.
+
+     THE RULE: print the two-decimal form ONLY when it IS the value. Otherwise print the shortest string
+     that reads back as exactly this number, which is what `String(n)` already gives - including scientific
+     notation for the extremes, which is kept rather than expanded.
+
+     SO EVERY WEIGHT PRINTS EXACTLY, AND THAT IS WHAT MAKES A FAKE TIE IMPOSSIBLE RATHER THAN UNLIKELY:
+     both branches return a string `s` with `Number(s) === n`, so two different numbers cannot produce the
+     same string - if they did, `Number(s)` would have to equal both. Injective by construction, for
+     adjacent rows and for any other pair, with no need to look at the neighbours.
+
+     AND NOTHING HERE IS EVER APPROXIMATE, so nothing has to be LABELLED approximate. The round asked that
+     an approximate display must not be misrepresented as the exact stored value; this meets that by not
+     producing one. The exact value is additionally carried in the cell's `title` so it can be read
+     without entering Edit.
+
+     WHAT THIS IS NOT FOR: the payload, the compare-and-set, the ordering comparator and the midpoint
+     arithmetic all take the NUMBER. Formatted text never reaches any of them - `commitPriority` is handed
+     `v.value`, the CAS carries `before.value`, `weightOf` returns `c.value`, and this function is called
+     nowhere near them. */
+  function formatWeight(n) {
+    if (typeof n !== 'number' || !isFinite(n)) return '';
+    var full = String(n);
+    var short = n.toFixed(2);
+    if (short.indexOf('.') !== -1) short = short.replace(/0+$/, '').replace(/\.$/, '');
+    // `Number(short) === n` is the whole test: it asks whether the shortened form IS the value, not whether
+    // it looks close to it.
+    if (Number(short) === n) return short.length <= full.length ? short : full;
+    return full;
+  }
+
   // Validation for OPERATOR INPUT. Deliberately stricter than `classify`, which reads what is already stored:
   // a value someone is typing now has no reason to be invalid, so a refusal here is cheaper than a refusal
   // three layers down inside the allocator.
@@ -495,12 +532,15 @@
       // which position was refused, and inventing a weight to fill the cell would be the one thing this
       // page must never do.
       priorityCell = '<span class="sp-pri sp-pri--preview' + (preview.value === null ? ' sp-pri--refused' : '')
-        + '">' + (preview.value === null ? '&#8212;' : esc(String(preview.value))) + '</span>'
-        + '<span class="sp-prev-was">' + (c.state === 'SET' ? 'was ' + esc(String(c.value)) : 'was Missing')
+        + '">' + (preview.value === null ? '&#8212;' : esc(formatWeight(preview.value))) + '</span>'
+        + '<span class="sp-prev-was">' + (c.state === 'SET' ? 'was ' + esc(formatWeight(c.value)) : 'was Missing')
         + '</span>';
     } else {
-      priorityCell = (c.state === 'SET' ? '<span class="sp-pri">' + esc(String(c.value)) + '</span>'
-                                        : '<span class="sp-pri sp-pri--none">—</span>');
+      // `title` carries the raw stored value. The text is already exact, so the two agree except in
+      // presentation - but it means the precise figure is readable without opening Edit.
+      priorityCell = (c.state === 'SET'
+        ? '<span class="sp-pri" title="' + esc(String(c.value)) + '">' + esc(formatWeight(c.value)) + '</span>'
+        : '<span class="sp-pri sp-pri--none">—</span>');
     }
 
     // THREE DIFFERENT THINGS THAT ARE ALL "NOT THE STORED VALUE", and they are never merged: a draft awaiting
@@ -790,7 +830,7 @@
     if (_move.live) {
       bar.className = 'sp-draft sp-draft--live';
       bar.innerHTML = '<p class="sp-draft__msg">Moving ' + label + '. '
-        + (p.ok ? 'Drop here to propose <strong>' + esc(String(p.value)) + '</strong>.'
+        + (p.ok ? 'Drop here to propose <strong>' + esc(formatWeight(p.value)) + '</strong>.'
                 : '<span class="sp-draft__no">' + esc(p.reason) + '</span>')
         + ' Use the arrow keys to move, Space or Enter to drop, Escape to cancel.</p>';
       return;
@@ -803,13 +843,13 @@
     }
     bar.className = 'sp-draft sp-draft--ready';
     bar.innerHTML = '<p class="sp-draft__msg"><strong>Proposed, not saved.</strong> ' + label
-      + ' would be stored as <strong>' + esc(String(p.value)) + '</strong>'
+      + ' would be stored as <strong>' + esc(formatWeight(p.value)) + '</strong>'
       // THE FACTOR IS READ FROM THE CONSTANT, NOT SPELLED AGAIN. A sentence that says "x 1.1" beside a rule
       // that no longer multiplies by 1.1 is worse than no sentence, and two copies of a number is how that
       // happens. There is one copy, and the explanation quotes it.
-      + (p.basis === 'TOP' ? ' — above the current highest (' + esc(String(p.lower)) + ' x ' + TOP_FACTOR + ').'
-        : p.basis === 'BOTTOM' ? ' — below the current lowest (' + esc(String(p.upper)) + ' x ' + BOTTOM_FACTOR + ').'
-        : ' — between ' + esc(String(p.upper)) + ' and ' + esc(String(p.lower)) + '.')
+      + (p.basis === 'TOP' ? ' — above the current highest (' + esc(formatWeight(p.lower)) + ' x ' + TOP_FACTOR + ').'
+        : p.basis === 'BOTTOM' ? ' — below the current lowest (' + esc(formatWeight(p.upper)) + ' x ' + BOTTOM_FACTOR + ').'
+        : ' — between ' + esc(formatWeight(p.upper)) + ' and ' + esc(formatWeight(p.lower)) + '.')
       + ' No other site is changed.</p>'
       + '<button type="button" class="sp-btn sp-btn--primary" data-sp-move-save="1">Save this move</button>'
       + '<button type="button" class="sp-btn sp-btn--ghost" data-sp-move-cancel="1">Cancel</button>';
@@ -1229,8 +1269,8 @@
         + 'same company / country / marketplace values.';
       if (rb.verdict === 'ROW_CHANGED') return 'the row answering to ' + label + ' is a DIFFERENT record than '
         + 'the one this save was prepared against.';
-      return 'a fresh read shows ' + (rb.c && rb.c.state === 'SET' ? rb.c.value : String(rb.c && rb.c.state).toLowerCase())
-        + ' rather than ' + v.value + '.';
+      return 'a fresh read shows ' + (rb.c && rb.c.state === 'SET' ? formatWeight(rb.c.value) : String(rb.c && rb.c.state).toLowerCase())
+        + ' rather than ' + formatWeight(v.value) + '.';
     }
 
     // ---- THE FOUR OUTCOMES ---------------------------------------------------------------------------------
@@ -1279,14 +1319,14 @@
         if (rb.verdict === 'MATCH') {
           if (!unknown) {
             return done('success', 'Saved and VERIFIED by re-reading the reference. ' + label
-              + ' now has priority ' + v.value + '.' + placed(), true);
+              + ' now has priority ' + formatWeight(v.value) + '.' + placed(), true);
           }
           // A MATCH AFTER AN UNKNOWN OUTCOME IS NOT A CONFIRMED SAVE, AND IS NOT LABELLED AS ONE.
           // The answer was lost, so this read cannot attribute the stored value to THIS request rather than to
           // a concurrent one, and it cannot say whether updated_by / updated_at completed — the handler writes
           // the priority first precisely so this case is recoverable rather than invisible.
           return done('warn', 'The write outcome was UNKNOWN (' + why + '). A fresh read now shows ' + label
-            + ' at priority ' + v.value + ', which is the intended value — but this does NOT prove this request '
+            + ' at priority ' + formatWeight(v.value) + ', which is the intended value — but this does NOT prove this request '
             + 'is what stored it, and the audit fields may be incomplete. Nothing was re-sent. Treat the value '
             + 'as correct and the save as unconfirmed.' + placed(), true);
         }
@@ -1536,6 +1576,9 @@
     // that matter — a product that cannot escape zero, a midpoint that overflows, a factor that fails to move
     // a denormal — are tested as numbers rather than inferred from a screenshot.
     proposeWeight: proposeWeight, midpoint: midpoint, isStorableWeight: isStorableWeight,
+    // DISPLAY ONLY - exported so the suite can prove it is injective and that nothing it returns ever
+    // reaches a payload, a compare-and-set, the comparator or the arithmetic.
+    formatWeight: formatWeight,
     displayOrder: displayOrder, weightOf: weightOf, isOrdered: isOrdered,
     TOP_FACTOR: TOP_FACTOR, BOTTOM_FACTOR: BOTTOM_FACTOR,
     _state: function () {

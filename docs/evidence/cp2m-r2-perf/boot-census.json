@@ -1,9 +1,9 @@
 {
- "capturedAt": "2026-10-13",
- "note": "Counted from index.html as it stands. The suite recounts every field from the live file and FAILS on a mismatch, so this cannot quietly describe a past build.",
+ "capturedAt": "2026-10-14",
+ "note": "Counted from index.html as it stands. The suite recounts every field from the live file and FAILS on a mismatch, so this cannot quietly describe a past build. S8-B3-R3-CP2O: bootScriptBytes fell by 52 because the application cache token rotated from r53-coldstartshell-20261013 (27 chars) to r54-settlement-20261014 (23 chars) across 13 references in app.js. No script was added, removed or moved: the count, the tag total and the page-script bytes are all unchanged.",
  "bootScriptCount": 65,
- "bootScriptBytes": 3811075,
- "bootScriptMB": 3.635,
+ "bootScriptBytes": 3811023,
+ "bootScriptMB": 3.634,
  "bootScriptTagsTotal": 67,
  "externalCdnScripts": [
   "https://cdn.jsdelivr.net/npm/chart.js",

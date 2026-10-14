@@ -273,7 +273,28 @@ eq(t29.ok, true, 'A10 T29 — a top placement above 0.04 now ACCEPTS');
 eq(t29.value, 0.044000000000000004, 'A10a at 0.044000000000000004, the unrounded double');
 ok(t29.value > 0.04, 'A10b which is STRICTLY above 0.04 — the property the rounding destroyed');
 eq(Number(t29.value.toFixed(2)), 0.04, 'A10c and rounding it to 2dp WOULD have collapsed it — U4, reproduced');
-ok(!/toFixed|Math\.round/.test(CODE), 'A10d and no rounding of a computed weight exists in the code');
+/* S8-B3-R3-CP2O - A10d IS SCOPED TO THE RULE, WHICH IS WHAT THE SENTENCE WAS ALWAYS ABOUT, AND IT IS THE
+   THIRD TIME THIS REPOSITORY HAS MADE THE SAME MISTAKE IN A GATE (E2, G4, G6 before it): a statement about
+   ONE function written as a statement about the WHOLE FILE.
+
+   What A10d means is that the WEIGHT RULE must not round - rounding to 2dp is precisely what collapsed
+   0.044 back to 0.04 and created U4. That is still asserted, now where it is true.
+
+   CP2O adds a DISPLAY formatter that calls toFixed(2) to decide whether two decimals ARE the value. It is
+   not a computed weight and never becomes one: nothing parses its output back, and §A10f pins that. The old
+   form would have failed this round while its own sentence stayed true. */
+var RULE_SRC = CODE.slice(CODE.indexOf('function proposeWeight'), CODE.indexOf('function displayOrder'));
+ok(RULE_SRC.length > 400, 'A10d0 (the weight rule was located in the source)', RULE_SRC.length);
+ok(RULE_SRC.indexOf('proposeWeight') !== -1 && RULE_SRC.indexOf('midpoint') !== -1,
+  'A10d1 (and it contains both the proposal and the midpoint)');
+ok(!/toFixed|Math\.round/.test(RULE_SRC), 'A10d and no rounding of a computed weight exists in the RULE');
+// The ONE place rounding may appear, and it is display-only.
+var FMT_SRC = CODE.slice(CODE.indexOf('function formatWeight'), CODE.indexOf('function validateInput'));
+ok(FMT_SRC.indexOf('toFixed(2)') !== -1, 'A10e the display formatter is the one place two decimals appear');
+eq((CODE.match(/toFixed/g) || []).length, 1, 'A10e1 and it is the ONLY toFixed in the page');
+eq((CODE.match(/Math\.round/g) || []).length, 0, 'A10e2 with no Math.round anywhere at all');
+ok(CODE.indexOf('Number(formatWeight') === -1,
+  'A10f and nothing parses the formatted text back into a number, so it can never re-enter the arithmetic');
 
 // ---- the very small end, where a factor stops moving a number at all
 eq(PW(null, Number.MIN_VALUE).ok, false,
