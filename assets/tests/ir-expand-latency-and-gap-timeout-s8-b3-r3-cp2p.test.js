@@ -61,9 +61,17 @@ function runMed(r, f) { return med(expands(r).map(f)); }
 // ==============================================================================================================
 section('A. THE CAPTURES DESCRIBE THE PAGE THAT IS ON DISK');
 // ==============================================================================================================
+// S8-B3-R3-CP2P-R1 - THESE CAPTURES ARE NOW BASELINE, AND THE ASSERTION SAYS SO.
+// They were taken against the page BEFORE the approved render-pass share, and against the runner before its
+// phase attribution was corrected. Demanding that they still match disk would be demanding that the page
+// keep the redundancy they were written to document. What still has to be true is that they RECORD what
+// they ran against, and that it is not what is on disk now.
 Object.keys(SHIPPED[0].sources).forEach(function (rel) {
-  eq(sha(rel), SHIPPED[0].sources[rel], 'A1 ' + rel.split('/').pop() + ' is unchanged since the capture');
+  ok(/^[0-9a-f]{16}$/.test(String(SHIPPED[0].sources[rel])),
+    'A1 BASELINE: the capture records the ' + rel.split('/').pop() + ' it ran against', SHIPPED[0].sources[rel]);
 });
+ok(SHIPPED[0].sources['assets/js/pages/inventory-replenishment.js'] !== sha('assets/js/pages/inventory-replenishment.js'),
+  'A1a BASELINE: and that page is NOT the one on disk - CP2P-R1 changed it, by approval');
 ok(VARIANT[0].sources['assets/js/pages/inventory-replenishment.js']
    !== SHIPPED[0].sources['assets/js/pages/inventory-replenishment.js'],
   'A2 the variant captures describe DIFFERENT page source — they are not a copy of the shipped run');
@@ -97,7 +105,8 @@ ok(/getReplenishmentData\(\)/.test(code(extractFn(PAGE, '_irRevealSkuData_'))),
 ok(/getReplenishmentData\(\)/.test(code(extractFn(PAGE, '_irRecoRerenderSummariesRender_'))),
   'B3b and every recommendation transition does it again for the whole card set');
 ok(/_getCloudReplenishmentData/.test(code(extractFn(PAGE, 'getReplenishmentData'))),
-  'B4 and the function behind them is the full cloud assembly, with no memo of any kind');
+  'B4 and the function behind them is still the full cloud assembly - it produces the rows, and CP2P-R1 '
+  + 'changed only how often one synchronous render asks it for them');
 
 // ==============================================================================================================
 section('C. §A — THE DEFERRED VARIANT: measured, paired, and NOT shipped');

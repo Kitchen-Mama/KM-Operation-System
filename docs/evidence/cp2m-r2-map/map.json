@@ -15,16 +15,16 @@
    "glVersion": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
    "contextLost": false,
    "lostAtMs": null,
-   "frames": 357,
-   "heldForMs": 6760
+   "frames": 360,
+   "heldForMs": 7848
   },
   "note": "The forced --use-gl=swiftshader of the original entry point is NOT passed here; see the file header and docs/evidence/cp2o-r2-gl/gl-probe.json."
  },
  "sources": {
-  "index.html": "b6c9d44a441d2649",
+  "index.html": "8c8a2e0ec53dd528",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
   "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
-  "assets/js/app.js": "19aa183e823b631f",
+  "assets/js/app.js": "951a01f7c7c2c56a",
   "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c",
   "assets/tests/_cp2o-r2-map-capture.js": "d41703314dccd624",
   "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
@@ -58,7 +58,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 1677,
+    "canvasWaitMs": 1580,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -82,7 +82,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 1105,
+    "canvasWaitMs": 916,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -106,7 +106,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 1086,
+    "canvasWaitMs": 922,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
@@ -200,7 +200,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 979,
+    "canvasWaitMs": 876,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -224,7 +224,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 968,
+    "canvasWaitMs": 926,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -248,7 +248,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 951,
+    "canvasWaitMs": 907,
     "canvasAppeared": true,
     "dragPath": {
      "from": [

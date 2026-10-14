@@ -327,17 +327,34 @@ function measureScript(capId, opts) {
     var enter = marksFor.filter(function(m){ return m.tag==='handler.enter'; })[0] || null;
     var exit  = marksFor.filter(function(m){ return m.tag==='handler.exit'; })[0] || null;
     var calls = out.getCalls.slice(before);
+    /* S8-B3-R3-CP2P-R1 - PHASE ATTRIBUTION, NOT A SUBTRACTION.
+       CP2P reported ms_build_rest as (handler duration) minus (every assembly seen in the whole window),
+       which mixed two different clocks: the handler is ONE synchronous task, while the window also contains
+       assemblies that run LATER, from async continuations. The result was routinely negative, which is the
+       tell. Each call is now attributed to the phase it actually ran in, by its own timestamp, and the two
+       are reported separately and never subtracted from one another. */
+    var inHandler = (enter && exit)
+      ? calls.filter(function(c){ return c.at >= enter.t && c.at <= exit.t; }) : [];
+    var afterHandler = (enter && exit)
+      ? calls.filter(function(c){ return c.at > exit.t; }) : calls;
+    var sum = function(a){ return +a.reduce(function(s,c){ return s + c.ms; }, 0).toFixed(2); };
     var rec = {
       tag: tag,
       t_click: +base.toFixed(2),
       t_handler_enter: enter ? enter.t : null,
       t_handler_exit: exit ? exit.t : null,
       ms_click_to_handler: enter ? +(enter.t - base).toFixed(2) : null,
-      ms_handler_total: (enter && exit) ? +(exit.t - enter.t).toFixed(2) : null,
-      ms_data_total: +calls.reduce(function(s,c){ return s + c.ms; }, 0).toFixed(2),
+      // THE SYNCHRONOUS HANDLER. One task, wall clock, nothing else in it.
+      ms_handler_sync: (enter && exit) ? +(exit.t - enter.t).toFixed(2) : null,
+      // What the handler itself spent assembling, and how often — a SUBSET of ms_handler_sync.
+      ms_data_in_handler: sum(inHandler),
+      calls_in_handler: inHandler.length,
+      // What ran AFTER the handler returned, from async continuations. A different clock; never subtracted
+      // from the one above, and never added to it as though they were one elapsed period.
+      ms_data_after_handler: sum(afterHandler),
+      calls_after_handler: afterHandler.length,
       data_calls: calls.length,
       data_rows: calls.length ? calls[0].rows : 0,
-      ms_build_rest: (enter && exit) ? +((exit.t - enter.t) - calls.reduce(function(s,c){ return s+c.ms; },0)).toFixed(2) : null,
       t_first_paint: painted.ok ? painted.v.t : null,
       ms_click_to_paint: painted.ok ? +(painted.v.t - base).toFixed(2) : null,
       ms_handler_exit_to_paint: (painted.ok && exit) ? +(painted.v.t - exit.t).toFixed(2) : null,
@@ -421,7 +438,7 @@ function measureScript(capId, opts) {
       frameTag = 'collapse';
       var t0 = now(); mark('collapse.click'); fr[3].click(); mark('collapse.done');
       await sleep(400);
-      out.expands.push({ tag: 'collapse', ms_handler_total: +(out.marks.filter(function(x){return x.tag==='collapse.done';})[0].t - t0).toFixed(2),
+      out.expands.push({ tag: 'collapse', ms_handler_sync: +(out.marks.filter(function(x){return x.tag==='collapse.done';})[0].t - t0).toFixed(2),
         panelAfter: !!document.querySelector('#ops-section .replen-expand-panel--scroll') });
       frameTag = '';
 
@@ -681,8 +698,9 @@ async function main() {
       rows: m && m.rowCount, fatal: m && m.fatal, bootWaitMs: m && m.bootWaitMs,
       expands: (m && m.expands || []).map(e => ({ tag: e.tag, click_to_paint: e.ms_click_to_paint,
         shellFirst: e.first_frame_was_shell, real_panel: e.ms_click_to_real_panel,
-        exec_resolved: e.ms_click_to_exec_resolved, handler: e.ms_handler_total,
-        data: e.ms_data_total, calls: e.data_calls })) }, null, 1));
+        exec_resolved: e.ms_click_to_exec_resolved, handler_sync: e.ms_handler_sync,
+        data_in: e.ms_data_in_handler, data_after: e.ms_data_after_handler,
+        calls_in: e.calls_in_handler, calls_after: e.calls_after_handler })) }, null, 1));
   });
 }
 

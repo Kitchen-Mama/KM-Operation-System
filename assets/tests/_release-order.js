@@ -1015,7 +1015,21 @@ var ROUND_TOKENS = [
   // bytes did not move is the misplaced-token defect these rules check in both directions.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r54-settlement-20261014'];
+  'r54-settlement-20261014',
+  // S8-B3-R3-CP2P-R1 - ONE SYNCHRONOUS RENDER, ONE ASSEMBLY. One route-owned page file changes bytes a
+  // published browser already holds: inventory-replenishment.js. The callers that run in the SAME
+  // synchronous task now share one row assembly, released by a microtask, rebuilt whenever scope, LTS,
+  // Search generation, workspace model identity, exposure entry identity or exposure readiness moved.
+  // Measured over eight interleaved pairs at 100 SKUs: first paint 73.8 -> 56.3 ms and the Execution panel
+  // resolved 239.8 -> 123.0 ms, both better in eight of eight pairs.
+  //
+  // R54 WENT OUT WITH THE PUBLISHED MAIN, so reusing it would strand every browser holding it on the old
+  // handler. Same rule R54 records about R53, applied to R54.
+  //
+  // THE MAP SERIES IS DELIBERATELY NOT TOUCHED: no map file changed this round.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r55-rendershare-20261014'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

@@ -1359,6 +1359,65 @@ function calculateShippingSuggestions(skuData, marketplace) {
     return [];
 }
 
+/**
+ * S8-B3-R3-CP2P-R1 §A — ONE SYNCHRONOUS RENDER, ONE ASSEMBLY. OWNER-APPROVED, AND BOUNDED TO THAT.
+ *
+ * WHAT WAS MEASURED (docs/evidence/cp2p-ir-expand/, real page, 100-SKU fixture). `_getCloudReplenishmentData`
+ * re-assembles EVERY row of the station from twelve source tables, and one expand asks for it about nine
+ * times: the handler finds one row in it, the reveal looks the same row up again, and every recommendation
+ * transition rebuilds the whole card set from it. The same array, rebuilt nine times inside one interaction,
+ * with no data change in between.
+ *
+ * WHAT THIS IS. A result shared by the callers that run in the SAME SYNCHRONOUS TASK. It is released by a
+ * microtask, which runs after the current task and BEFORE any later task, timer or promise continuation, so
+ * it cannot be read by the next event, by an async response, or after a station switch. It is not a cache of
+ * the station, it has no expiry to tune, and nothing survives the render that produced it.
+ *
+ * WHAT IT IS NOT, because the distinction is the whole approval. It is NOT a station memo. It does not
+ * outlive an event. It does not answer across a Search, an LTS change, a workspace read landing, or an
+ * exposure entry becoming READY: every one of those is a dependency, and a dependency that moved means a
+ * rebuild. The underlying assembly, its source tables, the Loader, the 13+6 and every write path are
+ * untouched; this shares a result, it does not change one.
+ *
+ * SAFE TO SHARE because no caller mutates what it receives: every call site reads the array through find,
+ * filter or forEach, no call site sorts, pushes or splices it, and no call site assigns to a row.
+ */
+var _irRowsPass = null;      // { deps, rows } - alive for ONE synchronous task, never longer
+
+function _irRowsPassDeps_() {
+    var sc = (typeof _irRenderScope_ === 'function') ? _irRenderScope_() : {};
+    return {
+        // SCOPE - the applied station, and the client-side filter that is read live.
+        country: String(sc.country || ''),
+        marketplaceId: String(sc.marketplaceId || ''),
+        lts: String(sc.ltsFilter || ''),
+        searchGen: (typeof _irSearch !== 'undefined' && _irSearch) ? _irSearch.seq : null,
+        // SOURCE VERSION - by object IDENTITY, so a new workspace read or a newly READY exposure entry is a
+        // different source even when it carries equal-looking contents.
+        workspace: (typeof _irEffectiveWorkspace === 'function') ? !!_irEffectiveWorkspace() : null,
+        readModel: (typeof _irReadModel !== 'undefined') ? _irReadModel : null,
+        exposureEntry: (typeof _irExposureActiveEntry_ === 'function') ? _irExposureActiveEntry_() : null,
+        // READINESS - a row built while the second layer was NOT_LOADED is not the row it will be when READY.
+        exposureState: (typeof _irExposureStateForRender_ === 'function') ? _irExposureStateForRender_() : null
+    };
+}
+function _irRowsPassSame_(a, b) {
+    if (!a || !b) return false;
+    return a.country === b.country && a.marketplaceId === b.marketplaceId && a.lts === b.lts
+        && a.searchGen === b.searchGen && a.workspace === b.workspace
+        && a.readModel === b.readModel && a.exposureEntry === b.exposureEntry
+        && a.exposureState === b.exposureState;
+}
+function _irRowsPassRelease_() { _irRowsPass = null; }
+/* THE RELEASE IS THE BOUNDARY. A microtask is scheduled the moment a result is stored, so the result is gone
+   before anything that is not part of this same synchronous render can reach it. setTimeout would be wrong
+   here: it runs in a LATER task, which is exactly the lifetime the approval excludes. */
+function _irRowsPassArm_() {
+    if (typeof Promise === 'function' && Promise.resolve) { Promise.resolve().then(_irRowsPassRelease_); return 'microtask'; }
+    _irRowsPass = null; return 'immediate';
+}
+window._irRowsPassRelease_ = _irRowsPassRelease_;
+
 function getReplenishmentData() {
     // === Demo Data Layer: Phase 2A ===
     if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
@@ -1370,7 +1429,16 @@ function getReplenishmentData() {
     // from existing snapshot/forecast/inventory tables via IRMap (Phase 1). Source tables that
     // are not yet exposed to the frontend return [] → every field safe-falls-back to 0 / '--'
     // (no fabricated data). See docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md v1.0.
-    return _getCloudReplenishmentData();
+    //
+    // S8-B3-R3-CP2P-R1 §A - the callers in THIS synchronous render share one assembly. The dependency set is
+    // compared first and a change in any of it rebuilds; the result is released by a microtask, so it can
+    // never answer a later event. See _irRowsPassDeps_ for what counts as a dependency and why.
+    var _deps = _irRowsPassDeps_();
+    if (_irRowsPass && _irRowsPassSame_(_irRowsPass.deps, _deps)) return _irRowsPass.rows;
+    var _rows = _getCloudReplenishmentData();
+    _irRowsPass = { deps: _deps, rows: _rows };
+    _irRowsPassArm_();
+    return _rows;
     return siteData.map(item => {
         const mockData = replenishmentMockData.find(m => m.sku === item.sku) || {
             lifecycle: "Mature",

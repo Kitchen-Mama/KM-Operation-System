@@ -172,7 +172,13 @@ function runScenario(browser, scenario) {
 
       const udd = path.join(OUT, '.chrome-profile-' + scenario);
       const args = ['--headless=new', '--disable-gpu-sandbox', '--no-sandbox', '--no-first-run',
-        '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--disable-dev-shm-usage',
+        /* S8-B3-R3-CP2O-R2 - NOT --use-gl=swiftshader. That round measured this machine losing a SOFTWARE
+           WebGL context 1313 ms after creating it, while every real-GPU configuration held one for
+           9.8-11.0 s (docs/evidence/cp2o-r2-gl/gl-probe.json). This capture asserts globeDestroys 0 and
+           contextLost 0, so under the forced software rasteriser it would be recording the rasteriser,
+           not the page. Chrome picks the real adapter; the unsafe flag stays so a GPU-less machine still
+           falls back and reports a lost context truthfully rather than failing to start. */
+        '--enable-unsafe-swiftshader', '--disable-dev-shm-usage',
         '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
         '--user-data-dir=' + udd, '--window-size=1280,900',
         'http://127.0.0.1:' + port + '/wrap.html'];

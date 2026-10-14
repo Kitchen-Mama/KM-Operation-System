@@ -3245,3 +3245,85 @@ of a timeout, and `ERROR` is never degraded into `EMPTY` or a zero — those are
 
 **Still UNVERIFIED:** whether the production read actually ran the full 45 s. Only the Owner-side sample can
 say, and the one-line passive command for it is in the acceptance list.
+
+---
+
+### D-S8-B3-49 — One synchronous render shares one assembly, and nothing outlives it — **FROZEN (CP2P-R1)**
+
+**Decision, under Owner approval.** The callers of `getReplenishmentData()` that run in the SAME SYNCHRONOUS
+TASK share one row assembly. The share is released by a microtask, and a dependency that moved forces a
+rebuild even inside that task.
+
+**Measured, eight interleaved pairs, 100 SKUs** (`docs/evidence/cp2p-r1-share/`):
+
+| | baseline | shared | paired delta |
+|---|---|---|---|
+| click -> first paint | 73.8 ms | 56.3 ms | **-20.1 ms, better in 8 of 8** |
+| click -> Execution resolved | 239.8 ms | **123.0 ms** | **-113 ms, better in 8 of 8** |
+| synchronous handler | 48.0 ms | 30.1 ms | |
+
+Both improved. CP2P withdrew a variant that bought one with the other; this one does not, and the
+measurement is paired for the reason CP2P learned the hard way.
+
+**The dependency set, which is the whole boundary.** Scope (country, marketplace_id), the live LTS filter,
+the Search generation, the workspace model BY IDENTITY, the exposure entry BY IDENTITY, exposure readiness,
+and workspace-vs-legacy mode. An equal-looking new model object is a DIFFERENT source. The release is a
+microtask and deliberately not a timer: a timer runs in a LATER task, which is exactly the lifetime the
+approval excludes.
+
+**Why it is safe to share an array.** Every call site reads through `find`, `filter` or `forEach`; none
+sorts, pushes or splices it; none assigns to a row. That was checked across all fourteen call sites before
+the share was written, not assumed.
+
+**THE CALL COUNT IS NOT THE METRIC, and the baseline gates say so.** The callers still call about nine times
+per expand. What changed is what a repeat costs. The CP2P assertions that recorded the historical redundancy
+are relabelled BASELINE and read the baseline captures; one of them carried a sentence ("with no memo of any
+kind") that CP2P-R1 made false while its regex stayed true, and the sentence was corrected rather than left
+to pass silently.
+
+**Unchanged:** the assembly itself, its twelve source tables, the Loader, the Boot Arbiter, the 13+6, every
+write path, and every readiness rule.
+
+### D-S8-B3-50 — The gap read cannot say where its 45 seconds went, and that is a code fact — **FROZEN (CP2P-R1)**
+
+**Owner evidence, treated as complete and not re-requested:** 45013 ms / REQUEST_TIMEOUT, on
+`marketplace_id = MKT-RESUS-US-AMAZON`, `company = ResUS`, `country = US`, `marketplace = Amazon`, with the
+Runtime Master and `gapRequestedScope` in agreement. The company was taken from that record, never inferred
+from US/Amazon and never from the demo fixture.
+
+**What 45013 ms is.** `_kmFetchBounded_` aborts at `KM_READ_TIMEOUT_MS_` = 45 000 ms; the remainder is
+client overhead. It proves the CLIENT gave up. **It does not prove the server was slow** — reaching a
+client bound and a slow backend are different claims, and only one of them is in evidence.
+
+**Why the client cannot narrow it, and this is the finding.** `01_router.gs` builds `rtrEntryEvidence_()`
+— `routerEntryAt`, `routerRequestId`, `routerToHandlerMs` — and its own comment says it exists to
+"find the execution belonging to a client request that timed out". `60_` (the inventory workspace read)
+carries it. **`43_` never calls it**, and `gapBatchEnvelope_` emits only a handler-version marker: no
+`serverDurationMs`, no router entry. So of the three reads one Search dispatches within 44 ms of each other,
+the ONE that times out is the only one that cannot report where its time went.
+
+**What the handler does.** `gapReadScopeRows_` -> `gapReadObjects_` -> `sh.getDataRange().getValues()`
+reads the ENTIRE `inventory_replenishment_gap` sheet and filters for the one station in memory. The cost
+scales with the whole table, not with the requested scope.
+
+**The stages that remain indistinguishable from the client**, and none may be asserted over the others:
+browser dispatch; Apps Script dispatch, cold start or per-user execution contention; the handler itself
+(`openTarget` plus the full-sheet read); the 302 hop to googleusercontent; or a server that finished after
+the client had already aborted.
+
+**NOT DONE, deliberately:** no timeout raised, no retry added, no front-end calculation, no Recalculate or
+AI Support, and no ERROR degraded to EMPTY or 0.
+
+**Two minimal proposals, both requiring Owner approval because both touch GS:**
+
+1. **Make the gap read able to answer the question.** Have `gapBatchEnvelope_` carry `rtrEntryEvidence_()`
+   and a `serverDurationMs`, exactly as 40_/42_/60_ already do. Additive meta only: no formula, no schema,
+   no new table, no behaviour change. Roughly three lines in 43_. **Limit: it can only describe requests
+   that COMPLETE.** A request that times out still returns nothing, so this buys the ability to separate
+   "queued" from "executing" on the slow-but-successful reads, and nothing more.
+2. **Stop reading the whole table to answer for one station.** A scoped read in place of
+   `getDataRange().getValues()`. This is a read-strategy change, it is materially larger than (1), and its
+   benefit is unknown until the row count of the live table is known — so it should not be started on
+   the strength of a guess.
+
+**The one server-side artefact that would localise the stage** is named in the report, requested once.
