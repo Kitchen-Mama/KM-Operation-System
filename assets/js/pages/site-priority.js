@@ -87,41 +87,130 @@
     return { state: 'SET', value: n };
   }
 
-  /* S8-B3-R3-CP2O - HOW A WEIGHT IS SHOWN. DISPLAY ONLY.
+  /* S8-B3-R3-CP2O-R1 - HOW A WEIGHT IS SHOWN. DISPLAY ONLY.
      ----------------------------------------------------------------------------------------------------
-     `String(n)` put `0.30000000000000004` and `0.04400000000000001` in a table cell, because the drag rule
-     is arithmetic on IEEE doubles and midpoints land on float tails. Rounding everything to two decimals
-     would fix the width and introduce something far worse: two DIFFERENT stored weights printing the same
-     string. A fake tie on this page is not cosmetic - the order IS the meaning, and two rows that read
-     identically while ranking differently is the one thing the table must never show.
+     THE RULE, AS APPROVED: at most two decimals, trailing zeros removed. `110.00000000000001` reads as
+     `110`, which is what an operator needs to see. Precision is raised ONLY where it has to be - when two
+     DIFFERENT weights in the SAME COMPANY would otherwise print the same string, because the order is the
+     meaning and a fake tie there is unreadable. Very small and very large values keep their exponent
+     instead of becoming a wall of zeros or a 309-character integer.
 
-     THE RULE: print the two-decimal form ONLY when it IS the value. Otherwise print the shortest string
-     that reads back as exactly this number, which is what `String(n)` already gives - including scientific
-     notation for the extremes, which is kept rather than expanded.
+     WHAT THIS REPLACED, AND WHY THE REPLACEMENT WAS WRONG. CP2O printed the shortest EXACT form whenever
+     two decimals were not the value. That made every display round-trip, which does make a fake tie
+     impossible - and it also put `110.00000000000001` in a table cell, which is the thing the rule exists
+     to prevent. "Always exact" is a property that is easy to prove and was not what was asked for; it was
+     substituted for the requirement rather than derived from it.
 
-     SO EVERY WEIGHT PRINTS EXACTLY, AND THAT IS WHAT MAKES A FAKE TIE IMPOSSIBLE RATHER THAN UNLIKELY:
-     both branches return a string `s` with `Number(s) === n`, so two different numbers cannot produce the
-     same string - if they did, `Number(s)` would have to equal both. Injective by construction, for
-     adjacent rows and for any other pair, with no need to look at the neighbours.
-
-     AND NOTHING HERE IS EVER APPROXIMATE, so nothing has to be LABELLED approximate. The round asked that
-     an approximate display must not be misrepresented as the exact stored value; this meets that by not
-     producing one. The exact value is additionally carried in the cell's `title` so it can be read
-     without entering Edit.
+     SO A DISPLAY MAY NOW BE APPROXIMATE, AND WHERE IT IS, IT SAYS SO. `weightDisplayMap` reports
+     `approx` per value; the table carries the stored figure in the cell's `title`, and the sentences that
+     quote a weight append the exact value rather than presenting a rounded one as what was stored.
 
      WHAT THIS IS NOT FOR: the payload, the compare-and-set, the ordering comparator and the midpoint
-     arithmetic all take the NUMBER. Formatted text never reaches any of them - `commitPriority` is handed
-     `v.value`, the CAS carries `before.value`, `weightOf` returns `c.value`, and this function is called
-     nowhere near them. */
+     arithmetic all take the NUMBER. Nothing here is parsed back, and the Edit control still carries the
+     raw stored value because that is what an operator types against. */
+
+  // One candidate form at a fixed number of decimals, trailing zeros removed.
+  function weightFormAt(n, dp) {
+    var t = n.toFixed(dp);
+    if (t.indexOf('.') !== -1) t = t.replace(/0+$/, '').replace(/\.$/, '');
+    return t;
+  }
+
+  /* The DEFAULT form: two decimals. Two guards, each for a case two decimals cannot express.
+       - a NON-ZERO weight must never print as `0`; 1e-7 keeps its exponent instead.
+       - a value whose plain form is shorter than its two-decimal expansion uses the plain form, which is
+         what keeps MAX_VALUE at 23 characters rather than 309. */
   function formatWeight(n) {
     if (typeof n !== 'number' || !isFinite(n)) return '';
+    if (n === 0) return '0';
     var full = String(n);
-    var short = n.toFixed(2);
-    if (short.indexOf('.') !== -1) short = short.replace(/0+$/, '').replace(/\.$/, '');
-    // `Number(short) === n` is the whole test: it asks whether the shortened form IS the value, not whether
-    // it looks close to it.
-    if (Number(short) === n) return short.length <= full.length ? short : full;
-    return full;
+    var two = weightFormAt(n, 2);
+    if (Number(two) === 0) return full;
+    if (full.length < two.length) return full;
+    return two;
+  }
+
+  // Is this string a rounded view of this number, rather than the number?
+  function weightIsApprox(n, text) { return typeof n === 'number' && isFinite(n) && Number(text) !== n; }
+
+  /* THE COMPANY-SCOPED PASS. Given every weight that will appear together - the stored ones AND any
+     proposal being previewed beside them - return the string each one is drawn with.
+
+     Precision is raised ONLY for the values that actually collide, and only until they separate, so one
+     awkward pair cannot lengthen every other row in the company. If 20 decimals still cannot separate
+     them the exact forms are used, which cannot collide; and a final sweep catches the rare case where an
+     escalated form lands on a string some OTHER value already owns. */
+  function weightDisplayMap(values) {
+    var uniq = [];
+    (values || []).forEach(function (v) {
+      if (typeof v === 'number' && isFinite(v) && uniq.indexOf(v) === -1) uniq.push(v);
+    });
+    var out = {}, groups = {};
+    uniq.forEach(function (v) {
+      var b = formatWeight(v);
+      (groups[b] = groups[b] || []).push(v);
+    });
+    Object.keys(groups).forEach(function (b) {
+      var g = groups[b];
+      if (g.length === 1) { out[String(g[0])] = b; return; }
+      for (var dp = 3; dp <= 20; dp++) {
+        var seen = {}, cand = {}, clean = true;
+        for (var i = 0; i < g.length; i++) {
+          var t = weightFormAt(g[i], dp);
+          if (seen[t]) { clean = false; break; }
+          seen[t] = 1; cand[String(g[i])] = t;
+        }
+        if (clean) { g.forEach(function (v) { out[String(v)] = cand[String(v)]; }); return; }
+      }
+      g.forEach(function (v) { out[String(v)] = String(v); });
+    });
+    // FINAL SWEEP. An escalated form could coincide with a string another group already holds; the exact
+    // form cannot, so that is where any survivor lands.
+    var taken = {}, dup = {};
+    uniq.forEach(function (v) { var t = out[String(v)]; if (taken[t]) dup[t] = 1; taken[t] = 1; });
+    uniq.forEach(function (v) { if (dup[out[String(v)]]) out[String(v)] = String(v); });
+    return {
+      text: function (v) {
+        if (typeof v !== 'number' || !isFinite(v)) return '';
+        var t = Object.prototype.hasOwnProperty.call(out, String(v)) ? out[String(v)] : formatWeight(v);
+        return t;
+      },
+      approx: function (v) { return weightIsApprox(v, this.text(v)); }
+    };
+  }
+
+  // The `title` an operator reads to see what is actually stored. It NEVER claims a rounded figure is the
+  // stored one: when the two differ it says which is which.
+  function weightTitle(n, text) {
+    if (typeof n !== 'number' || !isFinite(n)) return '';
+    return weightIsApprox(n, text) ? ('Shown rounded. Stored value: ' + String(n)) : String(n);
+  }
+
+  /* A weight quoted inside a SENTENCE, in the SAME form the table draws it.
+
+     The context matters and the first version of this did not use it: it quoted the context-free short form,
+     so a save whose row reads `0.044` in the table was reported as "0.04 (stored as 0.044)". Both are true
+     and together they are confusing - the operator is looking at one figure and being told another. The
+     company pass is the same one the rows use, so the sentence and the row cannot disagree.
+
+     A rounded figure is still never presented as what was stored: where the form IS a rounding, the exact
+     value is named beside it. Where it is not, nothing is appended, because an unnecessary qualification
+     teaches an operator to ignore the necessary ones. */
+  function weightInSentenceFor(company, n) {
+    if (typeof n !== 'number' || !isFinite(n)) return '';
+    var vals = [n];
+    (_rows || []).forEach(function (r) {
+      if (company != null && str(r.company) !== str(company)) return;
+      var cc = classify(r.allocationPriority);
+      if (cc.state === 'SET') vals.push(cc.value);
+    });
+    var m = weightDisplayMap(vals);
+    var t = m.text(n);
+    return m.approx(n) ? (t + ' (stored as ' + String(n) + ')') : t;
+  }
+  function weightInSentence(n) {
+    var t = formatWeight(n);
+    return weightIsApprox(n, t) ? (t + ' (stored as ' + String(n) + ')') : t;
   }
 
   // Validation for OPERATOR INPUT. Deliberately stricter than `classify`, which reads what is already stored:
@@ -519,6 +608,9 @@
     opts = opts || {};
     var key = identityOf(r);
     var c = classify(r.allocationPriority);
+    // The company-scoped display map. A row drawn outside a company pass (none today) falls back to the
+    // default form, which is the same answer whenever nothing collides.
+    var dmap = opts.dmap || weightDisplayMap([c.value, opts.preview ? opts.preview.value : null]);
     var editing = (_editingKey === key);
     var preview = opts.preview || null;
 
@@ -532,14 +624,15 @@
       // which position was refused, and inventing a weight to fill the cell would be the one thing this
       // page must never do.
       priorityCell = '<span class="sp-pri sp-pri--preview' + (preview.value === null ? ' sp-pri--refused' : '')
-        + '">' + (preview.value === null ? '&#8212;' : esc(formatWeight(preview.value))) + '</span>'
-        + '<span class="sp-prev-was">' + (c.state === 'SET' ? 'was ' + esc(formatWeight(c.value)) : 'was Missing')
+        + '">' + (preview.value === null ? '&#8212;' : esc(dmap.text(preview.value))) + '</span>'
+        + '<span class="sp-prev-was">' + (c.state === 'SET' ? 'was ' + esc(dmap.text(c.value)) : 'was Missing')
         + '</span>';
     } else {
-      // `title` carries the raw stored value. The text is already exact, so the two agree except in
-      // presentation - but it means the precise figure is readable without opening Edit.
+      // `title` carries the STORED figure, and says so when the text is a rounded view of it.
       priorityCell = (c.state === 'SET'
-        ? '<span class="sp-pri" title="' + esc(String(c.value)) + '">' + esc(formatWeight(c.value)) + '</span>'
+        ? '<span class="sp-pri' + (dmap.approx(c.value) ? ' sp-pri--approx' : '')
+          + '" title="' + esc(weightTitle(c.value, dmap.text(c.value))) + '">'
+          + esc(dmap.text(c.value)) + '</span>'
         : '<span class="sp-pri sp-pri--none">—</span>');
     }
 
@@ -621,10 +714,18 @@
     companies.forEach(function (co) {
       var all = byCo[co];
       var view = previewFor(co, all.filter(isOrdered), all.filter(function (r) { return !isOrdered(r); }));
+      // EVERY weight that will be on screen together for this company, including a proposal being
+      // previewed beside the stored ones - which is exactly the pair most likely to collide.
+      var coVals = [];
+      all.forEach(function (r) { var cc = classify(r.allocationPriority); if (cc.state === 'SET') coVals.push(cc.value); });
+      view.ordered.concat(view.unordered).forEach(function (e) {
+        if (e.preview && typeof e.preview.value === 'number') coVals.push(e.preview.value);
+      });
+      var dmap = weightDisplayMap(coVals);
       html += groupHeaderHtml(co, all.length, locked[co] || '');
       view.ordered.forEach(function (e, i) {
         html += rowHtml(e.row, {
-          rank: i + 1, of: view.ordered.length, preview: e.preview,
+          rank: i + 1, of: view.ordered.length, preview: e.preview, dmap: dmap,
           // A SINGLE WEIGHTED SITE HAS NOWHERE TO GO. Lifting it would leave an empty list to be positioned
           // against, which is NO_BASIS -- so the handle would exist only to refuse. It is withheld instead,
           // because a refusal belongs BEFORE the gesture, not after it.
@@ -638,7 +739,7 @@
         view.unordered.forEach(function (e) {
           var st = classify(e.row.allocationPriority).state;
           html += rowHtml(e.row, {
-            rank: null, preview: e.preview,
+            rank: null, preview: e.preview, dmap: dmap,
             // A MISSING row may be dragged in — that IS the explicit first set. An INVALID one may not:
             // its stored value is unreadable, and placing it would mean choosing what it should have been.
             draggable: !locked[co] && st === 'MISSING' && view.ordered.length > 0,
@@ -802,6 +903,14 @@
     }
 
     var label = esc(str(row.marketplace)) + ' <span class="sp-draft__co">' + esc(str(row.company)) + '</span>';
+    // The same company-scoped pass the table uses, so the bar and the rows cannot print one weight two ways.
+    var barVals = [];
+    _rows.forEach(function (r) {
+      if (str(r.company) !== str(row.company)) return;
+      var cc = classify(r.allocationPriority); if (cc.state === 'SET') barVals.push(cc.value);
+    });
+    if (p && p.ok) barVals.push(p.value);
+    var bmap = weightDisplayMap(barVals);
     if (_move.unconfirmed) {
       bar.className = 'sp-draft sp-draft--warn';
       bar.innerHTML = '<p class="sp-draft__msg"><strong>Unconfirmed.</strong> ' + label + ' is shown in the '
@@ -830,7 +939,7 @@
     if (_move.live) {
       bar.className = 'sp-draft sp-draft--live';
       bar.innerHTML = '<p class="sp-draft__msg">Moving ' + label + '. '
-        + (p.ok ? 'Drop here to propose <strong>' + esc(formatWeight(p.value)) + '</strong>.'
+        + (p.ok ? 'Drop here to propose <strong>' + esc(bmap.text(p.value)) + '</strong>.'
                 : '<span class="sp-draft__no">' + esc(p.reason) + '</span>')
         + ' Use the arrow keys to move, Space or Enter to drop, Escape to cancel.</p>';
       return;
@@ -843,13 +952,14 @@
     }
     bar.className = 'sp-draft sp-draft--ready';
     bar.innerHTML = '<p class="sp-draft__msg"><strong>Proposed, not saved.</strong> ' + label
-      + ' would be stored as <strong>' + esc(formatWeight(p.value)) + '</strong>'
+      + ' would be stored as <strong>' + esc(bmap.text(p.value)) + '</strong>'
+      + (bmap.approx(p.value) ? ' <span class="sp-draft__exact">(exactly ' + esc(String(p.value)) + ')</span>' : '')
       // THE FACTOR IS READ FROM THE CONSTANT, NOT SPELLED AGAIN. A sentence that says "x 1.1" beside a rule
       // that no longer multiplies by 1.1 is worse than no sentence, and two copies of a number is how that
       // happens. There is one copy, and the explanation quotes it.
-      + (p.basis === 'TOP' ? ' — above the current highest (' + esc(formatWeight(p.lower)) + ' x ' + TOP_FACTOR + ').'
-        : p.basis === 'BOTTOM' ? ' — below the current lowest (' + esc(formatWeight(p.upper)) + ' x ' + BOTTOM_FACTOR + ').'
-        : ' — between ' + esc(formatWeight(p.upper)) + ' and ' + esc(formatWeight(p.lower)) + '.')
+      + (p.basis === 'TOP' ? ' — above the current highest (' + esc(bmap.text(p.lower)) + ' x ' + TOP_FACTOR + ').'
+        : p.basis === 'BOTTOM' ? ' — below the current lowest (' + esc(bmap.text(p.upper)) + ' x ' + BOTTOM_FACTOR + ').'
+        : ' — between ' + esc(bmap.text(p.upper)) + ' and ' + esc(bmap.text(p.lower)) + '.')
       + ' No other site is changed.</p>'
       + '<button type="button" class="sp-btn sp-btn--primary" data-sp-move-save="1">Save this move</button>'
       + '<button type="button" class="sp-btn sp-btn--ghost" data-sp-move-cancel="1">Cancel</button>';
@@ -1269,8 +1379,8 @@
         + 'same company / country / marketplace values.';
       if (rb.verdict === 'ROW_CHANGED') return 'the row answering to ' + label + ' is a DIFFERENT record than '
         + 'the one this save was prepared against.';
-      return 'a fresh read shows ' + (rb.c && rb.c.state === 'SET' ? formatWeight(rb.c.value) : String(rb.c && rb.c.state).toLowerCase())
-        + ' rather than ' + formatWeight(v.value) + '.';
+      return 'a fresh read shows ' + (rb.c && rb.c.state === 'SET' ? weightInSentenceFor(row.company, rb.c.value) : String(rb.c && rb.c.state).toLowerCase())
+        + ' rather than ' + weightInSentenceFor(row.company, v.value) + '.';
     }
 
     // ---- THE FOUR OUTCOMES ---------------------------------------------------------------------------------
@@ -1319,14 +1429,14 @@
         if (rb.verdict === 'MATCH') {
           if (!unknown) {
             return done('success', 'Saved and VERIFIED by re-reading the reference. ' + label
-              + ' now has priority ' + formatWeight(v.value) + '.' + placed(), true);
+              + ' now has priority ' + weightInSentenceFor(row.company, v.value) + '.' + placed(), true);
           }
           // A MATCH AFTER AN UNKNOWN OUTCOME IS NOT A CONFIRMED SAVE, AND IS NOT LABELLED AS ONE.
           // The answer was lost, so this read cannot attribute the stored value to THIS request rather than to
           // a concurrent one, and it cannot say whether updated_by / updated_at completed — the handler writes
           // the priority first precisely so this case is recoverable rather than invisible.
           return done('warn', 'The write outcome was UNKNOWN (' + why + '). A fresh read now shows ' + label
-            + ' at priority ' + formatWeight(v.value) + ', which is the intended value — but this does NOT prove this request '
+            + ' at priority ' + weightInSentenceFor(row.company, v.value) + ', which is the intended value — but this does NOT prove this request '
             + 'is what stored it, and the audit fields may be incomplete. Nothing was re-sent. Treat the value '
             + 'as correct and the save as unconfirmed.' + placed(), true);
         }
@@ -1576,9 +1686,12 @@
     // that matter — a product that cannot escape zero, a midpoint that overflows, a factor that fails to move
     // a denormal — are tested as numbers rather than inferred from a screenshot.
     proposeWeight: proposeWeight, midpoint: midpoint, isStorableWeight: isStorableWeight,
-    // DISPLAY ONLY - exported so the suite can prove it is injective and that nothing it returns ever
-    // reaches a payload, a compare-and-set, the comparator or the arithmetic.
-    formatWeight: formatWeight,
+    // DISPLAY ONLY - exported so the suite can drive the approved rule directly, with and without a
+    // collision, and prove that nothing it returns reaches a payload, a CAS, the comparator or the
+    // arithmetic.
+    formatWeight: formatWeight, weightDisplayMap: weightDisplayMap,
+    weightIsApprox: weightIsApprox, weightTitle: weightTitle, weightInSentence: weightInSentence,
+    weightInSentenceFor: weightInSentenceFor,
     displayOrder: displayOrder, weightOf: weightOf, isOrdered: isOrdered,
     TOP_FACTOR: TOP_FACTOR, BOTTOM_FACTOR: BOTTOM_FACTOR,
     _state: function () {

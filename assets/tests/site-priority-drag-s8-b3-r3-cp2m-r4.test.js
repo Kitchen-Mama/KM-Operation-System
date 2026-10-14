@@ -288,9 +288,15 @@ ok(RULE_SRC.length > 400, 'A10d0 (the weight rule was located in the source)', R
 ok(RULE_SRC.indexOf('proposeWeight') !== -1 && RULE_SRC.indexOf('midpoint') !== -1,
   'A10d1 (and it contains both the proposal and the midpoint)');
 ok(!/toFixed|Math\.round/.test(RULE_SRC), 'A10d and no rounding of a computed weight exists in the RULE');
-// The ONE place rounding may appear, and it is display-only.
-var FMT_SRC = CODE.slice(CODE.indexOf('function formatWeight'), CODE.indexOf('function validateInput'));
-ok(FMT_SRC.indexOf('toFixed(2)') !== -1, 'A10e the display formatter is the one place two decimals appear');
+/* The ONE place rounding may appear, and it is display-only. CP2O-R1 moved the toFixed into
+   `weightFormAt(n, dp)`, which the display path calls with 2 by default and with a higher dp ONLY when two
+   weights in a company would otherwise print the same string. The landmark is the function, not the literal
+   `toFixed(2)` - pinning the literal was a pin on how the rounding is spelled rather than on where it
+   lives. */
+var FMT_SRC = CODE.slice(CODE.indexOf('function weightFormAt'), CODE.indexOf('function validateInput'));
+ok(FMT_SRC.indexOf('n.toFixed(dp)') !== -1, 'A10e the display formatter is the one place rounding happens');
+ok(/formatWeight[\s\S]{0,200}weightFormAt\(n, 2\)/.test(FMT_SRC),
+  'A10e0 and two decimals is its default');
 eq((CODE.match(/toFixed/g) || []).length, 1, 'A10e1 and it is the ONLY toFixed in the page');
 eq((CODE.match(/Math\.round/g) || []).length, 0, 'A10e2 with no Math.round anywhere at all');
 ok(CODE.indexOf('Number(formatWeight') === -1,

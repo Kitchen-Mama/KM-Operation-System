@@ -50,12 +50,21 @@ ok(!!boundMatch, 'A1 the transport declares a default read bound');
 var BOUND = boundMatch ? Number(boundMatch[1]) : null;
 eq(BOUND, 60000, 'A1a and it is 60 000 ms');
 
-// The page's own recorded production timeline quotes the same number against the catalogue. That is the
-// attribution: the panel was not slow, its read ran out of time.
+/* S8-B3-R3-CP2O-R1 - WHAT THE PAGE'S RECORDED TIMELINE IS, AND WHAT IT IS NOT.
+   The comment block in the page records a timeline measured at F1-7N-FB-4G-A1-R1, in which the catalogue
+   settled exactly at the bound and the Execution panel reported REQUEST_TIMEOUT. That is HISTORICAL
+   EVIDENCE from an earlier round. It is NOT a measurement of the delay being reported now, and CP2O
+   over-claimed when it presented it as the attribution for the current complaint.
+
+   WHAT IS PROVEN HERE is narrower and worth more than the overstatement: the ceiling exists, it belongs to
+   the transport, and a panel that reaches it reports a TIMEOUT rather than a slow success. WHY A PARTICULAR
+   PRODUCTION EXPANSION IS SLOW TODAY IS NOT PROVEN BY THIS ROUND and is recorded as UNVERIFIED. */
 ok(/60000:carrier catalogue settled/.test(PAGE),
-  'A2 the page records a production timeline in which the catalogue settled exactly at the bound');
+  'A2 the page carries a timeline from an EARLIER round in which the catalogue settled at the bound');
 ok(/EXECUTION_PLAN_VISIBLE \(ERROR\/REQUEST_TIMEOUT\)/.test(PAGE),
-  'A2a and the panel that waited on it settled as REQUEST_TIMEOUT, not as a slow success');
+  'A2a in which the panel waiting on it settled as REQUEST_TIMEOUT, not as a slow success');
+ok(/F1-7N-FB-4G-A1-R1/.test(PAGE),
+  'A2b and that timeline is attributed to the round that measured it — it is history, not this round’s proof');
 
 // REQUEST_TIMEOUT is a named, terminal classification — never a longer wait.
 var timedOut = RV.executionReadiness({ readModelReady: true, hydrationInFlight: false, exposureState: 'READY',
@@ -214,6 +223,14 @@ ok(boundMatch && BOUND === 60000, 'E2 the transport read bound is unchanged');
 ok(!/readTimeoutMs:\s*\d+/.test(PAGE), 'E2a and this page does not set one of its own');
 // No Recalculate / AI Support was invoked to make a gap look like data.
 ok(true, 'E3 (no Recalculate and no AI Support was run by this suite — it reads, it does not repair)');
+
+/* AND THE CLAIM THIS SUITE DOES NOT MAKE, written down so a later reader cannot mistake its scope.
+   Neither production figure is reproduced here. The ~0.5 s is layout and has no meaning without a browser
+   and a real stylesheet; the >60 s figure's FREQUENCY in production is a property of the deployment. Both
+   stay UNVERIFIED. What is established is the SHAPE: a ceiling that belongs to the transport, four inputs
+   any one of which can hold the Execution panel, and two panels that cannot delay each other. */
+eq(typeof BOUND, 'number', 'E4 the bound is a number read from the transport, not a number quoted here');
+ok(!/PRODUCTION_LATENCY_CAUSE_PROVEN/.test(PAGE), 'E4a (nothing in the page claims the cause is proven)');
 
 // =============================================================================================================
 console.log('\n----------------------------------------');
