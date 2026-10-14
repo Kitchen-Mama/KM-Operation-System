@@ -3047,4 +3047,96 @@ still fails; the exact map-fidelity evidence still lives in the map suites, by n
 > adjusted quietly.** Both were corrected because the gate could not support the claim it made, not because
 > this round's work was inconvenient to them: E2 passed its previous capture on a 1.6 ms difference across an
 > 18 ms spread, and G4 passes trivially after any commit.
+---
 
+### D-S8-B3-43 — A mount continuation belongs to a NAVIGATION, and the map's never asked which — **FROZEN (CP2M-R4-R2)**
+
+**Decision.** The map's lifecycle `mount` captures its identity at the ORIGINAL mount — the page's own
+navigation generation, plus the shell's `commitGuard(epoch, sectionId)` — and the `ensureMarkup().then`
+refuses before it marks the section active, before it boots and before it resizes.
+
+**Why boot's existing guard could not cover this.** CP2M-R4-R1 taught `boot()`'s read callback to drop a
+superseded answer by capturing `var myNav = _glmNavGen` **inside boot**. In this path boot is CALLED after the
+navigation, so the generation matches, the guard passes, and the work proceeds. The identity has to be taken
+at the moment the continuation is created, which is the mount.
+
+**MEASURED, before and after, in a real browser against the REAL lifecycle manager and the REAL partial
+loader.** The markup is answered late by the server, which restores the production ordering rather than
+inventing one: app.js sends a route's partial and its scripts together, `loadPartial` fetches with
+`{ cache: 'no-store' }` and the scripts are cacheable, so on a return visit the markup is routinely the LAST
+thing to arrive.
+
+| scenario | | boots | workspace reads (counted at the SERVER) | renders | globes built | superseded mounts refused |
+|---|---|---|---|---|---|---|
+| mount → Home | before | 1 | 1 | 2 | **1** | — |
+| | **after** | **0** | **0** | **0** | **0** | **1** |
+| mount → another route | before | 1 | 1 | 2 | **1** | — |
+| | **after** | **0** | **0** | **0** | **0** | **1** |
+| leave and return | before | **2** | 1 | 3 | 1 | — |
+| | **after** | **1** | 1 | 2 | 1 | **1** |
+
+**The worst of it was not the `.active` flag.** A continuation that outlived its navigation **built a WebGL
+globe for a page the operator was not on**, having first dispatched a workspace read and rewritten the map
+body.
+
+**AND THE THIRD CASE IS THE ONE NO OBSERVER COULD HAVE CAUGHT.** On leave-and-return both mounts join the
+SAME in-flight partial, so both continuations fire in one tick and both call `boot()`. The map IS the active
+section throughout, so `.active` is CORRECT and the shell's MutationObserver has nothing to revert. The
+defect is that one navigation performed two loads. This round was told not to accept a late `.active`
+correction as a fix, and this is the case that shows why.
+
+**The duplicate read was ISSUED, not avoided** — the server saw one request because the transport shares an
+OPEN read between identical callers, and the transport's own `coalesced` counter reads 1 before the fix and
+0 after. Reporting "one request, so no duplicate" would have credited the page with something another layer
+did for it.
+
+**Nothing new was invented:** `commitGuard(epoch, sectionId)` is the lifecycle manager's own contract, already
+used by `site-priority.js`, `fc-summary.js` and `request-order.js`. The globe engine, the read strategy, the
+geometry and the transport are untouched, and the MAP token family is the one that rotates.
+
+---
+
+### D-S8-B3-44 — An unreadable priority leaves the drag handle LIVE, and the fail-closed point is the server — **FROZEN (CP2M-R4-R2)**
+
+**Correction to a statement made in the CP2M-R4-R1 acceptance list.** That list told the Owner that a row
+holding a garbled `allocation_priority` would show *Missing* **and a disabled handle**. The first half is
+right; the second is wrong, and the two halves cannot both be true:
+
+- the page disables the handle when `classify(...)` says **INVALID**;
+- `normalizeMarketplaceRecord` produces INVALID only for a value it CAN read and reject — a negative number;
+- unreadable TEXT becomes `null`, which the page reads as **MISSING**, not INVALID.
+
+So a garbled row looks exactly like a site nobody has prioritised yet, and it can be picked up and dropped.
+The save then goes out, the server reads the RAW cell, classifies it INVALID, and refuses with
+`PRIORITY_CHANGED` above the line the handler marks *"PROVABLY ZERO-WRITE"*.
+
+**The contract is unchanged and fail-closed; the refusal simply does not happen at the handle.** D-S8-B3-36
+and D-S8-B3-40 both stand. What changes is what an acceptance list may promise — and that such a check
+belongs in an isolated fixture, never by asking an Owner to put a garbled value into the live master.
+
+---
+
+### D-S8-B3-45 — Two handoff documents stated things they had not read — **FROZEN (CP2M-R4-R2)**
+
+**The errors were not details; they were a method.** Where a handler had not been read, the first edition
+filled the gap with something that reads like a fact — the shape of the chain, or a count of occurrences.
+
+| was | is, per the shipped handler |
+|---|---|
+| the reservation is taken at **dispatch** | acquired at **DRAFT CREATION**; dispatch **CONSUMES** it; cancel **RELEASES** it, pre-dispatch only |
+| "a reservation exists **iff** the shipment is dispatched" | **DELETED.** False both ways — a draft holds one before any dispatch, and a dispatched shipment holds none |
+| `W*` means "a partial state no rollback undoes" | five of these steps carry a compensating rollback; `createShippingPlansBatch`'s is DURABLE, in Script Property `SPCFL_JOURNAL_<execution_key>` |
+| factory stock grain "factory + SKU" | **`warehouse_id` + `sku`**; factory `available` is DERIVED, overseas `wh_available_stock` is STORED, and the two must not share arithmetic |
+| every `W1` is recoverable by writing the old value back | **wrong as a general rule** — only one writer's CAS is verified, the restore re-stamps the audit columns, and a row is not always the whole effect |
+| counts offered as evidence (111, 67, trigger and Drive call sites) | **withdrawn.** A count cannot distinguish a write from a comment, a constant or a comparison |
+
+**Two Script Property keys were missing entirely** — `SPCFL_JOURNAL_*` and `PRW_RCPT_*` — which is the
+concrete reason each row now records whether its literal was read this round.
+
+**`SPCFL_JOURNAL_*` is a new kind of hazard in that list.** It is written BEFORE the first mutation so a crash
+is recoverable from a later execution, and deleted on both endings. A leftover key therefore means an
+execution died mid-write, and deleting it as housekeeping destroys the only durable record of the intent.
+
+**Everything not re-read is now marked UNVERIFIED**, which is a different statement from "absent".
+Status-transition legality remains unenumerated except for `cancelShipmentDraft`, whose three sets ARE now
+recorded, and remains the first item of next-round work.

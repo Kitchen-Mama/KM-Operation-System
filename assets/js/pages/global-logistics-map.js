@@ -229,6 +229,7 @@
     globeCreates: 0, globeDestroys: 0,
     contextLost: 0,
     staleRendersBlocked: 0, teardownsAvoided: 0,
+    staleMountsBlocked: 0,
     everRendered: false
   };
   function ensureDb(force, cb) {
@@ -1726,6 +1727,7 @@
       globeCreates: _glmDiag.globeCreates, globeDestroys: _glmDiag.globeDestroys,
       contextLost: _glmDiag.contextLost,
       staleRendersBlocked: _glmDiag.staleRendersBlocked,
+      staleMountsBlocked: _glmDiag.staleMountsBlocked,
       teardownsAvoided: _glmDiag.teardownsAvoided,
       hostExists: !!host,
       hostInDocument: inDoc,
@@ -1743,8 +1745,47 @@
     };
   };
 
+  /* S8-B3-R3-CP2M-R4-R2 — THE MOUNT CONTINUATION NOW ASKS WHAT EVERY OTHER CONTINUATION ON THIS PAGE ASKS.
+
+     `mount()`'s `.then` asked nothing. If the markup arrived after the operator had gone somewhere else it
+     added `.active` to a section nobody was on, called `boot()` and resized the globe. AND boot's OWN guard
+     cannot cover this: `var myNav = _glmNavGen` is captured when boot is CALLED, which here is already after
+     the navigation, so the generation matches, the read goes out, the spinner is written and — measured —
+     a WebGL globe is built for a page the operator left. The identity has to be captured at the ORIGINAL
+     mount, which is the only moment that knows which navigation this continuation belongs to.
+
+     WHY THE MARKUP IS LATE AT ALL, since on loopback it never is: app.js sends a route's partial and its
+     scripts out together, `loadPartial` fetches with { cache: 'no-store' }, and the scripts are ordinary
+     cacheable assets. On a return visit the scripts come from the cache and the partial is a real round
+     trip, so the markup is routinely the LAST thing to arrive.
+
+     TWO AUTHORITIES, NEITHER OF THEM NEW. The local navigation generation this page already keeps (bumped by
+     unmount), and the shell's own `commitGuard(epoch, sectionId)` — the same contract site-priority.js,
+     fc-summary.js and request-order.js use. Nothing per-page is invented, and when the shell's guard is
+     absent the local generation still holds. */
+  function mountSuperseded(myNav, epoch) {
+    if (myNav !== _glmNavGen) return true;
+    var lc = window.KM && window.KM.lifecycle;
+    if (epoch !== undefined && lc && typeof lc.commitGuard === 'function'
+        && !lc.commitGuard(epoch, 'global-logistics-map-section')) return true;
+    return false;
+  }
+
   KM.lifecycle.register('global-logistics-map-section', {
-    mount: function () { ensureMarkup().then(function (loaded) { var sec = root(); if (sec) sec.classList.add('active'); if (!loaded || !sec) return; boot(); if (state.globe) state.globe.resize(); }); },
+    /* LEAVE-AND-RETURN IS THE CASE NO OBSERVER CAN CLEAN UP. Both mounts join the SAME in-flight partial,
+       so both continuations fire in one tick and both call boot(): two loads for one navigation, with the
+       section legitimately active throughout. `.active` is CORRECT there — the duplication is the defect,
+       and a late `.active` correction cannot see it. */
+    mount: function (epoch) {
+      var myNav = _glmNavGen;
+      ensureMarkup().then(function (loaded) {
+        if (mountSuperseded(myNav, epoch)) { _glmDiag.staleMountsBlocked++; return; }
+        var sec = root(); if (sec) sec.classList.add('active');
+        if (!loaded || !sec) return;
+        boot();
+        if (state.globe) state.globe.resize();
+      });
+    },
     /* Leaving retires the navigation AND the in-flight read. Without the first, a load started before the
        operator left still rendered on return; without the second, `ensureDb`'s own sequence guard was the
        only thing dropping the response, and it does not run until the promise settles. The globe instance

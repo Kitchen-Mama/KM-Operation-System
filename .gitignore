@@ -11,3 +11,9 @@ assets/tests/_p1b8c-frame-*.html
 # rehydrated sixty rows. The export is input evidence, kept outside version control.
 assets/tools/p1b8c-r1a-editor-log.txt
 assets/tools/p1b8c-r1a-editor-log.txt.txt
+
+# S8-B3-R3-CP2M-R4-R2: the headless browser runners pass --user-data-dir into the evidence
+# directory so each scenario gets a clean profile. The CAPTURE is committed; the profile is a
+# throwaway Chrome install that is rewritten on every run and must never enter version control.
+docs/evidence/**/.chrome-profile
+docs/evidence/**/.chrome-profile-*

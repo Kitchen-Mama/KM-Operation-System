@@ -1131,6 +1131,16 @@ var MAP_TOKEN_SERIES = [
   // The APPLICATION token is deliberately NOT used here — crossing the families is the misplaced-token
   // defect the release-order rules check in both directions.
   'map-canvaslifecycle-r12-20261013'
+  // S8-B3-R3-CP2M-R4-R2 changed global-logistics-map.js again (the mount continuation) and DELIBERATELY DID
+  // NOT APPEND, which is this series' own rule applied rather than set aside. A token is spent when its bytes
+  // have been SERVED. R12 was minted in CP2M-R4-R1, that round is still a local commit, and `origin` has never
+  // carried it -- so no browser holds it and nothing cached under it can go stale. Appending here would mint a
+  // second token for one unreleased change and leave R12 in the series having never named anything.
+  //
+  // THE CONDITION, STATED SO IT CAN BE CHECKED RATHER THAN REMEMBERED: if R4-R1 is released BEFORE R4-R2, R12
+  // is spent and R4-R2 must append its own entry. The file's TEXTURE-3-R12 marker is unchanged for the same
+  // reason, and the application token is still not used here -- crossing the families is the misplaced-token
+  // defect these rules check in both directions.
 ];
 
 // The newest entry is the current round's token, by construction rather than by restatement.

@@ -1,17 +1,17 @@
 {
  "ok": true,
  "browser": "chrome.exe",
- "capturedAt": "2026-10-13",
+ "capturedAt": "2026-10-14",
  "design": "A and B are identical runs (the noise floor); C performs a real pointer drag (the effect).",
  "sources": {
   "index.html": "d93cdd650e463869",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
-  "assets/js/pages/global-logistics-map.js": "89047639598fd4e9",
+  "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
   "assets/js/app.js": "120a5e09cecadc15",
-  "assets/tests/_cp2m-r2-map-runner.js": "a4d3c48fc9572231",
+  "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c",
   "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
  },
- "shotsDir": "C:/Users/viczh/AppData/Local/Temp/r41map",
+ "shotsDir": "C:/Users/viczh/Desktop/KM/品牌資源/Vibe Coding/Operation System/wt-product-strategy-board-p0/docs/evidence/cp2m-r2-map",
  "scenes": [
   {
    "scene": "desktop",
@@ -40,7 +40,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 470,
+    "canvasWaitMs": 485,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -64,7 +64,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 473,
+    "canvasWaitMs": 481,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -88,7 +88,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 429,
+    "canvasWaitMs": 489,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
@@ -182,7 +182,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 442,
+    "canvasWaitMs": 450,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -206,7 +206,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 397,
+    "canvasWaitMs": 474,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -230,7 +230,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 411,
+    "canvasWaitMs": 424,
     "canvasAppeared": true,
     "dragPath": {
      "from": [

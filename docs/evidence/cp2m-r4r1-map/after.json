@@ -5,13 +5,13 @@
   {
    "noDiag": true,
    "tag": "boot",
-   "t": 788,
+   "t": 795,
    "navHow": "click"
   },
   {
    "noDiag": true,
    "tag": "first-load-0",
-   "t": 789
+   "t": 797
   },
   {
    "navGen": 0,
@@ -23,6 +23,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -38,7 +39,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-1",
-   "t": 912
+   "t": 919
   },
   {
    "navGen": 0,
@@ -50,6 +51,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -65,7 +67,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-2",
-   "t": 1037
+   "t": 1044
   },
   {
    "navGen": 0,
@@ -77,6 +79,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -92,7 +95,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-3",
-   "t": 1161
+   "t": 1170
   },
   {
    "navGen": 0,
@@ -104,6 +107,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -119,7 +123,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-4",
-   "t": 1286
+   "t": 1295
   },
   {
    "navGen": 0,
@@ -131,6 +135,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -146,7 +151,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-5",
-   "t": 1406
+   "t": 1418
   },
   {
    "navGen": 0,
@@ -158,6 +163,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -173,7 +179,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-6",
-   "t": 1531
+   "t": 1542
   },
   {
    "navGen": 0,
@@ -185,6 +191,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -200,7 +207,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-7",
-   "t": 1660
+   "t": 1665
   },
   {
    "navGen": 0,
@@ -212,6 +219,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -227,7 +235,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-8",
-   "t": 1785
+   "t": 1787
   },
   {
    "navGen": 0,
@@ -239,6 +247,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -254,7 +263,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-9",
-   "t": 1911
+   "t": 1913
   },
   {
    "navGen": 0,
@@ -266,6 +275,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -281,7 +291,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-10",
-   "t": 2035
+   "t": 2036
   },
   {
    "navGen": 0,
@@ -293,6 +303,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -308,7 +319,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-11",
-   "t": 2158
+   "t": 2162
   },
   {
    "navGen": 0,
@@ -320,6 +331,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": false,
    "hostInDocument": false,
@@ -335,7 +347,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-12",
-   "t": 2281
+   "t": 2286
   },
   {
    "navGen": 0,
@@ -347,6 +359,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -362,7 +375,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-13",
-   "t": 2722
+   "t": 2788
   },
   {
    "navGen": 0,
@@ -374,6 +387,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -389,7 +403,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-14",
-   "t": 2934
+   "t": 3007
   },
   {
    "navGen": 0,
@@ -401,6 +415,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -416,7 +431,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-15",
-   "t": 4523
+   "t": 5149
   },
   {
    "navGen": 0,
@@ -428,6 +443,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -443,7 +459,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-16",
-   "t": 4647
+   "t": 5274
   },
   {
    "navGen": 0,
@@ -455,6 +471,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -470,7 +487,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-17",
-   "t": 4773
+   "t": 5398
   },
   {
    "navGen": 0,
@@ -482,6 +499,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -497,7 +515,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-18",
-   "t": 4897
+   "t": 5523
   },
   {
    "navGen": 0,
@@ -509,6 +527,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -524,7 +543,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-19",
-   "t": 5021
+   "t": 5648
   },
   {
    "navGen": 0,
@@ -536,6 +555,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -551,7 +571,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-20",
-   "t": 5145
+   "t": 5770
   },
   {
    "navGen": 0,
@@ -563,6 +583,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -578,7 +599,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-21",
-   "t": 5270
+   "t": 5893
   },
   {
    "navGen": 0,
@@ -590,141 +611,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
-   "teardownsAvoided": 0,
-   "hostExists": true,
-   "hostInDocument": true,
-   "hostParentClass": "glm-globe-slot",
-   "canvasPresent": true,
-   "canvasW": 615,
-   "canvasH": 718,
-   "globeAlive": true,
-   "globeInstanceId": 1,
-   "globeError": "",
-   "loading": false,
-   "error": "",
-   "dataReady": true,
-   "shipments": 8,
-   "tag": "first-load-22",
-   "t": 5395
-  },
-  {
-   "navGen": 0,
-   "renders": 2,
-   "boots": 1,
-   "attaches": 1,
-   "detaches": 0,
-   "globeCreates": 1,
-   "globeDestroys": 0,
-   "contextLost": 0,
-   "staleRendersBlocked": 0,
-   "teardownsAvoided": 0,
-   "hostExists": true,
-   "hostInDocument": true,
-   "hostParentClass": "glm-globe-slot",
-   "canvasPresent": true,
-   "canvasW": 615,
-   "canvasH": 718,
-   "globeAlive": true,
-   "globeInstanceId": 1,
-   "globeError": "",
-   "loading": false,
-   "error": "",
-   "dataReady": true,
-   "shipments": 8,
-   "tag": "first-load-23",
-   "t": 5521
-  },
-  {
-   "navGen": 0,
-   "renders": 2,
-   "boots": 1,
-   "attaches": 1,
-   "detaches": 0,
-   "globeCreates": 1,
-   "globeDestroys": 0,
-   "contextLost": 0,
-   "staleRendersBlocked": 0,
-   "teardownsAvoided": 0,
-   "hostExists": true,
-   "hostInDocument": true,
-   "hostParentClass": "glm-globe-slot",
-   "canvasPresent": true,
-   "canvasW": 615,
-   "canvasH": 718,
-   "globeAlive": true,
-   "globeInstanceId": 1,
-   "globeError": "",
-   "loading": false,
-   "error": "",
-   "dataReady": true,
-   "shipments": 8,
-   "tag": "first-load-24",
-   "t": 5645
-  },
-  {
-   "navGen": 0,
-   "renders": 2,
-   "boots": 1,
-   "attaches": 1,
-   "detaches": 0,
-   "globeCreates": 1,
-   "globeDestroys": 0,
-   "contextLost": 0,
-   "staleRendersBlocked": 0,
-   "teardownsAvoided": 0,
-   "hostExists": true,
-   "hostInDocument": true,
-   "hostParentClass": "glm-globe-slot",
-   "canvasPresent": true,
-   "canvasW": 615,
-   "canvasH": 718,
-   "globeAlive": true,
-   "globeInstanceId": 1,
-   "globeError": "",
-   "loading": false,
-   "error": "",
-   "dataReady": true,
-   "shipments": 8,
-   "tag": "first-load-25",
-   "t": 5773
-  },
-  {
-   "navGen": 0,
-   "renders": 2,
-   "boots": 1,
-   "attaches": 1,
-   "detaches": 0,
-   "globeCreates": 1,
-   "globeDestroys": 0,
-   "contextLost": 0,
-   "staleRendersBlocked": 0,
-   "teardownsAvoided": 0,
-   "hostExists": true,
-   "hostInDocument": true,
-   "hostParentClass": "glm-globe-slot",
-   "canvasPresent": true,
-   "canvasW": 615,
-   "canvasH": 718,
-   "globeAlive": true,
-   "globeInstanceId": 1,
-   "globeError": "",
-   "loading": false,
-   "error": "",
-   "dataReady": true,
-   "shipments": 8,
-   "tag": "first-load-26",
-   "t": 5899
-  },
-  {
-   "navGen": 0,
-   "renders": 2,
-   "boots": 1,
-   "attaches": 1,
-   "detaches": 0,
-   "globeCreates": 1,
-   "globeDestroys": 0,
-   "contextLost": 0,
-   "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -740,7 +627,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-settled",
-   "t": 5899
+   "t": 5893
   },
   {
    "navGen": 0,
@@ -752,6 +639,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 0,
    "hostExists": true,
    "hostInDocument": true,
@@ -767,7 +655,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "pre-refresh",
-   "t": 5899,
+   "t": 5893,
    "refreshFound": true
   },
   {
@@ -780,6 +668,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -795,7 +684,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-0",
-   "t": 5900
+   "t": 5894
   },
   {
    "navGen": 0,
@@ -807,6 +696,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -822,7 +712,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-1",
-   "t": 6021
+   "t": 6018
   },
   {
    "navGen": 0,
@@ -834,6 +724,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -849,7 +740,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-2",
-   "t": 6145
+   "t": 6142
   },
   {
    "navGen": 0,
@@ -861,6 +752,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -876,7 +768,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-3",
-   "t": 6268
+   "t": 6265
   },
   {
    "navGen": 0,
@@ -888,6 +780,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -903,7 +796,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-4",
-   "t": 6395
+   "t": 6387
   },
   {
    "navGen": 0,
@@ -915,6 +808,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -930,7 +824,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-5",
-   "t": 6518
+   "t": 6511
   },
   {
    "navGen": 0,
@@ -942,6 +836,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -957,7 +852,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-6",
-   "t": 6643
+   "t": 6635
   },
   {
    "navGen": 0,
@@ -969,6 +864,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -984,7 +880,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-7",
-   "t": 6767
+   "t": 6760
   },
   {
    "navGen": 0,
@@ -996,6 +892,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1011,7 +908,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-8",
-   "t": 6891
+   "t": 6883
   },
   {
    "navGen": 0,
@@ -1023,6 +920,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1038,7 +936,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-9",
-   "t": 7019
+   "t": 7006
   },
   {
    "navGen": 0,
@@ -1050,6 +948,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1065,7 +964,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-10",
-   "t": 7145
+   "t": 7130
   },
   {
    "navGen": 0,
@@ -1077,6 +976,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1092,7 +992,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-11",
-   "t": 7272
+   "t": 7253
   },
   {
    "navGen": 0,
@@ -1104,6 +1004,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1119,7 +1020,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-12",
-   "t": 7396
+   "t": 7378
   },
   {
    "navGen": 0,
@@ -1131,6 +1032,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1146,7 +1048,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-13",
-   "t": 7556
+   "t": 7576
   },
   {
    "navGen": 0,
@@ -1158,13 +1060,14 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
    "hostParentClass": "glm-globe-slot",
    "canvasPresent": true,
    "canvasW": 614,
-   "canvasH": 716,
+   "canvasH": 717,
    "globeAlive": true,
    "globeInstanceId": 1,
    "globeError": "",
@@ -1173,7 +1076,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-14",
-   "t": 7700
+   "t": 7739
   },
   {
    "navGen": 0,
@@ -1185,6 +1088,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1200,7 +1104,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-15",
-   "t": 7847
+   "t": 7906
   },
   {
    "navGen": 0,
@@ -1212,6 +1116,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1227,7 +1132,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-16",
-   "t": 7998
+   "t": 8027
   },
   {
    "navGen": 0,
@@ -1239,6 +1144,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1254,7 +1160,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-17",
-   "t": 8128
+   "t": 8153
   },
   {
    "navGen": 0,
@@ -1266,6 +1172,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1281,7 +1188,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-18",
-   "t": 8253
+   "t": 8278
   },
   {
    "navGen": 0,
@@ -1293,6 +1200,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1308,7 +1216,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-19",
-   "t": 8378
+   "t": 8404
   },
   {
    "navGen": 0,
@@ -1320,6 +1228,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1335,7 +1244,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-20",
-   "t": 8502
+   "t": 8529
   },
   {
    "navGen": 0,
@@ -1347,6 +1256,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1362,7 +1272,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-21",
-   "t": 8628
+   "t": 8655
   },
   {
    "navGen": 0,
@@ -1374,6 +1284,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1389,7 +1300,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-22",
-   "t": 8754
+   "t": 8778
   },
   {
    "navGen": 0,
@@ -1401,6 +1312,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1416,7 +1328,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-23",
-   "t": 8879
+   "t": 8903
   },
   {
    "navGen": 0,
@@ -1428,6 +1340,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1443,7 +1356,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-24",
-   "t": 9004
+   "t": 9027
   },
   {
    "navGen": 0,
@@ -1455,6 +1368,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1470,7 +1384,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-25",
-   "t": 9129
+   "t": 9152
   },
   {
    "navGen": 0,
@@ -1482,6 +1396,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1497,7 +1412,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-26",
-   "t": 9254
+   "t": 9276
   },
   {
    "navGen": 0,
@@ -1509,6 +1424,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1524,7 +1440,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-27",
-   "t": 9379
+   "t": 9400
   },
   {
    "navGen": 0,
@@ -1536,6 +1452,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1551,7 +1468,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-28",
-   "t": 9503
+   "t": 9524
   },
   {
    "navGen": 0,
@@ -1563,6 +1480,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1578,7 +1496,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-29",
-   "t": 9627
+   "t": 9646
   },
   {
    "navGen": 0,
@@ -1590,6 +1508,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1605,7 +1524,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-30",
-   "t": 9752
+   "t": 9772
   },
   {
    "navGen": 0,
@@ -1617,6 +1536,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1632,7 +1552,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-31",
-   "t": 9875
+   "t": 9896
   },
   {
    "navGen": 0,
@@ -1644,6 +1564,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1659,7 +1580,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-32",
-   "t": 9999
+   "t": 10020
   },
   {
    "navGen": 0,
@@ -1671,6 +1592,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1686,7 +1608,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-33",
-   "t": 10124
+   "t": 10146
   },
   {
    "navGen": 0,
@@ -1698,6 +1620,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1713,7 +1636,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-34",
-   "t": 10249
+   "t": 10271
   },
   {
    "navGen": 0,
@@ -1725,6 +1648,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1740,7 +1664,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-35",
-   "t": 10375
+   "t": 10396
   },
   {
    "navGen": 0,
@@ -1752,6 +1676,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1767,7 +1692,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-36",
-   "t": 10499
+   "t": 10521
   },
   {
    "navGen": 0,
@@ -1779,6 +1704,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1794,7 +1720,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-37",
-   "t": 10626
+   "t": 10645
   },
   {
    "navGen": 0,
@@ -1806,6 +1732,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1821,7 +1748,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-38",
-   "t": 10750
+   "t": 10769
   },
   {
    "navGen": 0,
@@ -1833,6 +1760,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1848,7 +1776,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-39",
-   "t": 10876
+   "t": 10893
   },
   {
    "navGen": 0,
@@ -1860,33 +1788,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
-   "teardownsAvoided": 1,
-   "hostExists": true,
-   "hostInDocument": true,
-   "hostParentClass": "glm-globe-slot",
-   "canvasPresent": true,
-   "canvasW": 615,
-   "canvasH": 718,
-   "globeAlive": true,
-   "globeInstanceId": 1,
-   "globeError": "",
-   "loading": false,
-   "error": "",
-   "dataReady": true,
-   "shipments": 8,
-   "tag": "refresh-40",
-   "t": 11000
-  },
-  {
-   "navGen": 0,
-   "renders": 4,
-   "boots": 2,
-   "attaches": 2,
-   "detaches": 1,
-   "globeCreates": 1,
-   "globeDestroys": 0,
-   "contextLost": 0,
-   "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1902,7 +1804,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-settled",
-   "t": 11001
+   "t": 10893
   },
   {
    "navGen": 1,
@@ -1914,6 +1816,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1929,7 +1832,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "away",
-   "t": 11904
+   "t": 11808
   },
   {
    "navGen": 1,
@@ -1941,6 +1844,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 1,
    "hostExists": true,
    "hostInDocument": true,
@@ -1956,7 +1860,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-0",
-   "t": 11905
+   "t": 11808
   },
   {
    "navGen": 1,
@@ -1968,13 +1872,14 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
    "hostParentClass": "glm-globe-slot",
    "canvasPresent": true,
-   "canvasW": 610,
-   "canvasH": 712,
+   "canvasW": 613,
+   "canvasH": 715,
    "globeAlive": true,
    "globeInstanceId": 1,
    "globeError": "",
@@ -1983,7 +1888,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-1",
-   "t": 12084
+   "t": 12065
   },
   {
    "navGen": 1,
@@ -1995,13 +1900,14 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
    "hostParentClass": "glm-globe-slot",
    "canvasPresent": true,
-   "canvasW": 614,
-   "canvasH": 717,
+   "canvasW": 615,
+   "canvasH": 718,
    "globeAlive": true,
    "globeInstanceId": 1,
    "globeError": "",
@@ -2010,7 +1916,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-2",
-   "t": 12232
+   "t": 12227
   },
   {
    "navGen": 1,
@@ -2022,6 +1928,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2037,7 +1944,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-3",
-   "t": 12414
+   "t": 12415
   },
   {
    "navGen": 1,
@@ -2049,6 +1956,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2064,7 +1972,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-4",
-   "t": 12541
+   "t": 12543
   },
   {
    "navGen": 1,
@@ -2076,6 +1984,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2091,7 +2000,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-5",
-   "t": 12667
+   "t": 12665
   },
   {
    "navGen": 1,
@@ -2103,6 +2012,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2118,7 +2028,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-6",
-   "t": 12793
+   "t": 12788
   },
   {
    "navGen": 1,
@@ -2130,6 +2040,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2145,7 +2056,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-7",
-   "t": 12919
+   "t": 12913
   },
   {
    "navGen": 1,
@@ -2157,6 +2068,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2172,7 +2084,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-8",
-   "t": 13043
+   "t": 13037
   },
   {
    "navGen": 1,
@@ -2184,6 +2096,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2199,7 +2112,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-9",
-   "t": 13169
+   "t": 13161
   },
   {
    "navGen": 1,
@@ -2211,6 +2124,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2226,7 +2140,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-10",
-   "t": 13296
+   "t": 13285
   },
   {
    "navGen": 1,
@@ -2238,6 +2152,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2253,7 +2168,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-11",
-   "t": 13419
+   "t": 13408
   },
   {
    "navGen": 1,
@@ -2265,6 +2180,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2280,7 +2196,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-12",
-   "t": 13544
+   "t": 13530
   },
   {
    "navGen": 1,
@@ -2292,6 +2208,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2307,7 +2224,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-13",
-   "t": 13669
+   "t": 13653
   },
   {
    "navGen": 1,
@@ -2319,6 +2236,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2334,7 +2252,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-14",
-   "t": 13793
+   "t": 13776
   },
   {
    "navGen": 1,
@@ -2346,6 +2264,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2361,7 +2280,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-15",
-   "t": 13917
+   "t": 13900
   },
   {
    "navGen": 1,
@@ -2373,6 +2292,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2388,7 +2308,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-16",
-   "t": 14042
+   "t": 14026
   },
   {
    "navGen": 1,
@@ -2400,6 +2320,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2415,7 +2336,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-17",
-   "t": 14165
+   "t": 14151
   },
   {
    "navGen": 1,
@@ -2427,6 +2348,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2442,7 +2364,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-18",
-   "t": 14290
+   "t": 14276
   },
   {
    "navGen": 1,
@@ -2454,6 +2376,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2469,7 +2392,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-19",
-   "t": 14414
+   "t": 14400
   },
   {
    "navGen": 1,
@@ -2481,6 +2404,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2496,7 +2420,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-20",
-   "t": 14539
+   "t": 14524
   },
   {
    "navGen": 1,
@@ -2508,6 +2432,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2523,7 +2448,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-21",
-   "t": 14663
+   "t": 14649
   },
   {
    "navGen": 1,
@@ -2535,6 +2460,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2550,7 +2476,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-22",
-   "t": 14789
+   "t": 14772
   },
   {
    "navGen": 1,
@@ -2562,6 +2488,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2577,7 +2504,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-23",
-   "t": 14913
+   "t": 14897
   },
   {
    "navGen": 1,
@@ -2589,6 +2516,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2604,7 +2532,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-24",
-   "t": 15037
+   "t": 15020
   },
   {
    "navGen": 1,
@@ -2616,6 +2544,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2631,7 +2560,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-25",
-   "t": 15162
+   "t": 15141
   },
   {
    "navGen": 1,
@@ -2643,6 +2572,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2658,7 +2588,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-26",
-   "t": 15286
+   "t": 15267
   },
   {
    "navGen": 1,
@@ -2670,6 +2600,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2685,7 +2616,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-27",
-   "t": 15412
+   "t": 15391
   },
   {
    "navGen": 1,
@@ -2697,6 +2628,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2712,7 +2644,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-28",
-   "t": 15537
+   "t": 15515
   },
   {
    "navGen": 1,
@@ -2724,6 +2656,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2739,7 +2672,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-29",
-   "t": 15661
+   "t": 15640
   },
   {
    "navGen": 1,
@@ -2751,6 +2684,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2766,7 +2700,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-30",
-   "t": 15787
+   "t": 15765
   },
   {
    "navGen": 1,
@@ -2778,6 +2712,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2793,7 +2728,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-31",
-   "t": 15912
+   "t": 15887
   },
   {
    "navGen": 1,
@@ -2805,6 +2740,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2820,7 +2756,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-32",
-   "t": 16039
+   "t": 16010
   },
   {
    "navGen": 1,
@@ -2832,6 +2768,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2847,7 +2784,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-33",
-   "t": 16163
+   "t": 16135
   },
   {
    "navGen": 1,
@@ -2859,6 +2796,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2874,7 +2812,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-34",
-   "t": 16286
+   "t": 16259
   },
   {
    "navGen": 1,
@@ -2886,6 +2824,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2901,7 +2840,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-35",
-   "t": 16411
+   "t": 16381
   },
   {
    "navGen": 1,
@@ -2913,6 +2852,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2928,7 +2868,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-36",
-   "t": 16537
+   "t": 16505
   },
   {
    "navGen": 1,
@@ -2940,6 +2880,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2955,7 +2896,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-37",
-   "t": 16662
+   "t": 16629
   },
   {
    "navGen": 1,
@@ -2967,6 +2908,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -2982,7 +2924,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-38",
-   "t": 16786
+   "t": 16753
   },
   {
    "navGen": 1,
@@ -2994,6 +2936,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -3009,7 +2952,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-39",
-   "t": 16912
+   "t": 16877
   },
   {
    "navGen": 1,
@@ -3021,6 +2964,7 @@
    "globeDestroys": 0,
    "contextLost": 0,
    "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
    "teardownsAvoided": 2,
    "hostExists": true,
    "hostInDocument": true,
@@ -3036,20 +2980,20 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-settled",
-   "t": 16912
+   "t": 16877
   }
  ],
- "capturedAt": "2026-10-13",
+ "capturedAt": "2026-10-14",
  "readDelayMs": 1500,
  "sources": {
-  "assets/js/pages/global-logistics-map.js": "89047639598fd4e9",
+  "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
   "index.html": "d93cdd650e463869",
   "assets/tests/_cp2m-r4r1-map-lifecycle-runner.js": "378e1ceac3f4fae2",
-  "assets/tests/_cp2m-r2-map-runner.js": "a4d3c48fc9572231"
+  "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c"
  },
  "summary": {
-  "samples": 114,
+  "samples": 108,
   "samplesWithoutCanvas": 14,
   "samplesHostDetached": 0,
   "maxGlobeInstanceId": 1,

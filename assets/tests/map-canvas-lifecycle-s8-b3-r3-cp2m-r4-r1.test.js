@@ -143,7 +143,15 @@ ok(/teardownsAvoided\+\+/.test(CODE), 'G3 and counts when it declined to, so the
 ok(/_glmNavGen/.test(CODE), 'G4 a navigation generation exists');
 ok(/unmount: function \(\) \{ _glmNavGen\+\+; _glmReadSeq\+\+;/.test(CODE),
   'G5 leaving retires both the navigation and the in-flight read');
-eq((CODE.match(/myNav !== _glmNavGen/g) || []).length, 3,
+/* S8-B3-R3-CP2M-R4-R2 — G6 IS SCOPED TO boot(), WHICH IS WHAT IT WAS ALWAYS ABOUT.
+   It counted the generation check across the WHOLE FILE and expected exactly three. That is a count of
+   boot()'s three re-checks written as a count of the file, so the first later round to consult the same
+   generation anywhere else failed an assertion whose sentence was still true. CP2M-R4-R2 is that round:
+   the mount continuation now captures the generation too, which makes four in the file and three in boot.
+   The number is not relaxed — it is measured where the sentence says it is. */
+const BOOT_BODY = (CODE.split('function boot(force)')[1] || '').split('function ensureMarkup')[0];
+ok(BOOT_BODY.length > 200, 'G6pre (boot was located in the source)', BOOT_BODY.length);
+eq((BOOT_BODY.match(/myNav !== _glmNavGen/g) || []).length, 3,
   'G6 and the boot callback re-checks it at each point it would otherwise render');
 
 // THE ENGINE, THE GEOMETRY AND THE TRANSPORT ARE UNTOUCHED — this round changed when the host is on the

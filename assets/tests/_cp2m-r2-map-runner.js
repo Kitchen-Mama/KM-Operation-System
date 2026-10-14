@@ -253,8 +253,23 @@ const MAX_HOLD_MS = 40000;   // the globe needs real frames; this is the ceiling
    production this read is an Apps Script round trip measured in seconds, and on loopback it returns
    in under a millisecond, which makes the loading window too narrow to sample. Slowing the SERVER
    makes an existing window observable; it does not create one. Default 0 = unchanged. */
+/* S8-B3-R3-CP2M-R4-R2 — `opts.staticDelayMs` + `opts.staticDelayMatch` answer ONE static path late, and
+   `opts.requestLog` records what was actually asked for.
+
+   The delayed path this round needs is the page PARTIAL, and slowing it is not a contrivance. app.js sends
+   the partial and the route's scripts out together; `loadPartial` fetches with `{ cache: 'no-store' }` while
+   the scripts are ordinary cacheable assets. So on any return visit the scripts come from the browser cache
+   and the 1.4 KB partial is a real network round trip — the markup is ROUTINELY the last thing to arrive. On
+   loopback, with nothing cached, that ordering is inverted and the window the defect lives in closes before
+   it can be sampled. The delay restores the production ordering; it does not invent it.
+
+   `requestLog` exists because "no read was dispatched" is the claim, and the only place that can be checked
+   without trusting the page is the server that would have answered it. */
 function startServer(pages, held, results, opts) {
   var _readDelay = (opts && opts.readDelayMs) || 0;
+  var _staticDelay = (opts && opts.staticDelayMs) || 0;
+  var _staticMatch = (opts && opts.staticDelayMatch) || null;
+  var _log = (opts && opts.requestLog) || null;
   const ships = fixtureShipments(14);
   return http.createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
@@ -301,6 +316,7 @@ function startServer(pages, held, results, opts) {
           try { const j = JSON.parse(body); action = j.action || ''; table = table || j.table || ''; rid = rid || j.requestId || ''; }
           catch (e) {}
         }
+        if (_log) _log.push({ kind: 'api', action: action, table: table, t: Date.now() });
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
         const send = (o) => res.end(JSON.stringify(withCorrelation(o, action, rid)));
         if (action === 'getClientCapabilities') { send({ success: true, data: { product_strategy_enabled: true } }); return; }
@@ -319,13 +335,18 @@ function startServer(pages, held, results, opts) {
       return;
     }
     if (pages[p]) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(pages[p]); return; }
+    if (_log) _log.push({ kind: 'static', path: p, t: Date.now() });
     const abs = path.join(ROOT, p.replace(/^\/+/, ''));
     if (!abs.startsWith(ROOT)) { res.writeHead(403); res.end('no'); return; }
     fs.readFile(abs, (err, buf) => {
       if (err) { res.writeHead(404); res.end('404'); return; }
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream',
-        'Cache-Control': 'no-store' });
-      res.end(buf);
+      const deliver = () => {
+        res.writeHead(200, { 'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream',
+          'Cache-Control': 'no-store' });
+        res.end(buf);
+      };
+      if (_staticDelay > 0 && _staticMatch && p.indexOf(_staticMatch) !== -1) setTimeout(deliver, _staticDelay);
+      else deliver();
     });
   });
 }
