@@ -3481,3 +3481,86 @@ it.
 their bodies would make those extractions depend on a helper outside the slice they take — the exact
 coupling that broke six suites in CP2P-R2. The suite that exercises the gate declares the dependency
 explicitly instead.
+
+---
+
+### D-S8-B3-56 — An un-excluded average is not a normal average — **FROZEN (CP2R-R1)**
+
+**CP2R made the wrong thing observable instead of removing it.** When a campaign line cannot prove site
+membership, the frozen owner throws. `recoWsResolveSalesRate_` caught that and **recomputed with
+`compute([], [])`** — no campaign filter, no event filter — and returned the result as `ok: true`. CP2R
+noticed the retry was silent and carried a `contaminationApplied: false` flag to the line so a reader could
+tell. That was an improvement on hiding it and it was still the wrong answer.
+
+The number that retry produces is **inflated by exactly the campaign days §22 exists to remove**. Publishing
+it as a legitimate rate asks every surface, and every human, to notice a boolean before trusting a figure
+that otherwise looks like every other figure in the column. The rule "contamination must never gate READY"
+was read as "therefore publish something"; the correct reading is that contamination must not gate READY
+**for reasons that are not about the data**, and an unresolved identity is about the data.
+
+**Now:** the retry is gone. An owner throw returns `{ ok: false, reason:
+'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: <the owner message> }` and **no rate is published**.
+
+**What was deliberately NOT swept up with it**, because fail-closed is easy to over-apply:
+
+| case | disposition | why |
+|---|---|---|
+| contamination source **present and empty** | resolves normally, `PRESENT` | a site that ran no campaign has nothing to exclude |
+| contamination source **absent** | resolves normally, `ABSENT` | differentiated from present-empty, as before |
+| **fewer than 3 normal days** | resolves via `weekly_7d`, warning `insufficient_normal_days` | the frozen §22 fallback rung is a legitimate basis |
+| **confirmed zero** sales | publishes `0` | zero is an answer, not a gap |
+| **no marketplace_sku_id AND no campaigns** | resolves normally | identity was never needed |
+| **no marketplace_sku_id WITH campaigns** | fails closed | identity is needed and cannot be proven |
+
+### D-S8-B3-57 — One operational scope, one marketplace SKU id — **FROZEN (CP2R-R1)**
+
+CP2R stopped the resolver reading **another company's** row. It still took the **first** row that matched,
+which is correct only while the complete scope maps to exactly one id. When it maps to two there is no right
+answer to pick, and picking one is a guess with a 50% error rate that **changes with sheet row order** — the
+same class of defect CP2R had just removed, one step later.
+
+`company + country + marketplace + sku` now collects the **distinct** ids. Two or more returns
+`{ ok: false, reason: 'MARKETPLACE_SKU_AMBIGUOUS', detail: <the colliding ids> }`. Two rows carrying the
+**same** id are not ambiguous — that is one site listed twice.
+
+### D-S8-B3-58 — A quality error that lives in metadata is one nobody acts on — **FROZEN (CP2R-R1)**
+
+The Avg Sales column printed a number or `--`, and `--` meant at least four different things: no sales
+history, an ambiguous channel, an unresolvable identity, and a horizon that happened to fail. Meanwhile
+§22's `source` and `warning` reached the row object and stopped there.
+
+**Two surfaces now carry it.** `horizonBasis.basisQualityError` carries the **named** reason on the line —
+which matters most for `forecast_driven`, because that path never sets `horizonsBlockedReason` and so had
+nowhere at all to say why its rate was missing. And the cell renders it: the word **unavailable** where no
+trustworthy rate exists, a quiet **!** beside a real number drawn from a thin sample, nothing at all when
+the basis is clean, and the full sentence as a title in every case. An unmapped future code renders the code
+rather than a blank.
+
+**The stylesheet rotated with it** (`irtpunresolved-20261011` → `iravgquality-20261015`). Five new classes
+would otherwise have **zero rules** in any browser holding the cached copy, and the word `unavailable` would
+arrive as bare body text inside a numeric column — the `.psb-state` failure for the fourth time, which is
+precisely why that token family exists.
+
+**Planning is untouched in both directions.** `sales_driven` already fails closed rather than recommending
+from a rate it cannot trust, and now does so with the specific reason. `forecast_driven` still plans from
+regular FC + Target%: the historical field is published beside its horizon and **never switches the formula**.
+
+### D-S8-B3-59 — The correctness fix paid for itself in bytes — **RECORDED (CP2R-R1)**
+
+CP2R left **72 bytes** of headroom and the ledger escalated that as release-blocking. R1 had to add an
+ambiguity check to the same file. It **fits, and then some: −497 bytes net**, because removing the
+`compute([], [])` retry and the comment paragraph defending it costs more than the check adds.
+
+```
+BEFORE R1 (b1061f31)   4,599,928   headroom   72
+R1  42_ only              -497
+AFTER  R1              4,599,431   headroom  569
+```
+
+(The −497 is the figure the AUDIT INSTRUMENT reports. A first pass through this entry carried −493, which
+was arithmetic done on a byte count taken with a lossy encoding of the § and em-dash characters in the
+comment being removed. The instrument is the authority and the four bytes were the difference.)
+
+**Nothing was raised, retired or compressed to achieve this.** It is recorded because it is the opposite of
+the usual direction and the reason is reusable: **a defensive fallback nobody should rely on costs bytes
+twice** — once for the code and once for the paragraph explaining why it is safe.

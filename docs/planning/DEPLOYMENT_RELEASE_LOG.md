@@ -5346,3 +5346,32 @@ until this file is synced**: the page can only display a rate the server actuall
 is an OWNER decision and is not taken here.
 
 **STATUS: NOT DEPLOYED · NOT PUSHED · NOT SYNCED.**
+
+---
+
+## S8-B3-R3-CP2R-R1 — THE CORRECTNESS FIX RETURNED BYTES (append-only, 2026-10-15)
+
+**NOT a release cut.** The entry above recorded 72 bytes of headroom and restated the escalation. R1 had to
+add a marketplace-SKU ambiguity refusal to the same file, which looked like the round that would not fit.
+
+```
+BUDGET                       4,600,000
+AFTER  CP2R   (b1061f31)     4,599,928      headroom   72
+CP2R-R1  42_ only                 -497
+AFTER  CP2R-R1               4,599,431      headroom  569
+```
+
+It is **negative** because R1 DELETES the `compute([], [])` no-contamination retry and the comment paragraph
+that defended it. **A defensive fallback nobody should rely on costs bytes twice** — once for the code and
+once for the prose explaining why it is safe. Nothing was raised, retired or compressed.
+
+**The escalation is NOT withdrawn.** 569 bytes is better than 72 and it is still not a backend round. The
+CP2Q gap-timeout diagnostic, narrowed to the two gap read actions in `43_` alone, measures **1,423 bytes**
+and is still short by **854**. It remains an unimplemented proposal.
+
+**PENDING SYNC (unchanged file set):**
+`APPS_SCRIPT_SYNC_REQUIRED: assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs`
+`BUNDLE_REBUILD_REQUIRED: NO`. Until it is synced the page cannot display a quality error the server does
+not send, and the Avg Sales column keeps its CP2R behaviour.
+
+**STATUS: NOT DEPLOYED · NOT PUSHED · NOT SYNCED.**

@@ -1328,7 +1328,20 @@ var IR_CSS_TOKEN_SERIES = [
   //
   // The correction is this entry, NOT a move onto the application token: crossing the families is what three
   // suites forbid, and a stylesheet borrowing the application token spends a rotation it does not own.
-  'irtpunresolved-20261011'
+  'irtpunresolved-20261011',
+  // S8-B3-R3-CP2R-R1 - THE AVG SALES QUALITY MARK NEEDS ITS OWN ROTATION, FOR THE REASON THIS FAMILY EXISTS.
+  // R1 stops publishing a rate that cannot be trusted and names the reason instead, and the Avg Sales cell
+  // now renders that name plus a low-sample mark. Three new rules carry it: .replen-avg-flag and its
+  // --error and --warning variants, with two cell tints beside them. A browser serving the cached stylesheet
+  // has ZERO rules for all of them, so the word unavailable would arrive as bare body text inside a numeric
+  // column - the entry above records that exact failure happening for the third time, and this is the fourth
+  // chance to not repeat it.
+  //
+  // irtpunresolved-20261011 IS PUBLISHED - b97d6398 is on origin/main - so by the rule this list records it
+  // may never be reused. The APPLICATION family rotates separately in the same round for its own reason;
+  // crossing the two is what three suites forbid, and a stylesheet borrowing the application token spends a
+  // rotation it does not own.
+  'iravgquality-20261015'
 ];
 // F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
 //

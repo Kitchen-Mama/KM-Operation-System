@@ -42,22 +42,27 @@ Four of the seven are capturable **without any share outliving the callback that
 
 | | unscoped | scoped | paired delta | improved in |
 |---|---|---|---|---|
-| click → first paint | 60.2 ms | 55.0 ms | −3.6 ms | 4 of 6 |
-| **click → full ready** | **218.7 ms** | **111.5 ms** | **−102.0 ms** | **6 of 6** |
-| assembly **in** handler | 25.4 ms | 25.6 ms | +1.8 ms | 1 of 6 |
-| **assembly after handler** | **172.8 ms** | **68.1 ms** | **−95.4 ms** | **6 of 6** |
-| handler sync | 27.3 ms | 28.1 ms | +1.5 ms | 1 of 6 |
+| click → first paint | 60.8 ms | 58.9 ms | +2.1 ms | 3 of 6 |
+| **click → full ready** | **216.8 ms** | **129.3 ms** | **−89.2 ms** | **6 of 6** |
+| assembly **in** handler | 27.5 ms | 25.0 ms | +0.2 ms | 2 of 6 |
+| **assembly after handler** | **164.5 ms** | **79.2 ms** | **−87.2 ms** | **6 of 6** |
+| handler sync | 30.2 ms | 26.9 ms | −0.6 ms | 3 of 6 |
+
+These are the CP2R-R1 captures. The batch was re-taken because R1 changed the page (the Avg Sales quality
+mark and its mapping), so the CP2R captures no longer described the file on disk. Three batches of this
+design have now been taken; the two load-bearing rows reproduced in all three, at −102.0 / −95.4,
+−90.9 / −92.2 and −89.2 / −87.2 ms, every one of them 6 of 6.
 
 ## What this does NOT claim
 
 **First paint is not improved, and it cannot be.** First paint is the frame in which the expand panel first
-has a layout box; every scoped callback runs after that frame. The −3.6 ms here is drift, and an earlier
-batch of the same design produced +3.8 ms with 2 of 6 — it oscillates around zero, which is what "unchanged"
-looks like. §E4 is therefore **one-sided**: it refuses a regression and deliberately does not require an
+has a layout box; every scoped callback runs after that frame. The +2.1 ms here is drift: across the three
+batches it has read +3.8, −3.6 and +2.1 ms, improving in 2, 4 and 3 of 6. It oscillates around zero, which
+is what "unchanged" looks like, and is why no improvement is claimed for it. §E4 is therefore **one-sided**: it refuses a regression and deliberately does not require an
 improvement.
 
-**The synchronous handler is unchanged.** CP2P-R2 owns that scope; this round did not widen it. The +1.8 ms
-and +1.5 ms rows are the same drift seen from the other side.
+**The synchronous handler is unchanged.** CP2P-R2 owns that scope; this round did not widen it. The +0.2 ms
+and −0.6 ms rows are the same drift seen from the other side.
 
 **Nothing crosses a callback, a frame or an event.** The scope releases in a `finally` the moment the
 callback returns; outside a scope nothing is stored and nothing is consulted. The next frame, the other

@@ -798,6 +798,35 @@
 #ops-section .replen-suggested-cell__value--breakdown { color: #64748B; }
 #ops-section .replen-suggested-cell__hint { font-style: normal; font-size: 11px; color: #94A3B8; }
 
+/* S8-B3-R3-CP2R-R1 — THE AVG SALES QUALITY MARK, WHICH HAS TO BE VISIBLE TO COUNT.
+   Section 22 publishes `source` and `warning` as independent fields, and R1 adds a NAMED quality error for
+   the case where no rate may be published at all. A quality error that lives only in metadata is one that
+   nobody acts on, so the cell carries it: `unavailable` where no trustworthy rate exists, and a quiet `!`
+   beside a real number that came from a thin sample. Both also carry the full sentence as a title.
+   These rules exist because four .psb-state classes once shipped with zero rules and the refusal box
+   rendered unstyled; a class the markup emits and the stylesheet never mentions is not a surface. */
+#ops-section .replen-avg-flag {
+    margin-left: 6px;
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    vertical-align: baseline;
+}
+#ops-section .replen-avg-flag--error {
+    color: #B42318;
+    background: #FEF3F2;
+    border: 1px solid #FDA29B;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-weight: 600;
+}
+#ops-section .replen-avg-flag--warning {
+    color: #B54708;
+    font-weight: 700;
+}
+#ops-section .replen-cell--avg-error { color: #B42318; }
+#ops-section .replen-cell--avg-warning { color: #B54708; }
+
 /* SKU-column expand toggle: a compact INLINE triangle immediately left of the SKU, matching Request
    Order's `.ro-sku-expand-toggle` (bare glyph — NO fixed-width box, NO border, NO rounded gray button
    background). It stays a native <button> for keyboard/ARIA. Collapsed ▸ rotates to ▾ via .is-open;

@@ -35,6 +35,7 @@ var path = require('path');
 var cp = require('child_process');
 
 var ROOT = path.join(__dirname, '../..');
+var RO = require('./_release-order.js');   // S8-B3-R3-CP2R-R1 - the token ledger, so section D stops hard-coding it
 var pass = 0, fail = 0;
 function ok(c, label) { if (c) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } }
 function section(t) { console.log('\n== ' + t + ' =='); }
@@ -221,10 +222,20 @@ section('D — NON-VACUITY: the gate FAILS against the pre-fix index.html');
 // -------------------------------------------------------------------------------------------------------------
 // A guard that has never been seen to fail is a guard nobody has tested. De-patch the correction in memory and
 // re-run the SAME classifier over the SAME baseline.
+// S8-B3-R3-CP2R-R1 - DERIVED FROM THE BASELINE, NOT TYPED IN. This de-patch named both tokens as literals,
+// so it stopped de-patching anything the moment the stylesheet rotated again - and a non-vacuity probe that
+// silently stops probing is worse than none, because the suite still reports D2 and D3 as results beneath it.
+// The value it has to restore is specifically the token THE BASELINE CARRIES: that is what "changed but
+// never rotated since publication" means, and it is what makes B5 fire. Read it from the baseline instead.
+var _irCssCur = RO.parseIndexTokens(liveHosts['index.html'])[IRCSS];
+var _irCssBase = RO.parseIndexTokens(norm(git('show ' + BASELINE + ':index.html')))[IRCSS];
+ok(!!_irCssCur && !!_irCssBase && _irCssCur !== _irCssBase,
+  'D0 the stylesheet HAS rotated since the baseline (' + _irCssBase + ' -> ' + _irCssCur + ')');
 var PRE_FIX = liveHosts['index.html'].replace(
-  'inventory-replenishment.css?v=irtpunresolved-20261011',
-  'inventory-replenishment.css?v=irrestinglayout-20261008');
-ok(PRE_FIX !== liveHosts['index.html'], 'D1 a de-patched pre-fix index.html was produced');
+  'inventory-replenishment.css?v=' + _irCssCur,
+  'inventory-replenishment.css?v=' + _irCssBase);
+ok(PRE_FIX !== liveHosts['index.html'],
+  'D1 a de-patched pre-fix index.html was produced (' + _irCssCur + ' -> ' + _irCssBase + ')');
 
 var preHosts = { 'index.html': PRE_FIX, 'assets/js/app.js': liveHosts['assets/js/app.js'] };
 var PRE = classify(preHosts);

@@ -2035,6 +2035,57 @@ function _irFixedRowHtml_(item) {
 // The Days-of-Supply cell's colour class, resolved where the cell is emitted. Computing it ahead of the row
 // would put item.daysOfSupply in the SOURCE before Current Stock, and the body-cell ORDER is a contract read
 // from this builder - source order and render order must not be allowed to disagree.
+// S8-B3-R3-CP2R-R1 — THE AVG SALES CELL SAYS WHY IT IS BLANK.
+//
+// Section 22 returns `source` and `warning` as independent fields so a normalized rate can be told from a
+// weekly fallback and a low sample is visible rather than inferred, and R1 adds a NAMED quality error for
+// the case where no rate may be published at all. All three were reaching the row and none of them reached
+// the screen: the column printed a number or '--', and '--' meant four different things.
+//
+// It renders NOTHING extra when the basis is clean. A marker that is always present is not a signal.
+// NOTHING IS COMPUTED HERE — every value is carried from the server, as the whole column already is.
+var IR_AVG_QUALITY_TEXT = {
+    MARKETPLACE_SKU_AMBIGUOUS: 'This site resolves to more than one Marketplace SKU id, so the campaign days cannot be identified. No average is shown rather than an average that may exclude the wrong days.',
+    SALES_BASIS_CONTAMINATION_UNRESOLVED: 'A campaign line could not be matched to this site, so the campaign days cannot be excluded. No average is shown rather than one inflated by campaign sales.',
+    SALES_BASIS_UNAVAILABLE: 'No usable daily or weekly sales history for this site.',
+    SALES_BASIS_AMBIGUOUS: 'The daily sales rows for this site resolve to more than one channel.',
+    SALES_RUNTIME_UNAVAILABLE: 'The sales calculation owner is not available in this deployment.',
+    CALCULATION_DATE_NOT_CONFIGURED: 'No calculation date is configured, so the 90-day window cannot be placed.'
+};
+var IR_AVG_WARNING_TEXT = {
+    low_sample_warning: 'Fewer than seven normal days in the sample.',
+    insufficient_normal_days: 'Fewer than three normal days, so this is the weekly rate divided by seven, not a normalized average.'
+};
+function _irAvgSalesQualityNote_(item) {
+    if (!item) return '';
+    var q = item.avgSalesQualityError;
+    if (q) return IR_AVG_QUALITY_TEXT[q] || ('Avg Sales unavailable: ' + q);
+    var w = item.avgSalesWarning;
+    if (w) return IR_AVG_WARNING_TEXT[w] || String(w);
+    return '';
+}
+function _irAvgSalesCellClass_(item) {
+    if (item && item.avgSalesQualityError) return ' replen-cell--avg-error';
+    if (item && item.avgSalesWarning) return ' replen-cell--avg-warning';
+    return '';
+}
+function _irAvgSalesTitleAttr_(item) {
+    var note = _irAvgSalesQualityNote_(item);
+    return note ? ' title="' + escapeReplenHtml(note) + '"' : '';
+}
+// The visible mark. A quality error means no number exists, so it is named; a warning sits beside a real
+// number and only has to be noticeable.
+function _irAvgSalesFlagHtml_(item) {
+    if (item && item.avgSalesQualityError) {
+        return '<span class="replen-avg-flag replen-avg-flag--error" aria-label="'
+            + escapeReplenHtml(_irAvgSalesQualityNote_(item)) + '">unavailable</span>';
+    }
+    if (item && item.avgSalesWarning) {
+        return '<span class="replen-avg-flag replen-avg-flag--warning" aria-label="'
+            + escapeReplenHtml(_irAvgSalesQualityNote_(item)) + '">!</span>';
+    }
+    return '';
+}
 function _irDosCellClass_(item) {
     return (window.IRMap ? window.IRMap.dosColorClass(item.daysOfSupply) : '') + (item.needsAlert ? ' alert-red' : '');
 }
@@ -2046,7 +2097,7 @@ function _irScrollRowHtml_(item) {
         '<div class="scroll-cell replen-cell--current-stock">' + item.currentInventory + '</div>' +
         '<div class="scroll-cell" title="' + String(item.thirdPartyTitle || '').replace(/"/g, '&quot;') + '">' + item.thirdPartyStock + '</div>' +
         '<div class="scroll-cell">' + item.onTheWay + '</div>' +
-        '<div class="scroll-cell">' + item.avgDailySales + '</div>' +
+        '<div class="scroll-cell' + _irAvgSalesCellClass_(item) + '"' + _irAvgSalesTitleAttr_(item) + '>' + item.avgDailySales + _irAvgSalesFlagHtml_(item) + '</div>' +
         '<div class="scroll-cell">' + item.forecast60d + '</div>' +
         '<div class="scroll-cell">' + (item.upcomingEventQty !== null ? item.upcomingEventQty : '-') + '</div>' +
         '<div class="scroll-cell ' + _irDosCellClass_(item) + '">' + item.daysOfSupply + '</div>' +
@@ -12617,6 +12668,7 @@ function _getCloudReplenishmentData() {
         // title/detail so a normalized rate can be told from a weekly fallback, and a low_sample_warning is
         // visible rather than inferred. `avg` (the weekly rate) is still computed above and is still used by
         // the existing weekly Sales Trend surfaces; it is simply no longer what this column prints.
+        var _avgQualityError = _canonBasis ? (_canonBasis.basisQualityError || null) : null;
         var _avgSource = _canonBasis ? (_canonBasis.source || null) : null;
         var _avgWarning = _canonBasis ? (_canonBasis.warning || null) : null;
         var _avgNormalDays = _canonBasis ? (_canonBasis.normalDayCount == null ? null : _canonBasis.normalDayCount) : null;
@@ -12672,6 +12724,7 @@ function _getCloudReplenishmentData() {
             avgDailySales: _avgDisplay,        // S8-R2: the canonical §22 rate for BOTH demand modes, or '--'
             // §22.3 decoupled diagnostics, carried not computed. Consumers read them to LABEL the rate; none
             // of them may substitute a value when the rate itself is null.
+            avgSalesQualityError: _avgQualityError,  // R1: the NAMED reason no rate could be trusted, or null
             avgSalesSource: _avgSource,              // 'normalized_30d' | 'weekly_7d' | null
             avgSalesWarning: _avgWarning,            // 'low_sample_warning' | 'insufficient_normal_days' | null
             avgSalesNormalDayCount: _avgNormalDays,  // the ACTUAL denominator, never a fixed 30
@@ -13926,11 +13979,12 @@ function _irRecoMapLine(L) {
         ? L.horizonBasis.excludedDates.map(function (d) { return String(d); }) : null,
       horizonOpeningQty: _irNumOrNull(L.horizonBasis.horizonOpeningQty),
       qualifiedIncomingCount: _irNumOrNull(L.horizonBasis.qualifiedIncomingCount),
-      // S8-B3-R3-CP2R - WHETHER THE EXCLUSION FILTER SURVIVED. The server retries the run-rate WITHOUT the
-      // campaign/event filter when a campaign line cannot prove site membership, because contamination must
-      // never gate READY. That retry is legitimate and it is also invisible: an un-excluded rate and a clean
-      // one are the same number shape. Carried so a reader can tell them apart; still never computed here.
-      contaminationApplied: (L.horizonBasis.contaminationApplied == null ? null : !!L.horizonBasis.contaminationApplied),
+      // S8-B3-R3-CP2R-R1 - THE NAMED QUALITY ERROR. CP2R carried a flag saying the server had recomputed the
+      // rate WITHOUT the campaign filter, which made a degraded number observable instead of hidden. R1
+      // removed that recompute: an un-excluded average is not a normal average, so the server now publishes
+      // NO rate and names the reason. This carries the name, and the Avg Sales cell renders it - a quality
+      // error that only exists in metadata is one nobody sees.
+      basisQualityError: (L.horizonBasis.basisQualityError == null ? null : String(L.horizonBasis.basisQualityError)),
       contaminationSource: (L.horizonBasis.contaminationSource && typeof L.horizonBasis.contaminationSource === 'object')
         ? { campaigns: String(L.horizonBasis.contaminationSource.campaigns || ''), events: String(L.horizonBasis.contaminationSource.events || '') } : null
     } : null,

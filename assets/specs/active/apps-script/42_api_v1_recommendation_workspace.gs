@@ -288,20 +288,25 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
       return { date: toYmd(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
     });
   }
-  // S8-B3-R3-CP2R - company + country + marketplace is what distinguishes operational ownership here, so
-  // omitting company let SHEET ROW ORDER pick the id when two companies sell one master SKU into one site,
-  // and KMCALC then excluded the OTHER company's campaign days. recoWsSiteSkuBySku_ matches the same grain.
-  var mSkuId = null, mskRows = recoWsToRowObjects_(snaps.marketplaceSkus);
-  for (var i = 0; i < mskRows.length; i++) { var mr = mskRows[i]; if (recoWsStr_(mr.sku) === sku && recoWsStr_(mr.company) === scope.company && recoWsStr_(mr.country) === scope.country && recoWsStr_(mr.marketplace) === scope.marketplace) { mSkuId = recoWsStr_(mr.marketplace_sku_id) || null; break; } }
+  // S8-B3-R3-CP2R-R1 - company + country + marketplace IS operational ownership, and it must resolve to ONE
+  // id. Omitting company let sheet row order choose; taking the first of several is the same guess one step
+  // later. Two ids for one scope is unrepairable here, so it refuses and names them.
+  var mSkuSet = {};
+  recoWsToRowObjects_(snaps.marketplaceSkus).forEach(function (mr) {
+    if (recoWsStr_(mr.sku) !== sku || recoWsStr_(mr.company) !== scope.company
+      || recoWsStr_(mr.country) !== scope.country || recoWsStr_(mr.marketplace) !== scope.marketplace) return;
+    var id = recoWsStr_(mr.marketplace_sku_id); if (id) mSkuSet[id] = 1;
+  });
+  var mSkuAll = Object.keys(mSkuSet);
+  if (mSkuAll.length > 1) return { ok: false, reason: 'MARKETPLACE_SKU_AMBIGUOUS', detail: mSkuAll.join(',') };
+  var mSkuId = mSkuAll.length ? mSkuAll[0] : null;
   // scope marketplace_id — the owner treats an event's marketplace_id as AUTHORITATIVE and fail-fasts on an
   // ID-bearing event when the scope marketplace_id is unresolved, so resolve it from the marketplaces registry.
   var scopeMktId = null;
   recoWsToRowObjects_(snaps.marketplaces).forEach(function (m) { if (scopeMktId) return; if (recoWsStr_(m.company) === scope.company && recoWsStr_(m.country) === scope.country && recoWsStr_(m.marketplace) === scope.marketplace) scopeMktId = recoWsStr_(m.marketplace_id) || null; });
-  // R3a+R4 — best-effort contamination facts (never []unless the source is empty/absent). The exclusion filter must
-  // NEVER gate READY (R4 §5): compute the basis WITH contamination; if the owner throws on a contamination identity
-  // conflict (e.g. a campaign line missing marketplace_sku_id), RECOMPUTE the basis WITHOUT the contamination filter
-  // so a malformed campaign row degrades to "no exclusion" instead of blocking the SKU. Only a fundamentally broken
-  // daily-sales basis (non-finite / owner throw even without contamination) fail-closes to SALES_BASIS_UNAVAILABLE.
+  // S8-B3-R3-CP2R-R1 - present-but-empty and ABSENT both still mean "no exclusion" and still resolve. An
+  // UNRESOLVED IDENTITY does not: recomputing without the filter published a rate inflated by the very
+  // campaign days §22 removes, as though it were a normal average. It now fails closed with a named error.
   var contam = recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId);
   function compute(campaigns, events) {
     return KMCALC.normalizedAvgSalesPerDay({
@@ -310,20 +315,15 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
       weekly7d: weekly7d, dailySales: dailySales, campaigns: campaigns, events: events
     });
   }
-  // Surface the REAL owner exception (stripped + truncated) in the detail so the live BLOCKED note names the exact
-  // cause when the owner still throws after the no-contamination retry — no more opaque "run-rate owner error".
+  // The REAL owner exception, stripped and truncated, so the named error says what to repair.
   function ownerErr(e) { return (e && e.message) ? String(e.message).replace(/^supplyPlanningCalculations:\s*/, '').slice(0, 140) : '?'; }
-  var res, contaminationApplied = true;
-  try {
-    res = compute(contam.campaigns, contam.events);
-  } catch (e) {
-    contaminationApplied = false;
-    try { res = compute([], []); } catch (e2) { return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error: ' + ownerErr(e2) }; }
-  }
+  var res;
+  try { res = compute(contam.campaigns, contam.events); }
+  catch (e) { return { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: ownerErr(e) }; }
   var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
   if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)' };
   return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,
-    contaminationApplied: contaminationApplied, contaminationSource: contam.sourceStatus };
+    contaminationSource: contam.sourceStatus };
 }
 
 // Build the additive per-destination day-horizon projection via the frozen KMHP owner. Returns null (→ line.horizons
@@ -716,14 +716,13 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   // normalized rate can be told from a weekly fallback. An unresolved basis stays null in EVERY field — never a
   // fabricated 0. S8-B3-R3-CP2R — AND IT IS PUBLISHED OUTSIDE THE HORIZON BRANCH: assigned inside `if (mHz)` it
   // withheld a valid historical average whenever a horizon could not be built, deleting a sales fact for a
-  // forecast reason. `contaminationApplied` travels for the same reason — the resolver retries WITHOUT the
-  // exclusion filter when a campaign line cannot prove site membership, and a caller that cannot see that flag
-  // cannot tell an un-excluded basis from a clean one.
+  // forecast reason. R1 — `basisQualityError` travels with it because a forecast_driven line sets no blocked
+  // reason, so an unresolved basis had nowhere to say why and a surface could only show a blank.
   mLine.horizonBasis = { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
     source: (sr.ok ? sr.source : null), warning: (sr.ok ? sr.warning : null),
     normalDayCount: (sr.ok ? sr.normalDayCount : null), excludedDates: (sr.ok ? sr.excludedDates : null),
     horizonOpeningQty: horizonOpening, qualifiedIncomingCount: (mIncoming || []).length,
-    contaminationApplied: (sr.ok ? sr.contaminationApplied : null), contaminationSource: (sr.ok ? sr.contaminationSource : null) };
+    basisQualityError: (sr.ok ? null : (sr.reason || null)), contaminationSource: (sr.ok ? sr.contaminationSource : null) };
   return mLine;
 }
 

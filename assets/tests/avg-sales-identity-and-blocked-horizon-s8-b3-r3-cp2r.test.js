@@ -30,6 +30,7 @@ var vm = require('vm');
 var ROOT = path.join(__dirname, '..', '..');
 var KMCALC = require('../js/core/supply-planning-calculations.js');
 var KMCID = require('../js/core/supply-planning-country-identity.js');
+var RO = require('./_release-order.js');
 
 var passed = 0, failed = 0;
 function ok(c, m, d) { if (c) { passed++; console.log('ok   ' + m); } else { failed++; console.log('FAIL ' + m + (d === undefined ? '' : '\n       got ' + JSON.stringify(d))); } }
@@ -153,17 +154,28 @@ eq(resFirst.avgSalesPerDay, (200 + 10 * 28) / 29,
 ok(resFirst.source === 'normalized_30d' && !resFirst.warning,
   'B2  and it is a normalized basis, not the weekly fallback', { s: resFirst.source, w: resFirst.warning });
 
-// A campaign line that cannot prove site membership makes KMCALC throw, and 42_ retries with NO
-// exclusions. That fallback is allowed to exist - contamination must never gate READY - but it must not
-// be SILENT: a caller cannot tell an un-excluded basis from a clean one without a flag.
+// S8-B3-R3-CP2R-R1 - B3..B5 USED TO BACK THE WRONG BEHAVIOUR AND ARE REPLACED.
+//
+// They asserted that a campaign line which cannot prove site membership makes KMCALC throw, 42_ retries
+// with NO exclusions, and the SKU stays ok:true with a flag saying so. The round that wrote them treated
+// "contamination must never gate READY" as the whole rule and the flag as sufficient honesty. It is not:
+// an un-excluded average is NOT a normal average. It is inflated by exactly the campaign days section 22
+// exists to remove, and publishing it as a legitimate rate - with the explanation parked in a metadata
+// field no surface reads - is the same defect as publishing a wrong number.
+//
+// The disposition is now FAIL CLOSED with a NAMED quality error. What is deliberately NOT swept up with
+// it: a source that is present-and-empty or genuinely absent still means "no exclusion", and the low
+// sample section 22 fallback still applies. Only an UNRESOLVED IDENTITY fails.
 var BROKEN_LINES = snap(['campaign_id', 'marketplace_sku_id', 'sku'],
   [['CMP-KM', '', 'SKU-A'], ['CMP-RES', 'MSKU-RES-US', 'SKU-A']]);
 var degraded = resolve('ResUS', [ROW_RES, ROW_KM], { campaignSkuLines: BROKEN_LINES });
-ok(degraded.ok === true, 'B3  a campaign line with no marketplace_sku_id does not block the SKU');
-eq(degraded.contaminationApplied, false,
-  'B4  and the resolver REPORTS that it recomputed without the exclusion filter');
-eq(degraded.excludedDates, [],
-  'B5  which is the honest consequence: with the filter dropped, nothing is excluded');
+eq(degraded.ok, false, 'B3  a campaign line that cannot prove site membership FAILS CLOSED');
+eq(degraded.reason, 'SALES_BASIS_CONTAMINATION_UNRESOLVED',
+  'B4  with a NAMED quality error, not a silently un-excluded number');
+ok(degraded.avgSalesPerDay == null,
+  'B5  and NO rate is published at all - an un-excluded average is not a normal average', degraded);
+ok(String(degraded.detail || '').indexOf('marketplaceSkuId') !== -1,
+  'B5a the detail names the real cause, carried verbatim from the owner', degraded.detail);
 
 // A cancelled campaign removes nothing, and an overlapping pair removes its union once.
 var CANCELLED = snap(['campaign_id', 'status', 'start_date', 'end_date'],
@@ -246,19 +258,17 @@ var zero = runRegion({
 eq(zero.horizonBasis && zero.horizonBasis.avgSalesPerDay, 0,
   'C10 a confirmed ZERO rate is published on a blocked line - zero is not missing');
 
-// The degradation flag must reach the line, or the UI cannot tell a clean basis from an un-excluded one.
-eq(built.horizonBasis && built.horizonBasis.contaminationApplied, true,
-  'C11 the line carries whether the exclusion filter was applied');
-var degradedLine = runRegion({
-  planModel: 'forecast_driven', salesRate: null,
-  sr: {
-    ok: true, avgSalesPerDay: 15, source: 'normalized_30d', warning: '', normalDayCount: 30, excludedDates: [],
-    contaminationApplied: false, contaminationSource: { campaigns: 'PRESENT', events: 'PRESENT' }
-  },
-  horizonOpening: 10, horizons: [{ d: 18 }]
-});
-eq(degradedLine.horizonBasis && degradedLine.horizonBasis.contaminationApplied, false,
-  'C12 and reports FALSE when the exclusions were dropped - the silent recompute becomes observable');
+// S8-B3-R3-CP2R-R1 - C11 and C12 ARE SUPERSEDED, AND THE STATE THEY DESCRIBED NO LONGER EXISTS.
+//
+// CP2R made the silent no-exclusion recompute OBSERVABLE by carrying a `contaminationApplied` flag to the
+// line. That was an improvement on hiding it, and it was still the wrong answer: an un-excluded average is
+// not a normal average, and shipping one with a flag attached asks every reader to notice the flag. R1
+// removes the recompute, so there is no degraded-but-published state left to report. What replaces these
+// is the assertion that the line carries the NAMED reason instead - see section F8b / F9 / F10b.
+ok(!/contaminationApplied/.test(RECO),
+  'C11 the degraded-state flag is gone from 42_ entirely - the state it reported cannot occur');
+ok(!/compute\(\[\],\s*\[\]\)/.test(RECO),
+  'C12 because the no-contamination recompute that produced it is gone with it');
 
 // ---------------------------------------------------------------------------------------------------
 section('D  what must not change');
@@ -347,5 +357,187 @@ ok(decoyOnly.ok === false || decoyOnly.excludedDates.length === 0,
 // Cross-company at scale, both directions, same table.
 eq(resolve('KM', bigMskRows(), BIG_OVER).excludedDates, [KM_DAY],
   'E7  and KM still gets its OWN day out of the same 4,000-row table');
+
+// ---------------------------------------------------------------------------------------------------
+section('F  identity must be UNIQUE, and a basis that cannot be trusted is not published');
+// ---------------------------------------------------------------------------------------------------
+// S8-B3-R3-CP2R-R1. CP2R stopped the resolver reading ANOTHER company's row. It still took the FIRST row
+// that matched, which is correct only while the complete operational scope maps to exactly one id. When it
+// maps to two, there is no right answer to pick and picking one is guessing with a 50% error rate.
+
+// --- the conflict ----------------------------------------------------------------------------------
+var ROW_RES_DUP = ['MSKU-RES-US-2', 'SKU-A', 'ResUS', 'US', 'Amazon'];   // same scope, DIFFERENT id
+var conflictA = resolve('ResUS', [ROW_RES, ROW_RES_DUP, ROW_KM]);
+var conflictB = resolve('ResUS', [ROW_RES_DUP, ROW_RES, ROW_KM]);
+eq(conflictA.ok, false, 'F1  one complete scope mapping to TWO ids REFUSES to resolve');
+eq(conflictA.reason, 'MARKETPLACE_SKU_AMBIGUOUS', 'F1a with a named reason, not a guess');
+eq(conflictB.reason, conflictA.reason,
+  'F1b and it refuses in BOTH row orders - the refusal is about the data, not about which row came first');
+ok(conflictA.avgSalesPerDay == null, 'F1c no rate is published for an unresolvable identity');
+ok(String(conflictA.detail || '').indexOf('MSKU-RES-US') !== -1,
+  'F1d the detail names the ids that collided, so the data can be repaired', conflictA.detail);
+
+// A DUPLICATE row carrying the SAME id is not a conflict - it is the same site listed twice.
+var SAME_ID_TWICE = ['MSKU-RES-US', 'SKU-A', 'ResUS', 'US', 'Amazon'];
+var dup = resolve('ResUS', [ROW_RES, SAME_ID_TWICE, ROW_KM]);
+eq(dup.ok, true, 'F2  two rows carrying the SAME id are not ambiguous');
+eq(dup.excludedDates, [RES_DAY], 'F2a and resolve to the same answer as one row');
+
+// --- the missing row -------------------------------------------------------------------------------
+// No row for this scope at all. With campaigns present the identity cannot be proven, so it must fail -
+// and it must fail with a NAME, not by publishing an un-excluded average.
+var missing = resolve('ResUS', [ROW_KM]);
+eq(missing.ok, false, 'F3  a scope with NO marketplace_skus row does not fall through to an un-excluded rate');
+ok(missing.avgSalesPerDay == null, 'F3a and publishes no rate', missing);
+
+// ...but a missing id is NOT a failure when there is nothing to exclude. This is the line between
+// "cannot prove identity" and "identity is not needed", and it is what keeps confirmed-empty data working.
+var NO_CAMPAIGNS = snap(['campaign_id', 'status', 'start_date', 'end_date'], []);
+var noCampNoRow = resolve('ResUS', [ROW_KM], { campaigns: NO_CAMPAIGNS, campaignSkuLines: snap(['campaign_id', 'marketplace_sku_id', 'sku'], []) });
+eq(noCampNoRow.ok, true,
+  'F4  with NO campaigns to exclude, an unresolved marketplace_sku_id is not an error - nothing needed it');
+eq(noCampNoRow.excludedDates, [], 'F4a and nothing is excluded, truthfully');
+
+// --- what fail-closed must NOT swallow ---------------------------------------------------------------
+// A present-but-EMPTY contamination source is a legitimate "no exclusion", not a read failure.
+var emptyCamp = resolve('ResUS', [ROW_RES, ROW_KM], { campaigns: NO_CAMPAIGNS, campaignSkuLines: snap(['campaign_id', 'marketplace_sku_id', 'sku'], []) });
+eq(emptyCamp.ok, true, 'F5  a PRESENT but EMPTY campaign table is not a failure');
+eq(emptyCamp.excludedDates, [], 'F5a it simply excludes nothing');
+eq(emptyCamp.avgSalesPerDay, (200 + 100 + 10 * 28) / 30,
+  'F5b and every day counts, including both companies\' spikes - this scope ran no campaign');
+
+// An ABSENT source likewise. Confirmed empty and absent were differentiated before this round and stay so.
+var absent = resolve('ResUS', [ROW_RES, ROW_KM], { campaigns: null, campaignSkuLines: null });
+eq(absent.ok, true, 'F6  an ABSENT campaign source is not a failure either');
+eq(absent.contaminationSource.campaigns, 'ABSENT', 'F6a and is still reported as ABSENT, not as PRESENT');
+eq(emptyCamp.contaminationSource.campaigns, 'PRESENT', 'F6b while present-and-empty still reads PRESENT');
+
+// The section 22 LOW SAMPLE fallback is a legitimate basis and must survive fail-closed.
+var THIN = snap(['snapshot_date', 'sku', 'sales_units', 'country', 'marketplace', 'channel'],
+  [[daysBack(1), 'SKU-A', 10, 'US', 'Amazon', 'Amazon'], [daysBack(2), 'SKU-A', 10, 'US', 'Amazon', 'Amazon']]);
+var thin = resolve('ResUS', [ROW_RES, ROW_KM], { amazonDailySalesSnapshot: THIN, campaigns: NO_CAMPAIGNS, campaignSkuLines: snap(['campaign_id', 'marketplace_sku_id', 'sku'], []) });
+eq(thin.ok, true, 'F7  fewer than three normal days still resolves through the weekly rung');
+eq(thin.source, 'weekly_7d', 'F7a labelled weekly_7d, never passed off as normalized');
+eq(thin.warning, 'insufficient_normal_days', 'F7b and carrying its own warning');
+eq(thin.avgSalesPerDay, 10, 'F7c with the weekly value divided by seven');
+
+// --- the named error has to REACH a surface ----------------------------------------------------------
+// A quality error parked in metadata that nothing renders is the defect this round is closing, so the
+// line must carry it. forecast_driven is the case that proves it: it never sets horizonsBlockedReason.
+var fcBad = runRegion({ planModel: 'forecast_driven', salesRate: null,
+  sr: { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: 'campaigns[0].skuLines[0] is missing marketplaceSkuId' },
+  horizonOpening: 40, horizons: [{ d: 18 }] });
+ok(!!fcBad.horizonBasis, 'F8  a forecast-driven line still publishes a basis object');
+eq(fcBad.horizonBasis.avgSalesPerDay, null, 'F8a with NO rate, because none can be trusted');
+eq(fcBad.horizonBasis.basisQualityError, 'SALES_BASIS_CONTAMINATION_UNRESOLVED',
+  'F8b and the NAMED quality error on the line itself - not only in a metadata field');
+eq(fcBad.horizons, [{ d: 18 }],
+  'F8c while the forecast horizon is UNTOUCHED - the historical field never switches the planning formula');
+ok(fcBad.horizonsBlockedReason === undefined,
+  'F8d and a forecast-driven line is not blocked by a sales-history problem');
+
+// A GOOD basis carries no quality error. The field must not become decorative.
+eq(built.horizonBasis.basisQualityError, null, 'F9  a resolved basis reports no quality error');
+
+// sales_driven, by contrast, must not plan from an untrustworthy average at all.
+var sdBad = runRegion({ planModel: 'sales_driven', salesRate: null, salesReason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED',
+  sr: { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED' }, horizonOpening: 40, horizons: null });
+eq(sdBad.horizonsBlockedReason, 'SALES_BASIS_CONTAMINATION_UNRESOLVED',
+  'F10 a sales-driven SKU fails CLOSED rather than recommending from a rate it cannot trust');
+eq(sdBad.horizonBasis.avgSalesPerDay, null, 'F10a and publishes no rate');
+eq(sdBad.horizonBasis.basisQualityError, 'SALES_BASIS_CONTAMINATION_UNRESOLVED',
+  'F10b with the same named error visible on the line');
+
+// --- the retry is GONE from the source, not merely unreachable ---------------------------------------
+var RESOLVER = extractFn(RECO, 'recoWsResolveSalesRate_');
+ok(!/compute\(\[\],\s*\[\]\)/.test(RESOLVER),
+  'F11 the no-contamination recompute is removed from the resolver entirely');
+ok(!/contaminationApplied/.test(RECO),
+  'F11a and the flag that reported it is gone - there is no longer a degraded state to report');
+
+// ---------------------------------------------------------------------------------------------------
+section('G  the named quality error has to be SEEN, not stored');
+// ---------------------------------------------------------------------------------------------------
+// S8-B3-R3-CP2R-R1. The column printed a number or '--', and '--' meant four different things: no history,
+// an ambiguous channel, an unresolvable identity, and a horizon that happened to fail. A reason carried as
+// far as the row object and no further is a reason nobody acts on. These run the REAL cell helpers.
+var IRPAGE = fs.readFileSync(path.join(ROOT, 'assets/js/pages/inventory-replenishment.js'), 'utf8');
+var IRCSS = fs.readFileSync(path.join(ROOT, 'assets/css/pages/inventory-replenishment.css'), 'utf8');
+
+var cellBox = { console: console };
+var cellCtx = vm.createContext(cellBox);
+vm.runInContext('function escapeReplenHtml(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }', cellCtx);
+['IR_AVG_QUALITY_TEXT', 'IR_AVG_WARNING_TEXT'].forEach(function (name) {
+  var i = IRPAGE.indexOf('var ' + name + ' = {');
+  var j = IRPAGE.indexOf('\n};', i);
+  vm.runInContext(IRPAGE.slice(i, j + 3), cellCtx);
+});
+['_irAvgSalesQualityNote_', '_irAvgSalesCellClass_', '_irAvgSalesTitleAttr_', '_irAvgSalesFlagHtml_']
+  .forEach(function (fn) { vm.runInContext(extractFn(IRPAGE, fn), cellCtx); });
+function cell(item, fn) { cellBox.__i = item; return vm.runInContext(fn + '(__i)', cellCtx); }
+
+// --- a clean basis shows NOTHING extra. A marker that is always there is not a signal. ---------------
+var CLEAN = { avgDailySales: '12.5', avgSalesQualityError: null, avgSalesWarning: null, avgSalesSource: 'normalized_30d' };
+eq(cell(CLEAN, '_irAvgSalesFlagHtml_'), '', 'G1  a clean basis renders no marker at all');
+eq(cell(CLEAN, '_irAvgSalesCellClass_'), '', 'G1a and adds no class');
+eq(cell(CLEAN, '_irAvgSalesTitleAttr_'), '', 'G1b and no title');
+
+// --- a named quality error is NAMED on screen --------------------------------------------------------
+var AMBIG = { avgDailySales: '--', avgSalesQualityError: 'MARKETPLACE_SKU_AMBIGUOUS', avgSalesWarning: null };
+var ambigFlag = cell(AMBIG, '_irAvgSalesFlagHtml_');
+ok(ambigFlag.indexOf('unavailable') !== -1,
+  'G2  an unresolvable identity renders a VISIBLE word, not an empty cell', ambigFlag);
+ok(ambigFlag.indexOf('replen-avg-flag--error') !== -1, 'G2a carrying the error class');
+var ambigTitle = cell(AMBIG, '_irAvgSalesTitleAttr_');
+ok(ambigTitle.indexOf('more than one Marketplace SKU id') !== -1,
+  'G2b and a title that says what is wrong in words, not a token', ambigTitle);
+ok(ambigTitle.indexOf('may exclude the wrong days') !== -1,
+  'G2c including WHY no number is better than a number here');
+eq(cell(AMBIG, '_irAvgSalesCellClass_'), ' replen-cell--avg-error', 'G2d and the cell is marked');
+
+var CONTAM = { avgDailySales: '--', avgSalesQualityError: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', avgSalesWarning: null };
+ok(cell(CONTAM, '_irAvgSalesTitleAttr_').indexOf('inflated by campaign sales') !== -1,
+  'G3  the contamination error explains the inflation it is refusing to publish');
+
+// An UNKNOWN code must still render something rather than vanishing.
+var UNKNOWN = { avgDailySales: '--', avgSalesQualityError: 'SOME_FUTURE_CODE', avgSalesWarning: null };
+ok(cell(UNKNOWN, '_irAvgSalesTitleAttr_').indexOf('SOME_FUTURE_CODE') !== -1,
+  'G4  an unmapped code falls back to showing the code itself - never a blank');
+
+// --- a low sample sits BESIDE a real number ----------------------------------------------------------
+var THIN_ROW = { avgDailySales: '10.0', avgSalesQualityError: null, avgSalesWarning: 'insufficient_normal_days' };
+var thinFlag = cell(THIN_ROW, '_irAvgSalesFlagHtml_');
+ok(thinFlag.indexOf('replen-avg-flag--warning') !== -1, 'G5  a weekly fallback is marked beside its number');
+ok(thinFlag.indexOf('unavailable') === -1, 'G5a but NOT as unavailable - the number is real');
+ok(cell(THIN_ROW, '_irAvgSalesTitleAttr_').indexOf('weekly rate divided by seven') !== -1,
+  'G5b and the title says it is not a normalized average');
+var LOW = { avgDailySales: '11.0', avgSalesQualityError: null, avgSalesWarning: 'low_sample_warning' };
+ok(cell(LOW, '_irAvgSalesTitleAttr_').indexOf('seven normal days') !== -1, 'G5c low_sample_warning is explained too');
+
+// An error OUTRANKS a warning: there is no number for the warning to qualify.
+var BOTH = { avgDailySales: '--', avgSalesQualityError: 'SALES_BASIS_UNAVAILABLE', avgSalesWarning: 'low_sample_warning' };
+ok(cell(BOTH, '_irAvgSalesFlagHtml_').indexOf('unavailable') !== -1,
+  'G6  when both are present the ERROR wins - a warning about a number that does not exist is noise');
+
+// --- the row actually uses the helpers ---------------------------------------------------------------
+ok(/_irAvgSalesCellClass_\(item\)[\s\S]{0,200}item\.avgDailySales[\s\S]{0,80}_irAvgSalesFlagHtml_\(item\)/.test(IRPAGE),
+  'G7  the Avg Sales cell is built from the helpers, in the same cell as the number');
+ok(/avgSalesQualityError: _avgQualityError/.test(IRPAGE), 'G7a and the row carries the named error');
+ok(/basisQualityError: \(L\.horizonBasis\.basisQualityError/.test(IRPAGE),
+  'G7b which it reads from the workspace line, never computing one here');
+
+// --- and the classes EXIST in the stylesheet ---------------------------------------------------------
+// Four .psb-state classes once shipped with zero rules and the refusal box rendered as bare body text.
+// A class the markup emits and the stylesheet never mentions is not a surface.
+['replen-avg-flag', 'replen-avg-flag--error', 'replen-avg-flag--warning',
+ 'replen-cell--avg-error', 'replen-cell--avg-warning'].forEach(function (c, i) {
+  ok(new RegExp('\\.' + c.replace(/--/g, '--') + '\\s*[,{]').test(IRCSS),
+    'G8.' + (i + 1) + ' .' + c + ' has at least one real CSS rule');
+});
+// And the stylesheet rotated, or a cached copy would render the word as plain text inside a numeric column.
+var _series = RO.IR_CSS_TOKEN_SERIES;
+eq(RO.currentIrCssToken(), _series[_series.length - 1], 'G9  the IR stylesheet token is the series head');
+ok(RO.currentIrCssToken() !== 'irtpunresolved-20261011',
+  'G9a and it ROTATED this round - the published one may not be reused for changed bytes');
 
 console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed');
