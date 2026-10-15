@@ -18,10 +18,15 @@ Actual column. Neither is implemented.
 
 ## 0. The one-line answer
 
-**The only source that could satisfy the rule is BigQuery `Raw Daily Sales`, and this repository
-cannot show how a row in it resolves to a COMPANY.** Everything else in this document is detail
-underneath that sentence. Two of the five questions below are answerable from the repository; three
-are `MISSING_OWNER_INPUT`.
+**The only source that could satisfy the rule is BigQuery `Raw Daily Sales`, and the one thing still
+open is how a row in it maps to a SELLING ENTITY.** That is a mapping question with three ordinary
+answers (§1.2), not a verdict that the source cannot do it — the repository lists the columns the
+import *selects*, which is not the list of columns the table *has*. The DB-side identity model is
+Owner-confirmed and is not re-opened here.
+
+Everything else is detail underneath that sentence. **Evidence in this document carries an as-of
+date**; where a later reading supersedes an earlier one, both are kept and the older is labelled a
+snapshot (§3.3).
 
 ---
 
@@ -59,24 +64,45 @@ This is not an oversight in the mapping — it is the whole system's position:
 - `42_api_v1_recommendation_workspace.gs:213` — the server proceeds on the recorded assumption
   "**company isolation holds by construction (amazon_daily_sales_snapshot is one-company-per-scope)**".
 
-That assumption is **unverified by data and unverifiable from this repository**, and the FC Builder
-is exactly where it would fail if it is false: its scope is `company|country|marketplace`, and KM and
-ResUS both operate US/Amazon.
+That assumption is **not verified by anything in this repository**. The FC Builder is exactly where
+it would matter if it were false: its scope is `company|country|marketplace`, and KM and ResUS both
+operate US/Amazon.
 
-> **MISSING_OWNER_INPUT #1 — does `Raw Daily Sales` contain rows for more than one selling entity,
-> and if so which column separates them?** Three shapes are possible and they are not
-> distinguishable from here: (a) one BQ table per Amazon account, so the table name itself is the
-> company; (b) one table with an unmapped seller/account column that the import simply does not
-> select; (c) one table that genuinely cannot separate them. **(c) means the interval feature cannot
-> be built correctly for any country where two companies share a marketplace, at any budget.**
+**WHAT THIS DOES AND DOES NOT SAY — a correction to the first draft.** The field map above is the list
+of columns the **import selects**, not the list of columns the BigQuery table **has**. A source table
+routinely carries more columns than a consumer reads. So the repository's silence is evidence about
+the *repository*, and it is **not** evidence that `Raw Daily Sales` cannot separate selling entities.
+The first draft let the second conclusion stand next to the first; it does not follow and it is
+withdrawn.
+
+**The Owner-confirmed DB facts are kept and are not re-opened.** `marketplaces` and `marketplace_skus`
+carry `company` as a required column, and `company + country + marketplace` is what distinguishes
+operational ownership. Nothing here asks for that to be re-proved, and nothing here asks for a Master
+Data change first.
+
+> **MISSING_OWNER_INPUT #1, narrowed to the one thing that is actually open — how does a RAW SALES
+> ROW map to a selling entity?** Not "is the DB correct" and not "please re-prove the identity model":
+> only the join from a `Raw Daily Sales` row to one of the companies the DB already defines. Any one
+> of these answers it, and the first two need nothing changed anywhere:
+>
+> 1. a column already in the BQ table that the import does not select (a seller / merchant / account id);
+> 2. a per-account table or dataset, so the source location itself carries the entity;
+> 3. an external mapping the Owner holds (for example account id → company) that can be joined at read time.
+>
+> Only if **none** of the three exists does the question become a data-model problem rather than a
+> mapping one. **Unknown is recorded as unknown; it is not reported as impossible.**
 
 ### 1.3 `channel` is not the answer — evidence, not assumption
 
-`channel` is the only dimension in the key whose meaning is otherwise unexplained. The 2026-08-03
-real-data dry-run recorded in `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` analysed a production export
-of 12,882 rows spanning 58 days, 9 countries and 96 SKUs, and reports **`channel=Amazon`** for all of
-them — a single constant. **`channel` did not separate anything in the observed data**, and nothing
-in the repository documents a second permitted value.
+`channel` is the only dimension in the key whose meaning is otherwise unexplained. The **2026-08-03**
+real-data dry-run recorded in `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` analysed a production export of
+12,882 rows spanning 58 days, 9 countries and 96 SKUs and reports **`channel=Amazon`** for all of them
+— a single constant. **`channel` did not separate anything in that observation**, and nothing in the
+repository documents a second permitted value.
+
+**That is a 2026-08-03 observation and it is cited as one** (see §3.3 on why the age matters). It is
+strong evidence that `channel` is not the company discriminator and it is **not** a proof about the
+BigQuery table's full schema, which no export of the *destination* sheet can show.
 
 ### 1.4 Site identity — ANSWERED
 
@@ -141,20 +167,53 @@ record each run.
 **This is the right instrument and it is already written.** A historical reader should reuse it
 rather than invent a second completeness test.
 
-### 3.3 Duplicates are a live, measured condition — ANSWERED, and it is bad
+### 3.3 Duplicates — the August figures are a HISTORICAL SNAPSHOT, and a later read supersedes them
 
-The same 2026-08-03 dry-run: **12,882 rows → 6,500 unique keys; 6,382 duplicate groups; max 2 rows
-per key**, over 2026-06-03 → 2026-07-30. All 6,382 groups carry an **identical `source_row_hash`**.
-Measured downstream effect: the 7-day Sales Trend (which sums by date without dedup) was **doubled**
-for affected SKUs.
+**The first draft reported the August numbers as the current condition. They are a dated observation,
+and a more recent one exists.** An evidence file with no as-of date attached is the same mistake this
+project has made before with publication state: a fact about one moment, carried forward as if it
+were a standing property.
 
-**The spec records that this migration `remains unexecuted; no live rows changed`.** So unless the
-Owner has run it since, **a naive SUM over the daily snapshot can still double a month's units.** Any
-historical reader must dedup by natural key before summing, and must treat a duplicate key as an
-`incomplete` signal rather than silently collapsing it.
+**2026-08-03 — HISTORICAL SNAPSHOT (A2-DATA).** An export analysed 12,882 rows → 6,500 unique keys;
+**6,382 duplicate groups**, max 2 rows per key, over 2026-06-03 → 2026-07-30; all carrying an
+identical `source_row_hash`. Measured downstream effect at the time: the 7-day Sales Trend (which sums
+by date without dedup) was doubled for affected SKUs. Root cause was a Date-vs-string key comparison
+that made `rolling_upsert` append instead of update (HOTFIX A).
 
-> **MISSING_OWNER_INPUT #2 — has the duplicate cleanup been executed in production, and were the 243
-> `CONFLICTING_FACTS` groups resolved?** Until answered, assume duplicates are present.
+**2026-08-03 — follow-up on the record (A3-PREP).** With the authorised tolerant-derived-field
+refinement the same export reclassified to **0 CONFLICTING, 6,382 AUTO_ELIGIBLE, 0 BLOCKED**,
+projected output 6,500. That dry-run is marked **PROVISIONAL** in the spec — it ran against the
+earlier export, not a fresh post-deployment one — and execution readiness was **BLOCKED** on five
+user-side Google-UI steps. HOTFIX A source was committed and recorded as **not yet deployed**.
+
+**Latest Owner attachment — read-only result (supersedes the above for the destination sheet):**
+
+| | |
+|---|---|
+| rows | **10,342** |
+| valid unique keys | **9,989** |
+| duplicate groups | **0** |
+| conflicting groups | **0** |
+| invalid date keys | **353** |
+
+9,989 + 353 = 10,342 exactly: **every row is either a valid, unique key or an invalid date key, and
+there are no duplicates among the valid ones.** The duplicate condition the August snapshot described
+is **not present in this attachment**.
+
+**This is an attachment, not a BigQuery reading, and it is not treated as one.** It describes the
+destination sheet as exported. It says nothing about `Raw Daily Sales`, and §4 keeps source and
+destination completeness as separate questions for exactly this reason.
+
+**No historical cleanup is requested.** It is also worth recording *why* the two observations can both
+be true without anyone having run one: the affected range was **2026-06-03 → 2026-07-30**, and the
+rolling retention window keeps the latest **90 completed days**, which as of 2026-10-15 begins around
+**2026-07-17**. Most of the affected range has therefore aged out of the sheet on its own. That is one
+plausible account among several (the fix may also have been deployed, or a cleanup run) and it is
+**offered as an observation, not asserted as the explanation**.
+
+**What a historical reader must still do**, unchanged by the good news: dedup by natural key before
+summing, and treat a duplicate key as an `incomplete` signal rather than silently collapsing it.
+A reader that is only correct while the data happens to be clean is not correct.
 
 ---
 
@@ -165,26 +224,60 @@ A date can return a healthy row count while the specific SKU being averaged is a
 date with few rows can be perfectly complete because few SKUs were listed. A count over the wrong
 population answers a different question than the one the rule asks.
 
+### 4.1 Three questions, not one — a correction to the first draft
+
+The first draft ran these together under "month completeness". They have different authorities,
+different evidence and different failure modes, and the per-date key-count comparison answers only
+one and a half of them.
+
+| | question | authority | what answers it |
+|---|---|---|---|
+| **Q1** | is the **raw source** complete for this month? | BigQuery `Raw Daily Sales` | a source-side completion signal — see §4.2. The destination can never answer this. |
+| **Q2** | did the **import** land everything the source had? | source vs destination | `amazonReadDailyGapAware_`: per date, destination distinct-key count vs source. This is the part that is already built. |
+| **Q3** | is **this SKU** missing data on this date? | the scope+SKU row set | an enumeration over `company+country+marketplace+sku`, not a table-wide total. |
+
+**Why Q2 is not Q1.** A perfect import of an incomplete extract is complete by Q2 and wrong by Q1. The
+gap-aware comparison proves the destination matches the source; it is silent on whether the source had
+everything, because both sides are reading the same upstream.
+
+**Why Q3 is not Q2 either.** A date can pass Q2 with a healthy key count while the specific SKU being
+averaged is absent from it, and a date with few keys can be perfectly complete because few SKUs were
+listed. **A count over the wrong population answers a different question than the one the rule asks.**
+
+### 4.2 Confirmed zero vs missing — and the proof is not required to be a physical row
+
 What the rule needs, per month, per `company+country+marketplace+sku`:
 
-1. **every calendar date in the month is present** in the source for that scope+SKU — an enumeration,
-   not a total;
-2. **per date, destination distinct-natural-key count == source distinct-natural-key count** (§3.2's
-   existing `incomplete` test), so a partially-written date is not read as a low-sales day;
+1. **every calendar date in the month is accounted for** for that scope+SKU — an enumeration, not a
+   total (Q3);
+2. **per date, destination distinct-natural-key count == source distinct-natural-key count** (Q2);
 3. **zero duplicate natural keys** for that scope+SKU within the month (§3.3);
-4. **and the distinction between "this SKU reported 0" and "this SKU was not reported"** is carried
-   per date, because only the first belongs in the denominator.
+4. **"this SKU reported 0" told apart from "this SKU was not reported"**, because only the first
+   belongs in the denominator.
 
-(1)–(3) are computable with the existing instruments **against the BigQuery source**. (4) depends on
-`MISSING_OWNER_INPUT #3`.
+**(4) does NOT require the source to emit a physical zero row, and the first draft was wrong to imply
+it must.** "Every date must carry a row for every SKU" is **one** sufficient proof, not the only one.
+A source that deliberately omits zero rows can still support (4), and this is the better design in
+most reporting systems. Two ingredients make it provable:
 
-> **MISSING_OWNER_INPUT #3 — does `Raw Daily Sales` emit an explicit zero row for a listed SKU with
-> no sales that day, or does it omit the row entirely?** If it omits, then "confirmed zero" is **not
-> derivable from the sales table alone** and needs a second authority for "was this SKU listed and
-> active on this date" (a listing/ASIN-status history). This repository contains no such history.
-> **If this is unanswerable, the rule's "已確認零銷量的正常日計入分母" cannot be honoured**, and the
-> only safe behaviour is to treat an absent row as `MISSING` and refuse the month — which will refuse
-> a great many months.
+- **a trustworthy source-completion signal** for the date — the source states that the date is
+  finalised and fully extracted (a load-complete marker, a per-date manifest, a reconciliation total),
+  rather than the reader inferring it from row presence; **and**
+- **a stated omit-zero rule** — the source documents that a listed, active SKU with no sales on a
+  complete date is **omitted** rather than zero-filled.
+
+With both, an absent row on a complete date is a **confirmed zero** by construction, and the
+denominator is sound. With either missing, an absent row is **MISSING** and the month is refused.
+
+**The default while nothing is proven is MISSING, and never 0.** That default is not softened by this
+correction; what changes is that a workable alternative proof is now named instead of being excluded
+by a rule this document had no standing to impose.
+
+> **MISSING_OWNER_INPUT #3, restated — for `Raw Daily Sales`, (a) is there a per-date completion /
+> finalisation signal, and (b) is there a documented rule for whether a listed SKU with zero sales is
+> emitted as a 0 row or omitted?** Either "zero rows are emitted" or "(a) + (b) both exist" is enough.
+> If neither holds, an absent row stays `MISSING` and the affected months are refused — which will
+> refuse a great many of them, and that is the correct outcome rather than a tuneable one.
 
 **Retention is a separate, already-answered limit.** The Google Sheet `amazon_daily_sales_snapshot`
 keeps a rolling **90 completed days** and prunes older rows (`retentionDays: 90`,
@@ -226,18 +319,27 @@ both. Only the **exclusion-date machinery** is reused; the aggregation is new.
 
 ## 6. Status summary
 
-| # | question | status |
-|---|---|---|
-| 1.2 | BQ row → company | **MISSING_OWNER_INPUT #1** — blocking |
-| 1.3 | does `channel` separate companies | **ANSWERED: no** (observed constant `Amazon`) |
-| 1.4 | BQ row → site identity | **ANSWERED** (via `marketplaces` / `marketplace_skus`) |
-| 2 | which platforms have a source | **ANSWERED: Amazon only** |
-| 3.1 | zero vs missing in the row shape | **PARTLY** — depends on #3 |
-| 3.3 | duplicates | **ANSWERED: present and measured**; cleanup status is **MISSING_OWNER_INPUT #2** |
-| 4 | month completeness evidence | **ANSWERED for the method**; (4) depends on **MISSING_OWNER_INPUT #3** |
-| 5 | exclusion identity mapping | **ANSWERED** (frozen, reused) |
+| # | question | status | as of |
+|---|---|---|---|
+| 1.2 | raw sales row → selling entity | **MISSING_OWNER_INPUT #1** — the one open mapping | — |
+| 1.2 | the DB identity model (`company` on `marketplaces` / `marketplace_skus`) | **OWNER-CONFIRMED, not re-opened** | standing |
+| 1.3 | does `channel` separate companies | **ANSWERED: no** (observed constant `Amazon`) | 2026-08-03 |
+| 1.4 | snapshot row → site identity | **ANSWERED** (via `marketplaces` / `marketplace_skus`) | standing |
+| 2 | which platforms have a source | **ANSWERED: Amazon only** | standing |
+| 3.1 | zero vs missing in the row shape | **PARTLY** — depends on #3 | — |
+| 3.3 | duplicates (destination sheet) | **ANSWERED: 0 duplicate groups, 0 conflicting**; the 6,382-group figure is a superseded **2026-08-03 snapshot** | latest Owner attachment |
+| 3.3 | duplicates (BigQuery source) | **UNKNOWN** — no reading of `Raw Daily Sales` exists | — |
+| **Q1** | is the **raw source** complete for a month | **MISSING_OWNER_INPUT #3** (completion signal) | — |
+| **Q2** | did the **import** land what the source had | **ANSWERED: instrument exists** (`amazonReadDailyGapAware_`) | standing |
+| **Q3** | is **this SKU** missing on this date | **method ANSWERED**; the zero-vs-absent half depends on #3 | — |
+| 5 | exclusion identity mapping | **ANSWERED** (frozen, reused) | standing |
+
+**`MISSING_OWNER_INPUT #2 is withdrawn.** It asked whether the duplicate cleanup had run. The latest
+attachment shows **0 duplicate groups and 0 conflicting groups** in the destination sheet, so the
+question no longer gates anything, and **no historical cleanup is requested**. The August figures stay
+on the record as a dated snapshot rather than being deleted.
 
 **Not yet produced, and deliberately so:** the draft byte increment, the query shape, the scanned-byte
-and execution ceilings, and the cache-invalidation design. Those are only meaningful once #1 is
-answered — if `Raw Daily Sales` cannot separate companies, there is no query to size. **No other
-module's size was used as a stand-in for a measurement of this one.**
+and execution ceilings, and the cache-invalidation design. Those become meaningful once the entity
+mapping in §1.2 is known, because the mapping decides the query's shape and therefore its cost. **No
+other module's size was used as a stand-in for a measurement of this one.**

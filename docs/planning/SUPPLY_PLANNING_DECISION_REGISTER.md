@@ -3821,3 +3821,88 @@ machinery that can name the fault.
 query string by the transport, and `01_router.gs rtrMarkEntry_` already captures it on every request.
 The correlation key exists **on both sides today**; what is missing is the log read - which is exactly
 CP2Q proposal, still unimplemented and now behind a budget wall.
+
+---
+
+### D-S8-B3-70 — Deployment state is a fact about the Apps Script project, not about Git — **FROZEN (FCB1-R1 correction)**
+
+The FCB1-R1 report listed, under its release list:
+
+```
+APPS_SCRIPT_SYNC_REQUIRED   (none — FCB1/R1 touched no .gs)
+前輪遺留(仍待 Owner 同步)   assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs
+```
+
+The first line is correct. **The second is an inference Git cannot support.** "This commit changed
+42_, and I have not seen a sync happen" is not evidence that 42_ is unsynced — the sync is a manual
+Google-UI action by the Owner that leaves **no trace in this repository at all**. The ledger
+(`DEPLOYMENT_RELEASE_LOG.md`) records *intent*; only a live `system.health` probe reports what
+Production is running, which is already recorded as D-"release log is intent, not live state".
+
+**This is the same error as the r57 one, one category over.** There, publication state was read from
+the working tree instead of the remote. Here, deployment state was read from the commit graph instead
+of the deployment. Both are properties of a system outside the repository, and **both have to be
+checked rather than inferred, every round.**
+
+**Corrected release list for `45be6010..ab624f30` (FCB1 + FCB1-R1):**
+
+```
+APPS_SCRIPT_SYNC_REQUIRED   none          — no .gs in the range
+BUNDLE_REBUILD_REQUIRED     NO
+```
+
+**42_ deployment status: listed separately, and UNKNOWN.** The file last changed in `45be6010`
+(CP2R-R1) and changed again in `68a395a8` (CP2S, which is over budget and not releasable). Whether
+the `45be6010` version is live in the Apps Script project **cannot be determined from this repository
+and is not asserted in either direction.** A `system.health` probe, or the Owner, settles it.
+
+### D-S8-B3-71 — The source contract's evidence now carries an as-of date — **FROZEN (FCB1-R1 correction)**
+
+The contract reported the **2026-08-03** duplicate analysis (12,882 rows, 6,382 duplicate groups) as
+the current condition and instructed the reader to "assume duplicates are present". It is a dated
+observation, and the register now holds three readings instead of one:
+
+| as of | source | duplicate groups |
+|---|---|---|
+| 2026-08-03 (A2-DATA) | export analysed in the import spec | 6,382 · 243 conflicting |
+| 2026-08-03 (A3-PREP) | same export, authorised refinement — **PROVISIONAL**, execution **BLOCKED** | 0 conflicting · 6,382 auto-eligible |
+| latest Owner attachment | destination sheet, read-only | **0 duplicate · 0 conflicting** |
+
+Latest attachment in full: **10,342 rows · 9,989 valid unique keys · 0 duplicate groups · 0
+conflicting groups · 353 invalid date keys.** 9,989 + 353 = 10,342 exactly, so **every row is either
+a valid unique key or an invalid date key**, and there are no duplicates among the valid ones.
+
+**It is an attachment, not a BigQuery reading, and it is not treated as one.** It describes the
+destination sheet; the source's own duplicate state remains UNKNOWN. **No historical cleanup is
+requested**, and `MISSING_OWNER_INPUT #2` is withdrawn rather than left open as pressure.
+
+Recorded as an observation and not asserted as the explanation: the affected range was 2026-06-03 to
+2026-07-30, and the rolling 90-day window as of 2026-10-15 begins around 2026-07-17, so most of that
+range has aged out of the sheet on its own.
+
+**And the 353 connects to CP2S.** D-S8-B3-66 skips rows whose `snapshot_date` is **blank** and keeps
+failing closed on a value that is present but unreadable. The attachment counts **invalid date keys**,
+which is the wider category. **How many of the 353 are blank versus present-but-unparseable is UNKNOWN
+and decides how much of the 353 CP2S actually recovers** — named here rather than assumed to be all
+of them.
+
+### D-S8-B3-72 — Three completeness questions, and the zero-row rule was never ours to impose — **FROZEN (FCB1-R1 correction)**
+
+The contract ran source completeness, import completeness and per-SKU presence together. They have
+different authorities and different failure modes:
+
+| | question | what answers it |
+|---|---|---|
+| **Q1** | is the **raw source** complete for this month? | a source-side completion signal. The destination can never answer this. |
+| **Q2** | did the **import** land everything the source had? | `amazonReadDailyGapAware_`, per date, destination distinct-key count vs source — already built |
+| **Q3** | is **this SKU** missing on this date? | an enumeration over scope+SKU, not a table-wide total |
+
+A perfect import of an incomplete extract passes Q2 and fails Q1.
+
+**And the first draft said a complete month requires a physical row per SKU per date. That was an
+overreach.** Zero-row omission is a normal and often better reporting design. It is provable with
+**(a)** a trustworthy per-date source-completion signal and **(b)** a stated omit-zero rule; with both,
+an absent row on a complete date is a confirmed zero by construction. **With either missing, an absent
+row is MISSING and the month is refused — that default is unchanged and is not negotiable.** What
+changed is that a workable alternative proof is now named instead of excluded by a rule this document
+had no standing to impose.
