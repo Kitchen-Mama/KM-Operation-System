@@ -243,5 +243,80 @@ ok(/row\[monthKey\] = newQty/.test(save), 'D5  Save still replaces exactly one m
 ok(/P\.targetYear/.test(save) && /P\.targetMonth/.test(save),
   'D6  and still writes the period captured in the preview, which B is what makes safe');
 
+// ---------------------------------------------------------------------------------------------------
+section('E  the single-month write, EXECUTED against a fixture');
+// ---------------------------------------------------------------------------------------------------
+// S8-B3-R3-FCB1-R1. D5/D6 assert the write contract at SOURCE level, which proves the line is still
+// written and nothing about what it produces. "Only the Target month changes" is the claim an operator
+// would otherwise have to verify by pressing Save on production data, and that is not an acceptance
+// step anyone should be asked to perform. So the REAL saveRegularUpdate runs here against a fake write
+// API and the rows it hands over are inspected.
+(function () {
+  var els = {};
+  function el(v) { return { value: v, style: {}, innerHTML: '', textContent: '',
+    querySelectorAll: function () { return []; } }; }
+  els['regular-preview'] = el('');
+  els['regular-country'] = el('US');
+  els['regular-marketplace'] = el('KM|US|Amazon');
+
+  // The stored row: eleven months with DISTINCT values, including a real 0 and a BLANK. A fixture of
+  // twelve equal numbers cannot tell "preserved" from "rewritten with the same thing".
+  var EXISTING = { jan: 11, feb: 22, mar: 0, apr: '', may: 55, jun: 66,
+                   jul: 77, aug: 88, sep: 99, oct: 100, nov: 111, dec: 122 };
+  var captured = null;
+  var box = { console: console,
+    document: { getElementById: function (id) { return els[id] || null; } },
+    REG_MONTH_KEYS: ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],
+    alerts: [], captured: null,
+    _regularPreview: { targetYear: 2026, targetMonth: 5, method: 'prevMonth', baseYear: 2026, baseMonth: 4,
+      rows: [{ sku: 'SKU-1', company: 'KM', country: 'US', marketplace: 'Amazon',
+               existing: EXISTING, oldQty: 66, newQty: 110 }] },
+    window: { KM: { DB: { importFcRegularForecastBatch: function (rows, opts) {
+      captured = { rows: rows, opts: opts };
+      return { then: function () { return { catch: function () {} }; } };
+    } } } } };
+  var ctx = vm.createContext(box);
+  vm.runInContext('function alert(m){ alerts.push(String(m)); }', ctx);
+  vm.runInContext('function _fcUseDb(){ return true; }', ctx);
+  vm.runInContext('function _fcWriteBegin_(){ return true; }', ctx);
+  vm.runInContext('function _setRegularSaveEnabled(){}', ctx);
+  vm.runInContext('function _fcEpoch_(){ return 1; }', ctx);
+  vm.runInContext('function _fcSettleWrite_(){}', ctx);
+  vm.runInContext('function _fcFailWrite_(){}', ctx);
+  vm.runInContext('function _fcAfterWriteScoped_(){}', ctx);
+  vm.runInContext('function _fcCountsLine_(){ return ""; }', ctx);
+  vm.runInContext('function renderFcRegularTable(){}', ctx);
+  vm.runInContext('function closeFcModal(){}', ctx);
+  vm.runInContext('var FC_SLICE_ = { REGULAR: "regular" }; var FC_MSG_ = { SAVED: "Saved" };', ctx);
+  vm.runInContext('function _regularSelectedSite(){ return { company: "KM", country: "US", marketplace: "Amazon" }; }', ctx);
+  vm.runInContext(fnSrc(FCS, 'saveRegularUpdate'), ctx);
+  vm.runInContext('saveRegularUpdate()', ctx);
+
+  ok(captured && captured.rows && captured.rows.length === 1, 'E1  the real save handed exactly one row to the write API');
+  var w = captured && captured.rows && captured.rows[0];
+  eq(w && w.jun, 110, 'E2  the TARGET month (Jun, index 5) carries the new value');
+  // Every other month, by value, including the explicit 0 and the blank.
+  ['jan','feb','mar','apr','may','jul','aug','sep','oct','nov','dec'].forEach(function (m) {
+    eq(w && w[m], EXISTING[m], 'E3.' + m + '  ' + m + ' is preserved exactly (' + JSON.stringify(EXISTING[m]) + ')');
+  });
+  eq(w && w.mar, 0, 'E4  a stored 0 stays 0 - it is a value, not an empty slot');
+  eq(w && w.apr, '', 'E5  a stored BLANK stays blank - it is never forced to 0 on the way through');
+  eq([w && w.sku, w && w.year, w && w.company, w && w.country, w && w.marketplace],
+    ['SKU-1', 2026, 'KM', 'US', 'Amazon'], 'E6  and the row carries the full business key, never SKU alone');
+
+  // The period written is the one the PREVIEW captured, which is what section B makes safe.
+  eq(w && w.year, 2026, 'E7  the year written is the preview year');
+
+  // A row that no longer matches the selected site is dropped rather than written to the wrong place.
+  box.captured = null; captured = null;
+  els['regular-country'].value = 'CA';
+  vm.runInContext('_regularPreview.rows[0].country = "US";', ctx);
+  vm.runInContext('function _regularSelectedSite(){ return { company: "KM", country: "CA", marketplace: "Amazon" }; }', ctx);
+  vm.runInContext('saveRegularUpdate()', ctx);
+  eq(captured, null, 'E8  a preview row outside the now-selected site is NOT written');
+  ok(box.alerts.join(' ').indexOf('out of scope') !== -1,
+    'E9  and the operator is told, rather than seeing a silent no-op', box.alerts.slice(-1));
+})();
+
 console.log('\n' + (fail === 0 ? 'PASS' : 'FAIL') + '  ' + pass + ' passed, ' + fail + ' failed');
 process.exitCode = fail === 0 ? 0 : 1;

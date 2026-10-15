@@ -1059,7 +1059,29 @@ var ROUND_TOKENS = [
   // THE MAP SERIES IS DELIBERATELY NOT TOUCHED: no map file changed this round.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r57-avgsalesidentity-20261015'];
+  'r57-avgsalesidentity-20261015',
+  // S8-B3-R3-FCB1 - THE REGULAR FORECAST BUILDER DERIVES ITS BASE PERIOD. One boot-loaded page file changes
+  // bytes a published browser already holds: fc-summary.js. A browser on the old copy keeps a builder whose
+  // Based Year/Month are editable, whose Target Year has no change handler at all, and whose Preview reads
+  // the period back out of those fields - so it can still Save a preview built for a month the form no
+  // longer shows. That is the defect this round removes, and it is page-side, so a stale page keeps it.
+  //
+  // R57 IS PUBLISHED. 45be6010 is on origin/main and the live site is serving r57, so by the rule this list
+  // records about R53, R54 and R56 it may never be reused: every browser holding it would keep the builder
+  // that can write a month nobody chose.
+  //
+  // The PREVIOUS round reported r57 as unpublished and therefore reusable. That was true when it was
+  // written and is not true now - the only thing that changed is that the Owner pushed. A token being
+  // spendable is a fact about the remote, never a fact about the working tree, and it has to be re-checked
+  // per round rather than carried forward.
+  //
+  // THE MAP SERIES IS DELIBERATELY NOT TOUCHED: no map file changed this round. The R12 note above records
+  // a condition - if R4-R1 shipped BEFORE R4-R2, R12 is spent and R4-R2 owes its own entry. The condition
+  // did NOT occur: 5d6e4a18 and 65eb95b5 are both ancestors of the same published main, so they were served
+  // together and R12 names both. The IR stylesheet series is untouched for the same reason.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r58-derivedbaseperiod-20261015'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

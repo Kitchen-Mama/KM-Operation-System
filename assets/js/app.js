@@ -133,8 +133,8 @@ var KM_ROUTE_ASSETS_ = {
             // lookup resolves `UK` against the ISO `GB` through it (D-S8-C1-2). KMCID is the same owner
             // KMMSA / 43_ / 71_ use, and is itself a declared mirror of this page's frozen IRCountry alias
             // table, so this borrows one authority rather than introducing a second.
-            'assets/js/core/supply-planning-country-identity.js?v=r57-avgsalesidentity-20261015',
-            'assets/js/pages/inventory-replenishment.js?v=r57-avgsalesidentity-20261015'
+            'assets/js/core/supply-planning-country-identity.js?v=r58-derivedbaseperiod-20261015',
+            'assets/js/pages/inventory-replenishment.js?v=r58-derivedbaseperiod-20261015'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -163,8 +163,8 @@ var KM_ROUTE_ASSETS_ = {
     'site-priority': {
         sectionId: 'site-priority-section',
         scripts: [
-            'assets/js/core/supply-planning-country-identity.js?v=r57-avgsalesidentity-20261015',
-            'assets/js/pages/site-priority.js?v=r57-avgsalesidentity-20261015'
+            'assets/js/core/supply-planning-country-identity.js?v=r58-derivedbaseperiod-20261015',
+            'assets/js/pages/site-priority.js?v=r58-derivedbaseperiod-20261015'
         ],
         partial: { key: 'site-priority', url: 'assets/html/pages/site-priority.html',
             target: '#site-priority-mount' },
@@ -189,7 +189,7 @@ var KM_ROUTE_ASSETS_ = {
     'carrier-rate-card': {
         sectionId: 'carrier-rate-card-section',
         scripts: [
-            'assets/js/pages/carrier-rate-card.js?v=r57-avgsalesidentity-20261015'
+            'assets/js/pages/carrier-rate-card.js?v=r58-derivedbaseperiod-20261015'
         ],
         partial: { key: 'carrier-rate-card', url: 'assets/html/pages/carrier-rate-card.html',
             target: '#carrier-rate-card-mount' },
@@ -198,7 +198,7 @@ var KM_ROUTE_ASSETS_ = {
     'overseas-stock': {
         sectionId: 'overseas-stock-section',
         scripts: [
-            'assets/js/pages/overseas-stock.js?v=r57-avgsalesidentity-20261015'
+            'assets/js/pages/overseas-stock.js?v=r58-derivedbaseperiod-20261015'
         ],
         partial: { key: 'overseas-stock', url: 'assets/html/pages/overseas-stock.html',
             target: '#overseas-stock-mount' },
@@ -207,13 +207,13 @@ var KM_ROUTE_ASSETS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=r57-avgsalesidentity-20261015',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r57-avgsalesidentity-20261015',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r57-avgsalesidentity-20261015',
-            'assets/js/product-strategy/psb-selectors.js?v=r57-avgsalesidentity-20261015',
-            'assets/js/product-strategy/psb-chart-layout.js?v=r57-avgsalesidentity-20261015',
-            'assets/js/product-strategy/psb-board-ui.js?v=r57-avgsalesidentity-20261015',
-            'assets/js/pages/product-strategy-board.js?v=r57-avgsalesidentity-20261015'
+            'assets/js/product-strategy/psb-data-contract.js?v=r58-derivedbaseperiod-20261015',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r58-derivedbaseperiod-20261015',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r58-derivedbaseperiod-20261015',
+            'assets/js/product-strategy/psb-selectors.js?v=r58-derivedbaseperiod-20261015',
+            'assets/js/product-strategy/psb-chart-layout.js?v=r58-derivedbaseperiod-20261015',
+            'assets/js/product-strategy/psb-board-ui.js?v=r58-derivedbaseperiod-20261015',
+            'assets/js/pages/product-strategy-board.js?v=r58-derivedbaseperiod-20261015'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },

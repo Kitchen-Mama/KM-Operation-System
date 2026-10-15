@@ -3643,3 +3643,76 @@ handler reusing `amazonRunBigQuery_` and the existing per-date coverage prober
 `amazonQuerySourceDateCoverage_` would still be several kilobytes. **Headroom is 31 bytes.** It is not
 short by a margin that trimming reaches, and nothing was raised, retired or compressed to pretend
 otherwise. Queued behind it, still unimplemented: CP2Q's narrowed gap-timeout diagnostic (1,423 bytes).
+
+---
+
+### D-S8-B3-63 — A token is spent when its bytes have been SERVED, and that is a fact about the remote — **RECORDED (FCB1-R1)**
+
+The previous round reported `r57-avgsalesidentity-20261015` as unpublished and therefore reusable,
+and declined to rotate. **That was true when it was written and is not true now.** `origin/main` has
+since moved to `45be6010` and the live site is serving r57. The only thing that changed is that the
+Owner pushed.
+
+So FCB1 **does** owe a rotation, and `r58-derivedbaseperiod-20261015` is minted. A browser holding r57
+keeps a builder whose Based Year/Month are editable, whose Target Year has no change handler, and
+whose Preview reads the period back out of those fields — it can still Save a preview built for a
+month the form no longer shows. The defect is page-side, so a stale page keeps it.
+
+**The reusable lesson is the one this costs least to learn:** *spendable* is a property of the remote,
+never of the working tree, and it has to be re-checked each round rather than carried forward from the
+last report. A round that opens by reading its own previous conclusion about publication state is
+reading a cached value with no invalidation.
+
+**The MAP series is deliberately NOT rotated**, and not by omission. The R12 note records a condition:
+if CP2M-R4-R1 shipped *before* R4-R2, R12 is spent and R4-R2 owes its own entry. The condition **did
+not occur** — `5d6e4a18` and `65eb95b5` are both ancestors of the same published main, so they were
+served together and R12 names both. The IR stylesheet series is untouched for the same reason: no IR
+file changed in R1.
+
+### D-S8-B3-64 — Five captures, derived rather than recalled — **RECORDED (FCB1-R1)**
+
+96 evidence files carry a `sources` map and most of them pin `index.html` or `app.js`, so a token
+rotation looks at first like a 20-file re-capture. It is five, and the derivation is what says so:
+**only the suites that hash a capture against the CURRENT source can be invalidated by changing it.**
+
+A `before.json` is never hashed against current source — it is compared against its `after` sibling
+(`BEFORE.sources[x] !== AFTER.sources[x]`), which is the assertion that the two captures were taken on
+*different* code. Those files are ALREADY stale by several rounds and are **supposed** to be. Re-taking
+one would delete the only record of the state the fix was measured against.
+
+Derived set, each from its own evidence file rather than from memory:
+
+| suite | capture it hash-verifies |
+|---|---|
+| `map-canvas-acceptance-s8-b3-r3-cp2m-r2` | `cp2m-r2-map/map.json` |
+| `map-canvas-lifecycle-s8-b3-r3-cp2m-r4-r1` | `cp2m-r4r1-map/after.json` |
+| `map-mount-continuation-s8-b3-r3-cp2m-r4-r2` | `cp2m-r4r2-mount/after.json` |
+| `navigation-performance-observation-s8-b3-r3-cp2m-r2` | `cp2m-r2-perf/perf.json` |
+| `site-priority-viewport-acceptance-s8-b3-r3-cp2m-r2` | `cp2m-r2-viewport/measurements.json` |
+
+Every one was captured to a scratch directory and **compared before installing**, because a degraded
+capture that is structurally valid overwrites a good one silently. All five differ from their
+predecessors **only** in the two token-bearing hashes plus timing jitter (sample counts, `leftAt`,
+`markupArrivedAt`); every structural and behavioural field is unchanged — viewport `results` is
+byte-identical, perf is 63/63 ok runs with 0 page errors, lifecycle holds 1 create / 0 destroys /
+0 context losses, mount holds the same 0/0/1 · 0/0/1 · 1/1/1.
+
+`boot-census.json` is not hash-pinned but is recomputed from the live `index.html`, and it moved
+**+13**: the token grew one character across its 13 occurrences in `app.js`. `index.html` carries 54
+more occurrences that do not count, because it is the file that *lists* the boot scripts and is not
+one of them.
+
+### D-S8-B3-65 — The single-month write is proved by a fixture, not by an operator — **FROZEN (FCB1-R1)**
+
+§D asserted the write contract at source level, which proves the line is still written and nothing
+about what it produces. "Only the Target month changes" was therefore a claim an operator could only
+confirm by pressing Save on production data — and **acceptance must never require a production
+write**.
+
+§E now executes the real `saveRegularUpdate` against a fake write API. The fixture gives the eleven
+other months **distinct** values including an explicit `0` and a **blank**, because twelve equal
+numbers cannot tell "preserved" from "rewritten with the same thing". A mutant that rewrites every
+month kills 13 assertions. The stored `0` stays `0` and the blank stays blank: neither is forced
+through a numeric default on the way out.
+
+Owner acceptance for this round is therefore **Preview / Cancel only**.
