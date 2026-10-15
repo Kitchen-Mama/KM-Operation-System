@@ -3906,3 +3906,112 @@ an absent row on a complete date is a confirmed zero by construction. **With eit
 row is MISSING and the month is refused — that default is unchanged and is not negotiable.** What
 changed is that a workable alternative proof is now named instead of excluded by a rule this document
 had no standing to impose.
+
+---
+
+### D-S8-B3-73 — I inferred an execution stage from a browser-side symptom — **CORRECTED (CP2S-R1)**
+
+D-S8-B3-69 wrote: *"The request ARRIVED - otherwise the router would have answered with its structured
+envelope... The failure is inside the handler, after entry, and only the Apps Script execution log can
+see it."*
+
+**That is an inference from an absence, and the absence has more than one cause.** A browser that is
+refused by CORS cannot read the status, the body, or the headers. From that position it is impossible
+to tell apart:
+
+- the request never reached the deployment (wrong URL, revoked access, project disabled);
+- it reached the router and the router itself threw before dispatch;
+- it reached the handler and the handler threw;
+- it reached the handler, the handler returned, and the response was lost in the redirect chain.
+
+The structured envelope is missing in **every** one of those, so its absence names none of them. I
+reasoned "the classifier paths all need a readable response, therefore the failure is deep" - but the
+same unreadability is exactly what makes the depth unknowable. **The conclusion was shaped by the one
+hypothesis I had already formed.**
+
+**Corrected status, all three UNCONFIRMED:**
+
+| | status |
+|---|---|
+| which action | **UNCONFIRMED** - the page issues three; nothing narrows it further without the screenshot |
+| whether the handler was entered | **UNCONFIRMED** |
+| which stage failed | **UNCONFIRMED** |
+
+**What survives, because it is about the mechanism rather than the incident:** an Apps Script exception
+page carries no `Access-Control-Allow-Origin`, so a server-side 500 and a browser-side "CORS error"
+**can** be one event. That remains a reason not to treat them as two separate faults. It is **not**
+evidence about where execution reached.
+
+**Nothing was added to find out.** No CP2Q logging, no transport change, no timeout change, no retry,
+no validation bypass. The correlation key (`km_rid` on the query string, `rtrMarkEntry_` on the router)
+already exists on both sides; reading it is CP2Q, which is out of scope for the approved budget.
+
+### D-S8-B3-74 — The size budget moved by exactly what was granted, and the guards did not — **FROZEN (CP2S-R1)**
+
+`SIZE_BUDGET` 4,600,000 → **4,610,000**, Owner-approved, covering exactly three things: the blank-date
+skip, the WAREHOUSE historical-average chain, and the diagnostic-field propagation those need.
+
+```
+BUDGET (approved)       4,610,000
+before this round       4,601,373
+after                   4,604,127      headroom 5,873
+```
+
+**What did not change, deliberately.** The gate is still load-bearing in both directions (`C3b`:
+headroom must be positive AND under 200,000). The three never-retired modules are still pinned by name
+(`C3c`). The measurement is still committed/LF through the same instrument. And a new assertion pins
+the raise itself: `C3b2` fails if `SIZE_BUDGET - 4600000 !== 10000`, so the number cannot be rounded up
+later without a decision. **A raise that also relaxed the guards would not be a raise; it would be a
+removal wearing one as a disguise.**
+
+### D-S8-B3-75 — The warehouse lane carries ONE basis, and that is the point rather than a saving — **FROZEN (CP2S-R1)**
+
+`horizonBasis` was built inline in the MARKETPLACE expander and nowhere else, which is why a
+`self_fulfilled` site - routed to the WAREHOUSE lane, producing no marketplace line at all - published
+no historical average and showed the same dash it shows for "no sales". A second inline copy would have
+been the same defect with a longer fuse, so there is now **one builder**, `recoWsBasisOf_`, and both
+lanes call it.
+
+**Resolved once per site SKU, shared by every warehouse line.** Building it per warehouse is how a
+reader starts believing the warehouses have different averages - the per-warehouse split and the
+averaged average this round must not introduce. The suite pins that the resolver and the builder are
+**absent from inside the per-warehouse loop**, with the loop slice bounded at both ends so the
+post-loop attachment cannot be mistaken for one.
+
+**Attached after the loop, to every line including the blocked ones.** A warehouse that failed to
+normalize, a ruleset that would not assemble and a horizon that could not be built are reasons about
+*that warehouse*; none is a reason to withhold the site SKU's sales history. Attaching inside the loop
+would have meant five attachment points and four early returns that each had to remember.
+
+**`horizonOpeningQty` and `qualifiedIncomingCount` stay null on a warehouse basis** - they are
+per-warehouse horizon inputs, and per-warehouse numbers on a shared object is precisely how the
+"different averages" misreading starts. The builder renders them `null`, never `0`.
+
+**The resolver now runs for BOTH demand modes in that lane**, as it has in the marketplace lane since
+CP2R. `whSalesRate` - the PLANNING input - is still assigned only under `sales_driven`, so no demand,
+allocation, gap or inventory formula moved.
+
+### D-S8-B3-76 — The async arrival writes two cells, not a table — **FROZEN (CP2S-R1)**
+
+CP2S made the arrival repaint by calling `renderReplenishment()`, and accepted *"render was called
+once"* as the acceptance. That proves the right numbers arrive and says nothing about what arriving
+costs. `renderReplenishment` rebuilds the whole main table, and this runs on an async read that can
+land seconds after the paint: **an expanded row collapses, its Execution Plan nodes are destroyed, a
+half-typed input loses its value, focus moves to the body and the scroll position jumps.**
+
+Only Avg Sales and Days of Supply depend on the basis. `_irRecoUpdateVelocityCells_` writes those two
+cells per row and touches nothing else. The values still come from `getReplenishmentData()` - the same
+producer `renderReplenishment` uses - so nothing is computed here that was not computed there.
+
+**The acceptance is now what SURVIVES**, asserted over a hand-built DOM by **node identity**: the
+Execution Plan node and the input are the *same objects* afterwards, the half-typed value is intact,
+focus still points at a node that still exists, the scroll offsets are untouched, a neighbouring cell
+is unchanged, and `renderReplenishment` is not called at all. A row absent from the current data keeps
+what it had rather than being blanked, and a recovered cell loses its stale tooltip instead of keeping
+an empty one.
+
+**The stylesheet rotated with it** (`iravgquality-20261015` → `iravgcell-20261016`). The two cells need
+stable hooks to be found, and a class the stylesheet never mentions is not a surface - the `.psb-state`
+lesson - so `.replen-avg-cell` / `.replen-dos-cell` carry the rule a numeric column actually wants
+(tabular figures, so the column does not shiver when a value updates). **Publication was checked against
+the remote this round, not carried forward: `45be6010` is on `origin/main`, so the old token is spent.**

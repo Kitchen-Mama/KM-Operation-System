@@ -133,8 +133,21 @@ eq(relocatedBytes, 808195,
 // the audit classifies C_MANUAL_OPERATOR_TOOL and whose own header says its three unsuffixed wrappers exist
 // to be "run from the Apps Script editor (no router)". A sufficient cut is therefore not a safe one, and
 // C3c below pins all three in place so that raising the budget cannot later be mistaken for retiring them.
-var SIZE_BUDGET = 4600000;
-ok(A.directoryBytes < SIZE_BUDGET, 'C3 the production runtime universe is under the 4.6 MB safety budget',
+// S8-B3-R3-CP2S-R1 - OWNER-APPROVED RAISE, 4,600,000 -> 4,610,000, AND IT IS SCOPED.
+//
+// The 4.6 MB number ran out on the blank-snapshot-date repair: one undated row was deleting 84 dated ones
+// for a whole SKU, and the fix measured 4,601,373 - over by 1,373. Stripped of every word of its own
+// explanation the executable change was still 239 bytes over, so no version of it fitted and the choice
+// was the Owner's rather than a matter of trimming prose. The Owner approved +10,000 covering EXACTLY
+// three things: the blank-date skip, the WAREHOUSE historical-average chain, and the propagation of the
+// existing diagnostic fields those two need. Nothing else is licensed by this number.
+//
+// WHAT DID NOT CHANGE, deliberately: the gate is still load-bearing in both directions (C3b), the three
+// never-retired modules are still pinned by name (C3c), and the measurement is still committed/LF through
+// the same instrument. A budget raise that also relaxed the guards would not be a raise, it would be a
+// removal wearing one as a disguise.
+var SIZE_BUDGET = 4610000;
+ok(A.directoryBytes < SIZE_BUDGET, 'C3 the production runtime universe is under the approved safety budget',
   A.directoryBytes);
 // The gate stays load-bearing in BOTH directions: a budget raised so far above the tree that nothing could
 // ever cross it is not a guard. Headroom is reported, and bounded.
@@ -143,6 +156,10 @@ console.log('   SIZE BUDGET ' + SIZE_BUDGET + '   MEASURED ' + A.directoryBytes 
 ok(HEADROOM > 0 && HEADROOM < 200000,
   'C3b the headroom is real but BOUNDED — room for roughly three more owner files at 73_\'s 29.6 KB, not an '
   + 'open budget', HEADROOM);
+// CP2S-R1 - and the raise is SMALL, which is the half of it that is easy to lose. 10,000 bytes is about a
+// third of one owner file: it funds the named repair and does not quietly become a backend round.
+ok(SIZE_BUDGET - 4600000 === 10000,
+  'C3b2 the approved raise is exactly the 10,000 bytes granted - not rounded up while nobody was looking');
 // The raise was load-bearing: the tree is genuinely above the old number, so this is a recorded decision
 // about a real overrun and not a pre-emptive widening.
 ok(A.directoryBytes > 4500000,

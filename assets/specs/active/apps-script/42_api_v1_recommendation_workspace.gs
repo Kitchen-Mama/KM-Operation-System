@@ -267,7 +267,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     // per-member latest-week units WITHOUT a channel filter. A stable synthetic channel token satisfies KMCALC's
     // non-empty-channel contract WITHOUT changing the run-rate (KMCALC uses channel only to filter the daily series,
     // which we PRE-aggregate). No new averaging engine — KMCALC stays the sole run-rate owner (§3/§11).
-    if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) + undatedNote() };
+    if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) + undatedNote(), blankDateRows: blankDates };
     channel = 'EU_AGG'; kmcalcChannel = channel;
     // Daily: SUM eligible member rows by the SAME canonical date → ONE canonical EU daily entry per date (never
     // per-country days, never averaged averages). The existing KMCALC ladder then owns the run-rate verbatim.
@@ -285,7 +285,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   } else {
     // Single-market path — UNCHANGED (US/CA/UK/DE/…): channel must be unambiguous; latest week is the <3-day rung.
     var chSource = daily.length ? daily : weeklyAll;
-    if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote() };
+    if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote(), blankDateRows: blankDates };
     var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
     var chKeys = Object.keys(chSet);
     if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']' };   // 0 or ambiguous channel → fail closed (conflict)
@@ -742,12 +742,31 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   // withheld a valid historical average whenever a horizon could not be built, deleting a sales fact for a
   // forecast reason. R1 — `basisQualityError` travels with it because a forecast_driven line sets no blocked
   // reason, so an unresolved basis had nowhere to say why and a surface could only show a blank.
-  mLine.horizonBasis = { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
+  mLine.horizonBasis = recoWsBasisOf_(sr, planModel, horizonOpening, (mIncoming || []).length);
+  return mLine;
+}
+
+// S8-B3-R3-CP2S-R1 - ONE SHAPE FOR THE HISTORICAL BASIS, BECAUSE THERE IS ONE BASIS.
+//
+// This was written inline in the MARKETPLACE expander and nowhere else, which is the whole reason a
+// self_fulfilled site - routed to the WAREHOUSE lane and so producing no marketplace line at all -
+// published no historical average and the column printed the same dash it prints for "no sales". A
+// second inline copy in the warehouse expander would have been the same defect with a longer fuse, so
+// there is one builder and both lanes call it.
+//
+// `blankDateRows` travels here too: the resolver counts the undated rows it skipped, and a count that
+// stops at the resolver is one nobody can act on. It is carried on FAILURES as well as successes,
+// because "no usable rows" and "the rows were all undated" are different repairs.
+//
+// NOTHING IS COMPUTED HERE. Every field is the owner's, passed through.
+function recoWsBasisOf_(sr, planModel, openingQty, incomingCount) {
+  return { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
     source: (sr.ok ? sr.source : null), warning: (sr.ok ? sr.warning : null),
     normalDayCount: (sr.ok ? sr.normalDayCount : null), excludedDates: (sr.ok ? sr.excludedDates : null),
-    horizonOpeningQty: horizonOpening, qualifiedIncomingCount: (mIncoming || []).length,
+    horizonOpeningQty: (openingQty === undefined ? null : openingQty),
+    qualifiedIncomingCount: (incomingCount === undefined ? null : incomingCount),
+    blankDateRows: (sr.blankDateRows == null ? null : sr.blankDateRows),
     basisQualityError: (sr.ok ? null : (sr.reason || null)), contaminationSource: (sr.ok ? sr.contaminationSource : null) };
-  return mLine;
 }
 
 // WAREHOUSE expansion → one canonical line per configured warehouse. Demand is fanned per month by the FROZEN ratio;
@@ -776,7 +795,13 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
   // per-warehouse horizons below all share it (the model is a marketplace-SKU attribute, not per-warehouse).
   var whPlanModel = recoWsResolvePlanningModel_(snaps, scope, sku);
   var whSalesRate = null, whSalesReason = null;
-  if (whPlanModel === 'sales_driven') { var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = (wsr.reason || 'SALES_BASIS_UNAVAILABLE') + (wsr.detail ? ': ' + wsr.detail : ''); }
+  // CP2S-R1 - RESOLVED FOR BOTH MODES, ONCE. It used to run only for sales_driven, because that is the only
+  // mode whose HORIZON needs it. But the historical average is a published fact about the site SKU, not an
+  // input to one formula: a forecast_driven line still has a real Avg Sales to show, exactly as the
+  // marketplace lane has published for both modes since CP2R. The horizon below still consumes it only when
+  // the model asks for it, so no formula moved.
+  var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate);
+  if (whPlanModel === 'sales_driven') { if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = (wsr.reason || 'SALES_BASIS_UNAVAILABLE') + (wsr.detail ? ': ' + wsr.detail : ''); }
   var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
   var override = {}; ruleset.warehouses.forEach(function (w) { override[w.warehouseId] = {}; });
   months.forEach(function (mm) {
@@ -823,6 +848,18 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
     else wLine.horizonsBlockedReason = whSalesReason || 'HORIZON_PROJECTION_UNAVAILABLE';   // R7 §1/§4 — preserve the specific reason (no generic mask)
     lines.push(wLine);
   });
+  // CP2S-R1 - ATTACHED AFTER THE LOOP, TO EVERY LINE, INCLUDING THE BLOCKED ONES. A warehouse that failed to
+  // normalize, a ruleset that would not assemble and a horizon that could not be built are all reasons about
+  // THIS WAREHOUSE; none of them is a reason to withhold the site SKU's sales history. Attaching inside the
+  // loop would have meant five attachment points and four early returns that each had to remember.
+  //
+  // ONE OBJECT, SHARED BY EVERY LINE, and that is the point rather than a saving: there is one basis for one
+  // site SKU. Building it per warehouse is how a reader starts believing the warehouses have different
+  // averages, which is the per-warehouse split and the averaged-average this round must not introduce. The
+  // opening and incoming counts stay NULL here for the same reason - they are per-warehouse horizon inputs,
+  // not part of the canonical historical basis.
+  var whBasis = recoWsBasisOf_(wsr, whPlanModel);
+  lines.forEach(function (ln) { ln.horizonBasis = whBasis; });
   return { lines: lines };
 }
 

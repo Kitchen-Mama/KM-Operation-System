@@ -65,7 +65,10 @@ ok(/function avgSalesPerDay\(/.test(IR) && /sales_units_7d|salesUnits7d/.test(IR
 ok(/normalizedAvgSalesPerDay/.test(F42), 'the canonical horizon rate owner = KMCALC.normalizedAvgSalesPerDay (§22 ladder) — a DIFFERENT owner than the DoS weekly rate');
 
 section('A2 — the new READ-ONLY reconciliation diagnostic surfaces the canonical inputs (no formula/schema change)');
-ok(/mLine\.horizonBasis = \{/.test(F42), 'recommendation.workspace.get now attaches mLine.horizonBasis (additive diagnostic)');
+// S8-B3-R3-CP2S-R1 - the object literal became a CALL. It was inline in the marketplace expander and
+// nowhere else, which is exactly why the WAREHOUSE lane published no basis at all; one builder now serves
+// both lanes. The CLAIM is unchanged and is what this follows.
+ok(/mLine\.horizonBasis = recoWsBasisOf_\(/.test(F42), 'recommendation.workspace.get still attaches mLine.horizonBasis (additive diagnostic)');
 // S8-R5-B / R46 — RESTATED. The field list is unchanged in PURPOSE: horizonBasis still carries the inputs
 // needed to reconcile a stored D-gap without the Sheet. What changed is where avgSalesPerDay comes from.
 // It used to be `planModel === 'sales_driven' ? salesRate : null` — the PLANNING basis, null for forecast.
@@ -74,7 +77,7 @@ ok(/mLine\.horizonBasis = \{/.test(F42), 'recommendation.workspace.get now attac
 // horizon, so this diagnostic can still answer the reconciliation question it was built for.
 ok(/demandMode: planModel/.test(F42)
   && /avgSalesPerDay: \(sr\.ok \? sr\.avgSalesPerDay : null\)/.test(F42)
-  && /horizonOpeningQty: horizonOpening/.test(F42),
+  && /recoWsBasisOf_\(sr, planModel, horizonOpening,/.test(F42),
   'horizonBasis exposes demandMode + resolved avgSalesPerDay + Site-Stock opening (the inputs to reconcile a stored D-gap)');
 ok(/source: \(sr\.ok \? sr\.source : null\)/.test(F42) && /normalDayCount: \(sr\.ok \? sr\.normalDayCount : null\)/.test(F42),
   'A2a and R46 adds the §22 quality fields beside it, so a normalized rate can be told from a weekly fallback '
@@ -87,9 +90,9 @@ ok(/source: \(sr\.ok \? sr\.source : null\)/.test(F42) && /normalDayCount: \(sr\
 // diagnostic never FABRICATES - every field is `sr.ok ? ... : null`, so an unresolved basis is null, not 0.
 ok(/if \(mHz\) mLine\.horizons = mHz/.test(F42),
   'the HORIZON is still guarded by mHz - a horizon is never fabricated when none was built');
-ok(/mLine\.horizonBasis = \{/.test(F42) && !/if \(mHz\) \{[\s\S]{0,4000}mLine\.horizonBasis/.test(F42),
+ok(/mLine\.horizonBasis = recoWsBasisOf_\(/.test(F42) && !/if \(mHz\) \{[\s\S]{0,4000}mLine\.horizonBasis/.test(F42),
   'but the BASIS is published outside that branch - a blocked horizon is not a statement about sales history');
-var _hb = F42.slice(F42.indexOf('mLine.horizonBasis = {'), F42.indexOf('mLine.horizonBasis = {') + 700);
+var _hb = F42.slice(F42.indexOf('function recoWsBasisOf_('), F42.indexOf('function recoWsBasisOf_(') + 900);
 ok(!/:\s*0/.test(_hb) && (_hb.match(/sr\.ok \?/g) || []).length >= 6,
   'and it still fabricates nothing - every resolved field reads `sr.ok ? ... : null`');
 

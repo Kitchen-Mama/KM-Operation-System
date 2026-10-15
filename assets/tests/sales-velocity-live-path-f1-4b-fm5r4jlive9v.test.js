@@ -24,7 +24,7 @@ function fnBody(src, name) {
   for (var p = i; p < src.length; p++) { if (src[p] === '{') depth++; else if (src[p] === '}') { depth--; if (depth === 0) { end = p + 1; break; } } }
   return src.slice(start, end);
 }
-// Build _irRecoRefreshVelocityCells_ with its helper + injected free vars (_irRecoState, renderReplenishment).
+// Build _irRecoRefreshVelocityCells_ with its helper + injected free vars (_irRecoState, the cell update).
 // S8-R5-B — THE HARNESS WAS MISSING A DEPENDENCY AND THIS SUITE HAD BEEN DEAD SINCE F1A.
 //
 // S8-R4D-F1A added `_irResultMatchesAppliedScope_` to the guard. This harness injects free variables by
@@ -32,10 +32,15 @@ function fnBody(src, name) {
 // suite exited 1 while printing no FAIL line — and the sweep's detector greps for `^FAIL`, so it counted
 // as neither a pass nor a failure. It is injected here, which makes the suite real again rather than
 // merely green.
+// S8-B3-R3-CP2S-R1 - THE COLLABORATOR IS NOW THE IN-PLACE CELL UPDATE. The async arrival used to call
+// renderReplenishment(), which rebuilds the whole main table and takes an expanded row, its Execution Plan
+// nodes, a half-typed input, focus and the scroll position with it. Only Avg Sales and Days of Supply
+// depend on the basis, so only those two cells are written now. WHAT THIS SUITE ASSERTS IS UNCHANGED:
+// WHEN the update runs. The counter below counts the update instead of the rebuild.
 function makeRefresh(state, renderFn, scopeMatches) {
   var body = fnBody(IRSRC, '_irRecoHasCanonicalBasis_') + '\n' + fnBody(IRSRC, '_irRecoRefreshVelocityCells_') +
     '\n return _irRecoRefreshVelocityCells_;';
-  return new Function('_irRecoState', 'renderReplenishment', '_irResultMatchesAppliedScope_',
+  return new Function('_irRecoState', '_irRecoUpdateVelocityCells_', '_irResultMatchesAppliedScope_',
     body)(state, renderFn, scopeMatches || function () { return true; });
 }
 function salesBasisState() { return { status: 'READY', linesBySku: { 'CO1100-R': [
@@ -46,7 +51,7 @@ function salesBasisState() { return { status: 'READY', linesBySku: { 'CO1100-R':
 section('refresh re-renders the main table ONLY when a canonical basis has loaded (R46: either mode)');
 (function () {
   var n = 0; makeRefresh(salesBasisState(), function () { n++; })();
-  ok(n === 1, 'READY + sales_driven basis → renderReplenishment called once (velocity cells pick up the canonical rate)');
+  ok(n === 1, 'READY + sales_driven basis → the velocity cells are updated in place once (they pick up the canonical rate)');
 })();
 // S8-R5-B — RESTATED, NOT DELETED. This read "Forecast-Driven basis → NO re-render", which was correct while
 // the backend published a rate for sales_driven only: the fixture's avgSalesPerDay is null, so there was

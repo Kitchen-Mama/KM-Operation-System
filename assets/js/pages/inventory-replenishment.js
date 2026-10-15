@@ -2097,10 +2097,10 @@ function _irScrollRowHtml_(item) {
         '<div class="scroll-cell replen-cell--current-stock">' + item.currentInventory + '</div>' +
         '<div class="scroll-cell" title="' + String(item.thirdPartyTitle || '').replace(/"/g, '&quot;') + '">' + item.thirdPartyStock + '</div>' +
         '<div class="scroll-cell">' + item.onTheWay + '</div>' +
-        '<div class="scroll-cell' + _irAvgSalesCellClass_(item) + '"' + _irAvgSalesTitleAttr_(item) + '>' + item.avgDailySales + _irAvgSalesFlagHtml_(item) + '</div>' +
+        '<div class="scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item) + '"' + _irAvgSalesTitleAttr_(item) + '>' + item.avgDailySales + _irAvgSalesFlagHtml_(item) + '</div>' +
         '<div class="scroll-cell">' + item.forecast60d + '</div>' +
         '<div class="scroll-cell">' + (item.upcomingEventQty !== null ? item.upcomingEventQty : '-') + '</div>' +
-        '<div class="scroll-cell ' + _irDosCellClass_(item) + '">' + item.daysOfSupply + '</div>' +
+        '<div class="scroll-cell replen-dos-cell ' + _irDosCellClass_(item) + '">' + item.daysOfSupply + '</div>' +
         '<div class="scroll-cell replen-suggested-cell">' + _irSuggestedCellHtml(item) + '</div>' +
         _irFactoryCellHtml_(item.cnStock, item) +
         _irFactoryCellHtml_(item.twStock, item) +
@@ -13979,6 +13979,10 @@ function _irRecoMapLine(L) {
         ? L.horizonBasis.excludedDates.map(function (d) { return String(d); }) : null,
       horizonOpeningQty: _irNumOrNull(L.horizonBasis.horizonOpeningQty),
       qualifiedIncomingCount: _irNumOrNull(L.horizonBasis.qualifiedIncomingCount),
+      // S8-B3-R3-CP2S-R1 - HOW MANY ROWS THE SERVER COULD NOT DATE. The resolver skips rows whose
+      // snapshot_date is blank rather than letting one of them delete the whole SKU, and counts them.
+      // A count that stops at the resolver is one nobody can act on, so it travels the response.
+      blankDateRows: _irNumOrNull(L.horizonBasis.blankDateRows),
       // S8-B3-R3-CP2R-R1 - THE NAMED QUALITY ERROR. CP2R carried a flag saying the server had recomputed the
       // rate WITHOUT the campaign filter, which made a degraded number observable instead of hidden. R1
       // removed that recompute: an un-excluded average is not a normal average, so the server now publishes
@@ -14581,6 +14585,43 @@ function _irRecoUpdateSuggestedCells() {
 //   • `!= null` (not `> 0`) — a confirmed ZERO rate is a real answer and must repaint. Only an UNRESOLVED
 //     basis is null, and that still does not.
 //   • returning false when nothing resolved — a scope with no sales history anywhere still never re-renders.
+// S8-B3-R3-CP2S-R1 - UPDATE THE TWO CELLS, NOT THE TABLE.
+//
+// When the canonical basis landed this called renderReplenishment(), which rebuilds the whole main table.
+// It produced the right numbers and it threw away everything the operator had done in the meantime: an
+// expanded row collapses, the Execution Plan nodes inside it are destroyed and rebuilt, a half-typed input
+// loses its value, focus moves to the body and the scroll position jumps. The async read can land seconds
+// after the table paints, so "the numbers are correct now" was being paid for with the operator's work.
+//
+// Only Avg Sales and Days of Supply depend on the basis. This writes those two cells per row and touches
+// nothing else: no innerHTML on the row, no re-render, no node replacement anywhere a panel or an input
+// could live. The VALUES still come from getReplenishmentData() - the same producer renderReplenishment
+// uses - so nothing is computed here that was not computed there.
+function _irRecoUpdateVelocityCells_() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  var rows = document.querySelectorAll('#ops-section .scroll-row[data-sku]');
+  if (!rows || !rows.length) return;
+  var data = (typeof getReplenishmentData === 'function') ? (getReplenishmentData() || []) : [];
+  var bySku = {};
+  for (var i = 0; i < data.length; i++) { if (data[i] && data[i].sku != null) bySku[String(data[i].sku)] = data[i]; }
+  Array.prototype.forEach.call(rows, function (row) {
+    var item = bySku[row.getAttribute('data-sku') || ''];
+    if (!item) return;   // a row with no current data is left exactly as it is, never blanked
+    var avg = row.querySelector('.replen-avg-cell');
+    if (avg) {
+      avg.className = 'scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item);
+      var note = _irAvgSalesQualityNote_(item);
+      // REMOVED rather than set to '', so a cell that recovers does not keep an empty tooltip box.
+      if (note) avg.setAttribute('title', note); else avg.removeAttribute('title');
+      avg.innerHTML = item.avgDailySales + _irAvgSalesFlagHtml_(item);
+    }
+    var dos = row.querySelector('.replen-dos-cell');
+    if (dos) {
+      dos.className = 'scroll-cell replen-dos-cell ' + _irDosCellClass_(item);
+      dos.textContent = item.daysOfSupply;   // textContent: this cell is a number, never markup
+    }
+  });
+}
 function _irRecoHasCanonicalBasis_() {
   var by = _irRecoState && _irRecoState.linesBySku; if (!by) return false;
   if (!_irResultMatchesAppliedScope_(_irRecoState)) return false;   // S8-R4D-F1A
@@ -14600,7 +14641,9 @@ function _irRecoRefreshVelocityCells_() {
   // F1-7N-FB-2A §B — never repaint before a confirmed Search. renderReplenishment() enforces this itself, but
   // asserting it here keeps the intent explicit at the async call site that used to cause the surprise repaint.
   if (typeof _irSearchApplied_ === 'function' && !_irSearchApplied_() && !(typeof _replenDemoOn === 'function' && _replenDemoOn())) return;
-  if (_irRecoState && _irRecoState.status === 'READY' && _irRecoHasCanonicalBasis_() && typeof renderReplenishment === 'function') renderReplenishment();
+  // CP2S-R1 - the two cells, in place. renderReplenishment() is NOT called: it is correct and it is a
+  // full rebuild, and this runs on an async arrival that can land long after the operator started working.
+  if (_irRecoState && _irRecoState.status === 'READY' && _irRecoHasCanonicalBasis_()) _irRecoUpdateVelocityCells_();
 }
 // __IRRECO_END__ (test extraction marker — do not remove)
 

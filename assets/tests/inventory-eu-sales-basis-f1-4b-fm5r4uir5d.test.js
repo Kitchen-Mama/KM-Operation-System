@@ -113,8 +113,18 @@ ok(/if \(planModel === 'sales_driven'\) \{ if \(sr\.ok\) salesRate = sr\.avgSale
 ok(/^\s*var sr = recoWsResolveSalesRate_\(/m.test(F42),
   'M1 ...while the RESOLVER itself is no longer gated (R46) — it runs for every SKU so the historical rate '
   + 'can be DISPLAYED in both modes, which is a different question from which demand drives planning');
-ok(/whPlanModel === 'sales_driven'\) \{ var wsr = recoWsResolveSalesRate_/.test(F42),
-  'M2 and the WAREHOUSE path is still gated — it publishes no horizonBasis, so R46 had no reason to touch it');
+// S8-B3-R3-CP2S-R1 - SUPERSEDED, AND THE OLD ASSERTION DESCRIBED THE GAP RATHER THAN A RULE. "The warehouse
+// path publishes no horizonBasis, so there was no reason to touch it" was true and was the reason a
+// self_fulfilled site - routed to the WAREHOUSE lane and so producing no marketplace line at all - showed the
+// same dash for "no historical average was sent" as for "this site had no sales". The resolver now runs for
+// BOTH modes in that lane too. What this suite actually protects is untouched and is asserted immediately
+// above: the PLANNING basis (whSalesRate) is still assigned only under sales_driven, so Forecast-Driven
+// demand still never acquires one.
+ok(/var wsr = recoWsResolveSalesRate_\(snaps, scope, sku, calc\.calculationDate\);/.test(F42),
+  'M2 the WAREHOUSE lane resolves the historical rate for BOTH modes (CP2S-R1) - displaying a rate and '
+  + 'driving demand with it are different questions');
+ok(/if \(whPlanModel === 'sales_driven'\) \{ if \(wsr\.ok\) whSalesRate = wsr\.avgSalesPerDay;/.test(F42),
+  'M2a while whSalesRate - the PLANNING input - is still assigned only under sales_driven');
 
 section('§5 N — identical recalc → identical READY result (deterministic)');
 var n1 = H.resolveRate(facts(dailyFor('DE', 100).concat(dailyFor('FR', 40)), [], EU), EU, 'CO1100-R', CALC);

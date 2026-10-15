@@ -2358,3 +2358,10 @@
     cursor: help;
     border-bottom: 1px dotted #D97706;
 }
+
+/* S8-B3-R3-CP2S-R1 - the two cells the canonical basis owns. They are updated IN PLACE when the async
+   workspace read lands, so they carry a stable hook; and a hook the stylesheet never mentions is not a
+   surface (the .psb-state lesson), so they carry the rule a numeric column actually wants: figures that
+   do not change width when the value does, which is what stops the column shivering on every update. */
+#ops-section .replen-avg-cell,
+#ops-section .replen-dos-cell { font-variant-numeric: tabular-nums; }

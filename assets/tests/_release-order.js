@@ -1363,7 +1363,20 @@ var IR_CSS_TOKEN_SERIES = [
   // may never be reused. The APPLICATION family rotates separately in the same round for its own reason;
   // crossing the two is what three suites forbid, and a stylesheet borrowing the application token spends a
   // rotation it does not own.
-  'iravgquality-20261015'
+  'iravgquality-20261015',
+  // S8-B3-R3-CP2S-R1 - the Avg Sales and Days of Supply cells are now updated IN PLACE when the async
+  // workspace read lands, instead of rebuilding the whole table and destroying whatever the operator had
+  // expanded, typed, focused or scrolled to. That needs a stable hook on each cell, and a hook the
+  // stylesheet never mentions is not a surface - the .psb-state lesson - so .replen-avg-cell and
+  // .replen-dos-cell carry a real rule. A browser on the cached stylesheet would hold two class names
+  // with zero rules and show a numeric column whose width shifts on every update.
+  //
+  // IRAVGQUALITY IS PUBLISHED. 45be6010 is on origin/main, so its bytes have been served and by this
+  // series own rule the token is spent. Checked against the remote this round rather than carried
+  // forward from the last report, which is the mistake r57 cost.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK.
+  'iravgcell-20261016'
 ];
 // F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
 //

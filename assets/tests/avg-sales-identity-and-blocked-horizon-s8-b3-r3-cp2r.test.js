@@ -65,7 +65,7 @@ function extractFn(src, name) {
 var sandbox = { KMCALC: KMCALC, KMCID: KMCID, console: console };
 var ctx = vm.createContext(sandbox);
 ['recoWsStr_', 'recoWsNum_', 'recoWsIsObj_', 'recoWsToRowObjects_', 'recoWsCmp_',
-  'recoWsBuildContaminationFacts_', 'recoWsResolveSalesRate_'].forEach(function (fn) {
+  'recoWsBuildContaminationFacts_', 'recoWsResolveSalesRate_', 'recoWsBasisOf_'].forEach(function (fn) {
     vm.runInContext(extractFn(RECO, fn), ctx);
   });
 
@@ -217,7 +217,10 @@ function runRegion(o) {
     recoWsNum_: function (v) { return (v === '' || v === null || v === undefined) ? null : (isFinite(Number(v)) ? Number(v) : null); },
     recoWsBuildHorizons_: function () { return o.horizons; }
   };
-  vm.runInNewContext(REGION, s);
+  // CP2S-R1 - the region now CALLS the shared basis builder instead of writing an object literal, so the
+  // REAL builder is loaded into the region's own sandbox. Stubbing it would have turned an execution test
+  // back into a text test at the exact statement this section exists to execute.
+  vm.runInNewContext(extractFn(RECO, 'recoWsBasisOf_') + ';' + REGION, s);
   return s.mLine;
 }
 var GOOD_SR = {
