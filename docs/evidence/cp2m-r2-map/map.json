@@ -16,12 +16,12 @@
    "contextLost": false,
    "lostAtMs": null,
    "frames": 360,
-   "heldForMs": 8260
+   "heldForMs": 7848
   },
   "note": "The forced --use-gl=swiftshader of the original entry point is NOT passed here; see the file header and docs/evidence/cp2o-r2-gl/gl-probe.json."
  },
  "sources": {
-  "index.html": "136e6c9082770f05",
+  "index.html": "b2708585cfa2fde7",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
   "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
   "assets/js/app.js": "f85df1d3462d63bd",
@@ -29,7 +29,7 @@
   "assets/tests/_cp2o-r2-map-capture.js": "d41703314dccd624",
   "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
  },
- "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/caps/map",
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/caps2/map",
  "scenes": [
   {
    "scene": "desktop",
@@ -58,7 +58,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 1551,
+    "canvasWaitMs": 1568,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -82,7 +82,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 886,
+    "canvasWaitMs": 871,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -106,7 +106,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 879,
+    "canvasWaitMs": 918,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
@@ -200,7 +200,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 851,
+    "canvasWaitMs": 889,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -224,7 +224,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 872,
+    "canvasWaitMs": 888,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -248,7 +248,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 849,
+    "canvasWaitMs": 894,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
