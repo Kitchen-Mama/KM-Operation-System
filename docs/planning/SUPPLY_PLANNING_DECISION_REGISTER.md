@@ -3577,3 +3577,69 @@ reported rather than relieved.
 **Nothing was raised, retired or compressed to achieve this.** It is recorded because it is the opposite of
 the usual direction and the reason is reusable: **a defensive fallback nobody should rely on costs bytes
 twice** — once for the code and once for the paragraph explaining why it is safe.
+
+---
+
+### D-S8-B3-60 — A derived period that the operator may edit is not derived — **FROZEN (FCB1 §A)**
+
+"Adjust From Previous Month Forecast" names its own source: the month before the Target. The builder
+rendered that as two **editable** fields seeded with the answer, so the sentence the method describes
+and the value it used were free to disagree — and `_regularBuildPreview` read the **fields**, not the
+Target, so a disagreement won.
+
+Three defects, one shape, at increasing distance from the user:
+
+| | before | now |
+|---|---|---|
+| **derivation** | Based Year/Month editable, seeded from Target | `_regularDerivedBasePeriod_` is the single pure owner; the fields are `readonly` / `disabled` |
+| **staleness** | `regular-target-year` had **no change handler at all**; `regular-target-month` re-seeded the fields and left the preview standing | `onRegularTargetChange()` re-derives **and** clears the preview, which is what disables Save |
+| **trust** | the preview read the period back out of the DOM | the preview derives its **own** copy and records `baseYear`/`baseMonth` on itself |
+
+The staleness one is the one worth naming. `saveRegularUpdate` writes the period captured in
+`_regularPreview`, so a stale preview did **not** write the wrong month — it wrote the month the
+operator could no longer see. Preview Jan, switch the Target to Feb, Save: the write was internally
+consistent and the screen was not, which is the hardest kind of wrong number to notice.
+
+A blank Target Month also stopped defaulting to `'0'`. The one field that decides which month gets
+written may not have a fallback: missing is missing, not January.
+
+**Deliberately NOT swept up:** the *Apply Growth Rate* Base Year/Month stay **editable**. That period
+is an operator choice, not a derivation, and locking it would be this round over-applying its own rule.
+
+### D-S8-B3-61 — `actual` has never meant actual sales — **RECORDED (FCB1 §A/D)**
+
+The internal value behind the label *Apply Growth Rate* is `'actual'`. Its basis is, and has always
+been, the existing `fc_regular_forecast` row for the chosen Base Year + Base Month. FCB1 is the round
+that brings historical-sales reading to this page, which is precisely when a name like `actual`
+becomes an invitation. §D of the suite pins the basis so the invitation has to be declined explicitly.
+
+### D-S8-B3-62 — The only source that can prove a historical month is one no request can reach — **RECORDED (FCB1 §B, read-only)**
+
+The Owner-approved interval rule requires, per month: **daily** rows, **provable month completeness**,
+**daily** campaign/event-day exclusion, and **company** isolation. Survey of every sales source the
+repository actually has:
+
+| source | horizon | why it cannot answer |
+|---|---|---|
+| `amazon_daily_sales_snapshot` (Sheet) | **rolling 90 completed days, older rows PRUNED** (`06_` config 4, `retentionDays: 90`; `09_amazonUpsertRollingSnapshot_` prunes) | cannot reach last year's same month, or any range older than ~3 months |
+| `amazon_weekly_sales_snapshot` (Sheet) | full rewrite from an external "Combined Sheet"; horizon **not determinable from this repository** | weekly grain cannot prove **month** completeness, weeks straddle month boundaries, and daily selling-day exclusion is impossible |
+| BigQuery `amazon-database-489810.AmazonSales.Raw Daily Sales` | **full history, never pruned** | the only source that satisfies the rule — and **no request-time read path exists**. It is reached only by the scheduled import runner (`07_`/`08_`), never by an action, and never by the client |
+
+**And a second, independent blocker that no amount of history fixes.** Neither snapshot carries a
+`company` column — `normalizeAmazonDailySalesSnapshotRecord` has no company field at all, and
+`supply-planning-calculations.js` states company "is NOT a column of amazon_daily_sales_snapshot and is
+NEVER inferred". The server works around this with the assumption recorded in `42_`, "one scope = one
+company". The FC Builder's scope is `company|country|marketplace`, and KM and ResUS **both** operate
+US/Amazon, so a client-side average over the broad cache could not isolate company **by construction**
+— the same class of defect D-S8-B3-57 has just made fail-closed one layer down. A browser-side
+interval average is therefore not a smaller version of the feature; it is the feature computed wrong.
+
+Also noted, read-only, not acted on: the `06_` comment above config 4 still says "a rolling 30
+completed days" while `retentionDays` is 90. The code is the authority; the prose is stale.
+
+**Consequence:** the interval mode needs a **server-side owner**, which is a GS change. The smallest
+comparable module in the directory is `55_api_v1_lead_time_owner.gs` at **8,712 bytes**; a lean
+handler reusing `amazonRunBigQuery_` and the existing per-date coverage prober
+`amazonQuerySourceDateCoverage_` would still be several kilobytes. **Headroom is 31 bytes.** It is not
+short by a margin that trimming reaches, and nothing was raised, retired or compressed to pretend
+otherwise. Queued behind it, still unimplemented: CP2Q's narrowed gap-timeout diagnostic (1,423 bytes).

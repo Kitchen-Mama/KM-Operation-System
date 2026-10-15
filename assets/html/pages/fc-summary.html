@@ -500,11 +500,11 @@
                             <div class="fc-form-row">
                                 <div class="fc-form-group">
                                     <label>Target Year *</label>
-                                    <input type="number" id="regular-target-year">
+                                    <input type="number" id="regular-target-year" oninput="onRegularTargetChange()">
                                 </div>
                                 <div class="fc-form-group">
                                     <label>Target Month *</label>
-                                    <select id="regular-target-month" onchange="_regularSyncBasedFromTarget()">
+                                    <select id="regular-target-month" onchange="onRegularTargetChange()">
                                         <option value="0">January</option><option value="1">February</option>
                                         <option value="2">March</option><option value="3">April</option>
                                         <option value="4">May</option><option value="5">June</option>
@@ -546,12 +546,12 @@
                             <!-- Based Year/Month (Adjust From Previous Month) -->
                             <div class="fc-form-row" id="regular-based-row" style="display:none;">
                                 <div class="fc-form-group">
-                                    <label>Based Year *</label>
-                                    <input type="number" id="regular-based-year">
+                                    <label>Based Year <span class="fc-hint">(derived from Target)</span></label>
+                                    <input type="number" id="regular-based-year" readonly aria-readonly="true" tabindex="-1">
                                 </div>
                                 <div class="fc-form-group">
-                                    <label>Based Month *</label>
-                                    <select id="regular-based-month">
+                                    <label>Based Month <span class="fc-hint">(derived from Target)</span></label>
+                                    <select id="regular-based-month" disabled aria-disabled="true" tabindex="-1">
                                         <option value="0">January</option><option value="1">February</option>
                                         <option value="2">March</option><option value="3">April</option>
                                         <option value="4">May</option><option value="5">June</option>

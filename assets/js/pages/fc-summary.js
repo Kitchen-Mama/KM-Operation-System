@@ -2901,7 +2901,7 @@ function toggleRegularMethodFields() {
   } else if (method === 'prevMonth') {
     show(baseRow, false); show(basedRow, true); show(growthGroup, true);
     _regularSyncBasedFromTarget();   // default Based Year/Month = the month before Target (editable)
-    methodDesc.innerHTML = '<strong>Adjust From Previous Month Forecast:</strong> take each SKU’s forecast for the explicit <em>Based Year + Based Month</em> (default = the month before Target), apply the rate, and write it into the <em>Target Month</em>. The source is never silently inferred.';
+    methodDesc.innerHTML = '<strong>Adjust From Previous Month Forecast:</strong> take each SKU’s forecast for the month immediately before the Target, apply the rate, and write it into the <em>Target Month</em>. The <em>Based Year + Based Month</em> shown are <strong>derived from the Target</strong> and are not editable — change the Target to change them.';
   } else { // manual
     show(baseRow, false); show(basedRow, false); show(growthGroup, false);
     methodDesc.innerHTML = '<strong>Manual Entry:</strong> Preview lists every in-scope SKU with an editable New value for the Target Month. <strong>Blank = Skip</strong> (row not written); enter <strong>0</strong> to set an explicit zero.';
@@ -2909,19 +2909,45 @@ function toggleRegularMethodFields() {
   _regularClearPreview();
 }
 
-// Default the Based Year / Based Month to the month immediately before the selected Target Month
-// (Target Jan → previous-year Dec). Only sets defaults; the user may override either field.
+// S8-B3-R3-FCB1 — THE BASE PERIOD OF "ADJUST FROM PREVIOUS MONTH" IS DERIVED, NOT OFFERED.
+//
+// The method names its own source: the month before the Target. It was rendered as two editable
+// fields seeded with that answer, so the sentence the method describes and the value it used were
+// free to disagree — and the preview read the fields, not the Target, so a disagreement won.
+//
+// PURE, and the single owner. A Target that cannot be read has NO previous month, and returning a
+// plausible one (the old code fell back to the current calendar year) would be the same guess the
+// round removes: a period nobody chose, used to compute a number somebody saves.
+function _regularDerivedBasePeriod_(targetYear, targetMonth) {
+  var y = Number(targetYear), m = Number(targetMonth);
+  if (!isFinite(y) || !isFinite(m) || m < 0 || m > 11) return null;
+  return m > 0 ? { year: y, month: m - 1 } : { year: y - 1, month: 11 };
+}
+
+// Display the derived period in the (locked) Based fields. Presentation only — `_regularBuildPreview`
+// derives its own copy and never reads these back.
 function _regularSyncBasedFromTarget() {
   var basedYearEl = document.getElementById('regular-based-year');
   var basedMonthEl = document.getElementById('regular-based-month');
   var targetMonthEl = document.getElementById('regular-target-month');
   if (!basedYearEl || !basedMonthEl || !targetMonthEl) return;
-  var targetYear = parseInt(document.getElementById('regular-target-year').value) || (new Date()).getFullYear();
-  var tm = parseInt(targetMonthEl.value || '0');
-  var basedMonth = tm > 0 ? tm - 1 : 11;
-  var basedYear = tm > 0 ? targetYear : targetYear - 1;
-  basedMonthEl.value = String(basedMonth);
-  basedYearEl.value = basedYear;
+  var derived = _regularDerivedBasePeriod_(
+    parseInt((document.getElementById('regular-target-year') || {}).value, 10),
+    parseInt(targetMonthEl.value, 10));
+  if (!derived) { basedYearEl.value = ''; basedMonthEl.value = ''; return; }
+  basedMonthEl.value = String(derived.month);
+  basedYearEl.value = String(derived.year);
+}
+
+// S8-B3-R3-FCB1 — THE TARGET MOVED, SO THE PREVIEW IS ABOUT ANOTHER MONTH NOW.
+//
+// Target Year carried no handler at all and Target Month carried one that only re-seeded the Based
+// fields. So Preview Jan → switch to Feb → Save wrote the JANUARY the preview had captured, with the
+// button still lit and the form on screen saying February. The write was internally consistent and
+// the screen was not, which is the hardest kind of wrong number to notice.
+function onRegularTargetChange() {
+  _regularSyncBasedFromTarget();
+  _regularClearPreview();   // also disables Save — a preview and its Save are one object
 }
 
 // ===== Regular Forecast Builder — preview + bulk single-month save =====
@@ -3007,7 +3033,9 @@ function _regularBuildPreview() {
   var site = _regularSelectedSite();
   var company = site.company, country = site.country, marketplace = site.marketplace;
   var targetYear = parseInt(document.getElementById('regular-target-year').value);
-  var targetMonth = parseInt((document.getElementById('regular-target-month') || {}).value || '0');
+  // FCB1 — a blank Target Month used to default to '0', which is January. The one field that decides
+  // which month gets written may not have a fallback: missing is missing, not January.
+  var targetMonth = parseInt((document.getElementById('regular-target-month') || {}).value, 10);
   var method = document.getElementById('regular-update-method').value;
   var rate = parseFloat((document.getElementById('regular-growth-rate') || {}).value) || 0;
 
@@ -3024,7 +3052,14 @@ function _regularBuildPreview() {
   var rows = _regularFcRows();
   var baseYear, baseMonth;
   if (method === 'actual') { baseYear = parseInt(document.getElementById('regular-base-year').value); baseMonth = parseInt((document.getElementById('regular-base-month') || {}).value || '0'); }
-  else if (method === 'prevMonth') { baseYear = parseInt((document.getElementById('regular-based-year') || {}).value); baseMonth = parseInt((document.getElementById('regular-based-month') || {}).value || '0'); }
+  // FCB1 — DERIVED HERE, not read back out of the locked fields. A disabled attribute is a
+  // presentation choice removed with one devtools click, and a field left over from a previous open
+  // still carries its old value; the period this preview is about to write may not be guessable.
+  else if (method === 'prevMonth') {
+    var derived = _regularDerivedBasePeriod_(targetYear, targetMonth);
+    if (!derived) { _setRegularManualHelp('Target Year and Target Month are required to derive the previous month.', '#b45309'); _regularClearPreview(); return; }
+    baseYear = derived.year; baseMonth = derived.month;
+  }
 
   var previewRows = candidates.map(function(c){
     var targetRow = _regularFindFc(rows, company, country, marketplace, c.sku, targetYear);
@@ -3041,7 +3076,11 @@ function _regularBuildPreview() {
       category: c.category, series: c.series, existing: existing, oldQty: oldQty, newQty: newQty };
   });
 
-  _regularPreview = { targetYear: targetYear, targetMonth: targetMonth, method: method, rows: previewRows };
+  // FCB1 — the period actually used is recorded ON the preview. Asking an operator to check a number
+  // against a period that is only implied is asking them to check it against what they assume.
+  _regularPreview = { targetYear: targetYear, targetMonth: targetMonth, method: method,
+    baseYear: (baseYear == null || isNaN(baseYear)) ? null : baseYear,
+    baseMonth: (baseMonth == null || isNaN(baseMonth)) ? null : baseMonth, rows: previewRows };
   _regularRenderPreview();
   _setRegularSaveEnabled(true);
 }
