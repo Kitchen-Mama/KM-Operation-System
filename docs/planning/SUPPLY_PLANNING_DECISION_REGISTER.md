@@ -3327,3 +3327,79 @@ AI Support, and no ERROR degraded to EMPTY or 0.
    the strength of a guess.
 
 **The one server-side artefact that would localise the stage** is named in the report, requested once.
+
+---
+
+### D-S8-B3-51 — A microtask is not the end of a synchronous scope — **FROZEN (CP2P-R2)**
+
+**The defect was mine, and it was in the part I argued was safe.** CP2P-R1 released the shared row assembly
+with `Promise.resolve().then(release)` and reasoned that a microtask runs after the current task and before
+any later one, so nothing outside the render could reach it.
+
+**That is false whenever a microtask was already queued.** The release is appended to the BACK of the
+microtask queue at the moment the result is stored, so any continuation queued EARLIER runs first, while the
+result is still live:
+
+    somePromise.then(cb)       cb is queued as microtask #1
+    getReplenishmentData()     stores the result, queues the release as microtask #2
+    ...the synchronous task ends...
+    cb runs                    AND READS THE SHARE. It is #1; the release is #2.
+
+An ordinary awaited continuation is exactly such a callback. The share therefore leaked into async work that
+had nothing to do with the render — the one thing the approval excluded. Reproduced before the fix:
+a callback queued before the render saw `assemblies === 1` where it must see 2, and three queued callbacks
+all inherited the render's rows.
+
+**The correction.** An explicit synchronous render scope: a depth counter opened by the render entry points
+(`toggleReplenRow`, `renderReplenishment`, `_irRecoRerenderSummariesRender_`) and closed in a `finally`. It
+ends when the render ends rather than when a queue happens to drain, survives a throw, and nests. **Outside
+a scope nothing is stored and nothing is consulted**, so there is no residue for a later reader to hit —
+which is a stronger property than a short expiry, and it is not a timing argument.
+
+**Identity is not a content guarantee, and the suite records what it cannot see.** The dependency snapshot
+compares the read model and the exposure entry BY IDENTITY. An entry mutated IN PLACE is the same object
+with different contents and is not detected. Inside one synchronous task nothing can mutate them, which is
+the only reason the comparison is sufficient — and that reason exists solely because the scope is
+genuinely synchronous. CP2P-R1 leaned on identity while its scope was not; this round removes the lean by
+fixing the scope, not by widening the comparison.
+
+**Not done:** the lifetime was not extended anywhere to protect a performance figure.
+
+### D-S8-B3-52 — "No correlatable record" is UNKNOWN, not "never arrived" — **FROZEN (CP2P-R2)**
+
+**Correcting my own handoff.** CP2P-R1 offered a decision rule ending "no execution = never reached the
+handler". That is wrong, and it is wrong twice.
+
+1. **Absence of a findable record is not evidence that the request never arrived.** It is absence of
+   evidence. The only honest verdict is **UNKNOWN**.
+2. **There is no correlation key in the log to find it by.** `01_router.gs` captures the client's `km_rid`
+   into `RTR_ENTRY_RID_` and returns it in the RESPONSE meta; it is never written to any server-side log
+   (`Logger.log` appears twice in that file, both for error stacks). So the Apps Script Executions list
+   carries function, start time, duration and status — and no request id. "No correlatable record" is
+   therefore the EXPECTED state, not a signal about the request.
+
+**The segments, which must not be collapsed into "the backend was slow":**
+
+| segment | what it covers | observable today |
+|---|---|---|
+| pre-router | client dispatch -> `doGet` begins executing: front-end, dispatch queue, cold start, per-user contention | **No.** The client sample records elapsed ms, not an absolute dispatch instant; the server writes no entry line |
+| in-router | router entry -> handler start | `routerToHandlerMs` EXISTS in `rtrEntryEvidence_()`, but 43_ never calls it, and it ships only in a response |
+| handler | handler start -> response built | the `serverDurationMs` pattern exists in 40_/42_; 43_ emits none |
+| return | response built -> client receives it, including the 302 hop | **No** |
+
+**AND ALL FOUR RIDE ON A RESPONSE.** A request that times out produces none. So the additive response-meta
+proposal **cannot observe the failing case at all** — it can only characterise slow-but-successful reads.
+That limit was stated in CP2P-R1 and is restated here because the proposal reads like an answer and is not
+one.
+
+**What would observe it** is a server-side record written DURING the execution, carrying the client's
+`km_rid` from router entry. That is a GS change. **It is NOT approved and was not implemented**, and neither
+was the scoped-read proposal.
+
+**Retained, not re-requested:** 45.013 s / REQUEST_TIMEOUT, `marketplace_id = MKT-RESUS-US-AMAZON`,
+`company = ResUS`, `country = US`, `marketplace = Amazon`, Runtime Master and `gapRequestedScope` in
+agreement.
+
+**Current verdict on which segment consumed the 45 seconds: UNKNOWN.** A time-window match against the
+Executions list is circumstantial — one Search dispatches three reads within 44 ms of each other, so
+several `doGet` executions sit in the same window with nothing to tell them apart.

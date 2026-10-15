@@ -1029,7 +1029,21 @@ var ROUND_TOKENS = [
   // THE MAP SERIES IS DELIBERATELY NOT TOUCHED: no map file changed this round.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r55-rendershare-20261014'];
+  'r55-rendershare-20261014',
+  // S8-B3-R3-CP2P-R2 - THE RENDER SCOPE IS EXPLICIT. One route-owned page file changes bytes a published
+  // browser already holds: inventory-replenishment.js. R55 released the shared row assembly with a
+  // microtask, which is NOT the end of a synchronous scope: a continuation queued earlier runs before the
+  // release and could read the share. The lifetime is now a depth counter opened by the render entry points
+  // and closed in a finally, and outside a scope nothing is stored or consulted at all.
+  //
+  // R55 HAS NOT BEEN PUBLISHED, but it is a token a browser could already hold if it ever were, and the
+  // series is append-only by rule rather than by convenience. Reusing it would also leave two different
+  // page builds sharing one cache identity in this branch.
+  //
+  // THE MAP SERIES IS DELIBERATELY NOT TOUCHED: no map file changed this round.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r56-renderscope-20261015'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

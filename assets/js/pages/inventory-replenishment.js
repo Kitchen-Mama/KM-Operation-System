@@ -1409,14 +1409,51 @@ function _irRowsPassSame_(a, b) {
         && a.exposureState === b.exposureState;
 }
 function _irRowsPassRelease_() { _irRowsPass = null; }
-/* THE RELEASE IS THE BOUNDARY. A microtask is scheduled the moment a result is stored, so the result is gone
-   before anything that is not part of this same synchronous render can reach it. setTimeout would be wrong
-   here: it runs in a LATER task, which is exactly the lifetime the approval excludes. */
-function _irRowsPassArm_() {
-    if (typeof Promise === 'function' && Promise.resolve) { Promise.resolve().then(_irRowsPassRelease_); return 'microtask'; }
-    _irRowsPass = null; return 'immediate';
+
+/**
+ * S8-B3-R3-CP2P-R2 — THE SCOPE IS EXPLICIT, BECAUSE A MICROTASK WAS NEVER THE END OF ONE.
+ *
+ * WHAT CP2P-R1 GOT WRONG. It released the shared rows with `Promise.resolve().then(release)` and argued
+ * that a microtask runs after the current task and before any later one, so nothing outside the render
+ * could reach the result. That is false whenever a microtask was ALREADY QUEUED: the release goes to the
+ * BACK of the queue at the moment the result is stored, so any continuation queued EARLIER runs first,
+ * while the result is still live.
+ *
+ *     somePromise.then(cb)       cb is queued as microtask #1
+ *     getReplenishmentData()     stores, and queues the release as microtask #2
+ *     ...the synchronous task ends...
+ *     cb runs                    AND READS THE SHARE. It is #1; the release is #2.
+ *
+ * An ordinary awaited continuation is exactly such a callback, so the share leaked into async work that had
+ * nothing to do with the render. The failing case is pinned in
+ * assets/tests/ir-render-pass-scope-s8-b3-r3-cp2p-r2.test.js.
+ *
+ * WHAT THIS IS INSTEAD. A depth counter opened by the render entry points and closed in a `finally`. It
+ * ends when the RENDER ends rather than when a queue happens to drain; it survives a throw; and it nests,
+ * so a render called from inside another render shares with its parent instead of opening a second one.
+ *
+ * OUTSIDE A SCOPE THERE IS NO SHARE AT ALL — not a stale one, not an expired one, none. Nothing is
+ * stored and nothing is consulted, so there is no residue for a later reader to hit.
+ *
+ * WHY IDENTITY IS ENOUGH HERE, AND ONLY HERE. The dependency snapshot compares the read model and the
+ * exposure entry BY IDENTITY, which says nothing about whether their CONTENTS changed. Inside one
+ * synchronous task nothing can mutate them, which is the only reason that comparison is sufficient - and
+ * that reason exists solely because this scope really is synchronous. It is not a general claim that an
+ * unchanged identity means unchanged data, and the suite records the in-place mutation it cannot see.
+ */
+var _irRowsPassDepth = 0;
+function _irRenderPassBegin_() { _irRowsPassDepth++; }
+function _irRenderPassEnd_() {
+    if (_irRowsPassDepth > 0) _irRowsPassDepth--;
+    if (_irRowsPassDepth === 0) _irRowsPassRelease_();
 }
-window._irRowsPassRelease_ = _irRowsPassRelease_;
+/* Every render that wants the share runs through here, so there is ONE place that can open a scope and ONE
+   that can close it. The finally is the whole point: a render that throws still releases. */
+function _irWithRenderPass_(fn) {
+    _irRenderPassBegin_();
+    try { return fn(); }
+    finally { _irRenderPassEnd_(); }
+}
 
 function getReplenishmentData() {
     // === Demo Data Layer: Phase 2A ===
@@ -1430,14 +1467,14 @@ function getReplenishmentData() {
     // are not yet exposed to the frontend return [] → every field safe-falls-back to 0 / '--'
     // (no fabricated data). See docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md v1.0.
     //
-    // S8-B3-R3-CP2P-R1 §A - the callers in THIS synchronous render share one assembly. The dependency set is
-    // compared first and a change in any of it rebuilds; the result is released by a microtask, so it can
-    // never answer a later event. See _irRowsPassDeps_ for what counts as a dependency and why.
+    // S8-B3-R3-CP2P-R2 - the callers in THIS synchronous render scope share one assembly. OUTSIDE a scope
+    // nothing is stored and nothing is consulted, so a later reader cannot hit a residue; inside one, a
+    // dependency that moved still rebuilds. See _irWithRenderPass_ for why the scope is explicit.
+    if (_irRowsPassDepth <= 0) return _getCloudReplenishmentData();
     var _deps = _irRowsPassDeps_();
     if (_irRowsPass && _irRowsPassSame_(_irRowsPass.deps, _deps)) return _irRowsPass.rows;
     var _rows = _getCloudReplenishmentData();
     _irRowsPass = { deps: _deps, rows: _rows };
-    _irRowsPassArm_();
     return _rows;
     return siteData.map(item => {
         const mockData = replenishmentMockData.find(m => m.sku === item.sku) || {
@@ -2096,6 +2133,8 @@ window._irHeaderLeafSpan_ = _irHeaderLeafSpan_;
 window._irRenderIntegrity_ = function () { return _irRenderIntegrity; };
 
 function renderReplenishment() {
+    /* S8-B3-R3-CP2P-R2 - the table render is one synchronous scope. */
+    return _irWithRenderPass_(function () {
     // F1-7N-FB-2A §B — THE gate. Placed before getReplenishmentData() so that NO caller of
     // renderReplenishment() — the mount, an LTS change, a post-write reconcile, the async recommendation
     // re-render — can paint inventory rows the user never searched for. Demo mode is unchanged (it needs no
@@ -2178,6 +2217,7 @@ function renderReplenishment() {
     _irApplyInventoryColumnModel(_irScopeFulfillmentModel());
     // F1-7N-FB-4E-R4B-R3 §3 - the render checks its own output rather than trusting it.
     _irVerifyRenderedRows_(data.length);
+    });
 }
 
 function initReplenHeaderSync() {
@@ -3066,6 +3106,8 @@ function _irRouteUiStateIsFailure_(s) {
 window._irRouteUiStateIsFailure_ = _irRouteUiStateIsFailure_;
 
 function toggleReplenRow(sku) {
+    /* S8-B3-R3-CP2P-R2 - ONE synchronous render scope for the whole expand: the handler, the reveal it opens and the pumps that run inside it share one row assembly, and the scope closes when this function returns or throws. */
+    return _irWithRenderPass_(function () {
     const fixedRows = document.querySelectorAll('#ops-section .fixed-row');
     const scrollRows = document.querySelectorAll('#ops-section .scroll-row');
     const fixedBody = document.getElementById('replenFixedBody');
@@ -3240,6 +3282,7 @@ function toggleReplenRow(sku) {
         initSalesTrendChart(sku, skuData);
         if (typeof _irUpdateHScrollGutter_ === 'function') _irUpdateHScrollGutter_();
     }, 0);
+    });
 }
 
 function updatePlannedQty(sku, qty) {
@@ -14347,6 +14390,8 @@ window.loadInventoryGap_ = loadInventoryGap_;
 // Two `function` declarations of ONE name in ONE scope do not compose - the second simply replaces the
 // first - so the base has its own name rather than being captured from a variable.
 function _irRecoRerenderSummariesRender_() {
+    /* S8-B3-R3-CP2P-R2 - a recommendation re-render is one synchronous scope of its own. It is reached from async continuations, and each of those gets its OWN scope rather than inheriting one. */
+    return _irWithRenderPass_(function () {
   if (typeof document === 'undefined' || !document.querySelectorAll) return;
   var cards = document.querySelectorAll('#ops-section .replen-card--recommendation-summary');
   if (!cards || !cards.length) return;
@@ -14364,6 +14409,7 @@ function _irRecoRerenderSummariesRender_() {
     if (_irRecoPatchSummaryCells(card, skuData)) return;
     card.innerHTML = '<h4 class="replen-card__title">Recommendation Summary</h4>' + _irRecoSummaryCardBody(skuData);
   });
+    });
 }
 // F1-7N-FB-4G-A1 - _irRecoRerenderSummaries is called on EVERY transition of both recommendation read
 // states (materialized gap and workspace alike), which makes it the single honest place to tell the barrier

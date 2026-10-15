@@ -1,7 +1,7 @@
 {
  "ok": true,
  "browser": "chrome.exe",
- "capturedAt": "2026-10-14",
+ "capturedAt": "2026-10-15",
  "design": "A and B are identical runs (the noise floor); C performs a real pointer drag (the effect).",
  "glEnvironment": {
   "flags": [
@@ -16,15 +16,15 @@
    "contextLost": false,
    "lostAtMs": null,
    "frames": 360,
-   "heldForMs": 7848
+   "heldForMs": 6763
   },
   "note": "The forced --use-gl=swiftshader of the original entry point is NOT passed here; see the file header and docs/evidence/cp2o-r2-gl/gl-probe.json."
  },
  "sources": {
-  "index.html": "8c8a2e0ec53dd528",
+  "index.html": "a4f41e2e137ec6b0",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
   "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
-  "assets/js/app.js": "951a01f7c7c2c56a",
+  "assets/js/app.js": "f4d015454dc2fe9b",
   "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c",
   "assets/tests/_cp2o-r2-map-capture.js": "d41703314dccd624",
   "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
@@ -58,7 +58,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 1580,
+    "canvasWaitMs": 709,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -82,7 +82,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 916,
+    "canvasWaitMs": 593,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -106,7 +106,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 922,
+    "canvasWaitMs": 676,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
@@ -120,9 +120,9 @@
     }
    },
    "pngBytes": {
-    "a": 430898,
-    "b": 430898,
-    "c": 450170
+    "a": 430891,
+    "b": 430891,
+    "c": 450193
    },
    "image": {
     "w": 1280,
@@ -136,7 +136,7 @@
      "h": 638
     },
     "sampled": 98252,
-    "distinctColours": 809,
+    "distinctColours": 804,
     "backgroundColour": "1,1,2",
     "nonBackgroundFraction": 0.8306,
     "contentBox": {
@@ -200,7 +200,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 876,
+    "canvasWaitMs": 545,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -224,7 +224,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 926,
+    "canvasWaitMs": 561,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -248,7 +248,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 907,
+    "canvasWaitMs": 520,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
@@ -262,9 +262,9 @@
     }
    },
    "pngBytes": {
-    "a": 296492,
-    "b": 296492,
-    "c": 295051
+    "a": 296481,
+    "b": 296481,
+    "c": 295057
    },
    "image": {
     "w": 560,
@@ -278,7 +278,7 @@
      "h": 606
     },
     "sampled": 47571,
-    "distinctColours": 817,
+    "distinctColours": 819,
     "backgroundColour": "0,1,2",
     "nonBackgroundFraction": 0.9273,
     "contentBox": {

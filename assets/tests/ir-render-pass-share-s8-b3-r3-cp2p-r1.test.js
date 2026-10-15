@@ -86,18 +86,32 @@ sandbox._getDemoReplenishmentData = function () { return [{ sku: 'DEMO' }]; };
 Object.defineProperty(sandbox, '_irReadModel', { get: function () { return sandbox.readModelRef; }, configurable: true });
 
 var ctx = vm.createContext(sandbox);
-['_irRowsPassDeps_', '_irRowsPassSame_', '_irRowsPassRelease_', '_irRowsPassArm_', 'getReplenishmentData']
+// S8-B3-R3-CP2P-R2 - `_irRowsPassArm_` is GONE. It armed a microtask release, and a microtask queued at
+// store time is not the end of the synchronous scope: a continuation queued EARLIER runs first and could
+// read the share. The lifetime is now an explicit scope, and its acceptance lives in
+// assets/tests/ir-render-pass-scope-s8-b3-r3-cp2p-r2.test.js. This suite drives that scope so its sharing
+// and dependency assertions keep testing what they were written to test.
+['_irRowsPassDeps_', '_irRowsPassSame_', '_irRowsPassRelease_',
+ '_irRenderPassBegin_', '_irRenderPassEnd_', '_irWithRenderPass_', 'getReplenishmentData']
   .forEach(function (fn) { vm.runInContext(extractFn(PAGE, fn), ctx); });
-vm.runInContext('var _irRowsPass = null;', ctx);
+vm.runInContext('var _irRowsPass = null; var _irRowsPassDepth = 0;', ctx);
 
-function call() { return vm.runInContext('getReplenishmentData()', ctx); }
-function reset() { sandbox.assemblies = 0; vm.runInContext('_irRowsPass = null;', ctx); }
+// Every call in this suite runs inside ONE render scope unless a test says otherwise.
+function call() { return vm.runInContext('_irWithRenderPass_(function(){ return getReplenishmentData(); })', ctx); }
+function callsInOneScope(n) {
+  sandbox.__n = n;
+  return vm.runInContext('_irWithRenderPass_(function(){ var last; for (var i = 0; i < __n; i++) last = getReplenishmentData(); return last; })', ctx);
+}
+function reset() { sandbox.assemblies = 0; vm.runInContext('_irRowsPass = null; _irRowsPassDepth = 0;', ctx); }
 function tick() { return new Promise(function (r) { Promise.resolve().then(function () { Promise.resolve().then(r); }); }); }
 
 reset();
-var r1 = call(), r2 = call(), r3 = call();
-eq(sandbox.assemblies, 1, 'A1 three calls in ONE synchronous task assemble ONCE');
-ok(r1 === r2 && r2 === r3, 'A1a and every caller receives the SAME array, not a copy');
+callsInOneScope(3);
+eq(sandbox.assemblies, 1, 'A1 three calls in ONE synchronous render scope assemble ONCE');
+sandbox.__pair = null;
+var same = vm.runInContext(
+  '_irWithRenderPass_(function(){ var a = getReplenishmentData(); var b = getReplenishmentData(); return a === b; })', ctx);
+ok(same === true, 'A1a and every caller receives the SAME array, not a copy');
 
 // ==============================================================================================================
 section('B. AND NOTHING OUTLIVES THAT TASK');
@@ -107,14 +121,14 @@ asyncChecks.push(function () {
   reset(); call();
   return tick().then(function () {
     call();
-    eq(sandbox.assemblies, 2, 'B1 a call after the task ends re-assembles — the share did not survive a microtask');
+    eq(sandbox.assemblies, 2, 'B1 a call in a later microtask re-assembles - it is a different scope');
   });
 });
 asyncChecks.push(function () {
   reset(); call();
   return new Promise(function (res) { setTimeout(res, 0); }).then(function () {
     call();
-    eq(sandbox.assemblies, 2, 'B2 nor a timer — a later task never reads it');
+    eq(sandbox.assemblies, 2, 'B2 and so does a call in a later task');
   });
 });
 
@@ -122,9 +136,9 @@ asyncChecks.push(function () {
 section('C. A DEPENDENCY THAT MOVED FORCES A REBUILD — even inside one task');
 // ==============================================================================================================
 function depCase(label, mutate) {
-  reset(); call();
-  mutate();
-  call();
+  reset();
+  sandbox.__mutate = mutate;
+  vm.runInContext('_irWithRenderPass_(function(){ getReplenishmentData(); __mutate(); getReplenishmentData(); })', ctx);
   eq(sandbox.assemblies, 2, label);
 }
 depCase('C1 a different marketplace is a different station', function () { sandbox.scope = { country: 'US', marketplaceId: 'MKT-B', ltsFilter: '' }; });
@@ -142,19 +156,22 @@ depCase('C8 leaving workspace mode rebuilds', function () { sandbox.workspaceOn 
 sandbox.workspaceOn = true;
 
 // A model object that is merely EQUAL is still a different source.
-reset(); call();
-sandbox.readModelRef = { id: 'model-1' };            // same contents, new object
-call();
-eq(sandbox.assemblies, 2, 'C9 an equal-looking model object is a DIFFERENT source — identity decides, not deep equality');
+reset();
+sandbox.__mutate = function () { sandbox.readModelRef = { id: 'model-1' }; };   // same contents, new object
+vm.runInContext('_irWithRenderPass_(function(){ getReplenishmentData(); __mutate(); getReplenishmentData(); })', ctx);
+eq(sandbox.assemblies, 2, 'C9 an equal-looking model object is a DIFFERENT source - identity decides, not deep equality');
 
 // ==============================================================================================================
 section('D. THE SHAPE OF THE SHARE, in the shipped source');
 // ==============================================================================================================
-var ARM = code(extractFn(PAGE, '_irRowsPassArm_'));
-ok(/Promise\.resolve\(\)\.then\(_irRowsPassRelease_\)/.test(ARM),
-  'D1 the release is a MICROTASK — after this task, before any later one');
-ok(!/setTimeout/.test(ARM),
-  'D2 and not a timer, which would run in a LATER task and is exactly the lifetime the approval excludes');
+// S8-B3-R3-CP2P-R2 - SUPERSEDED. D1 and D2 asserted a microtask release and were removed when that
+// release was found not to bound the synchronous scope at all. The lifetime is now an explicit scope and
+// its acceptance is in ir-render-pass-scope-s8-b3-r3-cp2p-r2.test.js, which reproduces the leak first.
+var WRAP = code(extractFn(PAGE, '_irWithRenderPass_'));
+ok(/finally/.test(WRAP),
+  'D1 the scope is closed in a finally, so a render that throws still releases');
+ok(!/Promise\.resolve\(\)\.then\(_irRowsPassRelease_\)/.test(code(PAGE)),
+  'D2 and the microtask release is gone from the page entirely');
 var DEPS = code(extractFn(PAGE, '_irRowsPassDeps_'));
 ['marketplaceId', 'country', 'lts', 'searchGen', 'readModel', 'exposureEntry', 'exposureState', 'workspace']
   .forEach(function (k) { ok(new RegExp(k).test(DEPS), 'D3 the dependency set names ' + k); });
@@ -181,9 +198,16 @@ for (var i = 1; i <= 8; i++) { BASE.push(ev('baseline-' + i + '.json')); SHARE.p
 function expands(r) { return (r.measurement.expands || []).filter(function (e) { return e.tag !== 'collapse'; }); }
 function runMed(r, f) { return med(expands(r).map(f)); }
 
+// S8-B3-R3-CP2P-R2 - THESE ARE NOW HISTORICAL. They were captured against the MICROTASK implementation,
+// which no longer exists, so requiring them to match disk would require that implementation back. What must
+// still hold is that each capture RECORDS what it ran against, and that the page it ran against is not the
+// page on disk. The current measurement is in docs/evidence/cp2p-r2-scope/.
 Object.keys(SHARE[0].sources).forEach(function (rel) {
-  eq(sha(rel), SHARE[0].sources[rel], 'E1 ' + rel.split('/').pop() + ' is unchanged since the shared capture');
+  ok(/^[0-9a-f]{16}$/.test(String(SHARE[0].sources[rel])),
+    'E1 HISTORICAL: the R1 capture records the ' + rel.split('/').pop() + ' it ran against', SHARE[0].sources[rel]);
 });
+ok(SHARE[0].sources['assets/js/pages/inventory-replenishment.js'] !== sha('assets/js/pages/inventory-replenishment.js'),
+  'E1b HISTORICAL: and that page is not the one on disk - CP2P-R2 replaced its lifetime');
 ok(BASE[0].sources['assets/js/pages/inventory-replenishment.js']
    !== SHARE[0].sources['assets/js/pages/inventory-replenishment.js'],
   'E1a and the two sides were captured against DIFFERENT page source');
