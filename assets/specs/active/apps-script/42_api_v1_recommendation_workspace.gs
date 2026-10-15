@@ -216,8 +216,20 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     ? KMCID.sourceCountriesForScope(scope.country, scope.marketplace) : { members: [scopeCountryC], aggregate: false };
   var srcMembers = {}; srcSet.members.forEach(function (m) { srcMembers[m] = 1; });
   function recoWsInSrc_(c) { return srcMembers[recoWsCanonC(c)] === 1; }
+  // S8-B3-R3-CP2S - AN UNDATED ROW IS NOT AN OBSERVATION, AND IT MAY NOT DELETE THE ONES THAT ARE. The
+  // frozen owner requires a strict date per row and throws otherwise, correctly: a row whose date cannot
+  // be read cannot be placed in the 90-day window. But the single-market branch handed EVERY scoped row
+  // through, so one empty snapshot_date cell raised and the SKU published nothing at all - 84 dated rows
+  // unread behind 1 undated one. The EU branch had always skipped them. This moves that decision to the
+  // one boundary both branches read from, so the two cannot drift apart again.
+  // BLANK ONLY, and COUNTED. A non-empty value this layer cannot parse is a cell somebody wrote: it still
+  // fails closed rather than vanishing into a tally. No date is ever substituted - not synced_at, not
+  // today, not a neighbouring row - because a fabricated date puts real units on a day they did not happen.
+  var blankDates = 0;
   var daily = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot).filter(function (r) {
-    return recoWsStr_(r.sku) === sku && recoWsInSrc_(r.country) && recoWsStr_(r.marketplace) === scope.marketplace;
+    if (recoWsStr_(r.sku) !== sku || !recoWsInSrc_(r.country) || recoWsStr_(r.marketplace) !== scope.marketplace) return false;
+    if (recoWsStr_(r.snapshot_date) === '') { blankDates++; return false; }
+    return true;
   });
   var weeklyAll = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot).filter(function (r) {
     return recoWsStr_(r.sku) === sku && recoWsInSrc_(r.country) && recoWsStr_(r.marketplace) === scope.marketplace;
@@ -243,6 +255,9 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     var b = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/); if (b) return b[3] + '-' + ('0' + b[1]).slice(-2) + '-' + ('0' + b[2]).slice(-2);
     return s;
   }
+  // "no rows" and "rows that were all undated" are different facts and the operator needs the second one
+  // to know what to repair. Empty when nothing was skipped, so a clean scope reads exactly as before.
+  function undatedNote() { return blankDates ? ' (' + blankDates + ' undated rows skipped)' : ''; }
   var calcYmd = toYmd(calcDate);
 
   var channel, kmcalcChannel, weekly7d = 0, dailySales;
@@ -252,12 +267,12 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     // per-member latest-week units WITHOUT a channel filter. A stable synthetic channel token satisfies KMCALC's
     // non-empty-channel contract WITHOUT changing the run-rate (KMCALC uses channel only to filter the daily series,
     // which we PRE-aggregate). No new averaging engine — KMCALC stays the sole run-rate owner (§3/§11).
-    if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) };
+    if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) + undatedNote() };
     channel = 'EU_AGG'; kmcalcChannel = channel;
     // Daily: SUM eligible member rows by the SAME canonical date → ONE canonical EU daily entry per date (never
     // per-country days, never averaged averages). The existing KMCALC ladder then owns the run-rate verbatim.
     var byDate = {};
-    daily.forEach(function (r) { var d = toYmd(r.snapshot_date); if (!d) return; var u = recoWsNum_(r.sales_units); byDate[d] = (byDate[d] || 0) + ((u === null || u < 0) ? 0 : u); });
+    daily.forEach(function (r) { var d = toYmd(r.snapshot_date); var u = recoWsNum_(r.sales_units); byDate[d] = (byDate[d] || 0) + ((u === null || u < 0) ? 0 : u); });
     dailySales = Object.keys(byDate).sort().map(function (d) { return { date: d, sku: sku, units: byDate[d], company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel }; });
     // Weekly fallback: per eligible member country take its OWN latest week_end_date sales_units_7d, then SUM across
     // members ONCE (mirrors IRCountry.weeklyUnits7d) → weekly7d ÷ 7 flows through the same owner.
@@ -270,7 +285,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   } else {
     // Single-market path — UNCHANGED (US/CA/UK/DE/…): channel must be unambiguous; latest week is the <3-day rung.
     var chSource = daily.length ? daily : weeklyAll;
-    if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) };
+    if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote() };
     var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
     var chKeys = Object.keys(chSet);
     if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']' };   // 0 or ambiguous channel → fail closed (conflict)
@@ -332,7 +347,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
   if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)' };
   return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,
-    contaminationSource: contam.sourceStatus };
+    contaminationSource: contam.sourceStatus, blankDateRows: blankDates };
 }
 
 // Build the additive per-destination day-horizon projection via the frozen KMHP owner. Returns null (→ line.horizons
