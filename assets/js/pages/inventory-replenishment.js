@@ -14390,8 +14390,14 @@ window.loadInventoryGap_ = loadInventoryGap_;
 // Two `function` declarations of ONE name in ONE scope do not compose - the second simply replaces the
 // first - so the base has its own name rather than being captured from a variable.
 function _irRecoRerenderSummariesRender_() {
-    /* S8-B3-R3-CP2P-R2 - a recommendation re-render is one synchronous scope of its own. It is reached from async continuations, and each of those gets its OWN scope rather than inheriting one. */
-    return _irWithRenderPass_(function () {
+    /* S8-B3-R3-CP2P-R2 - DELIBERATELY NOT WRAPPED IN A RENDER SCOPE, and the reason is worth keeping.
+       Wrapping it bought nothing measurable: this function is reached from async continuations and makes ONE
+       assembly per call, so there is no repeat inside it to share. It did buy a defect - six suites eval the
+       recommendation REGION of this file, which contains this function but not `_irWithRenderPass_`, so the
+       call referenced a helper that does not exist in their sandbox and all six threw. A region-sliced
+       function must not depend on a helper defined far outside its region. */
+
+
   if (typeof document === 'undefined' || !document.querySelectorAll) return;
   var cards = document.querySelectorAll('#ops-section .replen-card--recommendation-summary');
   if (!cards || !cards.length) return;
@@ -14409,7 +14415,7 @@ function _irRecoRerenderSummariesRender_() {
     if (_irRecoPatchSummaryCells(card, skuData)) return;
     card.innerHTML = '<h4 class="replen-card__title">Recommendation Summary</h4>' + _irRecoSummaryCardBody(skuData);
   });
-    });
+    
 }
 // F1-7N-FB-4G-A1 - _irRecoRerenderSummaries is called on EVERY transition of both recommendation read
 // states (materialized gap and workspace alike), which makes it the single honest place to tell the barrier

@@ -244,65 +244,71 @@ checks.push(function () {
 });
 
 // ==============================================================================================================
-section('G. THE MEASUREMENT \u2014 three arms, interleaved triples, and the number CP2P-R1 overstated');
+section('G. THE MEASUREMENT \u2014 two batches, each paired within itself');
 // ==============================================================================================================
-// Six triples, each arm run back to back within its triple: the page with NO share, the page with the
-// LEAKY microtask release, and the page with the explicit scope. Three arms because two questions had to be
-// answered at once: does the correct version still help, and what was the leak worth?
+// BATCH 1, six interleaved TRIPLES: no share / leaky microtask / scoped. It answers what the LEAK was worth,
+// and it is paired within itself. Its scoped arm describes the pre-correction build and is labelled so.
+// BATCH 2, six interleaved PAIRS: no share / the SHIPPED scope. It is the current acceptance.
+// The two batches are never cross-compared: a pair must be a pair, which is the lesson CP2P learned when a
+// pooled comparison across a drifting machine pointed the wrong way.
 var EV = 'docs/evidence/cp2p-r2-scope';
 function ev(n) { return JSON.parse(read(EV + '/' + n)); }
-var UNSHARED = [], SCOPED = [], LEAKY = [];
+var UNSHARED = [], SCOPED = [], T_UNSHARED = [], T_LEAKY = [], T_SCOPED = [];
 for (var k = 1; k <= 6; k++) {
   UNSHARED.push(ev('unshared-' + k + '.json'));
   SCOPED.push(ev('scoped-' + k + '.json'));
-  LEAKY.push(ev('leaky-microtask-' + k + '.json'));
+  T_UNSHARED.push(ev('triple-unshared-' + k + '.json'));
+  T_LEAKY.push(ev('triple-leaky-' + k + '.json'));
+  T_SCOPED.push(ev('triple-scoped-' + k + '.json'));
 }
 function expands(r) { return (r.measurement.expands || []).filter(function (e) { return e.tag !== 'collapse'; }); }
 function rmed(r, f) { var a = expands(r).map(f).sort(function (x, y) { return x - y; }); var n = a.length; return n ? (n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2) : null; }
 function med2(a) { var b = a.slice().sort(function (x, y) { return x - y; }); var n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2) : null; }
-function pairs(A, B, f) {
-  var out = []; for (var i = 0; i < 6; i++) out.push(rmed(B[i], f) - rmed(A[i], f)); return out;
-}
+function pairs(A, B, f) { var out = []; for (var i = 0; i < 6; i++) out.push(rmed(B[i], f) - rmed(A[i], f)); return out; }
 var crypto2 = require('crypto');
 function shaOf(rel) { return crypto2.createHash('sha256').update(read(rel).replace(/\r\n/g, '\n')).digest('hex').slice(0, 16); }
 
 checks.push(function () {
-  // The SCOPED captures must describe the page on disk; the other two arms must not.
+  // BATCH 2 describes the page on disk. Nothing else may.
   Object.keys(SCOPED[0].sources).forEach(function (rel) {
-    eq(shaOf(rel), SCOPED[0].sources[rel], 'G1 ' + rel.split('/').pop() + ' is unchanged since the scoped capture');
+    eq(shaOf(rel), SCOPED[0].sources[rel], 'G1 ' + rel.split('/').pop() + ' is unchanged since the shipped capture');
   });
   ok(UNSHARED[0].sources['assets/js/pages/inventory-replenishment.js'] !== shaOf('assets/js/pages/inventory-replenishment.js'),
     'G1a the unshared arm ran against a different page');
-  ok(LEAKY[0].sources['assets/js/pages/inventory-replenishment.js'] !== shaOf('assets/js/pages/inventory-replenishment.js'),
-    'G1b and so did the leaky arm \u2014 that implementation is gone');
+  ok(T_LEAKY[0].sources['assets/js/pages/inventory-replenishment.js'] !== shaOf('assets/js/pages/inventory-replenishment.js'),
+    'G1b the leaky arm did too \u2014 that implementation is gone');
+  ok(T_SCOPED[0].sources['assets/js/pages/inventory-replenishment.js'] !== shaOf('assets/js/pages/inventory-replenishment.js'),
+    'G1c and so did batch 1 scoped, which predates the region-coupling fix');
 
+  // --- BATCH 2: the current acceptance -------------------------------------------------------------
   var paintD = pairs(UNSHARED, SCOPED, function (e) { return e.ms_click_to_paint; });
   var execD = pairs(UNSHARED, SCOPED, function (e) { return e.ms_click_to_exec_resolved; });
   eq(paintD.filter(function (x) { return x < 0; }).length, 6,
-    'G2 against NO share, the scope improves first paint in six of six');
+    'G2 the scope improves first paint in six of six pairs');
   eq(execD.filter(function (x) { return x < 0; }).length, 6,
     'G3 and improves the full ready time in six of six');
   ok(med2(execD) < -15, 'G3a by a median of tens of milliseconds', { medianMs: med2(execD) });
 
-  // THE CORRECTION TO THE PREVIOUS ROUND'S HEADLINE, asserted rather than written in prose only.
-  var leakD = pairs(LEAKY, SCOPED, function (e) { return e.ms_click_to_exec_resolved; });
-  eq(leakD.filter(function (x) { return x > 0; }).length, 6,
-    'G4 the CORRECT scope is SLOWER than the leaky one in six of six \u2014 most of the R1 headline was the leak');
-  ok(med2(leakD) > 50,
-    'G4a by a median far larger than the gain the scope itself delivers', { medianMs: med2(leakD) });
-  ok(Math.abs(med2(leakD)) > Math.abs(med2(execD)),
-    'G4b which is the whole point: a number that depended on the defect is not a number this round may keep');
-
-  // WHERE the legitimate gain is: inside the synchronous handler, which is the only place a scope can share.
+  // WHERE the gain is, and where it is not. A scope can only share inside one synchronous task.
   var dinD = pairs(UNSHARED, SCOPED, function (e) { return e.ms_data_in_handler; });
   eq(dinD.filter(function (x) { return x < 0; }).length, 6,
-    'G5 the assembly cost INSIDE the handler falls in six of six \u2014 that is what one synchronous scope can share');
+    'G4 the assembly cost INSIDE the handler falls in six of six');
   var daftD = pairs(UNSHARED, SCOPED, function (e) { return e.ms_data_after_handler; });
   ok(med2(daftD) > -40,
-    'G5a while the cost AFTER the handler is essentially unchanged, because each later continuation is its '
+    'G4a while the cost AFTER the handler is essentially unchanged, because each later continuation is its '
     + 'OWN scope and no scope was widened to pretend otherwise', { medianMs: med2(daftD) });
 
-  // The guards, on the scoped build, in every run.
+  // --- BATCH 1: what the leak was worth, paired within its own batch --------------------------------
+  var leakD = pairs(T_LEAKY, T_SCOPED, function (e) { return e.ms_click_to_exec_resolved; });
+  eq(leakD.filter(function (x) { return x > 0; }).length, 6,
+    'G5 the CORRECT scope is SLOWER than the leaky one in six of six \u2014 most of the R1 headline was the leak');
+  ok(med2(leakD) > 50, 'G5a by a median far larger than the gain the scope itself delivers', { medianMs: med2(leakD) });
+  var leakAfter = pairs(T_LEAKY, T_SCOPED, function (e) { return e.ms_data_after_handler; });
+  ok(med2(leakAfter) > 50,
+    'G5b and the difference is in the work AFTER the handler \u2014 exactly the async continuations the leaked '
+    + 'share was answering', { medianMs: med2(leakAfter) });
+
+  // The guards, on the shipped build, in every run.
   ok(SCOPED.every(function (r) { return r.measurement.abPanels === 1; }), 'G6 A then B leaves exactly one panel');
   ok(SCOPED.every(function (r) { return r.measurement.afterSwitch.panelsOpen === 0; }), 'G6a a station switch leaves none open');
   ok(SCOPED.every(function (r) { return r.measurement.afterSwitch.rows === 25; }), 'G6b and really switches station');
@@ -310,6 +316,10 @@ checks.push(function () {
   ok(SCOPED.every(function (r) { return !r.measurement.fatal; }), 'G6d nothing threw');
   ok(SCOPED.every(function (r) { return r.measurement.dialogs.length === 0; }), 'G6e no dialog was raised');
   ok(SCOPED.every(function (r) { return r.measurement.rowCount === 100; }), 'G6f every run rendered the 100-SKU station');
+
+  // The region coupling that the full regression caught, pinned so it cannot come back.
+  ok(!/_irWithRenderPass_/.test(code(extractFn(PAGE, '_irRecoRerenderSummariesRender_'))),
+    'G7 the recommendation re-render does NOT call the scope helper \u2014 six suites eval that region without it');
   return Promise.resolve();
 });
 
