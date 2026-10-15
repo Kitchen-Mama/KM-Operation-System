@@ -62,10 +62,18 @@ function extractFn(src, name) {
 }
 
 // The real functions this defect lives across. Every one is taken from the shipped page, not restated.
+//
+// S8-B3-R3-CP2R - `_irExecRevealOnce_` and the render-scope helpers join the list because the gate now
+// reveals THROUGH a scope. The dependency is DECLARED here rather than defended with a `typeof` guard in
+// the page: a guard would keep the coupling and hide it, which is what CP2P-R2 refused to do when six
+// suites broke on a region-sliced function calling a helper outside its slice. The PAINT itself stays
+// OUT of the list: this harness stubs it to observe reveals, and loading the real one would silence that.
 var REAL_FNS = [
   '_irRevealFrame_', '_irRevealNow_', '_irExecGate_',
   '_irRevealScopeKey_', '_irRevealSearchGen_', '_irRevealCtx_', '_irRevealSkuData_',
-  '_irExecReadinessInput_', '_irRevealPumpExec_', '_irHydrateDraftForAppliedScope_'
+  '_irExecReadinessInput_', '_irRevealPumpExec_', '_irHydrateDraftForAppliedScope_',
+  '_irRowsPassRelease_', '_irRenderPassBegin_', '_irRenderPassEnd_', '_irWithRenderPass_',
+  '_irExecRevealOnce_'
 ];
 
 function tick() { return new Promise(function (r) { setTimeout(r, 0); }); }
@@ -139,6 +147,9 @@ function build(opts) {
   ].join(NL), ctx, { filename: 'doubles' });
 
   // ---- the REAL functions, sliced from the shipped page ----------------------------------------------------
+  // S8-B3-R3-CP2R - the render-scope state the helpers above operate on. Declared per sandbox, so no
+  // scenario can inherit another's open scope.
+  vm.runInContext('var _irRowsPass = null; var _irRowsPassDepth = 0;', ctx);
   REAL_FNS.forEach(function (n) { vm.runInContext(extractFn(PAGE, n), ctx, { filename: n }); });
 
   var api = {

@@ -3403,3 +3403,81 @@ agreement.
 **Current verdict on which segment consumed the 45 seconds: UNKNOWN.** A time-window match against the
 Executions list is circumstantial — one Search dispatches three reads within 44 ms of each other, so
 several `doGet` executions sit in the same window with nothing to tell them apart.
+
+---
+
+### D-S8-B3-53 — A marketplace SKU resolved without `company` is resolved by sheet row order — **FROZEN (CP2R)**
+
+**The owner was right; the identity handed to it was wrong.** `KMCALC.normalizedAvgSalesPerDay` isolates
+campaign contamination strictly by `scope.marketplaceSkuId`, refuses to guess by master SKU, and fail-fasts
+on a line that cannot prove site membership. All of that is correct and unchanged. What was wrong sat one
+layer above it: `recoWsResolveSalesRate_` resolved that id out of `marketplace_skus` by
+`sku + country + marketplace` and took the FIRST matching row.
+
+`DATABASE_RELATIONSHIP_MAP.md` states that `company` on that table is **required** and that
+`company + country + marketplace` is what distinguishes operational ownership; the match grain is
+`sku + company + country + marketplace`. The sibling reader `recoWsSiteSkuBySku_`, in the same file, already
+matched all three. So when KM and ResUS both sell one master SKU into US / Amazon, **sheet row order decided
+whose marketplace_sku_id was used**, and therefore whose campaign days were removed from whose average.
+
+Reproduced before the fix, with the real resolver over the real owner: asking for ResUS twice, changing
+nothing but the order of two rows, returned `16.55` in one order and `13.10` in the other, excluding
+`2026-10-07` (the KM campaign day) instead of `2026-10-06` (the ResUS one). The two spikes in the fixture
+differ ON PURPOSE — with equal spikes the published rate comes out the same whichever day is wrongly
+excluded, and the defect hides behind a number that looks right.
+
+**The repair** adds `company` to that one match. No new API, no schema change, no formula change, no second
+averaging engine, and no change to the frozen owner.
+
+**Not done:** the country comparison on that lookup is still a RAW string match while the sales-snapshot
+match is canonical (`KMCID`). Making them consistent is a separate question because the EU aggregate scope
+resolves `scope.country = 'EU'` while member rows carry IT/DE/ES/FR — changing it blind would risk the EU
+path. Recorded as an open item, not silently altered.
+
+### D-S8-B3-54 — A blocked horizon must not delete the sales history — **FROZEN (CP2R)**
+
+`mLine.horizonBasis` carries `avgSalesPerDay` and the four §22 quality fields. It was assigned **inside**
+`if (mHz)`, so a line whose day-horizon could not be built published **no basis at all**. A horizon fails for
+forecast-side reasons — a covered month's regular FC missing, an unresolvable Site-Stock opening — none of
+which say anything about whether the SKU has 29 clean normal days of sales history. The page then showed
+`--` for Avg Sales and Days of Supply, and the API was right while the screen was wrong.
+
+R46 had already moved the RESOLVER call out of the `sales_driven` branch. This moves the PUBLICATION out of
+the horizon branch, which is the same mistake one layer further down.
+
+**What stays guarded:** `mLine.horizons` is still assigned only when a horizon was built — a horizon is
+never fabricated. And the basis still fabricates nothing: every field reads `sr.ok ? ... : null`, so an
+unresolved basis is null in every field and a confirmed **zero** is published as zero. Valid 0, missing and
+quality-error remain three distinguishable states.
+
+**`contaminationApplied` / `contaminationSource` now travel with the basis.** The resolver legitimately
+recomputes WITHOUT the campaign/event filter when a campaign line cannot prove site membership, because
+contamination must never gate READY. That retry was **invisible**: an un-excluded rate and a clean one are
+the same number shape. The flag was already returned by the resolver and was being dropped at this boundary.
+Carrying it is what makes the degradation observable rather than silent.
+
+**Superseded gate:** `sales-horizon-reconciliation-f1-4b-fm5r4jlive8` asserted
+`if (mHz) { ... mLine.horizons = mHz` — an assertion that REQUIRED the defect. It is replaced by the two
+invariants that were actually worth protecting (the horizon stays guarded; the basis fabricates nothing),
+with the reason recorded at the assertion.
+
+### D-S8-B3-55 — Seven post-handler assemblies, three turns, one scope per callback — **FROZEN (CP2R)**
+
+**Measured before scoped.** With the handler already scoped by CP2P-R2, a 100-SKU expand still ran **seven**
+full-station assemblies AFTER the handler returned, about 150 ms. The number of calls is not the question
+that decides whether a scope can help — a render scope may only share inside ONE synchronous turn. So every
+call was stamped with its turn (a marker microtask queued at the first call of a turn; anything still in that
+task reads the same number). The answer: **7 calls, 3 turns, and one turn assembling 5 times.** Four of the
+seven are capturable without a share ever outliving the callback that made it.
+
+**The scope is the callback and nothing larger.** Each reveal callback runs inside `_irWithRenderPass_`,
+released in a `finally` the moment it returns. Nothing is stored or consulted outside a scope, so the next
+frame, the other panel's callback and every later continuation each assemble for themselves. This is
+deliberately NOT a memo across callbacks or frames — that was the CP2P-R1 defect and the approval excludes
+it.
+
+**Wrapped at the gate registration site, not inside the paints.** `_irRecoRevealPaint_` and
+`_irExecRevealPaint_` are extracted BY NAME and executed by several suites; putting the helper call inside
+their bodies would make those extractions depend on a helper outside the slice they take — the exact
+coupling that broke six suites in CP2P-R2. The suite that exercises the gate declares the dependency
+explicitly instead.

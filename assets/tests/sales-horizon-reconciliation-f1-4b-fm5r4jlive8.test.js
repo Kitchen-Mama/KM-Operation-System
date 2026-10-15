@@ -79,7 +79,19 @@ ok(/demandMode: planModel/.test(F42)
 ok(/source: \(sr\.ok \? sr\.source : null\)/.test(F42) && /normalDayCount: \(sr\.ok \? sr\.normalDayCount : null\)/.test(F42),
   'A2a and R46 adds the §22 quality fields beside it, so a normalized rate can be told from a weekly fallback '
   + 'when reconciling — the divergence this suite documents is now self-describing rather than inferred');
-ok(/if \(mHz\) \{[\s\S]*mLine\.horizons = mHz/.test(F42), 'diagnostic is guarded by mHz — additive only, never fabricated when horizons are absent');
+// S8-B3-R3-CP2R — SUPERSEDED, AND THE OLD ASSERTION WAS THE DEFECT WRITTEN DOWN. It required
+// horizonBasis to live inside `if (mHz)`, which conflated two independent questions: whether a day-horizon
+// could be BUILT, and what the SKU's historical sales rate IS. A line whose horizon failed for a forecast
+// reason therefore published no rate at all, and the page showed '--' for a SKU with 29 clean normal days.
+// What the assertion was RIGHT about is kept and still enforced: horizons themselves are guarded, and the
+// diagnostic never FABRICATES - every field is `sr.ok ? ... : null`, so an unresolved basis is null, not 0.
+ok(/if \(mHz\) mLine\.horizons = mHz/.test(F42),
+  'the HORIZON is still guarded by mHz - a horizon is never fabricated when none was built');
+ok(/mLine\.horizonBasis = \{/.test(F42) && !/if \(mHz\) \{[\s\S]{0,4000}mLine\.horizonBasis/.test(F42),
+  'but the BASIS is published outside that branch - a blocked horizon is not a statement about sales history');
+var _hb = F42.slice(F42.indexOf('mLine.horizonBasis = {'), F42.indexOf('mLine.horizonBasis = {') + 700);
+ok(!/:\s*0/.test(_hb) && (_hb.match(/sr\.ok \?/g) || []).length >= 6,
+  'and it still fabricates nothing - every resolved field reads `sr.ok ? ... : null`');
 
 section('§9/A5 — stored gap row is READ latest; no page-side recalculation');
 ok(/INV_GAP_HEADERS_/.test(F43) && /d90_gap_qty/.test(F43), 'inventory_replenishment_gap stores the final d90_gap_qty (materialized owner 43_)');

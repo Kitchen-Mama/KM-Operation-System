@@ -269,10 +269,19 @@ var crypto2 = require('crypto');
 function shaOf(rel) { return crypto2.createHash('sha256').update(read(rel).replace(/\r\n/g, '\n')).digest('hex').slice(0, 16); }
 
 checks.push(function () {
-  // BATCH 2 describes the page on disk. Nothing else may.
+  // S8-B3-R3-CP2R - BATCH 2 IS NOW HISTORICAL. It described the page on disk for exactly as long as that
+  // page was the shipped one. CP2R scopes each reveal callback, so the page moved, and requiring these
+  // captures to match disk would require the pre-CP2R page back - the same reason CP2P-R2 relabelled the
+  // CP2P-R1 captures rather than re-taking them under a claim they no longer supported. What must still
+  // hold is that every capture RECORDS what it ran against, and that the arm this batch measured is no
+  // longer the page on disk. The CURRENT reveal-path measurement is docs/evidence/cp2r-reveal-scope/.
   Object.keys(SCOPED[0].sources).forEach(function (rel) {
-    eq(shaOf(rel), SCOPED[0].sources[rel], 'G1 ' + rel.split('/').pop() + ' is unchanged since the shipped capture');
+    ok(/^[0-9a-f]{16}$/.test(String(SCOPED[0].sources[rel])),
+      'G1 HISTORICAL: the batch-2 capture records the ' + rel.split('/').pop() + ' it ran against',
+      SCOPED[0].sources[rel]);
   });
+  ok(SCOPED[0].sources['assets/js/pages/inventory-replenishment.js'] !== shaOf('assets/js/pages/inventory-replenishment.js'),
+    'G1z HISTORICAL: and that page is not the one on disk - CP2R scoped the reveal callbacks after it');
   ok(UNSHARED[0].sources['assets/js/pages/inventory-replenishment.js'] !== shaOf('assets/js/pages/inventory-replenishment.js'),
     'G1a the unshared arm ran against a different page');
   ok(T_LEAKY[0].sources['assets/js/pages/inventory-replenishment.js'] !== shaOf('assets/js/pages/inventory-replenishment.js'),

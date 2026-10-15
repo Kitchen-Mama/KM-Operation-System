@@ -2455,6 +2455,28 @@ function _irRemoveStickyOverlay() {
 // reveal; neither can delay the other, and their data still loads in parallel exactly as before.
 // ================================================================================================================
 var _irRecoGateSingleton = null, _irExecGateSingleton = null;
+// S8-B3-R3-CP2R - ONE REVEAL CALLBACK, ONE ASSEMBLY.
+//
+// MEASURED FIRST, THEN SCOPED. With the handler already scoped by CP2P-R2, a 100-SKU expand still ran SEVEN
+// full-station assemblies after the handler returned, ~150 ms. The question that decides whether a scope can
+// help at all is not how many calls there are but how many SYNCHRONOUS TURNS they span, because a scope may
+// only share inside one. Stamping every call with its turn answered it: 7 calls, 3 turns, and ONE of those
+// turns assembles FIVE times. Four of the seven are therefore capturable without a share ever outliving the
+// callback that made it.
+//
+// THE SCOPE IS THE CALLBACK, AND NOTHING LARGER. Each reveal callback runs inside its own
+// `_irWithRenderPass_`, which releases in a `finally` the moment the callback returns. Nothing is stored
+// outside a scope and nothing is consulted outside one, so the next frame, the other panel's callback and
+// every later continuation each assemble for themselves. This is deliberately NOT a memo across callbacks or
+// frames: that was the CP2P-R1 defect, and it is the thing the approval excludes.
+//
+// WRAPPED AT THE REGISTRATION SITE, NOT INSIDE THE PAINTS. `_irRecoRevealPaint_` and `_irExecRevealPaint_`
+// are extracted BY NAME and executed by several suites; putting the helper call inside their bodies would
+// make those extractions depend on a helper outside the slice they take - the exact coupling that broke six
+// suites in CP2P-R2. The gates are outside the __IRRECO__ region, so the dependency added here is one that
+// the suite exercising the gate declares explicitly.
+function _irRecoRevealOnce_(snap) { return _irWithRenderPass_(function () { return _irRecoRevealPaint_(snap); }); }
+function _irExecRevealOnce_(snap) { return _irWithRenderPass_(function () { return _irExecRevealPaint_(snap); }); }
 var _irRowGen = 0;   // the expanded-row generation - bumped by every expand AND every collapse
 // rAF, or an immediate call where there is no rAF (headless). NEVER setTimeout: a timer would be an
 // artificial wait, and it would paint AFTER a frame rather than inside one.
@@ -2470,7 +2492,7 @@ function _irRecoGate_() {
     if (_irRecoGateSingleton) return _irRecoGateSingleton;
     if (typeof window === 'undefined' || !window.IRPlanningReveal) return null;
     _irRecoGateSingleton = window.IRPlanningReveal.createPanelGate({
-        name: 'recommendation', frame: _irRevealFrame_, now: _irRevealNow_, onReveal: _irRecoRevealPaint_
+        name: 'recommendation', frame: _irRevealFrame_, now: _irRevealNow_, onReveal: _irRecoRevealOnce_
     });
     return _irRecoGateSingleton;
 }
@@ -2478,7 +2500,7 @@ function _irExecGate_() {
     if (_irExecGateSingleton) return _irExecGateSingleton;
     if (typeof window === 'undefined' || !window.IRPlanningReveal) return null;
     _irExecGateSingleton = window.IRPlanningReveal.createPanelGate({
-        name: 'execution', frame: _irRevealFrame_, now: _irRevealNow_, onReveal: _irExecRevealPaint_
+        name: 'execution', frame: _irRevealFrame_, now: _irRevealNow_, onReveal: _irExecRevealOnce_
     });
     return _irExecGateSingleton;
 }
@@ -13903,7 +13925,14 @@ function _irRecoMapLine(L) {
       excludedDates: Array.isArray(L.horizonBasis.excludedDates)
         ? L.horizonBasis.excludedDates.map(function (d) { return String(d); }) : null,
       horizonOpeningQty: _irNumOrNull(L.horizonBasis.horizonOpeningQty),
-      qualifiedIncomingCount: _irNumOrNull(L.horizonBasis.qualifiedIncomingCount)
+      qualifiedIncomingCount: _irNumOrNull(L.horizonBasis.qualifiedIncomingCount),
+      // S8-B3-R3-CP2R - WHETHER THE EXCLUSION FILTER SURVIVED. The server retries the run-rate WITHOUT the
+      // campaign/event filter when a campaign line cannot prove site membership, because contamination must
+      // never gate READY. That retry is legitimate and it is also invisible: an un-excluded rate and a clean
+      // one are the same number shape. Carried so a reader can tell them apart; still never computed here.
+      contaminationApplied: (L.horizonBasis.contaminationApplied == null ? null : !!L.horizonBasis.contaminationApplied),
+      contaminationSource: (L.horizonBasis.contaminationSource && typeof L.horizonBasis.contaminationSource === 'object')
+        ? { campaigns: String(L.horizonBasis.contaminationSource.campaigns || ''), events: String(L.horizonBasis.contaminationSource.events || '') } : null
     } : null,
     diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
   };

@@ -288,8 +288,11 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
       return { date: toYmd(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
     });
   }
+  // S8-B3-R3-CP2R - company + country + marketplace is what distinguishes operational ownership here, so
+  // omitting company let SHEET ROW ORDER pick the id when two companies sell one master SKU into one site,
+  // and KMCALC then excluded the OTHER company's campaign days. recoWsSiteSkuBySku_ matches the same grain.
   var mSkuId = null, mskRows = recoWsToRowObjects_(snaps.marketplaceSkus);
-  for (var i = 0; i < mskRows.length; i++) { var mr = mskRows[i]; if (recoWsStr_(mr.sku) === sku && recoWsStr_(mr.country) === scope.country && recoWsStr_(mr.marketplace) === scope.marketplace) { mSkuId = recoWsStr_(mr.marketplace_sku_id) || null; break; } }
+  for (var i = 0; i < mskRows.length; i++) { var mr = mskRows[i]; if (recoWsStr_(mr.sku) === sku && recoWsStr_(mr.company) === scope.company && recoWsStr_(mr.country) === scope.country && recoWsStr_(mr.marketplace) === scope.marketplace) { mSkuId = recoWsStr_(mr.marketplace_sku_id) || null; break; } }
   // scope marketplace_id — the owner treats an event's marketplace_id as AUTHORITATIVE and fail-fasts on an
   // ID-bearing event when the scope marketplace_id is unresolved, so resolve it from the marketplaces registry.
   var scopeMktId = null;
@@ -698,31 +701,29 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   }
   var mHz = (planModel === 'sales_driven' && salesRate === null) ? null
     : recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening, mIncoming, upc, nd.destination, planModel, salesRate);
-  if (mHz) {
-    mLine.horizons = mHz;
-    // LIVE8 §A2/§A3/§A4 — additive READ-ONLY reconciliation diagnostic (NO formula/schema/calculation change).
-    // Surfaces the exact canonical inputs that drove the day-horizon gap — the resolved run-rate (avgSalesPerDay),
-    // the demand mode, and the Site-Stock opening — which recoWsBuildHorizons_ otherwise drops. This lets a USER
-    // reconcile a stored D-horizon gap (e.g. CO1100-R D90 = 4173) against horizons[].demandQty/coveredQty WITHOUT
-    // the Sheet, and makes any divergence between the Inventory DoS column (a SEPARATE weekly IR.avgSalesPerDay ÷ 7)
-    // and this canonical horizon rate (KMCALC §22 ladder) directly observable (SALES_DOS_HORIZON_AUTHORITY_DIVERGENCE).
-    // S8-R5-B (R46) — `avgSalesPerDay` is the canonical §22 HISTORICAL rate for BOTH Planning Models. It is
-    // NOT a claim about what drove the horizon: `demandMode` remains the discriminator for that. Under
-    // sales_driven this rate IS also the planning basis; under forecast_driven the horizon ran on regular FC
-    // + Target% and this value is historical only. The four §22 quality fields travel as INDEPENDENT
-    // diagnostics (verbatim from the owner, never recomputed, never defaulted) so a normalized rate can be
-    // told from a weekly fallback and a low-sample warning is visible rather than inferred. An unresolved
-    // basis stays null in every field — never a fabricated 0, never an unlabelled weekly substitution.
-    mLine.horizonBasis = { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
-      source: (sr.ok ? sr.source : null), warning: (sr.ok ? sr.warning : null),
-      normalDayCount: (sr.ok ? sr.normalDayCount : null), excludedDates: (sr.ok ? sr.excludedDates : null),
-      horizonOpeningQty: horizonOpening, qualifiedIncomingCount: (mIncoming || []).length };
-  }
+  if (mHz) mLine.horizons = mHz;
   // F1-4B-FM5-R4UI-R7 §1/§4 — when the day-horizon cannot be built, PRESERVE the specific first reason so
   // materialization surfaces it verbatim (a Sales-Driven SKU with an unresolvable canonical run-rate now reports
   // SALES_BASIS_UNAVAILABLE / SALES_BASIS_AMBIGUOUS, not the generic HORIZONS_NOT_AVAILABLE that masked the real
   // cause). Horizon-only reason — the line's own blocked/monthlyProjection (Order Planning) is untouched.
   else mLine.horizonsBlockedReason = salesReason || 'HORIZON_PROJECTION_UNAVAILABLE';
+  // LIVE8 §A2/§A3/§A4 — additive READ-ONLY reconciliation diagnostic (NO formula/schema/calculation change):
+  // the canonical inputs recoWsBuildHorizons_ drops, so a stored D-horizon gap reconciles against
+  // horizons[].demandQty/coveredQty WITHOUT the Sheet and a divergence from the Inventory DoS column is
+  // observable (SALES_DOS_HORIZON_AUTHORITY_DIVERGENCE). S8-R5-B (R46) — `avgSalesPerDay` is the canonical §22
+  // HISTORICAL rate for BOTH Planning Models, NOT a claim about what drove the horizon (`demandMode` is that
+  // discriminator). The four §22 quality fields travel as INDEPENDENT diagnostics, verbatim from the owner, so a
+  // normalized rate can be told from a weekly fallback. An unresolved basis stays null in EVERY field — never a
+  // fabricated 0. S8-B3-R3-CP2R — AND IT IS PUBLISHED OUTSIDE THE HORIZON BRANCH: assigned inside `if (mHz)` it
+  // withheld a valid historical average whenever a horizon could not be built, deleting a sales fact for a
+  // forecast reason. `contaminationApplied` travels for the same reason — the resolver retries WITHOUT the
+  // exclusion filter when a campaign line cannot prove site membership, and a caller that cannot see that flag
+  // cannot tell an un-excluded basis from a clean one.
+  mLine.horizonBasis = { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
+    source: (sr.ok ? sr.source : null), warning: (sr.ok ? sr.warning : null),
+    normalDayCount: (sr.ok ? sr.normalDayCount : null), excludedDates: (sr.ok ? sr.excludedDates : null),
+    horizonOpeningQty: horizonOpening, qualifiedIncomingCount: (mIncoming || []).length,
+    contaminationApplied: (sr.ok ? sr.contaminationApplied : null), contaminationSource: (sr.ok ? sr.contaminationSource : null) };
   return mLine;
 }
 

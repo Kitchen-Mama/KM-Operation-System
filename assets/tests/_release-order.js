@@ -1043,7 +1043,23 @@ var ROUND_TOKENS = [
   // THE MAP SERIES IS DELIBERATELY NOT TOUCHED: no map file changed this round.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r56-renderscope-20261015'];
+  'r56-renderscope-20261015',
+  // S8-B3-R3-CP2R - AVG SALES IDENTITY AND THE REVEAL-CALLBACK SCOPE. One route-owned page file changes
+  // bytes a published browser already holds: inventory-replenishment.js. Two reasons, and either alone
+  // would require the rotation. The page now carries the contamination flag the server publishes beside
+  // the canonical rate, so a browser on the old copy would silently drop it and keep showing an
+  // un-excluded average as though it were clean. And each reveal callback now runs inside its own render
+  // scope: a browser holding the old page would keep running four extra full-station assemblies per
+  // expand, which is the cost this round removes.
+  //
+  // R56 WENT OUT WITH THE PUBLISHED MAIN - b97d6398 is on origin/main - so by the rule this list records
+  // about R53 and R54 it may never be reused: every browser holding it would keep the page that cannot
+  // tell a degraded basis from a clean one.
+  //
+  // THE MAP SERIES IS DELIBERATELY NOT TOUCHED: no map file changed this round.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r57-avgsalesidentity-20261015'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

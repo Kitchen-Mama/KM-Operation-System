@@ -5311,3 +5311,38 @@ honestly. **This is now a release-blocking structural fact and is escalated to t
 rounds have had to condense their own comment prose to fit, and the next backend round of any size cannot.
 
 **STATUS: NOT DEPLOYED · NOT PUSHED · NOT SYNCED.**
+
+---
+
+## S8-B3-R3-CP2R — DEPLOYMENT-BYTES UPDATE AND ONE PENDING `.gs` (append-only, 2026-10-15)
+
+**NOT a release cut.** No release ID is claimed here. This records two facts the entry above left stale.
+
+**THE BUDGET ESCALATION, WITH THIS ROUND'S NUMBER.** The previous entry escalated the headroom as a
+release-blocking structural fact and predicted that *the next backend round of any size cannot fit*. CP2R is
+that round. Measured on the same committed/LF instrument (`gs-load-surface-audit`, `rev: HEAD`):
+
+```
+BUDGET                       4,600,000      (apps-script-load-surface-slim-r1, SIZE_BUDGET)
+BEFORE CP2R  (b97d6398)      4,599,631      headroom  369
+CP2R  42_ only                  +297        two identity/publication repairs, comments kept tight
+AFTER  CP2R                  4,599,928      headroom   72
+```
+
+The gate passes honestly and nothing was done to make it pass: **no budget raised, no module retired, no
+other file compressed to buy room.** The escalation therefore stands and is now sharper — 72 bytes is not a
+round of any size, it is not a sentence.
+
+**AND IT HAS A NAMED CONSEQUENCE ALREADY.** The CP2Q gap-timeout diagnostic, narrowed as far as it goes
+(the two gap read actions only, `43_` alone, no router / transport / request-id change), measures
+**1,423 bytes**. Against 72 it is short by **1,351**. CP2Q is therefore blocked on a budget decision, not on
+design, and remains an unimplemented proposal.
+
+**PENDING SYNC.** `APPS_SCRIPT_SYNC_REQUIRED: assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs`
+— the marketplace-SKU identity repair (`company` added to the `marketplace_skus` match) and the publication
+of `horizonBasis` outside the horizon branch. **The frontend half of this round does nothing for Avg Sales
+until this file is synced**: the page can only display a rate the server actually sends. `BUNDLE_REBUILD_REQUIRED: NO`
+(no `assets/js/core/*` changed). Which release ID this travels under, and whether it joins or starts a cut,
+is an OWNER decision and is not taken here.
+
+**STATUS: NOT DEPLOYED · NOT PUSHED · NOT SYNCED.**
