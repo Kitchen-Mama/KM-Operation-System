@@ -48,7 +48,11 @@ section('Phase 3 — R5B live-path repair markers still present (the version pro
 ok(/function toYmd\(v\)/.test(F42) && /var calcYmd = toYmd\(calcDate\)/.test(F42), 'R1 snapshot/calc date coercion (toYmd) present');
 ok(/kmcalcChannel = \(!daily\.length && !channel\) \? 'WEEKLY_ONLY' : channel;/.test(F42), 'R2 WEEKLY_ONLY blank-channel sentinel present (single-market branch)');
 ok(/var chSource = daily\.length \? daily : weeklyAll;/.test(F42), 'R3 daily-else-weekly basis routing present');
-ok(/run-rate owner error: ' \+ ownerErr\(e2\)/.test(F42), 'R4 the real owner exception is surfaced (no opaque token)');
+// S8-B3-R3-CP2R-R1 - the claim is unchanged, the DEAD VARIABLE NAME is not. `e2` was the second catch
+// of a no-contamination retry that R1 removed: an un-excluded average is not a normal average, so the
+// resolver fails closed instead of recomputing. The surfaced-exception behaviour this protects is
+// unchanged and is also exercised directly, not only grepped.
+ok(/run-rate owner error: ' \+ m/.test(F42), 'R4 the real owner exception is surfaced (no opaque token)');
 
 section('Phase 3 — exactly ONE sales-rate owner (no alternate/old path bypasses the R5B fix)');
 var kmcalcCalls = (F42.match(/KMCALC\.normalizedAvgSalesPerDay\(/g) || []).length;

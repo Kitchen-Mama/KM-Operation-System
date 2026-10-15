@@ -3548,18 +3548,31 @@ regular FC + Target%: the historical field is published beside its horizon and *
 ### D-S8-B3-59 — The correctness fix paid for itself in bytes — **RECORDED (CP2R-R1)**
 
 CP2R left **72 bytes** of headroom and the ledger escalated that as release-blocking. R1 had to add an
-ambiguity check to the same file. It **fits, and then some: −497 bytes net**, because removing the
-`compute([], [])` retry and the comment paragraph defending it costs more than the check adds.
+ambiguity check to the same file. It **fits — but only just, and not for the reason the first draft of this entry claimed.**
 
 ```
 BEFORE R1 (b1061f31)   4,599,928   headroom   72
-R1  42_ only              -497
-AFTER  R1              4,599,431   headroom  569
+R1  42_ only                 +41
+AFTER  R1              4,599,969   headroom   31
 ```
 
-(The −497 is the figure the AUDIT INSTRUMENT reports. A first pass through this entry carried −493, which
-was arithmetic done on a byte count taken with a lossy encoding of the § and em-dash characters in the
-comment being removed. The instrument is the authority and the four bytes were the difference.)
+**THE NUMBER MOVED TWICE AND BOTH CORRECTIONS BELONG HERE.** Removing the `compute([], [])` retry and the
+paragraph defending it returned **−497 bytes**, and this entry was first written around that figure with the
+observation that a defensive fallback nobody should rely on costs bytes twice — once for the code, once for
+the prose. That observation is still true and it was not the whole story.
+
+The full regression then found that collapsing both catch arms into one had made **every** owner throw
+report `SALES_BASIS_CONTAMINATION_UNRESOLVED`, including an unparseable `snapshot_date`, which is a broken
+basis and has nothing to do with exclusions. Naming two different failures the same way is the defect this
+round exists to remove, so the throw is now discriminated — and that correction costs ~538 bytes, which is
+what turns −497 into **+41**.
+
+(An even earlier draft said −493. That was arithmetic on a byte count taken with a lossy encoding of the
+§ and em-dash characters in the comment being deleted. The audit instrument is the authority in all three
+readings, and every figure above is its output rather than a subtraction.)
+
+**Nothing was raised, retired or compressed.** 31 bytes is the tightest this budget has been, and it is
+reported rather than relieved.
 
 **Nothing was raised, retired or compressed to achieve this.** It is recorded because it is the opposite of
 the usual direction and the reason is reusable: **a defensive fallback nobody should rely on costs bytes

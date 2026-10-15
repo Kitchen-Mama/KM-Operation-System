@@ -317,9 +317,18 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   }
   // The REAL owner exception, stripped and truncated, so the named error says what to repair.
   function ownerErr(e) { return (e && e.message) ? String(e.message).replace(/^supplyPlanningCalculations:\s*/, '').slice(0, 140) : '?'; }
+  // R1 - the two kinds of owner throw are NOT one error. A line that cannot prove site membership is a
+  // contamination-identity failure; an unparseable snapshot_date is a broken basis with nothing to do with
+  // exclusions. Naming both the same is the defect this round removes.
   var res;
   try { res = compute(contam.campaigns, contam.events); }
-  catch (e) { return { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: ownerErr(e) }; }
+  catch (e) {
+    var m = ownerErr(e);
+    if ((contam.campaigns.length || contam.events.length) && /campaigns\[|events\[|marketplaceSkuId|marketplaceId/.test(m)) {
+      return { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: m };
+    }
+    return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error: ' + m };
+  }
   var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
   if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)' };
   return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,

@@ -5357,17 +5357,20 @@ add a marketplace-SKU ambiguity refusal to the same file, which looked like the 
 ```
 BUDGET                       4,600,000
 AFTER  CP2R   (b1061f31)     4,599,928      headroom   72
-CP2R-R1  42_ only                 -497
-AFTER  CP2R-R1               4,599,431      headroom  569
+CP2R-R1  42_ only                  +41
+AFTER  CP2R-R1               4,599,969      headroom   31
 ```
 
-It is **negative** because R1 DELETES the `compute([], [])` no-contamination retry and the comment paragraph
-that defended it. **A defensive fallback nobody should rely on costs bytes twice** — once for the code and
-once for the prose explaining why it is safe. Nothing was raised, retired or compressed.
+**It very nearly went the other way, and the honest record is worth more than the tidy one.** Deleting the
+`compute([], [])` retry and the paragraph defending it returned **−497 bytes** — a defensive fallback nobody
+should rely on costs bytes twice, once for the code and once for the prose. The full regression then showed
+that collapsing the two catch arms had made every owner throw report a contamination error, including an
+unparseable date, so the throw had to be discriminated. That correction costs ~538 bytes and turns the
+saving into **+41**.
 
-**The escalation is NOT withdrawn.** 569 bytes is better than 72 and it is still not a backend round. The
+**The escalation is therefore SHARPER, not relieved.** 31 bytes is the tightest this budget has been. The
 CP2Q gap-timeout diagnostic, narrowed to the two gap read actions in `43_` alone, measures **1,423 bytes**
-and is still short by **854**. It remains an unimplemented proposal.
+and is short by **1,392**. It remains an unimplemented proposal.
 
 **PENDING SYNC (unchanged file set):**
 `APPS_SCRIPT_SYNC_REQUIRED: assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs`

@@ -68,7 +68,11 @@ section('§1 source structure — marshalling fixes present, owner untouched');
 ok(/function toYmd\(v\)/.test(F42) && /calcDate: calcYmd/.test(F42), 'S1 date coercion helper + normalized calcDate wired into the owner call');
 ok(/kmcalcChannel = \(!daily\.length && !channel\) \? 'WEEKLY_ONLY' : channel;/.test(F42), 'S2 the blank-channel sentinel is gated to the weekly-only path (single-market branch)');
 ok(/channel: kmcalcChannel,/.test(F42), 'S3 the owner scope uses the sentinel-safe channel');
-ok(/run-rate owner error: ' \+ ownerErr\(e2\)/.test(F42), 'S4 the real owner exception message is surfaced');
+// S8-B3-R3-CP2R-R1 - the claim is unchanged, the DEAD VARIABLE NAME is not. `e2` was the second catch
+// of a no-contamination retry that R1 removed: an un-excluded average is not a normal average, so the
+// resolver fails closed instead of recomputing. The surfaced-exception behaviour this protects is
+// unchanged and is also exercised directly, not only grepped.
+ok(/run-rate owner error: ' \+ m/.test(F42), 'S4 the real owner exception message is surfaced');
 
 console.log('\n----------------------------------------');
 console.log('R5B SALES OWNER MARSHALLING (F1-4B-FM5-R4UI-R5B): ' + pass + ' passed, ' + fail + ' failed');

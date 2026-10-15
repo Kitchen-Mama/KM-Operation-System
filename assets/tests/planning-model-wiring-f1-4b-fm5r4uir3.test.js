@@ -89,10 +89,23 @@ ok(b.ok === true && b.avgSalesPerDay === 370, 'B1 absent campaigns/campaign_sku_
 eq(b.contaminationSource.campaigns, 'ABSENT', 'B2 sourceStatus differentiates ABSENT (diagnostic) — but never blocks');
 eq(noCampaign.contaminationSource.campaigns, 'PRESENT', 'B3 present-but-empty campaigns → PRESENT (0 matches), distinct from ABSENT, also 370 — neither blocks (TABLE PRESENT+0 ≠ UNAVAILABLE)');
 
-section('R4 §5 — ambiguous campaign identity DEGRADES to no-exclusion (never blocks the SKU)');
+section('S8-B3-R3-CP2R-R1 — ambiguous campaign identity FAILS CLOSED (the degrade-to-no-exclusion is gone)');
+// SUPERSEDED, AND THIS ASSERTION BACKED THE DEFECT. It required that a campaign line which cannot prove
+// site membership degrade to "no exclusion" and publish 370 — the rate WITH the campaign spikes still in
+// it — as a legitimate normal average, on the strength of R4 §5's "contamination must never gate READY".
+// That rule means contamination must not gate READY for reasons that are not about the data. An unresolved
+// identity IS about the data: 370 is not an average with a caveat, it is the wrong number. CP2R carried a
+// `contaminationApplied: false` flag to make it observable, which still asked every reader to notice a
+// boolean before trusting a figure. R1 removes the recompute and names the failure instead.
+//
+// What R4 §5 still protects is directly above and unchanged: B1/B2/B3 — an ABSENT source and a
+// present-but-empty source both resolve, differentiated, neither blocking.
 var ambigLine = merge(base(spikeRows), { campaigns: snap(CAMP_H, [['C1', 'KM', 'US', 'Amazon', 'MP1', '2026-07-25', '2026-07-27', 'active']]), campaignSkuLines: snap(CSL_H, [['L1', 'C1', '', 'CO1100-R']]) });   // blank marketplace_sku_id + master-sku match → owner throws
 var c = H.resolveRate(ambigLine, SCOPE, 'CO1100-R', '2026-08-07');
-ok(c.ok === true && c.avgSalesPerDay === 370 && c.contaminationApplied === false, 'C1 a malformed campaign line no longer blocks — the basis recomputes WITHOUT contamination (rate 370, contaminationApplied=false)');
+ok(c.ok === false, 'C1 a campaign line that cannot prove site membership FAILS CLOSED');
+eq(c.reason, 'SALES_BASIS_CONTAMINATION_UNRESOLVED', 'C1a with a named quality error');
+ok(c.avgSalesPerDay == null, 'C1b and publishes NO rate - never the un-excluded 370');
+ok(c.contaminationApplied === undefined, 'C1c the degraded-state flag is gone with the state it reported');
 
 section('R3a — historical event selling days excluded (event contamination via the events param, composite scope)');
 var evtRows = merge(base(spikeRows), { fcSpecialEvents: snap(EVT_H, [['E1', 'KM', 'US', 'Amazon', '', 'CO1100-R', '2026-07-25', '2026-07-27', 'active', 500]]) });
