@@ -14585,7 +14585,15 @@ function _irRecoHasCanonicalBasis_() {
   var by = _irRecoState && _irRecoState.linesBySku; if (!by) return false;
   if (!_irResultMatchesAppliedScope_(_irRecoState)) return false;   // S8-R4D-F1A
   for (var sku in by) { if (!by.hasOwnProperty(sku)) continue; var ls = by[sku] || [];
-    for (var i = 0; i < ls.length; i++) { var b = ls[i] && ls[i].horizonBasis; if (b && b.avgSalesPerDay != null) return true; } }
+    // S8-B3-R3-CP2S - A NAMED QUALITY ERROR IS AN ANSWER. This asked only for a rate, so a response in
+    // which EVERY sku resolved to a named error - ambiguous identity, unresolved contamination, no
+    // history - was indistinguishable from a response that never arrived: nothing repainted and the
+    // column kept the placeholder it had before the request was issued. A permanent '--' reads as
+    // "no sales", when what happened is "I asked, and every answer was an error I can name".
+    // CP2R-R1 gave the server the words and the cell the markup; this was the gate in between that
+    // threw the answer away for being bad news. A basis with NEITHER a rate nor a named error still
+    // says nothing, and still does not earn a full table render.
+    for (var i = 0; i < ls.length; i++) { var b = ls[i] && ls[i].horizonBasis; if (b && (b.avgSalesPerDay != null || b.basisQualityError)) return true; } }
   return false;
 }
 function _irRecoRefreshVelocityCells_() {

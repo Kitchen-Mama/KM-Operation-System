@@ -3716,3 +3716,108 @@ month kills 13 assertions. The stored `0` stays `0` and the blank stays blank: n
 through a numeric default on the way out.
 
 Owner acceptance for this round is therefore **Preview / Cancel only**.
+
+---
+
+### D-S8-B3-66 — One undated row deleted eighty-four dated ones — **FROZEN (CP2S A), BLOCKED ON BUDGET**
+
+The Owner export holds 10,342 daily rows, **353 with an empty `snapshot_date`**. US / CO1150-AG holds 84
+perfectly dated rows and publishes **no average at all**, because one undated row reaches the frozen
+owner, which requires a strict date and throws.
+
+**The asymmetry is the proof, and it is inside one function.** The EU aggregate branch of
+`recoWsResolveSalesRate_` has always skipped undated rows. The single-market branch handed every scoped
+row straight through. Two branches, one boundary, one of them already correct. The fix moves that
+decision to the **one boundary both branches read from**, and deletes the EU branch now-dead guard.
+
+**Blank only, and counted.** A non-empty value this layer cannot parse is a cell somebody wrote: it
+still fails closed with the owner own message rather than vanishing into a tally. `blankDateRows`
+travels on the resolved basis and appears in the "no daily or weekly rows" detail, because *there are
+no rows* and *the rows were all undated* are different facts and only the second tells the Owner what
+to repair. **No date is ever substituted** - not `synced_at`, not today, not a neighbouring row.
+
+**Deliberately not swallowed**, each pinned: confirmed zero still publishes 0; all-undated reaches the
+legitimate weekly rung and says `insufficient_normal_days`; undated daily **and** no weekly publishes
+nothing rather than a fabricated 0; an unresolvable campaign identity still fails closed as
+contamination and is not relabelled a date problem; a resolvable campaign still excludes its day.
+
+**IT DOES NOT FIT.**
+
+```
+BUDGET                  4,600,000
+at ab624f30             4,599,969    headroom      31
+with the fix            4,601,373    OVER BY    1,373
+executable change alone    +270 B    OVER BY      239
+```
+
+The second line settles it: strip **every word** of explanation and the code alone is still 239 bytes
+over. There is no version that fits, so this is a **budget decision, not a craft decision**. Budget not
+raised, no module retired, nothing in another file compressed. All 46 suites reading 42_ are CLEAN; the
+load-surface gate is the single red light, red by exactly the number above.
+
+### D-S8-B3-67 — A response in which every average failed is still a response — **FROZEN (CP2S B7)**
+
+`_irRecoRefreshVelocityCells_` repaints only when `_irRecoHasCanonicalBasis_()` is true, and that
+predicate asked for one line **with a rate**. So a response in which every SKU resolved to a NAMED
+quality error was **indistinguishable from a response that never arrived**: nothing repainted, and the
+column kept the placeholder it had before the request was issued.
+
+A permanent `--` reads as *no sales*. What happened is *I asked, and every answer was an error I can
+name*. CP2R-R1 gave the server the words (D-S8-B3-56) and the cell the markup (D-S8-B3-58); this was
+the gate in between, throwing the whole answer away for being bad news.
+
+**Now:** a basis carrying either a rate **or** a named quality error counts as an answer. A basis with
+**neither** still says nothing and still does not earn a full table render; the S8-R4D-F1A stale-scope
+guard is untouched. **Page-side only - zero GS bytes.**
+
+### D-S8-B3-68 — The historical average reaches two of four destination lanes — **RECORDED (CP2S B5/B6), SERVER-SIDE GAP**
+
+| destination | demand mode | carries `horizonBasis`? |
+|---|---|---|
+| MARKETPLACE | sales_driven | **yes** |
+| MARKETPLACE | forecast_driven | **yes** (D-S8-B3-55 decoupled it from the horizon) |
+| WAREHOUSE | sales_driven | **no** |
+| WAREHOUSE | forecast_driven | **no** |
+
+`horizonBasis` is assigned in exactly one place, inside `recoWsExpandMarketplace_`.
+`recoWsExpandWarehouse_` never mentions it. The fulfillment model routes each site to **one** lane:
+`self_fulfilled` to WAREHOUSE. So a self-fulfilled site produces **no MARKETPLACE line at all**, the
+page picker finds nothing, and the column shows `--`.
+
+**That is "not sent", and the page renders it as "no sales".** Widening the picker alone cannot fix it:
+there is nothing on a warehouse line to find. The repair is server-side, in the same file that is
+already 1,373 bytes over budget, so it is recorded and **not attempted**. The suite pins the gap and
+will fail when the server half lands, which is the point.
+
+### D-S8-B3-69 — The CORS message and the 500 are almost certainly one event — **RECORDED (CP2S D), ATTRIBUTION UNKNOWN**
+
+**The screenshot did not reach this session**, so the failing action is **UNKNOWN** and is not guessed.
+What the code settles:
+
+**The page issues exactly three server actions**, so the candidate set is closed:
+`getWorkspace('inventoryReplenishment')` (4 call sites), `getWorkspace('recommendation')` (1), and
+`inventoryReplenishmentGap.get` (1 - the action already known to time out at ~45 s, CP2Q).
+
+**Why one event and not two.** Apps Script answers every `/exec` POST with a 302 to
+`script.googleusercontent.com`. An Apps Script **exception page carries no
+`Access-Control-Allow-Origin`**, so the browser rejects it *before* JavaScript can read the status: the
+page observes `TypeError: Failed to fetch` and DevTools labels it a CORS error. The 500 is the real
+server failure; "CORS" is how a browser reports that a failed response had no CORS headers. Treating
+them as two faults would send the repair to the wrong layer.
+
+**The stage.** The request ARRIVED - otherwise the router would have answered with its structured
+envelope, which this transport does classify (`DEPLOYMENT_CONTRACT_MISMATCH`,
+`REQUEST_METHOD_DOWNGRADED`, `AUTH_OR_ACCESS_HTML`, `HTTP_NOT_FOUND_HTML`). Those paths all require a
+**readable** response; a CORS-blocked one is not readable at all, so none can fire and the transport
+falls to its least specific code, `TRANSPORT_ERROR`. **The failure is inside the handler, after entry,
+and only the Apps Script execution log can see it.**
+
+**Why each forbidden shortcut is wrong, specifically:** `no-cors` makes the response *opaque* (status 0,
+body unreadable) - it hides the 500 rather than fixing it; a higher timeout does nothing for a 500; an
+auto-retry re-runs a read already known to spend 45 seconds; disabling verification removes the only
+machinery that can name the fault.
+
+**What would settle it, and it already half exists:** the request id. `km_rid` is already placed on the
+query string by the transport, and `01_router.gs rtrMarkEntry_` already captures it on every request.
+The correlation key exists **on both sides today**; what is missing is the log read - which is exactly
+CP2Q proposal, still unimplemented and now behind a budget wall.
