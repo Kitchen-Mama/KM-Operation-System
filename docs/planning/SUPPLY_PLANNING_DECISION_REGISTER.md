@@ -4410,10 +4410,13 @@ happened. All of them read `no daily or weekly rows @ CA/Amazon`, which names th
 
 **THE FOURTH IS NOT AMONG THE REFUSALS.** Rows that match the scope but fall outside the 90-day window pass
 to the frozen owner, which samples none of them, counts **zero** normal days and drops to the weekly rung.
-That publishes a RATE: `0.0` with no weekly row, or the weekly rate divided by seven. **A site whose history
-is entirely too old prints a plausible number**, so looking for it among the refusals finds nothing. Its
-signature is `normalDayCount: 0` with `source: 'weekly_7d'`, and both fields already reach the row — against
-a CONFIRMED zero, which also prints `0.0` but over 30 normal days on `normalized_30d`.
+Whether that publishes a rate depends on whether a weekly source can be read: with one, the weekly rate
+divided by seven, `normalDayCount: 0` and `source: 'weekly_7d'`; **without one it must refuse** (D-S8-B3-95).
+
+> **CORRECTED BY CP2T-R2.** This entry said the no-weekly case "publishes a RATE: `0.0`" and treated that as
+> the behaviour to look for. It was the defect written down as the design — `0.0` there was divided out of a
+> weekly total that had never been read. The acceptance suite asserted it too, and **a suite that accepts a
+> defect protects it**; it protected this one for exactly one round. See D-S8-B3-95.
 
 **The planning model is not one of the four.** A `forecast_driven` SKU has a real historical average and
 publishes it (CP2S-R1); the model selects which HORIZON formula consumes the rate, not whether the site has
@@ -4446,4 +4449,84 @@ against current source is what keeps a re-capture from becoming a re-run of ever
 Unchanged by this round and not claimed. No Chart.js is vendored, "has a layout box" is still not separated
 from "is actually visible", and **the expand delay remains unfixed**. Data correctness was the stated
 priority for CP2T-R1 as it was for CP2T, and is where both rounds went.
+
+### D-S8-B3-95 — A missing weekly source is not a week in which nothing sold — **FIXED (CP2T-R2 P0)**
+
+The frozen ladder is "3 or more normal days —> normalized_30d, else weekly_7d — 7". 42_ initialises `weekly7d`
+to **0** and leaves it there whenever the weekly cell cannot be read, so below three normal days the owner
+divided a total that was never observed and the column printed a confident **`0.0`**.
+
+| what the weekly source actually was | what `weekly7d` became | what the column printed |
+|---|---|---|
+| table absent from the read | 0 | `0.0` |
+| no row for the resolved channel / SKU / country | 0 | `0.0` |
+| row present, `sales_units_7d` **blank** | 0 (`recoWsNum_` —> null) | `0.0` |
+| `null`, non-numeric, `Infinity` | 0 | `0.0` |
+| **negative** — a data error, not an observation | 0 (clamped) | `0.0` |
+| EU: no eligible member week at all | 0 (a sum over nothing) | `0.0` |
+| **explicit `0`** — a real reported week | 0 | `0.0` **(legitimate)** |
+
+**A fabricated zero is the worst answer available here.** It is indistinguishable from a real "nothing sold",
+it feeds Days of Supply as **infinite cover**, and it silently reports that the site needs no replenishment.
+The last row of that table is why `weekly7d` alone cannot carry the distinction: **0 is both the reading and
+the absence of one.**
+
+**So availability is recorded WHERE THE CELL IS READ** (`weeklyOk`, set only for a finite non-negative value),
+and the refusal keys on **the rung the owner actually selected** (`res.source === 'weekly_7d'`), never on a
+day count re-derived here. Consequences, each pinned:
+
+- an **explicit 0** still resolves on the weekly rung with the unchanged `insufficient_normal_days` warning;
+- a site with **enough normal days** is never refused for a fallback it does not use (3 is still the frozen
+  threshold, and 3 days still carries `low_sample_warning`);
+- a **confirmed zero** day count still publishes `0` on `normalized_30d`;
+- a **blank latest week is not rescued by an older readable one** — reaching back a week would be a second
+  window policy invented at this layer;
+- EU refuses with **no usable member week**, while **one** member reporting an explicit 0 resolves, and a
+  readable member beside an unreadable one sums the readable one only. **No per-member coverage threshold,
+  freshness rule or TTL was introduced** — one usable member is what the frozen roll-up already accepted;
+- the **more specific reasons still win**: an unreadable campaign date or an untieable campaign line keeps
+  `SALES_BASIS_CONTAMINATION_UNRESOLVED`, an ambiguous channel keeps its own, and a scope with no rows at all
+  keeps `SALES_BASIS_UNAVAILABLE`. The new code is for **a rung that was reached and found empty**.
+
+New reason `SALES_BASIS_WEEKLY_UNAVAILABLE`, with operator-facing words rather than a bare token. Frozen
+KMCALC, its ladder, its window, its division and its latest-week pick are all untouched; no formula and no
+schema changed. **`weekly-fallback-source-s8-b3-r3-cp2t-r2.test.js` — 51 passed / 47 failed before the
+repair, 98 / 0 after**, over both planning models, both lanes and the full cell chain. The cell now refuses
+instead of printing `0.0`, and **Days of Supply refuses with it**.
+
+### D-S8-B3-96 — r5e, and the cache case a shape check cannot see — **FROZEN (CP2T-R2)**
+
+`RECO_WS_HANDLER_VERSION_` moves `fm5-r4ui-r5d` —> **`fm5-r4ui-r5e`**, and the page's accept list with it.
+The superseded list now has **two** entries and they fail differently:
+
+| version | what its stored answers hold |
+|---|---|
+| `fm5-r4ui-r5c` | campaign / event date cells mis-read — a refusal where there is a real history |
+| `fm5-r4ui-r5d` | **readable, correctly shaped, and carrying a fabricated `0`** |
+
+**r5d is the sharper case for this whole guard.** An r5d record has exactly the shape this build reads and
+values that pass every structural check; only the computation version distinguishes its `0` from a real
+reported zero. That is the argument for an allow-list on the computation, made concrete.
+
+### D-S8-B3-97 — r59 carried a second time, re-checked again — **FROZEN (CP2T-R2)**
+
+`origin/main` is `37d9db8c` and `b382644d`, which introduced `r59-cacheshape-20261017`, is still not an
+ancestor of it. **r59 has never been served**, so it is carried rather than succeeded, and `index.html` and
+`app.js` are untouched for a second round. The check was re-run against the remote; the note in
+`_release-order.js` is not the evidence and never becomes it.
+
+The Owner has since reported that **main `37d9db8c` is published, 42_ is synced and the deployment updated**
+— so the live handler is the `fm5-r4ui-r5c` that ships at that commit, and the live `index.html` carries
+**r58**. Neither r5d nor r5e has ever run in Production.
+
+### D-S8-B3-98 — The MARKETPLACE lane withholds the basis on an inactive destination — **RECORDED, NOT FIXED**
+
+Found while repairing this round's own fixture, and recorded because it is the same shape as a defect this
+branch has already fixed once. `recoWsExpandMarketplace_` blocks on `MARKETPLACE_DESTINATION_INACTIVE`
+**before the basis is attached**, so the line carries no `horizonBasis` at all and the cell prints the bare
+dash — even for a site with 30 days of readable history. CP2S-R1/R2 repaired exactly this for the WAREHOUSE
+lane, where a missing demand-allocation rule withheld the site SKU's sales history (D-S8-B3-79).
+
+**Not repaired this round**, which was scoped to the weekly fallback source. Pinned as an executed
+observation in `weekly-fallback-source-s8-b3-r3-cp2t-r2.test.js` §K4 so it cannot quietly become normal.
 

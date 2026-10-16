@@ -22,7 +22,8 @@ var INDEX = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf
 // and change independently: CP2T-R1 repaired the campaign/event date passing in 42_ only, so 42_ owes a
 // new version and 43_ does not. Marching 43_ to it would stamp a change onto a file that did not change,
 // which is the per-module-stamp error the release governance already names.
-var VER_WS = 'fm5-r4ui-r5d';     // 42_ recommendation workspace - r5d computes campaign dates correctly
+var VER_WS = 'fm5-r4ui-r5e';     // 42_ recommendation workspace - r5e refuses a weekly rung with no source
+var VER_WS_SUPERSEDED = ['fm5-r4ui-r5c', 'fm5-r4ui-r5d'];   // r5c mis-read campaign dates; r5d published a fabricated 0
 var VER_GAP = 'fm5-r4ui-r5c';    // 43_ gap materialization - unchanged this round
 var fail = 0, pass = 0;
 function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; } }
@@ -69,8 +70,10 @@ var accepted = (IRPAGE.match(/var _IR_RECO_CACHE_HANDLERS = \[([^\]]*)\]/) || []
 ok(accepted !== undefined, 'P1 the page declares the handler versions whose computation it will cache');
 ok(String(accepted).indexOf("'" + VER_WS + "'") !== -1,
   'P2 and it accepts the version 42_ actually stamps (' + VER_WS + ') - otherwise the cache can never hit', accepted);
-ok(String(accepted).indexOf("'" + VER_GAP + "'") === -1,
-  'P3 and NOT the pre-repair one, which is the record that produced the live column', accepted);
+VER_WS_SUPERSEDED.forEach(function (v) {
+  ok(String(accepted).indexOf("'" + v + "'") === -1,
+    'P3 and NOT ' + v + ', whose stored answers are wrong rather than unreadable', accepted);
+});
 
 section('Phase 3 — exactly ONE sales-rate owner (no alternate/old path bypasses the R5B fix)');
 var kmcalcCalls = (F42.match(/KMCALC\.normalizedAvgSalesPerDay\(/g) || []).length;

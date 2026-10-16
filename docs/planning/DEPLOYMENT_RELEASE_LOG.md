@@ -5378,3 +5378,37 @@ and is short by **1,392**. It remains an unimplemented proposal.
 not send, and the Avg Sales column keeps its CP2R behaviour.
 
 **STATUS: NOT DEPLOYED · NOT PUSHED · NOT SYNCED.**
+
+---
+
+## Owner-reported release — main `37d9db8c` (recorded 2026-10-16, CP2T-R2)
+
+**The Owner reports that main `37d9db8c` is PUSHED, that `42_api_v1_recommendation_workspace.gs` is SYNCED
+and that the Apps Script deployment was UPDATED.** That supersedes the `NOT DEPLOYED` status of the CP2R-R1
+entry above, which recorded the intent of that round and was never revised as later rounds landed locally.
+
+| | |
+|---|---|
+| published main | `37d9db8c` (confirmed this round by `git ls-remote`) |
+| `42_` handler version at that commit | **`fm5-r4ui-r5c`** (read out of the file at that revision) |
+| `index.html` application token at that commit | `r58-derivedbaseperiod-20261015` |
+| Apps Script deployment version number | **UNKNOWN — not provided** |
+
+**The deployment VERSION NUMBER is UNKNOWN and is recorded as UNKNOWN.** It was not supplied and this ledger
+does not infer one. What IS established is the handler that ships at the published commit.
+
+**So the live Avg Sales column runs r5c.** Neither `fm5-r4ui-r5d` (CP2T-R1 — campaign and event date cells)
+nor `fm5-r4ui-r5e` (CP2T-R2 — the weekly fallback source) has ever run in Production; both exist only in
+local commits. The live column therefore still carries both defects those rounds repaired.
+
+**This entry also retires the phrase "not published since".** Earlier reports in this branch asserted what
+had or had not shipped after the previous ledger entry. Publication is a property of the REMOTE and is
+re-checked per round; only checked statements are kept here, and an unsupplied version number is UNKNOWN
+rather than absent.
+
+**PENDING SYNC (local commits ahead of the published main):**
+`APPS_SCRIPT_SYNC_REQUIRED: assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs`
+`BUNDLE_REBUILD_REQUIRED: NO`
+
+**STATUS: LOCAL ONLY — NOT PUSHED — NOT SYNCED (this round).**
+

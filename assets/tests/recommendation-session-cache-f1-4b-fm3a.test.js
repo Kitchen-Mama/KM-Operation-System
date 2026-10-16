@@ -54,7 +54,7 @@ ok(typeof loadRecommendationWorkspace_ === 'function' && typeof _irAggregateActi
 // a response from a pre-R5C deployment rather than the minimal response it was meant to be. A success the
 // page will store is now a success whose COMPUTATION it accepts, not merely one it can parse - see
 // reco-session-cache-compat-s8-b3-r3-cp2t.test.js for the record that has the right shape and wrong values.
-var HANDLER_OK = 'fm5-r4ui-r5d';
+var HANDLER_OK = 'fm5-r4ui-r5e';   // CP2T-R2 moved the computation again
 function envOk(lines, meta) {
   return { success: true, data: { lines: lines, pagination: { page: 1, size: 100, total: lines.length }, dataVersion: { formulaVersion: 'v4.7', sourceDataAsOf: '2026-08-01' } },
     meta: Object.assign({ requestId: 'REQ-P1', calculationMonth: '2026-08', planningCycle: 'RECO-2026-08', recommendationWorkspaceHandlerVersion: HANDLER_OK }, meta || {}), errors: [] };

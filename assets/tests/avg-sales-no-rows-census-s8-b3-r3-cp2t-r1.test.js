@@ -13,9 +13,16 @@
 //
 // AND THE FOURTH IS NOT EVEN IN THAT SENTENCE. Rows that match the scope but fall outside the window never
 // reach the no-rows return at all: they pass through to the frozen owner, which samples none of them,
-// counts ZERO normal days and drops to the weekly rung. That publishes a RATE, not a refusal - so a SKU
-// whose history is entirely too old prints a number, and looking for it among the refusals finds nothing.
-// Section D pins the signature that tells it apart: normalDayCount 0 with source weekly_7d.
+// counts ZERO normal days and drops to the weekly rung. What happens THERE depends entirely on whether a
+// weekly source can be read, and section D is where this file was wrong.
+//
+// CORRECTED BY CP2T-R2. As first written, section D asserted that this case "publishes a rate: 0.0 with no
+// weekly row" and called it expected behaviour. It was the defect written down as the design: 42_ handed
+// the owner a weekly total of 0 that had never been read, the owner divided it by 7, and the column printed
+// a confident 0.0 indistinguishable from a real week of no sales - which then fed Days of Supply as
+// infinite cover. The condition is now a DEFECT REGRESSION here, and the behaviour it covers lives in
+// weekly-fallback-source-s8-b3-r3-cp2t-r2.test.js. An out-of-window history prints a number only when a
+// weekly source actually exists to divide.
 //
 // WHAT THIS IS NOT. The planning model is not one of the four. A forecast_driven SKU has a real historical
 // average and publishes it (CP2S-R1); the model decides which HORIZON formula consumes the rate, not
@@ -139,33 +146,42 @@ var Cc = resolve(snaps({ daily: inWindow(30, 4, { country: 'ca' }), weekly: [] }
 ok(Cc.ok === true, 'C4  a lower-case country still matches - the compare is canonical, not byte-exact', Cc);
 
 // ---------------------------------------------------------------------------------------------------
-section('D  OUT OF WINDOW - matched, dated, and too old. This one prints a NUMBER.');
+section('D  OUT OF WINDOW - matched, dated, too old. It prints a number ONLY if a week can be read.');
 // ---------------------------------------------------------------------------------------------------
-// It never reaches a refusal: the rows pass to the frozen owner, which samples none, counts zero normal
-// days, and falls to the weekly rung. Looking for this case among the refusals finds nothing at all.
+// It never reaches the no-rows refusal: the rows pass to the frozen owner, which samples none, counts zero
+// normal days, and falls to the weekly rung. THE FIRST VERSION OF THIS SECTION STOPPED THERE and recorded
+// the 0.0 that came back as the expected answer. CP2T-R2 keeps the condition and inverts the verdict.
 var D = resolve(snaps({ daily: beforeWindow(30, 4), weekly: [] }));
-eq(D.ok, true, 'D1  rows entirely BEFORE the window still RESOLVE - this is not a refusal at all');
-eq(D.normalDayCount, 0, 'D2  with ZERO normal days, because none of them are in the window');
-eq(D.source, 'weekly_7d', 'D2a so the owner drops to the weekly rung');
-eq(D.warning, 'insufficient_normal_days', 'D2b and marks it - the rate is never silently a weekly one');
-eq(D.avgSalesPerDay, 0, 'D3  and with no weekly row either, the published rate is 0');
-eq(basisOf(D).basisQualityError, null, 'D3a carrying NO quality error - nothing refused');
+eq(D.ok, false,
+  'D1  REGRESSION GUARD: an out-of-window history with NO weekly source must NOT resolve. This assertion '
+  + 'read `true` when it was written, and the 0.0 behind it was a fabrication, not a measurement.');
+eq(D.reason, 'SALES_BASIS_WEEKLY_UNAVAILABLE', 'D2  it refuses by name instead');
+ok(D.avgSalesPerDay === undefined, 'D2a publishing no rate at all');
+eq(basisOf(D).basisQualityError, 'SALES_BASIS_WEEKLY_UNAVAILABLE', 'D2b and the basis carries the code');
+eq(basisOf(D).avgSalesPerDay, null, 'D2c with a null rate, never a zero');
 
-// Which is why it must be told from a REAL zero: same printed number, different sample.
+// With a weekly source the same out-of-window history DOES publish a number, and that is correct: the
+// week is a real observation even though no day in the window is.
+var Dw0 = resolve(snaps({ daily: beforeWindow(30, 4), weekly: [['2026-10-12', 'CA', 'Amazon.ca', SKU, 21, 'Amazon']] }));
+eq(Dw0.ok, true, 'D3  the SAME history with a readable weekly row resolves', Dw0);
+eq(Dw0.avgSalesPerDay, 3, 'D3a to 21 / 7 - so D1 is about the weekly SOURCE, not about the window');
+eq(Dw0.normalDayCount, 0, 'D3b still with zero normal days');
+eq(Dw0.source, 'weekly_7d', 'D3c on the weekly rung');
+eq(Dw0.warning, 'insufficient_normal_days', 'D3d which the row declares rather than implying');
+
+// And a REAL zero is still a real zero.
 var Dz = resolve(snaps({ daily: inWindow(30, 0), weekly: [] }));
-eq(Dz.avgSalesPerDay, 0, 'D4  a site with 30 CONFIRMED zero days also publishes 0');
-eq(Dz.normalDayCount, 30, 'D4a but over 30 normal days');
+eq(Dz.avgSalesPerDay, 0, 'D4  a site with 30 CONFIRMED zero days publishes 0');
+eq(Dz.normalDayCount, 30, 'D4a over 30 normal days');
 eq(Dz.source, 'normalized_30d', 'D4b on the normalized rung');
-ok(D.normalDayCount !== Dz.normalDayCount && D.source !== Dz.source,
-  'D5  SO THE TWO ZEROES ARE DISTINGUISHABLE on normalDayCount and source, both of which already reach the '
-  + 'row. "0.0" alone does not say which one it is, and these two fields do.');
+eq(basisOf(Dz).basisQualityError, null, 'D4c with no quality error');
+ok(D.ok === false && Dz.ok === true,
+  'D5  SO THE TWO ARE NO LONGER BOTH ZEROES. One is a measurement and the other is a refusal, which is a '
+  + 'sharper separation than the normalDayCount / source comparison this assertion used to make - that '
+  + 'comparison was true, and it was distinguishing two numbers only one of which should have existed.');
 
-// And with a weekly row present, the out-of-window case publishes the weekly rate - a real number from a
-// real observation, which is exactly why nobody goes looking for a defect.
-var Dw = resolve(snaps({ daily: beforeWindow(30, 4), weekly: [['2026-10-12', 'CA', 'Amazon.ca', SKU, 21, 'Amazon']] }));
-eq(Dw.ok, true, 'D6  with a weekly row it resolves too');
-eq(Dw.avgSalesPerDay, 3, 'D6a to 21 / 7 = 3.0 - a plausible number produced by zero in-window daily rows');
-eq(Dw.warning, 'insufficient_normal_days', 'D6b with the marker that says which rung it came from');
+// A plausible number produced by zero in-window daily rows is exactly why nobody went looking for a defect
+// here - which is the whole reason D1 had to be inverted rather than merely annotated.
 
 // ---------------------------------------------------------------------------------------------------
 section('E  the planning model is NOT one of the four');
@@ -208,6 +224,9 @@ ok(true, 'G1  NOT KNOWN: which of A-E the live CA row actually is. This round ma
 ok(true, 'G2  NOT TESTED HERE: the canonical country authority (KMCID). C4 runs on the uppercase fallback '
   + 'because no KMCID is bound in this sandbox, so it records the fallback behaviour and claims nothing about '
   + 'the live canonicaliser - avg-sales-destination-chain owns that.');
+ok(true, 'G3  CORRECTED: section D of this file asserted the fabricated zero as expected behaviour when it '
+  + 'was written. A suite that accepts a defect protects it, and this one protected it for exactly one round. '
+  + 'The condition is kept and the verdict inverted, so the regression it now guards is the one it caused.');
 
 console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed');
 process.exitCode = failed === 0 ? 0 : 1;

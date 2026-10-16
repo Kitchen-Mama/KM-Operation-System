@@ -1,76 +1,76 @@
 {
  "round": "S8-B3-R3-CP2S-R2",
  "what": "in-place velocity update: what survives a real workspace arrival in a real browser",
- "takenAt": "2026-10-16T08:16:33.944Z",
+ "takenAt": "2026-10-16T09:57:33.050Z",
  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
  "skus": 160,
  "recoReadsServed": 2,
  "sources": {
   "index.html": "905eac46ef288bab",
-  "assets/js/pages/inventory-replenishment.js": "8437caaaa9c9a546",
+  "assets/js/pages/inventory-replenishment.js": "cf286dbd22817c02",
   "assets/css/pages/inventory-replenishment.css": "74872c1b61ce9d47"
  },
  "actionLog": [
   {
    "action": "getClientCapabilities",
-   "t": 924
+   "t": 4018
   },
   {
    "action": "inventoryScope.registry.get",
-   "t": 971
+   "t": 4062
   },
   {
    "action": "inventoryReplenishment.workspace.get",
-   "t": 995
+   "t": 4083
   },
   {
    "action": "inventoryReplenishmentGap.get",
-   "t": 1075
+   "t": 4361
   },
   {
    "action": "recommendation.workspace.get",
-   "t": 1077
+   "t": 4364
   },
   {
    "action": "inventoryReplenishment.workspace.get",
-   "t": 1451
+   "t": 4761
   },
   {
    "action": "recommendation.workspace.get",
-   "t": 1839
+   "t": 5045
   }
  ],
  "result": {
-  "capId": "inplace-1792138471605",
+  "capId": "inplace-1792144527557",
   "steps": [
    {
     "step": "app-ready",
-    "t": 204.4,
-    "v": 0.1
+    "t": 865.5,
+    "v": 0
    },
    {
     "step": "filter-bar",
-    "t": 245,
-    "v": 39.3
+    "t": 897.7,
+    "v": 31.2
    },
    {
     "step": "table",
-    "t": 775,
+    "t": 1427.6,
     "v": 160
    },
    {
     "step": "first-reco-cell",
-    "t": 1675,
+    "t": 2327.7,
     "v": "7.0"
    },
    {
     "step": "exec-card",
-    "t": 1675,
+    "t": 2327.7,
     "v": 0
    },
    {
     "step": "edit-state-captured",
-    "t": 2725,
+    "t": 3377.6,
     "v": {
      "activeMark": "INPUT",
      "activeTag": "INPUT",
@@ -91,12 +91,12 @@
    },
    {
     "step": "second-arrival",
-    "t": 2755,
+    "t": 3407.6,
     "v": "11.0"
    },
    {
     "step": "done",
-    "t": 3005,
+    "t": 3657.7,
     "v": {
      "firstReadResolved": true,
      "firstCell": "7.0",

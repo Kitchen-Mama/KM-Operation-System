@@ -2051,6 +2051,9 @@ var IR_AVG_QUALITY_TEXT = {
     // the calculation owner cannot read produces, which is the live cause this round repaired. Both are named.
     SALES_BASIS_CONTAMINATION_UNRESOLVED: 'A campaign or special event for this site could not be used: either its line cannot be matched to this site, or its start/end date cannot be read. The campaign days cannot be excluded, so no average is shown rather than one inflated by campaign sales.',
     SALES_BASIS_UNAVAILABLE: 'No usable daily or weekly sales history for this site.',
+    // CP2T-R2 — the fallback rung was reached and had nothing to divide. Said plainly, because the
+    // alternative the operator saw was a confident 0.0 that looked like a measured week of no sales.
+    SALES_BASIS_WEEKLY_UNAVAILABLE: 'Fewer than three normal days in the window, and no weekly sales figure could be read for this site. No average is shown rather than one divided from a week that was never reported.',
     SALES_BASIS_AMBIGUOUS: 'The daily sales rows for this site resolve to more than one channel.',
     SALES_RUNTIME_UNAVAILABLE: 'The sales calculation owner is not available in this deployment.',
     CALCULATION_DATE_NOT_CONFIGURED: 'No calculation date is configured, so the 90-day window cannot be placed.',
@@ -13897,7 +13900,7 @@ var _IR_RECO_CACHE_SUPERSEDED_KEYS = ['km_ir_reco_cache_v1'];
 // NOT ADDED: a second cache, another store, a longer retention, a TTL, polling, an automatic retry, or any
 // change to WHAT is cached (a success, including a valid zero and a named quality error), to the key's
 // scope, to the F1A stale-RESPONSE guard, or to any read policy, formula, loader, transport or timeout.
-var _IR_RECO_CACHE_HANDLERS = ['fm5-r4ui-r5d'];            // computation versions this build will cache
+var _IR_RECO_CACHE_HANDLERS = ['fm5-r4ui-r5e'];            // computation versions this build will cache
 function _irRecoHandlerOk_(v) { return !!v && _IR_RECO_CACHE_HANDLERS.indexOf(v) !== -1; }
 function _irRecoEnvHandler_(env) {
   var m = (env && env.meta) || {};

@@ -111,8 +111,13 @@ function currentEnvelopeData(rate, err) {
 // cache now reads it: a matching SHAPE is not a compatible COMPUTATION. HANDLER_OK is the version this
 // build accepts; HANDLER_OLD is the one that handed campaign date CELLS to the owner as String(Date),
 // whose records have exactly this shape and the wrong values inside it.
-var HANDLER_OK = 'fm5-r4ui-r5d';
+// CP2T-R2 - r5e is the accepted computation now, and the superseded list has TWO entries. r5c mis-read the
+// campaign date cells; r5d read them correctly and still published a fabricated 0 whenever the weekly
+// fallback rung had no readable source. r5d is the sharper case of this whole guard: its records are
+// readable, correctly shaped, and WRONG - which a shape check cannot see and a version check can.
+var HANDLER_OK = 'fm5-r4ui-r5e';
 var HANDLER_OLD = 'fm5-r4ui-r5c';
+var HANDLER_WRONG_ZERO = 'fm5-r4ui-r5d';
 function envOf(data, handler) { return { success: true, data: data, meta: { requestId: 'rid-1', calculationMonth: '2026-10', planningCycle: 'W1', recommendationWorkspaceHandlerVersion: handler === undefined ? HANDLER_OK : handler }, errors: [] }; }
 
 function resetAll() {
@@ -202,6 +207,14 @@ ok(_irRecoCacheGet(SCOPE) === null,
   + 'answer was still the one the date defect produced');
 ok(JSON.parse(STORE[_IR_RECO_CACHE_KEY] || '{}')[[SCOPE.company, SCOPE.country, SCOPE.marketplace].join('||')] === undefined,
   'A4a and it too is dropped on the way past');
+
+// r5d: readable, right shape, wrong values. The record below carries a rate of 0 that the handler divided
+// out of a week it never read, and nothing about its structure says so.
+resetAll();
+seedStampedRecord(SCOPE, currentEnvelopeData(0), HANDLER_WRONG_ZERO);
+ok(_irRecoCacheGet(SCOPE) === null,
+  'A4b  nor is an r5d record whose 0 rate was fabricated from an unread weekly source - it is READABLE and '
+  + 'correctly SHAPED, so only the computation version distinguishes it from a real reported zero');
 
 resetAll();
 seedStampedRecord(SCOPE, currentEnvelopeData(11), HANDLER_OK);

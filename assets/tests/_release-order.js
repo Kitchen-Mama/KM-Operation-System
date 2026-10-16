@@ -1110,6 +1110,28 @@ var ROUND_TOKENS = [
   // it does not need an asset token to take effect.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  //
+  // S8-B3-R3-CP2T-R2 - CARRIED A SECOND TIME, CHECKED A SECOND TIME. origin/main is still 37d9db8c and
+  // b382644d is still not an ancestor of it, so r59 has still never reached a browser. index.html and
+  // app.js are untouched for a second consecutive round.
+  //
+  // THE OWNER HAS SINCE REPORTED that main 37d9db8c is published, that 42_ is synced and that the
+  // deployment was updated. That does not change this entry: the published index.html at 37d9db8c carries
+  // r58, and r59 lives only in a local commit. A report that a deployment happened is not a report that
+  // this token shipped, and the ancestry check is what decides.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  //
+  // S8-B3-R3-CP2T-R2 - CARRIED A SECOND TIME, CHECKED A SECOND TIME. origin/main is still 37d9db8c and
+  // b382644d is still not an ancestor of it, so r59 has still never reached a browser. index.html and
+  // app.js are untouched for a second consecutive round.
+  //
+  // THE OWNER HAS SINCE REPORTED that main 37d9db8c is published, that 42_ is synced and that the
+  // deployment was updated. That does not change this entry: the published index.html at 37d9db8c carries
+  // r58, and r59 lives only in a local commit. A report that a deployment happened is not a report that
+  // this token shipped, and the ancestry check is what decides.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
   'r59-cacheshape-20261017'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

@@ -35,9 +35,10 @@ var RECO_WS_PAGE_DEFAULT_ = 50;
 // Stamped into the workspace envelope's `meta` so ONE direct recommendation.workspace.get Network response proves
 // which deployed recommendation-workspace handler is live — i.e. that the R5B sales-basis marshalling repair
 // (toYmd coercion + WEEKLY_ONLY sentinel + surfaced owner error) is actually running server-side. Bump per round.
-// CP2T-R1 — r5d. r5c handed campaign / event date CELLS to the owner as String(Date), so r5c and r5d differ in
-// what they COMPUTE, not merely in shape; the page reads this to refuse a cached r5c answer (_IR_RECO_CACHE_HANDLERS).
-var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5d';
+// CP2T-R2 — r5e. r5c String()-ed the campaign / event date cells; r5d still published a fabricated 0 when the
+// weekly rung had no readable source. All three differ in what they COMPUTE, so neither a cached r5c nor an r5d
+// answer may be replayed — the page accepts r5e alone (_IR_RECO_CACHE_HANDLERS).
+var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5e';
 
 // --------------------------------------------------------------------------------------------------------
 // PURE helpers (deterministic; no clock / no Spreadsheet / no formula)
@@ -283,11 +284,10 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // "no rows" and "rows that were all undated" are different facts and the operator needs the second one
   // to know what to repair. Empty when nothing was skipped, so a clean scope reads exactly as before.
   function undatedNote() { return blankDates ? ' (' + blankDates + ' undated rows skipped)' : ''; }
-  // S8-B3-R3-CP2T-R1 — AND "NO ROWS" IS FOUR FACTS AND FOUR REPAIRS: a table never in the read scope, a table
-  // with nothing for this SKU anywhere, rows for the SKU matching no scope dimension, and rows that match but sit
-  // outside the window. The first three reach the returns below as an empty `daily`; the FOURTH never does — it
-  // resolves with normalDayCount 0 on the weekly rung, so it prints a rate, not a refusal, and is not looked for
-  // here. Diagnostics only: the reason code and every published value are unchanged.
+  // S8-B3-R3-CP2T-R1 — AND "NO ROWS" IS FOUR FACTS AND FOUR REPAIRS: a table never in the read, a table with
+  // nothing for this SKU, rows for the SKU matching no scope dimension, and rows matching but outside the window.
+  // The first three reach the returns below as an empty `daily`; the FOURTH reaches the weekly rung instead (see
+  // CP2T-R2). Diagnostics only: the reason code and every published value are unchanged.
   function srcNote() {
     var dAll = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot), wAll = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot);
     function forSku(rows) { var t = 0; for (var i = 0; i < rows.length; i++) { if (recoWsStr_(rows[i].sku) === sku) t++; } return t; }
@@ -296,7 +296,10 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   }
   var calcYmd = toYmd(calcDate);
 
-  var channel, kmcalcChannel, weekly7d = 0, dailySales;
+  // CP2T-R2 — weeklyOk is set only where a weekly cell READS as a finite, non-negative number. weekly7d alone
+  // cannot carry that: 0 is both a real reported week and what an absent / blank / null / non-numeric / negative
+  // one leaves behind.
+  var channel, kmcalcChannel, weekly7d = 0, weeklyOk = false, dailySales;
   if (srcSet.aggregate) {
     // F1-4B-FM5-R4UI-R5D — EU roll-up (frozen IRCountry.SALES_AGG authority). The member markets (IT/DE/ES/FR) are
     // DISTINCT Amazon sites, so "channel" is NOT a single-market identity here — the frozen weekly authority sums
@@ -316,7 +319,8 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
       var mr = weeklyAll.filter(function (r) { return recoWsCanonC(r.country) === m; });
       if (!mr.length) return;
       mr.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
-      var wv = recoWsNum_(mr[mr.length - 1].sales_units_7d); weekly7d += (wv === null || wv < 0) ? 0 : wv;
+      var wv = recoWsNum_(mr[mr.length - 1].sales_units_7d);
+      if (wv !== null && wv >= 0) { weekly7d += wv; weeklyOk = true; }   // an unreadable member adds nothing, proves nothing
     });
   } else {
     // Single-market path — UNCHANGED (US/CA/UK/DE/…): channel must be unambiguous; latest week is the <3-day rung.
@@ -333,7 +337,8 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     var weekly = weeklyAll.filter(function (r) { return recoWsStr_(r.channel) === channel; });
     if (weekly.length) {
       weekly.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
-      var wv = recoWsNum_(weekly[weekly.length - 1].sales_units_7d); weekly7d = (wv === null || wv < 0) ? 0 : wv;   // latest week; the <3-day fallback rung only
+      var wv = recoWsNum_(weekly[weekly.length - 1].sales_units_7d);                 // latest week; the <3-day rung only
+      if (wv !== null && wv >= 0) { weekly7d = wv; weeklyOk = true; }
     }
     dailySales = daily.map(function (r) {
       return { date: toYmd(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
@@ -379,6 +384,17 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
       return { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: m, blankDateRows: blankDates };
     }
     return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error: ' + m, blankDateRows: blankDates };
+  }
+  // S8-B3-R3-CP2T-R2 — A MISSING WEEKLY SOURCE IS NOT A WEEK IN WHICH NOTHING SOLD. Below 3 normal days the
+  // ladder divides weekly7d by 7, and that was 0 whenever the cell could not be read, so the column printed a
+  // confident 0.0 indistinguishable from a real zero and fed Days of Supply as infinite cover. CP2T-R1 recorded
+  // it as expected behaviour; it was the defect written down as the design. KEYED ON THE RUNG THE OWNER SELECTED,
+  // never on a count re-derived here: an EXPLICIT 0 still resolves, and enough normal days is never refused for a
+  // fallback it does not use. Ladder, window, 3-day threshold, division and latest-week pick are all unchanged.
+  if (res && res.source === 'weekly_7d' && !weeklyOk) {
+    return { ok: false, reason: 'SALES_BASIS_WEEKLY_UNAVAILABLE', blankDateRows: blankDates,
+      detail: 'normal days=' + res.normalDayCount + ' (below the 3-day rung), no readable weekly sales_units_7d @ '
+        + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote() };
   }
   var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
   if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)', blankDateRows: blankDates };

@@ -42,24 +42,26 @@ Four of the seven are capturable **without any share outliving the callback that
 
 | | unscoped | scoped | paired delta | improved in |
 |---|---|---|---|---|
-| click → first paint | 64.5 ms | 58.8 ms | −4.2 ms | 4 of 6 |
-| **click → full ready** | **230.1 ms** | **126.5 ms** | **−100.2 ms** | **6 of 6** |
-| assembly **in** handler | 27.6 ms | 26.2 ms | −1.8 ms | 4 of 6 |
-| **assembly after handler** | **188.2 ms** | **83.1 ms** | **−104.4 ms** | **6 of 6** |
-| handler sync | 27.6 ms | 27.5 ms | −0.0 ms | 3 of 6 |
+| click → first paint | 66.3 ms | 63.8 ms | −6.4 ms | 5 of 6 |
+| **click → full ready** | **246.8 ms** | **124.7 ms** | **−124.2 ms** | **6 of 6** |
+| assembly **in** handler | 28.8 ms | 27.1 ms | −2.1 ms | 4 of 6 |
+| **assembly after handler** | **190.8 ms** | **74.7 ms** | **−118.5 ms** | **6 of 6** |
+| handler sync | 30.2 ms | 27.4 ms | −3.5 ms | 5 of 6 |
 
-These are the **CP2T-R1** captures. The batch is re-taken whenever `inventory-replenishment.js` changes,
+These are the **CP2T-R2** captures. The batch is re-taken whenever `inventory-replenishment.js` changes,
 because the shipped arm then no longer describes the file on disk and §E1 says so — CP2S-R2 changed the
-canonical-basis picker, CP2T changed the session-cache shape, and CP2T-R1 added the handler-version
-compatibility check to the same cache. **Twelve runs, no fatals, no cold-machine outliers.**
+canonical-basis picker, CP2T changed the session-cache shape, CP2T-R1 added the handler-version
+compatibility check, and CP2T-R2 moved the accepted version and added the weekly-refusal wording.
+**Twelve runs, no fatals, no cold-machine outliers.**
 
 **Both arms were re-taken, not just the shipped one.** Re-taking the scoped arm against the stored
 unscoped arm would have compared today's build with a batch measured on an older one — pooling across
 builds, which is the one thing this design exists to prevent.
 
-**Six batches of this design have now been taken, and the two load-bearing rows reproduced in all six,
-at −102.0 / −95.4, −90.9 / −92.2, −89.2 / −87.2, −107.4 / −107.6, −107.5 / −101.2 and −100.2 / −104.4 ms
-— every one of them 6 of 6.** The CP2S-R2 batch carried two large cold-machine outliers (−704.8 and
+**Seven batches of this design have now been taken, and the two load-bearing rows reproduced in all seven,
+at −102.0 / −95.4, −90.9 / −92.2, −89.2 / −87.2, −107.4 / −107.6, −107.5 / −101.2, −100.2 / −104.4
+and −124.2 / −118.5 ms — every one of them 6 of 6.** This batch is the largest of the seven; the spread
+across batches is wide enough that the MAGNITUDE is not a finding either, only the direction and the 6 of 6. The CP2S-R2 batch carried two large cold-machine outliers (−704.8 and
 −403.5 ms) which the per-run medians and the paired design absorbed; the last two have none, and land in
 the same place anyway. That is the argument for the design: the result does not depend on the machine
 being quiet.
@@ -70,12 +72,24 @@ difference is within the batch-to-batch spread, so neither ordering is a finding
 
 ## What this does NOT claim
 
-**First paint is not improved, and it cannot be.** First paint is the frame in which the expand panel first
-has a layout box; every scoped callback runs after that frame. The −4.2 ms here is drift: across the
-batches it has read +3.8, −3.6, +2.1, −1.8 and −4.2 ms, improving in 2, 4, 3, 4 and 4 of 6. **It
-oscillates around zero, which is what "unchanged" looks like, and a run of small negatives is not a trend
-— it is the same oscillation seen from one side.** No improvement is claimed for it, and this batch's
-−4.2 ms is not evidence of one. §E4 is therefore **one-sided**: it refuses a regression and deliberately does not require an
+**First paint is still not claimed, and the reason has changed — so the honest version is written here
+rather than the previous sentence repeated.** Across the batches it has read +3.8, −3.6, +2.1, −1.8,
+−4.2 and −6.4 ms, improving in 2, 4, 3, 4, 4 and 5 of 6. **The last four are all negative and the
+magnitude is growing, which is no longer what pure oscillation looks like**, and continuing to call it
+drift would be reading the series to suit the earlier conclusion.
+
+What has NOT changed is that no improvement is claimed, and there are two live explanations:
+
+- **A mechanism is conceivable.** First paint is the frame in which the panel first has a layout box. The
+  unscoped arm starts its extra assemblies earlier, and work that lands before that frame commits can push
+  the paint later — so removing it could move first paint as a side effect, even though the scope itself
+  releases after the paint.
+- **A confound is equally available.** These batches also differ in machine, build and the rest of the
+  file, and this design controls for drift WITHIN a pair, not for whatever changed between batches.
+
+Nothing here distinguishes them, so nothing is concluded. §E4 stays **one-sided** — it refuses a
+regression and deliberately does not require an improvement — which is exactly the assertion to keep while
+the cause is undecided. §E4 is therefore **one-sided**: it refuses a regression and deliberately does not require an
 improvement.
 
 **The synchronous handler is unchanged.** CP2P-R2 owns that scope; this round did not widen it. The +0.2 ms
