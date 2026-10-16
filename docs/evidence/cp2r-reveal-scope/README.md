@@ -42,34 +42,40 @@ Four of the seven are capturable **without any share outliving the callback that
 
 | | unscoped | scoped | paired delta | improved in |
 |---|---|---|---|---|
-| click → first paint | 61.6 ms | 60.3 ms | −1.8 ms | 4 of 6 |
-| **click → full ready** | **241.5 ms** | **128.8 ms** | **−107.5 ms** | **6 of 6** |
-| assembly **in** handler | 27.2 ms | 28.1 ms | −0.5 ms | 3 of 6 |
-| **assembly after handler** | **184.3 ms** | **81.1 ms** | **−101.2 ms** | **6 of 6** |
-| handler sync | 31.0 ms | 30.5 ms | −1.5 ms | 4 of 6 |
+| click → first paint | 64.5 ms | 58.8 ms | −4.2 ms | 4 of 6 |
+| **click → full ready** | **230.1 ms** | **126.5 ms** | **−100.2 ms** | **6 of 6** |
+| assembly **in** handler | 27.6 ms | 26.2 ms | −1.8 ms | 4 of 6 |
+| **assembly after handler** | **188.2 ms** | **83.1 ms** | **−104.4 ms** | **6 of 6** |
+| handler sync | 27.6 ms | 27.5 ms | −0.0 ms | 3 of 6 |
 
-These are the **CP2T** captures, re-taken because CP2T changed `inventory-replenishment.js` again (the
-session-cache shape). This batch carries no cold-machine outliers, so the per-pair spread is tighter than
-the CP2S-R2 one while the two load-bearing medians land in the same place. The batch was re-taken, again, for the same reason the CP2R-R1 batch
-was: CP2S-R2 changed `inventory-replenishment.js` (the canonical-basis picker), so the shipped arm no
-longer described the file on disk and §E1 said so.
+These are the **CP2T-R1** captures. The batch is re-taken whenever `inventory-replenishment.js` changes,
+because the shipped arm then no longer describes the file on disk and §E1 says so — CP2S-R2 changed the
+canonical-basis picker, CP2T changed the session-cache shape, and CP2T-R1 added the handler-version
+compatibility check to the same cache. **Twelve runs, no fatals, no cold-machine outliers.**
 
 **Both arms were re-taken, not just the shipped one.** Re-taking the scoped arm against the stored
 unscoped arm would have compared today's build with a batch measured on an older one — pooling across
 builds, which is the one thing this design exists to prevent.
 
-**Five batches of this design have now been taken, and the two load-bearing rows reproduced in all five,
-at −102.0 / −95.4, −90.9 / −92.2, −89.2 / −87.2, −107.4 / −107.6 and −107.5 / −101.2 ms — every one of
-them 6 of 6.** The CP2S-R2 batch carried two large cold-machine outliers (−704.8 and −403.5 ms) which the
-per-run medians and the paired design absorbed; this one has none, and lands in the same place anyway.
-That is the argument for the design: the result does not depend on the machine being quiet.
+**Six batches of this design have now been taken, and the two load-bearing rows reproduced in all six,
+at −102.0 / −95.4, −90.9 / −92.2, −89.2 / −87.2, −107.4 / −107.6, −107.5 / −101.2 and −100.2 / −104.4 ms
+— every one of them 6 of 6.** The CP2S-R2 batch carried two large cold-machine outliers (−704.8 and
+−403.5 ms) which the per-run medians and the paired design absorbed; the last two have none, and land in
+the same place anyway. That is the argument for the design: the result does not depend on the machine
+being quiet.
+
+Note that the two rows **swap which is larger** between batches — full ready led in CP2T (−107.5 against
+−101.2), after-handler leads here (−104.4 against −100.2). They measure overlapping work and their
+difference is within the batch-to-batch spread, so neither ordering is a finding.
 
 ## What this does NOT claim
 
 **First paint is not improved, and it cannot be.** First paint is the frame in which the expand panel first
-has a layout box; every scoped callback runs after that frame. The +2.1 ms here is drift: across the three
-batches it has read +3.8, −3.6 and +2.1 ms, improving in 2, 4 and 3 of 6. It oscillates around zero, which
-is what "unchanged" looks like, and is why no improvement is claimed for it. §E4 is therefore **one-sided**: it refuses a regression and deliberately does not require an
+has a layout box; every scoped callback runs after that frame. The −4.2 ms here is drift: across the
+batches it has read +3.8, −3.6, +2.1, −1.8 and −4.2 ms, improving in 2, 4, 3, 4 and 4 of 6. **It
+oscillates around zero, which is what "unchanged" looks like, and a run of small negatives is not a trend
+— it is the same oscillation seen from one side.** No improvement is claimed for it, and this batch's
+−4.2 ms is not evidence of one. §E4 is therefore **one-sided**: it refuses a regression and deliberately does not require an
 improvement.
 
 **The synchronous handler is unchanged.** CP2P-R2 owns that scope; this round did not widen it. The +0.2 ms

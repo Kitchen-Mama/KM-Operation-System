@@ -4260,7 +4260,7 @@ column names and **every date representation the shipped normaliser accepts** (D
 | no daily and no weekly rows | `SALES_BASIS_UNAVAILABLE` | unavailable |
 | two `marketplace_sku_id` for one scope+SKU | `MARKETPLACE_SKU_AMBIGUOUS` | unavailable |
 | two channels in the scoped rows | `SALES_BASIS_AMBIGUOUS` | unavailable |
-| a campaign line with no `marketplace_sku_id` | `SALES_BASIS_CONTAMINATION_UNRESOLVED` | unavailable |
+| a campaign line with no `marketplace_sku_id` **— or a campaign / event date the owner cannot read (CP2T-R1)** | `SALES_BASIS_CONTAMINATION_UNRESOLVED` | unavailable |
 | no calculation date | `CALCULATION_DATE_NOT_CONFIGURED` | unavailable, `blankDateRows` null |
 | a line carrying NO `horizonBasis` | — none — | **`--`** |
 
@@ -4276,6 +4276,13 @@ channel is not averaged across, and the weekly rung is always marked `insufficie
 to an un-excluded basis — never a block". That stopped being true in CP2R-R1, which made it fail CLOSED.
 **A comment that denies a reason the code returns is read by whoever is trying to find out why a row
 refused**, which is this round exactly.
+
+> **CORRECTED BY CP2T-R1.** This entry read `SALES_BASIS_CONTAMINATION_UNRESOLVED` as an identity failure,
+> because that was the cause it had reproduced. It is also what a campaign or event whose START / END DATE
+> the owner cannot parse produces — the catch in 42_ discriminates on the owner's error LABEL
+> (`campaigns[i]` / `events[i]`), and BOTH throws carry it. The code alone does not separate them; the
+> DETAIL does. See D-S8-B3-90. The page's hover text, which said the same thing to the operator, is
+> corrected too.
 
 ### D-S8-B3-87 — r59, because r58 is published now — **FROZEN (CP2T)**
 
@@ -4318,4 +4325,125 @@ visible" needs a signal the current capture does not take.
 **What it would need, named rather than guessed at:** a real Chart build available to an offline run, and a
 visibility signal beyond a bounding box. Neither was started, and **the expand delay remains unfixed**.
 Data correctness was the stated priority and is where this round went.
+
+### D-S8-B3-90 — A Sheet date CELL was reported as an identity failure — **FIXED (CP2T-R1 P0)**
+
+`recoWsResolveSalesRate_` normalises `snapshot_date` through a `toYmd` CLOSURE. `recoWsBuildContaminationFacts_`
+— a **different function**, which cannot see that closure — marshalled `campaigns.start_date`,
+`campaigns.end_date`, `fc_special_events.event_start_date` and `fc_special_events.event_end_date` through
+`recoWsStr_`, which is `String().trim()` and nothing else.
+
+A Google Sheets date cell arrives in Apps Script as a **JS Date OBJECT**. `String(Date)` is
+`"Mon Sep 28 2026 00:00:00 GMT+0800 (Taipei Standard Time)"`. The frozen owner demands strict `YYYY-MM-DD`
+and throws; the throw is labelled `campaigns[0].start`; 42_'s catch matches `/campaigns\[/` and returns
+`SALES_BASIS_CONTAMINATION_UNRESOLVED`, which CP2R-R1 made fail CLOSED. **So the cell printed `unavailable`
+and its hover text blamed an unmatched campaign line for a date-format problem.**
+
+| campaign / event start+end written as | before | after |
+|---|---|---|
+| Date object (what `getValues()` returns) | refused | resolves |
+| `YYYY-MM-DD` | resolved | resolves |
+| `YYYY/MM/DD` | refused | resolves |
+| `M/D/YYYY` | refused | resolves |
+
+**The coercion is the one that already existed**, moved to `recoWsYmd_` at module scope so both callers read
+the same one; `toYmd` delegates to it and both resolver branches read unchanged. **LOCAL CALENDAR
+COMPONENTS, never `toISOString()`** — in Asia/Taipei a Date at local midnight is 16:00 of the PREVIOUS day in
+UTC, so an ISO slice moves a campaign off its own day. That is asserted from a child process pinned to
+`TZ=Asia/Taipei`, which first shows the trap is live there (`toISOString().slice(0,10)` on local midnight
+2026-09-05 reports the 4th) and then that the shipped answer reports the 5th.
+
+**Nothing was bought with the number.** The exclusion still happens: 27 normal days at 10 units beside 3
+campaign days at 100 resolve to **10.0**, and the control with no campaign resolves to **19.0**, so a repair
+that dropped the campaign would be visible. An unreadable date (`'next Tuesday'`, blank, `2026-09-31`, an
+Invalid Date object) still refuses BY NAME and still publishes no rate; the campaign is still PASSED to the
+owner rather than filtered out; and a FUTURE campaign is still passed for the **owner** to clip to the window
+(this layer owns no window and must not start filtering by date). Frozen KMCALC untouched, no validation
+loosened, company and site isolation unchanged.
+
+**Executed, not inspected:** `campaign-event-date-passing-s8-b3-r3-cp2t-r1.test.js` — **46 passed / 51 failed
+before the repair, 97 / 0 after**, over reader — marshaller — frozen owner — basis — mapping — picker — cell.
+
+### D-S8-B3-91 — A matching SHAPE is not a compatible COMPUTATION — **FIXED (CP2T-R1 P0)**
+
+CP2T stamped the response SHAPE on every cache record so a build could not read an envelope it did not
+understand (D-S8-B3-84). **A record written by the handler that String()-ed the campaign dates has exactly
+the shape this build reads** — `horizonBasis` present, every field in place — and the wrong values inside
+it: a named refusal where there is a real history. A shape check cannot see that, and **a record that is
+merely WRONG is more dangerous than one that is unreadable, because it renders.**
+
+So compatibility is now declared on the computation as well, reusing the marker that already exists:
+`RECO_WS_HANDLER_VERSION_` (42_), stamped on every envelope as `meta.recommendationWorkspaceHandlerVersion`,
+bumped `fm5-r4ui-r5c` —> `fm5-r4ui-r5d`. The page names the versions whose output it will cache
+(`_IR_RECO_CACHE_HANDLERS`). An answer from any other version is **still DISPLAYED** when the server sends it
+live — it is the current truth, and hiding it would make an unsynced deployment look like an empty one — but
+it is never stored, and a stored one is dropped on the way past. The acceptance is a **named list, not a
+comparison**, so a version this build has never heard of is refused rather than assumed compatible, however
+new it looks.
+
+`_irRecoAnswerSource_()` now reports `handlerVersion` and `handlerAccepted` beside the cache / server source,
+so one console line says **which deployed handler computed the answer on screen**. `handlerVersion: null` on a
+loaded result is itself the answer: a deployment older than the marker.
+
+**NOT added:** a second cache, another store, a longer retention, a TTL, polling, an automatic retry, or any
+change to WHAT is cached, to the key's scope, to the F1A stale-RESPONSE guard, or to any read policy,
+formula, loader, transport or timeout. `reco-session-cache-compat` 23 —>  **36 passed / 0 failed**.
+
+**And the two handler markers are no longer one constant.** The probe suite tied 42_ and 43_ to a single
+`VER`, which said they move together. They are deployed and change independently — this round repaired 42_
+only — so the suite now carries `VER_WS` and `VER_GAP`, and marching 43_ to r5d would have stamped a change
+onto a file that did not change. It also now checks that the PAGE accepts exactly the version the server
+stamps: accepting one the server never sends means the cache can never hit, and accepting one it no longer
+sends means serving a pre-repair answer.
+
+### D-S8-B3-92 — "No rows" is FOUR facts, and the fourth prints a number — **RECORDED (CP2T-R1 P1)**
+
+A CA row still refuses after the date repair, and the question asked of it was which of four things
+happened. All of them read `no daily or weekly rows @ CA/Amazon`, which names the symptom and no cause.
+
+| what happened | how it now reads | the repair it needs |
+|---|---|---|
+| the table was never in the read | `daily ABSENT, 0 rows, 0 for this SKU` | the read scope, not the data |
+| read, nothing for this SKU anywhere | `daily PRESENT, 30 rows, 0 for this SKU` | the only one that means what the dash looks like |
+| rows for this SKU, none for this site | `daily PRESENT, 30 rows, 30 for this SKU` | a MAPPING repair (country / marketplace / channel) |
+| matched, dated, outside the window | **never reaches a refusal at all** | see below |
+
+**THE FOURTH IS NOT AMONG THE REFUSALS.** Rows that match the scope but fall outside the 90-day window pass
+to the frozen owner, which samples none of them, counts **zero** normal days and drops to the weekly rung.
+That publishes a RATE: `0.0` with no weekly row, or the weekly rate divided by seven. **A site whose history
+is entirely too old prints a plausible number**, so looking for it among the refusals finds nothing. Its
+signature is `normalDayCount: 0` with `source: 'weekly_7d'`, and both fields already reach the row — against
+a CONFIRMED zero, which also prints `0.0` but over 30 normal days on `normalized_30d`.
+
+**The planning model is not one of the four.** A `forecast_driven` SKU has a real historical average and
+publishes it (CP2S-R1); the model selects which HORIZON formula consumes the rate, not whether the site has
+a sales history. "It is forecast_driven" is the explanation that most invites itself here, and it explains
+nothing. Pinned for both models, and for a SKU with no `marketplace_skus` row at all (which resolves to the
+documented DB default, not to a blocked line).
+
+Diagnostics only: the reason code, `blankDateRows` and every published value are unchanged.
+`avg-sales-no-rows-census-s8-b3-r3-cp2t-r1.test.js` — **36 / 7 before, 43 / 0 after**.
+
+**STILL OPEN:** which of these the live CA row actually is. This round makes the four separable and prints
+the census in the refusal detail; which one it prints for that row is read off the live response.
+
+### D-S8-B3-93 — r59 is CARRIED, not rotated — **FROZEN (CP2T-R1)**
+
+`origin/main` is `37d9db8c`; `b382644d`, which introduced `r59-cacheshape-20261017`, is **not an ancestor of
+it**, checked against the remote this round rather than carried forward. **r59 has never been served**, so
+the iteration on top of it reuses it: a token that no browser has ever received cannot be holding a stale
+page anywhere. `index.html` and `app.js` are therefore **untouched this round**.
+
+Which is also why the capture estate barely moved. The delta is two files; 42_ is pinned by no capture;
+`inventory-replenishment.js` is pinned by many, but only **three** batches have an acceptance suite that
+enforces its hash (`cp2r-reveal-scope`, `cp2s-r2-inplace`, `cp2s-r2-c9`) — each failing on exactly that one
+assertion and nothing else. The five cascade captures pin `index.html`, which did not move, so they are
+**not** re-taken. Deriving the set from what each capture hashes AND which arm an enforcing suite compares
+against current source is what keeps a re-capture from becoming a re-run of everything.
+
+### D-S8-B3-94 — C9 with a real Chart is still NOT done — **OPEN (carried from D-S8-B3-89)**
+
+Unchanged by this round and not claimed. No Chart.js is vendored, "has a layout box" is still not separated
+from "is actually visible", and **the expand delay remains unfixed**. Data correctness was the stated
+priority for CP2T-R1 as it was for CP2T, and is where both rounds went.
 

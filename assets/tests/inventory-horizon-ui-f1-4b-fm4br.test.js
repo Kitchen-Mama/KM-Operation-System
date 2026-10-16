@@ -38,7 +38,9 @@ var READY = { status: 'READY', company: 'KM', country: 'US', marketplace: 'AMAZO
 function setCtx(m) { _irctxLastContext = m; }
 function tick() { return Promise.resolve().then(function () {}).then(function () {}); }
 function makeApi(active, env) { var calls = { getWorkspace: 0, lastParams: null }; return { _calls: calls, workspaceApiActive: function (n) { return active && n === 'recommendation'; }, getWorkspace: function (name, params) { calls.getWorkspace++; calls.lastParams = params; return Promise.resolve(env); } }; }
-function envOk(lines) { return { success: true, data: { lines: lines, pagination: { page: 1, size: 100, total: lines.length }, dataVersion: { formulaVersion: 'v4.7', sourceDataAsOf: '2026-08-01' } }, meta: { requestId: 'REQ-H1', calculationMonth: '2026-08', planningCycle: 'RECO-2026-08' }, errors: [] }; }
+// CP2T-R1 - meta carries the handler-version marker every deployed handler at or after R5C stamps; the
+// session cache reads it, so an envelope without it is a pre-R5C response rather than a minimal one.
+function envOk(lines) { return { success: true, data: { lines: lines, pagination: { page: 1, size: 100, total: lines.length }, dataVersion: { formulaVersion: 'v4.7', sourceDataAsOf: '2026-08-01' } }, meta: { requestId: 'REQ-H1', calculationMonth: '2026-08', planningCycle: 'RECO-2026-08', recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5d' }, errors: [] }; }
 function freshLoad(active, env, ctx) { if (typeof invalidateRecommendationSessionCache === 'function') invalidateRecommendationSessionCache(); _irRecoInvalidate('CONTEXT_NOT_READY'); var api = makeApi(active, env); global.window.KM = { api: api }; setCtx(ctx || READY); return Promise.resolve(loadRecommendationWorkspace_()).then(tick).then(function () { return api; }); }
 
 // ---- fixtures --------------------------------------------------------------------------------------

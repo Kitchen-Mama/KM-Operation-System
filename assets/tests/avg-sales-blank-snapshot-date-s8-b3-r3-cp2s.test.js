@@ -55,7 +55,7 @@ function extractFn(src, name) {
 
 var sandbox = { KMCALC: KMCALC, KMCID: KMCID, console: console };
 var ctx = vm.createContext(sandbox);
-['recoWsStr_', 'recoWsNum_', 'recoWsIsObj_', 'recoWsToRowObjects_', 'recoWsCmp_',
+['recoWsStr_', 'recoWsNum_', 'recoWsIsObj_', 'recoWsYmd_', 'recoWsToRowObjects_', 'recoWsCmp_',
   'recoWsBuildContaminationFacts_', 'recoWsResolveSalesRate_'].forEach(function (fn) {
     vm.runInContext(extractFn(RECO, fn), ctx);
   });

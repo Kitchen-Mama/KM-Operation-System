@@ -35,7 +35,9 @@ var RECO_WS_PAGE_DEFAULT_ = 50;
 // Stamped into the workspace envelope's `meta` so ONE direct recommendation.workspace.get Network response proves
 // which deployed recommendation-workspace handler is live — i.e. that the R5B sales-basis marshalling repair
 // (toYmd coercion + WEEKLY_ONLY sentinel + surfaced owner error) is actually running server-side. Bump per round.
-var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5c';
+// CP2T-R1 — r5d. r5c handed campaign / event date CELLS to the owner as String(Date), so r5c and r5d differ in
+// what they COMPUTE, not merely in shape; the page reads this to refuse a cached r5c answer (_IR_RECO_CACHE_HANDLERS).
+var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5d';
 
 // --------------------------------------------------------------------------------------------------------
 // PURE helpers (deterministic; no clock / no Spreadsheet / no formula)
@@ -43,6 +45,24 @@ var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5c';
 function recoWsStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
 function recoWsNum_(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
 function recoWsIsObj_(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+// S8-B3-R3-CP2T-R1 — THE CANONICAL SHEET-DATE COERCION, AT MODULE SCOPE BECAUSE TWO CALLERS NEED IT. A Sheets
+// date cell arrives as a JS Date OBJECT and recoWsStr_ leaves it as "Mon Sep 28 2026 00:00:00 GMT+0800 (...)",
+// which the frozen owner rejects. The coercion existed only as a CLOSURE inside recoWsResolveSalesRate_, so
+// snapshot_date got it and the campaign / event date columns, marshalled elsewhere, did not. One declaration now.
+// LOCAL CALENDAR COMPONENTS, NEVER toISOString(): in Asia/Taipei a Date at local midnight is 16:00 of the PREVIOUS
+// day in UTC, so an ISO slice moves a campaign off its own day. An unrecognised value is returned trimmed and
+// UNCHANGED so the owner still validates it — this MARSHALS, it does not accept. No date math, no substitution.
+function recoWsYmd_(v) {
+  if (v == null || v === '') return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    if (isNaN(v.getTime())) return recoWsStr_(v);                    // an Invalid Date is not coerced into a plausible day
+    return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2) + '-' + ('0' + v.getDate()).slice(-2);
+  }
+  var s = recoWsStr_(v);
+  var a = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/); if (a) return a[1] + '-' + ('0' + a[2]).slice(-2) + '-' + ('0' + a[3]).slice(-2);
+  var b = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/); if (b) return b[3] + '-' + ('0' + b[1]).slice(-2) + '-' + ('0' + b[2]).slice(-2);
+  return s;
+}
 
 function recoWsRequestId_(provided, io) {
   var p = recoWsStr_(provided);
@@ -145,6 +165,12 @@ function recoWsResolvePlanningModel_(snaps, scope, sku) {
 // or fc_special_events sheet is source-UNAVAILABLE (never silently "no contamination"); a PRESENT-but-empty source
 // is the legitimate "zero contaminated days"; an ambiguous identity (owner throw) is a distinct conflict. Returns
 // { ok:true, campaigns, events } or { ok:false, reason }.
+// S8-B3-R3-CP2T-R1 — THE FOUR DATE COLUMNS ARE COERCED HERE. The owner throws on a non-ISO date under the label
+// campaigns[i].start / events[i].start, which this file's catch maps to SALES_BASIS_CONTAMINATION_UNRESOLVED — so
+// a Sheet DATE CELL was reported as an IDENTITY failure and the cell blamed an unmatched line for a format problem.
+// recoWsYmd_ shapes and nothing else: an unreadable date still reaches the owner unchanged and is still refused BY
+// NAME, no campaign is dropped, and a campaign outside the window is still passed for the OWNER to clip (this layer
+// owns no window and must never filter by date).
 function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
   // F1-4B-FM5-R4UI-R4 §5 — contamination sources are OPTIONAL exclusion FILTERS: the frozen owner accepts empty
   // campaigns/events as a legitimate "no contaminated days". So a source that is PRESENT-BUT-EMPTY *or* genuinely
@@ -170,7 +196,7 @@ function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
       // line set is passed so the owner applies its own identity guard.
       var touches = lines.some(function (ln) { return (mSkuId && ln.marketplaceSkuId === mSkuId) || (ln.sku && recoWsStr_(ln.sku) === sku); });
       if (!touches) return;
-      campaigns.push({ status: recoWsStr_(c.status), start: recoWsStr_(c.start_date), end: recoWsStr_(c.end_date), skuLines: lines });
+      campaigns.push({ status: recoWsStr_(c.status), start: recoWsYmd_(c.start_date), end: recoWsYmd_(c.end_date), skuLines: lines });
     });
   }
   var events = [];
@@ -179,7 +205,7 @@ function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
       if (recoWsStr_(r.sku) !== sku) return;
       events.push({ sku: recoWsStr_(r.sku), status: recoWsStr_(r.status), marketplaceId: recoWsStr_(r.marketplace_id) || null,
         company: recoWsStr_(r.company), country: recoWsStr_(r.country), marketplace: recoWsStr_(r.marketplace),
-        start: recoWsStr_(r.event_start_date) || recoWsStr_(r.eventStartDate), end: recoWsStr_(r.event_end_date) || recoWsStr_(r.eventEndDate) });
+        start: recoWsYmd_(r.event_start_date) || recoWsYmd_(r.eventStartDate), end: recoWsYmd_(r.event_end_date) || recoWsYmd_(r.eventEndDate) });
     });
   }
   return { ok: true, campaigns: campaigns, events: events, sourceStatus: { campaigns: campPresent ? 'PRESENT' : 'ABSENT', events: evtPresent ? 'PRESENT' : 'ABSENT' } };
@@ -250,21 +276,24 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // genuine SALES_BASIS_UNAVAILABLE. NO forecast fallback, NO fabricated value, NO new averaging engine — the same
   // canonical owner, now correctly routed to its own weekly rung. (R7V diagnostic detail retained on each reason.)
   // toYmd (needed by BOTH branches below) — coerce a Sheet cell (JS Date object / 'YYYY/MM/DD' / 'M/D/YYYY') to the
-  // STRICT 'YYYY-MM-DD' the frozen KMCALC owner requires (R5B). A valid 'YYYY-MM-DD' is re-emitted unchanged; an
-  // unrecognised value passes through so KMCALC still validates it. Marshalling only — no date math, no owner change.
-  function toYmd(v) {
-    if (v == null || v === '') return '';
-    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
-      return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2) + '-' + ('0' + v.getDate()).slice(-2);
-    }
-    var s = recoWsStr_(v);
-    var a = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/); if (a) return a[1] + '-' + ('0' + a[2]).slice(-2) + '-' + ('0' + a[3]).slice(-2);
-    var b = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/); if (b) return b[3] + '-' + ('0' + b[1]).slice(-2) + '-' + ('0' + b[2]).slice(-2);
-    return s;
-  }
+  // STRICT 'YYYY-MM-DD' the frozen KMCALC owner requires (R5B). CP2T-R1 moved the algorithm to recoWsYmd_ at module
+  // scope so the campaign / event marshaller reads the SAME coercion instead of a second one; the local name is kept
+  // so both branches below read unchanged. Marshalling only — no date math, no owner change.
+  function toYmd(v) { return recoWsYmd_(v); }
   // "no rows" and "rows that were all undated" are different facts and the operator needs the second one
   // to know what to repair. Empty when nothing was skipped, so a clean scope reads exactly as before.
   function undatedNote() { return blankDates ? ' (' + blankDates + ' undated rows skipped)' : ''; }
+  // S8-B3-R3-CP2T-R1 — AND "NO ROWS" IS FOUR FACTS AND FOUR REPAIRS: a table never in the read scope, a table
+  // with nothing for this SKU anywhere, rows for the SKU matching no scope dimension, and rows that match but sit
+  // outside the window. The first three reach the returns below as an empty `daily`; the FOURTH never does — it
+  // resolves with normalDayCount 0 on the weekly rung, so it prints a rate, not a refusal, and is not looked for
+  // here. Diagnostics only: the reason code and every published value are unchanged.
+  function srcNote() {
+    var dAll = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot), wAll = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot);
+    function forSku(rows) { var t = 0; for (var i = 0; i < rows.length; i++) { if (recoWsStr_(rows[i].sku) === sku) t++; } return t; }
+    return ' [daily ' + (recoWsIsObj_(snaps.amazonDailySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + dAll.length + ' rows, ' + forSku(dAll) + ' for this SKU'
+      + '; weekly ' + (recoWsIsObj_(snaps.amazonWeeklySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + wAll.length + ' rows, ' + forSku(wAll) + ' for this SKU]';
+  }
   var calcYmd = toYmd(calcDate);
 
   var channel, kmcalcChannel, weekly7d = 0, dailySales;
@@ -274,7 +303,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     // per-member latest-week units WITHOUT a channel filter. A stable synthetic channel token satisfies KMCALC's
     // non-empty-channel contract WITHOUT changing the run-rate (KMCALC uses channel only to filter the daily series,
     // which we PRE-aggregate). No new averaging engine — KMCALC stays the sole run-rate owner (§3/§11).
-    if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) + undatedNote(), blankDateRows: blankDates };
+    if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote(), blankDateRows: blankDates };
     channel = 'EU_AGG'; kmcalcChannel = channel;
     // Daily: SUM eligible member rows by the SAME canonical date → ONE canonical EU daily entry per date (never
     // per-country days, never averaged averages). The existing KMCALC ladder then owns the run-rate verbatim.
@@ -292,7 +321,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   } else {
     // Single-market path — UNCHANGED (US/CA/UK/DE/…): channel must be unambiguous; latest week is the <3-day rung.
     var chSource = daily.length ? daily : weeklyAll;
-    if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote(), blankDateRows: blankDates };
+    if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote(), blankDateRows: blankDates };
     var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
     var chKeys = Object.keys(chSet);
     if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']', blankDateRows: blankDates };   // 0 or ambiguous channel → fail closed (conflict)

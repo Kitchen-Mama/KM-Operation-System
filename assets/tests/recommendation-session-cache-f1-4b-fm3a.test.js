@@ -49,9 +49,15 @@ eval(IRSUG);
 ok(typeof loadRecommendationWorkspace_ === 'function' && typeof _irAggregateActionableRecommendedQty === 'function' && typeof invalidateRecommendationSessionCache === 'function', 'X1 cache + aggregation functions eval OK');
 
 // ---- fakes -----------------------------------------------------------------------------------------
+// S8-B3-R3-CP2T-R1 - the envelope carries the HANDLER VERSION marker, because every deployed handler at or
+// after R5C stamps it (recoWsEnvelope_) and the cache now reads it. This fixture omitted it, which made it
+// a response from a pre-R5C deployment rather than the minimal response it was meant to be. A success the
+// page will store is now a success whose COMPUTATION it accepts, not merely one it can parse - see
+// reco-session-cache-compat-s8-b3-r3-cp2t.test.js for the record that has the right shape and wrong values.
+var HANDLER_OK = 'fm5-r4ui-r5d';
 function envOk(lines, meta) {
   return { success: true, data: { lines: lines, pagination: { page: 1, size: 100, total: lines.length }, dataVersion: { formulaVersion: 'v4.7', sourceDataAsOf: '2026-08-01' } },
-    meta: Object.assign({ requestId: 'REQ-P1', calculationMonth: '2026-08', planningCycle: 'RECO-2026-08' }, meta || {}), errors: [] };
+    meta: Object.assign({ requestId: 'REQ-P1', calculationMonth: '2026-08', planningCycle: 'RECO-2026-08', recommendationWorkspaceHandlerVersion: HANDLER_OK }, meta || {}), errors: [] };
 }
 function envFail(code) { return { success: false, data: null, meta: { requestId: 'REQ-E1' }, errors: [{ code: code, message: code, details: null }] }; }
 function line(over) { var L = { sku: 'CO1100-R', destinationType: 'MARKETPLACE', destinationKey: 'MARKETPLACE||KM||US||AMAZON_US||MP1', recommendationMode: 'MARKETPLACE_ORDER_NEED', recommendedQty: 120, provisionalOrderNeed: null, residualShortageQty: null, blocked: false, blockedReason: null }; if (over) for (var k in over) L[k] = over[k]; return L; }

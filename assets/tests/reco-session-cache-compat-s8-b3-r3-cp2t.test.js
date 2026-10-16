@@ -107,7 +107,13 @@ function currentEnvelopeData(rate, err) {
     { sku: SKU, destinationType: 'WAREHOUSE', warehouseId: 'WH-B', horizonBasis: b }
   ], dataVersion: { sourceDataAsOf: '2026-10-16' } };
 }
-function envOf(data) { return { success: true, data: data, meta: { requestId: 'rid-1', calculationMonth: '2026-10', planningCycle: 'W1' }, errors: [] }; }
+// S8-B3-R3-CP2T-R1 - a real response carries the handler marker 42_ stamps on EVERY envelope, and the
+// cache now reads it: a matching SHAPE is not a compatible COMPUTATION. HANDLER_OK is the version this
+// build accepts; HANDLER_OLD is the one that handed campaign date CELLS to the owner as String(Date),
+// whose records have exactly this shape and the wrong values inside it.
+var HANDLER_OK = 'fm5-r4ui-r5d';
+var HANDLER_OLD = 'fm5-r4ui-r5c';
+function envOf(data, handler) { return { success: true, data: data, meta: { requestId: 'rid-1', calculationMonth: '2026-10', planningCycle: 'W1', recommendationWorkspaceHandlerVersion: handler === undefined ? HANDLER_OK : handler }, errors: [] }; }
 
 function resetAll() {
   for (var k in STORE) delete STORE[k];
@@ -116,9 +122,9 @@ function resetAll() {
   RENDERS = 0;
 }
 // Serve the loader a FRESH response, so "the cache was bypassed" is observable as the fresh value arriving.
-function serveFresh(data) {
+function serveFresh(data, handler) {
   global.window.KM = { api: { workspaceApiActive: function (n) { return n === 'recommendation'; },
-    getWorkspace: function () { return Promise.resolve(envOf(data)); } } };
+    getWorkspace: function () { return Promise.resolve(envOf(data, handler)); } } };
 }
 function pickRate() { var b = _irCanonicalSalesBasis_(SKU); return b ? b.avgSalesPerDay : null; }
 function pickErr() { var b = _irCanonicalSalesBasis_(SKU); return b ? b.basisQualityError : null; }
@@ -174,6 +180,40 @@ ok(_irRecoCacheGet(SCOPE) === null,
   'A3  nor a record under TODAY key that declares no shape - absent is not "assume compatible"');
 ok(JSON.parse(STORE[_IR_RECO_CACHE_KEY] || '{}')[[SCOPE.company, SCOPE.country, SCOPE.marketplace].join('||')] === undefined,
   'A3a and it is dropped on the way past, so the next lookup is a clean miss');
+
+// CP2T-R1 - AND THE CASE A SHAPE CHECK CANNOT SEE. This record has exactly the shape this build reads:
+// horizonBasis present, every field in place. What is wrong with it is the VALUES - computed by the
+// handler that String()-ed the campaign date cells, so a real history reads as a named refusal. A record
+// that is merely WRONG is more dangerous than one that is unreadable, because it renders.
+function seedStampedRecord(scope, data, handler) {
+  var rec = {};
+  rec[[scope.company, scope.country, scope.marketplace].join('||')] = {
+    shape: _IR_RECO_CACHE_SHAPE, handlerVersion: handler,
+    requestScope: { company: scope.company, country: scope.country, marketplace: scope.marketplace },
+    envelopeData: data, meta: { requestId: 'rid-old' }, cachedAt: Date.now()
+  };
+  STORE[_IR_RECO_CACHE_KEY] = JSON.stringify(rec);
+  _irRecoCacheMem = null;
+}
+resetAll();
+seedStampedRecord(SCOPE, currentEnvelopeData(null, 'SALES_BASIS_CONTAMINATION_UNRESOLVED'), HANDLER_OLD);
+ok(_irRecoCacheGet(SCOPE) === null,
+  'A4  a record with THIS shape but the PRE-REPAIR computation is not served - the shape matched and the '
+  + 'answer was still the one the date defect produced');
+ok(JSON.parse(STORE[_IR_RECO_CACHE_KEY] || '{}')[[SCOPE.company, SCOPE.country, SCOPE.marketplace].join('||')] === undefined,
+  'A4a and it too is dropped on the way past');
+
+resetAll();
+seedStampedRecord(SCOPE, currentEnvelopeData(11), HANDLER_OK);
+ok(_irRecoCacheGet(SCOPE) !== null,
+  'A5  while a record from an ACCEPTED computation is served - the guard is a version check, not a purge');
+
+// The acceptance is a NAMED LIST, not a comparison, so a version this build has never heard of is refused
+// rather than guessed at - including one that looks newer.
+resetAll();
+seedStampedRecord(SCOPE, currentEnvelopeData(11), 'fm5-r4ui-r9z');
+ok(_irRecoCacheGet(SCOPE) === null,
+  'A6  and an UNKNOWN version is refused rather than assumed compatible, however new it looks');
 
 // ---------------------------------------------------------------------------------------------------
 section('B  and the page then asks the NEW deployment, rather than showing the old answer');
@@ -263,6 +303,39 @@ Promise.resolve(p).then(function () {
 }).then(function () {
   eq(typeof _irRecoAnswerSource_ === 'function' ? _irRecoAnswerSource_().source : null, 'SERVER',
     'F4  and SERVER when the deployment actually answered');
+  eq(_irRecoAnswerSource_().handlerVersion, HANDLER_OK,
+    'F5  naming WHICH deployed handler computed it, which is the other half of "is this the new deployment"');
+  eq(_irRecoAnswerSource_().handlerAccepted, true, 'F5a and whether this build accepts that computation');
+
+  // ---------------------------------------------------------------------------------------------------
+  section('G  a PRE-REPAIR deployment answering live is SHOWN, and never stored');
+  // ---------------------------------------------------------------------------------------------------
+  // Refusing to display it would be worse: it is what the server currently says, and hiding it would make
+  // an unsynced deployment look like an empty one. What must not happen is that it OUTLIVES the deployment
+  // that produced it, so it is never written to the store.
+  resetAll();
+  serveFresh(currentEnvelopeData(3.75), HANDLER_OLD);
+  return Promise.resolve(loadRecommendationWorkspace_()).then(function () {
+    return new Promise(function (r) { setTimeout(r, 0); });
+  });
+}).then(function () {
+  eq(pickRate(), 3.75, 'G1  the live answer from a pre-repair handler IS displayed - it is the current truth');
+  eq(_irRecoAnswerSource_().handlerVersion, HANDLER_OLD, 'G1a and the probe names the handler that produced it');
+  eq(_irRecoAnswerSource_().handlerAccepted, false, 'G1b and says this build does not accept that computation');
+  ok(_irRecoCacheGet(SCOPE) === null,
+    'G2  and it was NOT stored, so it cannot be replayed after the deployment that produced it is gone');
+
+  // A response with NO marker at all is a deployment older than the marker itself. Same treatment.
+  resetAll();
+  serveFresh(currentEnvelopeData(2.5), null);
+  return Promise.resolve(loadRecommendationWorkspace_()).then(function () {
+    return new Promise(function (r) { setTimeout(r, 0); });
+  });
+}).then(function () {
+  eq(pickRate(), 2.5, 'G3  an UNSTAMPED response is displayed too');
+  eq(_irRecoAnswerSource_().handlerVersion, null,
+    'G3a with handlerVersion null, which is itself the answer: a deployment older than the marker');
+  ok(_irRecoCacheGet(SCOPE) === null, 'G3b and it is not stored either - absent is not "assume compatible"');
 
   console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed === 0 ? 0 : 1;

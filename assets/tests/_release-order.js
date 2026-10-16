@@ -1093,6 +1093,23 @@ var ROUND_TOKENS = [
   // the defect this round closes, reintroduced by the cache that serves the page itself.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  //
+  // S8-B3-R3-CP2T-R1 - R59 IS CARRIED, NOT SUCCEEDED, AND THE CHECK WAS RE-RUN TO SAY SO. origin/main is
+  // still 37d9db8c and b382644d, the commit that introduced r59, is NOT an ancestor of it. R59 has
+  // therefore never been served to any browser, so no cached page anywhere is holding it and the
+  // iteration on top of it reuses the same token. index.html and app.js are untouched this round.
+  //
+  // THIS SENTENCE IS NOT THE EVIDENCE. Publication is a property of the REMOTE and must be re-checked
+  // every round; a later round that reads this note instead of running git ls-remote will eventually
+  // reuse a token that has shipped. The reason the entry exists is the check, not the note.
+  //
+  // WHAT THE ROUND ADDED INSTEAD OF A TOKEN: the cache record now declares the HANDLER VERSION whose
+  // computation produced it, beside the shape it was written for. A record with a matching shape and a
+  // pre-repair computation renders, which is worse than one that cannot be read, so the page names the
+  // versions it accepts and drops the rest. That marker lives in the RESPONSE, not in a page asset, so
+  // it does not need an asset token to take effect.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
   'r59-cacheshape-20261017'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

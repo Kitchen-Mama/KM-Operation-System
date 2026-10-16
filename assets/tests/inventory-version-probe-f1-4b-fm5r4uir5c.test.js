@@ -17,7 +17,13 @@ var F42 = read('specs/active/apps-script/42_api_v1_recommendation_workspace.gs')
 var F43 = read('specs/active/apps-script/43_api_v1_gap_materialization.gs');
 var INDEX = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
 
-var VER = 'fm5-r4ui-r5c';
+// S8-B3-R3-CP2T-R1 - THE TWO MARKERS ARE NOT ONE MARKER, and tying them to a single constant said they
+// were. Each one exists to prove which handler of ITS OWN file is live, and the two files are deployed
+// and change independently: CP2T-R1 repaired the campaign/event date passing in 42_ only, so 42_ owes a
+// new version and 43_ does not. Marching 43_ to it would stamp a change onto a file that did not change,
+// which is the per-module-stamp error the release governance already names.
+var VER_WS = 'fm5-r4ui-r5d';     // 42_ recommendation workspace - r5d computes campaign dates correctly
+var VER_GAP = 'fm5-r4ui-r5c';    // 43_ gap materialization - unchanged this round
 var fail = 0, pass = 0;
 function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; } }
 function section(n) { console.log('\n== ' + n + ' =='); }
@@ -29,20 +35,20 @@ var G = (new Function(F43 + '\n;return { batchEnvelope: gapBatchEnvelope_, ver: 
 section('Phase 4 — 43 gap-materialization batch envelope carries the READ-ONLY handler-version marker (the Recalculate response)');
 var okEnv = G.batchEnvelope(true, { product: 'INVENTORY', totalScopes: 3, ready: 2, blocked: 1, written: 3 });
 ok(okEnv.success === true, 'G1 success envelope still succeeds (marker is additive, not gating)');
-ok(okEnv.meta && okEnv.meta.gapMaterializationHandlerVersion === VER, 'G2 success envelope.meta.gapMaterializationHandlerVersion === "' + VER + '" (ONE Recalculate response proves the live gap handler)');
+ok(okEnv.meta && okEnv.meta.gapMaterializationHandlerVersion === VER_GAP, 'G2 success envelope.meta.gapMaterializationHandlerVersion === "' + VER_GAP + '" (ONE Recalculate response proves the live gap handler)');
 ok(okEnv.data && okEnv.data.ready === 2 && okEnv.data.blocked === 1 && okEnv.data.written === 3, 'G3 the batch SUMMARY business fields are untouched (marker lives on meta, not data)');
 var errEnv = G.batchEnvelope(false, null, 'GAP_BATCH_ERROR', 'boom');
-ok(errEnv.success === false && errEnv.meta && errEnv.meta.gapMaterializationHandlerVersion === VER, 'G4 even a FAILURE envelope carries the marker (a stale deploy that errors is still identifiable)');
+ok(errEnv.success === false && errEnv.meta && errEnv.meta.gapMaterializationHandlerVersion === VER_GAP, 'G4 even a FAILURE envelope carries the marker (a stale deploy that errors is still identifiable)');
 ok(errEnv.errors && errEnv.errors[0] && errEnv.errors[0].code === 'GAP_BATCH_ERROR', 'G5 the error envelope shape is unchanged');
-ok(G.ver === VER, 'G6 the gap-materializer version constant is exactly "' + VER + '"');
+ok(G.ver === VER_GAP, 'G6 the gap-materializer version constant is exactly "' + VER_GAP + '"');
 
 section('Phase 4 — 42 recommendation-workspace envelope carries the marker (any workspace GET proves the R5B sales fix is live)');
 var wsOk = W.envelope(true, { lines: [] }, [], { calculationDate: '2026-08-08' });
-ok(wsOk.success === true && wsOk.meta && wsOk.meta.recommendationWorkspaceHandlerVersion === VER, 'W1 workspace success meta.recommendationWorkspaceHandlerVersion === "' + VER + '"');
+ok(wsOk.success === true && wsOk.meta && wsOk.meta.recommendationWorkspaceHandlerVersion === VER_WS, 'W1 workspace success meta.recommendationWorkspaceHandlerVersion === "' + VER_WS + '"');
 ok(wsOk.meta.apiVersion === '1' && wsOk.meta.source === 'recommendation.workspace.get' && wsOk.meta.calculationDate === '2026-08-08', 'W2 the existing meta contract (apiVersion / source / caller meta) is preserved — marker is purely additive');
 var wsErr = W.envelope(false, null, [{ code: 'VALIDATION_FAILED' }]);
-ok(wsErr.success === false && wsErr.meta && wsErr.meta.recommendationWorkspaceHandlerVersion === VER, 'W3 a failure envelope also carries the marker');
-ok(W.ver === VER, 'W4 the workspace version constant is exactly "' + VER + '"');
+ok(wsErr.success === false && wsErr.meta && wsErr.meta.recommendationWorkspaceHandlerVersion === VER_WS, 'W3 a failure envelope also carries the marker');
+ok(W.ver === VER_WS, 'W4 the workspace version constant is exactly "' + VER_WS + '"');
 
 section('Phase 3 — R5B live-path repair markers still present (the version proven live IS the fixed code)');
 ok(/function toYmd\(v\)/.test(F42) && /var calcYmd = toYmd\(calcDate\)/.test(F42), 'R1 snapshot/calc date coercion (toYmd) present');
@@ -53,6 +59,18 @@ ok(/var chSource = daily\.length \? daily : weeklyAll;/.test(F42), 'R3 daily-els
 // resolver fails closed instead of recomputing. The surfaced-exception behaviour this protects is
 // unchanged and is also exercised directly, not only grepped.
 ok(/run-rate owner error: ' \+ m/.test(F42), 'R4 the real owner exception is surfaced (no opaque token)');
+
+section('Phase 5 — CP2T-R1: the PAGE accepts exactly the computation the server stamps');
+// A page that accepts a version the server never sends caches nothing for the rest of the session; a page
+// that accepts one the server no longer sends serves a pre-repair answer. The two files must agree, and
+// nothing else in the repo checks that they do.
+var IRPAGE = fs.readFileSync(path.join(__dirname, '..', 'js/pages/inventory-replenishment.js'), 'utf8');
+var accepted = (IRPAGE.match(/var _IR_RECO_CACHE_HANDLERS = \[([^\]]*)\]/) || [])[1];
+ok(accepted !== undefined, 'P1 the page declares the handler versions whose computation it will cache');
+ok(String(accepted).indexOf("'" + VER_WS + "'") !== -1,
+  'P2 and it accepts the version 42_ actually stamps (' + VER_WS + ') - otherwise the cache can never hit', accepted);
+ok(String(accepted).indexOf("'" + VER_GAP + "'") === -1,
+  'P3 and NOT the pre-repair one, which is the record that produced the live column', accepted);
 
 section('Phase 3 — exactly ONE sales-rate owner (no alternate/old path bypasses the R5B fix)');
 var kmcalcCalls = (F42.match(/KMCALC\.normalizedAvgSalesPerDay\(/g) || []).length;

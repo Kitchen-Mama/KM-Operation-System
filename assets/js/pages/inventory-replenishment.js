@@ -2046,7 +2046,10 @@ function _irFixedRowHtml_(item) {
 // NOTHING IS COMPUTED HERE — every value is carried from the server, as the whole column already is.
 var IR_AVG_QUALITY_TEXT = {
     MARKETPLACE_SKU_AMBIGUOUS: 'This site resolves to more than one Marketplace SKU id, so the campaign days cannot be identified. No average is shown rather than an average that may exclude the wrong days.',
-    SALES_BASIS_CONTAMINATION_UNRESOLVED: 'A campaign line could not be matched to this site, so the campaign days cannot be excluded. No average is shown rather than one inflated by campaign sales.',
+    // CP2T-R1 — this said "a campaign line could not be matched to this site", and the operator reading it
+    // went looking for an identity problem. The code is also what a campaign or event whose START / END DATE
+    // the calculation owner cannot read produces, which is the live cause this round repaired. Both are named.
+    SALES_BASIS_CONTAMINATION_UNRESOLVED: 'A campaign or special event for this site could not be used: either its line cannot be matched to this site, or its start/end date cannot be read. The campaign days cannot be excluded, so no average is shown rather than one inflated by campaign sales.',
     SALES_BASIS_UNAVAILABLE: 'No usable daily or weekly sales history for this site.',
     SALES_BASIS_AMBIGUOUS: 'The daily sales rows for this site resolve to more than one channel.',
     SALES_RUNTIME_UNAVAILABLE: 'The sales calculation owner is not available in this deployment.',
@@ -13875,6 +13878,31 @@ function _irAggregateActionableRecommendedQty(lines) {
 var _IR_RECO_CACHE_SHAPE = 'horizonBasis.v2';              // the RESPONSE SHAPE this build knows how to read
 var _IR_RECO_CACHE_KEY = 'km_ir_reco_cache_' + _IR_RECO_CACHE_SHAPE;
 var _IR_RECO_CACHE_SUPERSEDED_KEYS = ['km_ir_reco_cache_v1'];
+// S8-B3-R3-CP2T-R1 — THE SHAPE IS NOT THE COMPUTATION, AND A MATCHING SHAPE IS NOT A COMPATIBLE ANSWER.
+//
+// CP2T stamped the response SHAPE on every record so a build could not read an envelope it did not
+// understand. A record written by the handler that String()-ed the campaign date cells has exactly the
+// shape this build reads — `horizonBasis` present, every field in place — and the wrong values in it: a
+// named refusal where there is a real history, computed before the date repair existed. A shape check
+// cannot see that, and a record that is merely WRONG is more dangerous than one that is unreadable,
+// because it renders.
+//
+// So compatibility is declared on the COMPUTATION as well: the server already stamps
+// `meta.recommendationWorkspaceHandlerVersion` (42_, RECO_WS_HANDLER_VERSION_) and this build names the
+// handler versions whose output it will cache and serve. An answer from any other version is still
+// DISPLAYED when the server sends it live — it is the current truth and _irRecoAnswerSource_() reports
+// which handler produced it — but it is never stored, and a stored one is dropped on the way past, so a
+// pre-repair answer cannot outlive the deployment that produced it.
+//
+// NOT ADDED: a second cache, another store, a longer retention, a TTL, polling, an automatic retry, or any
+// change to WHAT is cached (a success, including a valid zero and a named quality error), to the key's
+// scope, to the F1A stale-RESPONSE guard, or to any read policy, formula, loader, transport or timeout.
+var _IR_RECO_CACHE_HANDLERS = ['fm5-r4ui-r5d'];            // computation versions this build will cache
+function _irRecoHandlerOk_(v) { return !!v && _IR_RECO_CACHE_HANDLERS.indexOf(v) !== -1; }
+function _irRecoEnvHandler_(env) {
+  var m = (env && env.meta) || {};
+  return m.recommendationWorkspaceHandlerVersion || m.handlerVersion || null;
+}
 var _irRecoCacheMem = null;                                // lazy in-memory mirror of the session store
 function _irRecoCacheLoad() {
   if (_irRecoCacheMem) return _irRecoCacheMem;
@@ -13908,13 +13936,21 @@ function _irRecoCacheGet(scopeReq) {
   // A record written for a different response shape is not an old answer to be shown with a caveat; it is
   // an answer this build cannot read. It is dropped on the way past so the next lookup is a clean miss.
   if (e.shape !== _IR_RECO_CACHE_SHAPE) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); return null; }
+  // CP2T-R1 — and a record this build CAN read but whose values were computed by a handler it no longer
+  // accepts is dropped for the same reason: it would render, and what it renders is the pre-repair answer.
+  if (!_irRecoHandlerOk_(e.handlerVersion)) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); return null; }
   return e;
 }
 function _irRecoCacheSet(scopeReq, env) {
   var k = _irRecoCacheKey(scopeReq); if (!k || !env || env.success !== true) return;   // successes only
+  // CP2T-R1 — an answer from a handler whose computation this build does not accept is SHOWN (it is what the
+  // server said) and never STORED, so it cannot be replayed after the deployment that produced it is gone.
+  var hv = _irRecoEnvHandler_(env);
+  if (!_irRecoHandlerOk_(hv)) return;
   var c = _irRecoCacheLoad();
   c[k] = {
     shape: _IR_RECO_CACHE_SHAPE,
+    handlerVersion: hv,
     requestScope: { company: scopeReq.company, country: scopeReq.country, marketplace: scopeReq.marketplace },
     envelopeData: (env.data && typeof env.data === 'object') ? env.data : {},
     meta: {
@@ -13948,7 +13984,13 @@ function _irRecoAnswerSource_() {
     calculationMonth: st.calculationMonth || null,
     planningCycle: st.planningCycle || null,
     sourceDataAsOf: (dv && dv.sourceDataAsOf) || null,
-    shape: _IR_RECO_CACHE_SHAPE
+    shape: _IR_RECO_CACHE_SHAPE,
+    // CP2T-R1 — WHICH DEPLOYED HANDLER COMPUTED THIS ANSWER, and whether this build accepts that
+    // computation. `handlerVersion: null` on a loaded result means the response carried no stamp at all,
+    // which is itself the answer: a deployment older than the marker.
+    handlerVersion: st.handlerVersion || null,
+    handlerAccepted: _irRecoHandlerOk_(st.handlerVersion || null),
+    handlersAccepted: _IR_RECO_CACHE_HANDLERS.slice()
   };
 }
 // Narrow programmatic invalidation (no UI this round). No arg → clear all; scopeReq → drop that key.
@@ -14093,6 +14135,7 @@ function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
   _irRecoState.requestId = (env.meta && env.meta.requestId) || null;
   _irRecoState.calculationMonth = (env.meta && env.meta.calculationMonth) || null;
   _irRecoState.planningCycle = (env.meta && env.meta.planningCycle) || null;
+  _irRecoState.handlerVersion = _irRecoEnvHandler_(env);   // CP2T-R1: WHICH deployed handler computed this answer
   _irRecoState.updatedAt = (data.dataVersion && data.dataVersion.sourceDataAsOf) || null;   // server value, not browser clock
   _irRecoState.loadedOk = true;
 }
@@ -14178,7 +14221,8 @@ function loadRecommendationWorkspace_() {
     if (_irRecoAbort && _irRecoAbort.abort) { try { _irRecoAbort.abort(); } catch (e) {} }
     _irRecoAbort = null; _irRecoSeq++;
     var cachedEnv = { success: true, data: cachedEntry.envelopeData,
-      meta: Object.assign({ source: 'session-cache' }, cachedEntry.meta || {}), errors: [] };
+      meta: Object.assign({ source: 'session-cache', handlerVersion: cachedEntry.handlerVersion || null },
+        cachedEntry.meta || {}), errors: [] };
     _irRecoApplyEnvelope(cachedEnv, ctxKey, scopeReq);
     _irRecoState.fromCache = true;
     _irRecoRerenderSummaries();
