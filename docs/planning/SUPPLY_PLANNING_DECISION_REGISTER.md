@@ -3755,6 +3755,13 @@ over. There is no version that fits, so this is a **budget decision, not a craft
 raised, no module retired, nothing in another file compressed. All 46 suites reading 42_ are CLEAN; the
 load-surface gate is the single red light, red by exactly the number above.
 
+**SETTLED — the Owner raised it to 4,610,000 (D-S8-B3-74).** The 4,600,000 above is kept as the
+figure this round was measured against and **is no longer an open question**; a reader arriving here
+should not re-open it. What is recorded here is still worth keeping: the refusal to trim prose or
+retire a module to buy 239 bytes, and the executable-only floor that proved no version fit. The raise
+that followed covers **only** the three IR items named in D-S8-B3-74, and the headroom it left is not
+a licence for anything else.
+
 ### D-S8-B3-67 — A response in which every average failed is still a response — **FROZEN (CP2S B7)**
 
 `_irRecoRefreshVelocityCells_` repaints only when `_irRecoHasCanonicalBasis_()` is true, and that
@@ -3854,7 +3861,27 @@ BUNDLE_REBUILD_REQUIRED     NO
 **42_ deployment status: listed separately, and UNKNOWN.** The file last changed in `45be6010`
 (CP2R-R1) and changed again in `68a395a8` (CP2S, which is over budget and not releasable). Whether
 the `45be6010` version is live in the Apps Script project **cannot be determined from this repository
-and is not asserted in either direction.** A `system.health` probe, or the Owner, settles it.
+and is not asserted in either direction.**
+
+**And the probe does not settle it either — a correction to the line that said it would.** The
+sentence above originally ended "a `system.health` probe, or the Owner, settles it". For 42_ that is
+not true, and the reason is checkable in this repository:
+
+- 42_ **publishes no build symbol.** The per-file stamp manifest in `63_api_v1_system_health.gs`
+  carries `01_`, `03_`, `47_`, `56_`, `59_`, `66_`, `69_` and others; **42_ has no row and no
+  `*_BUILD_VERSION_` constant of its own.** `mixed_deployment` therefore has nothing to compare.
+- **The CP2S / CP2S-R1 changes add no action.** They alter what the recommendation workspace computes
+  internally; the router's action list is identical before and after. 63_'s own comments already state
+  this failure mode for `20_` and `58_`: "a partial sync of this file was invisible to `system.health`".
+  An action list cannot see a change that adds no action.
+- `build_id` is the **release**, not a per-module fact — already recorded as "deployment release vs
+  module stamp". A uniform `build_id` is consistent with a stale 42_.
+
+**So the correct status after a clean health probe is still UNKNOWN.** Only the Owner stating that the
+file was copied, or a stamp being added to 42_ in some future round and then probed, can answer it.
+A probe that cannot distinguish the revisions returning "healthy" is **not** evidence of a sync, and
+recording it as one would be the same inference error one level further out: this time reading
+deployment state from an instrument that was never pointed at it.
 
 ### D-S8-B3-71 — The source contract's evidence now carries an as-of date — **FROZEN (FCB1-R1 correction)**
 
@@ -3882,9 +3909,20 @@ range has aged out of the sheet on its own.
 
 **And the 353 connects to CP2S.** D-S8-B3-66 skips rows whose `snapshot_date` is **blank** and keeps
 failing closed on a value that is present but unreadable. The attachment counts **invalid date keys**,
-which is the wider category. **How many of the 353 are blank versus present-but-unparseable is UNKNOWN
-and decides how much of the 353 CP2S actually recovers** — named here rather than assumed to be all
-of them.
+which is the wider category.
+
+**ANSWERED, and the UNKNOWN is withdrawn (FCB1-R1 freeze, 2026-10-16).** This entry said it was
+unknown how many of the 353 were blank versus present-but-unparseable, and that the split decided how
+much of the 353 the skip recovers. **The Owner has stated that all 353 are blank.** In this
+attachment the wider category and the narrower one hold the same rows, so the skip covers all of
+them; the question it was named to keep open is closed by evidence rather than by assumption, which
+is why it was named rather than guessed.
+
+**Scope, and what does not change.** This is one read-only export of the destination sheet at one
+moment. It is **not** a statement about the live sheet now and **not** a statement about BigQuery
+`Raw Daily Sales`. **The present-but-unreadable path is not relaxed**: a `snapshot_date` somebody
+wrote and this layer cannot parse still fails closed with the owner's own message. A count of zero
+occurrences in one export is not a reason to delete the branch that handles them.
 
 ### D-S8-B3-72 — Three completeness questions, and the zero-row rule was never ours to impose — **FROZEN (FCB1-R1 correction)**
 
@@ -3894,18 +3932,37 @@ different authorities and different failure modes:
 | | question | what answers it |
 |---|---|---|
 | **Q1** | is the **raw source** complete for this month? | a source-side completion signal. The destination can never answer this. |
-| **Q2** | did the **import** land everything the source had? | `amazonReadDailyGapAware_`, per date, destination distinct-key count vs source — already built |
+| **Q2** | did the **import** land **as many distinct keys** as the source had? | `amazonReadDailyGapAware_`, per date, destination distinct-key **count** vs source — already built |
 | **Q3** | is **this SKU** missing on this date? | an enumeration over scope+SKU, not a table-wide total |
 
 A perfect import of an incomplete extract passes Q2 and fails Q1.
 
+**Q2 is a COVERAGE check, and the first draft read it as more (FCB1-R1 freeze).** It compares *counts*
+of distinct natural keys, so it proves a date is **not short** — and it does not prove the two sides
+hold the **same** keys (equal counts over a different key set pass), it compares **no sales values**
+at any point, and it says nothing about whether the SKU being averaged is among them. Useful, and
+smaller than "the import landed everything".
+
 **And the first draft said a complete month requires a physical row per SKU per date. That was an
-overreach.** Zero-row omission is a normal and often better reporting design. It is provable with
-**(a)** a trustworthy per-date source-completion signal and **(b)** a stated omit-zero rule; with both,
-an absent row on a complete date is a confirmed zero by construction. **With either missing, an absent
-row is MISSING and the month is refused — that default is unchanged and is not negotiable.** What
-changed is that a workable alternative proof is now named instead of excluded by a rule this document
-had no standing to impose.
+overreach.** Zero-row omission is a normal and often better reporting design. **It is provable with
+three parts, not two** — the earlier version of this entry named only the first two:
+
+- **(a)** a trustworthy per-date source-completion signal; **and**
+- **(b)** a stated omit-zero rule; **and**
+- **(c) evidence that this scope+SKU was within that date's reporting coverage.**
+
+**(c) was missing, and without it (a) and (b) do not reach the conclusion.** Together they license
+*"nothing absent from this complete date sold"*; they do not license *"this SKU sold nothing"*. A SKU
+that was delisted, not yet launched, outside the report's scope or owned by another entity is absent
+for a reason unrelated to sales, and counting those days as zeros puts days in the denominator that
+were never in the numerator's universe — the average falls by arithmetic rather than by trade. It is
+the Q3 population error arriving one step later. **(c) does not prescribe an instrument**: a listing
+status history, a per-date report-scope manifest, or a stated coverage rule each satisfy it; what it
+forbids is the reader inferring coverage from the rows it happens to see.
+
+**With any one of the three missing, an absent row is MISSING and the month is refused — that
+default is unchanged and is not negotiable.** What changed is that a workable alternative proof is
+now named instead of excluded by a rule this document had no standing to impose.
 
 ---
 
@@ -4015,3 +4072,34 @@ stable hooks to be found, and a class the stylesheet never mentions is not a sur
 lesson - so `.replen-avg-cell` / `.replen-dos-cell` carry the rule a numeric column actually wants
 (tabular figures, so the column does not shiver when a value updates). **Publication was checked against
 the remote this round, not carried forward: `45be6010` is on `origin/main`, so the old token is spent.**
+
+### D-S8-B3-77 — Four claims narrowed to what was actually searched — **FROZEN (FCB1-R1 doc freeze)**
+
+The source contract is frozen at this round. No FC Builder feature was added, no BQ path, no API, no
+cache. What changed is four claims that were **wider than their evidence**, and the pattern is the same
+in all four: a search over this repository was written up as a fact about the world.
+
+| claim as written | what was actually searched | corrected to |
+|---|---|---|
+| Walmart / Shopify / Target are **UNSUPPORTED** | four import configs, two readers, one option list — all in this repo | **no source identified here**; absence here proves this code cannot read one, not that none exists |
+| BQ `Raw Daily Sales` is **the only** source that could satisfy the rule | the same files | the only one **among the sources this repository identifies** |
+| the per-date key-count check proves the import **landed everything** | the function's own code | a **coverage** check: catches a short date; no key identities, no values |
+| the 353 invalid date keys split is **UNKNOWN** | — | **ANSWERED: all 353 blank**, Owner-stated, scoped to that attachment (D-S8-B3-71) |
+
+**The behaviour is identical under the narrower wording, and that is the reason to prefer it rather
+than an argument against bothering.** "Unsupported" and "no source identified here" both produce a
+named refusal. But they imply different next moves: the first tells the Owner to go build a feed, the
+second tells them to go ask whether one already exists. **A document that is read for decisions has to
+be right about which question is open**, not only about which output is correct.
+
+**Added in the same pass, and it does change behaviour:** the confirmed-zero proof now needs a
+**third** part — evidence that the scope+SKU was within that date's reporting coverage (D-S8-B3-72).
+And `MISSING_OWNER_INPUT #3` now has three parts (a)/(b)/(c) rather than two.
+
+**Also recorded:** the size budget is **4,610,000** (D-S8-B3-74) and the previous 4,600,000 is history
+rather than a pending decision (D-S8-B3-66); 42_'s live deployment state stays **UNKNOWN** even after
+a clean `system.health` probe, because 42_ publishes no build stamp and its change adds no action
+(D-S8-B3-70).
+
+**This freeze is documentation only.** No source file changed, no test was relaxed, and nothing here
+means the IR mainline (S8 / CP2S-R1) has been accepted — that remains with the Owner.
