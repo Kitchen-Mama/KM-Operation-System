@@ -1,65 +1,65 @@
 {
   "round": "S8-B3-R3-CP2T P1",
   "what": "FC Regular builder, prevMonth: derived Based period, non-editability, preview revocation, growth base still editable",
-  "takenAt": "2026-10-16T04:41:07.710Z",
+  "takenAt": "2026-10-16T14:51:56.277Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "index.html": "905eac46ef288bab",
+    "index.html": "5a2bdbcaf91d9f95",
     "assets/js/pages/fc-summary.js": "81af8665cbea6075",
     "assets/html/pages/fc-summary.html": "274936c74f1c44ca"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 842
+      "t": 754
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 922
+      "t": 834
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 923
+      "t": 836
     },
     {
       "action": "getTable",
-      "t": 1956
+      "t": 1871
     },
     {
       "action": "getTable",
-      "t": 1956
+      "t": 1872
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 1957
+      "t": 1872
     }
   ],
   "result": {
-    "capId": "fcprev-1792125487664",
+    "capId": "fcprev-1792162136232",
     "steps": [
       {
         "step": "fc-section",
-        "t": 415,
-        "v": 38.5
+        "t": 401.7,
+        "v": 30.3
       },
       {
         "step": "mode-select",
-        "t": 1327.7,
-        "v": 10.5
+        "t": 1323.3,
+        "v": 10.3
       },
       {
         "step": "builder",
-        "t": 1520.1,
-        "v": 32.8
+        "t": 1514.9,
+        "v": 30.7
       },
       {
         "step": "method",
-        "t": 2242.9,
+        "t": 2217.5,
         "v": "prevMonth"
       },
       {
         "step": "derived",
-        "t": 2754.6,
+        "t": 2739.5,
         "v": {
           "basedYear": "2026",
           "basedMonth": "11",
@@ -68,7 +68,7 @@
       },
       {
         "step": "done",
-        "t": 6409.8,
+        "t": 6381.5,
         "v": {
           "addButtonFound": true,
           "modeSelectVisible": true,

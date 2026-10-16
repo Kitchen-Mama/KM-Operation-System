@@ -5412,3 +5412,39 @@ rather than absent.
 
 **STATUS: LOCAL ONLY — NOT PUSHED — NOT SYNCED (this round).**
 
+---
+
+## Published main advanced to `1778efc3` (checked 2026-10-16, CP2U-R1)
+
+`git ls-remote origin main` returns **`1778efc3`**. The two commits that were local-only in the entry above
+are therefore **published**, and `b382644d` — which introduced `r59-cacheshape-20261017` — **is now an
+ancestor of `origin/main`**, so that token has been served and may never be reused.
+
+| | |
+|---|---|
+| published main | **`1778efc3`** (`git ls-remote`) |
+| `42_` handler version at that commit | **`fm5-r4ui-r5e`** |
+| `43_` gap-materialization handler at that commit | **`fm5-r4ui-r5c`** — a SEPARATE series, not a later r5 of the same one |
+| `index.html` application token at that commit | **`r59-cacheshape-20261017`** — now spent |
+| Apps Script deployment version number | **UNKNOWN — not provided** |
+| Apps Script sync state for `42_` at r5e | **UNKNOWN** — push and sync are separate manual steps and no sync was reported for this commit |
+
+**THE GIT PUBLICATION IS CONFIRMED; THE APPS SCRIPT SYNC IS NOT.** A push moves `origin`; it does not copy a
+`.gs` into the Apps Script project. No sync was reported for `1778efc3`, so whether the live Avg Sales column
+runs `r5e` is **UNKNOWN**, and this ledger does not infer it from the push. If the project still holds `r5c`,
+the live column keeps both the campaign-date defect CP2T-R1 repaired and the fabricated weekly zero CP2T-R2
+repaired — and the page accept list admits only `r5e`, so until the sync happens **no response is cached at
+all**. That is safe and slow, not wrong.
+
+**CP2U-R1 (this round) is PAGE-ONLY.** No `.gs` changed, so there is **nothing to sync for it** and the GS
+load surface is unchanged at **4,609,902 bytes**. What it does change is `index.html`, `assets/js/app.js` and
+`assets/js/pages/inventory-replenishment.js`, so the co-deployed application set rotates to
+**`r60-readstate-20261016`** — required, because `app.js` pinned the changed page file to the r59 token that
+has now shipped.
+
+**PENDING SYNC, carried forward unchanged:**
+`APPS_SCRIPT_SYNC_REQUIRED: assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs` (to r5e)
+`BUNDLE_REBUILD_REQUIRED: NO`
+
+**STATUS: LOCAL ONLY — NOT PUSHED — NOT SYNCED (CP2U-R1).**
+

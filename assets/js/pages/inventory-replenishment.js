@@ -2063,17 +2063,45 @@ var IR_AVG_WARNING_TEXT = {
     low_sample_warning: 'Fewer than seven normal days in the sample.',
     insufficient_normal_days: 'Fewer than three normal days, so this is the weekly rate divided by seven, not a normalized average.'
 };
+// CP2U-R1 - A QUALITY ERROR IS AN ANSWER THIS COLUMN ALREADY HAD WORDS FOR. The states below are the ones it
+// did not: the read is still open, the read FAILED, or it completed and published nothing for this site. All
+// three printed the bare dash, and the dash was already taken - it is what a refusal prints too. An operator
+// cannot act on "--": retry a failed read, wait out a pending one, and chase the data for an absent one are
+// three different actions.
+//
+// DISABLED is deliberately absent. With the workspace read off the column keeps its pre-cutover display, and
+// a tooltip on every cell of a build that never asked the question would be noise, not a signal.
+var IR_AVG_STATE_TEXT = {
+    IN_FLIGHT: 'The sales basis for this site is still being read.',
+    CONTEXT_NOT_READY: 'Select a valid Country / Marketplace before a sales basis can be read.',
+    SCOPE_SUPERSEDED: 'This result belongs to a site that is no longer displayed. A newer read is in flight.',
+    READ_FAILED: 'The sales basis could not be READ for this site. This is a failed read, not a site without history - retry before concluding anything about the data.',
+    CONFIG_NOT_READY: 'No calculation context is configured, so no sales basis could be requested.',
+    SCOPE_RESOLVED_NO_LINES: 'The read completed and returned no destination line for any SKU in this site.',
+    NO_LINE_FOR_SKU: 'The read completed, but it returned no destination line for this SKU.',
+    BASIS_WITHHELD: 'A destination line exists for this SKU and it carries no sales basis at all - neither a rate nor a named reason. The basis was withheld before it was attached.'
+};
 function _irAvgSalesQualityNote_(item) {
     if (!item) return '';
     var q = item.avgSalesQualityError;
     if (q) return IR_AVG_QUALITY_TEXT[q] || ('Avg Sales unavailable: ' + q);
     var w = item.avgSalesWarning;
     if (w) return IR_AVG_WARNING_TEXT[w] || String(w);
+    // CP2U-R1 - the state note is LAST. A named quality error and a warning are both statements about a
+    // basis that was actually resolved, and they stay the more specific answer.
+    var r = item.avgSalesCellReason;
+    if (r && IR_AVG_STATE_TEXT[r]) {
+        var d = item.avgSalesCellDetail;
+        return IR_AVG_STATE_TEXT[r] + (d ? (' [' + d + ']') : '');
+    }
     return '';
 }
 function _irAvgSalesCellClass_(item) {
     if (item && item.avgSalesQualityError) return ' replen-cell--avg-error';
     if (item && item.avgSalesWarning) return ' replen-cell--avg-warning';
+    // CP2U-R1 - a FAILED read earns the error class; a pending one must not, or every first paint looks
+    // like a fault. NONE keeps the neutral class: nothing is broken, there is simply nothing to show.
+    if (item && item.avgSalesCellState === 'READ_FAILED') return ' replen-cell--avg-error';
     return '';
 }
 function _irAvgSalesTitleAttr_(item) {
@@ -2086,6 +2114,12 @@ function _irAvgSalesFlagHtml_(item) {
     if (item && item.avgSalesQualityError) {
         return '<span class="replen-avg-flag replen-avg-flag--error" aria-label="'
             + escapeReplenHtml(_irAvgSalesQualityNote_(item)) + '">unavailable</span>';
+    }
+    // CP2U-R1 - 'unavailable' is the word for a basis the calculation REFUSED. A read that never completed
+    // has not refused anything, and borrowing that word for it is how the two became one dash.
+    if (item && item.avgSalesCellState === 'READ_FAILED') {
+        return '<span class="replen-avg-flag replen-avg-flag--error" aria-label="'
+            + escapeReplenHtml(_irAvgSalesQualityNote_(item)) + '">read failed</span>';
     }
     if (item && item.avgSalesWarning) {
         return '<span class="replen-avg-flag replen-avg-flag--warning" aria-label="'
@@ -2337,8 +2371,32 @@ function _irSuggestedQtyState_(item) {
     // S8-R4D-F1A §7 — SUGGESTED_QTY_STALE_CROSS_SCOPE is forbidden. A result for another site is PENDING
     // (the cell prints the pending marker), never NONE and never that site's number.
     if (!_irResultMatchesAppliedScope_(_irMatState)) return { state: 'PENDING', value: null };
+    // CP2U-R1 — ONE `NONE` STOOD FOR FOUR DIFFERENT FACTS, and the one that mattered most was invisible.
+    // A failed READ, a read that succeeded over zero rows, a scope that resolved without a row for THIS sku,
+    // and a row the calculation itself refused all returned this identical object. "The read broke" printed
+    // the same dash as "the calculation says no", so a transport fault read as a business answer.
+    //
+    // `state` is deliberately UNCHANGED: NONE is still the right answer to "is there a number", and it is
+    // what the consumers of this authority are written against. The REASON is carried beside it, and it is
+    // the reason the cell renders from. Neither a failure nor an absence becomes 0 — `_irSuggestedQtyNumber_`
+    // still seeds 0 only as the editor's starting value and still refuses to call any of these a quantity.
+    if (st === 'READ_ERROR') {
+      return { state: 'NONE', value: null, reason: 'READ_FAILED',
+        detail: (_irMatState.error && _irMatState.error.code) ? String(_irMatState.error.code) : 'READ_FAILED' };
+    }
     var row = (item && _irMatState.bySku[String(item.sku)]) || null;
-    if (!row || String(row.calculation_status) !== 'READY') return { state: 'NONE', value: null };
+    if (!row) {
+      // EMPTY is a read that ANSWERED, over no rows at all. A missing row inside a READY answer is a
+      // different fact: this site was calculated and this SKU was not in it.
+      return { state: 'NONE', value: null, reason: (st === 'EMPTY') ? 'READ_EMPTY' : 'NO_ROW_FOR_SKU' };
+    }
+    var cs = String(row.calculation_status || '');
+    if (cs !== 'READY') {
+      // The row EXISTS and the calculation declined it. `note` is the stored reason, and it is the only one
+      // of these that can speak for itself — so it is carried, and every renderer must escape it.
+      return { state: 'NONE', value: null, reason: 'REFUSED', detail: cs || 'UNKNOWN_STATUS',
+        note: (row.note == null || String(row.note) === '') ? null : String(row.note) };
+    }
     var v = _irMatNum(row.d90_suggested_qty);   // furthest cumulative checkpoint = the single actionable total
     if (v === null) return { state: 'NONE', value: null, reason: 'NO_STORED_VALUE' };
     return { state: 'READY', value: v };
@@ -2375,10 +2433,32 @@ function _irSuggestedCellHtml(item) {
       : '<span class="replen-suggested-cell__value replen-suggested-cell__value--pending" title="Calculating recommendation…">…</span>';
   }
   if (sug.state === 'NONE') {
-    if (sug.reason === 'NO_STORED_VALUE') return '<span class="replen-suggested-cell__value replen-suggested-cell__value--none">—</span>';
-    return materialized
-      ? '<span class="replen-suggested-cell__value replen-suggested-cell__value--none" title="No actionable materialized recommendation — run Recalculate All Sites / see the expanded Recommendation Summary">—</span>'
-      : '<span class="replen-suggested-cell__value replen-suggested-cell__value--none" title="No actionable canonical recommendation — see the expanded Recommendation Summary">—</span>';
+    // CP2U-R1 — the dash stays (there is no number in any of these), and it now says WHICH of them it is.
+    // A read failure gets its own modifier class as well, because it is the only one an operator can fix by
+    // retrying, and the only one that is not a statement about the data.
+    var cls = 'replen-suggested-cell__value replen-suggested-cell__value--none';
+    var why = null;
+    if (sug.reason === 'READ_FAILED') {
+      cls += ' replen-suggested-cell__value--read-failed';
+      why = 'The materialized replenishment gap could not be READ for this site [' + (sug.detail || 'READ_FAILED')
+        + ']. This is a failed read, not a refused calculation - retry before concluding anything.';
+    } else if (sug.reason === 'READ_EMPTY') {
+      why = 'The read completed and this site has no stored gap rows at all - run Recalculate All Sites.';
+    } else if (sug.reason === 'NO_ROW_FOR_SKU') {
+      why = 'This site has stored gap rows, but none for this SKU - run Recalculate All Sites.';
+    } else if (sug.reason === 'REFUSED') {
+      why = 'The calculation declined this SKU [' + (sug.detail || 'UNKNOWN_STATUS') + ']'
+        + (sug.note ? (': ' + sug.note) : '. See the expanded Recommendation Summary.');
+    } else if (sug.reason === 'NO_STORED_VALUE') {
+      why = 'The gap row for this SKU is READY and stores no suggested quantity.';
+    } else {
+      why = materialized
+        ? 'No actionable materialized recommendation — run Recalculate All Sites / see the expanded Recommendation Summary'
+        : 'No actionable canonical recommendation — see the expanded Recommendation Summary';
+    }
+    // EVERY branch above can carry a stored `note` or an error code from the database, so the attribute is
+    // built through the escaper rather than concatenated. The old literal titles never needed it; these do.
+    return '<span class="' + cls + '" title="' + escapeReplenHtml(why) + '">—</span>';
   }
   return '<span class="replen-suggested-cell__value">' + sug.value + '</span>';
 }
@@ -6002,7 +6082,13 @@ var IR_READ_STAGES_ = [
   { stage: 'deployment_contract', actions: ['system.health', 'getClientCapabilities'] },
   { stage: 'scope_registry', actions: ['inventoryScope.registry.get'] },
   { stage: 'inventory_workspace', actions: ['inventoryReplenishment.workspace.get'] },
-  { stage: 'recommendation_read', actions: ['recommendation.workspace.get', 'inventoryReplenishmentGap.get', 'gapJob.status.get'] },
+  // CP2U-R1 - THREE READS WERE ONE STAGE, so "separate the reads" was impossible by construction. They are
+  // different actions against different handlers with different answers, and `_irRecoTrigger` fires two of
+  // them back to back without awaiting either, so they OVERLAP and their completion order is not fixed. One
+  // stage could report neither fact. `recommendation_read` keeps its name - it is the recommendation read.
+  { stage: 'recommendation_read', actions: ['recommendation.workspace.get'] },
+  { stage: 'materialized_gap_read', actions: ['inventoryReplenishmentGap.get'] },
+  { stage: 'gap_job_status', actions: ['gapJob.status.get'] },
   { stage: 'allocation_hydration', actions: ['getShippingAllocationDraftWorkspace', 'shippingAllocationDraft.workspace.get'] },
   { stage: 'carrier_authorities', actions: ['getCarrierRateCards', 'getWarehouseAllocationConfig', 'carrier.rateCards.get'] }
 ];
@@ -6050,7 +6136,23 @@ function _irReadStageReport_() {
     // §4 — EVERY sample, not only the ones labelled 'read'. The previous filter dropped anything the
     // transport classified differently, which is another way an unclassified request became an invisible one.
     var reads = samples.slice();
+    // CP2U-R1 - THIS IS A SUM OVER INTERVALS THAT OVERLAP BY CONSTRUCTION, AND IT WAS NAMED LIKE A CLOCK.
+    //
+    // `_irRecoTrigger` calls `loadInventoryGap_()` and `loadRecommendationWorkspace_()` one after the other
+    // and awaits neither, so at least two of these requests are always open at the same time. Adding their
+    // durations produces a number larger than the time that actually passed, and it sat directly beside
+    // `page_boot_elapsed_ms`, which IS a wall clock - so subtracting one from the other invented a gap that
+    // never existed. That subtraction is how a scheduling question became a "where did the time go" question.
+    //
+    // The value is unchanged and the key is kept, because callers and a pinned contract both read it. What
+    // changes is that the report now states what it is, and `_irReadTimingReport_()` below reports the
+    // recorded dispatch and settle marks instead, from which overlap is a measurement.
     out.client_total_elapsed_ms = reads.reduce(function (a, x) { return a + (Number(x.ms) || 0); }, 0);
+    out.client_elapsed_sum_ms = out.client_total_elapsed_ms;   // the honest name for the same number
+    out.client_elapsed_sum_is_not_wall_clock = true;
+    out.wall_clock_basis = 'page_boot_elapsed_ms is the only measured wall clock in this report. '
+      + 'client_total_elapsed_ms / client_elapsed_sum_ms is a SUM of per-request durations over intervals '
+      + 'that overlap, and is never the elapsed time of the page.';
     var claimed = {};
     IR_READ_STAGES_.forEach(function (st) {
       var mine = reads.filter(function (x) { return st.actions.indexOf(String(x.action || '')) !== -1; });
@@ -6186,6 +6288,111 @@ function _irReadStageReport_() {
   }
 }
 window._irReadStageReport_ = _irReadStageReport_;
+
+// ==================================================================================================
+// CP2U-R1 §1 - THE THREE READS, SEPARATELY, FROM MARKS THAT WERE ALREADY BEING RECORDED.
+//
+// Nothing here is new instrumentation. `window.KM.transport.timeline()` has recorded dispatch_ms, settled_ms,
+// elapsed_ms, server_ms, concurrent_at_dispatch, overlapped_with, code, phase, request_id, attempts and
+// marks_source for EVERY request all along, and computes overlap from the recorded intervals rather than
+// guessing at it. The page simply never asked: `_irReadStageReport_` merged three of these reads into one
+// stage and printed a sum of their durations.
+//
+// FOUR RULES THIS REPORT KEEPS, because breaking any of them is how a diagnostic starts lying:
+//   * server_ms is whatever the envelope's meta reported, or NULL. A client duration is not an estimate of a
+//     server one, and "the server never told us" is the honest reading of a missing value.
+//   * marks_source travels with every row. A row whose interval was EXTERNAL_RECONSTRUCTED must not be read
+//     as though it had been timed at dispatch, and the only place that can be said is on the row itself.
+//   * observed_span_ms is DERIVED - the first dispatch to the last settle - and says so. It is not one
+//     measured interval and must not be quoted as the duration of anything.
+//   * a read that never dispatched is reported as not_observed, not as a zero.
+// ==================================================================================================
+var IR_TIMED_READS_ = [
+  { read: 'inventory_workspace', action: 'inventoryReplenishment.workspace.get' },
+  { read: 'recommendation', action: 'recommendation.workspace.get' },
+  { read: 'materialized_gap', action: 'inventoryReplenishmentGap.get' },
+  { read: 'gap_job_status', action: 'gapJob.status.get' }
+];
+function _irReadTimingReport_() {
+  var out = { available: false, basis: null, reads: [], dispatch_order: null, completion_order: null,
+    client_elapsed_sum_ms: null, client_elapsed_sum_is_not_wall_clock: true, observed_span_ms: null,
+    span_basis: null, overlapping_pairs: null, peak_concurrent_requests: null,
+    reconstructed_marks: null, server_ms_missing_for: null, classification: 'NO_TIMELINE' };
+  try {
+    if (!(window.KM && window.KM.transport && typeof window.KM.transport.timeline === 'function')) {
+      out.classification = 'TRANSPORT_TIMELINE_UNAVAILABLE';
+      return out;
+    }
+    var tl = window.KM.transport.timeline() || {};
+    var rows = tl.request_timeline || [];
+    out.available = true;
+    out.basis = 'window.KM.transport.timeline() — dispatch and settle marks recorded by the transport at the '
+      + 'time of each request. Overlap is computed from those intervals, not inferred from durations.';
+    out.peak_concurrent_requests = (typeof tl.peak_concurrent_requests === 'number') ? tl.peak_concurrent_requests : null;
+    IR_TIMED_READS_.forEach(function (d) {
+      var mine = rows.filter(function (r) { return String(r.action || '') === d.action; });
+      if (!mine.length) {
+        // NEVER DISPATCHED is not a duration of zero. A read that did not happen and a read that was
+        // instant are the same number and opposite facts.
+        out.reads.push({ read: d.read, action: d.action, not_observed: true, attempt_seq: null,
+          dispatch_ms: null, settled_ms: null, client_elapsed_ms: null, server_ms: null,
+          server_answered: null, code: null, phase: null, http_status: null, request_id: null,
+          attempts: null, marks_source: null, concurrent_at_dispatch: null, overlapped_with: [] });
+        return;
+      }
+      mine.forEach(function (r) {
+        out.reads.push({ read: d.read, action: d.action, not_observed: false, attempt_seq: r.seq,
+          dispatch_ms: r.dispatch_ms, settled_ms: r.settled_ms,
+          client_elapsed_ms: (typeof r.elapsed_ms === 'number') ? r.elapsed_ms : null,
+          server_ms: (typeof r.server_ms === 'number') ? r.server_ms : null,
+          server_answered: r.server_answered === true,
+          code: r.code || null, phase: r.phase || null,
+          http_status: (typeof r.http_status === 'number') ? r.http_status : null,
+          request_id: r.request_id || null, attempts: r.attempts,
+          marks_source: r.marks_source || null,
+          concurrent_at_dispatch: r.concurrent_at_dispatch,
+          overlapped_with: r.overlapped_with || [] });
+      });
+    });
+    var seen = out.reads.filter(function (r) { return !r.not_observed && typeof r.dispatch_ms === 'number'; });
+    out.dispatch_order = seen.slice().sort(function (a, b) { return a.dispatch_ms - b.dispatch_ms; })
+      .map(function (r) { return r.read; });
+    var done = seen.filter(function (r) { return typeof r.settled_ms === 'number'; });
+    // THE QUESTION §1 ASKED. Two reads fired back to back do not finish in the order they were fired, and
+    // nothing in the page recorded which of them the operator was actually waiting on.
+    out.completion_order = done.slice().sort(function (a, b) { return a.settled_ms - b.settled_ms; })
+      .map(function (r) { return r.read; });
+    out.client_elapsed_sum_ms = seen.reduce(function (a, r) { return a + (Number(r.client_elapsed_ms) || 0); }, 0);
+    if (done.length) {
+      var lo = null, hi = null;
+      done.forEach(function (r) {
+        if (lo === null || r.dispatch_ms < lo) lo = r.dispatch_ms;
+        if (hi === null || r.settled_ms > hi) hi = r.settled_ms;
+      });
+      out.observed_span_ms = hi - lo;
+      out.span_basis = 'DERIVED: first dispatch to last settle across the reads above. It is not a measured '
+        + 'interval and is not the duration of any one read. Compare it with client_elapsed_sum_ms — a sum '
+        + 'larger than the span is the arithmetic proof that these reads overlapped.';
+    }
+    out.overlapping_pairs = seen.filter(function (r) { return (r.overlapped_with || []).length; })
+      .map(function (r) { return { read: r.read, overlapped_with: r.overlapped_with }; });
+    // §4 - a reconstructed interval is reported AS reconstructed, and never silently promoted.
+    out.reconstructed_marks = out.reads.filter(function (r) {
+      return r.marks_source && r.marks_source !== 'OBSERVED';
+    }).map(function (r) { return { read: r.read, marks_source: r.marks_source }; });
+    // Which reads the SERVER never costed. The page used to keep only the main table's serverDurationMs and
+    // discard the other two; this names the ones still missing instead of filling them in.
+    out.server_ms_missing_for = out.reads.filter(function (r) {
+      return !r.not_observed && r.server_ms === null;
+    }).map(function (r) { return r.read; });
+    out.classification = out.reconstructed_marks.length ? 'OBSERVED_WITH_RECONSTRUCTED_ROWS' : 'OBSERVED';
+  } catch (e) {
+    out.classification = 'REPORT_FAILED';
+    out.error = String(e && e.message || e);
+  }
+  return out;
+}
+window._irReadTimingReport_ = _irReadTimingReport_;
 
 // F1-7N-FA-3C-R6E-P0 — SAFE STRUCTURED save-error surface. Never fakes success (no "Saved"), never renders
 // "[object Object]", never exposes a stack/token. Concise user line + a COLLAPSED technical disclosure (code /
@@ -12665,11 +12872,24 @@ function _getCloudReplenishmentData() {
         var _avgDisplay = '--';
         var _dosDisplay = '--';
         var _canonBasis = (typeof _irCanonicalSalesBasis_ === 'function') ? _irCanonicalSalesBasis_(mp.sku) : null;
+        // CP2U-R1 - WHICH of the non-answers this is. `_canonBasis === null` is returned by a read still in
+        // flight, a read that FAILED, a result belonging to a site no longer displayed, a scope that resolved
+        // with no line for this SKU, and a line carrying no basis at all. Five facts, one dash, and the one
+        // that needed an operator - the failed read - was the least visible of them.
+        var _avgState = (typeof _irAvgSalesCellState_ === 'function') ? _irAvgSalesCellState_(mp.sku, _canonBasis) : null;
+        var _avgCellState = _avgState ? _avgState.state : null;
+        var _avgCellReason = _avgState ? (_avgState.reason || null) : null;
+        var _avgCellDetail = _avgState ? (_avgState.detail || null) : null;
         var _cr = _canonBasis ? _canonBasis.avgSalesPerDay : null;
         if (_cr != null) {
             _avgDisplay = (Math.round(_cr * 10) / 10).toFixed(1);
             var _cdos = IR.daysOfSupply(currentStock, _cr);
             _dosDisplay = (_cdos === null ? '--' : String(_cdos));
+        } else if (_avgCellState === 'PENDING') {
+            // The marker the Suggested Qty cell has always used for the same condition. Avg Sales had one
+            // symbol for "waiting" and "nothing to show"; Suggested Qty had two, and was right.
+            _avgDisplay = '…';
+            _dosDisplay = '…';
         }
         // §22.3 — source and warning stay INDEPENDENT fields. They are attached to the row for the cell's
         // title/detail so a normalized rate can be told from a weekly fallback, and a low_sample_warning is
@@ -12729,6 +12949,10 @@ function _getCloudReplenishmentData() {
             thirdPartyDetailHtml: _irRenderThirdPartyDetail(thirdPartyPlan),
             thirdPartyTitle: _irThirdPartyTitle(thirdPartyPlan),
             avgDailySales: _avgDisplay,        // S8-R2: the canonical §22 rate for BOTH demand modes, or '--'
+            // CP2U-R1 - WHY there is no rate, when there is none. Carried, never computed here.
+            avgSalesCellState: _avgCellState,         // 'READY' | 'PENDING' | 'READ_FAILED' | 'REFUSED' | 'NONE' | 'DISABLED'
+            avgSalesCellReason: _avgCellReason,       // the specific condition inside that state
+            avgSalesCellDetail: _avgCellDetail,       // the server error code, when one was reported
             // §22.3 decoupled diagnostics, carried not computed. Consumers read them to LABEL the rate; none
             // of them may substitute a value when the rate itself is null.
             avgSalesQualityError: _avgQualityError,  // R1: the NAMED reason no rate could be trusted, or null
@@ -13985,6 +14209,7 @@ function _irRecoAnswerSource_() {
     status: st.status || null,
     requestId: st.requestId || null,
     calculationMonth: st.calculationMonth || null,
+    calculationDate: st.calculationDate || null,   // CP2U-R1 - the authoritative window anchor, as served
     planningCycle: st.planningCycle || null,
     sourceDataAsOf: (dv && dv.sourceDataAsOf) || null,
     shape: _IR_RECO_CACHE_SHAPE,
@@ -14138,6 +14363,13 @@ function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
   _irRecoState.requestId = (env.meta && env.meta.requestId) || null;
   _irRecoState.calculationMonth = (env.meta && env.meta.calculationMonth) || null;
   _irRecoState.planningCycle = (env.meta && env.meta.planningCycle) || null;
+  // CP2U-R1 - THE DATE WAS ALWAYS IN THE ANSWER AND THE PAGE DROPPED IT. 42_ reads
+  // RECOMMENDATION_CALCULATION_DATE from Script Properties under a strict yyyy-MM-dd guard with no clock
+  // fallback, and stamps it on the meta of every successful response beside the month and the cycle. The
+  // month and the cycle were kept and this was not, so the one field that places the 90-day window could
+  // only be obtained by reading Properties - which is a write-capable surface nobody should open to answer
+  // a read-only question. Kept here; no request, no Property, no schema touched.
+  _irRecoState.calculationDate = (env.meta && env.meta.calculationDate) || null;
   _irRecoState.handlerVersion = _irRecoEnvHandler_(env);   // CP2T-R1: WHICH deployed handler computed this answer
   _irRecoState.updatedAt = (data.dataVersion && data.dataVersion.sourceDataAsOf) || null;   // server value, not browser clock
   _irRecoState.loadedOk = true;
@@ -14199,6 +14431,64 @@ function _irCanonicalSalesBasis_(sku) {
     normalDayCount: null, excludedDates: null, horizonOpeningQty: null, qualifiedIncomingCount: null,
     blankDateRows: null, basisQualityError: 'SALES_BASIS_LINE_CONFLICT', contaminationSource: null };
 }
+// CP2U-R1 — THE FIVE WAYS THE AVERAGE CAN BE ABSENT, TOLD APART.
+//
+// `_irCanonicalSalesBasis_` answers "what is the rate for this SKU", and `null` is a perfectly good answer to
+// that question. It is not an answer to "why is there no number", and the cell only ever had the one dash to
+// print. A read that FAILED and a site with genuinely no history are different facts needing different
+// actions, and a read still in flight is not a fact about the data at all.
+//
+// CP2U ATTRIBUTED THIS TO A NULL SCOPE DURING LOADING. IT IS NOT THAT. `_irRecoBlank` does return
+// `scope: null`, but the LOADING assignment overwrites it on the very next line — `_irRecoState.scope =
+// scopeReq` together with `appliedScopeKey`, both stamped at issue time — so a LOADING state carries its
+// requested scope and satisfies the scope guard. What is empty during LOADING is `linesBySku`. And the two
+// failure arms differ from each other: a read the server ANSWERED with success:false goes through
+// `_irRecoApplyEnvelope`, which stamps the scope, while a THROWN read keeps the blank and really does carry
+// a null scope. A `scope === null` test would therefore have classified one of them as the other.
+//
+// So each state is read from `status` DIRECTLY and the scope guard is asked by name. Nothing here infers a
+// state from the shape of the state object.
+// `basisKnown` is the RENDERING COST guard, not an option: the projection has already resolved the basis
+// for this SKU on the line above, and resolving it a second time here would double the per-row work of
+// every table render for a diagnostic. Omitted, it resolves its own.
+function _irAvgSalesCellState_(sku, basisKnown) {
+  var st = _irRecoState || {};
+  var status = st.status || null;
+  function out(state, reason, detail) {
+    return { state: state, status: status, reason: reason || null, detail: detail || null };
+  }
+  // With the workspace read off the column keeps its pre-cutover display and this authority says nothing.
+  // CP2P-R2 RULE: this function is inside the __IRRECO__ extraction region and the cutover predicate is
+  // declared OUTSIDE it, so the call is typeof-guarded. An unbound predicate must not be read as "disabled"
+  // - that would make every region-sliced harness report a disabled column - so an absent predicate falls
+  // through to the status, which `_irRecoInvalidate('DISABLED')` already sets for exactly this condition.
+  if (status === 'DISABLED') return out('DISABLED', null, null);
+  if (typeof _irRecommendationWorkspaceEnabled === 'function' && !_irRecommendationWorkspaceEnabled()) {
+    return out('DISABLED', null, null);
+  }
+  if (status === 'CONTEXT_NOT_READY') return out('PENDING', 'CONTEXT_NOT_READY', null);
+  if (status === 'LOADING') return out('PENDING', 'IN_FLIGHT', null);
+  var e0 = (Array.isArray(st.errors) && st.errors.length) ? st.errors[0] : null;
+  var code = (e0 && e0.code) ? String(e0.code) : null;
+  if (status === 'CONFIG_NOT_READY') return out('READ_FAILED', 'CONFIG_NOT_READY', code);
+  if (status === 'API_ERROR') return out('READ_FAILED', 'READ_FAILED', code);
+  // A rate loaded for ANOTHER site is not this site's absence of one. Same verdict the Suggested Qty
+  // authority already reaches for the same condition (S8-R4D-F1A §7).
+  if (!_irResultMatchesAppliedScope_(st)) return out('PENDING', 'SCOPE_SUPERSEDED', null);
+  var basis = (basisKnown !== undefined) ? basisKnown : _irCanonicalSalesBasis_(sku);
+  if (basis && basis.basisQualityError) return out('REFUSED', null, null);   // the column already names these
+  if (basis && basis.avgSalesPerDay != null) return out('READY', null, null);
+  var lines = st.linesBySku ? st.linesBySku[String(sku)] : null;
+  if (!lines || !lines.length) {
+    return out('NONE', status === 'EMPTY' ? 'SCOPE_RESOLVED_NO_LINES' : 'NO_LINE_FOR_SKU', null);
+  }
+  // Lines exist and not ONE of them carried a rate or a named reason. That is the D-S8-B3-98 shape, where
+  // the destination is refused before the basis is ever attached, and it is reported as a WITHHELD basis
+  // rather than as a site without history — which is the claim the bare dash was making.
+  return out('NONE', 'BASIS_WITHHELD', null);
+}
+window._irAvgSalesCellState_ = _irAvgSalesCellState_;
+
 // Invalidate any in-flight request (bump seq + abort browser response) and reset to a clean status.
 function _irRecoInvalidate(status) {
   _irRecoSeq++;
@@ -14598,7 +14888,15 @@ function loadInventoryGap_(force) {
     if (!res || !res.success) { _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: (res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' } }; _irRecoRerenderSummaries(); return; }
     var rows = (res.data && res.data.rows) || [];
     var bySku = {}; rows.forEach(function (r) { if (r && r.sku != null) bySku[String(r.sku)] = r; });
-    _irMatState = { status: rows.length ? 'READY' : 'EMPTY', scopeKey: key, appliedScopeKey: appliedKey, bySku: bySku, rows: rows, loadedOk: true, error: null };
+    // CP2U-R1 - 43_ stamps gapMaterializationHandlerVersion on its own envelopes. It is captured here and
+    // reported SEPARATELY from the 42_ recommendation handler, and it is deliberately NOT checked against
+    // the recommendation accept list. The two markers currently read fm5-r4ui-r5c and fm5-r4ui-r5e, which
+    // look like one series and are two: they version different handlers that ship and move independently,
+    // and treating the gap read's marker as a recommendation version would make a matching string mean
+    // something it does not.
+    _irMatState = { status: rows.length ? 'READY' : 'EMPTY', scopeKey: key, appliedScopeKey: appliedKey, bySku: bySku, rows: rows, loadedOk: true, error: null,
+      handlerVersion: (res.meta && res.meta.gapMaterializationHandlerVersion) || null,
+      scope: scopeReq, appliedAt: ((typeof Date !== 'undefined' && Date.now) ? Date.now() : null) };
     _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells();
   }).catch(function (err) {
     if (my !== _irMatSeq) return;
@@ -14606,6 +14904,74 @@ function loadInventoryGap_(force) {
     _irRecoRerenderSummaries();
   });
 }
+// ==================================================================================================
+// CP2U-R1 §5 - A READ-ONLY PROBE FOR THE MATERIALIZED GAP READ.
+//
+// `window._irRecoAnswerSource_()` has existed for the recommendation read since CP2T; the gap read had no
+// counterpart, so the state behind every Suggested Qty dash could only be guessed at from the DOM. The six
+// stored fields this round's task names - calculation_status, note, calculation_date, calculated_at,
+// d90_gap_qty, d90_suggested_qty - are all on the row and were reachable only by turning on
+// IR_DEBUG_DIAGNOSTICS and expanding the SKU, and `note` is replaced by generic wording in the normal card.
+//
+// THIS ISSUES NO REQUEST. It reports the response the page has ALREADY applied, which is why it cannot be
+// read as a freshness check: `appliedAt` is when this browser stored that answer, `calculated_at` is when
+// the batch computed the row, and neither says the row is current. A probe that re-read to answer would be
+// a new request on a page whose read cost is the thing under investigation.
+//
+// Call `_irMatAnswerSource_()` for the three SKUs under investigation, or pass a sku / array of skus.
+var IR_MAT_PROBE_DEFAULT_SKUS_ = ['CO1200-B', 'CO1200-O', 'CO1200-WR'];
+function _irMatAnswerSource_(skus) {
+  var st = _irMatState || {};
+  var want = Array.isArray(skus) ? skus.slice()
+    : ((skus == null || skus === '') ? IR_MAT_PROBE_DEFAULT_SKUS_.slice() : [skus]);
+  var rows = {};
+  want.forEach(function (k) {
+    var key = String(k);
+    var r = (st.bySku && Object.prototype.hasOwnProperty.call(st.bySku, key)) ? st.bySku[key] : null;
+    if (!r) {
+      // ABSENT FROM THE ANSWER is not the same fact in every status, so the status is repeated here rather
+      // than left to be looked up: absent from a READ_ERROR means nothing was read at all.
+      rows[key] = { present: false, under_status: st.status || null };
+      return;
+    }
+    rows[key] = { present: true,
+      calculation_status: (r.calculation_status == null) ? null : String(r.calculation_status),
+      note: (r.note == null || String(r.note) === '') ? null : String(r.note),
+      calculation_date: (r.calculation_date == null) ? null : String(r.calculation_date),
+      calculated_at: (r.calculated_at == null) ? null : String(r.calculated_at),
+      d90_gap_qty: _irMatNum(r.d90_gap_qty),
+      d90_suggested_qty: _irMatNum(r.d90_suggested_qty),
+      stale_vs_expected: (typeof _irMatIsStale === 'function') ? _irMatIsStale(r) : null,
+      // What the CELL does with this row, from the authority the cell itself asks - so the probe and the
+      // screen can never disagree about which of them is right.
+      cell_state: (typeof _irSuggestedQtyState_ === 'function') ? _irSuggestedQtyState_({ sku: key }) : null };
+  });
+  return {
+    reads: 'materialized gap (inventoryReplenishmentGap.get, handler 43_)',
+    issued_request: false,
+    reflects: 'THE LAST APPLIED RESPONSE for the scope below. Not a fresh read, and not a claim that these '
+      + 'rows are current — calculated_at is when the batch computed them.',
+    status: st.status || null,
+    scope: st.scope || null,
+    scope_key: st.scopeKey || null,
+    applied_scope_key: st.appliedScopeKey || null,
+    matches_displayed_scope: (typeof _irResultMatchesAppliedScope_ === 'function')
+      ? _irResultMatchesAppliedScope_(st) : null,
+    loaded_ok: st.loadedOk === true,
+    applied_at: (typeof st.appliedAt === 'number') ? st.appliedAt : null,
+    error: st.error || null,
+    row_count: Array.isArray(st.rows) ? st.rows.length : null,
+    // 43_'s marker, reported ALONE. There is no accept list for it and none is implied.
+    gapMaterializationHandlerVersion: st.handlerVersion || null,
+    handler_marker_note: 'This is 43_ gap-materialization version only. It is NOT compared against the 42_ '
+      + 'recommendation accept list (see _irRecoAnswerSource_), and a string it happens to share with that '
+      + 'list means nothing: the two handlers version independently.',
+    expected_calculation_date: (typeof _irMatExpectedCalcDate === 'function') ? _irMatExpectedCalcDate() : null,
+    rows: rows
+  };
+}
+window._irMatAnswerSource_ = _irMatAnswerSource_;
+
 // Manual-recalc refresh: invalidate the materialized cache + refetch the stored rows (no per-SKU live calc).
 function refreshInventoryGapAfterRecalc_() { _irMatState.loadedOk = false; _irMatState.scopeKey = null; return loadInventoryGap_(true); }
 window.loadInventoryGap_ = loadInventoryGap_;

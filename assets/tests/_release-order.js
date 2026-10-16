@@ -1122,17 +1122,36 @@ var ROUND_TOKENS = [
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
   //
-  // S8-B3-R3-CP2T-R2 - CARRIED A SECOND TIME, CHECKED A SECOND TIME. origin/main is still 37d9db8c and
-  // b382644d is still not an ancestor of it, so r59 has still never reached a browser. index.html and
-  // app.js are untouched for a second consecutive round.
+  // S8-B3-R3-CP2U-R1 - THE CARRY ENDS HERE. origin/main is 1778efc3 and b382644d IS an ancestor of it, so
+  // r59 HAS been served and may never be reused. It was carried through two rounds on the strength of a
+  // check that said it had not shipped; the same check now says it has, which is the whole reason the
+  // check is re-run rather than read off this file.
   //
-  // THE OWNER HAS SINCE REPORTED that main 37d9db8c is published, that 42_ is synced and that the
-  // deployment was updated. That does not change this entry: the published index.html at 37d9db8c carries
-  // r58, and r59 lives only in a local commit. A report that a deployment happened is not a report that
-  // this token shipped, and the ancestry check is what decides.
+  // CORRECTED: the CP2T-R2 note above appeared TWICE, word for word, each copy announcing the same second
+  // re-check. Two identical records are not two checks. One copy is kept.
+  'r59-cacheshape-20261017',
+  //
+  // S8-B3-R3-CP2U-R1 - A NEW TOKEN, AND THE WHOLE CO-DEPLOYED SET MOVES ONTO IT.
+  //
+  // inventory-replenishment.js changes this round, and app.js pins it with the r59 query string that has
+  // now shipped. A browser holding the published copy would keep serving the OLD file against the new
+  // one - which for this round means the Avg Sales and Suggested Qty cells would keep printing the single
+  // dash the round exists to split, while every diagnostic added beside them reported the new behaviour.
+  // That is the exact failure mode this list was built to prevent.
+  //
+  // THE WHOLE SET ROTATES, not the one file. 54 entries in index.html and 13 in app.js shared r59, and the
+  // rule recorded further up is that the co-deployed application set moves together: app.js itself changes
+  // here (it carries the query string), and a half-rotated set is a browser holding some new files and
+  // some old ones, which is strictly worse than holding all of the old ones.
+  //
+  // THE CSS TOKEN DOES NOT MOVE. No stylesheet changed. The one new modifier class this round adds,
+  // replen-suggested-cell__value--read-failed, has no rule - and neither do the --none and --pending
+  // modifiers beside it, so it follows the convention already in the file rather than breaking it. What
+  // the operator reads is the glyph and the title text. Styling those four states is a UI question, and it
+  // is recorded as deferred rather than answered halfway.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r59-cacheshape-20261017'];
+  'r60-readstate-20261016'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

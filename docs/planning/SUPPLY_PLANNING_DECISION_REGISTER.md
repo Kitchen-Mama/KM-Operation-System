@@ -4530,3 +4530,201 @@ lane, where a missing demand-allocation rule withheld the site SKU's sales histo
 **Not repaired this round**, which was scoped to the weekly fallback source. Pinned as an executed
 observation in `weekly-fallback-source-s8-b3-r3-cp2t-r2.test.js` §K4 so it cannot quietly become normal.
 
+### D-S8-B3-99 — A failed read and an empty answer printed the same dash — **FIXED (CP2U-R1, page only)**
+
+Two columns, the same shape of defect, and in both the state that needed an operator was the least visible.
+
+**AVG SALES HAD ONE SYMBOL FOR FIVE FACTS.** `_irCanonicalSalesBasis_` returns `null` for each of them, and
+`null` is a perfectly good answer to "what is the rate" — it is not an answer to "why is there no number":
+
+| what actually happened | what the cell printed |
+|---|---|
+| the read is still in flight | `--` |
+| the read **FAILED** (thrown, or answered `success:false`) | `--` |
+| the result belongs to a site no longer displayed | `--` |
+| the scope resolved with no line for this SKU | `--` |
+| a line exists carrying **no basis at all** (D-S8-B3-98) | `--` |
+| a NAMED quality refusal | `--` **plus the words**, which already worked |
+
+The dash was already taken: a refusal prints it too. So "retry", "wait" and "chase the data" were one glyph.
+
+**SUGGESTED QTY HAD TWO SYMBOLS AND STILL NOT ENOUGH.** `READ_ERROR`, a read that succeeded over zero rows, a
+READY answer with no row for this SKU, and a row the calculation **BLOCKED** all returned `{ state: 'NONE' }`
+— so a transport fault was indistinguishable from a business answer.
+
+**THE ATTRIBUTION CP2U GAVE WAS WRONG, AND IS CORRECTED HERE.** CP2U reported that `_irRecoBlank` leaves
+`scope` null during LOADING and that this was the cause. It is not. The LOADING assignment overwrites it on
+the very next line, stamping both `scope` and `appliedScopeKey` at issue time, so **a LOADING state carries
+its requested scope and satisfies the scope guard**; what is empty is `linesBySku`. The two failure arms are
+not alike either — a read the server ANSWERED with `success:false` goes through `_irRecoApplyEnvelope` and
+is given a scope, while a THROWN read keeps the blank and is not. **A `scope === null` test would therefore
+have classified one of those as the other.** So `_irAvgSalesCellState_` reads `status` directly and asks the
+scope guard by name, and section A of the suite pins the actual state objects rather than restating this.
+
+**WHAT CHANGED, ALL PAGE-SIDE.** `_irAvgSalesCellState_` (new) returns
+`READY | PENDING | READ_FAILED | REFUSED | NONE | DISABLED` with a specific reason; `IR_AVG_STATE_TEXT` gives
+each one operator-facing words; a PENDING cell prints `…` instead of borrowing the dash, and Days of Supply
+waits with it; a FAILED read takes the error class and the words **read failed**, never `unavailable`, which
+is reserved for a refusal. `_irSuggestedQtyState_` keeps `state: 'NONE'` — it is still the right answer to
+"is there a number", and consumers are written against it — and carries `reason` plus `detail`/`note`.
+
+**THE RENDERING-COST GUARD AND THE SLICE RULE, both of which bit once already.** The projection already
+resolves the basis, so the authority accepts it as a parameter rather than resolving it a second time per row.
+And the call is `typeof`-guarded exactly as the picker beside it is: the seven older avg-sales suites slice
+that block into a `new Function` binding the picker alone, so an unguarded call would have thrown in every one
+of them — the same harness defect CP2T-R1 shipped and had to repair. Unbound, the block behaves exactly as it
+did before this round, which is why **none of those suites changed**. For the same reason
+`_irRecommendationWorkspaceEnabled` is typeof-guarded: the new authority sits inside the `__IRRECO__`
+extraction region and that predicate is declared outside it (CP2P-R2 rule).
+
+**NOT STYLED, AND RECORDED AS SUCH.** `replen-suggested-cell__value--read-failed` has no CSS rule — and
+neither do the `--none` and `--pending` modifiers beside it. It follows the convention already in the file;
+what the operator reads is the glyph and the title. Styling those four states is a UI question and is deferred
+rather than answered halfway. **No stylesheet changed, so the CSS token does not move.**
+
+`read-state-distinction-s8-b3-r3-cp2u-r1.test.js` — **6 passed / 1 failed then a hard `ReferenceError` at B1
+before the repair** (the authority did not exist), **155 / 0 after**, over every state transition, both
+columns, cross-site, late responses, and the title escaping. **GS delta: 0 bytes** — `assets/js/pages` is not
+on the Apps Script load surface.
+
+### D-S8-B3-100 — The three reads were one stage, and a sum was named like a clock — **FIXED (CP2U-R1)**
+
+`IR_READ_STAGES_` merged `recommendation.workspace.get`, `inventoryReplenishmentGap.get` and
+`gapJob.status.get` into a single `recommendation_read` stage, so **separating the reads was impossible by
+construction**. And `_irReadStageReport_` reported
+`client_total_elapsed_ms = Σ sample.ms` — a sum over intervals that **overlap by construction**, because
+`_irRecoTrigger` fires `loadInventoryGap_()` and `loadRecommendationWorkspace_()` back to back and awaits
+neither. It sat directly beside `page_boot_elapsed_ms`, which IS a wall clock, so subtracting one from the
+other invented a gap that never existed.
+
+**NOTHING NEW WAS INSTRUMENTED.** `window.KM.transport.timeline()` has recorded `dispatch_ms`, `settled_ms`,
+`elapsed_ms`, `server_ms`, `concurrent_at_dispatch`, `overlapped_with`, `code`, `phase`, `request_id`,
+`attempts` and `marks_source` for every request all along, and computes overlap from the recorded intervals
+rather than guessing. The page simply never asked. `_irReadTimingReport_()` (new, read-only) asks, and keeps
+four rules: **server_ms is reported or NULL, never derived** from a client duration; **marks_source travels
+with every row**, so an `EXTERNAL_RECONSTRUCTED` interval cannot pass as a measured one and the whole report
+downgrades its own classification when one is present; `observed_span_ms` **declares that it is derived**;
+and a read that never dispatched is `not_observed`, **not a duration of zero**.
+
+The stage map now has `recommendation_read` (the recommendation read only), `materialized_gap_read` and
+`gap_job_status`. `client_total_elapsed_ms` is **kept** — a pinned contract and its callers read it, and
+renaming it would have been a second defect in place of the first — beside `client_elapsed_sum_ms`,
+`client_elapsed_sum_is_not_wall_clock` and `wall_clock_basis`, which say what it is.
+
+Over a timeline where two reads provably overlap, the suite shows a **sum of 5,390 ms against a span of
+4,000 ms**: the arithmetic proof that the sum was never elapsed time.
+
+### D-S8-B3-101 — calculationDate was served and discarded; the Gap read had no probe — **FIXED (CP2U-R1)**
+
+42_ reads `RECOMMENDATION_CALCULATION_DATE` from Script Properties under a strict `yyyy-MM-dd` guard **with no
+clock fallback**, and stamps it on `meta.calculationDate` of every successful response beside the month and the
+cycle. `_irRecoApplyEnvelope` kept the month and the cycle and **dropped the date** — the one field that
+places the 90-day window — so the only way to obtain it was to open Properties, a write-capable surface, to
+answer a read-only question. It is now kept and reported by `_irRecoAnswerSource_`. **No Property was read,
+written or probed by this round.**
+
+`window._irMatAnswerSource_()` (new) is the materialized Gap counterpart to the recommendation probe that has
+existed since CP2T. It reports scope, status, error, row count and, for the SKUs under investigation
+(`CO1200-B`, `CO1200-O`, `CO1200-WR` by default), the six stored fields — `calculation_status`, `note`,
+`calculation_date`, `calculated_at`, `d90_gap_qty`, `d90_suggested_qty` — which previously required
+`IR_DEBUG_DIAGNOSTICS` **and** an expand, and whose `note` the normal card replaces with generic wording. It
+also reports what the CELL does with each row, from the cell own authority, so probe and screen cannot
+disagree about which is right.
+
+**AND THE PROCEDURE CP2U PROPOSED IS WITHDRAWN.** That report offered a console one-liner calling
+`getWorkspace('recommendation', { pagination: { size: 1 } })` to read the calculation date out of a live
+response. **`size` is a PAGINATION bound, not a work bound** — the handler still expands destinations and
+loops SKUs before anything is paginated, so `size: 1` buys a smaller payload at close to full server cost, on
+a page whose read cost is the subject of the investigation. A diagnostic that spends the thing it is measuring
+is not a diagnostic. The date is kept from the response the page **already** received instead, and nothing is
+re-requested.
+
+**IT ISSUES NO REQUEST, and says so.** `issued_request: false`, and `reflects` states that this is the
+response already applied — not a fresh read and not a freshness claim. A probe that re-read to answer would
+add a request to the page whose read cost is the thing under investigation.
+
+**42_ AND 43_ VERSION INDEPENDENTLY.** The gap read now carries `gapMaterializationHandlerVersion` from 43_,
+reported alone and deliberately **not** checked against the 42_ recommendation accept list. The two markers
+currently read `fm5-r4ui-r5c` and `fm5-r4ui-r5e`: they look like one series and are two, and the 42_ list
+genuinely does not accept `r5c`, so conflating them would have inverted the answer.
+
+### D-S8-B3-102 — r59 has shipped, so the carry ends — **FROZEN (CP2U-R1)**
+
+`origin/main` is `1778efc3` and `b382644d`, which introduced `r59-cacheshape-20261017`, **IS** an ancestor of
+it. r59 has been served and **may never be reused**. It was carried through two rounds on the strength of the
+same check that now says the opposite, which is exactly why the check is re-run every round instead of read
+off `_release-order.js`.
+
+`inventory-replenishment.js` changes this round and `app.js` pins it with the shipped r59 query string, so a
+browser holding the published copy would keep serving the OLD file — which here would mean the two cells
+keep printing the single dash this round exists to split while every new diagnostic reports the new
+behaviour. **The whole co-deployed set rotates onto `r60-readstate-20261016`**: 54 entries in `index.html` and
+13 in `app.js`, because a half-rotated set is strictly worse than an unrotated one.
+
+**CORRECTED IN PLACE:** the CP2T-R2 note in `_release-order.js` had been applied **twice, word for word**,
+each copy announcing the same second re-check. Two identical records are not two checks; one copy is kept.
+
+### D-S8-B3-103 — What CP2U-R1 does NOT claim — **RECORDED**
+
+This round changes **what the page can say about a read it already made**. It changes nothing about what is
+read, when, from where, or how long it takes.
+
+- **The EU root cause is NOT fixed.** `EU_SALES_SOURCE_` still resolves `IT+DE+ES+FR` and was not touched. The
+  asymmetry CP2U found — the member-row filter canonicalises `country` through KMCID and compares
+  `marketplace` as a raw string — is **unchanged**, and remains diagnosable only through the CP2T-R1 census
+  detail. What this round adds is that an EU scope still LOADING no longer looks like one with no source.
+- **No read got faster.** No request was added, removed, reordered or retimed.
+- **No data is more current.** The Gap probe reports the response already applied; `calculated_at` is when the
+  batch computed the row, and nothing here recomputes anything.
+- **D-S8-B3-98 is still OPEN.** Section B5 makes the withheld basis VISIBLE as `BASIS_WITHHELD` instead of a
+  bare dash. Naming a defect is not repairing it.
+- Also still open and untouched: the **C9 expand delay**, the **Gap timeout diagnostic**, and the **FC
+  historical-sales features**.
+
+### D-S8-B3-104 — The invalidated capture set, DERIVED rather than listed — **RECORDED (CP2U-R1)**
+
+Many batches PIN a file; far fewer ENFORCE it. The authoritative question is which arm of which acceptance
+suite compares a stored hash against CURRENT source, and the only way to answer it is to RUN the
+capture-consuming suites. Thirteen evidence directories pin one of the three files this round changed; **eight
+batches actually refused**, in two distinct groups.
+
+**From the page edit (3):** `cp2s-r2-inplace`, `cp2s-r2-c9`, `cp2r-reveal-scope`. The CP2P batches pin the
+page file too but assert `!==` — they are historical arms that MUST differ — so the edit moved them further
+from, not toward, failing.
+
+**From the token rotation (5):** `cp2m-r2-map`, `cp2m-r2-perf`, `cp2m-r4r1-map`, `cp2m-r4r2-mount`,
+`cp2t-fc-prevmonth`. None of these has anything to do with Avg Sales; they pin `index.html` and `app.js`,
+which a token rotation edits by definition. **This is the same churn CP2T paid once already** and it is the
+price of a token rotation, not a surprise.
+
+**One assertion was re-measured instead of re-captured.** `navigation-performance-observation` §G2 compares a
+live byte total against `boot-census.json`, and it was off by exactly **13 bytes**: `r59-cacheshape-20261017`
+is 23 characters, `r60-readstate-20261016` is 22, and `app.js` carries 13 of them. That field is computed from
+`index.html` and the files on disk, so it was RE-MEASURED locally rather than re-captured in a browser, with
+the arithmetic recorded in the census note. `inventory-replenishment.js` is router-loaded and is not a boot
+script, so `pageScriptBytes` is unchanged — which is why a 21 KB page growth moved this number by minus 13.
+
+**THREE PROCESS FAILURES OF MINE ARE RECORDED, because each one changes how the next round should work:**
+
+1. **A timing batch was contaminated by my own concurrent work.** The first CP2R batch ran while I was
+   executing other node processes against this repo. `assembly after handler` still came back 6 of 6 at
+   −60.4 ms, but `click → full ready` came back **5 of 6** with three outliers — 2 746 ms in one SCOPED run
+   against 87–90 ms in five others, and 1 385 and 490 ms in two UNSCOPED runs. **Outliers in BOTH arms cannot
+   be an effect of the round under test.** The batch was re-taken on a quiet machine (6 of 6, −63.8 ms) and
+   **the discarded batch is documented in the CP2R README**, because "re-run until the expected answer
+   appears" looks identical to this in a diff and is its opposite in method. What makes it legitimate is that
+   a specific defect in HOW the measurement was produced was identified first, and that the row the scope
+   actually affects reproduced in both batches.
+2. **A failed capture overwrote a good record before it could be inspected.** The first `cp2m-r4r2-mount` run
+   returned `ok: false` with every scenario null, and had already written over `after.json`. It was restored
+   from git. **Every capture after that was written to a TEMP directory, inspected, and promoted only on
+   `ok: true`** — a runner that writes straight onto the evidence it is replacing has no safe failure mode.
+3. **Captures were taken before the source was final, so two had to be taken twice.** `cp2s-r2-inplace` and
+   `cp2s-r2-c9` were re-taken before the token rotation and the rotation invalidated them again; worse, the
+   c9 run was still in flight WHILE `index.html` was being rotated, so it recorded a post-rotation hash for a
+   page its browser may have loaded pre-rotation. Both were re-taken once every source edit was final.
+   **A capture is only valid if nothing it pins changes after it starts.**
+
+All eight batches, plus the three CP2P batches that must differ and this round's own suite, verified green
+after the final source state.
+

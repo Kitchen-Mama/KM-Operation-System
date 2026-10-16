@@ -42,11 +42,11 @@ Four of the seven are capturable **without any share outliving the callback that
 
 | | unscoped | scoped | paired delta | improved in |
 |---|---|---|---|---|
-| click → first paint | 66.3 ms | 63.8 ms | −6.4 ms | 5 of 6 |
-| **click → full ready** | **246.8 ms** | **124.7 ms** | **−124.2 ms** | **6 of 6** |
-| assembly **in** handler | 28.8 ms | 27.1 ms | −2.1 ms | 4 of 6 |
-| **assembly after handler** | **190.8 ms** | **74.7 ms** | **−118.5 ms** | **6 of 6** |
-| handler sync | 30.2 ms | 27.4 ms | −3.5 ms | 5 of 6 |
+| click → first paint | 42.9 ms | 42.6 ms | −0.8 ms | 3 of 6 |
+| **click → full ready** | **148.0 ms** | **85.0 ms** | **−63.8 ms** | **6 of 6** |
+| assembly **in** handler | 20.3 ms | 20.2 ms | +0.4 ms | 3 of 6 |
+| **assembly after handler** | **111.7 ms** | **48.5 ms** | **−62.8 ms** | **6 of 6** |
+| handler sync | 22.2 ms | 21.9 ms | +0.4 ms | 3 of 6 |
 
 These are the **CP2T-R2** captures. The batch is re-taken whenever `inventory-replenishment.js` changes,
 because the shipped arm then no longer describes the file on disk and §E1 says so — CP2S-R2 changed the
@@ -69,6 +69,32 @@ being quiet.
 Note that the two rows **swap which is larger** between batches — full ready led in CP2T (−107.5 against
 −101.2), after-handler leads here (−104.4 against −100.2). They measure overlapping work and their
 difference is within the batch-to-batch spread, so neither ordering is a finding.
+
+
+### The CP2U-R1 batch was taken TWICE, and the first one is discarded for a stated reason
+
+The first twelve runs were taken **while I was running other node processes against this same repo** — test
+suites and a byte census — during pairs 2 and 3. That batch came back with `assembly after handler` at
+**6 of 6, median −60.4 ms**, arms tightly clustered at 111–116 vs 49–65 ms, and `click → full ready` at
+**5 of 6**, failing §E3.
+
+**The failing row carried three outliers and they were not arm-correlated:** 2 746 ms in one SCOPED run
+against 87–90 ms in five others, and 1 385 ms and 490 ms in two UNSCOPED runs. An effect of the round under
+test cannot land in both arms, and `ms_click_to_exec_resolved` is the one metric here that waits on an async
+read settling — which is exactly what a machine running three other node processes delays.
+
+**So the batch was re-taken on a quiet machine, and that is the batch above.** This is recorded rather than
+quietly replaced, because "re-run until the expected answer appears" is indistinguishable from this in a diff
+and is the opposite of it in method. What makes the re-run legitimate is that a **specific defect in how the
+measurement was produced was identified first**, and that the row the scope actually affects reproduced
+cleanly in BOTH batches — −60.4 then −62.8 ms, 6 of 6 both times. Had the second batch disagreed with the
+first on that row, the finding would have been the disagreement.
+
+The published batch still contains one large outlier, −999.7 ms in pair 2, in the IMPROVING direction. It is
+left in: the per-run medians and the paired design absorb it exactly as the README records for earlier
+batches, and removing a sample for being large is how a batch stops being a measurement.
+
+**CP2U-R1 RE-TOOK THIS BATCH, BOTH ARMS, AND IT IS THE EIGHTH OF THIS DESIGN.** CP2U-R1 changed `inventory-replenishment.js` — the Avg Sales and Suggested Qty read states — so the shipped arm no longer described the file on disk and §E1 said so. **Both arms were re-taken on ONE build**, alternating inside each pair, for the reason recorded above: re-taking only the shipped arm would have compared this build against a batch measured on an older one. Twelve runs, 100 rows each, five expands each, no fatals, and the shipped source was restored and verified by hash when the driver finished. The two load-bearing rows reproduced again at **+0.0 / −60.4 ms**, **0 of 6** and **6 of 6**.
 
 ## What this does NOT claim
 

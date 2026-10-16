@@ -32,3 +32,32 @@ rate — 1 of 3 — is stated here and in the round report.
 **What it does NOT mean:** a 1-in-3 context loss in headless swiftshader is not a measurement of production,
 where the GPU is real. It is not evidence of a defect in the page, and it is not evidence that there is none.
 It is an open observation about the capture environment.
+
+---
+
+# Re-captured again at CP2U-R1, for a DIFFERENT reason: a cache token, not a code change
+
+CP2U-R1 changed no map code at all. What it changed is the **application cache token** — `r59` had shipped and
+could not be reused, so the whole co-deployed set moved to `r60-readstate-20261016`, which edits `index.html`.
+This capture pins `index.html`, so §A4 correctly refused it. **That is the pin doing its job on a file whose
+CONTENT is one query string different**, and the honest answer is still to re-measure rather than to re-stamp
+a hash by hand.
+
+Re-taken with the **same runner and the same 1500 ms read delay**. Nothing about the experiment changed.
+
+| | samples | without canvas | host detached | creates / destroys | context lost |
+|---|---|---|---|---|---|
+| CP2U-R1 `after.json` | 125 | 14 | 0 | **1 / 0** | **0** |
+
+One run, clean on the first attempt, matching the run-2 and run-3 profile above. `before.json` is
+**untouched** — it describes an older build by design and re-taking it would destroy the comparison. The
+three `after-run*.json` files are left exactly as they are: they are the CP2M-R4-R2 record and no suite reads
+them.
+
+**One failure is recorded from this round, in the sibling mount capture.** The first `cp2m-r4r2-mount` run of
+CP2U-R1 came back `ok: false` with every scenario null, launched immediately after the six-screenshot map
+runner — the same back-to-back-Chrome hazard this note already describes. It also **overwrote the good
+`after.json` before it could be inspected**. That file was restored from git, the capture was re-run **into a
+temp directory first**, inspected, and installed only once it read `ok: true` with real counts. Captures in
+this round are written to a temp directory and promoted, never written straight over the record.
+
