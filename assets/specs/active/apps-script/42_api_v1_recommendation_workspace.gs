@@ -225,6 +225,9 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // BLANK ONLY, and COUNTED. A non-empty value this layer cannot parse is a cell somebody wrote: it still
   // fails closed rather than vanishing into a tally. No date is ever substituted - not synced_at, not
   // today, not a neighbouring row - because a fabricated date puts real units on a day they did not happen.
+  // CP2S-R2 - ONCE COUNTED, ALWAYS REPORTED. Every return BELOW this filter carries blankDateRows, failures
+  // included: the two returns ABOVE it carry none, because they genuinely never counted. null means "not
+  // counted" and 0 means "counted none" - a failure that drops the number turns the first into the second.
   var blankDates = 0;
   var daily = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot).filter(function (r) {
     if (recoWsStr_(r.sku) !== sku || !recoWsInSrc_(r.country) || recoWsStr_(r.marketplace) !== scope.marketplace) return false;
@@ -288,7 +291,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote(), blankDateRows: blankDates };
     var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
     var chKeys = Object.keys(chSet);
-    if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']' };   // 0 or ambiguous channel → fail closed (conflict)
+    if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']', blankDateRows: blankDates };   // 0 or ambiguous channel → fail closed (conflict)
     channel = chKeys[0];
     // A WEEKLY-ONLY source (0 daily rows) with a BLANK channel is a valid weekly_7d basis (result independent of
     // channel); represent it with a stable token so KMCALC's non-empty-channel contract is met (R5B). Daily-driven
@@ -313,7 +316,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     var id = recoWsStr_(mr.marketplace_sku_id); if (id) mSkuSet[id] = 1;
   });
   var mSkuAll = Object.keys(mSkuSet);
-  if (mSkuAll.length > 1) return { ok: false, reason: 'MARKETPLACE_SKU_AMBIGUOUS', detail: mSkuAll.join(',') };
+  if (mSkuAll.length > 1) return { ok: false, reason: 'MARKETPLACE_SKU_AMBIGUOUS', detail: mSkuAll.join(','), blankDateRows: blankDates };
   var mSkuId = mSkuAll.length ? mSkuAll[0] : null;
   // scope marketplace_id — the owner treats an event's marketplace_id as AUTHORITATIVE and fail-fasts on an
   // ID-bearing event when the scope marketplace_id is unresolved, so resolve it from the marketplaces registry.
@@ -340,12 +343,12 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   catch (e) {
     var m = ownerErr(e);
     if ((contam.campaigns.length || contam.events.length) && /campaigns\[|events\[|marketplaceSkuId|marketplaceId/.test(m)) {
-      return { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: m };
+      return { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: m, blankDateRows: blankDates };
     }
-    return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error: ' + m };
+    return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error: ' + m, blankDateRows: blankDates };
   }
   var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
-  if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)' };
+  if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)', blankDateRows: blankDates };
   return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,
     contaminationSource: contam.sourceStatus, blankDateRows: blankDates };
 }
@@ -783,25 +786,34 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
   var evtRowsW = recoWsRows_(read, 'fcSpecialEvents').filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; });
   var whById = {}; whRows.forEach(function (w) { var id = recoWsStr_(w.warehouse_id); if (id) whById[id] = w; });
   var scopeObj = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
+  // F1-4B-FM5-R4UI-R3 - resolve the SKU's Planning Model + canonical run-rate ONCE per SKU; the per-warehouse
+  // horizons below all share it (the model is a marketplace-SKU attribute, not per-warehouse).
+  //
+  // CP2S-R1 - RESOLVED FOR BOTH MODES. It used to run only for sales_driven, because that is the only mode whose
+  // HORIZON needs it. But the historical average is a published fact about the site SKU, not an input to one
+  // formula: a forecast_driven line still has a real Avg Sales to show, exactly as the marketplace lane has
+  // published for both modes since CP2R. The horizon below still consumes it only when the model asks for it.
+  //
+  // CP2S-R2 - AND RESOLVED ABOVE THE RULESET GATE, WHICH IS WHY THIS MOVED. R1 attached the basis after the
+  // per-warehouse loop and said in a comment that "a ruleset that would not assemble ... is not a reason to
+  // withhold the site SKU's sales history". The gate below is an EARLY RETURN that fires four lines before the
+  // resolver ever ran, so a site with no demand-allocation rule published no average at all and the column
+  // printed the dash it prints for "no sales". The comment described the intent; the code returned first.
+  // Both exits now go through whReturn_, so the attachment cannot be skipped by adding a third one.
+  var whPlanModel = recoWsResolvePlanningModel_(snaps, scope, sku);
+  var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate);
+  var whBasis = recoWsBasisOf_(wsr, whPlanModel);
+  function whReturn_(ls) { ls.forEach(function (ln) { ln.horizonBasis = whBasis; }); return { lines: ls }; }
+  var whSalesRate = null, whSalesReason = null;
+  if (whPlanModel === 'sales_driven') { if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = (wsr.reason || 'SALES_BASIS_UNAVAILABLE') + (wsr.detail ? ': ' + wsr.detail : ''); }
   var active = KMDA.readActiveAllocationRules(ruleRows, scopeObj, calc.calculationMonth);
   var ruleset = KMDA.validateAllocationRules(active, scopeObj, whById);
   if (!ruleset.ok) {
     var iss = (ruleset.issues && ruleset.issues[0]) || { code: 'DEMAND_ALLOCATION_RULE_NOT_CONFIGURED' };
     lines.push(KMDR.buildRecommendationLine({ destination: { destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, warehouseId: null, destinationKey: 'WAREHOUSE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' }, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, blocked: true, blockedReason: iss.code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: iss.code, message: iss.message || '' }] } }));
-    return { lines: lines };
+    return whReturn_(lines);
   }
   var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
-  // F1-4B-FM5-R4UI-R3 — resolve the SKU's Planning Model + (Sales-Driven) canonical run-rate ONCE per SKU; the
-  // per-warehouse horizons below all share it (the model is a marketplace-SKU attribute, not per-warehouse).
-  var whPlanModel = recoWsResolvePlanningModel_(snaps, scope, sku);
-  var whSalesRate = null, whSalesReason = null;
-  // CP2S-R1 - RESOLVED FOR BOTH MODES, ONCE. It used to run only for sales_driven, because that is the only
-  // mode whose HORIZON needs it. But the historical average is a published fact about the site SKU, not an
-  // input to one formula: a forecast_driven line still has a real Avg Sales to show, exactly as the
-  // marketplace lane has published for both modes since CP2R. The horizon below still consumes it only when
-  // the model asks for it, so no formula moved.
-  var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate);
-  if (whPlanModel === 'sales_driven') { if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = (wsr.reason || 'SALES_BASIS_UNAVAILABLE') + (wsr.detail ? ': ' + wsr.detail : ''); }
   var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
   var override = {}; ruleset.warehouses.forEach(function (w) { override[w.warehouseId] = {}; });
   months.forEach(function (mm) {
@@ -848,19 +860,16 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
     else wLine.horizonsBlockedReason = whSalesReason || 'HORIZON_PROJECTION_UNAVAILABLE';   // R7 §1/§4 — preserve the specific reason (no generic mask)
     lines.push(wLine);
   });
-  // CP2S-R1 - ATTACHED AFTER THE LOOP, TO EVERY LINE, INCLUDING THE BLOCKED ONES. A warehouse that failed to
-  // normalize, a ruleset that would not assemble and a horizon that could not be built are all reasons about
-  // THIS WAREHOUSE; none of them is a reason to withhold the site SKU's sales history. Attaching inside the
-  // loop would have meant five attachment points and four early returns that each had to remember.
+  // ATTACHED TO EVERY LINE, INCLUDING THE BLOCKED ONES. A warehouse that failed to normalize, a ruleset that
+  // would not assemble and a horizon that could not be built are all reasons about THAT WAREHOUSE; none of them
+  // is a reason to withhold the site SKU's sales history.
   //
   // ONE OBJECT, SHARED BY EVERY LINE, and that is the point rather than a saving: there is one basis for one
   // site SKU. Building it per warehouse is how a reader starts believing the warehouses have different
   // averages, which is the per-warehouse split and the averaged-average this round must not introduce. The
   // opening and incoming counts stay NULL here for the same reason - they are per-warehouse horizon inputs,
   // not part of the canonical historical basis.
-  var whBasis = recoWsBasisOf_(wsr, whPlanModel);
-  lines.forEach(function (ln) { ln.horizonBasis = whBasis; });
-  return { lines: lines };
+  return whReturn_(lines);
 }
 
 function recoWsFilterLines_(lines, filters) {

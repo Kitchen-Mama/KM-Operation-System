@@ -2050,7 +2050,8 @@ var IR_AVG_QUALITY_TEXT = {
     SALES_BASIS_UNAVAILABLE: 'No usable daily or weekly sales history for this site.',
     SALES_BASIS_AMBIGUOUS: 'The daily sales rows for this site resolve to more than one channel.',
     SALES_RUNTIME_UNAVAILABLE: 'The sales calculation owner is not available in this deployment.',
-    CALCULATION_DATE_NOT_CONFIGURED: 'No calculation date is configured, so the 90-day window cannot be placed.'
+    CALCULATION_DATE_NOT_CONFIGURED: 'No calculation date is configured, so the 90-day window cannot be placed.',
+    SALES_BASIS_LINE_CONFLICT: 'This site resolves to more than one sales history. No average is shown rather than whichever of them happened to be listed first.'
 };
 var IR_AVG_WARNING_TEXT = {
     low_sample_warning: 'Fewer than seven normal days in the sample.',
@@ -14045,10 +14046,32 @@ function _irRecoLinesForSku(skuData) {
   if (!_irResultMatchesAppliedScope_(_irRecoState)) return null;   // S8-R4D-F1A — null = PENDING, never another scope's lines
   return _irRecoState.linesBySku[skuData.sku] || [];
 }
-// F1-4B-FM5-R4J-LIVE9: the canonical Sales-Driven velocity basis for a SKU, sourced (never recomputed) from the
-// workspace MARKETPLACE line's horizonBasis — the SAME KMCALC-normalized rate the D18/D30/D45/D90 horizon uses.
-// Returns null when the workspace read did not resolve a basis (→ caller keeps the existing weekly display; NO
-// page-side sales-rate calculator, NO KMCALC call, NO DOM copy). Marketplace-grain (warehouse lines carry none).
+// F1-4B-FM5-R4J-LIVE9: the canonical velocity basis for a SKU, sourced (never recomputed) from the workspace
+// line's horizonBasis — the SAME KMCALC-normalized rate the D18/D30/D45/D90 horizon uses. Returns null when the
+// workspace read did not resolve one (→ caller keeps the existing weekly display; NO page-side sales-rate
+// calculator, NO KMCALC call, NO DOM copy).
+//
+// S8-B3-R3-CP2S-R2 — EVERY DESTINATION LANE, NOT JUST MARKETPLACE. This used to accept a line only when
+// `destinationType === 'MARKETPLACE'`, which was true of the data until CP2S-R1 gave the warehouse lane a basis
+// too. A `self_fulfilled` site is routed to the WAREHOUSE lane and produces NO marketplace line at all, so the
+// server resolved its history, the response carried it, `_irRecoMapLine` mapped it — and this function dropped
+// it one call before the cell. The column printed the same '--' it prints for a SKU with no sales.
+//
+// It was worse than a no-op: `_irRecoHasCanonicalBasis_()` scans the same lines WITHOUT the destination filter,
+// so it answered true, the refresh fired, and the in-place update repainted the placeholder. The page did work,
+// concluded nothing, and showed the dash that reads as "no sales".
+//
+// THE RULE IS ONE SITE SKU, ONE HISTORY — and the two forbidden ways to produce it are both absent here. There is
+// no sum and no average across warehouses: the server resolves once per site SKU and shares ONE object, so the
+// lines agree by construction and agreement returns that one answer unchanged. And a genuine DISAGREEMENT is not
+// settled by taking the first line, because first-in-array is sheet order wearing the costume of a decision — it
+// is reported as a NAMED error with no rate, which the cell already knows how to print.
+//
+// An uninformative basis (no rate AND no named error) is SKIPPED rather than returned: that is silence, not a
+// conflicting opinion, and it must not outrank a line that actually resolved. A rate of 0 is an ANSWER — a
+// confirmed zero — so the test is `!= null`, never truthiness.
+// The agreement test is INLINE on purpose (CP2P-R2): ten harnesses slice this function out by name and
+// eval it, so a helper declared beside it would be a ReferenceError in every one of them.
 function _irCanonicalSalesBasis_(sku) {
   if (sku == null || !_irRecoState || !_irRecoState.scope || !_irRecoState.linesBySku) return null;
   // S8-R4D-F1A §1 — a rate loaded for ANOTHER site is not a slow rate, it is a wrong one. Refusing here
@@ -14057,10 +14080,22 @@ function _irCanonicalSalesBasis_(sku) {
   if (!_irResultMatchesAppliedScope_(_irRecoState)) return null;
   var lines = _irRecoState.linesBySku[String(sku)];
   if (!lines || !lines.length) return null;
+  var picked = null, conflict = false;
   for (var i = 0; i < lines.length; i++) {
-    if (lines[i] && lines[i].destinationType === 'MARKETPLACE' && lines[i].horizonBasis) return lines[i].horizonBasis;
+    var b = lines[i] && lines[i].horizonBasis;
+    if (!b || (b.avgSalesPerDay == null && !b.basisQualityError)) continue;
+    if (!picked) picked = b;
+    else if (!(picked.avgSalesPerDay === b.avgSalesPerDay
+      && (picked.basisQualityError || null) === (b.basisQualityError || null)
+      && (picked.source || null) === (b.source || null)
+      && (picked.warning || null) === (b.warning || null)
+      && picked.normalDayCount === b.normalDayCount)) conflict = true;
   }
-  return null;
+  if (!picked) return null;
+  if (!conflict) return picked;
+  return { demandMode: picked.demandMode, avgSalesPerDay: null, source: null, warning: null,
+    normalDayCount: null, excludedDates: null, horizonOpeningQty: null, qualifiedIncomingCount: null,
+    blankDateRows: null, basisQualityError: 'SALES_BASIS_LINE_CONFLICT', contaminationSource: null };
 }
 // Invalidate any in-flight request (bump seq + abort browser response) and reset to a clean status.
 function _irRecoInvalidate(status) {

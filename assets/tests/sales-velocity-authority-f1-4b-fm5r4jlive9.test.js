@@ -61,12 +61,35 @@ section('_irCanonicalSalesBasis_ — CARRIES the MARKETPLACE line horizonBasis (
   // S8-R47-A — F1A requires a result to carry the scope it was produced for; an unstamped state is a
   // MISMATCH by design, never a pass. This fixture declares "produced for the applied scope" rather
   // than disabling the guard, and the negatives below prove the guard is doing real work.
+  // S8-B3-R3-CP2S-R2 — SUPERSEDED, AND WHY. This fixture put 999 on a WAREHOUSE line beside 139.08 on a
+  // MARKETPLACE one and asserted the warehouse value is ignored. That described the DATA, not a rule: the
+  // warehouse lane published no basis at all until CP2S-R1, so 999 was a sentinel for "a field that is never
+  // populated" rather than a rival answer. It is populated now, both lanes resolve the SAME frozen owner for
+  // the same site SKU, and a response cannot contain both lanes for one SKU in any case — the handler routes a
+  // SKU to exactly one expander. So two different rates under one SKU is no longer "ignore the second", it is
+  // a contradiction, and CP2S-R2 reports it by name rather than preferring whichever lane is listed first.
+  //
+  // What this section actually protects — that the basis is CARRIED from the response and never recomputed, and
+  // that the scope guard refuses another site's rate — is unchanged and asserted below.
   var state = { appliedScopeKey: SCOPE_KEY, scope: { country: 'US' }, linesBySku: { 'CO1100-R': [
-    { destinationType: 'WAREHOUSE', horizonBasis: { demandMode: 'sales_driven', avgSalesPerDay: 999 } },   // must be ignored
     { destinationType: 'MARKETPLACE', horizonBasis: { demandMode: 'sales_driven', avgSalesPerDay: 139.08, horizonOpeningQty: 8344, qualifiedIncomingCount: 0 } }
   ] } };
   var fn = makeBasis(state);
-  eq(fn('CO1100-R'), { demandMode: 'sales_driven', avgSalesPerDay: 139.08, horizonOpeningQty: 8344, qualifiedIncomingCount: 0 }, 'A resolves the MARKETPLACE line horizonBasis (ignores WAREHOUSE lines)');
+  eq(fn('CO1100-R'), { demandMode: 'sales_driven', avgSalesPerDay: 139.08, horizonOpeningQty: 8344, qualifiedIncomingCount: 0 }, 'A carries the line horizonBasis through verbatim (never recomputed)');
+  // the same object, on the lane a self_fulfilled site actually uses
+  var whState = { appliedScopeKey: SCOPE_KEY, scope: { country: 'US' }, linesBySku: { 'CO1100-R': [
+    { destinationType: 'WAREHOUSE', horizonBasis: { demandMode: 'sales_driven', avgSalesPerDay: 139.08, horizonOpeningQty: null, qualifiedIncomingCount: null } }
+  ] } };
+  eq(makeBasis(whState)('CO1100-R').avgSalesPerDay, 139.08,
+    'A0 a WAREHOUSE-only response resolves too — a self_fulfilled site has no marketplace line to fall back on');
+  // two lanes disagreeing is a contradiction, not a preference
+  var splitState = { appliedScopeKey: SCOPE_KEY, scope: { country: 'US' }, linesBySku: { 'CO1100-R': [
+    { destinationType: 'WAREHOUSE', horizonBasis: { demandMode: 'sales_driven', avgSalesPerDay: 999 } },
+    { destinationType: 'MARKETPLACE', horizonBasis: { demandMode: 'sales_driven', avgSalesPerDay: 139.08 } }
+  ] } };
+  var split = makeBasis(splitState)('CO1100-R');
+  ok(split && split.avgSalesPerDay === null && split.basisQualityError === 'SALES_BASIS_LINE_CONFLICT',
+    'A0a two rates under one SKU is named, not silently resolved by array order');
   ok(makeBasis({ scope: null, linesBySku: {} })('CO1100-R') === null, 'B no scope loaded → null (caller keeps weekly display)');
   ok(makeBasis({ scope: {}, linesBySku: { X: [{ destinationType: 'MARKETPLACE', horizonBasis: null }] } })('X') === null, 'C MARKETPLACE line without horizonBasis → null');
   ok(makeBasis({ scope: {}, linesBySku: {} })('CO1100-R') === null, 'D SKU absent → null');
@@ -228,7 +251,11 @@ mut++; (function () {
 section('source contract — carry-not-recompute wiring (§1) + no new calculator (§8)');
 ok(/horizonBasis:\s*\(L\.horizonBasis/.test(IRSRC), '§1 _irRecoMapLine carries horizonBasis from the workspace response');
 ok(/function _irRecoTrigger\(\)[\s\S]{0,600}loadRecommendationWorkspace_\(\);\s*\n\}/.test(IRSRC), '§1 _irRecoTrigger issues the workspace read (sources horizonBasis even in materialized mode)');
-ok(/destinationType === 'MARKETPLACE' && lines\[i\]\.horizonBasis/.test(IRSRC), 'basis is marketplace-grain (warehouse lines carry none)');
+// S8-B3-R3-CP2S-R2 — the destination filter this line pinned WAS the defect: it dropped every warehouse
+// basis one call before the cell. What the line was really guarding — that the page reads a basis off the
+// response rather than inventing one — is asserted by the two checks around it, and by A/A0 above.
+ok(!/destinationType === 'MARKETPLACE' && lines\[i\]\.horizonBasis/.test(IRSRC),
+  'the basis is read from EVERY destination lane (the MARKETPLACE-only filter is gone — CP2S-R2)');
 ok(!/KMCALC\.normalizedAvgSalesPerDay/.test(IRSRC), '§8 NO page-side canonical-rate calculator (KMCALC.normalizedAvgSalesPerDay never called on the page)');
 
 section('§4/§5/§8 — no formula change: weekly owner + Sales Trend chart untouched');

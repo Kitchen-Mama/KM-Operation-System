@@ -154,11 +154,22 @@ ok(!/avgSalesPerDay[^\n]*\/\s*(ruleset\.warehouses\.length|lines\.length)/.test(
   'C5c and nothing divides a rate by a warehouse count - there is no averaged average here');
 
 // --- not disabled by a horizon or a configuration failure --------------------------------------
-// Attached AFTER the loop, so the four early returns that push a BLOCKED line cannot skip it.
-ok(/lines\.forEach\(function \(ln\) \{ ln\.horizonBasis = whBasis; \}\)/.test(WH_FN),
-  'C6  attached to EVERY line after the loop - a blocked warehouse still carries the sales history');
-ok(WH_FN.indexOf('var whBasis') > WH_FN.lastIndexOf('lines.push('),
-  'C6a and the attachment comes after the LAST push, so no early return can miss it');
+// S8-B3-R3-CP2S-R2 - SUPERSEDED BY AN EXECUTED PROOF, AND C6a IS THE REASON TO DISTRUST THE OLD PAIR.
+//
+// C6 matched the attachment literal; C6a asserted that it sits after the LAST `lines.push(`, and called
+// that "so no early return can miss it". Both PASSED on a build where an early return DID miss it: the
+// ruleset gate pushes its blocked line and returns about sixty lines above the attachment, so it is
+// textually before it and the ordering check was satisfied by the very return that defeated it. A
+// statement about CONTROL FLOW was tested by comparing two string offsets.
+//
+// What replaces it runs the real expander against a scope with no demand-allocation rule and reads the
+// basis off the line it returns: avg-sales-warehouse-cell-chain-s8-b3-r3-cp2s-r2 section A. Both exits
+// now go through one `whReturn_`, which is what makes a third exit safe; that is asserted here as a
+// structural fact, with the behaviour owned by the suite that executes it.
+ok(/function whReturn_\(ls\) \{ ls\.forEach\(function \(ln\) \{ ln\.horizonBasis = whBasis; \}\); return \{ lines: ls \}; \}/.test(WH_FN),
+  'C6  ONE exit helper attaches the basis - so a new return cannot forget it');
+ok(!/\n  return \{ lines: lines \};/.test(WH_FN),
+  'C6a and no return bypasses it - every exit from this function goes through whReturn_');
 
 // --- opening / incoming stay null on a warehouse line ------------------------------------------
 ok(/var whBasis = recoWsBasisOf_\(wsr, whPlanModel\);/.test(WH_FN),

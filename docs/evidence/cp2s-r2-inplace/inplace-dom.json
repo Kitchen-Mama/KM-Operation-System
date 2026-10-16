@@ -1,0 +1,174 @@
+{
+  "round": "S8-B3-R3-CP2S-R2",
+  "what": "in-place velocity update: what survives a real workspace arrival in a real browser",
+  "takenAt": "2026-10-16T00:37:50.695Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "skus": 160,
+  "recoReadsServed": 2,
+  "sources": {
+    "index.html": "b2708585cfa2fde7",
+    "assets/js/pages/inventory-replenishment.js": "fc9060c1b58e3b11",
+    "assets/css/pages/inventory-replenishment.css": "74872c1b61ce9d47"
+  },
+  "actionLog": [
+    {
+      "action": "getClientCapabilities",
+      "t": 716
+    },
+    {
+      "action": "inventoryScope.registry.get",
+      "t": 762
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 789
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "t": 857
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 858
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 1263
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 1739
+    }
+  ],
+  "result": {
+    "capId": "inplace-1792110948529",
+    "steps": [
+      {
+        "step": "app-ready",
+        "t": 177.2,
+        "v": 0.1
+      },
+      {
+        "step": "filter-bar",
+        "t": 218.1,
+        "v": 39.4
+      },
+      {
+        "step": "table",
+        "t": 748,
+        "v": 160
+      },
+      {
+        "step": "first-reco-cell",
+        "t": 1648.1,
+        "v": "7.0"
+      },
+      {
+        "step": "exec-card",
+        "t": 1648.1,
+        "v": 0
+      },
+      {
+        "step": "edit-state-captured",
+        "t": 2698.1,
+        "v": {
+          "activeMark": "INPUT",
+          "activeTag": "INPUT",
+          "selStart": null,
+          "selEnd": null,
+          "value": "1234",
+          "panelMark": "PANEL",
+          "panelPresent": true,
+          "scrollTop": 120,
+          "scrollLeft": 40,
+          "windowY": 0,
+          "avgCell": "7.0",
+          "dosCell": "155.6",
+          "inputTag": "INPUT",
+          "inputType": "number",
+          "inputId": ""
+        }
+      },
+      {
+        "step": "second-arrival",
+        "t": 2728.1,
+        "v": "11.0"
+      },
+      {
+        "step": "done",
+        "t": 2978.1,
+        "v": {
+          "firstReadResolved": true,
+          "firstCell": "7.0",
+          "cellUpdated": true,
+          "focusKept": true,
+          "selectionKept": "NOT_MEASURABLE_NO_TEXT_FIELD",
+          "valueKept": true,
+          "inputSameNode": true,
+          "panelKept": true,
+          "scrollKept": true,
+          "windowScrollKept": "NOT_MEASURABLE_WINDOW_DOES_NOT_SCROLL",
+          "noFullRebuild": true
+        }
+      }
+    ],
+    "notes": [
+      "panel fields: INPUT:number",
+      "no selection-capable field in the panel; using number"
+    ],
+    "fatal": null,
+    "before": {
+      "activeMark": "INPUT",
+      "activeTag": "INPUT",
+      "selStart": null,
+      "selEnd": null,
+      "value": "1234",
+      "panelMark": "PANEL",
+      "panelPresent": true,
+      "scrollTop": 120,
+      "scrollLeft": 40,
+      "windowY": 0,
+      "avgCell": "7.0",
+      "dosCell": "155.6",
+      "inputTag": "INPUT",
+      "inputType": "number",
+      "inputId": ""
+    },
+    "after": {
+      "activeMark": "INPUT",
+      "activeTag": "INPUT",
+      "selStart": null,
+      "selEnd": null,
+      "value": "1234",
+      "inputStillInDocument": true,
+      "panelMark": "PANEL",
+      "panelPresent": true,
+      "panelSameNode": true,
+      "scrollTop": 120,
+      "scrollLeft": 40,
+      "windowY": 0,
+      "avgCell": "11.0",
+      "dosCell": "99",
+      "renderReplenishmentCalls": 0
+    },
+    "verdict": {
+      "firstReadResolved": true,
+      "firstCell": "7.0",
+      "cellUpdated": true,
+      "focusKept": true,
+      "selectionKept": "NOT_MEASURABLE_NO_TEXT_FIELD",
+      "valueKept": true,
+      "inputSameNode": true,
+      "panelKept": true,
+      "scrollKept": true,
+      "windowScrollKept": "NOT_MEASURABLE_WINDOW_DOES_NOT_SCROLL",
+      "noFullRebuild": true
+    },
+    "selectionCapable": false,
+    "scrollerV": "DIV.main-content",
+    "scrollerH": "DIV.scroll-header-viewport",
+    "scrollerVTop": 120,
+    "scrollerHLeft": 40,
+    "windowScrollable": false
+  }
+}
