@@ -42,16 +42,26 @@ Four of the seven are capturable **without any share outliving the callback that
 
 | | unscoped | scoped | paired delta | improved in |
 |---|---|---|---|---|
-| click → first paint | 60.8 ms | 58.9 ms | +2.1 ms | 3 of 6 |
-| **click → full ready** | **216.8 ms** | **129.3 ms** | **−89.2 ms** | **6 of 6** |
-| assembly **in** handler | 27.5 ms | 25.0 ms | +0.2 ms | 2 of 6 |
-| **assembly after handler** | **164.5 ms** | **79.2 ms** | **−87.2 ms** | **6 of 6** |
-| handler sync | 30.2 ms | 26.9 ms | −0.6 ms | 3 of 6 |
+| click → first paint | 69.0 ms | 67.2 ms | −2.5 ms | 3 of 6 |
+| **click → full ready** | **254.1 ms** | **146.8 ms** | **−107.4 ms** | **6 of 6** |
+| assembly **in** handler | 30.4 ms | 30.3 ms | −0.3 ms | 3 of 6 |
+| **assembly after handler** | **192.9 ms** | **89.9 ms** | **−107.6 ms** | **6 of 6** |
+| handler sync | 33.1 ms | 33.1 ms | +1.3 ms | 2 of 6 |
 
-These are the CP2R-R1 captures. The batch was re-taken because R1 changed the page (the Avg Sales quality
-mark and its mapping), so the CP2R captures no longer described the file on disk. Three batches of this
-design have now been taken; the two load-bearing rows reproduced in all three, at −102.0 / −95.4,
-−90.9 / −92.2 and −89.2 / −87.2 ms, every one of them 6 of 6.
+These are the **CP2S-R2** captures. The batch was re-taken, again, for the same reason the CP2R-R1 batch
+was: CP2S-R2 changed `inventory-replenishment.js` (the canonical-basis picker), so the shipped arm no
+longer described the file on disk and §E1 said so.
+
+**Both arms were re-taken, not just the shipped one.** Re-taking the scoped arm against the stored
+unscoped arm would have compared today's build with a batch measured on an older one — pooling across
+builds, which is the one thing this design exists to prevent.
+
+**Four batches of this design have now been taken, and the two load-bearing rows reproduced in all four,
+at −102.0 / −95.4, −90.9 / −92.2, −89.2 / −87.2 and −107.4 / −107.6 ms — every one of them 6 of 6.** The
+absolute numbers are larger in this batch than the last (254 ms vs 217 ms unscoped full-ready) and the
+first two pairs carry large outliers (−704.8 and −403.5 ms) from a cold machine; per-run medians and the
+paired design absorb that, which is why the deltas sit with the other three batches rather than with the
+outliers.
 
 ## What this does NOT claim
 

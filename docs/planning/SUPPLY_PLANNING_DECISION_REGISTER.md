@@ -4103,3 +4103,107 @@ a clean `system.health` probe, because 42_ publishes no build stamp and its chan
 
 **This freeze is documentation only.** No source file changed, no test was relaxed, and nothing here
 means the IR mainline (S8 / CP2S-R1) has been accepted — that remains with the Owner.
+
+### D-S8-B3-78 — The picker dropped every warehouse basis one call before the cell — **FIXED (CP2S-R2)**
+
+CP2S-R1 reported that all four destination/demand combinations carry a historical average. It was proved at
+TWO boundaries — the server's `recoWsBasisOf_` and the page's `_irRecoMapLine` — with a third between them
+that no suite ran. `_irCanonicalSalesBasis_` accepted a line only when `destinationType === 'MARKETPLACE'`.
+
+**That filter was true of the DATA until R1 and false afterwards.** A `self_fulfilled` site routes to the
+WAREHOUSE lane and produces no marketplace line at all, so the rate was computed, serialized, mapped into
+page state, and dropped one call before the cell.
+
+**It was worse than a no-op.** `_irRecoHasCanonicalBasis_()` scans the same lines WITHOUT the destination
+filter, so it answered true: the refresh fired, the in-place updater ran, and it repainted the cells with
+the placeholder they already had. The gate and the picker disagreed about whether an answer existed and
+nothing compared them — the new suite now asserts they agree.
+
+**One site SKU, one history, and neither forbidden shortcut.** No sum and no average across warehouses: the
+server resolves once per site SKU and shares one object, so agreement returns that one answer unchanged. A
+genuine disagreement is NOT settled by taking the first line — first-in-array is sheet order wearing the
+costume of a decision — it is published as `SALES_BASIS_LINE_CONFLICT` with no rate. An uninformative basis
+(no rate AND no named error) is SKIPPED, because silence must not outrank a line that resolved. A rate of 0
+is an ANSWER, so the test is `!= null` and never truthiness. The agreement test is inline because ten
+harnesses slice this function out by name (the CP2P-R2 rule).
+
+**Superseded, with reasons:** live9's A asserted "ignores WAREHOUSE lines" over a fixture that put 999 on a
+warehouse line beside 139.08 on a marketplace one. That described the data, not a rule — 999 was a sentinel
+for a field that was never populated. A response cannot carry both lanes for one SKU in any case (the
+handler routes a SKU to exactly one expander), so two rates under one SKU is now a named conflict. What
+that section protects — carry-not-recompute, and the scope guard — is asserted unchanged beside it.
+
+### D-S8-B3-79 — The ruleset gate returned before the basis was attached, and the assertion that should have caught it passed — **FIXED (CP2S-R2)**
+
+R1 attached the basis after the per-warehouse loop and wrote there that "a ruleset that would not assemble
+... is not a reason to withhold the site SKU's sales history". **The gate returns sixty lines above that
+attachment.** A site with no demand-allocation rule published no average at all. The comment described an
+intent the code did not implement.
+
+**And C6a is the reason to distrust the pair that was supposed to guard it.** It asserted the attachment
+sits after the LAST `lines.push(` and called that "so no early return can miss it". Both it and C6 PASSED on
+the broken build: the early return's push is textually earlier, so the ordering check was satisfied by the
+very return that defeated it. **A statement about CONTROL FLOW was tested by comparing two string offsets.**
+
+Now: the resolver runs above the gate and both exits go through one `whReturn_`, which is what makes a third
+exit safe. The replacement assertion runs the real expander against a scope with no allocation rule.
+
+### D-S8-B3-80 — Once counted, always reported — **FIXED (CP2S-R2)**
+
+Five failure paths below the blank-date filter dropped `blankDateRows`: ambiguous channel, ambiguous
+marketplace SKU, contamination unresolved, run-rate owner error, non-finite average. **null means "not
+counted" and 0 means "counted none"; a failure that drops the number turns the first into the second.** The
+two returns ABOVE the filter still carry nothing, because they genuinely never counted.
+
+### D-S8-B3-81 — The in-place acceptance compared the harness to itself — **REPLACED (CP2S-R2)**
+
+R1 accepted the two-cell update with a hand-built DOM in node, and that fixture tracked focus with a LOCAL
+VARIABLE the code under test was never handed: `focused === T.panels['SKU-A'].input` **would have passed
+against a function that cleared focus.** There was no `document.activeElement`, no layout, no scrolling,
+because a fake object has none of them.
+
+`_cp2s-r2-inplace-dom-runner.js` drives the real page in real Chrome and lets a SECOND real
+`recommendation.workspace.get` land while a row is open and a field half-typed. Avg **7.0 -> 11.0**, DoS
+**155.6 -> 99**, while `document.activeElement` is still the same marked node, the half-typed `1234` is
+intact, the expanded card is the same node, both scroll offsets are unchanged, and `renderReplenishment` was
+called **zero** times. Both halves are required: a table that never updates preserves everything.
+
+**Two checks the PAGE makes impossible are recorded as NOT_MEASURABLE with their reasons, not scored as
+passes** — caret position (the only editable field in the open panel is `<input type=number>`, which exposes
+no `selectionStart` in Chrome) and window scroll (the window does not scroll). The first version of the
+runner scored both as passing, by comparing null to null and 0 to 0.
+
+### D-S8-B3-82 — C9: the four points are separated; the first-frame work is NOT removed — **PARTIAL (CP2S-R2)**
+
+**Done:** `_cp2s-r2-c9-frame-runner.js` measures outline-visible, each fill callback by name, chart/layout
+and full-ready as four separate points, in one run so a first-frame win paid for out of full-ready cannot be
+reported as a win. CP2R's `ms_click_to_paint` blended the first three.
+
+**The inventory, which is the point of separating them:** 2-3 FULL row assemblies run before the panel has a
+layout box — 37-60 ms of the 39-76 ms wait. **No fill callback runs before the outline**, so the fills were
+never the first-frame cost. Two of those assemblies are inside ONE synchronous render pass, which the
+CP2P-R2 scope should collapse; the pass is invalidated mid-handler because `exposureEntry` / `exposureState`
+move while the handler runs.
+
+**NOT done, and not claimed:** the removal. One hypothesis was tried and REVERTED — asking for the second
+layer before the rows are built, so the handler would not invalidate its own pass, did **not** reduce the
+assemblies (still 2, 41.8-43.9 ms) and did not improve the outline. A change that does not produce the
+effect it was made for is not a fix even when it is harmless.
+
+**Also not claimed: the chart cost.** The harness serves a `Chart` stub, so point 3 locates charts in time
+and does not price them.
+
+**The expand delay is not fixed**, and nothing in this round should be read as saying it is.
+
+### D-S8-B3-83 — Two measuring instruments that measured themselves — **CORRECTED (CP2S-R2)**
+
+Recorded because both produced confident, wrong numbers that looked fine:
+
+- **`--virtual-time-budget` zeroed every duration.** The flag runs timers on a virtual clock that
+  `performance.now()` also reports, so the thing being measured and the ruler moved together and the first
+  C9 run reported 0 ms for every callback. Removed; real wall clock.
+- **The first in-place runner found the PREVIOUS panel.** Every expand reported "outline visible: 0 ms"
+  because the frame search started while the last panel was still on screen. A zero from measuring the
+  wrong element is worse than no number. The runner now proves the panel is absent before the click, and
+  proves a scroll container by moving it and reading it back rather than trusting `scrollHeight`.
+
