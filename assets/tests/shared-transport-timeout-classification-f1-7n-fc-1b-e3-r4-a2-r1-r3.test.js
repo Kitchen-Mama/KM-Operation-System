@@ -293,7 +293,13 @@ ok(!/setTimeout\([^)]*retry[^)]*\)/i.test(PAGE.slice(PAGE.indexOf('function _irW
 ok(!/location\.reload/.test(PAGE), 'G3  and no whole-page reload anywhere on the page');
 // §16.5 — the stages stay independently timed and independently failable; nothing was combined.
 var stages = (PAGE.match(/\{ stage: '[a-z_]+', actions: \[/g) || []).length;
-eq(stages, 6, 'G4  the six read stages are still separate (nothing merged into one mega-request)');
+// CP2U-R1 - SIX BECAME EIGHT, AND THE ASSERTION STILL MEANS WHAT IT MEANT. This number guards against reads
+// being MERGED into one mega-request, so a larger count is the direction it was written to protect. The
+// `recommendation_read` stage had carried three different actions against three different handlers -
+// recommendation.workspace.get, inventoryReplenishmentGap.get and gapJob.status.get - which made "report the
+// three reads separately" impossible by construction. They are now three stages. The assertion is raised
+// rather than loosened to `>= 6`, because the exact count is what would catch a merge in the other direction.
+eq(stages, 8, 'G4  the eight read stages are still separate (nothing merged into one mega-request)');
 ok(/inventoryReplenishment\.workspace\.get/.test(PAGE), 'G4a the workspace action is unchanged');
 // The one existing coalescing facility is untouched in its safety property.
 ok(/business scope: never shared/.test(TRANSPORT), 'G5  metadata-only single-flight still refuses business scopes');

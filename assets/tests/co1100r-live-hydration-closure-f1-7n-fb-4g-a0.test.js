@@ -509,6 +509,13 @@ section('G · §I — CO1100-T: SUGGESTED QTY 2120 AND EXECUTION PLAN QTY 0');
 // The two numbers were read from two different sources for one quantity. PROVEN, not asserted.
 function suggestedFor(opts) {
   var src = [
+    // CP2U-R1 - _irSuggestedCellHtml now puts a STORED NOTE and an ERROR CODE into a title attribute, so it
+    // builds that attribute through the shipped escaper instead of concatenating database text into markup.
+    // escapeReplenHtml is declared outside this slice, and the CP2P-R2 rule is that a sliced function may not
+    // depend on a helper the slice does not carry - so the harness carries it, exactly as CP2T-R1 added
+    // recoWsYmd_ to the two 42_ harnesses when that hoist broke them. It is loaded by extraction rather than
+    // stubbed, because a stub that does not escape would let this suite pass an unescaped cell.
+    extractFn(PAGE, 'escapeReplenHtml'),
     extractFn(PAGE, '_irUseMaterializedGapRead'),
     extractFn(PAGE, '_irMatNum'),
     extractFn(PAGE, '_irAggregateActionableRecommendedQty'),

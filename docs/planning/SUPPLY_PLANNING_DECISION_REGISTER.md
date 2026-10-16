@@ -4685,15 +4685,15 @@ read, when, from where, or how long it takes.
 
 Many batches PIN a file; far fewer ENFORCE it. The authoritative question is which arm of which acceptance
 suite compares a stored hash against CURRENT source, and the only way to answer it is to RUN the
-capture-consuming suites. Thirteen evidence directories pin one of the three files this round changed; **eight
+capture-consuming suites. Thirteen evidence directories pin one of the three files this round changed; **nine
 batches actually refused**, in two distinct groups.
 
 **From the page edit (3):** `cp2s-r2-inplace`, `cp2s-r2-c9`, `cp2r-reveal-scope`. The CP2P batches pin the
 page file too but assert `!==` — they are historical arms that MUST differ — so the edit moved them further
 from, not toward, failing.
 
-**From the token rotation (5):** `cp2m-r2-map`, `cp2m-r2-perf`, `cp2m-r4r1-map`, `cp2m-r4r2-mount`,
-`cp2t-fc-prevmonth`. None of these has anything to do with Avg Sales; they pin `index.html` and `app.js`,
+**From the token rotation (6):** `cp2m-r2-map`, `cp2m-r2-perf`, `cp2m-r4r1-map`, `cp2m-r4r2-mount`,
+`cp2t-fc-prevmonth`, `cp2m-r2-viewport`. None of these has anything to do with Avg Sales; they pin `index.html` and `app.js`,
 which a token rotation edits by definition. **This is the same churn CP2T paid once already** and it is the
 price of a token rotation, not a surprise.
 
@@ -4725,6 +4725,27 @@ script, so `pageScriptBytes` is unchanged — which is why a 21 KB page growth m
    page its browser may have loaded pre-rotation. Both were re-taken once every source edit was final.
    **A capture is only valid if nothing it pins changes after it starts.**
 
-All eight batches, plus the three CP2P batches that must differ and this round's own suite, verified green
-after the final source state.
+**AND MY DERIVATION MISSED ONE, WHICH IS THE POINT OF RUNNING THE SWEEP.** I mapped
+`docs/evidence/cp2m-r2-viewport` to `site-priority-drag-s8-b3-r3-cp2m-r4` because that suite names the
+directory, and that suite passes. Its real enforcing consumer is
+`site-priority-viewport-acceptance-s8-b3-r3-cp2m-r2`, which the first full regression caught at 307 / 2. A
+derivation by grep answers "which suite MENTIONS this directory"; only execution answers "which suite REFUSES
+this source". The ninth batch was re-taken and the suite reads 309 / 0.
+
+**Two further defects of this round were found by that same regression and by nothing before it:**
+
+- `co1100r-live-hydration-closure` **crashed** with `ReferenceError: escapeReplenHtml is not defined`. It
+  slices `_irSuggestedCellHtml` into a bare `new Function`, and this round made that function build its title
+  through the shipped escaper — a helper declared OUTSIDE the slice. That is the CP2P-R2 rule, and the fix is
+  the CP2T-R1 one: the harness now EXTRACTS `escapeReplenHtml` rather than stubbing it, because a stub that
+  does not escape would let the suite pass an unescaped cell. Two other suites touch that function and neither
+  was affected — one only mentions it in a comment, the other drives it in a real browser where the escaper
+  exists.
+- `shared-transport-timeout-classification` §G4 pinned the stage count at **6**, and the split made it **8**.
+  The assertion guards against reads being MERGED, so a larger count is the direction it protects; it is
+  RAISED to 8 rather than loosened to `>= 6`, because the exact count is what would catch a merge going the
+  other way.
+
+All nine batches, plus the three CP2P batches that must differ and this round's own suite, verified green
+against the final source state.
 
