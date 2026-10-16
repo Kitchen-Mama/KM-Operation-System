@@ -193,10 +193,14 @@ function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
 // fabricated 0, never a thrown scope failure). company is stamped from the resolved scope (amazon_daily_sales_snapshot
 // carries no company column; one scope = one company); channel is derived from the scoped rows and MUST be
 // unambiguous; marketplaceId is resolved from the marketplaces registry (required by the owner for ID-bearing events).
-// Reasons: SALES_BASIS_UNAVAILABLE = no scoped daily-sales history (or the basis is unusable even without any
-// contamination filter) · SALES_BASIS_AMBIGUOUS = ambiguous daily-sales channel. Contamination sources NEVER
-// produce a fail-closed reason (R4 §5): present-empty and absent both mean "no exclusion", and a contamination
-// identity conflict degrades to an un-excluded basis — never a block.
+// Reasons: SALES_BASIS_UNAVAILABLE = no scoped daily-sales history · SALES_BASIS_AMBIGUOUS = ambiguous channel ·
+// MARKETPLACE_SKU_AMBIGUOUS = two ids for one scope+SKU · SALES_BASIS_CONTAMINATION_UNRESOLVED = a campaign line
+// that cannot be tied to this site.
+// CP2T CORRECTION: this block used to end "a contamination identity conflict degrades to an un-excluded basis -
+// never a block". That stopped being true in CP2R-R1, which made it fail CLOSED, and a comment that denies a
+// reason the code returns is read by whoever is trying to find out why a row refused. A source that is
+// present-but-empty or absent still means "no exclusion" and still does not block (R4 §5); an UNRESOLVED
+// IDENTITY does, because an un-excluded average is not this average.
 function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   if (typeof KMCALC === 'undefined' || !KMCALC || typeof KMCALC.normalizedAvgSalesPerDay !== 'function') return { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' };
   if (!calcDate) return { ok: false, reason: 'CALCULATION_DATE_NOT_CONFIGURED' };

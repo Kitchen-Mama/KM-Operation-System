@@ -1,0 +1,272 @@
+// Kitchen Mama Operation System - S8-B3-R3-CP2T P0
+// A SESSION CACHE THAT OUTLIVED THE SHAPE IT WAS STORED FOR
+//
+// Run: node assets/tests/reco-session-cache-compat-s8-b3-r3-cp2t.test.js
+//
+// LOCAL / OFFLINE. No network, no DB, no writes.
+//
+// THE REPORT. After the 42_ sync, the Avg Sales column shows `unavailable` on some rows and `--` on
+// others. Two different symptoms in one column, which is the shape of TWO different causes.
+//
+// THE CANDIDATE THIS SUITE TESTS, and it is a CLIENT cause rather than a DB one. The recommendation
+// session cache stores a successful envelope under a SCOPE-ONLY key - company||country||marketplace -
+// and the record carries NO marker of the response shape it was built from. `loadRecommendationWorkspace_`
+// consults it BEFORE issuing a request and, on a hit, restores it with ZERO HTTP. sessionStorage survives
+// a reload, so an operator whose tab was open before the sync keeps being served the PRE-SYNC envelope:
+//
+//   * a pre-CP2S-R1 envelope has WAREHOUSE lines with no `horizonBasis` at all  -> the picker finds
+//     nothing -> the cell prints `--`, which reads as "no sales"
+//   * an envelope whose bases are named quality errors                          -> the cell prints
+//     `unavailable`
+//
+// ONE STALE RECORD PRODUCES BOTH SYMPTOMS, and in that state the new deployment is never asked, so no
+// amount of correct server behaviour can show up on screen.
+//
+// WHAT THIS SUITE DOES NOT CLAIM. It does not claim this IS the Owner's failure. It establishes that the
+// client can produce exactly these two symptoms from a stale cache without the server being wrong, which
+// is why `fromCache` has to become observable (section F) before anything is concluded from a screenshot.
+// Clearing a cache is not a diagnosis and must never be reported as a fix.
+//
+// NOTE: no 'use strict' - the shipped IRRECO region is eval'd into MODULE scope.
+var fs = require('fs');
+var path = require('path');
+var ROOT = path.join(__dirname, '..', '..');
+
+var passed = 0, failed = 0;
+function ok(c, m, d) { if (c) { passed++; console.log('ok   ' + m); } else { failed++; console.log('FAIL ' + m + (d === undefined ? '' : '\n       got ' + JSON.stringify(d))); } }
+function eq(a, b, m) { ok(JSON.stringify(a) === JSON.stringify(b), m + '  (got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b) + ')'); }
+function section(t) { console.log('\n== ' + t + ' =='); }
+
+var IRSRC = fs.readFileSync(path.join(ROOT, 'assets/js/pages/inventory-replenishment.js'), 'utf8');
+var F1A = require('./_f1a-scope-guard.js');
+var IRREGION = IRSRC.slice(IRSRC.indexOf('// __IRRECO_START__'), IRSRC.indexOf('// __IRRECO_END__'));
+
+// ---------------------------------------------------------------------------------------------------
+// A REAL sessionStorage, because the cache is a sessionStorage consumer and a fake that always returns
+// null would make every read a miss - which is the state this suite is trying to prove is NOT safe.
+// ---------------------------------------------------------------------------------------------------
+var STORE = {};
+global.sessionStorage = {
+  getItem: function (k) { return Object.prototype.hasOwnProperty.call(STORE, k) ? STORE[k] : null; },
+  setItem: function (k, v) { STORE[k] = String(v); },
+  removeItem: function (k) { delete STORE[k]; }
+};
+
+var SCOPE = { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' };
+var OTHER_COMPANY = { company: 'Res US', country: 'US', marketplace: 'Amazon' };
+var OTHER_SITE = { company: 'Kitchen Mama', country: 'CA', marketplace: 'Amazon' };
+
+global.window = { IRContext: { toScopeRequest: function () { return SCOPE; } }, KM_FLAGS: {} };
+var DOMROWS = [];
+global.document = { querySelectorAll: function (sel) { return /scroll-row/.test(sel) ? DOMROWS : []; }, getElementById: function () { return null; } };
+global.AbortController = function () { this.signal = {}; this.abort = function () {}; };
+var REPLEN_ITEMS = [];
+function escapeReplenHtml(s) { return String(s == null ? '' : s); }
+function getReplenishmentData() { return REPLEN_ITEMS; }
+function updateReplenRecoContext() { return {}; }
+function _irRecoRerenderSummaries() {}
+function _legacyRecSummaryTableHtml() { return ''; }
+function _recSummaryRows() { return ''; }
+function _irSearchApplied_() { return true; }
+var RENDERS = 0;
+function renderReplenishment() { RENDERS++; }
+
+eval(F1A.guardPreamble(IRSRC));
+eval(IRSRC.slice(IRSRC.indexOf('var IR_AVG_QUALITY_TEXT'), IRSRC.indexOf('function _irScrollRowHtml_')));
+eval(IRREGION);
+
+var SKU = 'CO1150-AG';
+
+// ---- the two envelope shapes that exist in the wild -------------------------------------------------
+// PRE-CP2S-R1: the warehouse lane published no basis at all. This is what a tab opened before the sync
+// has sitting in sessionStorage.
+function oldWarehouseEnvelopeData() {
+  return { lines: [
+    { sku: SKU, siteSku: 'SS-1', destinationType: 'WAREHOUSE', warehouseId: 'WH-A',
+      recommendationMode: 'WAREHOUSE_REPLENISHMENT', blocked: false, recommendedQty: 120 },
+    { sku: SKU, siteSku: 'SS-1', destinationType: 'WAREHOUSE', warehouseId: 'WH-B',
+      recommendationMode: 'WAREHOUSE_REPLENISHMENT', blocked: false, recommendedQty: 80 }
+  ], dataVersion: { sourceDataAsOf: '2026-10-10' } };
+}
+// An envelope whose every basis is a NAMED error - the other half of the reported screen.
+function oldAllErrorEnvelopeData() {
+  var b = { demandMode: 'sales_driven', avgSalesPerDay: null, source: null, warning: null,
+    normalDayCount: null, excludedDates: null, horizonOpeningQty: null, qualifiedIncomingCount: null,
+    blankDateRows: null, basisQualityError: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', contaminationSource: null };
+  return { lines: [{ sku: SKU, destinationType: 'WAREHOUSE', warehouseId: 'WH-A', horizonBasis: b }],
+    dataVersion: { sourceDataAsOf: '2026-10-10' } };
+}
+// TODAY: both lanes publish a basis, and a confirmed zero is a rate.
+function currentEnvelopeData(rate, err) {
+  var b = { demandMode: 'sales_driven', avgSalesPerDay: (rate === undefined ? null : rate),
+    source: 'normalized_30d', warning: '', normalDayCount: 30, excludedDates: [],
+    horizonOpeningQty: null, qualifiedIncomingCount: null, blankDateRows: 0,
+    basisQualityError: (err || null), contaminationSource: null };
+  return { lines: [
+    { sku: SKU, destinationType: 'WAREHOUSE', warehouseId: 'WH-A', horizonBasis: b },
+    { sku: SKU, destinationType: 'WAREHOUSE', warehouseId: 'WH-B', horizonBasis: b }
+  ], dataVersion: { sourceDataAsOf: '2026-10-16' } };
+}
+function envOf(data) { return { success: true, data: data, meta: { requestId: 'rid-1', calculationMonth: '2026-10', planningCycle: 'W1' }, errors: [] }; }
+
+function resetAll() {
+  for (var k in STORE) delete STORE[k];
+  _irRecoCacheMem = null;
+  _irRecoInvalidate('CONTEXT_NOT_READY');
+  RENDERS = 0;
+}
+// Serve the loader a FRESH response, so "the cache was bypassed" is observable as the fresh value arriving.
+function serveFresh(data) {
+  global.window.KM = { api: { workspaceApiActive: function (n) { return n === 'recommendation'; },
+    getWorkspace: function () { return Promise.resolve(envOf(data)); } } };
+}
+function pickRate() { var b = _irCanonicalSalesBasis_(SKU); return b ? b.avgSalesPerDay : null; }
+function pickErr() { var b = _irCanonicalSalesBasis_(SKU); return b ? b.basisQualityError : null; }
+
+// ---------------------------------------------------------------------------------------------------
+section('A  a PRE-SYNC envelope must not be restored over the new deployment');
+// ---------------------------------------------------------------------------------------------------
+// THE OLD RECORD IS WRITTEN THE WAY THE OLD BUILD WROTE IT, which is the only way this proves anything.
+// The first version of this section stored the old ENVELOPE through today's setter, so the record was
+// stamped with today's shape and the test was asking whether a current record is served - it is, and
+// should be. What the operator actually has is a record written by the PREVIOUS build: under the previous
+// storage key, with no shape field at all, because that build had no such concept.
+var LEGACY_KEY = 'km_ir_reco_cache_v1';
+function seedLegacyRecord(scope, data) {
+  var rec = {};
+  rec[[scope.company, scope.country, scope.marketplace].join('||')] = {
+    requestScope: { company: scope.company, country: scope.country, marketplace: scope.marketplace },
+    envelopeData: data,
+    meta: { requestId: 'rid-old', calculationMonth: '2026-10', planningCycle: 'W1',
+      dataVersion: data.dataVersion || null },
+    cachedAt: Date.now()
+  };
+  STORE[LEGACY_KEY] = JSON.stringify(rec);
+  _irRecoCacheMem = null;            // force a re-read from the store, as a fresh page load would
+}
+// And the same record under TODAY's key but with no shape - a half-written or hand-edited store.
+function seedUnstampedRecord(scope, data) {
+  var rec = {};
+  rec[[scope.company, scope.country, scope.marketplace].join('||')] = {
+    requestScope: { company: scope.company, country: scope.country, marketplace: scope.marketplace },
+    envelopeData: data, meta: { requestId: 'rid-old' }, cachedAt: Date.now()
+  };
+  STORE[_IR_RECO_CACHE_KEY] = JSON.stringify(rec);
+  _irRecoCacheMem = null;
+}
+
+resetAll();
+seedLegacyRecord(SCOPE, oldWarehouseEnvelopeData());
+ok(_irRecoCacheGet(SCOPE) === null,
+  'A1  a record written by the PREVIOUS build is not served - it is the "--" half of the report',
+  _irRecoCacheGet(SCOPE) ? 'SERVED' : 'refused');
+ok(STORE[LEGACY_KEY] === undefined,
+  'A1a and the superseded store is dropped rather than left in the session for the rest of the day');
+
+resetAll();
+seedLegacyRecord(SCOPE, oldAllErrorEnvelopeData());
+ok(_irRecoCacheGet(SCOPE) === null,
+  'A2  nor is one whose every basis is a named error - the "unavailable" half');
+
+resetAll();
+seedUnstampedRecord(SCOPE, oldWarehouseEnvelopeData());
+ok(_irRecoCacheGet(SCOPE) === null,
+  'A3  nor a record under TODAY key that declares no shape - absent is not "assume compatible"');
+ok(JSON.parse(STORE[_IR_RECO_CACHE_KEY] || '{}')[[SCOPE.company, SCOPE.country, SCOPE.marketplace].join('||')] === undefined,
+  'A3a and it is dropped on the way past, so the next lookup is a clean miss');
+
+// ---------------------------------------------------------------------------------------------------
+section('B  and the page then asks the NEW deployment, rather than showing the old answer');
+// ---------------------------------------------------------------------------------------------------
+resetAll();
+seedLegacyRecord(SCOPE, oldWarehouseEnvelopeData());
+serveFresh(currentEnvelopeData(12.5));
+var p = loadRecommendationWorkspace_();
+Promise.resolve(p).then(function () {
+  return new Promise(function (r) { setTimeout(r, 0); });
+}).then(function () {
+  eq(pickRate(), 12.5, 'B1  the FRESH rate reaches the picker - the stale record did not shadow it');
+  eq(_irRecoState.fromCache === true, false, 'B1a and the state does not claim it came from the cache');
+
+  // ---------------------------------------------------------------------------------------------------
+  section('C  a CURRENT record is still cached, and a confirmed zero is not mistaken for an absence');
+  // ---------------------------------------------------------------------------------------------------
+  resetAll();
+  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(0)));
+  var hit = _irRecoCacheGet(SCOPE);
+  ok(hit !== null, 'C1  a record stored by THIS build is served - the cache still does its job');
+  eq(hit && hit.envelopeData.lines[0].horizonBasis.avgSalesPerDay, 0,
+    'C2  and a confirmed zero survives it - 0 is a rate, never an absence');
+  eq(hit && hit.meta.dataVersion && hit.meta.dataVersion.sourceDataAsOf, '2026-10-16',
+    'C3  the version information the server sent is still carried through');
+
+  resetAll();
+  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(null, 'SALES_BASIS_UNAVAILABLE')));
+  ok(_irRecoCacheGet(SCOPE) !== null,
+    'C4  a CURRENT response whose basis is a named error is still a success and is still cached - '
+    + 'refusing it would be the CP2S B7 defect moved into the cache');
+
+  // ---------------------------------------------------------------------------------------------------
+  section('D  company and site isolation - a key is not a scope');
+  // ---------------------------------------------------------------------------------------------------
+  resetAll();
+  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(9)));
+  ok(_irRecoCacheGet(OTHER_COMPANY) === null,
+    'D1  the same country+marketplace under ANOTHER COMPANY is a different key - US holds both KM and Res US');
+  ok(_irRecoCacheGet(OTHER_SITE) === null, 'D2  and another country is another key');
+  eq(_irRecoCacheGet(SCOPE) && _irRecoCacheGet(SCOPE).envelopeData.lines[0].horizonBasis.avgSalesPerDay, 9,
+    'D3  while the scope that stored it still resolves');
+
+  // ---------------------------------------------------------------------------------------------------
+  section('E  the stale-RESPONSE guard is a different guard, and it is untouched');
+  // ---------------------------------------------------------------------------------------------------
+  resetAll();
+  serveFresh(currentEnvelopeData(7));
+  return Promise.resolve(loadRecommendationWorkspace_()).then(function () {
+    return new Promise(function (r) { setTimeout(r, 0); });
+  });
+}).then(function () {
+  eq(pickRate(), 7, 'E1  a fresh result resolves');
+  var good = _irRecoState.appliedScopeKey;
+  _irRecoState.appliedScopeKey = F1A.MISMATCHED_SCOPE_KEY;
+  eq(_irCanonicalSalesBasis_(SKU), null,
+    'E2  a result produced for ANOTHER applied scope is still refused - the F1A guard was not widened');
+  _irRecoState.appliedScopeKey = good;
+  eq(pickRate(), 7, 'E2a and the correctly-stamped twin still resolves');
+
+  // ---------------------------------------------------------------------------------------------------
+  section('F  which answer the operator is looking at must be VISIBLE');
+  // ---------------------------------------------------------------------------------------------------
+  // `fromCache` is set on the hit path and read NOWHERE, so "old cached result" and "new deployment
+  // answered" look identical from outside. Item 1 of the approval is to tell them apart; a screenshot
+  // cannot, and neither could anyone reading this page's state.
+  resetAll();
+  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(4.25)));
+  return Promise.resolve(loadRecommendationWorkspace_()).then(function () {
+    return new Promise(function (r) { setTimeout(r, 0); });
+  });
+}).then(function () {
+  eq(pickRate(), 4.25, 'F1  a CURRENT cached record is restored (zero HTTP) - the cache still works');
+  eq(_irRecoState.fromCache, true, 'F2  and the state says the answer came from the cache');
+  ok(typeof _irRecoAnswerSource_ === 'function',
+    'F3  there is a named reader for it, so the distinction can be reported rather than inferred');
+  eq(typeof _irRecoAnswerSource_ === 'function' ? _irRecoAnswerSource_().source : null, 'SESSION_CACHE',
+    'F3a which says SESSION_CACHE on a restored answer');
+  eq(typeof _irRecoAnswerSource_ === 'function' ? _irRecoAnswerSource_().requestId : null, 'rid-1',
+    'F3b and carries the requestId of the response that was stored, not a new one');
+
+  resetAll();
+  serveFresh(currentEnvelopeData(5.5));
+  return Promise.resolve(loadRecommendationWorkspace_()).then(function () {
+    return new Promise(function (r) { setTimeout(r, 0); });
+  });
+}).then(function () {
+  eq(typeof _irRecoAnswerSource_ === 'function' ? _irRecoAnswerSource_().source : null, 'SERVER',
+    'F4  and SERVER when the deployment actually answered');
+
+  console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed');
+  process.exitCode = failed === 0 ? 0 : 1;
+}).catch(function (e) {
+  console.log('FAIL  suite threw: ' + (e && e.stack || e));
+  process.exitCode = 1;
+});

@@ -1,0 +1,235 @@
+{
+  "round": "S8-B3-R3-CP2T P1",
+  "what": "FC Regular builder, prevMonth: derived Based period, non-editability, preview revocation, growth base still editable",
+  "takenAt": "2026-10-16T04:41:07.710Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "sources": {
+    "index.html": "905eac46ef288bab",
+    "assets/js/pages/fc-summary.js": "81af8665cbea6075",
+    "assets/html/pages/fc-summary.html": "274936c74f1c44ca"
+  },
+  "actionLog": [
+    {
+      "action": "getClientCapabilities",
+      "t": 842
+    },
+    {
+      "action": "fcSummary.workspace.get",
+      "t": 922
+    },
+    {
+      "action": "fcSummary.workspace.get",
+      "t": 923
+    },
+    {
+      "action": "getTable",
+      "t": 1956
+    },
+    {
+      "action": "getTable",
+      "t": 1956
+    },
+    {
+      "action": "fcSummary.workspace.get",
+      "t": 1957
+    }
+  ],
+  "result": {
+    "capId": "fcprev-1792125487664",
+    "steps": [
+      {
+        "step": "fc-section",
+        "t": 415,
+        "v": 38.5
+      },
+      {
+        "step": "mode-select",
+        "t": 1327.7,
+        "v": 10.5
+      },
+      {
+        "step": "builder",
+        "t": 1520.1,
+        "v": 32.8
+      },
+      {
+        "step": "method",
+        "t": 2242.9,
+        "v": "prevMonth"
+      },
+      {
+        "step": "derived",
+        "t": 2754.6,
+        "v": {
+          "basedYear": "2026",
+          "basedMonth": "11",
+          "basedMonthText": "December"
+        }
+      },
+      {
+        "step": "done",
+        "t": 6409.8,
+        "v": {
+          "addButtonFound": true,
+          "modeSelectVisible": true,
+          "builderVisible": true,
+          "basedRowVisible": true,
+          "baseRowHiddenUnderPrevMonth": true,
+          "target": {
+            "year": "2027",
+            "month": "0"
+          },
+          "derived": {
+            "basedYear": "2026",
+            "basedMonth": "11",
+            "basedMonthText": "December"
+          },
+          "basedYearAttrs": {
+            "readOnly": true,
+            "disabled": false,
+            "tabIndex": -1
+          },
+          "basedMonthAttrs": {
+            "readOnly": false,
+            "disabled": true,
+            "tabIndex": -1
+          },
+          "basedYearLock": {
+            "tag": "INPUT",
+            "readOnly": true,
+            "disabled": false,
+            "tabIndex": -1,
+            "keyboardReachable": false,
+            "focusTaken": true,
+            "uaLocked": true,
+            "programmaticAssignmentStuck": true
+          },
+          "basedMonthLock": {
+            "tag": "SELECT",
+            "readOnly": false,
+            "disabled": true,
+            "tabIndex": -1,
+            "keyboardReachable": false,
+            "focusTaken": false,
+            "uaLocked": true,
+            "programmaticAssignmentStuck": true
+          },
+          "scope": {
+            "country": "US",
+            "marketplace": "FixtureCo|US|Amazon"
+          },
+          "sku": "FX-001",
+          "skuOptionCount": 0,
+          "previewButtonFound": true,
+          "previewShown": true,
+          "previewHtmlLen": 299,
+          "saveEnabledAfterPreview": true,
+          "previewVisibleAfterTargetChange": false,
+          "saveDisabledAfterTargetChange": true,
+          "derivedAfterYearChange": {
+            "basedYear": "2027",
+            "basedMonth": "11"
+          },
+          "forcedPreviewShown": true,
+          "forcedPreviewText": "SKUCategory / Serie Current Foreca t (Jan 2027)New Foreca tChangeFX-001— / ——00",
+          "basedAfterForcedPreview": {
+            "year": "1999",
+            "month": "5"
+          },
+          "growthRowVisible": true,
+          "growthBaseYearAttrs": {
+            "readOnly": false,
+            "disabled": false
+          },
+          "growthBaseMonthAttrs": {
+            "readOnly": false,
+            "disabled": false
+          },
+          "growthBaseYearEditable": true,
+          "growthBaseMonthEditable": true
+        }
+      }
+    ],
+    "notes": [],
+    "fatal": null,
+    "checks": {
+      "addButtonFound": true,
+      "modeSelectVisible": true,
+      "builderVisible": true,
+      "basedRowVisible": true,
+      "baseRowHiddenUnderPrevMonth": true,
+      "target": {
+        "year": "2027",
+        "month": "0"
+      },
+      "derived": {
+        "basedYear": "2026",
+        "basedMonth": "11",
+        "basedMonthText": "December"
+      },
+      "basedYearAttrs": {
+        "readOnly": true,
+        "disabled": false,
+        "tabIndex": -1
+      },
+      "basedMonthAttrs": {
+        "readOnly": false,
+        "disabled": true,
+        "tabIndex": -1
+      },
+      "basedYearLock": {
+        "tag": "INPUT",
+        "readOnly": true,
+        "disabled": false,
+        "tabIndex": -1,
+        "keyboardReachable": false,
+        "focusTaken": true,
+        "uaLocked": true,
+        "programmaticAssignmentStuck": true
+      },
+      "basedMonthLock": {
+        "tag": "SELECT",
+        "readOnly": false,
+        "disabled": true,
+        "tabIndex": -1,
+        "keyboardReachable": false,
+        "focusTaken": false,
+        "uaLocked": true,
+        "programmaticAssignmentStuck": true
+      },
+      "scope": {
+        "country": "US",
+        "marketplace": "FixtureCo|US|Amazon"
+      },
+      "sku": "FX-001",
+      "skuOptionCount": 0,
+      "previewButtonFound": true,
+      "previewShown": true,
+      "previewHtmlLen": 299,
+      "saveEnabledAfterPreview": true,
+      "previewVisibleAfterTargetChange": false,
+      "saveDisabledAfterTargetChange": true,
+      "derivedAfterYearChange": {
+        "basedYear": "2027",
+        "basedMonth": "11"
+      },
+      "forcedPreviewShown": true,
+      "forcedPreviewText": "SKUCategory / Serie Current Foreca t (Jan 2027)New Foreca tChangeFX-001— / ——00",
+      "basedAfterForcedPreview": {
+        "year": "1999",
+        "month": "5"
+      },
+      "growthRowVisible": true,
+      "growthBaseYearAttrs": {
+        "readOnly": false,
+        "disabled": false
+      },
+      "growthBaseMonthAttrs": {
+        "readOnly": false,
+        "disabled": false
+      },
+      "growthBaseYearEditable": true,
+      "growthBaseMonthEditable": true
+    }
+  }
+}

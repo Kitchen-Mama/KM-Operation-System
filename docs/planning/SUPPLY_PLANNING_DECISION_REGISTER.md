@@ -4207,3 +4207,115 @@ Recorded because both produced confident, wrong numbers that looked fine:
   wrong element is worse than no number. The runner now proves the panel is absent before the click, and
   proves a scroll container by moving it and reading it back rather than trusting `scrollHeight`.
 
+### D-S8-B3-84 — A cached answer outlived the shape it was stored for — **FIXED (CP2T P0, Owner-approved)**
+
+The live report after the 42_ sync was `unavailable` on some rows and `--` on others. Two symptoms in one
+column is the shape of two causes, and **one stale cache record produces both**.
+
+The recommendation session cache stored a successful envelope under a SCOPE-ONLY key with **no marker of
+the response shape it was built from**, and `loadRecommendationWorkspace_` consults it BEFORE issuing a
+request. sessionStorage survives a reload, so a tab opened before the sync kept being served its PRE-SYNC
+envelope with zero HTTP:
+
+| what the stale record holds | what the column shows |
+|---|---|
+| pre-CP2S-R1 WAREHOUSE lines — no `horizonBasis` at all | the picker finds nothing — **`--`** |
+| bases that are named quality errors | **`unavailable`** |
+
+**In that state the new deployment is never asked**, so no amount of correct server behaviour can reach
+the screen — and the symptom looks exactly like a mis-configured source.
+
+**The shape is NAMED, not sniffed.** Inspecting a record to guess whether it looks new enough would pass
+any future shape that happens to resemble this one. A record declares the shape it was written for, and a
+record that does not declare THIS one is not read. The storage key moves with the shape, and the
+superseded key is removed rather than left in the operator's session.
+
+**Strictly inside the approval:** no new cache, no second store, no longer retention, no change to WHAT is
+cached (a success, including a valid zero and a named quality error), to the key's scope, to the F1A
+stale-RESPONSE guard, or to any read policy, formula, loader, transport or timeout.
+
+### D-S8-B3-85 — The page knew which answer it was showing and never said — **FIXED (CP2T P0)**
+
+`_irRecoState.fromCache` has been set on the restore path since FM3a and **read nowhere**. So "the operator
+is looking at a result stored before the sync" and "the new deployment answered this" were
+indistinguishable from outside — including from a screenshot, which is what a live report arrives as.
+
+`_irRecoAnswerSource_()` reports `SESSION_CACHE` / `SERVER` / `NONE` with the requestId, calculation month,
+planning cycle and `sourceDataAsOf` **already on the state**. Nothing is computed. A restored answer
+reports the requestId of the response that was STORED, which is the identifier that correlates with the
+server log of that earlier request.
+
+**This is a prerequisite for diagnosing the column, not a fix for it.** Clearing a cache is not a diagnosis
+and must never be reported as one (approval item 5).
+
+### D-S8-B3-86 — Every way the column can refuse, tied to the words it refuses with — **RECORDED (CP2T P0)**
+
+Run through the whole chain — real row reader, real resolver, real frozen KMCALC owner, real basis
+builder, real page mapping, real picker, real cell — over a fixture using the destination sheet's own
+column names and **every date representation the shipped normaliser accepts** (Date object, `YYYY-MM-DD`,
+`YYYY/MM/DD`, `M/D/YYYY`) plus the blank one the attachment contained:
+
+| condition | code on the row | cell |
+|---|---|---|
+| no daily and no weekly rows | `SALES_BASIS_UNAVAILABLE` | unavailable |
+| two `marketplace_sku_id` for one scope+SKU | `MARKETPLACE_SKU_AMBIGUOUS` | unavailable |
+| two channels in the scoped rows | `SALES_BASIS_AMBIGUOUS` | unavailable |
+| a campaign line with no `marketplace_sku_id` | `SALES_BASIS_CONTAMINATION_UNRESOLVED` | unavailable |
+| no calculation date | `CALCULATION_DATE_NOT_CONFIGURED` | unavailable, `blankDateRows` null |
+| a line carrying NO `horizonBasis` | — none — | **`--`** |
+
+**The two dashes are different**, and that decides where to look: a dash with no reason is an answer that
+was never published (pre-sync envelope, or a lane that published nothing); a dash beside `unavailable`
+is a published refusal that names itself.
+
+**And none of the shortcuts is present:** an unresolved campaign identity does not fall back to an
+un-excluded rate, no history does not become 0 (while a REPORTED zero still prints `0.0`), an ambiguous
+channel is not averaged across, and the weekly rung is always marked `insufficient_normal_days`.
+
+**Also corrected in 42_:** the resolver's header comment ended "a contamination identity conflict degrades
+to an un-excluded basis — never a block". That stopped being true in CP2R-R1, which made it fail CLOSED.
+**A comment that denies a reason the code returns is read by whoever is trying to find out why a row
+refused**, which is this round exactly.
+
+### D-S8-B3-87 — r59, because r58 is published now — **FROZEN (CP2T)**
+
+`origin/main` is `37d9db8c` and `ab624f30` is an ancestor of it, **checked against the remote this round**
+rather than carried forward. R58 is spent, so the page change this round owes its own token:
+`r59-cacheshape-20261017`, 54 references in `index.html` and 13 in `app.js`.
+
+The reason it must rotate is the round's own subject: a browser holding the previous page beside the new
+storage key would be the stale-answer defect reintroduced by the cache that serves the page itself.
+
+### D-S8-B3-88 — The prevMonth builder, operated rather than inspected — **VERIFIED (CP2T P1)**
+
+Target 2027 / January derives Based **2026 / December**; both Based fields are user-agent locked; Preview
+is withdrawn and Save re-disabled when Target changes; **Apply Growth Rate keeps its own Base editable**.
+
+**Two instrument errors found on the way, and both would have produced a confident wrong answer:**
+
+- **The builder is not reached by calling its opener.** `openRegularUpdateModal()` REFUSES when the
+  prerequisites are not loaded and re-opens the mode-select modal. The first run called it directly and
+  reported "modal not visible" — which reads as a page defect and is a harness defect. The operator's
+  route is the button, the card and Next, which loads the prerequisites first.
+- **A programmatic assignment is not editing.** The first lock check set `el.value` and concluded the field
+  was editable when it stuck. `readonly` and `disabled` restrain the USER AGENT, not a script, so **that
+  check would have failed against a perfectly locked field**. What the browser enforces is checked
+  instead: a disabled control cannot take focus (observed refused), and the readonly input is reported as
+  readOnly plus off the tab order — with the keystroke half stated as NOT tested rather than implied.
+
+**And the defence that holds when the lock does not:** with Based FORCED to 1999 / June by script, Preview
+still computed for **Jan 2027**. The lock stops the operator; deriving the period from Target is what stops
+everything else, and that is what FCB1 actually repaired.
+
+### D-S8-B3-89 — C9 with a real Chart is NOT done — **OPEN (CP2T P2)**
+
+P2 asks for the first-frame work to be measured against a REAL Chart build, with layout box and actually-
+visible recorded separately. **Neither is delivered this round.** No Chart.js is vendored — the page loads
+it from a CDN and every runner in this repo substitutes a stub, so point 3 of the C9 capture locates charts
+in time and does not price them (D-S8-B3-82, unchanged). Separating "has a layout box" from "is actually
+visible" needs a signal the current capture does not take.
+
+**What it would need, named rather than guessed at:** a real Chart build available to an offline run, and a
+visibility signal beyond a bounding box. Neither was started, and **the expand delay remains unfixed**.
+Data correctness was the stated priority and is where this round went.
+

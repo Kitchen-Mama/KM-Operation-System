@@ -1081,7 +1081,19 @@ var ROUND_TOKENS = [
   // together and R12 names both. The IR stylesheet series is untouched for the same reason.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r58-derivedbaseperiod-20261015'];
+  'r58-derivedbaseperiod-20261015',
+  //
+  // S8-B3-R3-CP2T - R59. R58 IS PUBLISHED NOW. origin/main is 37d9db8c and ab624f30 is an ancestor of it,
+  // checked against the remote this round rather than carried forward from the last report, which is the
+  // rule the R57 note above exists to enforce. So R58 is spent and this round owes its own entry.
+  //
+  // WHAT IT CARRIES: the recommendation session cache now declares the RESPONSE SHAPE it was written for,
+  // and refuses a record written for another one. That is exactly the kind of change a cached asset must
+  // not be allowed to straddle - a browser holding the previous page beside the new storage key would be
+  // the defect this round closes, reintroduced by the cache that serves the page itself.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r59-cacheshape-20261017'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

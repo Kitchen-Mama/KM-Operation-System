@@ -13853,13 +13853,39 @@ function _irAggregateActionableRecommendedQty(lines) {
 // SUCCESSFUL canonical envelope is stored (blocked lines and valid zero ARE valid successes and cacheable);
 // transport/API failure, CONFIG_NOT_READY, aborted, and stale responses are NEVER stored. JSON-safe record;
 // the canonical envelope is never mutated.
-var _IR_RECO_CACHE_KEY = 'km_ir_reco_cache_v1';
+// S8-B3-R3-CP2T — A CACHED ANSWER OUTLIVED THE SHAPE IT WAS STORED FOR.
+//
+// The record carried no marker of the response shape it was built from, and the key is scope-only. So a
+// tab that was open BEFORE the 42_ sync kept being served its PRE-SYNC envelope: sessionStorage survives a
+// reload, and the loader consults this cache before issuing a request. One stale record produces BOTH
+// reported symptoms — a pre-CP2S-R1 envelope has WAREHOUSE lines with no `horizonBasis` at all, so the
+// picker finds nothing and the cell prints `--`; an envelope whose bases are named errors prints
+// `unavailable`. In that state the new deployment is never asked, so no amount of correct server
+// behaviour can reach the screen.
+//
+// THE SHAPE IS NAMED, NOT SNIFFED. Inspecting a record to guess whether it looks new enough would be the
+// same mistake one level down: it would pass any future shape that happens to resemble this one. A record
+// declares the shape it was written for, and a record that does not declare THIS one is not read.
+//
+// WHAT THIS IS NOT. No new cache, no second store, no longer retention, no change to what is cached (a
+// success, including a valid zero and a named quality error), to the key, to the scope guard, or to any
+// read policy. The storage key moves with the shape so that records written by the previous build are not
+// merely ignored but unreachable, and the superseded key is dropped rather than left to sit in the
+// operator's session for the rest of the day.
+var _IR_RECO_CACHE_SHAPE = 'horizonBasis.v2';              // the RESPONSE SHAPE this build knows how to read
+var _IR_RECO_CACHE_KEY = 'km_ir_reco_cache_' + _IR_RECO_CACHE_SHAPE;
+var _IR_RECO_CACHE_SUPERSEDED_KEYS = ['km_ir_reco_cache_v1'];
 var _irRecoCacheMem = null;                                // lazy in-memory mirror of the session store
 function _irRecoCacheLoad() {
   if (_irRecoCacheMem) return _irRecoCacheMem;
   _irRecoCacheMem = {};
   try {
     if (typeof sessionStorage !== 'undefined') {
+      // Bounded, one-time: the keys this build has superseded are removed, so a stale record cannot be
+      // revived by a later build that happens to reuse the old name.
+      for (var si = 0; si < _IR_RECO_CACHE_SUPERSEDED_KEYS.length; si++) {
+        try { sessionStorage.removeItem(_IR_RECO_CACHE_SUPERSEDED_KEYS[si]); } catch (e2) {}
+      }
       var raw = sessionStorage.getItem(_IR_RECO_CACHE_KEY);
       if (raw) { var o = JSON.parse(raw); if (o && typeof o === 'object') _irRecoCacheMem = o; }
     }
@@ -13876,13 +13902,19 @@ function _irRecoCacheKey(scopeReq) {
 }
 function _irRecoCacheGet(scopeReq) {
   var k = _irRecoCacheKey(scopeReq); if (!k) return null;
-  var e = _irRecoCacheLoad()[k];
-  return (e && e.envelopeData) ? e : null;
+  var c = _irRecoCacheLoad();
+  var e = c[k];
+  if (!e || !e.envelopeData) return null;
+  // A record written for a different response shape is not an old answer to be shown with a caveat; it is
+  // an answer this build cannot read. It is dropped on the way past so the next lookup is a clean miss.
+  if (e.shape !== _IR_RECO_CACHE_SHAPE) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); return null; }
+  return e;
 }
 function _irRecoCacheSet(scopeReq, env) {
   var k = _irRecoCacheKey(scopeReq); if (!k || !env || env.success !== true) return;   // successes only
   var c = _irRecoCacheLoad();
   c[k] = {
+    shape: _IR_RECO_CACHE_SHAPE,
     requestScope: { company: scopeReq.company, country: scopeReq.country, marketplace: scopeReq.marketplace },
     envelopeData: (env.data && typeof env.data === 'object') ? env.data : {},
     meta: {
@@ -13894,6 +13926,30 @@ function _irRecoCacheSet(scopeReq, env) {
     cachedAt: (typeof Date !== 'undefined' && Date.now) ? Date.now() : null
   };
   _irRecoCacheMem = c; _irRecoCachePersist();
+}
+// S8-B3-R3-CP2T — WHICH ANSWER IS ON SCREEN, STATED RATHER THAN INFERRED.
+//
+// `_irRecoState.fromCache` has been set on the restore path since FM3a and read NOWHERE, so "the operator
+// is looking at a result stored before the sync" and "the new deployment answered this" were
+// indistinguishable from outside — including from a screenshot, which is what a live report arrives as.
+// Telling them apart is a prerequisite for diagnosing the column, not a fix for it.
+//
+// NOTHING IS COMPUTED HERE. Every field is already on the state: the source flag the loader sets, and the
+// requestId / dataVersion the SERVER sent, carried through the cache record unchanged. A restored answer
+// therefore reports the requestId of the response that was STORED, which is the identifier that can be
+// correlated with the server-side log of that earlier request.
+function _irRecoAnswerSource_() {
+  var st = _irRecoState || {};
+  var dv = st.dataVersion || null;
+  return {
+    source: (st.loadedOk !== true) ? 'NONE' : (st.fromCache === true ? 'SESSION_CACHE' : 'SERVER'),
+    status: st.status || null,
+    requestId: st.requestId || null,
+    calculationMonth: st.calculationMonth || null,
+    planningCycle: st.planningCycle || null,
+    sourceDataAsOf: (dv && dv.sourceDataAsOf) || null,
+    shape: _IR_RECO_CACHE_SHAPE
+  };
 }
 // Narrow programmatic invalidation (no UI this round). No arg → clear all; scopeReq → drop that key.
 function invalidateRecommendationSessionCache(scopeReq) {
@@ -14685,6 +14741,7 @@ function _irRecoRefreshVelocityCells_() {
 window._irRecommendationWorkspaceEnabled = _irRecommendationWorkspaceEnabled;
 window.loadRecommendationWorkspace_ = loadRecommendationWorkspace_;
 window._irRecoSummaryCardBody = _irRecoSummaryCardBody;
+window._irRecoAnswerSource_ = _irRecoAnswerSource_;   // CP2T - cached answer vs deployment answer, readable
 window.invalidateRecommendationSessionCache = invalidateRecommendationSessionCache;
 
 // ============================================================================
