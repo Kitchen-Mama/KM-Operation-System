@@ -37,11 +37,17 @@ function fnBody(src, name) {
 // nodes, a half-typed input, focus and the scroll position with it. Only Avg Sales and Days of Supply
 // depend on the basis, so only those two cells are written now. WHAT THIS SUITE ASSERTS IS UNCHANGED:
 // WHEN the update runs. The counter below counts the update instead of the rebuild.
-function makeRefresh(state, renderFn, scopeMatches) {
+function makeRefresh(state, renderFn, scopeMatches, paintFn) {
+  // CP2U-R2 - the refresh now has a SECOND arm: READY-with-a-basis takes the numeric updater, and every
+  // other read state takes `_irRecoPaintReadStateCells_`, which writes the marker and the sentence
+  // without a row assembly. That function is declared outside this slice, so it is injected (the
+  // CP2P-R2 rule). A no-op is the right stub HERE: what this suite asserts is WHEN THE NUMERIC UPDATE
+  // runs, and the state painter deliberately never writes a number. The delivery of those states is
+  // owned by read-state-delivery-s8-b3-r3-cp2u-r2, which drives the real loaders.
   var body = fnBody(IRSRC, '_irRecoHasCanonicalBasis_') + '\n' + fnBody(IRSRC, '_irRecoRefreshVelocityCells_') +
     '\n return _irRecoRefreshVelocityCells_;';
-  return new Function('_irRecoState', '_irRecoUpdateVelocityCells_', '_irResultMatchesAppliedScope_',
-    body)(state, renderFn, scopeMatches || function () { return true; });
+  return new Function('_irRecoState', '_irRecoUpdateVelocityCells_', '_irResultMatchesAppliedScope_', '_irRecoPaintReadStateCells_',
+    body)(state, renderFn, scopeMatches || function () { return true; }, paintFn || function () {});
 }
 function salesBasisState() { return { status: 'READY', linesBySku: { 'CO1100-R': [
   { destinationType: 'WAREHOUSE', horizonBasis: { demandMode: 'sales_driven', avgSalesPerDay: 139.08 } },

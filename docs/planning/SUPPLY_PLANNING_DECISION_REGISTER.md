@@ -4839,6 +4839,24 @@ re-taken until the harness runs. **This round therefore does not claim a green f
 not claim that the transitions were seen in a browser. What is verified is the node-level behaviour suite,
 which drives the real loaders and reads the real cells.
 
+### D-S8-B3-108b — The slice rule, for the FOURTH time in this branch — **RECORDED (CP2U-R2)**
+
+The full regression caught two suites crashing with `ReferenceError: _irRecoPaintReadStateCells_ is not
+defined`: `avg-sales-destination-chain-s8-b3-r3-cp2s` and `sales-velocity-live-path-f1-4b-fm5r4jlive9v`.
+Both slice `_irRecoRefreshVelocityCells_` into a bare `new Function`, and that function now calls the state
+painter, which is declared outside the slice.
+
+That is the CP2P-R2 rule, and it is the **fourth** time this branch has paid it: `recoWsYmd_` (CP2T-R1),
+`escapeReplenHtml` (CP2U-R1), `IR_AVG_PENDING_MARK` (CP2U-R2, caught by the suites themselves) and now this.
+**The pattern is stable enough to state as a rule of the file:** adding ANY new call to a function inside
+the `__IRRECO__` region obliges a sweep of every harness that extracts its caller by name, because those
+harnesses bind collaborators one at a time and a new one is invisible until it throws.
+
+The painter is **injected as a no-op** in both, and that is the right stub rather than a shortcut: what
+those two suites assert is WHEN THE NUMERIC UPDATE RUNS, and the state painter deliberately never writes a
+number. Delivery of the states is owned by `read-state-delivery-s8-b3-r3-cp2u-r2`, which drives the real
+loaders and reads the real cells.
+
 ### D-S8-B3-109 — What CP2U-R2 does NOT claim — **RECORDED**
 
 - **No read was accelerated.** No request was added, removed, reordered or retimed. The only cost CHANGE is a
