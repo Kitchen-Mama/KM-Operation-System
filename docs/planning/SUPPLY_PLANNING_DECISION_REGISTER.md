@@ -4749,3 +4749,104 @@ this source". The ninth batch was re-taken and the suite reads 309 / 0.
 All nine batches, plus the three CP2P batches that must differ and this round's own suite, verified green
 against the final source state.
 
+### D-S8-B3-105 — The states existed and the screen never heard about them — **FIXED (CP2U-R2, page only)**
+
+CP2U-R1 gave both columns a vocabulary for every way an answer can be absent, and verified it against the
+authorities. **That is not the same as verifying the screen.** The async arrival repainted through one gate:
+
+```
+if (_irRecoState.status === 'READY' && _irRecoHasCanonicalBasis_()) _irRecoUpdateVelocityCells_();
+```
+
+so a **failed read, an empty answer and a withheld basis repainted nothing at all**, and the `.catch` arm
+never called a cell updater of any kind. Every word CP2U-R1 added for those states was unreachable on the
+live path. **A state nobody can see is not a state**, and a suite that asks the authority what it would say,
+without asking the cell what it shows, cannot tell the difference.
+
+**THE SPLIT IS BY WHAT THE CELL NEEDS, not by whether the news is good.** A resolved rate is a NUMBER owned
+by the row assembly that computed it, so READY keeps the existing path. Every other state is a marker and a
+sentence derived from the read state alone, so it takes a new painter that touches only the two velocity
+cells of rows already in the DOM — **no node created or replaced, and no row assembly at all**. That last
+point is the constraint that shaped the design: `getReplenishmentData()` outside a render pass is a full
+whole-site recomposition, so printing "still reading" through the existing updater would have put the
+heaviest work on the page onto its slowest path. Measured in the suite: **0 full renders and 0 assemblies**
+across the failed, empty and withheld arrivals.
+
+The same gap is closed for Suggested Qty: the gap loader's LOADING arm and **both** READ_ERROR arms now
+reach the cell. And `_irRecoUpdateSuggestedCells` stops assembling the site on the materialized lane, where
+`_irSuggestedQtyState_` reads nothing but `item.sku` — a full recomposition was being bought for a key
+lookup, which also made it unsafe to call on the failing arms. The LEGACY lane still gets the data it needs.
+
+**A FAILURE FOR ANOTHER SITE IS NOT THIS SITE FAILING.** The authority classified `API_ERROR` before asking
+the scope guard, so a read that failed for the site the operator had just left would paint a red "read
+failed" across rows whose own read never ran. The scope check now comes first, through a predicate that
+answers a different question from `_irResultMatchesAppliedScope_`: that one decides whether a RESULT may be
+believed and refuses an unstamped state on principle; this one asks whether a state is **attributable to
+some other site**, and an unstamped state is attributable to nowhere, so it is still classified on its own
+merits — which is what the API-client-unavailable arm needs. For the predicate to have anything to read,
+the **thrown** arm now stamps the scope it was issued for, which only the server-answered arm did before.
+
+`read-state-delivery-s8-b3-r3-cp2u-r2.test.js` drives the REAL loaders — `loadRecommendationWorkspace_`
+and `loadInventoryGap_` — with fixtures in the shape the real adapters return, and asserts what the cell
+shows. **31 passed / 29 failed before the repair, 60 / 0 after.** Nothing in it calls `_irRecoApplyEnvelope`
+or an updater by hand, because doing so would skip the gate that is the defect.
+
+### D-S8-B3-106 — The gap marker was read where the adapter never puts it — **FIXED (CP2U-R2)**
+
+`_kmGapRead_` returns `{ success: true, data: json.data, envelope: json }`. The server meta is under
+**`envelope`**, and there is **no top-level `meta`**. CP2U-R1 read `res.meta.gapMaterializationHandlerVersion`,
+which against every real response is `undefined` — so `_irMatAnswerSource_` reported "no marker" forever,
+and a fixture hand-filled with `meta` at the top level would have agreed with it. This is exactly the failure
+mode "do not hand-fill the handler version to make the test pass" describes: the probe was verified against a
+shape the adapter does not produce.
+
+Read from `envelope.meta` now, with `res.meta` kept as a second choice in case the adapter ever lifts it.
+**Null is still reported honestly**: the adapter drops the envelope on its failure branch, so a failed read
+genuinely has no marker, and the probe says so rather than carrying the previous answer forward. The 42_ and
+43_ markers remain reported independently.
+
+### D-S8-B3-107 — Three values, three meanings — **FIXED (CP2U-R2)**
+
+`_irReadTimingReport_` wrote `server_answered: r.server_answered === true`, which **collapses `null` into
+`false`** — turning "the transport never recorded whether the server answered" into "the server did not
+answer". Those are different claims and only one of them is about the server. Passed through as a boolean or
+null now.
+
+And `not_observed` carried the comment "a read that never dispatched". **The sample buffer is bounded**, so
+an absent row means this report cannot see the read — not that nothing was dispatched and nothing arrived.
+The stronger claim was never supported. The row now carries an explicit **`dispatched: null`** beside the
+flag, and an observed row carries `dispatched: true`.
+
+### D-S8-B3-108 — The real-browser leg of CP2U-R2 did NOT complete — **OPEN, and not claimed**
+
+The in-place DOM harness could not be run to completion on this machine during this round. Every attempt
+died at the expand step with `NO_INPUT` — two expanded panels present, **neither containing any `input` or
+`textarea`** — so the Execution Plan composer never rendered a field to type in.
+
+**IT IS NOT A REGRESSION FROM THIS ROUND, and that was established rather than assumed.** The same failure
+reproduces with the **baseline `d097bb13` page** and with the **unmodified `d097bb13` runner**. The same
+command succeeded at 2026-10-16T15:08Z, which is the capture currently in the repo.
+
+Ruled out by experiment, each one its own run: a longer settle (900 —> 6 000 —> 12 000 ms), waiting on the
+FIELD instead of on the clock, and a larger `--virtual-time-budget` (180 000 —> 900 000). One run out of
+roughly eight passed, which makes it a race whose other side was not found. The harness changes written while
+investigating — a states scenario, a settle argument, a budget argument and a markup dump — were **reverted
+rather than committed**: an unvalidated harness in the tree is worse than an honest gap in the evidence.
+
+**CONSEQUENCE, STATED PLAINLY:** `ir-inplace-update-acceptance-s8-b3-r3-cp2s-r2` **fails** on this candidate.
+Its capture pins `inventory-replenishment.js`, this round changed that file, and the capture cannot be
+re-taken until the harness runs. **This round therefore does not claim a green full regression**, and it does
+not claim that the transitions were seen in a browser. What is verified is the node-level behaviour suite,
+which drives the real loaders and reads the real cells.
+
+### D-S8-B3-109 — What CP2U-R2 does NOT claim — **RECORDED**
+
+- **No read was accelerated.** No request was added, removed, reordered or retimed. The only cost CHANGE is a
+  removal: the materialized lane stops assembling the site to look up a key.
+- **The dynamic Gap is not built.** Nothing here makes a gap current; the probe still reports the response
+  the page already applied.
+- **The EU root cause is still not fixed.** See the release log entry for what the Owner's evidence does and
+  does not establish.
+- D-S8-B3-98 remains OPEN; naming a withheld basis is not repairing it. C9, the Gap timeout diagnostic and
+  the FC historical-sales features are untouched.
+

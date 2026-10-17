@@ -42,11 +42,11 @@ Four of the seven are capturable **without any share outliving the callback that
 
 | | unscoped | scoped | paired delta | improved in |
 |---|---|---|---|---|
-| click → first paint | 42.9 ms | 42.6 ms | −0.8 ms | 3 of 6 |
-| **click → full ready** | **148.0 ms** | **85.0 ms** | **−63.8 ms** | **6 of 6** |
-| assembly **in** handler | 20.3 ms | 20.2 ms | +0.4 ms | 3 of 6 |
-| **assembly after handler** | **111.7 ms** | **48.5 ms** | **−62.8 ms** | **6 of 6** |
-| handler sync | 22.2 ms | 21.9 ms | +0.4 ms | 3 of 6 |
+| click → first paint | 58.3 ms | 57.2 ms | −2.1 ms | 3 of 6 |
+| **click → full ready** | **222.7 ms** | **126.3 ms** | **−97.6 ms** | **6 of 6** |
+| assembly **in** handler | 24.1 ms | 25.2 ms | +1.4 ms | 2 of 6 |
+| **assembly after handler** | **172.5 ms** | **82.4 ms** | **−96.3 ms** | **6 of 6** |
+| handler sync | 27.1 ms | 27.0 ms | +1.1 ms | 2 of 6 |
 
 These are the **CP2T-R2** captures. The batch is re-taken whenever `inventory-replenishment.js` changes,
 because the shipped arm then no longer describes the file on disk and §E1 says so — CP2S-R2 changed the
@@ -93,6 +93,8 @@ first on that row, the finding would have been the disagreement.
 The published batch still contains one large outlier, −999.7 ms in pair 2, in the IMPROVING direction. It is
 left in: the per-run medians and the paired design absorb it exactly as the README records for earlier
 batches, and removing a sample for being large is how a batch stops being a measurement.
+
+**CP2U-R2 RE-TOOK IT AGAIN, BOTH ARMS, AND THE TABLE ABOVE IS THAT BATCH — THE NINTH.** CP2U-R2 changed `inventory-replenishment.js` again (the read states now reach the cells), so §E1 refused the batch below for the same reason it refused the one before it. Twelve runs, both arms on one build, alternating inside each pair, shipped source restored and verified by hash at the end. The two load-bearing rows reproduced at −97.6 / −96.3 ms, 6 of 6 and 6 of 6.
 
 **CP2U-R1 RE-TOOK THIS BATCH, BOTH ARMS, AND IT IS THE EIGHTH OF THIS DESIGN.** CP2U-R1 changed `inventory-replenishment.js` — the Avg Sales and Suggested Qty read states — so the shipped arm no longer described the file on disk and §E1 said so. **Both arms were re-taken on ONE build**, alternating inside each pair, for the reason recorded above: re-taking only the shipped arm would have compared this build against a batch measured on an older one. Twelve runs, 100 rows each, five expands each, no fatals, and the shipped source was restored and verified by hash when the driver finished. The two load-bearing rows reproduced again at **+0.0 / −60.4 ms**, **0 of 6** and **6 of 6**.
 

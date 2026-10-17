@@ -103,7 +103,11 @@ var LOAD_SITE = IRSRC.slice(IRSRC.indexOf("_irRecoState = _irRecoBlank('LOADING'
 ok(/_irRecoState\.scope = scopeReq;/.test(LOAD_SITE),
   'A1  THE LOADING STATE IS GIVEN ITS REQUESTED SCOPE on the line after the blank - so "LOADING implies a '
   + 'null scope", which CP2U offered as the cause, is false in the shipped code');
-ok(/_irRecoState\.appliedScopeKey = _irAppliedScopeKey_\(\);/.test(LOAD_SITE),
+// CP2U-R2 moved the stamp through a local, because the THROWN arm now has to stamp the SAME site and
+// reading the applied key twice could pick up a switch that happened in between. The claim is unchanged:
+// the LOADING state is given its applied scope at issue time.
+ok(/_irRecoState\.appliedScopeKey = appliedKeyAtIssue;/.test(LOAD_SITE)
+  && /var appliedKeyAtIssue = _irAppliedScopeKey_\(\);/.test(LOAD_SITE),
   'A1a and its appliedScopeKey too, stamped at issue time, so a LOADING state SATISFIES the scope guard');
 
 var blank = _irRecoBlank('LOADING');
@@ -115,10 +119,13 @@ var APPLY = IRSRC.slice(IRSRC.indexOf('function _irRecoApplyEnvelope'), IRSRC.in
 ok(/_irRecoState = _irRecoBlank\(_isConfig \? 'CONFIG_NOT_READY' : 'API_ERROR'\);\s*\n\s*_irRecoState\.contextKey = ctxKey; _irRecoState\.scope = reqScope;/.test(APPLY),
   'A3  a read the server ANSWERED with success:false is given a scope');
 var CATCH = IRSRC.slice(IRSRC.indexOf("_irRecoState = _irRecoBlank('API_ERROR'); _irRecoState.contextKey = ctxKey; _irRecoState.seq = my;"),
-  IRSRC.indexOf("_irRecoState = _irRecoBlank('API_ERROR'); _irRecoState.contextKey = ctxKey; _irRecoState.seq = my;") + 240);
-ok(!/_irRecoState\.scope = /.test(CATCH),
-  'A3a while a THROWN read keeps the blank and is NOT - so the two API_ERROR arms differ in exactly the '
-  + 'field CP2U proposed testing, and `scope === null` would have classified one of them as the other');
+  IRSRC.indexOf('_irRecoRefreshVelocityCells_();   // CP2U-R2: a thrown read used to repaint NOTHING'));
+ok(/_irRecoState\.scope = scopeReq; _irRecoState\.appliedScopeKey = appliedKeyAtIssue;/.test(CATCH),
+  'A3a CORRECTED BY CP2U-R2: the THROWN arm now stamps the scope TOO. When this was written it did not, '
+  + 'and the asymmetry was the point - but an unstamped failure is attributable to no site, so it was shown '
+  + 'against whichever site was on screen. Both arms now record which site they failed for.');
+ok(!/_irRecoState\.scope = /.test(IRSRC.slice(IRSRC.indexOf("function _irRecoBlank"), IRSRC.indexOf("function _irRecoBlank") + 420)),
+  'A3b and the blank FACTORY still sets no scope, so an unstamped state remains the unattributable one');
 ok(IRSRC.indexOf('CP2U ATTRIBUTED THIS TO A NULL SCOPE DURING LOADING. IT IS NOT THAT.') !== -1,
   'A4  and the correction is recorded where the authority is defined, not only in a report');
 
@@ -237,11 +244,17 @@ section('D  THE PROJECTION - a pending cell stops borrowing the dash');
 var PROJ = IRSRC.slice(IRSRC.indexOf("var _avgDisplay = '--';"),
   IRSRC.indexOf('// Forecast breakdown (next 3 months, Target Rule applied)'));
 var IR_DAYS = { daysOfSupply: function (stock, rate) { return (rate == null || rate <= 0) ? null : Math.floor(stock / rate); } };
+// CP2U-R2 - the projection now writes the PENDING marker through a shared constant, so the painter that
+// repaints the same cell on the async path cannot drift from it. That constant is declared outside this
+// slice, so the harness carries it (the CP2P-R2 rule, and the third time this file has applied it - after
+// recoWsYmd_ in CP2T-R1 and escapeReplenHtml in CP2U-R1). It is passed by VALUE from the shipped source,
+// never re-typed here, or the test could agree with itself about the wrong glyph.
 function project(basis, state) {
   var f = new Function('_irCanonicalSalesBasis_', '_irAvgSalesCellState_', 'IR', 'mp', 'currentStock', 'Math',
+    'IR_AVG_PENDING_MARK',
     PROJ + ' return { avg: _avgDisplay, dos: _dosDisplay, state: _avgCellState, reason: _avgCellReason, detail: _avgCellDetail };');
   return f(function () { return basis; }, state === undefined ? undefined : function () { return state; },
-    IR_DAYS, { sku: SKU }, 500, Math);
+    IR_DAYS, { sku: SKU }, 500, Math, IR_AVG_PENDING_MARK);
 }
 var D1 = project(null, { state: 'PENDING', reason: 'IN_FLIGHT', detail: null });
 eq(D1.avg, '…', 'D1  A PENDING AVG SALES CELL PRINTS THE PENDING MARKER, not the dash it shared with "no answer"');

@@ -1151,6 +1151,17 @@ var ROUND_TOKENS = [
   // is recorded as deferred rather than answered halfway.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  //
+  // S8-B3-R3-CP2U-R2 - CARRIED, AND CHECKED. origin/main is 1778efc3 and d097bb13, which introduced
+  // r60-readstate-20261016, is NOT an ancestor of it, so r60 has never reached a browser. It is reused
+  // rather than succeeded, and index.html and app.js are untouched this round.
+  //
+  // THE CHECK IS THE EVIDENCE, NOT THIS NOTE. The round before this one is the reason to say so twice:
+  // r59 was carried through two rounds on the strength of the same check that later said it had shipped.
+  // A later round that reads this block instead of running git ls-remote will eventually reuse a token
+  // that has been served.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
   'r60-readstate-20261016'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

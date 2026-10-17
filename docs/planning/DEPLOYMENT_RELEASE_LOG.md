@@ -5448,3 +5448,40 @@ has now shipped.
 
 **STATUS: LOCAL ONLY — NOT PUSHED — NOT SYNCED (CP2U-R1).**
 
+---
+
+## Owner evidence: the SERVER is running r5e (recorded 2026-10-17, CP2U-R2)
+
+**The Owner has provided evidence that the live `42_` handler is `fm5-r4ui-r5e`.** The previous entry
+recorded the Apps Script sync state for `1778efc3` as UNKNOWN because a push is not a sync and none had been
+reported. That is now answered.
+
+| | |
+|---|---|
+| live `42_` handler | **`fm5-r4ui-r5e`** — Owner-supplied server evidence |
+| Apps Script deployment VERSION NUMBER | **still UNKNOWN — not supplied** |
+
+**AN UNKNOWN VERSION NUMBER IS NOT AN UNCONFIRMED HANDLER, and the two were being conflated.** The version
+number is a label on a deployment; the handler marker is what the running code reports about itself. The
+handler is CONFIRMED at `r5e`. The version number remains UNKNOWN and is recorded as UNKNOWN, as this ledger
+records every value it was not given.
+
+**What follows from r5e being live:** the campaign-date repair (CP2T-R1) and the fabricated-weekly-zero
+repair (CP2T-R2) **are both running in Production**. The page accept list admits `r5e`, so responses are
+cached normally again — the "safe but slow, nothing cached" state the previous entry described is over.
+
+## EU — corrected: displayed successfully; first-load duration NOT established
+
+Earlier rounds left EU as an open display question. **The Owner reports that EU now displays successfully.**
+This ledger records that, and records just as plainly what it does **not** establish:
+
+- **The first-load duration is UNCONFIRMED.** No measurement of a cold EU load was taken, by this round or
+  any other. "It displays" and "it displays quickly" are different claims and only the first is supported.
+- **The root cause was never diagnosed.** The asymmetry CP2U found in the member-row filter — `country` is
+  canonicalised through KMCID while `marketplace` is compared as a raw string — is **unchanged in the
+  code**. EU displaying correctly today does not show that asymmetry is harmless; it shows that this site's
+  rows currently match on both.
+
+**STATUS: LOCAL ONLY — NOT PUSHED — NOT SYNCED (CP2U-R2). No `.gs` changed this round, so there is
+nothing to sync for it.**
+

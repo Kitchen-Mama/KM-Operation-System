@@ -2059,6 +2059,8 @@ var IR_AVG_QUALITY_TEXT = {
     CALCULATION_DATE_NOT_CONFIGURED: 'No calculation date is configured, so the 90-day window cannot be placed.',
     SALES_BASIS_LINE_CONFLICT: 'This site resolves to more than one sales history. No average is shown rather than whichever of them happened to be listed first.'
 };
+// CP2U-R2 - ONE marker, read by the full projection and by the async state painter alike.
+var IR_AVG_PENDING_MARK = '…';
 var IR_AVG_WARNING_TEXT = {
     low_sample_warning: 'Fewer than seven normal days in the sample.',
     insufficient_normal_days: 'Fewer than three normal days, so this is the weekly rate divided by seven, not a normalized average.'
@@ -6305,7 +6307,9 @@ window._irReadStageReport_ = _irReadStageReport_;
 //     as though it had been timed at dispatch, and the only place that can be said is on the row itself.
 //   * observed_span_ms is DERIVED - the first dispatch to the last settle - and says so. It is not one
 //     measured interval and must not be quoted as the duration of anything.
-//   * a read that never dispatched is reported as not_observed, not as a zero.
+//   * a read with NO RECORD is reported as not_observed with `dispatched: null`. The transport keeps a
+//     BOUNDED buffer, so an absent sample means this report cannot see the read — NOT that it was never
+//     dispatched and never arrived. CP2U-R1 wrote the stronger claim and it was not supported.
 // ==================================================================================================
 var IR_TIMED_READS_ = [
   { read: 'inventory_workspace', action: 'inventoryReplenishment.workspace.get' },
@@ -6332,20 +6336,26 @@ function _irReadTimingReport_() {
     IR_TIMED_READS_.forEach(function (d) {
       var mine = rows.filter(function (r) { return String(r.action || '') === d.action; });
       if (!mine.length) {
-        // NEVER DISPATCHED is not a duration of zero. A read that did not happen and a read that was
-        // instant are the same number and opposite facts.
-        out.reads.push({ read: d.read, action: d.action, not_observed: true, attempt_seq: null,
-          dispatch_ms: null, settled_ms: null, client_elapsed_ms: null, server_ms: null,
+        // NO RECORD is not a duration of zero, and it is not evidence of absence either. The transport
+        // keeps a bounded sample buffer, so "this report has no row for that action" means the report
+        // CANNOT SEE the read - it may have been dispatched, answered and evicted. `dispatched: null` is
+        // the honest value: unknown, not false.
+        out.reads.push({ read: d.read, action: d.action, not_observed: true, dispatched: null,
+          attempt_seq: null, dispatch_ms: null, settled_ms: null, client_elapsed_ms: null, server_ms: null,
           server_answered: null, code: null, phase: null, http_status: null, request_id: null,
           attempts: null, marks_source: null, concurrent_at_dispatch: null, overlapped_with: [] });
         return;
       }
       mine.forEach(function (r) {
-        out.reads.push({ read: d.read, action: d.action, not_observed: false, attempt_seq: r.seq,
+        out.reads.push({ read: d.read, action: d.action, not_observed: false, dispatched: true,
+          attempt_seq: r.seq,
           dispatch_ms: r.dispatch_ms, settled_ms: r.settled_ms,
           client_elapsed_ms: (typeof r.elapsed_ms === 'number') ? r.elapsed_ms : null,
           server_ms: (typeof r.server_ms === 'number') ? r.server_ms : null,
-          server_answered: r.server_answered === true,
+          // CP2U-R2 - THREE VALUES, THREE MEANINGS, and `=== true` had only two. true is "the server
+          // answered", false is "it did not", and null is "the transport never recorded whether it did".
+          // Collapsing null to false turns a gap in the instrumentation into a statement about the server.
+          server_answered: (typeof r.server_answered === 'boolean') ? r.server_answered : null,
           code: r.code || null, phase: r.phase || null,
           http_status: (typeof r.http_status === 'number') ? r.http_status : null,
           request_id: r.request_id || null, attempts: r.attempts,
@@ -12888,8 +12898,10 @@ function _getCloudReplenishmentData() {
         } else if (_avgCellState === 'PENDING') {
             // The marker the Suggested Qty cell has always used for the same condition. Avg Sales had one
             // symbol for "waiting" and "nothing to show"; Suggested Qty had two, and was right.
-            _avgDisplay = '…';
-            _dosDisplay = '…';
+            // CP2U-R2 - through the shared constant, because the async painter below writes the same cell
+            // and two literals in two places are two chances to disagree about what "waiting" looks like.
+            _avgDisplay = IR_AVG_PENDING_MARK;
+            _dosDisplay = IR_AVG_PENDING_MARK;
         }
         // §22.3 — source and warning stay INDEPENDENT fields. They are attached to the row for the cell's
         // title/detail so a normalized rate can be told from a weekly fallback, and a low_sample_warning is
@@ -14451,6 +14463,9 @@ function _irCanonicalSalesBasis_(sku) {
 // `basisKnown` is the RENDERING COST guard, not an option: the projection has already resolved the basis
 // for this SKU on the line above, and resolving it a second time here would double the per-row work of
 // every table render for a diagnostic. Omitted, it resolves its own.
+function _irRecoStateIsForAnotherScope_(st) {
+  return !!st && typeof st.appliedScopeKey === 'string' && st.appliedScopeKey !== _irAppliedScopeKey_();
+}
 function _irAvgSalesCellState_(sku, basisKnown) {
   var st = _irRecoState || {};
   var status = st.status || null;
@@ -14468,6 +14483,15 @@ function _irAvgSalesCellState_(sku, basisKnown) {
   }
   if (status === 'CONTEXT_NOT_READY') return out('PENDING', 'CONTEXT_NOT_READY', null);
   if (status === 'LOADING') return out('PENDING', 'IN_FLIGHT', null);
+  // CP2U-R2 - THE SCOPE CHECK COMES BEFORE THE FAILURE CLASSIFICATION, because a read that failed for the
+  // site the operator just left is not the displayed site failing. It would otherwise paint a red "read
+  // failed" across rows whose own read never ran, and the operator would retry a site that is fine.
+  //
+  // This asks a DIFFERENT question from `_irResultMatchesAppliedScope_`, which answers "may this RESULT be
+  // believed" and refuses an unstamped state on principle. Here the question is "is this state ATTRIBUTABLE
+  // to some other site", and an unstamped state is attributable to nowhere - so it falls through and is
+  // classified on its own merits, which is what the API-client-unavailable arm needs.
+  if (_irRecoStateIsForAnotherScope_(st)) return out('PENDING', 'SCOPE_SUPERSEDED', null);
   var e0 = (Array.isArray(st.errors) && st.errors.length) ? st.errors[0] : null;
   var code = (e0 && e0.code) ? String(e0.code) : null;
   if (status === 'CONFIG_NOT_READY') return out('READ_FAILED', 'CONFIG_NOT_READY', code);
@@ -14533,9 +14557,11 @@ function loadRecommendationWorkspace_() {
   _irRecoAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   var signal = _irRecoAbort ? _irRecoAbort.signal : undefined;
   _irRecoState = _irRecoBlank('LOADING');
+  var appliedKeyAtIssue = _irAppliedScopeKey_();   // CP2U-R2 - read ONCE, so both arms stamp the same site
   _irRecoState.contextKey = ctxKey; _irRecoState.seq = my; _irRecoState.scope = scopeReq;
-  _irRecoState.appliedScopeKey = _irAppliedScopeKey_();   // S8-R4D-F1A — the scope this request was issued for
+  _irRecoState.appliedScopeKey = appliedKeyAtIssue;   // S8-R4D-F1A — the scope this request was issued for
   _irRecoRerenderSummaries();
+  _irRecoPaintReadStateCells_();   // CP2U-R2: the cells say "still reading" instead of holding a stale number
   var _t0 = (typeof Date !== 'undefined' && Date.now) ? Date.now() : null;   // client-latency stamp (diagnostic only)
   // ONE scope-only request (server expands destinations + loops SKUs internally — no per-SKU HTTP, no dest/month/cycle).
   var params = { scope: { company: scopeReq.company, country: scopeReq.country, marketplace: scopeReq.marketplace, sku: null, siteSku: null },
@@ -14553,8 +14579,14 @@ function loadRecommendationWorkspace_() {
     if (my !== _irRecoSeq) return;
     _irRecoRecordDiag(_t0);
     _irRecoState = _irRecoBlank('API_ERROR'); _irRecoState.contextKey = ctxKey; _irRecoState.seq = my;
+    // CP2U-R2 - WHICH SITE DID THIS FAIL FOR. The server-answered failure arm has always stamped the scope;
+    // this one kept the blank, so a thrown read was attributable to nothing and would have been shown
+    // against whatever site happened to be on screen. Stamped with the scope the REQUEST was issued for.
+    _irRecoState.scope = scopeReq; _irRecoState.appliedScopeKey = appliedKeyAtIssue;
     _irRecoState.errors = [{ code: (err && err.apiCode) || 'PAGE_READ_FAILED', message: String(err && err.message || err), details: null }];
     _irRecoRerenderSummaries();
+    _irRecoRefreshVelocityCells_();   // CP2U-R2: a thrown read used to repaint NOTHING
+    _irRecoUpdateSuggestedCells();
   });
 }
 // F1-4B-FM2A: push the client-side latency for the Inventory consumer into the safe Foundation diagnostic
@@ -14883,9 +14915,11 @@ function loadInventoryGap_(force) {
   var my = ++_irMatSeq;
   _irMatState = { status: 'LOADING', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: null };
   _irRecoRerenderSummaries();
+  _irRecoUpdateSuggestedCells();   // CP2U-R2: the cell says "loading" rather than holding the last site number
   return Promise.resolve(window.KM.DB.getInventoryReplenishmentGap(scopeReq)).then(function (res) {
     if (my !== _irMatSeq) return;
-    if (!res || !res.success) { _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: (res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' } }; _irRecoRerenderSummaries(); return; }
+    if (!res || !res.success) { _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: (res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' } };
+      _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells(); return; }   // CP2U-R2: a failed read reaches the cell
     var rows = (res.data && res.data.rows) || [];
     var bySku = {}; rows.forEach(function (r) { if (r && r.sku != null) bySku[String(r.sku)] = r; });
     // CP2U-R1 - 43_ stamps gapMaterializationHandlerVersion on its own envelopes. It is captured here and
@@ -14895,13 +14929,22 @@ function loadInventoryGap_(force) {
     // and treating the gap read's marker as a recommendation version would make a matching string mean
     // something it does not.
     _irMatState = { status: rows.length ? 'READY' : 'EMPTY', scopeKey: key, appliedScopeKey: appliedKey, bySku: bySku, rows: rows, loadedOk: true, error: null,
-      handlerVersion: (res.meta && res.meta.gapMaterializationHandlerVersion) || null,
+      // CP2U-R2 - WHERE THE ADAPTER ACTUALLY PUTS IT. `_kmGapRead_` returns
+      // `{ success: true, data: json.data, envelope: json }`: the server meta is under `envelope`, and
+      // there is NO top-level `meta`. CP2U-R1 read `res.meta`, which against every real response is
+      // undefined, so the probe reported "no marker" forever and a hand-filled fixture agreed with it.
+      // `res.meta` is kept as a second choice in case the adapter ever lifts it, and null is reported
+      // honestly when neither carries one - the adapter drops the envelope on its failure branch, so a
+      // failed read genuinely has no marker to report.
+      handlerVersion: (res.envelope && res.envelope.meta && res.envelope.meta.gapMaterializationHandlerVersion)
+        || (res.meta && res.meta.gapMaterializationHandlerVersion) || null,
       scope: scopeReq, appliedAt: ((typeof Date !== 'undefined' && Date.now) ? Date.now() : null) };
     _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells();
   }).catch(function (err) {
     if (my !== _irMatSeq) return;
     _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: { code: 'READ_FAILED', message: String(err && err.message || err) } };
     _irRecoRerenderSummaries();
+    _irRecoUpdateSuggestedCells();   // CP2U-R2: so does a thrown one
   });
 }
 // ==================================================================================================
@@ -15047,7 +15090,13 @@ function _irRecoUpdateSuggestedCells() {
   if (typeof document === 'undefined' || !document.querySelectorAll) return;
   var rows = document.querySelectorAll('#ops-section .scroll-row[data-sku]');
   if (!rows || !rows.length) return;
-  var data = (typeof getReplenishmentData === 'function') ? (getReplenishmentData() || []) : [];
+  // CP2U-R2 - THE MATERIALIZED LANE READS NOTHING BUT `item.sku`. `_irSuggestedQtyState_` answers from
+  // `_irMatState.bySku[item.sku]` on that lane, so assembling every row to look one up was a full
+  // whole-site recomposition bought for a key. It is skipped there, which also makes this safe to call on
+  // the failing and empty arms - the paths where an assembly would hurt most. The LEGACY lane still needs
+  // `item.suggestedQty`, so it still gets the data.
+  var data = (typeof _irUseMaterializedGapRead === 'function' && _irUseMaterializedGapRead()) ? []
+    : ((typeof getReplenishmentData === 'function') ? (getReplenishmentData() || []) : []);
   Array.prototype.forEach.call(rows, function (row) {
     var cell = row.querySelector('.replen-suggested-cell'); if (!cell) return;
     var sku = row.getAttribute('data-sku');
@@ -15147,7 +15196,67 @@ function _irRecoRefreshVelocityCells_() {
   if (typeof _irSearchApplied_ === 'function' && !_irSearchApplied_() && !(typeof _replenDemoOn === 'function' && _replenDemoOn())) return;
   // CP2S-R1 - the two cells, in place. renderReplenishment() is NOT called: it is correct and it is a
   // full rebuild, and this runs on an async arrival that can land long after the operator started working.
+  // CP2U-R2 - THIS GATE IS WHY CP2U-R1 WAS INVISIBLE. It read
+  //     status === 'READY' && _irRecoHasCanonicalBasis_()
+  // so a failed read, an empty answer and a withheld basis repainted NOTHING: the vocabulary for those
+  // states existed, every authority returned the right answer, and the only path that could put any of it
+  // on screen declined to run. A state nobody can see is not a state.
+  //
+  // The split is by WHAT THE CELL NEEDS, not by whether the news is good. A resolved rate is a NUMBER, and
+  // the number belongs to the row assembly that computed it, so READY keeps the existing path. Every other
+  // state is a marker and a sentence derived from the read state alone, so it takes the painter below and
+  // costs no assembly at all - which matters because these are the slow and failing paths.
   if (_irRecoState && _irRecoState.status === 'READY' && _irRecoHasCanonicalBasis_()) _irRecoUpdateVelocityCells_();
+  else _irRecoPaintReadStateCells_();
+}
+
+// CP2U-R2 — THE STATE CELLS, IN PLACE, WITHOUT RE-ASSEMBLING THE SITE.
+//
+// `_irRecoUpdateVelocityCells_` reads `item.avgDailySales` out of `getReplenishmentData()`, and outside a
+// render pass that call is a FULL ROW ASSEMBLY. Paying for one in order to print "still reading" would add
+// the heaviest work on the page to its slowest path, which is the opposite of what this round is for. None
+// of these states needs row data: the marker, the class and the sentence all come from the read state and,
+// for a named refusal, from the basis the picker already holds.
+//
+// It repaints only the two velocity cells of rows already in the DOM. No node is created or replaced, so an
+// expanded panel, a half-typed quantity, the caret and the scroll position are untouched.
+function _irRecoPaintReadStateCells_() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  // The same confirmed-Search guard the velocity refresh keeps: never repaint a table the operator has not
+  // asked for yet.
+  if (typeof _irSearchApplied_ === 'function' && !_irSearchApplied_()
+    && !(typeof _replenDemoOn === 'function' && _replenDemoOn())) return;
+  var rows = document.querySelectorAll('#ops-section .scroll-row[data-sku]');
+  if (!rows || !rows.length) return;
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var sku = row.getAttribute && row.getAttribute('data-sku');
+    if (!sku) continue;
+    var basis = _irCanonicalSalesBasis_(sku);
+    var st = _irAvgSalesCellState_(sku, basis);
+    // READY carries a number this function has no right to invent, and DISABLED means the column keeps its
+    // pre-cutover display. Both are left to the path that owns them.
+    if (!st || st.state === 'READY' || st.state === 'DISABLED') continue;
+    var item = { avgSalesWarning: null, avgSalesCellState: st.state, avgSalesCellReason: st.reason,
+      avgSalesCellDetail: st.detail,
+      avgSalesQualityError: (st.state === 'REFUSED' && basis) ? (basis.basisQualityError || null) : null };
+    var mark = (st.state === 'PENDING') ? IR_AVG_PENDING_MARK : '--';
+    var avg = row.querySelector('.replen-avg-cell');
+    if (avg) {
+      avg.className = 'scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item);
+      var note = _irAvgSalesQualityNote_(item);
+      // REMOVED rather than blanked, so a cell that recovers does not keep an empty tooltip box.
+      if (note) avg.setAttribute('title', note); else avg.removeAttribute('title');
+      avg.innerHTML = mark + _irAvgSalesFlagHtml_(item);
+    }
+    var dos = row.querySelector('.replen-dos-cell');
+    if (dos) {
+      // No rate means no cover. The colour classes are dropped with it: a red "days of supply" on a cell
+      // that is reporting a failed read would be inventing a shortage out of a transport error.
+      dos.className = 'scroll-cell replen-dos-cell';
+      dos.textContent = mark;
+    }
+  }
 }
 // __IRRECO_END__ (test extraction marker — do not remove)
 
