@@ -405,9 +405,11 @@ on the record as a dated snapshot rather than being deleted.
 
 | | bytes | status |
 |---|---|---|
-| previous gate | 4,600,000 | **historical** — on the record, no longer a question awaiting a decision |
-| **current gate** | **4,610,000** | **Owner-approved** (S8-B3-R3-CP2S-R1), D-S8-B3-74 |
-| measured at `d6651700` | 4,604,127 | headroom **5,873** |
+| first gate | 4,600,000 | **historical** — on the record, no longer a question awaiting a decision |
+| second gate | 4,610,000 | **historical** — Owner-approved (S8-B3-R3-CP2S-R1), D-S8-B3-74 |
+| **current gate** | **4,630,000** | **Owner-approved** (S8-B3-R3-CP2V-R2), D-S8-B3-124 |
+| measured at `d6651700` | 4,604,127 | headroom **5,873** against the gate of that day |
+| measured at R53 | 4,629,739 | headroom **261** |
 
 **The approval is scoped, and this document is outside it.** The +10,000 covers exactly three IR
 items — the blank-date skip, the WAREHOUSE historical-average chain, and the diagnostic-field

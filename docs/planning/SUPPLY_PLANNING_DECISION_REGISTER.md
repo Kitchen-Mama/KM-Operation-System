@@ -5237,3 +5237,21 @@ other direction.
 **Carried, not fixed:** a trailing all-blank row is kept by `getDataRange()` and dropped by `batchGet`, so
 the intermediate rectangle can differ by such rows. §A5 records the difference explicitly and asserts the
 **handler output is identical**; the business answer does not depend on it.
+
+### D-S8-B3-124 — The GS load-surface gate is 4,630,000 — **OWNER-APPROVED (CP2V-R2)**
+
+CP2V-R1 measured the minimal enabling change for the batch canonical read at **+11,546 bytes** against **98
+bytes** of headroom, and **did not ship it**. It reported the whole delta in one piece and stopped, because
+a budget is not something an agent may widen for itself and a saving split into instalments is a way of
+never being refused.
+
+The Owner granted **+20,000**, to 4,630,000. The approval is scoped to this round's read transport: the
+two-call canonical read in 42_, the `config.only` subset capability in the generated bundle, the named
+refusals for a malformed batch reply, the capped non-silent fallback, the bounded `canonicalRead`
+diagnostic, and the R53 stamp and manifest row that make a stale 42_ visible.
+
+**It was spent, not banked: 4,629,739, 261 bytes under.** Both over-budget measurements along the way were
+answered by cutting THIS ROUND'S OWN PROSE — no module was retired and no unrelated file was compressed,
+which `C3c` still pins by name. `C3b` still bounds the headroom in the other direction, so the gate remains
+load-bearing both ways, and `C3b2` now pins the total of the two approved raises (10,000 + 20,000) rather
+than a single number somebody could round up quietly.

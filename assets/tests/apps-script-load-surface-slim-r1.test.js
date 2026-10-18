@@ -146,7 +146,22 @@ eq(relocatedBytes, 808195,
 // never-retired modules are still pinned by name (C3c), and the measurement is still committed/LF through
 // the same instrument. A budget raise that also relaxed the guards would not be a raise, it would be a
 // removal wearing one as a disguise.
-var SIZE_BUDGET = 4610000;
+// S8-B3-R3-CP2V-R2 - OWNER-APPROVED RAISE, 4,610,000 -> 4,630,000, AND IT IS SCOPED THE SAME WAY.
+//
+// The 4,610,000 number ran out on the recommendation read transport. CP2V-R1 measured the minimal enabling
+// change at +11,546 bytes against 98 bytes of headroom and did NOT ship it: it reported the whole delta in
+// one piece and stopped, because a budget is not something an agent may widen for itself. The Owner granted
+// +20,000 for this round.
+//
+// WHAT THE NUMBER LICENSES, and nothing else: the two-call canonical read in 42_, the `config.only` subset
+// capability the split needs in the generated bundle, the named refusals for a malformed batch reply, the
+// capped non-silent fallback, the bounded canonicalRead diagnostic, and the R53 module stamp and manifest
+// row that make a stale copy of 42_ visible.
+//
+// THE RAISE WAS SPENT, NOT BANKED. The measured tree is 4,629,739 - 261 bytes under. Those bytes came out
+// of THIS ROUND'S OWN PROSE, twice, after the first and second measurements came in over: no module was
+// retired and no unrelated file was compressed to make room, which C3c still pins.
+var SIZE_BUDGET = 4630000;
 ok(A.directoryBytes < SIZE_BUDGET, 'C3 the production runtime universe is under the approved safety budget',
   A.directoryBytes);
 // The gate stays load-bearing in BOTH directions: a budget raised so far above the tree that nothing could
@@ -158,8 +173,9 @@ ok(HEADROOM > 0 && HEADROOM < 200000,
   + 'open budget', HEADROOM);
 // CP2S-R1 - and the raise is SMALL, which is the half of it that is easy to lose. 10,000 bytes is about a
 // third of one owner file: it funds the named repair and does not quietly become a backend round.
-ok(SIZE_BUDGET - 4600000 === 10000,
-  'C3b2 the approved raise is exactly the 10,000 bytes granted - not rounded up while nobody was looking');
+ok(SIZE_BUDGET - 4600000 === 30000,
+  'C3b2 the approved raises total exactly the 30,000 bytes granted (10,000 at CP2S-R1 + 20,000 at CP2V-R2) '
+  + '- not rounded up while nobody was looking');
 // The raise was load-bearing: the tree is genuinely above the old number, so this is a recorded decision
 // about a real overrun and not a pre-emptive widening.
 ok(A.directoryBytes > 4500000,
