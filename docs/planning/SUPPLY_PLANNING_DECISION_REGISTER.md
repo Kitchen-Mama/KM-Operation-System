@@ -5255,3 +5255,81 @@ answered by cutting THIS ROUND'S OWN PROSE — no module was retired and no unre
 which `C3c` still pins by name. `C3b` still bounds the headroom in the other direction, so the gate remains
 load-bearing both ways, and `C3b2` now pins the total of the two approved raises (10,000 + 20,000) rather
 than a single number somebody could round up quietly.
+
+### D-S8-B3-125 — An unreadable catalogue was read as "the sheets are gone" — **FIXED (CP2V-R3)**
+
+Call 1 of the batch read asks which sheets exist. The R53 cut turned that reply into a `present` map and
+reported anything absent from it as `SOURCE_NOT_AVAILABLE`. So a reply that could not be READ produced the
+same answer as a reply that said the sheet is GONE.
+
+Measured against the cut, before any fix: a `null` reply, a missing `sheets` key, a `null` `sheets`, a
+non-array `sheets` and an empty `sheets` each produced **twelve tables reported SOURCE_NOT_AVAILABLE, no
+refusal and no error**, with the handler continuing on the remaining nine. An entry without `properties` or
+with a blank title condemned one. The only case that stopped at all did so by throwing a `TypeError` with no
+code.
+
+The reply is now validated before use and refused as `CANONICAL_BATCH_MALFORMED_METADATA`, carried on
+`apiCode` so the envelope names it. **The refusal is about an unreadable reply, not an absent table**, and
+§H9 pins that difference: a well-formed catalogue that genuinely omits one optional sheet still reports
+exactly that sheet and does not condemn the other eleven. Without that assertion, "refuse on anything
+unexpected" would have passed every other case in the section while destroying the ability to report a
+table that is really missing.
+
+---
+
+### D-S8-B3-126 — A sheet with used rows but nothing in them was reported MISSING — **FIXED (CP2V-R3)**
+
+`batchGet` omits trailing empty rows, so a sheet whose only used row is blank — empty cells, or formulas
+returning the empty string — comes back with no `values`, which is indistinguishable on the wire from a
+sheet with no used rows at all. The R53 cut called both `MISSING_SNAPSHOT`.
+
+They are different facts. `getDataRange()` returns `[['','','']]` for the first: a PRESENT table with blank
+headers and no data rows, raising **no issue**. `MISSING_SNAPSHOT` is a source fault a consumer may fail
+closed on, so the collapse invents a fault on a table that is merely empty.
+
+Such ranges are now resolved through the **unchanged per-sheet reader** rather than a second
+implementation — it already draws this line, and delegating to it means the two cannot drift. It also
+removes a second hazard for free: those values arrive through SpreadsheetApp, where a date cell is already a
+`Date`, so the serial map must not touch them.
+
+**The probe is bounded to that boundary**, which is the half that could have undone the round: §I4 asserts a
+healthy read still costs exactly two remote calls and nine per-sheet reads — the probe adds **none** — and
+that one blank-but-used table costs exactly **one** more, not twelve. The resolution also shares the single
+delegated call the nine non-batched tables already use, so it is one registry pass, not two.
+
+---
+
+### D-S8-B3-127 — `s4-r4-deferred-reads` failed once in a sweep and the cause is unknown — **OPEN**
+
+**It is not fixed, and it has not been explained.** A later sweep showed it clean; that is one
+non-reproduction, not a cause.
+
+What is recorded:
+
+| | first sweep (`37891bcf`) | final sweep (`4addbb04`) | standalone |
+|---|---|---|---|
+| exit | **1** | 0 | 0 (3 consecutive runs) |
+| classification | **NO_SUMMARY** | SUMMARY_PRESENT | 160 passed, 0 failed |
+| fail lines | 0 | 0 | 0 |
+| timed_out | false | false | — |
+| duration | **6,788 ms** | 14,258 ms | — |
+
+Also established: its three neighbours were CLEAN, the sweep reported `worktree INTACT` with
+`executed 680/680` and `complete: true`, so **no mutant leaked**; and re-running it through the sweep's own
+`runOne` — the same spawn path — returned CLEAN.
+
+**EVIDENCE GAP, stated rather than worked around.** The original stdout and stderr of the failing run are
+**lost and cannot be recovered**. `runOne` attaches them as `rec.raw`, but the writer strips that key before
+the JSON is written — the file says so in its own comment, "The JSON summary carries no raw bytes" — so the
+bytes existed only in that sweep process's memory. What survives is the classification above and one console
+line: `473/680  NOT_CLEAN  s4-r4-deferred-reads  [NONZERO_EXIT,MISSING_SUMMARY]`. No fail line was captured
+because there was none to capture; the suite produced no summary at all.
+
+What that narrows it to, without claiming more: the process ended non-zero **before printing its summary**,
+having run for about half the time it takes when healthy, without timing out. A suite that plants mutants in
+real source files is the family where this matters most, which is why it stays open rather than being
+written off as flaky.
+
+**Not done, deliberately:** no rerun-until-green was treated as a repair, S4 was not modified, and no test
+tooling was refactored to chase it. The one change that would close the evidence gap — persisting `raw` for
+non-clean suites — is a change to the sweep tool and is left for a round that authorises it.

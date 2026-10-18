@@ -987,47 +987,52 @@ function recommendationWorkspaceBuild_(v, calc, lines) {
 }
 
 // ============================================================================================================
-// CP2V-R1/R2 - THE CANONICAL READ, IN TWO REMOTE CALLS INSTEAD OF TWENTY-ONE.
+// CP2V - THE CANONICAL READ, IN TWO REMOTE CALLS INSTEAD OF TWENTY-ONE.
 //
-// THE COST IS THE SHEET COUNT, NOT THE ROWS. readCanonicalSnapshots opens twenty-one sheets and calls
-// getDataRange().getValues() on each. 60_ measured the same point on the same spreadsheet: thirteen tables,
-// 22,006 ms -> 2,265 ms, once they stopped crossing the range bridge thirteen times (R44). This handler
-// pays ONCE PER SITE.
+// The cost is the SHEET COUNT, not the rows; 60_ measured it here at R44 (13 tables, 22,006 -> 2,265 ms),
+// and this handler pays ONCE PER SITE.
 //
 // A SPLIT, NOT A SWEEP. Under UNFORMATTED_VALUE + SERIAL_NUMBER a date and a number are the same wire
-// value. 60_ answers that with SIR_B1_DATE_MAP_, a declared, never-inferred, per-column map validated
-// against the live reader; only canonical tables already in it are batched, and the rest keep the existing
-// per-sheet reader - unchanged by construction. THIS FILE DECLARES NO DATE COLUMNS: promoting a table means
-// adding it to 60_'s map, under 60_'s drift detector, after a live census. Membership is ASKED at runtime
-// (`sirWsIsB1Table_`), so the split follows that map instead of copying it.
-//
-// DEGRADING IS NOT FAILING. Every prerequisite - advanced service, 60_'s helpers, bundle capability,
-// spreadsheet timezone - is checked, and anything missing routes back to the read that ships today.
+// value, so only tables already in 60_'s proven SIR_B1_DATE_MAP_ are batched and the rest keep the
+// per-sheet reader, unchanged by construction. THIS FILE DECLARES NO DATE COLUMNS: promoting one means
+// adding it to 60_'s map, under its drift detector, after a live census. Membership is ASKED at runtime.
+// Every prerequisite is checked, and anything missing routes back to today's read, naming which.
 // ============================================================================================================
 
-// Transient-only, and deliberately the same list 60_ uses. A 403 or a schema fault must NOT fall back: that
-// would turn a deployment error into a permanent silent slow path.
+// Transient-only, the same list 60_ uses. A 403 or schema fault must NOT fall back: that turns a
+// deployment error into a permanent silent slow path.
 var RECO_WS_CANON_FALLBACK_ = ['SHEETS_QUOTA_EXCEEDED', 'SHEETS_SERVICE_ERROR', 'ADVANCED_SHEETS_SERVICE_UNAVAILABLE'];
 
-// CP2V-R2 - ONE fallback per execution, and never a quiet one. A fallback pays for the failed batch AND
-// then the full twenty-one-sheet read, so a request that falls back is SLOWER than it would have been
-// without this reader at all. Right for a transient fault, wrong for a standing condition - hence a CAP,
-// not just a count. `profile.fallback.batchMsWasted` reports that loss rather than hiding it.
+// ONE fallback per execution, never quiet. It pays for the failed batch AND the full read, so such a
+// request is SLOWER than without this reader - right for a transient fault, wrong for a standing one,
+// hence a CAP. `fallback.batchMsWasted` reports that loss.
 var RECO_WS_CANON_MAX_FALLBACK_ = 1;
 var RECO_WS_CANON_FALLBACKS_ = 0;
 
-// A refusal the handler can NAME. The generic catch reads `apiCode`, so this token reaches the envelope as
-// itself instead of collapsing into INTERNAL_ERROR - a malformed reply is not a bug in the projection.
+// A refusal the handler can NAME: the generic catch reads `apiCode`, so this reaches the envelope as
+// itself rather than as INTERNAL_ERROR.
 function recoWsCanonError_(code, detail) {
   var e = new Error(code + (detail ? ': ' + detail : ''));
   e.apiCode = code; e.safetyToken = code; e.canonicalReadFault = true;
   return e;
 }
 
-// `(vr && vr.values) || null` cannot tell a legitimately EMPTY range from a BROKEN entry, and those must
-// not share a branch: the first is an empty business table, the second is an unknown one. A null entry, a
-// non-array `values`, or a non-array row all mean the reply is not one this code can read, and the only
-// safe answer is to stop - an empty table here would publish an answer computed from a table never read.
+// THE RULE BOTH VALIDATORS ENFORCE: "I could not read the reply" must never share a branch with a fact
+// about the data - else a malformed valueRange becomes an EMPTY TABLE, and an unreadable Call-1 catalogue
+// condemns all twelve batched tables as SOURCE_NOT_AVAILABLE. Both answer from a source nobody read. A
+// real spreadsheet has at least one sheet, so an empty catalogue is malformed.
+function recoWsCanonValidMeta_(meta) {
+  if (!meta || typeof meta !== 'object') return 'reply is not an object';
+  if (!Array.isArray(meta.sheets)) return 'sheets is not an array';
+  if (!meta.sheets.length) return 'sheets is empty';
+  for (var i = 0; i < meta.sheets.length; i++) {
+    var e = meta.sheets[i];
+    if (!e || typeof e !== 'object' || !e.properties || typeof e.properties !== 'object') return 'sheets[' + i + '] has no properties';
+    if (typeof e.properties.title !== 'string' || e.properties.title === '') return 'sheets[' + i + '] has no title';
+  }
+  return null;
+}
+
 function recoWsCanonValidRange_(vr) {
   if (vr === null || vr === undefined) return 'entry is null';
   if (typeof vr !== 'object' || Array.isArray(vr)) return 'entry is not an object';
@@ -1039,7 +1044,7 @@ function recoWsCanonValidRange_(vr) {
   return null;
 }
 
-// Registry order is preserved on both sides, so the merged object is key-for-key what the old reader built.
+// Registry order holds on both sides, so the merged object is key-for-key what the old reader built.
 function recoWsCanonSplit_() {
   var reg = (typeof KMPS !== 'undefined' && KMPS && KMPS.CANONICAL_TABLES) || [];
   var batch = [], rest = [];
@@ -1049,9 +1054,8 @@ function recoWsCanonSplit_() {
   return { batch: batch, rest: rest };
 }
 
-// Rebuild the rectangle getDataRange() would have returned. batchGet omits trailing empty cells PER ROW, so
-// the width is the WIDEST ROW, not the header length: data running past the last populated header cell is
-// still inside getDataRange()'s rectangle, and padding to the header would drop those columns.
+// Rebuild getDataRange()'s rectangle. batchGet omits trailing empty cells PER ROW, so the width is the
+// WIDEST ROW, not the header length - data past the last populated header cell is still in the rectangle.
 function recoWsCanonRect_(values) {
   var w = 0, i;
   for (i = 0; i < values.length; i++) { var r = values[i]; if (r && r.length > w) w = r.length; }
@@ -1067,53 +1071,52 @@ function recoWsCanonicalRead_(ss, nowFn) {
   var now = (typeof nowFn === 'function') ? nowFn : function () { return Date.now(); };
   var t0 = now();
   var canFull = (typeof KMPS !== 'undefined' && KMPS && typeof KMPS.readCanonicalSnapshots === 'function');
-  if (!canFull) return { snapshots: {}, issues: [], profile: recoWsCanonProfile_('UNAVAILABLE', 0, 0, 0, 0, 0, null) };
+  if (!canFull) return { snapshots: {}, issues: [], profile: recoWsCanonProfile_('UNAVAILABLE', 0, 0, 0, 0, 0, null, 'KMPS_READER_ABSENT') };
 
-  // `reason` names WHY the slow path is running, so a deployment that silently never batches is visible in
-  // the response rather than only in a stopwatch.
-  var full = function (mode, reason, wasted, startedAt) {
+  var full = function (mode, reason, wasted, startedAt, why) {
     var fr = now();
     var r = KMPS.readCanonicalSnapshots(ss, null);
     var nTables = Object.keys(r.snapshots || {}).length;
     r.profile = recoWsCanonProfile_(mode, 0, nTables, nTables, (now() - (startedAt === undefined ? fr : startedAt)), 0,
       reason ? { count: RECO_WS_CANON_FALLBACKS_, max: RECO_WS_CANON_MAX_FALLBACK_, reason: reason,
-        batchMsWasted: wasted || 0 } : null);
+        batchMsWasted: wasted || 0 } : null, why || null);
     return r;
   };
 
-  // Every prerequisite, checked before anything is attempted. Missing one is not an error - it is the
-  // deployment this code was written to survive - but it IS named.
+  // Every prerequisite is checked before anything is attempted and each names ITSELF in `why`: a missing
+  // advanced service, a pre-CP2V bundle and a spreadsheet with no timezone are three different repairs
+  // that a bare "PER_SHEET" cannot tell apart, and a stopwatch cannot either.
   if (typeof Sheets === 'undefined' || !Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
-    return full('PER_SHEET', null, 0, t0);
+    return full('PER_SHEET', null, 0, t0, 'ADVANCED_SHEETS_SERVICE_UNAVAILABLE');
   }
   if (typeof sirWsIsB1Table_ !== 'function' || typeof sirWsApplyDateMap_ !== 'function'
     || typeof sirWsPadRows_ !== 'function' || typeof sirWsColumnLetter_ !== 'function') {
-    return full('PER_SHEET', null, 0, t0);
+    return full('PER_SHEET', null, 0, t0, 'DATE_MAP_HELPERS_ABSENT');
   }
 
-  // HALF A DEPLOYMENT: this file beside a PRE-CP2V 90_. `config.only` would be silently ignored, so the
-  // per-sheet pass would read all twenty-one tables - re-reading by hand the twelve just fetched in bulk.
-  // Still correct, but SLOWER than before the optimisation existed. KM_BUNDLE_CONTENT_HASH_ reports a
-  // stale 90_ to a person afterwards; this runs first, costs one pure call, and turns the bad pairing
-  // into the ordinary slow path, named as such.
+  // HALF A DEPLOYMENT: beside a PRE-CP2V 90_, `config.only` is ignored and the twelve tables just fetched
+  // in bulk are re-read by hand - correct, but SLOWER than before. One pure call turns that into the
+  // ordinary slow path; the bundle hash only tells a person afterwards.
   if (!(function () {
     try { return KMPS.tablesFor({ only: [] }).length === 0; } catch (e) { return false; }
-  })()) return full('PER_SHEET', null, 0, t0);
+  })()) return full('PER_SHEET', null, 0, t0, 'BUNDLE_SUBSET_READ_UNSUPPORTED');
 
   var split = recoWsCanonSplit_();
-  if (!split.batch.length) return full('PER_SHEET', null, 0, t0);
+  if (!split.batch.length) return full('PER_SHEET', null, 0, t0, 'NO_PROVEN_DATE_MAP_TABLES');
 
-  var snapshots = {}, issues = [], id = ss.getId();
+  var snapshots = {}, issues = [], id = ss.getId(), emptyBack = [], probeReads = 0;
   var tz = (typeof ss.getSpreadsheetTimeZone === 'function') ? ss.getSpreadsheetTimeZone() : null;
-  if (!tz) return full('PER_SHEET', null, 0, t0);   // no zone, no provable serial conversion, no batch
+  if (!tz) return full('PER_SHEET', null, 0, t0, 'SPREADSHEET_TIMEZONE_UNAVAILABLE');
   var remoteCalls = 0, normalizeMs = 0;
 
   try {
-    // CALL 1 - existence and width. Metadata only. It cannot be range-filtered: naming a missing sheet makes
-    // the call throw, and "missing" is the state SOURCE_NOT_AVAILABLE has to report.
+    // CALL 1 - existence and width, metadata only. It cannot be range-filtered: naming a missing sheet
+    // throws, and "missing" is the state SOURCE_NOT_AVAILABLE has to report.
     remoteCalls++;
     var meta = Sheets.Spreadsheets.get(id, { fields: 'sheets.properties(title,gridProperties(columnCount))' });
-    var width = {}, present = {}, sh = (meta && meta.sheets) || [], m;
+    var badMeta = recoWsCanonValidMeta_(meta);
+    if (badMeta) throw recoWsCanonError_('CANONICAL_BATCH_MALFORMED_METADATA', badMeta);
+    var width = {}, present = {}, sh = meta.sheets, m;
     for (m = 0; m < sh.length; m++) {
       var pr = sh[m].properties || {};
       if (!pr.title) continue;
@@ -1127,28 +1130,26 @@ function recoWsCanonicalRead_(ss, nowFn) {
       var e = split.batch[i];
       if (!present[e.sheet]) { issues.push({ sourceType: e.key, sheetName: e.sheet, reason: 'SOURCE_NOT_AVAILABLE' }); continue; }
       var cols = width[e.sheet] > 0 ? width[e.sheet] : 1;
-      // Column-bounded, ROW-OPEN: rowCount is the ALLOCATED grid, so bounding on it would ask for a thousand
-      // empty rows and make an empty sheet look like a full one.
+      // Column-bounded, ROW-OPEN: rowCount is the ALLOCATED grid, so bounding on it asks for a thousand
+      // empty rows and makes an empty sheet look full.
       ranges.push("'" + e.sheet.replace(/'/g, "''") + "'!A:" + sirWsColumnLetter_(cols));
       ordered.push(e);
     }
 
     if (ranges.length) {
-      // CALL 2 - the values. UNFORMATTED_VALUE is required for IDENTITY as much as arithmetic: sku columns are
-      // mixed number/string, and a formatted render would stringify them and change row identity.
+      // CALL 2 - the values. UNFORMATTED_VALUE is required for IDENTITY as much as arithmetic: sku columns
+      // are mixed number/string and a formatted render would change row identity.
       remoteCalls++;
       var resp = Sheets.Spreadsheets.Values.batchGet(id, { ranges: ranges,
         valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER' });
       var vrs = (resp && resp.valueRanges) || [];
-      // A MISSING valueRange IS NOT AN EMPTY TABLE. One entry comes back per requested range; a range with no
-      // data has no `values` KEY, which is a different thing from the ENTRY being absent. Treating the first
-      // as empty is correct; treating the second as empty fabricates an empty business table.
+      // A range with no data has no `values` KEY, which differs from the ENTRY being absent.
       if (vrs.length !== ordered.length) {
         throw recoWsCanonError_('CANONICAL_BATCH_PARTIAL_RESPONSE',
           'requested ' + ordered.length + ' ranges, received ' + vrs.length);
       }
-      // SHAPE FIRST, FOR EVERY ENTRY, BEFORE ANY IS USED. Validating as we go would leave the tables before a
-      // broken entry in `snapshots` and the rest unread - a partial read that looks complete.
+      // SHAPE FIRST, FOR EVERY ENTRY, BEFORE ANY IS USED: validating as we go leaves a partial read that
+      // looks complete.
       for (i = 0; i < ordered.length; i++) {
         var bad = recoWsCanonValidRange_(vrs[i]);
         if (bad) {
@@ -1160,17 +1161,18 @@ function recoWsCanonicalRead_(ss, nowFn) {
       for (i = 0; i < ordered.length; i++) {
         var sp = ordered[i], vrv = vrs[i].values;
         var vals = (vrv && vrv.length) ? vrv : null;
-        if (!vals) { issues.push({ sourceType: sp.key, sheetName: sp.sheet, reason: 'MISSING_SNAPSHOT' }); continue; }
+        if (!vals) { emptyBack.push(sp); continue; }      // resolved below, not assumed here
         var rect = recoWsCanonRect_(vals);
         sirWsApplyDateMap_(sp.sheet, rect, tz);          // declared columns only, and type-gated inside
         var headers = rect[0].map(function (h) { return recoWsStr_(h); });
         snapshots[sp.key] = { headers: headers, rows: rect.slice(1) };
       }
       normalizeMs += (now() - tN);
+
     }
   } catch (eB) {
-    // A fault this reader raised about the RESPONSE is never transient: it says the reply was not readable,
-    // and reading it again the slow way would not make the first reply correct. It fails closed, by name.
+    // A fault about the RESPONSE is never transient - re-reading slowly cannot make the first reply
+    // correct - so it fails closed, by name.
     if (eB && eB.canonicalReadFault) throw eB;
     var cls = (typeof sirWsClassifySheetsError_ === 'function') ? sirWsClassifySheetsError_(eB) : '';
     if (RECO_WS_CANON_FALLBACK_.indexOf(cls) === -1) throw eB;   // 403 / schema faults fail closed
@@ -1182,48 +1184,55 @@ function recoWsCanonicalRead_(ss, nowFn) {
     return full('FALLBACK', cls, now() - t0, t0);         // transient only, once, and never silently
   }
 
-  // The remainder, through the UNCHANGED per-sheet reader - one `only` request rather than one call each.
+  // ONE delegated read for everything the batch did not settle, through the UNCHANGED per-sheet reader:
+  // the nine tables with no proven date map, plus any batched range that came back EMPTY. The second is
+  // there because an empty range is TWO different sheets and only one is missing - a sheet whose only
+  // used row is blank (empty cells, or formulas returning '') has no `values` on the wire, yet
+  // getDataRange() returns a PRESENT table raising NO issue, against MISSING_SNAPSHOT which a consumer
+  // fails closed on. That reader already draws the line, and its Dates arrive as Dates. BOUNDED: a
+  // healthy read adds none.
   var restKeys = [];
   for (var k = 0; k < split.rest.length; k++) {
     var rk = split.rest[k];
-    // The allocation-rule snapshot is replaced by the Script-Property blob below, every time, before anything
-    // reads it; reading the retired Sheet first buys a read and discards it. Guarded on the SAME condition as
-    // the override, so a runtime without 50_ still reads it.
+    // The Script-Property blob below replaces this snapshot before anything reads it, so reading the
+    // retired Sheet buys a read and discards it. Guarded on the SAME condition as the override.
     if (rk.key === 'replenishmentDemandAllocationRules' && typeof warehouseAllocationSnapshot_ === 'function') continue;
     restKeys.push(rk.key);
   }
-  var perSheet = 0;
+  var perSheet = restKeys.length;
+  probeReads = emptyBack.length;
+  for (var e2 = 0; e2 < emptyBack.length; e2++) restKeys.push(emptyBack[e2].key);
   if (restKeys.length) {
     var r2 = KMPS.readCanonicalSnapshots(ss, { only: restKeys });
     var sn = r2.snapshots || {};
     for (var key in sn) { if (Object.prototype.hasOwnProperty.call(sn, key)) snapshots[key] = sn[key]; }
     issues = issues.concat(r2.issues || []);
-    perSheet = restKeys.length;
   }
   return { snapshots: snapshots, issues: issues,
-    profile: recoWsCanonProfile_('BATCH', remoteCalls, perSheet, Object.keys(snapshots).length,
+    profile: recoWsCanonProfile_('BATCH', remoteCalls, perSheet + probeReads, Object.keys(snapshots).length,
       (now() - t0), normalizeMs, null) };
 }
 
-// A BOUNDED diagnostic: fixed keys, numbers, one short token. No table names, no row counts, no array that
-// grows with the registry - a response is not a log. `readMs` covers obtaining the bytes (normalizeMs, the
-// padding and declared date conversion, is INSIDE it); the handler derives computeMs from its own total.
-function recoWsCanonProfile_(mode, remoteCalls, perSheetReads, tables, readMs, normalizeMs, fallback) {
+// A BOUNDED diagnostic: fixed keys, numbers, short tokens - no table names, no row counts, nothing that
+// grows with the registry. `readMs` covers obtaining the bytes, normalizeMs INSIDE it.
+function recoWsCanonProfile_(mode, remoteCalls, perSheetReads, tables, readMs, normalizeMs, fallback, notBatchedReason) {
   return { mode: mode, remoteCalls: remoteCalls, perSheetReads: perSheetReads, tables: tables,
-    readMs: readMs, normalizeMs: normalizeMs, fallback: fallback || null };
+    readMs: readMs, normalizeMs: normalizeMs, fallback: fallback || null,
+    notBatchedReason: notBatchedReason || null };
 }
 
-// The response projection. `computeMs` is derived here rather than in the reader because only the handler
-// knows its own total. An injected pre-read carries no profile; INJECTED says so rather than pretending
-// this handler chose a transport it never ran.
+// CP2V-R3 - `afterReadMs`, NOT `computeMs`. It is serverDurationMs minus the canonical read, so EVERY
+// other thing lands in it: Script Property lookups, openTarget, the allocation config blob, the per-SKU
+// expansion. "compute" would invite a reader to blame the calculation for what may be another I/O; the
+// honest claim is WHEN it was spent, not on what. An injected pre-read has no profile, hence INJECTED.
 function recoWsCanonMeta_(profile, serverMs) {
   if (!profile) return { mode: 'INJECTED', remoteCalls: 0, perSheetReads: 0, tables: null,
-    readMs: null, normalizeMs: null, computeMs: null, fallback: null };
+    readMs: null, normalizeMs: null, afterReadMs: null, fallback: null, notBatchedReason: 'PRE_READ_INJECTED' };
   var rm = (typeof profile.readMs === 'number') ? profile.readMs : null;
   return { mode: profile.mode, remoteCalls: profile.remoteCalls, perSheetReads: profile.perSheetReads,
     tables: profile.tables, readMs: rm, normalizeMs: profile.normalizeMs,
-    computeMs: (rm === null || typeof serverMs !== 'number') ? null : (serverMs - rm),
-    fallback: profile.fallback };
+    afterReadMs: (rm === null || typeof serverMs !== 'number') ? null : (serverMs - rm),
+    fallback: profile.fallback, notBatchedReason: profile.notBatchedReason || null };
 }
 
 // --------------------------------------------------------------------------------------------------------

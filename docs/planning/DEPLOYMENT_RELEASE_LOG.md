@@ -5588,3 +5588,139 @@ the same execution is refused by name (`CANONICAL_BATCH_FALLBACK_EXHAUSTED`) rat
 twice. `meta.canonicalRead.fallback.batchMsWasted` reports the loss instead of hiding it. Only the transient
 classes fall back at all; a permission or schema fault fails closed, because a deployment error that quietly
 becomes a permanent slow path is the one outcome a performance change must never buy.
+
+## S8-B3-R3-CP2V-R3 — CORRECTION INSIDE THE UNSHIPPED `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R53` CUT
+
+```
+BASE    4addbb04   R53 is CUT, NOT SYNCED, NOT DEPLOYED, so this correction lands INSIDE it rather than
+                   as a new release. That is the narrow exemption the stamp gate already names: a file
+                   edited after an UNSHIPPED cut keeps its stamp and is REPORTED, not marched forward.
+                   Nothing here is a new capability - R53's own claims are being made true.
+SCOPE   42_api_v1_recommendation_workspace.gs ONLY. No bundle rebuild (no assets/js/core file changed),
+        no 63_ change, no manifest change, no stamp move, no action, no formula, no frontend byte.
+
+WHAT WAS WRONG IN THE CUT, AND IS NOW FIXED
+
+  1. A MALFORMED CALL-1 REPLY WAS READ AS "TWELVE TABLES DO NOT EXIST".
+     `present` was built from the metadata reply and anything absent from it became
+     SOURCE_NOT_AVAILABLE. A reply that was null, had no `sheets`, had a non-array `sheets`, an empty
+     `sheets`, or an entry without a usable title therefore condemned every batched table as missing
+     while the handler answered from the remaining nine. Measured against the cut: 12 tables reported
+     SOURCE_NOT_AVAILABLE, no refusal, no error. Now validated before use and refused by name as
+     CANONICAL_BATCH_MALFORMED_METADATA. A WELL-FORMED catalogue that genuinely omits one optional
+     sheet still reports exactly that sheet - the refusal is about an unreadable reply, not an absent
+     table, and a test pins the difference so "refuse on anything unexpected" cannot pass for it.
+
+  2. A SHEET WITH USED ROWS BUT NOTHING IN THEM WAS REPORTED MISSING.
+     batchGet omits trailing empty rows, so a sheet whose only used row is blank - empty cells, or
+     formulas returning the empty string - returns no `values`, exactly like a sheet with no used rows.
+     The cut collapsed the two into MISSING_SNAPSHOT. getDataRange() distinguishes them: the first is a
+     PRESENT table with blank headers and no data rows that raises NO issue, and MISSING_SNAPSHOT is a
+     source fault a consumer may fail closed on. Such ranges are now resolved through the UNCHANGED
+     per-sheet reader, which already draws that line, so the two cannot drift.
+     BOUNDED: it runs ONLY for ranges that came back empty. A healthy read still costs two remote calls
+     and nine per-sheet reads, asserted directly; one blank-but-used table costs exactly ONE more.
+
+  3. PER_SHEET DID NOT SAY WHY. `canonicalRead.notBatchedReason` now names the missing prerequisite -
+     ADVANCED_SHEETS_SERVICE_UNAVAILABLE, DATE_MAP_HELPERS_ABSENT, BUNDLE_SUBSET_READ_UNSUPPORTED,
+     SPREADSHEET_TIMEZONE_UNAVAILABLE, NO_PROVEN_DATE_MAP_TABLES, KMPS_READER_ABSENT - or
+     PRE_READ_INJECTED when the Gap batch supplied the read. Three different repairs that looked
+     identical from outside now look different.
+
+  4. `computeMs` CLAIMED MORE THAN IT KNEW and is renamed `afterReadMs`. It is serverDurationMs minus
+     the canonical read, so every other I/O the handler performs lands in it - Script Property lookups,
+     openTarget, the allocation config blob - and calling it "compute" invites a reader to blame the
+     calculation for what may be another read.
+
+WHAT WAS MISSING FROM THE CUT'S EVIDENCE, AND IS NOW COVERED
+
+  5. THE EU ROLL-UP HAD NO SUCCESS CASE. R53 pinned the EU REFUSAL (SALES_BASIS_UNAVAILABLE when no
+     member rows exist) and a single European market, and neither exercises AGGREGATION - the one thing
+     an EU scope does that no other scope does. KMCID.sourceCountriesForScope('EU','Amazon') is
+     IT+DE+ES+FR; with each member contributing 10 units/day the region's rate is their SUM, 40. That
+     is now asserted on the baseline, proved non-vacuous against a single member giving 10, compared
+     across both transports, and guarded against a US row leaking into the region.
+
+GS LOAD SURFACE   4,629,739 -> 4,629,837 (+98), ceiling 4,630,000, 163 bytes spare. The repairs cost
+                  ~4,750 bytes and were paid for entirely out of THIS ROUND'S OWN PROSE plus one real
+                  simplification: the empty-range resolution and the nine-table read are now ONE
+                  delegated call instead of two. No module retired, no unrelated file compressed.
+
+STATUS            UNCHANGED: R53 is PREPARED, NOT SYNCED, NOT DEPLOYED.
+```
+
+### The acceptance protocol, corrected
+
+The R53 entry's acceptance guidance was wrong in two ways and is replaced by this.
+
+**Only a SUCCESSFUL SERVER RESPONSE may be used to accept the read path.** A refusal, a blocked line or a
+cached answer says nothing about which transport ran. Read `meta.canonicalRead` on a response whose
+`success` is true and whose `canonicalRead.mode` is present.
+
+**A hard reload does NOT clear the session cache.** The recommendation cache lives in `sessionStorage`
+under `km_ir_reco_cache_horizonBasis.v2`, keyed per site. `sessionStorage` survives a reload — including a
+hard one — and is cleared by closing the tab, by opening a new tab, or by clearing site data. An acceptance
+run that only reloads is very likely measuring a cache hit.
+
+**A cached answer that carries no `canonicalRead` does NOT mean an old deployment.** It means the answer
+predates this release, which is exactly what a cache is for. The previous entry's claim — "block absent → a
+pre-R53 42_ is deployed" — is WITHDRAWN: it is true only of a response that came from the SERVER on this
+request. `_irRecoAnswerSource_()` reports `source: 'SERVER' | 'SESSION_CACHE' | 'NONE'`, and only `SERVER`
+licenses any conclusion about the deployment.
+
+So the order is: confirm `source === 'SERVER'` **first**, then read `canonicalRead`.
+
+| reading (on a SERVER response) | what it means |
+|---|---|
+| `mode: BATCH`, `remoteCalls: 2` | R53 running as intended |
+| `mode: PER_SHEET` + `notBatchedReason` | running, not faster; the reason names the repair |
+| `mode: FALLBACK` + `fallback.reason` | this request was **slower** than before R53; `batchMsWasted` is the loss |
+| `mode: INJECTED` | the Gap batch supplied the read; this handler chose no transport |
+| block absent **on a SERVER response** | a pre-R53 42_ is deployed |
+| block absent on a `SESSION_CACHE` response | **nothing** — re-run after clearing session storage |
+
+`readMs` is the bytes; `normalizeMs` is inside it; `afterReadMs` is everything else the handler did, which
+is **not** the same as calculation time.
+
+### R53 minimal deployment dependency set
+
+Derived from `git diff` rather than restated: this round's files from `1e2f8dae..HEAD`, the span from the
+last SHIPPED base `e583057`.
+
+**Changed by R53 itself — three files:**
+
+```
+42_api_v1_recommendation_workspace.gs      RECO_WS_BUILD_VERSION_ = …-R53
+63_api_v1_system_health.gs                 SYS_BUILD_VERSION_     = …-R53
+90_generated_supply_planning_bundle.gs     KM_BUNDLE_CONTENT_HASH_ = 0e40bada…  (BUNDLE_REBUILD_REQUIRED)
+```
+
+**CARRIED — changed in an earlier cut that is also unshipped, so they must be verified on site.** Each is
+listed with the stamp a correctly synced copy declares. This list is NOT an instruction to sync anything
+new: it is the set whose deployed copy must be CHECKED, because R53 cannot be assumed complete beside a
+stale one.
+
+```
+01_router.gs                               …-R52      03_master_data_handlers.gs        …-R52
+00_config.gs                               …-R51      74_api_v1_overseas_allocation…    …-R51
+66_api_v1_request_order_send.gs            …-R49      61_api_v1_weekly_ai_plan.gs       …-R47
+60_api_v1_inventory_replenishment…         …-R45      22_shipment_dispatch_handlers.gs  …-R37
+05_overseas_inventory_handlers.gs          …-R35      21_factory_inventory_handlers.gs  …-R35
+11_shipping_plan_handlers.gs               …-R34      12_shipment_handlers.gs           …-R34
+14_fc_write_handlers.gs · 17_carrier_handlers.gs · 20_campaign_write_handlers.gs
+43_api_v1_gap_materialization.gs · 47_api_v1_recommendation_generation.gs
+57_api_v1_shipment_workspace.gs · 58_api_v1_fc_summary_workspace.gs · 73_api_v1_pricing_write.gs
+```
+
+`appsscript.json` is in the span (Sheets v4 was enabled at R44) but is NOT changed by R53. It is
+editor-applied, not pasted.
+
+**PRODUCTION STATE: UNKNOWN.** No probe was run this round and no evidence of the deployed state exists in
+this repository. The R52 entry records "Production is R49", but that is an intent recorded at R52's cut, not
+a measurement of today. Only a live `system.health` probe can answer it, and until one is run the correct
+entry is UNKNOWN for: which release Production carries, which of the carried files are already synced, and
+whether the Sheets v4 advanced service is enabled on the deployed project.
+
+**No manifest expectation was lowered and nothing outside R53 was synced.** If the paste set has to grow
+beyond the three files plus verification of the carried list, that is a separate decision and is reported
+before it is taken.
