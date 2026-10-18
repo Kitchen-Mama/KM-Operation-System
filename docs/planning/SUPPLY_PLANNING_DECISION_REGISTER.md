@@ -5061,3 +5061,45 @@ feeds it nineteen runs that are each broken in exactly one way, asserting it ret
 then feeds the same nineteen to the shipped function and requires **1** with a stated reason. Without the
 first half the second would only assert that today's code does what today's code does. 70 assertions.
 
+### D-S8-B3-118 — A mutual exclusion with a gap in it excludes nothing — **FIXED (CP2U-R3-R2)**
+
+The worktree lock added in CP2U-R3-R1 was `existsSync` followed by `writeFileSync`. That is a check and
+an act with a gap between them: two sweeps can both find no lock and both write one, and the second
+overwrites the first's record of ownership. It also had two subtler faults, and the middle one is worse
+than the race because it destroys rather than merely fails:
+
+1. **An unparseable lock was deleted as stale.** A lock caught MID-WRITE parses as nothing, so the reader
+   concluded it was junk and removed it — the code meant to respect the lock was the code destroying it.
+   A lock written by a future version with a different shape met the same fate.
+2. **Reclaim and release used `unlink` after a separate judgement.** Between deciding "this holder is
+   dead" and deleting, the holder can be replaced by a live one, and the delete then removes a VALID
+   holder's lock. Release compared `pid` only, and pids are reused.
+
+**THE FIX IS ONE INDIVISIBLE OPERATION.** The payload is written to a private temp file and published by
+`link()`, which fails with EEXIST if anything already holds the path. Two properties follow, and the
+second is what `open(wx)` alone would not give: only one caller can create the path, and **the file is
+complete at the instant it becomes visible**, because the bytes existed in full before the name did. A
+filesystem that refuses hard links falls back to an exclusive `open(wx)`, which still excludes.
+
+An unreadable lock is now **REFUSED, not removed** — it means "held by something I do not understand".
+Only after a long grace window, by which time no legitimate writer could still be in flight, does it
+become reclaimable. Reclaim is a **rename**, which can succeed only once, so exactly one caller wins the
+hand-off and the losers start over; nobody unlinks a path another process may have just taken. Release
+checks a **random token** minted at acquisition, so a process can only ever remove the lock it took, and
+a bare path — the pre-R2 handle — can release nothing at all.
+
+**THE TEST WAS ITSELF THE HAZARD.** The R1 lock test called `lockPath()`, deleted the file, and later
+wrote a forged stale lock over it. During a full regression THAT FILE IS THE RUNNING SWEEP'S OWN LOCK:
+the suite was unlocking the sweep that was executing it and leaving a forgery behind. Every lock
+assertion now runs in an isolated temp namespace, and the suite proves the live lock is **byte-identical
+before and after** — which, inside a sweep, is a positive statement that the parent's ownership was
+neither taken, forged nor released.
+
+**THE RACE IS DEMONSTRATED, NOT ASSERTED.** Two child processes are held at a barrier and released
+together; exactly one acquires, the other is refused `SWEEP_LOCKED`, and the lock on disk still carries
+the WINNER's token and pid — the loser changed nothing. Valid, unreadable-mid-write, stale-reclaim and
+release are each verified separately, all in a temp namespace, with no mutation run anywhere.
+
+Unchanged by this round, deliberately: the per-suite pollution check, the immediate abort, the refusal to
+auto-restore, the dirty-start refusal and the 600 s per-suite timeout.
+

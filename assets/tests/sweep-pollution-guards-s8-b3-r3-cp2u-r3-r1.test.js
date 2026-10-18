@@ -16,6 +16,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const cp = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SWEEP = require(path.join(ROOT, 'assets', 'tools', 'run-regression-sweep.js'));
@@ -137,36 +138,165 @@ section('D2. the guard fires where there is something to guard, and nowhere else
 }
 
 // -------------------------------------------------------------------------------------------------------------
-section('E. one sweep per worktree');
+section('E. the lock, exercised in an ISOLATED namespace');
+
+// THE PREVIOUS VERSION OF THIS SECTION WAS DANGEROUS. It called SWEEP.lockPath() and deleted the file,
+// then later overwrote it with a fabricated stale lock. During a full regression THAT FILE IS THE RUNNING
+// SWEEP'S OWN LOCK: this suite was unlocking the sweep that was executing it, and leaving a forged lock
+// behind afterwards. A lock test must never touch the live lock; it gets its own namespace.
+const LOCKDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-lock-ns-'));
+const NS = (n) => path.join(LOCKDIR, n + '.lock');
+
+// The live worktree lock, recorded before any of this runs, so section H can prove it was untouched.
+const REAL_LOCK = SWEEP.lockPath();
+function realLockSnapshot() {
+  try { return { exists: true, bytes: fs.readFileSync(REAL_LOCK, 'utf8') }; }
+  catch (e) { return { exists: false, bytes: null }; }
+}
+const REAL_BEFORE = realLockSnapshot();
 
 {
-  const lp = SWEEP.lockPath();
-  // No lock held to begin with (any stale one is reclaimable, asserted below).
-  try { if (fs.existsSync(lp)) fs.unlinkSync(lp); } catch (e) { /* ignore */ }
-
-  const held = SWEEP.acquireLock();
-  ok(fs.existsSync(held), 'E1  the lock is taken', held);
-  ok(path.dirname(path.resolve(held)) === path.resolve(os.tmpdir()),
-    'E1a and it lives in the OS temp dir, so taking it cannot dirty the tree it protects', held);
+  const lp = NS('basic');
+  const h = SWEEP.acquireLock(lp);
+  ok(h && h.path === lp, 'E1  the lock is taken at the path it was asked for', h && h.path);
+  ok(h && typeof h.token === 'string' && h.token.length >= 16,
+    'E1a and carries a token, because pids are reused and a pid alone cannot prove ownership');
+  eq(SWEEP.inspectLock(lp).state, 'VALID', 'E1b the file on disk parses as a lock');
 
   let threw = null;
-  try { SWEEP.acquireLock(); } catch (e) { threw = e; }
-  ok(threw && threw.code === 'SWEEP_LOCKED', 'E2  a second sweep in the same worktree is refused',
-    threw && threw.code);
-  ok(threw && /pid \d+/.test(threw.message), 'E2a naming the holder', threw && threw.message);
+  try { SWEEP.acquireLock(lp); } catch (e) { threw = e; }
+  eq(threw && threw.code, 'SWEEP_LOCKED', 'E2  a second acquisition of a live lock is refused');
+  eq(SWEEP.inspectLock(lp).held.token, h.token, 'E2a and the holder\'s record is untouched by the refusal');
 
-  SWEEP.releaseLock(held);
-  ok(!fs.existsSync(held), 'E3  releasing removes it');
+  eq(SWEEP.releaseLock(h), true, 'E3  the owner can release it');
+  eq(SWEEP.inspectLock(lp).state, 'ABSENT', 'E3a and it is gone');
+  eq(SWEEP.releaseLock(h), false, 'E3b releasing twice is a no-op, not an error');
+}
 
-  // A crashed sweep must not block the next one forever.
-  fs.writeFileSync(lp, JSON.stringify({ pid: 999999999, root: ROOT, startedAt: 'long ago' }));
-  let re = null;
-  try { re = SWEEP.acquireLock(); } catch (e) { re = null; }
-  ok(!!re, 'E4  a lock whose owner is gone is stale and is reclaimed');
-  SWEEP.releaseLock(re);
+// -------------------------------------------------------------------------------------------------------------
+section('E2. release cannot remove somebody else\'s lock');
 
-  eq(SWEEP.pidAlive(process.pid), true, 'E5  liveness detection recognises a live pid');
-  eq(SWEEP.pidAlive(999999999), false, 'E5a and a dead one');
+{
+  const lp = NS('ownership');
+  const holder = SWEEP.acquireLock(lp);
+  const bytesBefore = fs.readFileSync(lp, 'utf8');
+
+  // A handle with the right path and the WRONG token - what a stale handle, or a pid that has been
+  // recycled into a different process, looks like.
+  eq(SWEEP.releaseLock({ path: lp, token: 'not-the-right-token', pid: process.pid }), false,
+    'E2a a handle with a foreign token releases nothing');
+  // A bare path, which is what the pre-R2 API handed out. It cannot prove ownership, so it is refused.
+  eq(SWEEP.releaseLock(lp), false, 'E2b a bare path cannot release a lock - it proves no ownership');
+  eq(fs.readFileSync(lp, 'utf8'), bytesBefore, 'E2c the holder\'s record is byte-identical afterwards');
+  eq(SWEEP.releaseLock(holder), true, 'E2d while the real owner still can');
+}
+
+// -------------------------------------------------------------------------------------------------------------
+section('E3. a lock that is not readable is NOT treated as deletable');
+
+{
+  // A lock caught mid-write, or written by a version with a different shape. The old code parsed it,
+  // failed, called it stale and DELETED it - destroying a lock it did not understand.
+  const lp = NS('partial');
+  fs.writeFileSync(lp, '{"pid": 12345, "tok');          // truncated on purpose
+  const before = fs.readFileSync(lp, 'utf8');
+  eq(SWEEP.inspectLock(lp).state, 'UNREADABLE', 'E3a an incomplete lock is classified UNREADABLE');
+
+  let threw = null;
+  try { SWEEP.acquireLock(lp); } catch (e) { threw = e; }
+  eq(threw && threw.code, 'SWEEP_LOCK_UNREADABLE', 'E3b acquiring over it is REFUSED');
+  ok(threw && /NOT being treated as stale/.test(threw.message), 'E3c and says why');
+  ok(fs.existsSync(lp), 'E3d the file still exists - it was not destroyed by a reader');
+  eq(fs.readFileSync(lp, 'utf8'), before, 'E3e byte-identical');
+
+  // Only after the grace window does it become reclaimable, and even then through the atomic hand-off.
+  const old = Date.now() - (SWEEP.LOCK_UNREADABLE_GRACE_MS + 60000);
+  fs.utimesSync(lp, new Date(old), new Date(old));
+  const h = SWEEP.acquireLock(lp);
+  ok(!!h, 'E3f after the grace window an unreadable lock is reclaimable');
+  eq(SWEEP.inspectLock(lp).held.token, h.token, 'E3g and the new holder owns it');
+  SWEEP.releaseLock(h);
+}
+
+// -------------------------------------------------------------------------------------------------------------
+section('E4. a lock whose owner is gone is reclaimed; a live one never is');
+
+{
+  const lp = NS('stale');
+  fs.writeFileSync(lp, JSON.stringify({ pid: 999999999, token: 'dead', root: ROOT, startedAt: 'long ago' }));
+  eq(SWEEP.inspectLock(lp).state, 'VALID', 'E4a a dead holder\'s lock still parses');
+  const h = SWEEP.acquireLock(lp);
+  ok(!!h, 'E4b and is reclaimed, so a crashed sweep cannot block the next one forever');
+  eq(SWEEP.inspectLock(lp).held.pid, process.pid, 'E4c by this process');
+  SWEEP.releaseLock(h);
+
+  eq(SWEEP.pidAlive(process.pid), true, 'E4d liveness detection recognises a live pid');
+  eq(SWEEP.pidAlive(999999999), false, 'E4e and a dead one');
+}
+
+// -------------------------------------------------------------------------------------------------------------
+section('E5. TWO PROCESSES RACING FOR THE SAME LOCK - exactly one wins');
+
+// The counter-example the atomicity claim needs. `existsSync` then `writeFileSync` is a check and an act
+// with a gap; two processes can pass the check together and both write. Here both children are held at a
+// barrier and released at the same instant, so they contend for real. No mutation runs and nothing
+// outside this temp namespace is touched.
+{
+  const lp = NS('race');
+  const goFile = path.join(LOCKDIR, 'GO');
+  const driver = path.join(LOCKDIR, 'contender.js');
+  fs.writeFileSync(driver, [
+    'var fs = require("fs"), path = require("path");',
+    'var SWEEP = require(' + JSON.stringify(path.join(ROOT, 'assets', 'tools', 'run-regression-sweep.js')) + ');',
+    'var lp = process.argv[2], go = process.argv[3], out = process.argv[4], ready = process.argv[5];',
+    'function nap(ms){ try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }',
+    '  catch (e) { var u = Date.now() + ms; while (Date.now() < u) {} } }',
+    'fs.writeFileSync(ready, String(process.pid));',
+    'var deadline = Date.now() + 30000;',
+    'while (!fs.existsSync(go) && Date.now() < deadline) nap(5);',   // barrier
+    'var res;',
+    'try { var h = SWEEP.acquireLock(lp); res = { ok: true, pid: process.pid, token: h.token }; }',
+    'catch (e) { res = { ok: false, pid: process.pid, code: e.code }; }',
+    'fs.writeFileSync(out, JSON.stringify(res));'
+  ].join('\n'));
+
+  function napMs(ms) {
+    try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+    catch (e) { const u = Date.now() + ms; while (Date.now() < u) { /* spin */ } }
+  }
+  const outs = [path.join(LOCKDIR, 'r0.json'), path.join(LOCKDIR, 'r1.json')];
+  const readys = [path.join(LOCKDIR, 'k0'), path.join(LOCKDIR, 'k1')];
+  const kids = [0, 1].map(i => cp.spawn(process.execPath, [driver, lp, goFile, outs[i], readys[i]], { stdio: 'ignore' }));
+
+  let dl = Date.now() + 30000;
+  while (!(fs.existsSync(readys[0]) && fs.existsSync(readys[1])) && Date.now() < dl) napMs(20);
+  ok(fs.existsSync(readys[0]) && fs.existsSync(readys[1]), 'E5a both contenders reached the barrier');
+
+  fs.writeFileSync(goFile, 'go');                      // released at the same instant
+  dl = Date.now() + 30000;
+  while (!(fs.existsSync(outs[0]) && fs.existsSync(outs[1])) && Date.now() < dl) napMs(20);
+  kids.forEach(k => { try { k.kill(); } catch (e) { /* already gone */ } });
+
+  ok(fs.existsSync(outs[0]) && fs.existsSync(outs[1]), 'E5b both reported a result');
+  const res = outs.map(f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; } });
+  const winners = res.filter(r => r && r.ok === true);
+  const losers = res.filter(r => r && r.ok === false);
+  eq(winners.length, 1, 'E5c EXACTLY ONE acquired the lock', res);
+  eq(losers.length, 1, 'E5d and exactly one was refused', res);
+  eq(losers[0] && losers[0].code, 'SWEEP_LOCKED', 'E5e the loser was refused as locked, not by an error',
+    losers[0]);
+
+  // The loser must not have touched the winner's record.
+  const onDisk = SWEEP.inspectLock(lp);
+  eq(onDisk.state, 'VALID', 'E5f the lock on disk is valid');
+  eq(onDisk.held.token, winners[0] && winners[0].token, 'E5g and holds the WINNER\'s token - the loser '
+    + 'did not overwrite it');
+  eq(onDisk.held.pid, winners[0] && winners[0].pid, 'E5h and the winner\'s pid');
+  // Neither child is alive any more, so the lock is now stale and reclaimable - which is the correct
+  // end state, and is reached without anyone deleting anyone else's file.
+  const mine = SWEEP.acquireLock(lp);
+  ok(!!mine, 'E5i once both contenders are gone the lock is reclaimable');
+  SWEEP.releaseLock(mine);
 }
 
 // -------------------------------------------------------------------------------------------------------------
@@ -175,6 +305,25 @@ section('F. the timeout that caused this is still the one in force, and is recor
 eq(SWEEP.PER_SUITE_TIMEOUT_MS, 600000,
   'F1  the per-suite limit is 600000 ms - product-strategy-corrections-p1-b8d-r9 ran 629317 ms and was '
   + 'killed inside a mutation window, which is the whole mechanism');
+
+// -------------------------------------------------------------------------------------------------------------
+section('H. the live worktree lock was never touched by any of the above');
+
+// When this suite runs inside a full regression, SWEEP.lockPath() is the lock held by the sweep that is
+// executing it. Everything above used an isolated namespace precisely so that this holds.
+{
+  const after = realLockSnapshot();
+  eq(after.exists, REAL_BEFORE.exists,
+    'H1  the real worktree lock is in the same state as before this suite ran'
+    + (REAL_BEFORE.exists ? ' (held by the parent sweep)' : ' (absent - run standalone)'));
+  eq(after.bytes, REAL_BEFORE.bytes, 'H1a byte-identical - ownership was neither taken, forged nor released');
+  const inNs = (p) => path.resolve(p).indexOf(path.resolve(LOCKDIR)) === 0;
+  ok(inNs(NS('basic')) && !inNs(REAL_LOCK),
+    'H2  the namespace used above is disjoint from the real lock path',
+    { ns: LOCKDIR, real: REAL_LOCK });
+}
+
+try { fs.rmSync(LOCKDIR, { recursive: true, force: true }); } catch (e) { /* best effort */ }
 
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) { /* best effort */ }
 

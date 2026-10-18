@@ -56,31 +56,128 @@ function lockPath() {
 function pidAlive(pid) {
     try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === 'EPERM'; }
 }
-function acquireLock() {
-    var lp = lockPath();
-    if (fs.existsSync(lp)) {
-        var held = null;
-        try { held = JSON.parse(fs.readFileSync(lp, 'utf8')); } catch (e) { held = null; }
-        if (held && held.pid && pidAlive(held.pid)) {
-            var e2 = new Error('ANOTHER SWEEP IS RUNNING in this worktree (pid ' + held.pid
-                + ', started ' + held.startedAt + ').\n'
+/* CP2U-R3-R2 - WHY THIS IS NOT `existsSync` FOLLOWED BY `writeFileSync`.
+
+   That pair is a check and an act with a gap between them, and a mutual-exclusion primitive with a gap
+   excludes nothing: two sweeps can both see no lock and both write one, and the second silently
+   overwrites the first's record of ownership. The exclusion has to be ONE indivisible operation that
+   the filesystem either grants or refuses.
+
+   `link()` is that operation. The payload is written to a private temp file FIRST and published by
+   linking it to the lock path, which fails with EEXIST if anything is already there. Two consequences
+   follow, and the second is the one a plain `open(wx)` does not give:
+     1. Only one caller can ever create the lock path.
+     2. The file is COMPLETE at the instant it becomes visible. There is no moment at which a reader can
+        observe a half-written lock, because the bytes existed in full before the name did.
+
+   AN UNREADABLE LOCK IS NOT A DEAD LOCK. The previous version parsed the file and, on any error, treated
+   it as stale and DELETED it - so a lock being written at that moment, or written by a future version
+   with a different shape, was destroyed by the very code that was supposed to respect it. Unparseable
+   now means "held by something I do not understand": it is REFUSED, not removed. Only after a long
+   grace period, by which time no legitimate writer could still be mid-flight, is such a file reclaimable
+   - and even then through the same atomic hand-off as a stale one.
+
+   RECLAIM IS A RENAME, NOT AN UNLINK. Deleting a lock judged stale is a second check-then-act: between
+   the judgement and the delete, the holder may have been replaced by a live one, and the delete would
+   remove a VALID holder's lock. Renaming can succeed only once - whoever's rename lands owns the
+   reclaim, and everyone else gets ENOENT and starts over.
+
+   RELEASE IS BY TOKEN, NOT BY PID. Pids are reused. A random token minted at acquisition and checked at
+   release means a process can only ever delete the lock it actually took. */
+var LOCK_UNREADABLE_GRACE_MS = 10 * 60 * 1000;
+
+/** What is at the lock path right now. Never writes, never deletes. */
+function inspectLock(lp) {
+    var raw, st;
+    try { raw = fs.readFileSync(lp, 'utf8'); st = fs.statSync(lp); }
+    catch (e) { return { state: 'ABSENT', held: null, ageMs: null, raw: null }; }
+    var held = null;
+    try { held = JSON.parse(raw); } catch (e) { held = null; }
+    var ageMs = Date.now() - st.mtimeMs;
+    if (!held || typeof held.pid !== 'number') return { state: 'UNREADABLE', held: null, ageMs: ageMs, raw: raw };
+    return { state: 'VALID', held: held, ageMs: ageMs, raw: raw };
+}
+
+function lockError(code, message) { var e = new Error(message); e.code = code; return e; }
+
+/**
+ * Take the worktree lock. `lpOverride` exists so tests can exercise this against their own temp path
+ * instead of the real worktree lock - a lock test that borrows the live lock is a lock test that can
+ * release a running sweep's exclusion.
+ * Returns a HANDLE { path, token, pid }; pass that same handle to releaseLock.
+ */
+function acquireLock(lpOverride) {
+    var lp = lpOverride || lockPath();
+    var token = crypto.randomBytes(16).toString('hex');
+    var payload = JSON.stringify({ pid: process.pid, token: token, root: path.resolve(ROOT),
+        startedAt: new Date().toISOString() });
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+        // ---- publish atomically: complete content first, then an exclusive name for it ----------
+        var tmp = lp + '.tmp-' + process.pid + '-' + crypto.randomBytes(6).toString('hex');
+        var published = false;
+        try {
+            fs.writeFileSync(tmp, payload, 'utf8');
+            try {
+                fs.linkSync(tmp, lp);                       // atomic; EEXIST if taken
+                published = true;
+            } catch (eLink) {
+                if (eLink.code !== 'EEXIST') {
+                    // Some filesystems refuse hard links. `open(wx)` is still an atomic create, so
+                    // exclusion holds; only the complete-on-publish property is weaker, which is why
+                    // an unreadable lock is refused rather than deleted.
+                    try {
+                        var fd = fs.openSync(lp, 'wx');
+                        try { fs.writeSync(fd, payload); } finally { fs.closeSync(fd); }
+                        published = true;
+                    } catch (eOpen) { if (eOpen.code !== 'EEXIST') throw eOpen; }
+                }
+            }
+        } finally {
+            try { fs.unlinkSync(tmp); } catch (e) { /* the link, if made, keeps the content alive */ }
+        }
+        if (published) return { path: lp, token: token, pid: process.pid };
+
+        // ---- something is there. Decide, without touching it yet. ------------------------------
+        var cur = inspectLock(lp);
+        if (cur.state === 'ABSENT') continue;               // released under us; try again
+        if (cur.state === 'VALID' && pidAlive(cur.held.pid)) {
+            throw lockError('SWEEP_LOCKED', 'ANOTHER SWEEP IS RUNNING in this worktree (pid '
+                + cur.held.pid + ', started ' + cur.held.startedAt + ').\n'
                 + 'Two sweeps mutate the same sources and restore them from different snapshots.\n'
                 + 'Lock: ' + lp);
-            e2.code = 'SWEEP_LOCKED';
-            throw e2;
         }
-        try { fs.unlinkSync(lp); } catch (e) { /* stale, best effort */ }
+        if (cur.state === 'UNREADABLE' && cur.ageMs < LOCK_UNREADABLE_GRACE_MS) {
+            throw lockError('SWEEP_LOCK_UNREADABLE', 'The sweep lock exists but cannot be read as a lock '
+                + '(age ' + cur.ageMs + ' ms). It is NOT being treated as stale: a lock that is being '
+                + 'written, or written by a different version, must not be destroyed by a reader.\n'
+                + 'Lock: ' + lp);
+        }
+
+        // ---- reclaim, and only one caller can win it -------------------------------------------
+        var parked = lp + '.stale-' + process.pid + '-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
+        try { fs.renameSync(lp, parked); }
+        catch (eRen) { continue; }                          // someone else reclaimed it; start over
+        try { fs.unlinkSync(parked); } catch (e) { /* best effort */ }
     }
-    fs.writeFileSync(lp, JSON.stringify({ pid: process.pid, root: path.resolve(ROOT),
-        startedAt: new Date().toISOString() }), 'utf8');
-    return lp;
+    throw lockError('SWEEP_LOCK_CONTENDED',
+        'Could not take the sweep lock after 5 attempts: ' + lp);
 }
-function releaseLock(lp) {
-    try {
-        if (!lp || !fs.existsSync(lp)) return;
-        var held = JSON.parse(fs.readFileSync(lp, 'utf8'));
-        if (held && held.pid === process.pid) fs.unlinkSync(lp);
-    } catch (e) { /* best effort */ }
+
+/**
+ * Release a lock taken by THIS process. Returns true only if this call removed it.
+ * A handle without a token cannot release anything: refusing is the safe answer, because the one thing
+ * this function must never do is delete a lock belonging to a different, valid holder.
+ */
+function releaseLock(handle) {
+    if (!handle) return false;
+    var lp = (typeof handle === 'string') ? handle : handle.path;
+    var token = (typeof handle === 'object' && handle) ? handle.token : null;
+    if (!lp || !token) return false;
+    var cur = inspectLock(lp);
+    if (cur.state !== 'VALID') return false;
+    if (cur.held.token !== token || cur.held.pid !== process.pid) return false;
+    try { fs.unlinkSync(lp); return true; } catch (e) { return false; }
 }
 
 /** The registry: every *.test.js, sorted, so two runs enumerate identically. */
@@ -270,4 +367,5 @@ module.exports = { enumerateSuites: enumerateSuites, runOne: runOne, sweep: swee
     // CP2U-R3-R1 - the worktree lock and the per-suite pollution abort are exported so they can be
     // tested directly, which is the only way to prove a guard fires without staging a real disaster.
     acquireLock: acquireLock, releaseLock: releaseLock, lockPath: lockPath, pidAlive: pidAlive,
+    inspectLock: inspectLock, LOCK_UNREADABLE_GRACE_MS: LOCK_UNREADABLE_GRACE_MS,
     PER_SUITE_TIMEOUT_MS: PER_SUITE_TIMEOUT_MS };
