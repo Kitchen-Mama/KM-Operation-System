@@ -5534,3 +5534,41 @@ declared and `OPEN_C1` carries the choice. `OPEN_B1` is marked **resolved in pla
 restoration and growth together settles that growth multiplies a restored monthly quantity — rather than
 deleted, so the decision keeps its trail. Still nothing is connected: `MISSING_OWNER_INPUT #1` and `#3`
 remain open and no source is reached.
+
+---
+
+### D-S8-B3-137 — The token rotation invalidated five more captures; four were re-run, one cannot be — **PARTLY RE-CAPTURED / one OPEN (CP2X)**
+
+Rotating the token edits `index.html` and `app.js`, and five map / viewport / navigation captures pin the
+SHA of both. The full sweep found them; they were not anticipated. **No hash was edited.**
+
+| capture | outcome |
+|---|---|
+| `cp2m-r2-perf` | re-run, suite green |
+| `cp2m-r2-viewport` | re-run, suite green |
+| `cp2m-r4r1-map` (`after.json`) | re-run, promoted, suite green — 125 samples, 1 create / 0 destroys, 0 context lost |
+| `cp2m-r4r2-mount` (`after.json`) | re-run, promoted, suite green — all three scenarios real |
+| `cp2m-r2-map` | **CANNOT BE REPRODUCED ON THIS MACHINE — 2 assertions left failing** |
+
+**Two process notes, both from mistakes made and corrected inside this round.** The first three captures
+were launched back-to-back in one command, which `cp2m-r4r1-map/RECAPTURE-NOTE.md` already records as the
+hazard that kills a software WebGL context; both r4 runners came back `ok: false` with zero samples. Run
+individually, into a temp directory, inspected, and promoted only on `ok: true`, both were clean first
+time — the procedure that note prescribes, arrived at the hard way a second time. Nothing was overwritten:
+the two failed runs wrote filenames no suite reads.
+
+**Why `cp2m-r2-map` is left failing, and it is not this round's change.** Re-run alone it still reports
+`NO_CANVAS_BOX`. Its runner launches Chrome with `--use-gl=swiftshader`; `_cp2m-r4r1-map-lifecycle-runner.js`
+carries a comment recording that **CP2O-R2 measured this machine losing a software WebGL context under
+exactly that flag**, and the newer runners dropped it — which is why they capture a canvas here and this one
+does not. The failed capture was **restored from git rather than shipped**, so the directory still holds the
+good measurement and only the two source-hash assertions fail.
+
+**The fix is a harness change and is reported rather than taken.** Aligning
+`_cp2m-r2-map-runner.js` with the working flag set would also invalidate `cp2m-r4r2-mount`, whose capture
+pins that runner's SHA, so it is two re-captures and a harness that no longer matches the one the record was
+taken with. That is a decision for the Owner, not a repair to slip into an IR performance round.
+
+**Boot census re-measured, not re-stamped:** `bootScriptBytes` 3,813,586 → 3,813,599. The token grew by one
+character across its 13 occurrences in `app.js`; 1 × 13 = 13 exactly. `pageScriptBytes` is unchanged because
+`inventory-replenishment.js` is router-loaded and is not a boot script.
