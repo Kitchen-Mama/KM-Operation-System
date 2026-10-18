@@ -192,11 +192,11 @@ section('E2. release cannot remove somebody else\'s lock');
 }
 
 // -------------------------------------------------------------------------------------------------------------
-section('E3. a lock that is not readable is NOT treated as deletable');
+section('E3. an unreadable lock is refused, and age does not make it deletable');
 
 {
-  // A lock caught mid-write, or written by a version with a different shape. The old code parsed it,
-  // failed, called it stale and DELETED it - destroying a lock it did not understand.
+  // A lock caught mid-write, or written by a version with a different shape. It is NOT assumed
+  // abandoned, and - since CP2U-R3-R3 - no amount of elapsed time changes that.
   const lp = NS('partial');
   fs.writeFileSync(lp, '{"pid": 12345, "tok');          // truncated on purpose
   const before = fs.readFileSync(lp, 'utf8');
@@ -205,59 +205,164 @@ section('E3. a lock that is not readable is NOT treated as deletable');
   let threw = null;
   try { SWEEP.acquireLock(lp); } catch (e) { threw = e; }
   eq(threw && threw.code, 'SWEEP_LOCK_UNREADABLE', 'E3b acquiring over it is REFUSED');
-  ok(threw && /NOT being treated as stale/.test(threw.message), 'E3c and says why');
-  ok(fs.existsSync(lp), 'E3d the file still exists - it was not destroyed by a reader');
-  eq(fs.readFileSync(lp, 'utf8'), before, 'E3e byte-identical');
+  ok(threw && /must not be destroyed by a reader/.test(threw.message), 'E3c and says why');
+  ok(threw && threw.lockPath === lp, 'E3d the refusal names the path', threw && threw.lockPath);
+  ok(threw && typeof threw.ageMs === 'number', 'E3e and reports its age as information', threw && threw.ageMs);
+  ok(threw && /remove the lock file yourself/.test(threw.message),
+    'E3f and tells the operator what only they can safely do');
+  eq(fs.readFileSync(lp, 'utf8'), before, 'E3g the file is byte-identical - nothing was renamed or deleted');
 
-  // Only after the grace window does it become reclaimable, and even then through the atomic hand-off.
-  const old = Date.now() - (SWEEP.LOCK_UNREADABLE_GRACE_MS + 60000);
+  // CONTRACT CHANGE, RECORDED. R2 reclaimed an unreadable lock once it was older than a grace window.
+  // Age does not establish that a holder is gone - a long sweep is old by design - so the threshold is
+  // gone and an ancient lock is refused exactly like a fresh one.
+  const old = Date.now() - (99 * 24 * 3600 * 1000);
   fs.utimesSync(lp, new Date(old), new Date(old));
-  const h = SWEEP.acquireLock(lp);
-  ok(!!h, 'E3f after the grace window an unreadable lock is reclaimable');
-  eq(SWEEP.inspectLock(lp).held.token, h.token, 'E3g and the new holder owns it');
-  SWEEP.releaseLock(h);
+  let threw2 = null;
+  try { SWEEP.acquireLock(lp); } catch (e) { threw2 = e; }
+  eq(threw2 && threw2.code, 'SWEEP_LOCK_UNREADABLE',
+    'E3h a 99-DAY-OLD unreadable lock is still refused - elapsed time is not evidence of abandonment');
+  eq(fs.readFileSync(lp, 'utf8'), before, 'E3i and it too is left byte-identical');
+  eq(SWEEP.LOCK_UNREADABLE_GRACE_MS, undefined,
+    'E3j the grace window no longer exists as a concept in the tool');
 }
 
 // -------------------------------------------------------------------------------------------------------------
-section('E4. a lock whose owner is gone is reclaimed; a live one never is');
+section('E4. a lock whose recorded owner is dead is REFUSED, not reclaimed');
 
 {
   const lp = NS('stale');
-  fs.writeFileSync(lp, JSON.stringify({ pid: 999999999, token: 'dead', root: ROOT, startedAt: 'long ago' }));
+  const seed = JSON.stringify({ pid: 999999999, token: 'dead', root: ROOT, startedAt: 'long ago' });
+  fs.writeFileSync(lp, seed);
   eq(SWEEP.inspectLock(lp).state, 'VALID', 'E4a a dead holder\'s lock still parses');
-  const h = SWEEP.acquireLock(lp);
-  ok(!!h, 'E4b and is reclaimed, so a crashed sweep cannot block the next one forever');
-  eq(SWEEP.inspectLock(lp).held.pid, process.pid, 'E4c by this process');
-  SWEEP.releaseLock(h);
 
-  eq(SWEEP.pidAlive(process.pid), true, 'E4d liveness detection recognises a live pid');
-  eq(SWEEP.pidAlive(999999999), false, 'E4e and a dead one');
+  let threw = null;
+  try { SWEEP.acquireLock(lp); } catch (e) { threw = e; }
+  eq(threw && threw.code, 'SWEEP_LOCK_STALE',
+    'E4b it is REFUSED with its own code - distinct from a live holder, because the operator needs to '
+    + 'know which situation they are in');
+  eq(threw && threw.ownerAlive, false, 'E4c the refusal states that the owner is not running');
+  eq(threw && threw.owner && threw.owner.pid, 999999999, 'E4d and names the owner it could read');
+  ok(threw && /NOT RECLAIMED AUTOMATICALLY/.test(threw.message), 'E4e and says it will not act on that');
+  eq(fs.readFileSync(lp, 'utf8'), seed, 'E4f the file is byte-identical - no rename, no unlink');
+
+  eq(SWEEP.pidAlive(process.pid), true, 'E4g liveness detection recognises a live pid');
+  eq(SWEEP.pidAlive(999999999), false, 'E4h and a dead one');
+  fs.unlinkSync(lp);                                   // the operator's job, done here by the test
 }
 
 // -------------------------------------------------------------------------------------------------------------
-section('E5. TWO PROCESSES RACING FOR THE SAME LOCK - exactly one wins');
+section('E5. THE RECLAIM RACE - why automatic reclaim was removed');
 
-// The counter-example the atomicity claim needs. `existsSync` then `writeFileSync` is a check and an act
-// with a gap; two processes can pass the check together and both write. Here both children are held at a
-// barrier and released at the same instant, so they contend for real. No mutation runs and nothing
-// outside this temp namespace is touched.
+// THE COUNTER-EXAMPLE. R2 judged a lock stale and then renamed it aside. Judgement and act are two
+// steps, and the act lands on a PATH: between them the path can come to hold a DIFFERENT, LIVE lock,
+// which the reclaimer then destroys. The interleaving below is driven deterministically rather than
+// hoped for, and it ends with two holders at once.
+{
+  const GRACE = 10 * 60 * 1000;                        // R2's constant, reproduced with the algorithm
+  function inspectLocal(lp) {
+    let raw, st;
+    try { raw = fs.readFileSync(lp, 'utf8'); st = fs.statSync(lp); }
+    catch (e) { return { state: 'ABSENT', held: null, ageMs: null }; }
+    let held = null;
+    try { held = JSON.parse(raw); } catch (e) { held = null; }
+    const ageMs = Date.now() - st.mtimeMs;
+    if (!held || typeof held.pid !== 'number') return { state: 'UNREADABLE', held: null, ageMs: ageMs };
+    return { state: 'VALID', held: held, ageMs: ageMs };
+  }
+  // R2's acquireLock, reproduced. `hooks.beforeReclaim` is the only addition, and it only PAUSES.
+  function OLD_R2_acquire(lp, pid, token, hooks) {
+    const payload = JSON.stringify({ pid: pid, token: token, startedAt: 'r2' });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const tmp = lp + '.tmp-' + pid + '-' + Math.random().toString(16).slice(2);
+      let published = false;
+      try {
+        fs.writeFileSync(tmp, payload, 'utf8');
+        try { fs.linkSync(tmp, lp); published = true; }
+        catch (e) { if (e.code !== 'EEXIST') throw e; }
+      } finally { try { fs.unlinkSync(tmp); } catch (e) { /* ignore */ } }
+      if (published) return { path: lp, token: token, pid: pid };
+
+      const cur = inspectLocal(lp);
+      if (cur.state === 'ABSENT') continue;
+      if (cur.state === 'VALID' && SWEEP.pidAlive(cur.held.pid)) { const e = new Error('locked'); e.code = 'SWEEP_LOCKED'; throw e; }
+      if (cur.state === 'UNREADABLE' && cur.ageMs < GRACE) { const e = new Error('unreadable'); e.code = 'SWEEP_LOCK_UNREADABLE'; throw e; }
+
+      if (hooks && hooks.beforeReclaim) hooks.beforeReclaim();     // <-- the gap, made visible
+
+      const parked = lp + '.stale-' + pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+      try { fs.renameSync(lp, parked); } catch (e) { continue; }
+      try { fs.unlinkSync(parked); } catch (e) { /* ignore */ }
+    }
+    throw new Error('contended');
+  }
+
+  const lp = NS('reclaim-race');
+  const seed = JSON.stringify({ pid: 999999999, token: 'dead-owner', startedAt: 'long ago' });
+  fs.writeFileSync(lp, seed);
+
+  // P2 is paused after it has judged the lock stale but before it acts on that judgement. While it is
+  // paused, P1 completes a full, legitimate R2 reclaim and becomes the holder.
+  let p1 = null, fired = false;
+  const p2 = OLD_R2_acquire(lp, process.pid, 'TOKEN-P2', {
+    beforeReclaim: function () {
+      if (fired) return;
+      fired = true;
+      p1 = OLD_R2_acquire(lp, process.pid, 'TOKEN-P1');            // P1 takes it, validly
+      eq(inspectLocal(lp).held.token, 'TOKEN-P1', 'E5a P1 legitimately holds the lock');
+    }
+  });
+
+  ok(fired, 'E5b the interleaving was exercised');
+  ok(!!p1 && !!p2, 'E5c BOTH calls returned a handle - R2 handed ONE lock to TWO holders', { p1: !!p1, p2: !!p2 });
+  eq(inspectLocal(lp).held.token, 'TOKEN-P2',
+    'E5d and P1\'s live lock was destroyed by P2\'s reclaim - the judgement was about a file, the act '
+    + 'landed on a path');
+
+  // THE NEW BEHAVIOUR, on exactly the same starting state.
+  fs.writeFileSync(lp, seed);
+  const before = fs.readFileSync(lp, 'utf8');
+  let a = null, threw = null;
+  try { a = SWEEP.acquireLock(lp); } catch (e) { threw = e; }
+  ok(!a, 'E5e the shipped version acquires nothing when a lock is already there');
+  eq(threw && threw.code, 'SWEEP_LOCK_STALE', 'E5f it refuses instead');
+  eq(fs.readFileSync(lp, 'utf8'), before,
+    'E5g and the existing lock is byte-identical - there is no interleaving to exploit because there is '
+    + 'no second step');
+  fs.unlinkSync(lp);
+}
+
+// -------------------------------------------------------------------------------------------------------------
+section('E6. TWO PROCESSES RACING - the winner HOLDS while both verdicts are read');
+
+// The R2 version of this test let the winner exit as soon as it reported. That cannot distinguish
+// "both contended and one was refused" from "the first finished and released, and the second then
+// acquired legitimately" - two sequential successes would have looked the same. The winner now holds
+// the lock until the parent has read BOTH results and inspected the file, and only then is released.
 {
   const lp = NS('race');
   const goFile = path.join(LOCKDIR, 'GO');
+  const relFile = path.join(LOCKDIR, 'RELEASE');
   const driver = path.join(LOCKDIR, 'contender.js');
   fs.writeFileSync(driver, [
-    'var fs = require("fs"), path = require("path");',
+    'var fs = require("fs");',
     'var SWEEP = require(' + JSON.stringify(path.join(ROOT, 'assets', 'tools', 'run-regression-sweep.js')) + ');',
-    'var lp = process.argv[2], go = process.argv[3], out = process.argv[4], ready = process.argv[5];',
+    'var lp = process.argv[2], go = process.argv[3], out = process.argv[4], ready = process.argv[5],',
+    '    rel = process.argv[6], held = process.argv[7];',
     'function nap(ms){ try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }',
     '  catch (e) { var u = Date.now() + ms; while (Date.now() < u) {} } }',
     'fs.writeFileSync(ready, String(process.pid));',
-    'var deadline = Date.now() + 30000;',
-    'while (!fs.existsSync(go) && Date.now() < deadline) nap(5);',   // barrier
-    'var res;',
-    'try { var h = SWEEP.acquireLock(lp); res = { ok: true, pid: process.pid, token: h.token }; }',
+    'var dl = Date.now() + 30000;',
+    'while (!fs.existsSync(go) && Date.now() < dl) nap(5);',
+    'var res, handle = null;',
+    'try { handle = SWEEP.acquireLock(lp); res = { ok: true, pid: process.pid, token: handle.token }; }',
     'catch (e) { res = { ok: false, pid: process.pid, code: e.code }; }',
-    'fs.writeFileSync(out, JSON.stringify(res));'
+    'fs.writeFileSync(out, JSON.stringify(res));',
+    'if (handle) {',
+    '  fs.writeFileSync(held, String(process.pid));',
+    '  var dl2 = Date.now() + 60000;',
+    '  while (!fs.existsSync(rel) && Date.now() < dl2) nap(10);',   // HOLD until the parent says so
+    '  SWEEP.releaseLock(handle);',
+    '}'
   ].join('\n'));
 
   function napMs(ms) {
@@ -266,37 +371,44 @@ section('E5. TWO PROCESSES RACING FOR THE SAME LOCK - exactly one wins');
   }
   const outs = [path.join(LOCKDIR, 'r0.json'), path.join(LOCKDIR, 'r1.json')];
   const readys = [path.join(LOCKDIR, 'k0'), path.join(LOCKDIR, 'k1')];
-  const kids = [0, 1].map(i => cp.spawn(process.execPath, [driver, lp, goFile, outs[i], readys[i]], { stdio: 'ignore' }));
+  const helds = [path.join(LOCKDIR, 'h0'), path.join(LOCKDIR, 'h1')];
+  const kids = [0, 1].map(i => cp.spawn(process.execPath,
+    [driver, lp, goFile, outs[i], readys[i], relFile, helds[i]], { stdio: 'ignore' }));
+  const alive = () => kids.map(k => k.exitCode === null && k.signalCode === null);
 
   let dl = Date.now() + 30000;
   while (!(fs.existsSync(readys[0]) && fs.existsSync(readys[1])) && Date.now() < dl) napMs(20);
-  ok(fs.existsSync(readys[0]) && fs.existsSync(readys[1]), 'E5a both contenders reached the barrier');
+  ok(fs.existsSync(readys[0]) && fs.existsSync(readys[1]), 'E6a both contenders reached the barrier');
 
   fs.writeFileSync(goFile, 'go');                      // released at the same instant
   dl = Date.now() + 30000;
   while (!(fs.existsSync(outs[0]) && fs.existsSync(outs[1])) && Date.now() < dl) napMs(20);
-  kids.forEach(k => { try { k.kill(); } catch (e) { /* already gone */ } });
+  ok(fs.existsSync(outs[0]) && fs.existsSync(outs[1]), 'E6b both reported a verdict');
 
-  ok(fs.existsSync(outs[0]) && fs.existsSync(outs[1]), 'E5b both reported a result');
   const res = outs.map(f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; } });
   const winners = res.filter(r => r && r.ok === true);
   const losers = res.filter(r => r && r.ok === false);
-  eq(winners.length, 1, 'E5c EXACTLY ONE acquired the lock', res);
-  eq(losers.length, 1, 'E5d and exactly one was refused', res);
-  eq(losers[0] && losers[0].code, 'SWEEP_LOCKED', 'E5e the loser was refused as locked, not by an error',
-    losers[0]);
+  eq(winners.length, 1, 'E6c EXACTLY ONE acquired the lock', res);
+  eq(losers.length, 1, 'E6d and exactly one was refused', res);
+  eq(losers[0] && losers[0].code, 'SWEEP_LOCKED',
+    'E6e the loser was refused because the lock was LIVE - not stale, not unreadable', losers[0]);
 
-  // The loser must not have touched the winner's record.
+  // THE POINT OF THE REWRITE: the winner is still running and still holding, so the loser's refusal
+  // provably happened while the lock was held. A sequential pair could not produce this state.
+  const winnerIdx = res.findIndex(r => r && r.ok === true);
+  ok(alive()[winnerIdx], 'E6f the winner is STILL RUNNING at the moment both verdicts are judged');
+  ok(fs.existsSync(helds[winnerIdx]), 'E6g and had declared itself holding');
   const onDisk = SWEEP.inspectLock(lp);
-  eq(onDisk.state, 'VALID', 'E5f the lock on disk is valid');
-  eq(onDisk.held.token, winners[0] && winners[0].token, 'E5g and holds the WINNER\'s token - the loser '
-    + 'did not overwrite it');
-  eq(onDisk.held.pid, winners[0] && winners[0].pid, 'E5h and the winner\'s pid');
-  // Neither child is alive any more, so the lock is now stale and reclaimable - which is the correct
-  // end state, and is reached without anyone deleting anyone else's file.
-  const mine = SWEEP.acquireLock(lp);
-  ok(!!mine, 'E5i once both contenders are gone the lock is reclaimable');
-  SWEEP.releaseLock(mine);
+  eq(onDisk.state, 'VALID', 'E6h the lock is held right now');
+  eq(onDisk.held.token, winners[0].token, 'E6i by the winner');
+  eq(onDisk.held.pid, winners[0].pid, 'E6j and records the winner\'s pid - the loser changed nothing');
+
+  fs.writeFileSync(relFile, 'release');                // only now may the winner let go
+  dl = Date.now() + 30000;
+  while (alive().some(Boolean) && Date.now() < dl) napMs(20);
+  kids.forEach(k => { try { k.kill(); } catch (e) { /* already gone */ } });
+  eq(SWEEP.inspectLock(lp).state, 'ABSENT',
+    'E6k and when the winner releases, the lock is gone - released by its owner, not reclaimed by anyone');
 }
 
 // -------------------------------------------------------------------------------------------------------------

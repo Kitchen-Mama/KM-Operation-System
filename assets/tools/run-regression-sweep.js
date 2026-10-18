@@ -70,23 +70,36 @@ function pidAlive(pid) {
      2. The file is COMPLETE at the instant it becomes visible. There is no moment at which a reader can
         observe a half-written lock, because the bytes existed in full before the name did.
 
-   AN UNREADABLE LOCK IS NOT A DEAD LOCK. The previous version parsed the file and, on any error, treated
-   it as stale and DELETED it - so a lock being written at that moment, or written by a future version
-   with a different shape, was destroyed by the very code that was supposed to respect it. Unparseable
-   now means "held by something I do not understand": it is REFUSED, not removed. Only after a long
-   grace period, by which time no legitimate writer could still be mid-flight, is such a file reclaimable
-   - and even then through the same atomic hand-off as a stale one.
+   CP2U-R3-R3 - AND THE TOOL NEVER REMOVES A LOCK IT DID NOT TAKE.
 
-   RECLAIM IS A RENAME, NOT AN UNLINK. Deleting a lock judged stale is a second check-then-act: between
-   the judgement and the delete, the holder may have been replaced by a live one, and the delete would
-   remove a VALID holder's lock. Renaming can succeed only once - whoever's rename lands owns the
-   reclaim, and everyone else gets ENOENT and starts over.
+   R2 still reclaimed: a lock whose owner looked dead was renamed aside and replaced. That is a second
+   check-then-act, and it can hand the SAME lock to two sweeps at once. The interleaving is short:
+
+     P1 inspects  -> stale            P2 inspects  -> stale
+     P1 renames the stale file away, unlinks it, links its own     -> P1 HOLDS, validly
+     P2 renames "the stale file" away ... but the path now holds P1'S LIVE LOCK, so P2 destroys it,
+        links its own                                              -> P2 HOLDS
+
+   Both believe they hold it, and P1's record is gone. The judgement was about a file; the act lands on
+   a PATH, and between the two the path can come to mean something else. That is the same class of
+   defect R2 removed from acquisition and left in reclaim.
+
+   There is no safe automatic repair here, because the question "is the holder dead?" cannot be answered
+   atomically with "therefore take its place". So the tool no longer tries. EVERY existing lock is
+   REFUSED - live, dead, or unreadable - and the message carries the path, whatever owner information
+   can be read, and the reason. A residual lock is removed BY THE OPERATOR, who can do the one thing
+   this process cannot: confirm that no sweep is running before deleting it.
+
+   ELAPSED TIME IS NOT EVIDENCE. R2 reclaimed an unreadable lock once it was old enough. Age does not
+   establish that a holder is gone - a long sweep is old by design - so no age threshold grants removal
+   any more. The age is reported, because it helps the operator decide; it decides nothing here.
 
    RELEASE IS BY TOKEN, NOT BY PID. Pids are reused. A random token minted at acquisition and checked at
-   release means a process can only ever delete the lock it actually took. */
-var LOCK_UNREADABLE_GRACE_MS = 10 * 60 * 1000;
+   release means a process can only ever delete the lock it actually took. Releasing is not reclaiming:
+   it removes a lock this process holds, which is the one case that needs no judgement about anyone
+   else. */
 
-/** What is at the lock path right now. Never writes, never deletes. */
+/** What is at the lock path right now. Never writes, never renames, never deletes. */
 function inspectLock(lp) {
     var raw, st;
     try { raw = fs.readFileSync(lp, 'utf8'); st = fs.statSync(lp); }
@@ -98,12 +111,25 @@ function inspectLock(lp) {
     return { state: 'VALID', held: held, ageMs: ageMs, raw: raw };
 }
 
-function lockError(code, message) { var e = new Error(message); e.code = code; return e; }
+function lockError(code, message, detail) {
+    var e = new Error(message);
+    e.code = code;
+    if (detail) Object.keys(detail).forEach(function (k) { e[k] = detail[k]; });
+    return e;
+}
+
+/** How an operator clears a lock once they have confirmed no sweep is running. */
+function lockRemovalAdvice(lp) {
+    return 'If no sweep is running in this worktree, remove the lock file yourself and run again:\n'
+        + '  ' + lp + '\n'
+        + 'This tool will not delete it: it cannot tell a crashed sweep from a running one, and deleting '
+        + 'a live holder\'s lock is how two sweeps come to mutate the same sources at once.';
+}
 
 /**
- * Take the worktree lock. `lpOverride` exists so tests can exercise this against their own temp path
- * instead of the real worktree lock - a lock test that borrows the live lock is a lock test that can
- * release a running sweep's exclusion.
+ * Take the worktree lock, or refuse. `lpOverride` exists so tests can exercise this against their own
+ * temp path instead of the real worktree lock - a lock test that borrows the live lock is a lock test
+ * that can release a running sweep's exclusion.
  * Returns a HANDLE { path, token, pid }; pass that same handle to releaseLock.
  */
 function acquireLock(lpOverride) {
@@ -112,8 +138,9 @@ function acquireLock(lpOverride) {
     var payload = JSON.stringify({ pid: process.pid, token: token, root: path.resolve(ROOT),
         startedAt: new Date().toISOString() });
 
-    for (var attempt = 0; attempt < 5; attempt++) {
-        // ---- publish atomically: complete content first, then an exclusive name for it ----------
+    // The loop exists ONLY for the case where the path is free again by the time we look at it: nothing
+    // is removed on any iteration, so it cannot become a disguised reclaim.
+    for (var attempt = 0; attempt < 3; attempt++) {
         var tmp = lp + '.tmp-' + process.pid + '-' + crypto.randomBytes(6).toString('hex');
         var published = false;
         try {
@@ -124,8 +151,8 @@ function acquireLock(lpOverride) {
             } catch (eLink) {
                 if (eLink.code !== 'EEXIST') {
                     // Some filesystems refuse hard links. `open(wx)` is still an atomic create, so
-                    // exclusion holds; only the complete-on-publish property is weaker, which is why
-                    // an unreadable lock is refused rather than deleted.
+                    // exclusion holds; only the complete-on-publish property is weaker, which is one
+                    // more reason an unreadable lock is refused rather than removed.
                     try {
                         var fd = fs.openSync(lp, 'wx');
                         try { fs.writeSync(fd, payload); } finally { fs.closeSync(fd); }
@@ -138,30 +165,35 @@ function acquireLock(lpOverride) {
         }
         if (published) return { path: lp, token: token, pid: process.pid };
 
-        // ---- something is there. Decide, without touching it yet. ------------------------------
+        // Something holds the path. Report it; never touch it.
         var cur = inspectLock(lp);
-        if (cur.state === 'ABSENT') continue;               // released under us; try again
-        if (cur.state === 'VALID' && pidAlive(cur.held.pid)) {
-            throw lockError('SWEEP_LOCKED', 'ANOTHER SWEEP IS RUNNING in this worktree (pid '
-                + cur.held.pid + ', started ' + cur.held.startedAt + ').\n'
-                + 'Two sweeps mutate the same sources and restore them from different snapshots.\n'
-                + 'Lock: ' + lp);
-        }
-        if (cur.state === 'UNREADABLE' && cur.ageMs < LOCK_UNREADABLE_GRACE_MS) {
-            throw lockError('SWEEP_LOCK_UNREADABLE', 'The sweep lock exists but cannot be read as a lock '
-                + '(age ' + cur.ageMs + ' ms). It is NOT being treated as stale: a lock that is being '
-                + 'written, or written by a different version, must not be destroyed by a reader.\n'
-                + 'Lock: ' + lp);
+        if (cur.state === 'ABSENT') continue;               // released under us; try the atomic create again
+
+        if (cur.state === 'UNREADABLE') {
+            throw lockError('SWEEP_LOCK_UNREADABLE',
+                'A sweep lock exists but cannot be read as a lock (age ' + cur.ageMs + ' ms).\n'
+                + 'It is NOT assumed to be abandoned: a lock being written, or written by a different '
+                + 'version, must not be destroyed by a reader - and age does not prove otherwise.\n'
+                + lockRemovalAdvice(lp),
+                { lockPath: lp, owner: null, ageMs: cur.ageMs });
         }
 
-        // ---- reclaim, and only one caller can win it -------------------------------------------
-        var parked = lp + '.stale-' + process.pid + '-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
-        try { fs.renameSync(lp, parked); }
-        catch (eRen) { continue; }                          // someone else reclaimed it; start over
-        try { fs.unlinkSync(parked); } catch (e) { /* best effort */ }
+        var alive = pidAlive(cur.held.pid);
+        throw lockError(alive ? 'SWEEP_LOCKED' : 'SWEEP_LOCK_STALE',
+            (alive
+                ? 'ANOTHER SWEEP IS RUNNING in this worktree (pid ' + cur.held.pid + ', started '
+                  + cur.held.startedAt + ').\nTwo sweeps mutate the same sources and restore them from '
+                  + 'different snapshots.'
+                : 'A sweep lock is present and its recorded owner (pid ' + cur.held.pid + ', started '
+                  + cur.held.startedAt + ') is not running.\nTHIS IS NOT RECLAIMED AUTOMATICALLY. Judging '
+                  + 'a holder dead and then taking its place are two steps, and between them the path can '
+                  + 'come to belong to a live sweep - which is how one lock gets handed to two.')
+            + '\n' + lockRemovalAdvice(lp),
+            { lockPath: lp, owner: cur.held, ageMs: cur.ageMs, ownerAlive: alive });
     }
     throw lockError('SWEEP_LOCK_CONTENDED',
-        'Could not take the sweep lock after 5 attempts: ' + lp);
+        'Could not take the sweep lock after 3 attempts; it kept appearing and disappearing: ' + lp,
+        { lockPath: lp, owner: null });
 }
 
 /**
@@ -367,5 +399,5 @@ module.exports = { enumerateSuites: enumerateSuites, runOne: runOne, sweep: swee
     // CP2U-R3-R1 - the worktree lock and the per-suite pollution abort are exported so they can be
     // tested directly, which is the only way to prove a guard fires without staging a real disaster.
     acquireLock: acquireLock, releaseLock: releaseLock, lockPath: lockPath, pidAlive: pidAlive,
-    inspectLock: inspectLock, LOCK_UNREADABLE_GRACE_MS: LOCK_UNREADABLE_GRACE_MS,
+    inspectLock: inspectLock, lockRemovalAdvice: lockRemovalAdvice,
     PER_SUITE_TIMEOUT_MS: PER_SUITE_TIMEOUT_MS };

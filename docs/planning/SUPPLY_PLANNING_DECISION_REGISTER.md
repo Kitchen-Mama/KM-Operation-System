@@ -5103,3 +5103,48 @@ release are each verified separately, all in a temp namespace, with no mutation 
 Unchanged by this round, deliberately: the per-suite pollution check, the immediate abort, the refusal to
 auto-restore, the dirty-start refusal and the 600 s per-suite timeout.
 
+### D-S8-B3-119 — Automatic reclaim removed: the tool never deletes a lock it did not take — **NARROWED (CP2U-R3-R3)**
+
+R2 fixed acquisition and left the same class of defect in RECLAIM. A lock whose owner looked dead was
+renamed aside and replaced — a judgement followed by an act, with a gap between them. The judgement is
+about a FILE; the act lands on a PATH, and in between the path can come to mean something else:
+
+```
+P1 inspects -> stale                 P2 inspects -> stale
+P1 renames the stale file away, unlinks it, links its own   -> P1 HOLDS, validly
+P2 renames "the stale file" away — but the path now holds P1'S LIVE LOCK, so P2 destroys it,
+   links its own                                            -> P2 HOLDS
+```
+
+**One lock, two holders, and P1's record gone.** This is not argued: the interleaving is driven
+deterministically in `sweep-pollution-guards-…-r1.test.js` §E5, which reproduces R2's algorithm with a
+pause between its inspect and its rename, and asserts that **both calls return a handle** and that the
+surviving file carries P2's token.
+
+**THERE IS NO SAFE AUTOMATIC REPAIR**, because "is the holder dead?" cannot be answered atomically with
+"therefore take its place". So the tool stops trying. **Every existing lock is refused** — live
+(`SWEEP_LOCKED`), dead (`SWEEP_LOCK_STALE`), or unreadable (`SWEEP_LOCK_UNREADABLE`) — and the refusal
+carries the path, whatever owner information could be read, whether that owner is running, the age, and
+the one instruction this process cannot carry out itself: a residual lock is removed **by the operator**,
+who can confirm no sweep is running first.
+
+**ELAPSED TIME IS NOT EVIDENCE, and the grace window is gone.** R2 reclaimed an unreadable lock once it
+was old enough. Age does not establish abandonment — a long sweep is old by design. A 99-day-old
+unreadable lock is now refused exactly like a fresh one, and the constant no longer exists.
+
+**THIS IS A DELIBERATE NARROWING, and it has a cost worth stating.** After a crashed or killed sweep the
+next sweep will REFUSE to start until someone deletes the lock file. That is the trade: a manual step
+after a crash, in exchange for never handing one worktree to two mutating sweeps. The previous
+convenience was buying that step with a race.
+
+**AND THE RACE TEST ITSELF WAS TOO WEAK.** R2's two-process test let the winner exit as soon as it
+reported, so two SEQUENTIAL successes — first acquires and releases, second then acquires legitimately
+— would have looked identical to a genuine simultaneous refusal. The winner now holds the lock until
+the parent has read both verdicts and inspected the file, and is asserted to be **still running** at the
+moment of judgement; only then is it told to release. Release remains the owner's own act, verified by
+token, which needs no judgement about anybody else.
+
+Unchanged: atomic `link()` acquisition, token-verified release, the tests' private lock namespace, the
+per-suite pollution check, the immediate abort, the refusal to auto-restore a polluted source, the
+dirty-start refusal, and the 600 s per-suite timeout.
+
