@@ -423,3 +423,27 @@ still pinned by name, and a new assertion fails if the raise is ever anything ot
 the scanned-byte and execution ceilings, and the cache-invalidation design. Those become meaningful
 once the entity mapping in §1.2 is known, because the mapping decides the query's shape and therefore its cost. **No
 other module's size was used as a stand-in for a measurement of this one.**
+
+---
+
+## 7. Prepared while the contract is still open (CP2W)
+
+**Status re-checked, not re-litigated: `MISSING_OWNER_INPUT #1` and `#3` are both still open**, so no
+BigQuery and no historical API is reached by anything below. What exists now is the shape the answer
+will be poured into:
+
+| artifact | what it is |
+|---|---|
+| `assets/tests/_fc-historical-source-port.js` | the **interface** — request, row shape, per-month attestation, refusal names, and §4.2 encoded as `absentDateVerdict` |
+| `assets/tests/_fc-historical-fixtures.js` | one **fixture per pending mode**, plus the five OPEN questions carried as data |
+| `assets/tests/fc-historical-basis-port-and-fixtures-s8-b3-r3-cp2w.test.js` | 63 assertions, 6 mutants — the executable spec |
+
+Three properties were deliberate. The port's **row shape is the one
+`supply-planning-calculations.js` already requires**, so no translation layer stands between the
+source and the identity rules. The **exclusion set is executed, not copied** — the suite obtains it
+by calling the frozen owner. And the **`EMITS_ZERO` branch is refused rather than assumed**, because
+§4.2 does not say what an absent row means for the denominator under that rule; that is part of #3.
+
+**Not claimed:** nothing is implemented, nothing is connected, and no byte was added to the Apps
+Script load surface. The budget position in §6 is unchanged, and D-S8-B3-62's conclusion stands — the
+interval mode still needs a server-side owner that the current gate has no room for.

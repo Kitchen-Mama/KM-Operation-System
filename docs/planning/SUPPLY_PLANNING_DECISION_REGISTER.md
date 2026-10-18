@@ -5333,3 +5333,83 @@ written off as flaky.
 **Not done, deliberately:** no rerun-until-green was treated as a repair, S4 was not modified, and no test
 tooling was refactored to chase it. The one change that would close the evidence gap — persisting `raw` for
 non-clean suites — is a change to the sweep tool and is left for a round that authorises it.
+
+---
+
+### D-S8-B3-128 — Four segments were asked for; two of them have no instrument — **RECORDED (CP2W, read-only)**
+
+The round asks for `readMs`, `afterReadMs`, frontend landing and Search→Avg split from a SERVER
+measurement of R53. **No such measurement exists**: R53 is committed, unpushed and unsynced, and
+Production state was recorded UNKNOWN last round. That blocks the split on evidence nobody has yet.
+
+A second finding sits underneath it and does **not** go away when R53 deploys. Of the four segments,
+only two can be read at all today:
+
+| segment | instrument | verdict |
+|---|---|---|
+| `readMs` | `meta.canonicalRead.readMs` on the response | **readable** — but only in the raw response; the page discards it |
+| `afterReadMs` | `meta.canonicalRead.afterReadMs` | **readable**, same caveat |
+| frontend landing | — | **NOT derivable in-page** |
+| Search → Avg painted | — | **NOT measured at either end** |
+
+Evidence, each checked rather than assumed:
+
+- **`canonicalRead` has zero references in `assets/js/`.** The client never reads the block R53 adds.
+- **The recommendation read discards `meta.serverDurationMs`.** `_irRecoApplyEnvelope` keeps
+  `requestId` and `dataVersion` and nothing else; the only capture of `serverDurationMs` in the page
+  (`_irLastReadMeta`) belongs to the PRIMARY workspace read, a different request. So the one client
+  number that exists for this read — `lastClientDurationMs` — spans dispatch→envelope and **contains**
+  the server time, with nothing to subtract it with.
+- **`KM.perf.markInteraction` has zero call sites outside `perf-observer.js`.** The Search instant is
+  never marked, so the segment has no start.
+- **`_irRecoRecordDiag(_t0)` runs BEFORE `_irRecoApplyEnvelope` and the three repaints.** The render
+  that actually puts Avg on screen is outside the only number the page keeps, so it has no end either.
+
+**Consequence: the largest cost cannot be chosen yet, and no repair was made.** Picking one from the
+two segments that happen to be measurable would be choosing by instrument availability rather than by
+cost, which is how a round optimises the wrong half. The zero-code-change measurement protocol that
+closes the gap is in the deployment log addendum; in-page instrumentation is a frontend change and
+would owe a token rotation, so it is not taken unasked.
+
+---
+
+### D-S8-B3-129 — The two pending FC modes get a port and fixtures; nothing is connected — **PREPARED (CP2W)**
+
+The source contract still carries **MISSING_OWNER_INPUT #1** (raw row → selling entity) and **#3**
+(per-date completion signal + omit-zero rule + coverage evidence), so no BigQuery and no historical
+API may be reached. What could be prepared without them was:
+
+`assets/tests/_fc-historical-source-port.js` — the **interface**. Its row shape is deliberately the
+shape `supply-planning-calculations.js` already demands, so the frozen identity machinery consumes the
+port's output with no translation layer, and the port carries a **per-month attestation** beside the
+rows because §4.2 refuses per month. `absentDateVerdict` encodes the three-ingredient rule and nothing
+else: all three, or MISSING. The `EMITS_ZERO` branch is **refused rather than guessed** — the contract
+observes that always-emitted zeros would answer all three questions, but it does not say what an
+absent row then means for the denominator, and that is #3's territory.
+
+`assets/tests/_fc-historical-fixtures.js` — one fixture per mode, with the quantities chosen so a
+wrong implementation is **visibly** wrong: activity days carry 100 against normal days' 10, and the
+other selling entity carries 1,000.
+
+`assets/tests/fc-historical-basis-port-and-fixtures-s8-b3-r3-cp2w.test.js` — 63 assertions, 6 mutants.
+
+**The exclusion rule is not re-implemented.** The contaminated date set the interval mode uses is
+taken from `KMCALC.normalizedAvgSalesPerDay` **by executing it**, which is the only way "reuses the
+frozen rule" can be proved rather than claimed. The suite also pins the overlap: a campaign of three
+days and an event of three days sharing one date exclude **five** days, not six.
+
+**Both blockers are now executable rather than quoted.** Asked for 2026-11, the frozen owner sees
+nothing of 2025-11 and falls to the weekly rung — the 90-day window against a 90-day retention,
+D-S8-B3-62 in one assertion. And handed KM and ResUS rows on one source natural key it **throws**
+`ambiguous daily-sales company resolution`, which is why a browser-side interval average over the
+company-less snapshot is not a smaller version of the feature.
+
+**Five questions are declared OPEN rather than decided** (`OPEN_A1`, `OPEN_A2`, `OPEN_B1`, `OPEN_B2`,
+`OPEN_B3`), and the fixtures carry the data for **both** branches of each, so answering one needs no
+new fixture. The largest: whether "ACTUAL" excludes activity days (360 raw against 260 excluded), and
+whether growth multiplies the daily rate (11) or a derived monthly quantity (330).
+
+**Nothing is wired and the suite proves it**: no shipped page, core module or `.gs` file references
+either new file, and a comment-stripped scan of both finds no source token. **Zero bytes were added to
+the Apps Script load surface** — no `.gs` file was touched this round, so the GS measurement is
+unchanged at **4,629,837 / 4,630,000**.

@@ -5724,3 +5724,33 @@ whether the Sheets v4 advanced service is enabled on the deployed project.
 **No manifest expectation was lowered and nothing outside R53 was synced.** If the paste set has to grow
 beyond the three files plus verification of the carried list, that is a separate decision and is reported
 before it is taken.
+
+### CP2W addendum — measuring the four segments WITHOUT changing a byte
+
+R53 is not deployed, so none of this has been run; it is the protocol to run once it is. It needs **no
+code change**, which matters: instrumenting the page would be a frontend source change and would owe a
+published-token rotation under the standing policy, for a measurement that DevTools already affords.
+
+**Step 0 — get a SERVER answer, not a cached one.** `sessionStorage` survives a reload, including a
+hard one. Close the tab (or clear site data), reopen, then run `_irRecoAnswerSource_()` and require
+`source === 'SERVER'`. A cached answer carries no `canonicalRead` and proves nothing about the
+deployment.
+
+**Step 1 — the two server segments.** In DevTools → Network, open the `recommendation.workspace.get`
+response and read `meta.canonicalRead`: `readMs` (the bytes, with `normalizeMs` inside it) and
+`afterReadMs`. `afterReadMs` is `serverDurationMs` minus the canonical read, so it contains every
+other I/O the handler performs — Script Property lookups, `openTarget`, the allocation config blob —
+and is **not** calculation time. Record `mode` and, if it is not `BATCH`, `notBatchedReason`.
+
+**Step 2 — frontend landing.** The same Network row's total time minus `meta.serverDurationMs` is the
+network + parse leg. The page cannot do this subtraction itself: the recommendation read keeps only
+`requestId` and `dataVersion` from the envelope, so `serverDurationMs` is discarded on this request
+(D-S8-B3-128).
+
+**Step 3 — Search → Avg painted.** Record a Performance profile across the click. There is no User
+Timing mark to anchor it — `KM.perf.markInteraction` has no call sites — so this segment is read off
+the flame chart between the interaction and the paint that fills the Avg cells, and it is an
+**approximation**, which is how it must be reported.
+
+**Only then is the largest cost known.** Until these four numbers exist, any repair is chosen by
+which segment happened to be measurable.
