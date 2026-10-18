@@ -1,0 +1,422 @@
+// Kitchen Mama Operation System — S8-B3-R3-CP2X §1/§2
+// US → EU → US, LEAVE AND RETURN, AND RE-ENTRY WHILE LOADING — COUNTED, NOT ESTIMATED.
+//
+// Run: node assets/tests/ir-scope-reuse-and-inflight-dedup-s8-b3-r3-cp2x.test.js
+//
+// LOCAL / OFFLINE. No network, no DB, no writes, no browser.
+//
+// WHAT MAKES THIS A REPRODUCTION RATHER THAN A MODEL. The shipped IRRECO region of
+// inventory-replenishment.js is eval'd verbatim — the real `loadRecommendationWorkspace_`, the real
+// session cache, the real F1A stale-scope guard, a real sessionStorage, and a transport that resolves
+// on a LATER TURN so "in flight" is genuinely in flight rather than a label. Every number below is
+// counted by the harness; none is asserted from reading the source.
+//
+// TWO COUNTERS, KEPT APART, because the round asks for exactly that distinction:
+//   HTTP     — one increment per getWorkspace CALL. This is the cost.
+//   REPAINT  — one increment per summary re-render. A repaint without an HTTP is the cache working.
+//
+// THE SCENARIOS, in the order the round names them:
+//   §B  US → EU → US          — does coming back cost a request?
+//   §C  leave the page, return — does remounting cost a request?
+//   §D  re-entry while LOADING, same scope — does a second call duplicate the first?
+//   §E  re-entry while LOADING, scope flip  — what does an aborted request actually cost?
+//   §F  metadata round-trip: what SURVIVES the cache, and what the page silently loses.
+//
+// §F is where this suite started failing, and the failure is the point: `calculationDate` — the
+// authoritative 90-day window anchor the server stamps on every successful response — is read on the
+// live path and NOT stored by the cache, so a restored answer reports `calculationDate: null`. The
+// field that says WHICH window the numbers describe disappears exactly when nobody is watching.
+//
+// NOTE: no 'use strict' — the shipped IRRECO region is eval'd into MODULE scope.
+var fs = require('fs');
+var path = require('path');
+var ROOT = path.join(__dirname, '..', '..');
+
+var passed = 0, failed = 0;
+function ok(c, m, d) { if (c) { passed++; console.log('ok   ' + m); } else { failed++; console.log('FAIL ' + m + (d === undefined ? '' : '\n       got ' + JSON.stringify(d))); } }
+function eq(a, b, m) { ok(JSON.stringify(a) === JSON.stringify(b), m + '  (got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b) + ')'); }
+function section(t) { console.log('\n== ' + t + ' =='); }
+
+var IRSRC = fs.readFileSync(path.join(ROOT, 'assets/js/pages/inventory-replenishment.js'), 'utf8');
+var F1A = require('./_f1a-scope-guard.js');
+var IRREGION = IRSRC.slice(IRSRC.indexOf('// __IRRECO_START__'), IRSRC.indexOf('// __IRRECO_END__'));
+
+// ---- a real sessionStorage (a fake that always misses would prove the opposite of the point) -------
+var STORE = {};
+global.sessionStorage = {
+  getItem: function (k) { return Object.prototype.hasOwnProperty.call(STORE, k) ? STORE[k] : null; },
+  setItem: function (k, v) { STORE[k] = String(v); },
+  removeItem: function (k) { delete STORE[k]; }
+};
+
+// ---- the sites ------------------------------------------------------------------------------------
+var US = { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' };
+var EU = { company: 'Kitchen Mama', country: 'EU', marketplace: 'Amazon' };
+var APPLIED = { US: { country: 'US', marketplaceId: 'MP-US-AMZ' }, EU: { country: 'EU', marketplaceId: 'MP-EU-AMZ' } };
+var CURRENT = US, CURRENT_TAG = 'US';
+
+// ---- the counting transport ------------------------------------------------------------------------
+var HTTP = 0, REPAINT = 0, pending = [];
+function envelopeFor(scope, n) {
+  return {
+    success: true,
+    data: {
+      lines: [{ recommendationLineId: 'L' + n, sku: 'CO1150-AG', destinationType: 'MARKETPLACE',
+        destinationKey: scope.country + '|' + scope.marketplace, horizonBasis: { avgSalesPerDay: 10 },
+        recommendedQty: (scope.country === 'US') ? 70 : 25 }],
+      pagination: null,
+      dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-01T00:00:00Z' }
+    },
+    meta: {
+      requestId: 'REQ-' + scope.country + '-' + n,
+      calculationMonth: '2026-11',
+      planningCycle: 'RECO-2026-11',
+      calculationDate: '2026-10-18',                     // the window anchor the server always stamps
+      recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e',
+      serverDurationMs: 1234
+    },
+    errors: []
+  };
+}
+global.window = {
+  IRContext: { toScopeRequest: function () { return CURRENT; } },
+  KM_FLAGS: {},
+  KM: { api: { workspaceApiActive: function (w) { return w === 'recommendation'; },
+    getWorkspace: function (ws, params, opts) {
+    HTTP++;
+    var scope = CURRENT, n = HTTP;
+    var rec = {};
+    rec.promise = new Promise(function (res, rej) { rec.resolve = res; rec.reject = rej; });
+    rec.scope = scope; rec.n = n; rec.aborted = false;
+    if (opts && opts.signal) { opts.signal.__rec = rec; }
+    pending.push(rec);
+    return rec.promise;
+  } } }
+};
+var DOMROWS = [];
+global.document = { querySelectorAll: function (sel) { return /scroll-row/.test(sel) ? DOMROWS : []; }, getElementById: function () { return null; } };
+global.AbortController = function () {
+  var self = this;
+  this.signal = {};
+  this.abort = function () { if (self.signal.__rec) { self.signal.__rec.aborted = true; } };
+};
+
+var REPLEN_ITEMS = [];
+function escapeReplenHtml(s) { return String(s == null ? '' : s); }
+function getReplenishmentData() { return REPLEN_ITEMS; }
+function updateReplenRecoContext() { return { ok: true }; }
+function _legacyRecSummaryTableHtml() { return ''; }
+function _recSummaryRows() { return ''; }
+function _irSearchApplied_() { return true; }
+function renderReplenishment() {}
+
+eval(F1A.guardPreamble(IRSRC));
+eval(IRSRC.slice(IRSRC.indexOf('var IR_AVG_QUALITY_TEXT'), IRSRC.indexOf('function _irScrollRowHtml_')));
+eval(IRREGION);
+
+// Wrap the REAL render entry point so a repaint is counted without being replaced.
+var _realRerender = _irRecoRerenderSummaries;
+_irRecoRerenderSummaries = function () { REPAINT++; return _realRerender.apply(this, arguments); };
+
+// ---- driving the page the way a person drives it ----------------------------------------------------
+function gotoSite(tag) {
+  CURRENT_TAG = tag; CURRENT = (tag === 'US') ? US : EU;
+  _irSearch.applied = APPLIED[tag];           // the F1A guard reads this; both arms must agree
+}
+function settleAll() {
+  var batch = pending; pending = [];
+  batch.forEach(function (rec) { if (!rec.aborted) rec.resolve(envelopeFor(rec.scope, rec.n)); });
+  return new Promise(function (r) { setTimeout(r, 0); });
+}
+function counters() { return { http: HTTP, repaint: REPAINT }; }
+function reset() { HTTP = 0; REPAINT = 0; }
+
+// A page LEAVE: the route unmounts. The region's own invalidator is what the page calls; the session
+// store survives, which is the entire premise of the cache.
+function leavePage() { _irRecoInvalidate('CONTEXT_NOT_READY'); }
+
+function main() {
+  // ================================================================================================
+  section('§A  the harness is real');
+  // ================================================================================================
+  ok(typeof loadRecommendationWorkspace_ === 'function', 'A1  the shipped loader is the function under test');
+  ok(typeof _irRecoCacheGet === 'function' && typeof _irRecoCacheSet === 'function', 'A2  the shipped cache is the cache under test');
+  ok(_irRecoRerenderSummaries !== _realRerender, 'A3  the repaint counter wraps the real renderer rather than replacing it');
+
+  gotoSite('US');
+  loadRecommendationWorkspace_();
+  eq(HTTP, 1, 'A4  a cold scope issues exactly one request');
+  ok(pending.length === 1 && pending[0].aborted === false, 'A5  and it is genuinely in flight');
+
+  return settleAll().then(function () {
+    ok(_irRecoState.loadedOk === true, 'A6  the response landed through the real apply path');
+    ok(!!STORE['km_ir_reco_cache_horizonBasis.v2'], 'A7  and the real session cache stored it');
+
+    // ==============================================================================================
+    section('§B  US → EU → US');
+    // ==============================================================================================
+    reset();
+    gotoSite('EU');
+    loadRecommendationWorkspace_();
+    eq(HTTP, 1, 'B1  switching to a NEW site costs one request');
+    return settleAll();
+  }).then(function () {
+    var before = counters();
+    gotoSite('US');
+    loadRecommendationWorkspace_();
+    eq(HTTP - before.http, 0, 'B2  coming BACK to US costs ZERO requests — the session cache answers');
+    ok(REPAINT - before.repaint >= 1, 'B3  and it still repaints, so the operator sees the numbers again');
+    eq(_irRecoAnswerSource_().source, 'SESSION_CACHE', 'B4  and the page says so rather than implying a fresh read');
+
+    // ==============================================================================================
+    section('§C  leave the page and come back');
+    // ==============================================================================================
+    reset();
+    leavePage();
+    eq(HTTP, 0, 'C1  leaving issues nothing');
+    loadRecommendationWorkspace_();
+    eq(HTTP, 0, 'C2  returning to a site already read costs ZERO requests');
+    eq(REPAINT >= 1, true, 'C3  and repaints from the store');
+
+    // ==============================================================================================
+    section('§D  re-entry WHILE LOADING, same scope');
+    // ==============================================================================================
+    reset();
+    invalidateRecommendationSessionCache();      // force a cold scope so there is something to race
+    leavePage();
+    gotoSite('EU');
+    loadRecommendationWorkspace_();
+    var afterFirst = HTTP;
+    loadRecommendationWorkspace_();
+    loadRecommendationWorkspace_();
+    eq(HTTP - afterFirst, 0, 'D1  two more calls DURING the flight add zero requests — the in-flight dedup holds');
+    eq(pending.length, 1, 'D2  and exactly one request is outstanding');
+    return settleAll();
+  }).then(function () {
+    // ==============================================================================================
+    section('§E  re-entry WHILE LOADING, scope flipped mid-flight');
+    // ==============================================================================================
+    reset();
+    invalidateRecommendationSessionCache();
+    leavePage();
+    gotoSite('US');
+    loadRecommendationWorkspace_();            // US in flight
+    gotoSite('EU');
+    loadRecommendationWorkspace_();            // supersedes it
+    eq(HTTP, 2, 'E1  a mid-flight site switch costs a SECOND request — the first cannot answer the new site');
+    ok(pending.length === 2 && pending[0].aborted === true,
+      'E2  and the superseded one is ABORTED rather than left to land on the wrong site');
+    gotoSite('US');
+    loadRecommendationWorkspace_();            // back again, while EU is still in flight
+    eq(HTTP, 3, 'E3  returning to US before anything landed costs a THIRD — nothing was cached to come back to');
+    return settleAll();
+  }).then(function () {
+    // ==============================================================================================
+    section('§F  what survives the cache');
+    // ==============================================================================================
+    reset();
+    invalidateRecommendationSessionCache();
+    leavePage();
+    gotoSite('US');
+    loadRecommendationWorkspace_();
+    return settleAll();
+  }).then(function () {
+    var live = _irRecoAnswerSource_();
+    eq(live.source, 'SERVER', 'F1  a fresh answer reports SERVER');
+    eq(live.calculationDate, '2026-10-18', 'F2  and carries the calculationDate the server stamped');
+    eq(live.calculationMonth, '2026-11', 'F3  and the month');
+    eq(live.planningCycle, 'RECO-2026-11', 'F4  and the cycle');
+
+    leavePage();
+    loadRecommendationWorkspace_();            // restore the very same answer from the cache
+    var restored = _irRecoAnswerSource_();
+    eq(restored.source, 'SESSION_CACHE', 'F5  the restored answer is marked as cached');
+    eq(restored.calculationMonth, '2026-11', 'F6  the month survives the round trip');
+    eq(restored.planningCycle, 'RECO-2026-11', 'F7  the cycle survives the round trip');
+    eq(restored.calculationDate, '2026-10-18',
+      'F8  THE CALCULATION DATE MUST SURVIVE TOO — it is the anchor that says which 90-day window these numbers describe');
+    eq(restored.sourceDataAsOf, '2026-10-01T00:00:00Z',
+      'F9  and the source revision survives, because a result with no revision cannot be compared to anything');
+
+    // ==============================================================================================
+    section('§G  the invalidation contract (CP2X §4)');
+    // ==============================================================================================
+    var REV = { calculationDate: '2026-10-18', calculationMonth: '2026-11', planningCycle: 'RECO-2026-11',
+      formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-01T00:00:00Z' };
+    function withField(o, k, v) { var c = JSON.parse(JSON.stringify(o)); c[k] = v; return c; }
+
+    eq(_irRecoRevisionVerdict_(REV, REV), 'SAME', 'G1  two complete, identical revisions are SAME');
+    eq(_irRecoRevisionVerdict_(REV, withField(REV, 'planningCycle', 'RECO-2026-12')), 'SUPERSEDED',
+      'G2  a different planning cycle is SUPERSEDED — the next cycle must not be answered from this one');
+    eq(_irRecoRevisionVerdict_(REV, withField(REV, 'sourceDataAsOf', '2026-10-09T00:00:00Z')), 'SUPERSEDED',
+      'G3  a moved source revision is SUPERSEDED');
+    eq(_irRecoRevisionVerdict_(REV, withField(REV, 'calculationDate', null)), 'UNKNOWN',
+      'G4  one absent field makes the comparison UNKNOWN, not SAME');
+    eq(_irRecoRevisionVerdict_(withField(REV, 'formulaVersion', null), withField(REV, 'formulaVersion', null)),
+      'UNKNOWN',
+      'G5  TWO absent fields are still UNKNOWN — null never equals null, because a missing revision is not evidence of no change');
+    eq(_irRecoRevisionVerdict_(withField(REV, 'formulaVersion', null),
+      withField(withField(REV, 'formulaVersion', null), 'planningCycle', 'RECO-2026-12')), 'SUPERSEDED',
+      'G6  a KNOWN difference outranks an unknown one');
+    eq(_irRecoRevisionVerdict_(REV, null), 'UNKNOWN', 'G7  no counterpart at all is UNKNOWN');
+
+    // a record written by a build older than this contract, planted exactly as it would be found
+    reset();
+    invalidateRecommendationSessionCache();
+    leavePage();
+    gotoSite('US');
+    var legacy = {};
+    legacy[['Kitchen Mama', 'US', 'Amazon'].join('||')] = {
+      shape: 'horizonBasis.v2', handlerVersion: 'fm5-r4ui-r5e',
+      requestScope: { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' },
+      envelopeData: { lines: [], pagination: null, dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-01T00:00:00Z' } },
+      meta: { requestId: 'OLD', calculationMonth: '2026-10', planningCycle: 'RECO-2026-10', dataVersion: null },
+      cachedAt: 1
+    };
+    STORE['km_ir_reco_cache_horizonBasis.v2'] = JSON.stringify(legacy);
+    _irRecoCacheMem = null;                                  // force a reload from the store
+    eq(_irRecoCacheGet({ company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' }), null,
+      'G8  a pre-contract record — no revision block at all — is NOT served');
+    ok(JSON.parse(STORE['km_ir_reco_cache_horizonBasis.v2'])[['Kitchen Mama', 'US', 'Amazon'].join('||')] === undefined,
+      'G9  and it is dropped on the way past, so it cannot be reconsidered');
+    eq(_irRecoReadDiag_().cache, { outcome: 'MISS', reason: 'REVISION_ABSENT_LEGACY' },
+      'G9a and the retirement is NAMED at the moment it happens, not left as an unexplained miss');
+    loadRecommendationWorkspace_();
+    eq(HTTP, 1, 'G10 dropping it produces a clean MISS and a real request, not a silent blank');
+    return settleAll();
+  }).then(function () {
+    eq(_irRecoAnswerSource_().revisionComplete, true, 'G11 the answer that replaces it can state its own revision');
+    // A SERVER that omits calculationDate (the Script Property is not configured) is a real state, and
+    // refusing to cache it would disable caching entirely rather than report anything.
+    invalidateRecommendationSessionCache();
+    _irRecoCacheSet(US, { success: true,
+      data: { lines: [], dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-01T00:00:00Z' } },
+      meta: { recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e', calculationMonth: '2026-11',
+        planningCycle: 'RECO-2026-11' } });                       // no calculationDate
+    var partial = _irRecoCacheGet(US);
+    ok(partial !== null, 'G11a a record whose SERVER omitted a revision field is still SERVED');
+    eq(_irRecoReadDiag_().cache, { outcome: 'HIT', reason: 'SERVED_REVISION_INCOMPLETE' },
+      'G11b and the hit says the revision is incomplete instead of implying it is comparable');
+    eq(_irRecoRevisionVerdict_(partial.revision, partial.revision), 'UNKNOWN',
+      'G11c and it still never compares SAME against itself — an absent field is not evidence of no change');
+    invalidateRecommendationSessionCache();
+    eq(_irRecoAnswerSource_().revision.calculationDate, '2026-10-18', 'G12 including the window anchor');
+
+    // ==============================================================================================
+    section('§H  the cache decision and the three legs are legible (CP2X §2/§3)');
+    // ==============================================================================================
+    // self-establishing: §H states its own preconditions rather than inheriting the previous section's
+    invalidateRecommendationSessionCache();
+    _irRecoCacheSet(US, { success: true,
+      data: { lines: [], dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-01T00:00:00Z' } },
+      meta: { recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e', calculationDate: '2026-10-18',
+        calculationMonth: '2026-11', planningCycle: 'RECO-2026-11' } });
+    eq(_irRecoReadDiag_().cache, { outcome: 'STORED', reason: null }, 'H1  a stored success says so');
+    ok(_irRecoCacheGet(US) !== null, 'H1a and it is retrievable');
+    eq(_irRecoReadDiag_().cache, { outcome: 'HIT', reason: null }, 'H2  a complete hit says so, with no caveat');
+    invalidateRecommendationSessionCache();
+    leavePage();
+    _irRecoCacheGet(US);
+    eq(_irRecoReadDiag_().cache, { outcome: 'MISS', reason: 'NO_ENTRY' }, 'H3  an empty store is NO_ENTRY, not an unexplained miss');
+
+    // THE SILENT ONE: an answer from a handler this build does not accept is shown and never stored,
+    // so every later lookup misses and every site switch pays a full request.
+    _irRecoCacheSet(US, { success: true, data: { lines: [], dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: 'X' } },
+      meta: { recommendationWorkspaceHandlerVersion: 'some-other-build', calculationDate: '2026-10-18',
+        calculationMonth: '2026-11', planningCycle: 'RECO-2026-11' } });
+    eq(_irRecoReadDiag_().cache, { outcome: 'NOT_STORED', reason: 'HANDLER_NOT_ACCEPTED' },
+      'H4  and the condition that disables caching ENTIRELY is named rather than inferred from slowness');
+    eq(_irRecoCacheGet(US), null, 'H5  nothing was stored, so the next lookup misses');
+
+    var t = _irRecoReadDiag_().timing;
+    ok(typeof t.responseMs === 'number' && t.responseMs >= 0, 'H6  responseMs was measured', t);
+    ok(typeof t.domUpdateMs === 'number' && t.domUpdateMs >= 0, 'H7  domUpdateMs was measured', t);
+    ok(/not server time/.test(_irRecoReadDiag_().note),
+      'H8  and the reading states that responseMs is server AND network, so it is never quoted as server time');
+
+    reset();
+    invalidateRecommendationSessionCache();
+    leavePage();
+    gotoSite('US');
+    _irRecoMarkSearch_();                       // the Search leg gets its start, as the page does at apply
+    loadRecommendationWorkspace_();
+    var t2 = _irRecoReadDiag_().timing;
+    ok(typeof t2.searchToDispatchMs === 'number' && t2.searchToDispatchMs >= 0,
+      'H9  searchToDispatchMs is measured from the applied Search, which is page work only', t2);
+    return settleAll();
+  }).then(function () {
+    // ==============================================================================================
+    section('§I  Suggested Qty across sites — reused, never borrowed');
+    // ==============================================================================================
+    var ITEM = { sku: 'CO1150-AG' };
+    eq(_irAggregateActionableRecommendedQty(_irRecoLinesForSku(ITEM)), { total: 70, actionableCount: 1 },
+      'I1  on US the Suggested Qty authority answers with the US number');
+
+    gotoSite('EU');
+    loadRecommendationWorkspace_();
+    return settleAll().then(function () {
+      eq(_irAggregateActionableRecommendedQty(_irRecoLinesForSku(ITEM)), { total: 25, actionableCount: 1 },
+        'I2  on EU it answers with the EU number');
+      var before = HTTP;
+      gotoSite('US');
+      loadRecommendationWorkspace_();
+      eq(HTTP - before, 0, 'I3  returning to US REUSES the stored answer — zero requests');
+      eq(_irAggregateActionableRecommendedQty(_irRecoLinesForSku(ITEM)), { total: 70, actionableCount: 1 },
+        'I4  and the number is the US one again, restored rather than recomputed');
+
+      // the half that matters more: a result from another site is never borrowed
+      _irSearch.applied = APPLIED.EU;            // the page now renders EU; the loaded state is US
+      eq(_irRecoLinesForSku(ITEM), null,
+        'I5  with EU applied, the US result yields NULL — PENDING, never EU rendered with US numbers');
+      _irSearch.applied = APPLIED.US;
+    });
+  }).then(function () {
+    // ==============================================================================================
+    section('§X  mutants');
+    // ==============================================================================================
+    function mutant(id, what, fn) { ok(fn(), 'X  MUTANT CAUGHT — ' + id + ' ' + what); }
+    mutant('X1', 'the harness counts a cache restore as an HTTP call', function () {
+      var h = HTTP; leavePage(); loadRecommendationWorkspace_(); return HTTP === h;
+    });
+    mutant('X2', 'the transport is synchronous, so "in flight" would never be exercised', function () {
+      var h = HTTP; invalidateRecommendationSessionCache(); leavePage(); loadRecommendationWorkspace_();
+      var wasPending = pending.length === 1 && HTTP === h + 1;
+      pending.forEach(function (r) { r.aborted = true; }); pending = [];
+      return wasPending;
+    });
+    mutant('X6', 'the cache stops naming WHY it missed and every miss looks alike', function () {
+      invalidateRecommendationSessionCache(); _irRecoCacheGet(US);
+      var a = _irRecoReadDiag_().cache.reason;
+      _irRecoCacheSet(US, { success: false });
+      return a === 'NO_ENTRY' && _irRecoReadDiag_().cache.reason === 'NOT_A_SUCCESS';
+    });
+    mutant('X7', 'Suggested Qty borrows the other site number instead of reporting PENDING', function () {
+      _irSearch.applied = APPLIED.EU;
+      var borrowed = _irRecoLinesForSku({ sku: 'CO1150-AG' });
+      _irSearch.applied = APPLIED[CURRENT_TAG];
+      return borrowed === null;
+    });
+    mutant('X4', 'a missing revision is read as "unchanged" and two nulls compare SAME', function () {
+      var blank = { calculationDate: null, calculationMonth: null, planningCycle: null, formulaVersion: null, sourceDataAsOf: null };
+      return _irRecoRevisionVerdict_(blank, blank) !== 'SAME';
+    });
+    mutant('X5', 'an incomplete record is served with a caveat instead of being dropped', function () {
+      return _irRecoRevisionComplete_({ calculationDate: '2026-10-18', calculationMonth: '2026-11',
+        planningCycle: 'RECO-2026-11', formulaVersion: 'FV-7', sourceDataAsOf: null }) === false;
+    });
+    mutant('X3', 'the F1A scope guard is stubbed true and stops discriminating sites', function () {
+      _irSearch.applied = APPLIED.EU;
+      var mismatched = _irResultMatchesAppliedScope_({ appliedScopeKey: 'us|MP-US-AMZ' });
+      _irSearch.applied = APPLIED[CURRENT_TAG];
+      return mismatched === false;
+    });
+
+    console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed');
+    if (failed > 0) process.exitCode = 1;
+  });
+}
+
+main().catch(function (e) {
+  console.log('FAIL  harness threw: ' + (e && e.stack || e));
+  process.exitCode = 1;
+});

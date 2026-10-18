@@ -288,10 +288,68 @@ eq(scanFor(path.join(ROOT, 'assets/js'), '.js'), [], 'G9  no shipped page or cor
 eq(scanFor(path.join(ROOT, 'assets/specs/active/apps-script'), '.gs'), [], 'G10 no Apps Script file references it either');
 
 eq(FX.OPEN_QUESTIONS.map(function (q) { return q.id; }),
-  ['OPEN_A1', 'OPEN_A2', 'OPEN_B1', 'OPEN_B2', 'OPEN_B3'],
-  'G11 the five open questions are declared, so "prepared" is not mistaken for "decided"');
+  ['OPEN_A1', 'OPEN_A2', 'OPEN_B1', 'OPEN_C1', 'OPEN_B2', 'OPEN_B3'],
+  'G11 the questions are declared, so "prepared" is not mistaken for "decided"');
 ok(FX.OPEN_QUESTIONS.every(function (q) { return q.question && q.why; }),
   'G12 and each carries the reason it cannot be answered here');
+eq(FX.OPEN_QUESTIONS.filter(function (q) { return q.resolved; }).map(function (q) { return q.id; }),
+  ['OPEN_B1'],
+  'G13 a question CP2X settled is marked resolved in place rather than deleted, so the decision keeps its trail');
+
+// ==================================================================================================
+section('§J  FIXTURE C — complete months, monthly restoration, month equal weight, growth (CP2X §5)');
+// ==================================================================================================
+var C = FX.FIXTURE_C;
+var portC = PORT.makeFixturePort({ rows: C.rows, attestation: C.attestation });
+
+// The exclusion set comes from the frozen owner here too — the same rule, executed, not restated.
+var frozenC = KMCALC.normalizedAvgSalesPerDay({
+  calcDate: '2026-10-01', scope: C.scope, weekly7d: 0,
+  dailySales: C.rows.filter(function (r) { return r.company === C.scope.company; }),
+  campaigns: C.campaigns, events: C.events
+});
+var hotC = {};
+frozenC.excludedDates.forEach(function (d) { hotC[d] = 1; });
+eq(frozenC.excludedDates.length, 11, 'J1  the eleven July activity days are excluded by the frozen rule');
+
+var perMonth = {};
+C.months.forEach(function (m) {
+  var got = readMonth(C, portC, m);
+  ok(!got.refused, 'J2  ' + m + ' is a COMPLETE month and is answerable');
+  eq(got.accountedDays, C.expect.daysInMonth[m], 'J3  ' + m + ' accounts for every calendar date');
+  var normal = Object.keys(got.byDate).filter(function (d) { return !hotC[d]; });
+  var units = normal.reduce(function (sum, d) { return sum + got.byDate[d]; }, 0);
+  perMonth[m] = { days: normal.length, units: units, rate: units / normal.length };
+  eq(perMonth[m].days, C.expect.normalDays[m], 'J4  ' + m + ' normal days');
+  eq(perMonth[m].units, C.expect.normalUnits[m], 'J5  ' + m + ' normal units');
+  near(perMonth[m].rate, C.expect.monthRate[m], 'J6  ' + m + ' rate');
+  near(perMonth[m].rate * C.expect.daysInMonth[m], C.expect.monthRestoredQty[m],
+    'J7  ' + m + ' restored to a month quantity over its OWN length');
+});
+
+var pooledUnits = C.months.reduce(function (s, m) { return s + perMonth[m].units; }, 0);
+var pooledDays = C.months.reduce(function (s, m) { return s + perMonth[m].days; }, 0);
+near(pooledUnits / pooledDays, C.expect.pooledDailyAverage,
+  'J8  pooling the days gives the answer month-equal-weight exists to reject');
+
+var ewRate = C.months.reduce(function (s, m) { return s + perMonth[m].rate; }, 0) / C.months.length;
+near(ewRate, C.expect.monthEqualWeightRate, 'J9  MONTH EQUAL WEIGHT — every month counts once, whatever its length');
+ok(Math.abs(ewRate - C.expect.pooledDailyAverage) > 0.5,
+  'J10 and it DIFFERS from the pooled answer, so the rule is exercised rather than merely satisfied');
+
+var ewQty = C.months.reduce(function (s, m) { return s + perMonth[m].rate * C.expect.daysInMonth[m]; }, 0) / C.months.length;
+near(ewQty, C.expect.monthEqualWeightRestoredQty, 'J11 equal-weighting the RESTORED quantities instead');
+eq(Math.round(ewRate * C.expect.targetMonthDays * (1 + C.growthPercent / 100)), C.expect.grownFromRate,
+  'J12 growth on the rate-then-restore composition');
+eq(Math.round(ewQty * (1 + C.growthPercent / 100)), C.expect.grownFromRestoredQty,
+  'J13 growth on the restore-then-equal-weight composition');
+ok(C.expect.grownFromRate !== C.expect.grownFromRestoredQty,
+  'J14 the two compositions differ, which is why OPEN_C1 is a real question and both are declared');
+
+var cAll = portC.readDailySales({ scope: C.scope, from: '2026-08-01', to: '2026-08-31' }).rows;
+eq(cAll.filter(function (r) { return r.company === FX.OTHER_COMPANY; })
+  .reduce(function (s, r) { return s + r.units; }, 0), 2000,
+  'J15 the other entity is present in August and contributes nothing — isolation is doing work here too');
 
 // ==================================================================================================
 section('§X  mutants');
@@ -315,6 +373,12 @@ mutant('X4', 'the interval mode inherits the frozen 30-day cap', function () {
 });
 mutant('X5', 'the campaign/event overlap is counted twice', function () {
   return naive === 6 && frozen.excludedDates.length === 5;
+});
+mutant('X7', 'month equal weight is replaced by pooling every day', function () {
+  return Math.abs(C.expect.monthEqualWeightRate - C.expect.pooledDailyAverage) > 0.5;
+});
+mutant('X8', 'a month is restored over the TARGET month length instead of its own', function () {
+  return C.expect.monthRestoredQty['2026-07'] !== C.expect.monthRate['2026-07'] * C.expect.targetMonthDays;
 });
 mutant('X6', 'a scope without company is accepted and answered for whichever entity happens to be first', function () {
   var e = null;

@@ -11359,6 +11359,10 @@ function _irApplySearch_(pending, mySeq) {
         }
     } catch (_eGen) {}
     _irSearch.applied = { country: pending.country, marketplaceId: pending.marketplaceId };
+    // CP2X §3 — the Search leg has a START now. This is the single place `applied` is assigned, so it is
+    // the only instant that means "the operator asked for this site". typeof-guarded because the suites
+    // that eval only part of this file never reach the declaration.
+    if (typeof _irRecoMarkSearch_ === 'function') _irRecoMarkSearch_();
     // F1-7N-FB-4E-R3 §B.4 — remember the scope of a SUCCESSFUL Search, and only here. This is already the one
     // place `applied` is assigned, so it is the only place a scope is known to be valid AND to have produced a
     // real result. Remembering a merely SELECTED scope would persist something that was never proven to work.
@@ -14142,6 +14146,111 @@ function _irRecoEnvHandler_(env) {
   var m = (env && env.meta) || {};
   return m.recommendationWorkspaceHandlerVersion || m.handlerVersion || null;
 }
+// S8-B3-R3-CP2X §4 — THE INVALIDATION CONTRACT, IN ONE PLACE.
+//
+// Four different things can make a stored answer wrong, and before this they were checked in four
+// different ways or not at all: the response SHAPE (CP2T), the COMPUTATION that produced it (CP2T-R1),
+// the PLANNING CONTEXT it was computed for (calculation date / month / cycle), and the SOURCE REVISION
+// it read (formula version / source-data-as-of). The last two were stored only in part and compared
+// never, so an answer computed for one planning cycle could be restored into the next one unchanged.
+//
+// TWO RULES, and the second is the one that is easy to get backwards:
+//
+//   A MISSING FIELD IS NOT A MATCH. `null` never compares equal to anything, not even to another
+//   `null`. "We have no revision" is not evidence that nothing changed - it is the absence of
+//   evidence, and reading it as SAME is precisely how a stale result comes to pose as a current one.
+//   Every comparison involving an absent field answers UNKNOWN.
+//
+//   AN INCOMPLETE RECORD IS NOT SERVED. A stored entry that cannot state its own revision is dropped
+//   on read rather than rendered with a caveat, because the caveat is not where the operator is
+//   looking. This also retires, once and without a migration, every record written before this build.
+// S8-B3-R3-CP2X §2/§3 — A BOUNDED DIAGNOSTIC: WHY THE LAST LOOKUP MISSED, AND WHAT THE LEGS COST.
+//
+// WHY A MISS NEEDED A REASON. The cache answers or it does not, and when it does not the page simply
+// issues a request - correct, and completely silent. "The Avg cache never hits" and "the Avg cache is
+// hit and the answer is wrong" produce the same screen, and four different conditions drop a record
+// (shape, handler, revision, no entry at all) with no way to tell them apart from outside. One of
+// them - a handler version this build does not accept - silently disables caching ENTIRELY, so every
+// site switch pays a full request while everything looks healthy.
+//
+// WHAT IS MEASURED, and the boundaries are the point rather than the numbers:
+//   searchToDispatchMs - the applied Search to the request leaving. Page work, no server, no network.
+//   responseMs         - dispatch to the envelope in hand. Server + network; NOT server time alone.
+//   domUpdateMs        - the envelope to the last repaint of the three that follow it.
+// The server's own split (readMs / afterReadMs) stays where it is, on meta.canonicalRead, untouched.
+//
+// NOT ADDED: a store, a TTL, a retry, a request, an upload, a sampler, a timer, or any change to what
+// is read, cached, computed or rendered. Three numbers and a reason, overwritten in place.
+var _IR_RECO_DIAG_ = { cache: { outcome: null, reason: null }, timing: { searchToDispatchMs: null, responseMs: null, domUpdateMs: null },
+  marks: { searchAt: null, dispatchAt: null, responseAt: null } };
+function _irRecoNowMs_() {
+  try { if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') return performance.now(); } catch (e) {}
+  try { return Date.now(); } catch (e2) { return 0; }
+}
+// Called from the ONE place an applied Search is committed. Guarded at the call site, so a harness that
+// evaluates only part of this file cannot be broken by it.
+function _irRecoMarkSearch_() {
+  _IR_RECO_DIAG_.marks.searchAt = _irRecoNowMs_();
+  _IR_RECO_DIAG_.marks.dispatchAt = null; _IR_RECO_DIAG_.marks.responseAt = null;
+  _IR_RECO_DIAG_.timing = { searchToDispatchMs: null, responseMs: null, domUpdateMs: null };
+}
+function _irRecoCacheDecision_(outcome, reason) { _IR_RECO_DIAG_.cache = { outcome: outcome, reason: reason }; }
+function _irRecoReadDiag_() {
+  return { cache: { outcome: _IR_RECO_DIAG_.cache.outcome, reason: _IR_RECO_DIAG_.cache.reason },
+    timing: { searchToDispatchMs: _IR_RECO_DIAG_.timing.searchToDispatchMs,
+      responseMs: _IR_RECO_DIAG_.timing.responseMs, domUpdateMs: _IR_RECO_DIAG_.timing.domUpdateMs },
+    note: 'searchToDispatchMs is page work; responseMs is server AND network, not server time (read '
+      + 'meta.canonicalRead for that split); domUpdateMs ends at the last of the three repaints.' };
+}
+var _IR_RECO_REVISION_FIELDS = ['calculationDate', 'calculationMonth', 'planningCycle', 'formulaVersion', 'sourceDataAsOf'];
+// The planning context + source revision an ANSWER was computed under, read from where the server
+// actually puts each one: the first three on meta, the last two inside data.dataVersion.
+function _irRecoRevisionFromEnv_(env) {
+  var m = (env && env.meta) || {};
+  var dv = (env && env.data && env.data.dataVersion) || {};
+  return {
+    calculationDate: m.calculationDate || null,
+    calculationMonth: m.calculationMonth || null,
+    planningCycle: m.planningCycle || null,
+    formulaVersion: dv.formulaVersion || null,
+    sourceDataAsOf: dv.sourceDataAsOf || null
+  };
+}
+// The same five fields, read off the page STATE rather than an envelope, so the displayed answer can
+// state its own revision whether it came from the server or the store.
+function _irRecoRevisionFromState_(st) {
+  var dv = (st && st.dataVersion) || {};
+  return {
+    calculationDate: (st && st.calculationDate) || null,
+    calculationMonth: (st && st.calculationMonth) || null,
+    planningCycle: (st && st.planningCycle) || null,
+    formulaVersion: dv.formulaVersion || null,
+    sourceDataAsOf: dv.sourceDataAsOf || null
+  };
+}
+function _irRecoRevisionComplete_(rev) {
+  if (!rev || typeof rev !== 'object') return false;
+  for (var i = 0; i < _IR_RECO_REVISION_FIELDS.length; i++) {
+    var v = rev[_IR_RECO_REVISION_FIELDS[i]];
+    if (v === null || v === undefined || v === '') return false;
+  }
+  return true;
+}
+// 'SAME' | 'SUPERSEDED' | 'UNKNOWN'. UNKNOWN wins over SAME whenever a field is absent on either side,
+// and a field that differs is SUPERSEDED even if another field is absent - a known difference is a
+// stronger fact than an unknown one.
+function _irRecoRevisionVerdict_(a, b) {
+  if (!a || !b) return 'UNKNOWN';
+  var unknown = false;
+  for (var i = 0; i < _IR_RECO_REVISION_FIELDS.length; i++) {
+    var f = _IR_RECO_REVISION_FIELDS[i], x = a[f], y = b[f];
+    var xMissing = (x === null || x === undefined || x === '');
+    var yMissing = (y === null || y === undefined || y === '');
+    if (xMissing || yMissing) { unknown = true; continue; }
+    if (String(x) !== String(y)) return 'SUPERSEDED';
+  }
+  return unknown ? 'UNKNOWN' : 'SAME';
+}
 var _irRecoCacheMem = null;                                // lazy in-memory mirror of the session store
 function _irRecoCacheLoad() {
   if (_irRecoCacheMem) return _irRecoCacheMem;
@@ -14168,24 +14277,39 @@ function _irRecoCacheKey(scopeReq) {
   return [scopeReq.company || '', scopeReq.country || '', scopeReq.marketplace || ''].join('||');
 }
 function _irRecoCacheGet(scopeReq) {
-  var k = _irRecoCacheKey(scopeReq); if (!k) return null;
+  var k = _irRecoCacheKey(scopeReq); if (!k) { _irRecoCacheDecision_('MISS', 'NO_SCOPE_KEY'); return null; }
   var c = _irRecoCacheLoad();
   var e = c[k];
-  if (!e || !e.envelopeData) return null;
+  if (!e || !e.envelopeData) { _irRecoCacheDecision_('MISS', 'NO_ENTRY'); return null; }
   // A record written for a different response shape is not an old answer to be shown with a caveat; it is
   // an answer this build cannot read. It is dropped on the way past so the next lookup is a clean miss.
-  if (e.shape !== _IR_RECO_CACHE_SHAPE) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); return null; }
+  if (e.shape !== _IR_RECO_CACHE_SHAPE) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); _irRecoCacheDecision_('MISS', 'SHAPE_SUPERSEDED'); return null; }
   // CP2T-R1 — and a record this build CAN read but whose values were computed by a handler it no longer
   // accepts is dropped for the same reason: it would render, and what it renders is the pre-repair answer.
-  if (!_irRecoHandlerOk_(e.handlerVersion)) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); return null; }
+  if (!_irRecoHandlerOk_(e.handlerVersion)) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); _irRecoCacheDecision_('MISS', 'HANDLER_NOT_ACCEPTED'); return null; }
+  // CP2X §4 — a record written before this contract carries no revision block AT ALL. It cannot say
+  // which planning context or source state produced it, and nothing can be compared against it, so it
+  // is retired here: once, on the way past, with no migration.
+  //
+  // AN INCOMPLETE REVISION IS A DIFFERENT CASE AND IS NOT DROPPED. A successful response legitimately
+  // omits calculationDate when RECOMMENDATION_CALCULATION_DATE is not configured, so refusing those
+  // would disable caching entirely in a real configuration state - the silent, slow failure this round
+  // set out to make visible, reintroduced one layer down. Such a record is SERVED and reported:
+  // `revisionComplete: false` on the answer source, and the verdict function still answers UNKNOWN
+  // rather than SAME, so a missing field is never read as evidence that nothing changed.
+  if (e.revision === null || e.revision === undefined) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); _irRecoCacheDecision_('MISS', 'REVISION_ABSENT_LEGACY'); return null; }
+  _irRecoCacheDecision_('HIT', _irRecoRevisionComplete_(e.revision) ? null : 'SERVED_REVISION_INCOMPLETE');
   return e;
 }
 function _irRecoCacheSet(scopeReq, env) {
-  var k = _irRecoCacheKey(scopeReq); if (!k || !env || env.success !== true) return;   // successes only
+  var k = _irRecoCacheKey(scopeReq);
+  if (!k || !env || env.success !== true) { _irRecoCacheDecision_('NOT_STORED', 'NOT_A_SUCCESS'); return; }   // successes only
   // CP2T-R1 — an answer from a handler whose computation this build does not accept is SHOWN (it is what the
   // server said) and never STORED, so it cannot be replayed after the deployment that produced it is gone.
   var hv = _irRecoEnvHandler_(env);
-  if (!_irRecoHandlerOk_(hv)) return;
+  // THE SILENT ONE. Nothing is stored, every later lookup misses, and the only symptom is that the page
+  // is slow on every site switch. Named here so an acceptance can read it instead of inferring it.
+  if (!_irRecoHandlerOk_(hv)) { _irRecoCacheDecision_('NOT_STORED', 'HANDLER_NOT_ACCEPTED'); return; }
   var c = _irRecoCacheLoad();
   c[k] = {
     shape: _IR_RECO_CACHE_SHAPE,
@@ -14196,11 +14320,18 @@ function _irRecoCacheSet(scopeReq, env) {
       requestId: (env.meta && env.meta.requestId) || null,
       calculationMonth: (env.meta && env.meta.calculationMonth) || null,
       planningCycle: (env.meta && env.meta.planningCycle) || null,
+      // CP2X §2 — THE WINDOW ANCHOR WAS READ ON THE LIVE PATH AND DROPPED BY THE CACHE. 42_ stamps
+      // calculationDate on every successful response and _irRecoApplyEnvelope keeps it, but it was
+      // never stored, so a restored answer reported `calculationDate: null` - the one field that says
+      // which 90-day window the numbers describe, missing precisely when nobody re-read the server.
+      calculationDate: (env.meta && env.meta.calculationDate) || null,
       dataVersion: (env.data && env.data.dataVersion) || null
     },
+    revision: _irRecoRevisionFromEnv_(env),
     cachedAt: (typeof Date !== 'undefined' && Date.now) ? Date.now() : null
   };
   _irRecoCacheMem = c; _irRecoCachePersist();
+  _irRecoCacheDecision_('STORED', null);
 }
 // S8-B3-R3-CP2T — WHICH ANSWER IS ON SCREEN, STATED RATHER THAN INFERRED.
 //
@@ -14230,7 +14361,12 @@ function _irRecoAnswerSource_() {
     // which is itself the answer: a deployment older than the marker.
     handlerVersion: st.handlerVersion || null,
     handlerAccepted: _irRecoHandlerOk_(st.handlerVersion || null),
-    handlersAccepted: _IR_RECO_CACHE_HANDLERS.slice()
+    handlersAccepted: _IR_RECO_CACHE_HANDLERS.slice(),
+    // CP2X §4 — the planning context and source revision THIS answer was computed under, reported
+    // beside it. `revisionComplete: false` is not a warning about the diagnostic; it means the answer
+    // on screen cannot say which window or which source state it describes.
+    revision: _irRecoRevisionFromState_(st),
+    revisionComplete: _irRecoRevisionComplete_(_irRecoRevisionFromState_(st))
   };
 }
 // Narrow programmatic invalidation (no UI this round). No arg → clear all; scopeReq → drop that key.
@@ -14563,6 +14699,10 @@ function loadRecommendationWorkspace_() {
   _irRecoRerenderSummaries();
   _irRecoPaintReadStateCells_();   // CP2U-R2: the cells say "still reading" instead of holding a stale number
   var _t0 = (typeof Date !== 'undefined' && Date.now) ? Date.now() : null;   // client-latency stamp (diagnostic only)
+  _IR_RECO_DIAG_.marks.dispatchAt = _irRecoNowMs_();
+  if (_IR_RECO_DIAG_.marks.searchAt != null) {
+    _IR_RECO_DIAG_.timing.searchToDispatchMs = _IR_RECO_DIAG_.marks.dispatchAt - _IR_RECO_DIAG_.marks.searchAt;
+  }
   // ONE scope-only request (server expands destinations + loops SKUs internally — no per-SKU HTTP, no dest/month/cycle).
   var params = { scope: { company: scopeReq.company, country: scopeReq.country, marketplace: scopeReq.marketplace, sku: null, siteSku: null },
     filters: { lts: null, series: null, category: null, sku: null, siteSku: null },
@@ -14570,11 +14710,18 @@ function loadRecommendationWorkspace_() {
   return Promise.resolve(window.KM.api.getWorkspace('recommendation', params, { signal: signal })).then(function (env) {
     if (my !== _irRecoSeq) return;   // STALE_IGNORED — a newer scope superseded this response (never cached)
     _irRecoRecordDiag(_t0);
+    _IR_RECO_DIAG_.marks.responseAt = _irRecoNowMs_();
+    if (_IR_RECO_DIAG_.marks.dispatchAt != null) {
+      _IR_RECO_DIAG_.timing.responseMs = _IR_RECO_DIAG_.marks.responseAt - _IR_RECO_DIAG_.marks.dispatchAt;
+    }
     _irRecoApplyEnvelope(env, ctxKey, scopeReq);
     _irRecoCacheSet(scopeReq, env);   // FM3a: cache ONLY a successful canonical envelope (guarded inside)
     _irRecoRerenderSummaries();
     _irRecoUpdateSuggestedCells();
     _irRecoRefreshVelocityCells_();   // LIVE9V: re-render Avg Sales/day + Days of Supply with the now-loaded canonical rate
+    // The repaint leg ends HERE, after the last of the three, because the Avg cells are painted by the
+    // third one - measuring to the first would report a number that excludes the column being waited for.
+    _IR_RECO_DIAG_.timing.domUpdateMs = _irRecoNowMs_() - _IR_RECO_DIAG_.marks.responseAt;
   }).catch(function (err) {
     if (my !== _irRecoSeq) return;
     _irRecoRecordDiag(_t0);
@@ -15263,7 +15410,8 @@ function _irRecoPaintReadStateCells_() {
 window._irRecommendationWorkspaceEnabled = _irRecommendationWorkspaceEnabled;
 window.loadRecommendationWorkspace_ = loadRecommendationWorkspace_;
 window._irRecoSummaryCardBody = _irRecoSummaryCardBody;
-window._irRecoAnswerSource_ = _irRecoAnswerSource_;   // CP2T - cached answer vs deployment answer, readable
+window._irRecoAnswerSource_ = _irRecoAnswerSource_;
+window._irRecoReadDiag_ = _irRecoReadDiag_;        // CP2X §2/§3 - cache decision + the three client legs   // CP2T - cached answer vs deployment answer, readable
 window.invalidateRecommendationSessionCache = invalidateRecommendationSessionCache;
 
 // ============================================================================

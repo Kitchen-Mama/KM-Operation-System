@@ -5754,3 +5754,38 @@ the flame chart between the interaction and the paint that fills the Avg cells, 
 
 **Only then is the largest cost known.** Until these four numbers exist, any repair is chosen by
 which segment happened to be measurable.
+
+### CP2X addendum — a FRONTEND-only round, and the token it had to spend
+
+**No `.gs` file changed.** The Apps Script load surface is unchanged at **4,629,837 / 4,630,000**, the
+R53 sync list is unchanged, and this round adds nothing to it. What changed is the published site.
+
+**APPLICATION TOKEN ROTATED — `r60-readstate-20261016` → `r61-scopereuse-20261018`.** The check, not the
+note: `origin/main` is `eb48e4c3` and `d097bb13` (which introduced r60) IS an ancestor of it, so r60 has
+been served. `index.html` (54 entries) and `app.js` (13) move together. The CSS token does not move.
+
+**Why it is load-bearing this time.** The page is requested as
+`assets/js/pages/inventory-replenishment.js?v=<token>`. A browser holding r60 keeps the page whose session
+cache loses `calculationDate` on every restore and cannot say why a lookup missed. Publishing the new
+bytes under the old token would ship nothing while appearing to ship everything.
+
+**Files the USER publishes (GitHub Pages path, after review):** `index.html`, `assets/js/app.js`,
+`assets/js/pages/inventory-replenishment.js`. Nothing is pasted into Apps Script for this round.
+
+**Acceptance, once published.** Hard reload is not enough — `sessionStorage` survives it. Close the tab or
+clear site data, reopen, then:
+
+1. `_irRecoAnswerSource_()` must report `source: 'SERVER'` before anything else is read.
+2. `revision` on that answer carries all five fields, `calculationDate` among them, and
+   `revisionComplete: true`. Navigate away and back: the restored answer reports `SESSION_CACHE` and
+   **the same `calculationDate`** — that round trip is the defect this round fixed.
+3. `_irRecoReadDiag_()` names the cache decision. On the first visit after publishing expect
+   `MISS / REVISION_ABSENT_LEGACY` once per site — pre-contract records being retired — then `HIT`.
+   `NOT_STORED / HANDLER_NOT_ACCEPTED` means the deployed 42_ is not `fm5-r4ui-r5e` and caching is OFF
+   entirely; that is a deployment finding, not a page fault.
+4. `_irRecoReadDiag_().timing` gives `searchToDispatchMs`, `responseMs`, `domUpdateMs`. **`responseMs` is
+   server AND network** and must never be quoted as server time; the server split stays on
+   `meta.canonicalRead`.
+
+**Still outstanding and NOT answered here:** the four-way cost split needs the Owner deployment
+measurement referenced as "313", which was not supplied. No optimisation was chosen (D-S8-B3-132).

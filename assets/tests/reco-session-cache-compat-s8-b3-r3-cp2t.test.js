@@ -190,12 +190,20 @@ ok(JSON.parse(STORE[_IR_RECO_CACHE_KEY] || '{}')[[SCOPE.company, SCOPE.country, 
 // horizonBasis present, every field in place. What is wrong with it is the VALUES - computed by the
 // handler that String()-ed the campaign date cells, so a real history reads as a named refusal. A record
 // that is merely WRONG is more dangerous than one that is unreadable, because it renders.
+// S8-B3-R3-CP2X - THE RECORD NOW CARRIES A REVISION BLOCK, because a record written by this build does.
+// CP2X retires records that have none at all (they can state no planning context and no source state, so
+// nothing can be compared against them), and seeding one without it would make every case in this section
+// pass for that reason instead of the one it is testing - A5 in particular, whose whole point is that an
+// ACCEPTED computation IS still served. The guards under test here are unchanged: shape, then handler.
 function seedStampedRecord(scope, data, handler) {
   var rec = {};
   rec[[scope.company, scope.country, scope.marketplace].join('||')] = {
     shape: _IR_RECO_CACHE_SHAPE, handlerVersion: handler,
     requestScope: { company: scope.company, country: scope.country, marketplace: scope.marketplace },
-    envelopeData: data, meta: { requestId: 'rid-old' }, cachedAt: Date.now()
+    envelopeData: data, meta: { requestId: 'rid-old' }, cachedAt: Date.now(),
+    revision: { calculationDate: '2026-10-16', calculationMonth: '2026-10', planningCycle: 'RECO-2026-10',
+      formulaVersion: (data && data.dataVersion && data.dataVersion.formulaVersion) || null,
+      sourceDataAsOf: (data && data.dataVersion && data.dataVersion.sourceDataAsOf) || null }
   };
   STORE[_IR_RECO_CACHE_KEY] = JSON.stringify(rec);
   _irRecoCacheMem = null;

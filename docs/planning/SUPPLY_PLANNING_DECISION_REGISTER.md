@@ -5413,3 +5413,124 @@ whether growth multiplies the daily rate (11) or a derived monthly quantity (330
 either new file, and a comment-stripped scan of both finds no source token. **Zero bytes were added to
 the Apps Script load surface** — no `.gs` file was touched this round, so the GS measurement is
 unchanged at **4,629,837 / 4,630,000**.
+
+---
+
+### D-S8-B3-130 — US → EU → US, counted on the real page — **MEASURED (CP2X §1)**
+
+`ir-scope-reuse-and-inflight-dedup-s8-b3-r3-cp2x.test.js` evals the shipped IRRECO region verbatim — the
+real loader, the real session cache, the real F1A guard, a real `sessionStorage`, and a transport that
+resolves on a LATER TURN so "in flight" is in flight rather than a label. HTTP is counted per
+`getWorkspace` CALL; repaints are counted separately, because the round asks for exactly that line.
+
+| scenario | requests | repaints |
+|---|---|---|
+| cold scope | **1** | ≥1 |
+| switch to a new site | **1** | ≥1 |
+| **back to the first site** | **0** | ≥1 — the session cache answers |
+| leave the page and return | **0** | ≥1 |
+| two more calls DURING a flight, same scope | **+0** | dedup holds, exactly one outstanding |
+| site switch MID-FLIGHT | **+1**, the superseded one ABORTED | — |
+| back again before anything landed | **+1** | — |
+
+The last row is a real cost rather than a defect: **nothing is cached until a response lands**, so flipping
+sites while loading pays per switch. It is recorded rather than optimised, because which cost is largest
+is not yet known (D-S8-B3-132).
+
+---
+
+### D-S8-B3-131 — The window anchor did not survive the cache — **FIXED (CP2X §2)**
+
+42_ stamps `calculationDate` on every successful response and `_irRecoApplyEnvelope` keeps it. The cache
+stored `requestId`, `calculationMonth`, `planningCycle` and `dataVersion` — **not** `calculationDate`. So a
+restored answer reported `calculationDate: null`: the one field that says WHICH 90-day window the numbers
+describe, missing precisely when nobody had re-read the server. Now stored and asserted end to end.
+
+**And a miss now says why.** Four conditions dropped or refused a record, all silently: `NO_ENTRY`,
+`SHAPE_SUPERSEDED`, `HANDLER_NOT_ACCEPTED`, `REVISION_ABSENT_LEGACY`, plus `NOT_STORED/HANDLER_NOT_ACCEPTED`
+on the write side. That last one **disables caching entirely** — every site switch pays a full request
+while everything looks healthy — and was previously indistinguishable from a slow server.
+
+**A correction made inside this round.** The first version of the invalidation guard dropped any record
+whose revision was incomplete. That was wrong: a successful response legitimately omits `calculationDate`
+when `RECOMMENDATION_CALCULATION_DATE` is unconfigured, so the guard would have disabled caching in a real
+configuration state — reintroducing one layer down the exact silent slowness this round set out to expose.
+It now retires only records with **no revision block at all**, and serves an incomplete one flagged.
+
+---
+
+### D-S8-B3-132 — The four-way split still has no measurement, and no repair was chosen — **BLOCKED (CP2X §3)**
+
+The round asks for the largest cost to be chosen from "the Owner's 313 deployment measurement". **No such
+measurement was supplied this round and none exists in the repository.** Nothing was optimised: picking
+from the two segments that happen to be readable would be choosing by instrument availability rather than
+by cost, which is how a round optimises the wrong half.
+
+What was added is the measurement itself, which the round does authorise: `searchToDispatchMs` (page work
+only, anchored at the ONE place an applied Search is committed), `responseMs`, and `domUpdateMs` — ended
+after the LAST of the three repaints, because the Avg cells are painted by the third and measuring to the
+first would exclude the column being waited for. The reading states that **`responseMs` is server AND
+network**, so it can never be quoted as server time; the server's own `readMs` / `afterReadMs` split stays
+untouched on `meta.canonicalRead`.
+
+---
+
+### D-S8-B3-133 — One invalidation contract, and a missing revision is not evidence — **ADDED (CP2X §4)**
+
+Four things can make a stored answer wrong, and they were checked in four ways or not at all: response
+shape, computation, planning context (`calculationDate` / `calculationMonth` / `planningCycle`) and source
+revision (`formulaVersion` / `sourceDataAsOf`). The last two were stored in part and compared never.
+
+Two rules, the second easy to get backwards:
+
+- **A MISSING FIELD IS NOT A MATCH.** `null` never compares equal to anything, **not even to another
+  `null`**. Every comparison touching an absent field answers `UNKNOWN`, never `SAME` — "we have no
+  revision" is the absence of evidence, not evidence of no change. A KNOWN difference still outranks an
+  unknown one and answers `SUPERSEDED`.
+- **A RECORD THAT CANNOT STATE ITSELF IS NOT SERVED.** A pre-contract record carries no revision block at
+  all; it is retired once, on the way past, and the retirement is NAMED rather than silent.
+
+---
+
+### D-S8-B3-134 — The spent token, caught by the check and not by the note — **ROTATED (CP2X)**
+
+The ledger block for `r60-readstate-20261016` recorded that it had never reached a browser, and instructed
+a later round to run `git ls-remote` rather than believe it. The check says the opposite now: `origin/main`
+is `eb48e4c3`, `d097bb13` IS an ancestor of it, and **r60 has been served**.
+
+This is not cosmetic here, it is the whole delivery: `index.html` and `app.js` request
+`inventory-replenishment.js` **with the token in the query string**, so a browser holding r60 keeps the page
+whose cache drops `calculationDate` and cannot name a miss. Publishing without rotating would ship nothing.
+`r61-scopereuse-20261018` is appended, and the whole co-deployed set moves — **54 entries in `index.html`
+and 13 in `app.js`**. The CSS token does not move; no stylesheet changed.
+
+---
+
+### D-S8-B3-135 — Four browser captures were invalidated, and re-run rather than re-pinned — **RE-CAPTURED (CP2X)**
+
+Changing the page, and then `index.html`, broke the source-hash pins on four real-Chrome captures. **The
+hashes were not edited.** Each capture was re-run in Chrome against the code that now ships:
+`cp2s-r2-inplace`, `cp2u-r3-state-transitions`, `cp2s-r2-c9`, and `cp2r-reveal-scope` — the last being a
+twelve-run interleaved A/B across two builds, driven with the shipped text held in memory and restored
+after every run, verified byte-identical at the end.
+
+**The CP2R conclusion reproduced on fresh data**: the render-scoped reveal still wins six of six pairs. That
+is a re-validation, not a re-pin. CP2R's capture does not hash `index.html`, so the token rotation did not
+invalidate it a second time; the other three did and were re-run again after it.
+
+---
+
+### D-S8-B3-136 — The FC fixture covers the four settled rules — **PREPARED (CP2X §5)**
+
+Fixture C joins A and B: three complete months, monthly restoration over each month's OWN length, month
+equal weight, and growth. **Month equal weight is invisible unless the months differ in normal-day count**
+— with equal counts, pooling days and averaging months agree and a wrong implementation passes. July
+carries an eleven-day event and ends with 20 normal days against August 31 and September 30, so pooling
+gives 5.222 and the rule gives **6**.
+
+Monthly restoration is asserted through its COMPONENTS. Two compositions remain defensible once a month is
+restored and they differ here (216 against 222) exactly because months differ in length, so both are
+declared and `OPEN_C1` carries the choice. `OPEN_B1` is marked **resolved in place** — CP2X naming
+restoration and growth together settles that growth multiplies a restored monthly quantity — rather than
+deleted, so the decision keeps its trail. Still nothing is connected: `MISSING_OWNER_INPUT #1` and `#3`
+remain open and no source is reached.

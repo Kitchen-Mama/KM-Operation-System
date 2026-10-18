@@ -1162,7 +1162,26 @@ var ROUND_TOKENS = [
   // that has been served.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r60-readstate-20261016'];
+  'r60-readstate-20261016',
+  // S8-B3-R3-CP2X - r60 IS SPENT, AND THE CHECK SAID SO RATHER THAN THE NOTE.
+  //
+  // The block above recorded that d097bb13, which introduced r60, was not an ancestor of origin/main, so
+  // r60 had never reached a browser and was reused. That was true when it was written. The Owner has since
+  // pushed: origin/main is eb48e4c3, d097bb13 IS an ancestor of it, and git ls-remote says so. r60 has been
+  // served, so it cannot be reused, and this round succeeds it.
+  //
+  // THE ROTATION IS NOT COSMETIC HERE, it is the whole delivery. This round changes
+  // inventory-replenishment.js, which index.html and app.js request WITH THE TOKEN IN THE QUERY STRING. A
+  // browser holding r60 keeps the page it already has - the one whose session cache drops calculationDate
+  // on every restore and cannot name why a lookup missed. Publishing without rotating would ship nothing.
+  //
+  // THE WHOLE CO-DEPLOYED SET MOVES, as the rule above requires: 54 entries in index.html and 13 in app.js,
+  // not the one file that changed. A half-rotated set leaves a browser holding some new files and some old.
+  //
+  // THE CSS TOKEN DOES NOT MOVE. No stylesheet changed this round.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r61-scopereuse-20261018'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

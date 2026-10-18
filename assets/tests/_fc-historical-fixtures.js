@@ -156,6 +156,66 @@ var FIXTURE_B = {
 };
 
 // ==================================================================================================
+// FIXTURE C — THE FOUR RULES CP2X NAMES AS SETTLED: COMPLETE MONTHS, MONTHLY RESTORATION,
+// MONTH EQUAL WEIGHT, GROWTH.
+//
+// MONTH EQUAL WEIGHT is the rule this fixture exists for, and it is invisible unless the months have
+// DIFFERENT normal-day counts - with equal counts, pooling the days and averaging the months give the
+// same answer and a wrong implementation passes. So July carries an eleven-day event and ends with 20
+// normal days against August's 31 and September's 30:
+//
+//   pooled over days   423 / 81  = 5.222...   <- what you get by ignoring the rule
+//   equal weight       (12+3+3)/3 = 6         <- what the rule asks for
+//
+// MONTHLY RESTORATION is asserted through its COMPONENTS rather than as one composed figure. Two
+// compositions are defensible once a month is restored - average the monthly RATES and multiply by the
+// target month's length, or restore each month to a quantity and average THOSE - and they differ here
+// (216 against 222) exactly because the months differ in length. Both are declared. This is not a rule
+// being reopened: the components below are unambiguous, and whichever composition the implementation
+// adopts, it is measured against a number written down in advance.
+var C_MONTHS = ['2026-07', '2026-08', '2026-09'];
+var C_EVENT = { start: '2026-07-10', end: '2026-07-20' };            // 11 days, all inside July
+var C_JUL_HOT = PORT.enumerateRange(C_EVENT.start, C_EVENT.end);
+var C_JUL_NORMAL = exclude(PORT.enumerateMonth('2026-07'), C_JUL_HOT);   // 20 dates
+var C_AUG = PORT.enumerateMonth('2026-08');                              // 31 dates
+var C_SEP = PORT.enumerateMonth('2026-09');                              // 30 dates
+var C_ATTEST = { completionSignal: 'PRESENT', omitZeroRule: 'OMITS_ZERO', scopeCoverage: 'COVERED' };
+
+var FIXTURE_C = {
+  label: 'complete-months-monthly-restoration-month-equal-weight-growth',
+  scope: SCOPE,
+  months: C_MONTHS,
+  targetMonth: '2026-11',                 // 30 days
+  growthPercent: 20,
+  eventDates: C_JUL_HOT,
+  rows: []
+    .concat(rowsFor(C_JUL_NORMAL, 12))
+    .concat(rowsFor(C_JUL_HOT, 100))      // the activity days, loud enough that including them shows
+    .concat(rowsFor(C_AUG, 3))
+    .concat(rowsFor(C_SEP, 3))
+    .concat(rowsFor(['2026-08-04', '2026-08-05'], 1000, OTHER_COMPANY)),
+  campaigns: [],
+  events: [
+    { status: 'active', sku: SCOPE.sku, marketplaceId: SCOPE.marketplaceId, start: C_EVENT.start, end: C_EVENT.end }
+  ],
+  attestation: { '2026-07': C_ATTEST, '2026-08': C_ATTEST, '2026-09': C_ATTEST },
+  expect: {
+    daysInMonth: { '2026-07': 31, '2026-08': 31, '2026-09': 30 },
+    normalDays: { '2026-07': 20, '2026-08': 31, '2026-09': 30 },
+    normalUnits: { '2026-07': 240, '2026-08': 93, '2026-09': 90 },
+    monthRate: { '2026-07': 12, '2026-08': 3, '2026-09': 3 },
+    // 月量還原 — each month's rate carried back over that month's OWN length
+    monthRestoredQty: { '2026-07': 372, '2026-08': 93, '2026-09': 90 },
+    pooledDailyAverage: 423 / 81,         // the answer month-equal-weight exists to reject
+    monthEqualWeightRate: 6,              // (12 + 3 + 3) / 3
+    monthEqualWeightRestoredQty: 185,     // (372 + 93 + 90) / 3
+    targetMonthDays: 30,
+    grownFromRate: 216,                   // 6 × 30 × 1.20
+    grownFromRestoredQty: 222             // 185 × 1.20
+  }
+};
+
+// ==================================================================================================
 // WHAT IS STILL OPEN. Each is a question only the Owner can close; none is answered here, and the
 // fixtures carry the data for BOTH branches so that answering one does not require new data.
 // ==================================================================================================
@@ -170,10 +230,17 @@ var OPEN_QUESTIONS = [
     why: 'D-S8-B3-61: the control labelled "Apply Growth Rate" is internally named `actual` and today '
        + 'reads the existing fc_regular_forecast row. A refused month must not silently fall back to '
        + 'that row under a label the operator will read as sales.' },
-  { id: 'OPEN_B1', mode: 'interval-average',
+  { id: 'OPEN_B1', mode: 'interval-average', resolved: 'CP2X — growth multiplies a RESTORED MONTHLY QUANTITY',
     question: 'Does the growth rate multiply the DAILY RATE or a derived MONTHLY QUANTITY?',
-    why: 'The Builder already rounds a quantity (Math.round(base × (1 + g/100))). A rate must not be '
-       + 'rounded the same way. 11/day and 330/month are the two readings; they are not interchangeable.' },
+    why: 'Settled by CP2X naming monthly restoration and growth together: the month quantity is restored '
+       + 'first and growth is applied to it. The daily rate survives only as an intermediate, and it is '
+       + 'still never rounded the way a quantity is. What remains is narrower and is OPEN_C1.' },
+  { id: 'OPEN_C1', mode: 'month-equal-weight',
+    question: 'Equal-weight the monthly RATES and multiply by the target month length, or restore each '
+            + 'month to a quantity and equal-weight THOSE?',
+    why: 'The two agree only when every month is the same length. On fixture C they are 216 and 222. '
+       + 'Both are declared; the components each is built from are asserted individually, so this is a '
+       + 'composition to confirm rather than a rule to decide again.' },
   { id: 'OPEN_B2', mode: 'interval-average',
     question: 'Is there a minimum normal-day count below which the interval is refused?',
     why: 'The frozen owner has a ladder (<7 warns, <3 falls back to weekly_7d) and the contract says the '
@@ -190,5 +257,6 @@ module.exports = {
   OTHER_COMPANY: OTHER_COMPANY,
   FIXTURE_A: FIXTURE_A,
   FIXTURE_B: FIXTURE_B,
+  FIXTURE_C: FIXTURE_C,
   OPEN_QUESTIONS: OPEN_QUESTIONS
 };
