@@ -462,10 +462,8 @@ function recoWsGapBySku_(planningFacts) {
 var RECO_WS_MONTH_ABBR_ = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 function recoWsToRowObjects_(snap) {
   if (!recoWsIsObj_(snap) || !Array.isArray(snap.headers) || !Array.isArray(snap.rows)) return [];
-  // CP2X-R1 - memoized: per-SKU callers hold snaps, not read, and rebuilt whole tables per SKU.
-  if (snap.__ro) return snap.__ro;
   var h = snap.headers.map(function (x) { return recoWsStr_(x); });
-  return (snap.__ro = snap.rows.map(function (r) { var o = {}; for (var c = 0; c < h.length; c++) o[h[c]] = r[c]; return o; }));
+  return snap.rows.map(function (r) { var o = {}; for (var c = 0; c < h.length; c++) o[h[c]] = r[c]; return o; });
 }
 function recoWsUpcBySku_(skuRows) { var m = {}; (skuRows || []).forEach(function (r) { var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsNum_(r.units_per_carton); }); return m; }
 function recoWsSiteSkuBySku_(mskRows, scope) {

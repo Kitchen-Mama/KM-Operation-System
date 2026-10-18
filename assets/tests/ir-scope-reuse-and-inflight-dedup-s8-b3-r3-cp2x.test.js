@@ -524,21 +524,40 @@ function main() {
       eq(conv(snapA), expected, 'L1  the conversion is unchanged in VALUE');
       var first = conv(snapA), second = conv(snapA);
       eq(second, expected, 'L2  and a repeated call returns the same value');
-      ok(first === second, 'L3  by SHARING the array rather than rebuilding it - which is the whole saving');
 
-      // a DIFFERENT snapshot object must get its own conversion; the memo is per object, never global
+      // THE MEMO WAS WITHDRAWN, AND THIS ASSERTION IS THE REASON RECORDED IN PLACE.
+      //
+      // CP2X-R1 memoised the conversion on the snapshot object: one hunk, no call-site changes, and
+      // offline it cut 240 conversions of a 5,400-row table from 963 ms to 6.8 ms. It also broke an
+      // existing contract. `recoWsRows_` caches PER REQUEST, and
+      // api-recommendation-reuse-map-f1-7m-e-r1 builds a second `read` over the SAME snapshots object
+      // and asserts the two do not share. Memoising on the snapshot made them share, so the isolation
+      // that guard exists to hold stopped holding. Relaxing the guard to fit the optimisation would have
+      // been the wrong repair, so the optimisation went instead.
+      ok(first !== second,
+        'L3  each call rebuilds - the per-request isolation guard in F1-7M-E-R1 still holds');
+
       var snapB = { headers: ['sku', 'units'], rows: [['C', 9]] };
       eq(conv(snapB), [{ sku: 'C', units: 9 }], 'L4  a different snapshot converts on its own');
       ok(conv(snapB) !== first, 'L5  and never borrows another table result');
 
-      // the per-request boundary: 43_ hands a FRESH snapshot object per read, so a new object is a new
-      // conversion. Sharing is within one request, not across them.
-      var snapA2 = { headers: ['sku', 'units'], rows: [['A', 1], ['B', 2]] };
-      ok(conv(snapA2) !== first, 'L6  a new snapshot object converts again - the memo is not a cross-request cache');
-
       // the malformed guard still answers [] and stores nothing
       eq(conv(null), [], 'L7  a missing snapshot is still []');
       eq(conv({ headers: 'nope', rows: [] }), [], 'L8  and a malformed one too');
+
+      // THE COST THE WITHDRAWAL LEAVES ON THE TABLE, kept as a measurement rather than a memory: the
+      // per-SKU helpers still convert whole tables because they hold `snaps` and cannot reach
+      // `recoWsRows_`, which takes `read`. This counts the call sites so the finding cannot quietly
+      // lapse, and fails if someone fixes it without updating the record.
+      var perSkuFns = ['recoWsResolvePlanningModel_', 'recoWsBuildContaminationFacts_', 'recoWsResolveSalesRate_'];
+      var stillBypassing = perSkuFns.filter(function (fn) {
+        var body = sliceGs(fn);
+        return /recoWsToRowObjects_\(snaps\./.test(body);
+      });
+      eq(stillBypassing.length, 3,
+        'L11 all three per-SKU helpers still convert from `snaps`, bypassing the per-request cache');
+      ok(/function recoWsRows_\(read, key\)/.test(GS42),
+        'L12 while the per-request cache they cannot reach is right there, taking `read`');
 
       // THE SAFETY CLAIM, checked rather than asserted: the three .sort() sites in 42_ sort a FILTERED
       // copy, never the shared array. A sort of the shared array would persist an order to later callers.
@@ -558,11 +577,6 @@ function main() {
       var wasPending = pending.length === 1 && HTTP === h + 1;
       pending.forEach(function (r) { r.aborted = true; }); pending = [];
       return wasPending;
-    });
-    mutant('X11', 'the row-object memo is removed and every per-SKU call rebuilds the table', function () {
-      var sn = { headers: ['a'], rows: [[1]] };
-      var one = conv(sn);
-      return conv(sn) === one;
     });
     mutant('X8', 'the gap in-flight dedup is removed and re-entry during a flight reads twice', function () {
       GAP_PENDING = []; _irMatByScope = {};

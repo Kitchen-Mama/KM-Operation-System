@@ -5749,3 +5749,42 @@ That is the leading hypothesis for the live report, because Production's release
 pre-R53 42_ may send a different marker or none at all. It is not confirmed: confirming it needs one
 reading from the deployed site, `_irRecoReadDiag_().cache` on a SERVER answer. Until then it stays a
 hypothesis with a named check, not a cause.
+
+---
+
+### D-S8-B3-144 — The row-object memo is WITHDRAWN; it broke a per-request isolation guard — **CORRECTS D-S8-B3-142**
+
+D-S8-B3-142 recorded the memo as landed at GS 4,629,983. **It is reverted.** The finding it was built on
+stands unchanged; the fix did not.
+
+**What it broke.** `recoWsRows_` caches row objects **per request**, and
+`api-recommendation-reuse-map-f1-7m-e-r1` builds a SECOND `read` over the same `snapshots` object and
+asserts the two do not share a cache. Memoising on the snapshot object made them share, so the
+isolation that guard exists to hold stopped holding. The guard is right and the optimisation was wrong
+in that form; **relaxing the guard to fit it would have been the wrong repair**, so the optimisation
+went instead. GS returns to **4,629,837 / 4,630,000, headroom 163**.
+
+**How it was found, and this is the round's instruction paying off immediately.** The sweep's
+`--evidence` mode persisted raw stdout and stderr outside the repository, and the failing line was on
+**stderr**: `FAIL a different read gets its OWN cache (no cross-request sharing)`. The suite printed
+nothing to stdout. Before this round that output existed only in the sweep process's memory — the same
+gap that left D-S8-B3-127 and D-S8-B3-138 undiagnosable — and the failure would have been a bare
+`NOT_CLEAN` with a name.
+
+**The correct fix, costed, and NOT taken.** The per-SKU helpers bypass the cache because they receive
+`snaps` and `recoWsRows_` takes `read`. Threading `read` through
+`recoWsResolvePlanningModel_`, `recoWsBuildContaminationFacts_` and `recoWsResolveSalesRate_` would use
+the existing per-request cache and keep the isolation guard intact. By character arithmetic it is close
+to byte-neutral — `recoWsRows_(read, 'x')` is shorter than `recoWsToRowObjects_(snaps.x)`, while four
+`recoWsIsObj_(snaps.x)` sites get longer — but that is an estimate, not a measurement.
+
+**Its blast radius is the reason it is a separate batch: 17 test suites invoke those three helpers
+directly with a `snaps` object** and every one would need its fixture changed. With 163 bytes of
+headroom, no production measurement to size the prize against, and a long round already behind it,
+that is a change to authorise deliberately rather than to append here.
+
+**What is NOT withdrawn:** the measurement. The per-SKU helpers still convert whole tables — roughly 20
+conversions per SKU, four of them over `amazon_daily_sales_snapshot` — and offline that was 240
+conversions, 1,296,000 row objects and 963 ms for one table. §L of the CP2X suite now asserts that all
+three helpers still bypass the cache, so the finding cannot quietly lapse and the next round starts
+from a fact rather than a memory.
