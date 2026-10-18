@@ -58,14 +58,27 @@ ok((EV.actionLog || []).some(a => a.action === 'recommendation.workspace.get'),
 // -------------------------------------------------------------------------------------------------------------
 section('B. the update HAPPENED - half the claim, and the half a preserving no-op would pass');
 
+// CP2U-R3 - THE EXPECTED NUMBERS, NAMED. "Not a dash" was the old bar, and CP2U-R2 walked under it: the
+// in-flight cell now has a marker of its own, so "not a dash" accepts a cell that is STILL LOADING, and it
+// always accepted a cell that says the read FAILED. The fixture serves 7 then 11; those are what the cell
+// must hold, and the runner records them in the capture so this suite and the harness cannot drift apart.
+const EXP = EV.expected || {};
+ok(EXP.firstAvgCell === '7.0' && EXP.secondAvgCell === '11.0',
+  'B0  the capture names the two rates its fixture served', EXP);
 ok(V.firstReadResolved === true,
   'B1  the first read resolved a rate into the cell - a WAREHOUSE-lane site, which had no marketplace line '
   + 'to fall back on and showed "--" before this round', V.firstCell);
-ok(B.avgCell && B.avgCell !== '--', 'B1a the cell held a real number before the second arrival', B.avgCell);
+eq(V.firstCell, EXP.firstAvgCell, 'B1a and it is the FIRST read\'s rate, not a loading mark and not a failure');
+eq(B.avgCell, EXP.firstAvgCell, 'B1b the cell still held that number at the moment the operator was typing');
 ok(V.cellUpdated === true, 'B2  and the second arrival CHANGED it', { before: B.avgCell, after: A.avgCell });
-ok(A.avgCell !== B.avgCell && A.avgCell !== '--', 'B2a to a different real number, not back to a placeholder',
-  { before: B.avgCell, after: A.avgCell });
-ok(A.dosCell !== B.dosCell, 'B2b and Days of Supply moved with it', { before: B.dosCell, after: A.dosCell });
+eq(A.avgCell, EXP.secondAvgCell,
+  'B2a to the SECOND read\'s rate specifically - not merely to something different');
+ok(V.secondCellIsExpectedNumber === true,
+  'B2b and the harness confirmed that in the live cell, with no pending mark, no failure wording and no '
+  + 'error class', V.secondCellIsExpectedNumber);
+ok(A.dosCell !== B.dosCell, 'B2c and Days of Supply moved with it', { before: B.dosCell, after: A.dosCell });
+ok(V.dosMovedToNumber === true,
+  'B2d to a NUMBER - a Days of Supply that fell back to a dash would also have "moved"', A.dosCell);
 
 // -------------------------------------------------------------------------------------------------------------
 section('C. and it cost the operator NOTHING');

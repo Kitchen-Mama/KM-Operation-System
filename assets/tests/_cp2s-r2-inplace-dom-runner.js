@@ -52,18 +52,28 @@ function findBrowser() { return CHROMES.find(p => { try { return fs.existsSync(p
 const MAX_HOLD_MS = 120000;
 
 const MKT_ID = 'MP-FIXTURE-US-AMZ';
+// CP2U-R3 - the SECOND site, used only by the states scenario, to prove a failure on one site does not
+// follow the operator to the next one.
+const MKT2_ID = 'MP-FIXTURE-US-WMT';
 const skuOf = (i) => 'FIXTURE-SKU-' + String(i).padStart(3, '0');
 
-function fixtureWorkspace(n) {
+function fixtureWorkspace(n, twoSites) {
   const mk = (c, f) => Array.from({ length: c }, (_, i) => f(i));
+  const site2 = twoSites ? [{ marketplace_id: MKT2_ID, company: 'FixtureCo', country: 'US',
+    marketplace: 'Walmart', currency: 'USD', status: 'active', allocation_priority: 90 }] : [];
+  const skus2 = twoSites ? mk(n, i => ({ marketplace_sku_id: 'MSKU2-' + i, marketplace_id: MKT2_ID,
+    company: 'FixtureCo', country: 'US', marketplace: 'Walmart', sku: skuOf(i), site_sku: 'SS2-' + i,
+    marketplace_product_id: 'W000FIX' + String(i).padStart(3, '0'), currency: 'USD',
+    regular_price: 18.99 + i, minimum_price: 8.99, msrp: 28.99,
+    marketplace_sku_status: 'active', replenishment_model: 'sales_driven' })) : [];
   return {
     marketplaces: [{ marketplace_id: MKT_ID, company: 'FixtureCo', country: 'US', marketplace: 'Amazon',
-      currency: 'USD', status: 'active', allocation_priority: 100 }],
+      currency: 'USD', status: 'active', allocation_priority: 100 }].concat(site2),
     marketplace_skus: mk(n, i => ({ marketplace_sku_id: 'MSKU-' + i, marketplace_id: MKT_ID,
       company: 'FixtureCo', country: 'US', marketplace: 'Amazon', sku: skuOf(i), site_sku: 'SS-' + i,
       marketplace_product_id: 'B000FIX' + String(i).padStart(3, '0'), currency: 'USD',
       regular_price: 19.99 + i, minimum_price: 9.99, msrp: 29.99,
-      marketplace_sku_status: 'active', replenishment_model: 'sales_driven' })),
+      marketplace_sku_status: 'active', replenishment_model: 'sales_driven' })).concat(skus2),
     sku_details: mk(n, i => ({ sku: skuOf(i), product_name: 'Fixture Product ' + i, category: 'FIXTURE',
       status: 'active', company: 'FixtureCo', units_per_carton: 40 })),
     warehouses: mk(4, i => ({ warehouse_id: 'WH' + i, warehouse_name: 'Fixture WH ' + i, country: 'US', type: 'overseas' })),
@@ -73,7 +83,9 @@ function fixtureWorkspace(n) {
     amazon_inventory_health_snapshot: mk(n, i => ({ snapshot_date: '2026-10-13', country: 'US', marketplace: 'Amazon',
       sku: skuOf(i), qty_over_90_days: 20 + i, qty_over_180_days: 5 + i })),
     amazon_daily_sales_snapshot: mk(n * 4, i => ({ snapshot_date: '2026-10-' + String(9 + (i % 4)).padStart(2, '0'),
-      country: 'US', marketplace: 'Amazon', sku: skuOf(i % n), units_ordered: 5 + (i % 17) })),
+      country: 'US', marketplace: 'Amazon', sku: skuOf(i % n), units_ordered: 5 + (i % 17) }))
+      .concat(twoSites ? mk(n * 4, i => ({ snapshot_date: '2026-10-' + String(9 + (i % 4)).padStart(2, '0'),
+        country: 'US', marketplace: 'Walmart', sku: skuOf(i % n), units_ordered: 4 + (i % 13) })) : []),
     amazon_weekly_sales_snapshot: mk(n * 2, i => ({ week_start: '2026-10-05', country: 'US', marketplace: 'Amazon',
       sku: skuOf(i % n), units_ordered: 40 + (i % 31) })),
     fc_regular_forecast: mk(n, i => ({ forecast_id: 'FC-' + i, sku: skuOf(i), country: 'US', marketplace: 'Amazon',
@@ -98,8 +110,14 @@ function fixtureWorkspace(n) {
  * line, so these lines are the only carrier of the historical average. `rate` changes between the two reads
  * so the cell has something visible to change TO - an update that writes the same text proves nothing.
  */
-function recoLines(n, rate) {
-  const basis = {
+function recoLines(n, rate, opts) {
+  // CP2U-R3 - WITHHELD is a basis object that carries neither a rate nor a named reason, which is what
+  // D-S8-B3-98 describes. It is NOT the same as a line with no basis and NOT the same as a refusal.
+  const basis = (opts && opts.withhold) ? {
+    demandMode: 'sales_driven', avgSalesPerDay: null, source: null, warning: '',
+    normalDayCount: null, excludedDates: [], horizonOpeningQty: null, qualifiedIncomingCount: null,
+    blankDateRows: 0, basisQualityError: null, contaminationSource: { campaigns: 'ABSENT', events: 'ABSENT' }
+  } : {
     demandMode: 'sales_driven', avgSalesPerDay: rate, source: 'normalized_30d', warning: '',
     normalDayCount: 30, excludedDates: [], horizonOpeningQty: null, qualifiedIncomingCount: null,
     blankDateRows: 2, basisQualityError: null, contaminationSource: { campaigns: 'ABSENT', events: 'ABSENT' }
@@ -141,16 +159,45 @@ function apiAnswer(action, n, state) {
       capabilitiesVersion: 'fixture-cp2s-r2' } };
   }
   if (action === 'inventoryScope.registry.get') {
+    const two = !!(state && state.statesMode);
     return { success: true, data: {
       marketplaces: [{ marketplace_id: MKT_ID, company: 'FixtureCo', country: 'US', marketplace: 'Amazon',
-        marketplace_display_name: 'Amazon' }],
-      countries: ['US'], marketplace_ids_by_country: { US: [MKT_ID] }, empty: false, empty_reason: '' } };
+        marketplace_display_name: 'Amazon' }].concat(two ? [{ marketplace_id: MKT2_ID, company: 'FixtureCo',
+          country: 'US', marketplace: 'Walmart', marketplace_display_name: 'Walmart' }] : []),
+      countries: ['US'], marketplace_ids_by_country: { US: two ? [MKT_ID, MKT2_ID] : [MKT_ID] },
+      empty: false, empty_reason: '' } };
   }
-  if (action === 'inventoryReplenishment.workspace.get') return { success: true, data: fixtureWorkspace(n) };
+  if (action === 'inventoryReplenishment.workspace.get') return { success: true, data: fixtureWorkspace(n, state.statesMode) };
   if (action === 'inventoryReplenishmentGap.get') return { success: true, data: { rows: gapRows(n) } };
   if (action === 'gapJob.status.get') return { success: true, data: { status: 'IDLE', jobs: [] } };
   if (action === 'recommendation.workspace.get') {
     state.recoReads++;
+    // CP2U-R3 - THE STATES, each one a different way for an answer to be absent or present. Reached only
+    // under the opt-in flag; reads 1 and 2 are unchanged so the in-place experiment is undisturbed.
+    if (state.statesMode) {
+      const k = state.recoReads;
+      // 3: the read FAILS. The page must say so, and must not say it with a zero.
+      if (k === 3) return { success: false, data: null, meta: { requestId: 'fixture-fail' },
+        errors: [{ code: 'WORKSPACE_ERROR', message: 'fixture failure', details: null }] };
+      // 4: the read SUCCEEDS and resolves no destination line at all.
+      if (k === 4) return { success: true, data: { lines: [], dataVersion: { sourceDataAsOf: '2026-10-13' } } };
+      // 5: a line exists and carries NO basis - neither a rate nor a named reason. Withheld, not missing.
+      if (k === 5) return { success: true, data: { lines: recoLines(n, null, { withhold: true }),
+        dataVersion: { sourceDataAsOf: '2026-10-13' } } };
+      // 6: a LEGITIMATE ZERO. This site really sold nothing per day, and 0 is the answer, not the absence
+      //    of one - the one case a dash would be a lie.
+      if (k === 6) return { success: true, data: { lines: recoLines(n, 0),
+        dataVersion: { sourceDataAsOf: '2026-10-13' } } };
+      // 7: RECOVERY. A failed read must not be sticky.
+      if (k === 7) return { success: true, data: { lines: recoLines(n, 23),
+        dataVersion: { sourceDataAsOf: '2026-10-13' } } };
+      // 8: a failure again, to put a failed state on screen immediately before the site switch.
+      if (k === 8) return { success: false, data: null, meta: { requestId: 'fixture-fail-2' },
+        errors: [{ code: 'WORKSPACE_ERROR', message: 'fixture failure before switch', details: null }] };
+      // 9+: the NEW site answers normally. Its cells must show this, not the previous site's failure.
+      if (k >= 9) return { success: true, data: { lines: recoLines(n, 31),
+        dataVersion: { sourceDataAsOf: '2026-10-13' } } };
+    }
     // read 1 -> 7, read 2 -> 11. The second number is what must appear in the cell afterwards.
     return { success: true, data: { lines: recoLines(n, state.recoReads >= 2 ? 11 : 7),
       dataVersion: { sourceDataAsOf: '2026-10-13' } } };
@@ -197,6 +244,69 @@ function measureScript(capId, opts) {
     out.notes.push(label + ' never held ' + value);
     return { ok: false, waitedMs: +(now()-t0).toFixed(2) };
   }
+  /* CP2U-R3 - A HARNESS THAT CANNOT PROCEED MUST SAY WHICH PRECONDITION IS MISSING.
+     NO_INPUT was reported for days as a bare word, and a bare word cannot be diagnosed: the expanded panel
+     holds an input only when the Execution Plan actually rendered a ROUTE, and a route depends on a chain
+     of five readiness inputs plus the hydrated Working Draft. This records the whole chain at the moment of
+     failure, from the page's PUBLIC surface only - nothing here forces a state, builds a field, or reaches
+     past a guard. The two inputs that are module-private are NAMED as unreachable rather than guessed at. */
+  function diagnose(why, sku){
+    var d = { why: why, sku: sku || null, atMs: +now().toFixed(2) };
+    function t(fn, dflt){ try { return fn(); } catch(e) { return 'THREW:' + (e && e.message); } }
+    d.revealGates = t(function(){
+      return Array.prototype.map.call(document.querySelectorAll('#ops-section [data-ir-reveal]'), function(g){
+        return { panel: g.getAttribute('data-ir-reveal'), sku: g.getAttribute('data-ir-sku'),
+                 state: g.getAttribute('data-reveal-state'), frame: g.getAttribute('data-reveal-frame') };
+      });
+    });
+    d.execSkeletonStillUp = t(function(){ return !!document.querySelector('#ops-section .ir-skel--routes'); });
+    d.routeHostPresent    = t(function(){ return !!document.querySelector('#ops-section [id^="shipping-methods-"]'); });
+    d.routeRowCount       = t(function(){ return document.querySelectorAll('#ops-section .exec-routes-list > *').length; });
+    d.emptyStateShown     = t(function(){
+      var h = document.querySelector('#ops-section .exec-routes-list');
+      return h ? (h.textContent || '').trim().slice(0, 200) : null; });
+    d.addRouteDisabled    = t(function(){
+      var b = document.querySelector('#ops-section .replen-card__add-route-btn');
+      return b ? !!b.disabled : null; });
+    d.exposureState = t(function(){ return window._irExposureStateForRender_ ? window._irExposureStateForRender_() : 'NO_FN'; });
+    d.exposureSite  = t(function(){ return window._irExposureSite_ ? window._irExposureSite_() : 'NO_FN'; });
+    d.catalogue = t(function(){
+      var reg = window.KM && window.KM.methodRegistry;
+      if (!reg) return 'NO_REGISTRY';
+      var sc = (d.exposureSite && typeof d.exposureSite === 'object') ? d.exposureSite : null;
+      return { requestCount: reg.requestCount ? reg.requestCount() : null, scopeProbed: sc,
+        isLoaded: sc ? reg.isLoaded(sc) : null, error: sc ? reg.getError(sc) : null,
+        leadTimes: (sc && reg.getLeadTimes) ? (reg.getLeadTimes(sc) || []).length : null,
+        rateCards: (sc && reg.getRateCards) ? (reg.getRateCards(sc) || []).length : null };
+    });
+    /* The hydrated Working Draft is what branch 1 of initializeShippingAllocation renders, and branch 2
+       deliberately renders NO route at all - so an empty draft is a legitimate zero-input panel, not a bug. */
+    d.draftRows = t(function(){
+      return (typeof window._allocationDraftRowsFor === 'function')
+        ? (window._allocationDraftRowsFor(sku) || []).length : 'NOT_ON_WINDOW'; });
+    /* THE BARRIER MODULE ITSELF. _irRevealBegin_ has a documented fallback for when it is absent, and that
+       fallback calls initializeShippingAllocation BEFORE the card owns a shipping-methods host - so the
+       panel keeps its skeleton forever. Distinguishing "the gate never settled" from "there was no gate"
+       is the whole question, and only this tells them apart. */
+    d.revealModule = t(function(){ return typeof window.IRPlanningReveal; });
+    d.revealModuleKeys = t(function(){
+      return window.IRPlanningReveal ? Object.keys(window.IRPlanningReveal).slice(0, 20) : null; });
+    d.kmKeys = t(function(){ return window.KM ? Object.keys(window.KM).slice(0, 20) : null; });
+    d.adapterPresent = t(function(){
+      return !!(window.KM && window.KM.DB && window.KM.DB.adaptInventoryReplenishmentWorkspace); });
+    d.scriptsOnPage = t(function(){
+      return Array.prototype.map.call(document.querySelectorAll('script[src]'), function(x){
+        return (x.getAttribute('src') || '').split('/').slice(-2).join('/'); }); });
+    d.scriptLoadErrors = window.__cp2uScriptErrors || null;
+    d.panelMarkup = t(function(){
+      return Array.prototype.map.call(document.querySelectorAll('#ops-section .replen-expand-panel'), function(p){
+        return (p.outerHTML || '').slice(0, 6000); }); });
+    /* NOT REACHABLE from the page's public surface. Listed so a reader knows the chain is incomplete here
+       rather than believing these two were checked and found healthy. */
+    d.unreachable = ['_irDraftHydrateInFlight', '_irReadModel'];
+    out.diagnostic = d;
+    return d;
+  }
   function fixedRows(){ return document.querySelectorAll('#ops-section .fixed-row'); }
   function scrollRowFor(sku){
     var rs = document.querySelectorAll('#ops-section .scroll-row[data-sku]');
@@ -206,6 +316,27 @@ function measureScript(capId, opts) {
   function cellText(sku, cls){
     var r = scrollRowFor(sku); if (!r) return null;
     var c = r.querySelector('.' + cls); return c ? (c.textContent || '').trim() : null;
+  }
+  function cellInfo(sku, cls){
+    var r = scrollRowFor(sku); if (!r) return null;
+    var c = r.querySelector('.' + cls); if (!c) return null;
+    return { text: (c.textContent || '').trim(), cls: String(c.className || ''),
+             title: c.getAttribute('title') || '' };
+  }
+  /* CP2U-R3 - WHAT COUNTS AS THE ANSWER ARRIVING.
+     The old condition was "the text is not --". CP2U-R2 gave the loading cell its own marker, so that
+     condition now accepts a cell that is STILL LOADING, and it always accepted a cell that says the read
+     FAILED. Either would have scored as "the first read resolved". The condition is therefore the NUMBER
+     the fixture was built to produce - read 1 serves 7, read 2 serves 11 - plus the absence of every
+     non-answer the cell is capable of displaying. A cell that merely CHANGED is not a cell that answered. */
+  var PENDING_MARK = '\u2026';
+  function isReadyNumber(info, expected){
+    if (!info) return false;
+    if (info.text !== expected) return false;
+    if (info.text.indexOf(PENDING_MARK) !== -1) return false;
+    if (/read failed|unavailable|not calculated/i.test(info.text)) return false;
+    if (/read-failed|--error|is-error/i.test(info.cls)) return false;
+    return true;
   }
   /* THE SCROLL CONTAINER IS FOUND BY LAYOUT, NOT BY NAME. The first version guessed three class names and
      found nothing, which would have reported "scroll preserved" about an element that never scrolled. This
@@ -256,8 +387,81 @@ function measureScript(capId, opts) {
       step('app-ready', ready.ok ? ready.waitedMs : 'NOT_READY');
       if (!ready.ok) return report();
 
+      /* CP2U-R3 - OBSERVE THE CHAIN, DO NOT ALTER IT. Static reading reached a contradiction: the gate
+         module is present and the registry is present, yet the catalogue never loaded and the panel never
+         revealed. These wrappers record the calls that actually happen. Each one delegates to the original
+         and returns its value unchanged. */
+      out.obs = { gates: [], ensureLoaded: [], errors: [], raf: { fired: 0, firstAt: null, lastAt: null } };
+      (function beat(){
+        if (typeof window.requestAnimationFrame !== 'function') { out.obs.raf.absent = true; return; }
+        window.requestAnimationFrame(function(){
+          out.obs.raf.fired++;
+          var tt = +now().toFixed(2);
+          if (out.obs.raf.firstAt === null) out.obs.raf.firstAt = tt;
+          out.obs.raf.lastAt = tt;
+          beat();
+        });
+      }());
+      window.addEventListener('error', function(ev){
+        if (ev && ev.target && ev.target.tagName === 'SCRIPT') return;
+        out.obs.errors.push({ t: +now().toFixed(2), msg: String(ev && ev.message || ''),
+          stack: String((ev && ev.error && ev.error.stack) || '').slice(0, 900) });
+      });
+      window.addEventListener('unhandledrejection', function(ev){
+        out.obs.errors.push({ t: +now().toFixed(2), kind: 'rejection',
+          msg: String((ev && ev.reason && (ev.reason.message || ev.reason)) || ''),
+          stack: String((ev && ev.reason && ev.reason.stack) || '').slice(0, 900) });
+      });
+      try {
+        var REG = window.KM && window.KM.methodRegistry;
+        if (REG && typeof REG.ensureLoaded === 'function') {
+          var _el = REG.ensureLoaded.bind(REG);
+          REG.ensureLoaded = function(scope, opts){
+            var rec = { t: +now().toFixed(2), scope: scope, opts: opts || null };
+            out.obs.ensureLoaded.push(rec);
+            var p = _el(scope, opts);
+            try { Promise.resolve(p).then(function(r){ rec.settled = r && r.status; },
+                                          function(e){ rec.threw = String(e && e.message || e); }); } catch(e){}
+            return p;
+          };
+        } else { out.obs.ensureLoaded.push({ note: 'NO_REGISTRY_AT_INSTALL' }); }
+      } catch(e) { out.obs.ensureLoaded.push({ note: 'WRAP_THREW:' + e.message }); }
+      try {
+        var IRP = window.IRPlanningReveal;
+        if (IRP && typeof IRP.createPanelGate === 'function') {
+          var _cpg = IRP.createPanelGate;
+          IRP.createPanelGate = function(deps){
+            var nm = (deps && deps.name) || '?';
+            /* THE PAINT ITSELF. A revealed flag is set when the reveal is SCHEDULED - the paint runs a
+               frame later. Wrapping onReveal is the only way to tell scheduled from painted. */
+            if (deps && typeof deps.onReveal === 'function') {
+              var _or = deps.onReveal;
+              deps.onReveal = function(snap){
+                out.obs.gates.push({ t: +now().toFixed(2), gate: nm, call: 'PAINTED',
+                  gen: snap && snap.gen, frameId: snap && snap.frameId });
+                return _or.apply(this, arguments);
+              };
+            }
+            var g = _cpg.apply(this, arguments);
+            var _begin = g.begin, _rep = g.report, _ab = g.abandon;
+            g.begin = function(ctx){ var r = _begin.apply(g, arguments);
+              out.obs.gates.push({ t: +now().toFixed(2), gate: nm, call: 'begin', gen: r, ctx: ctx }); return r; };
+            g.abandon = function(){ var r = _ab.apply(g, arguments);
+              out.obs.gates.push({ t: +now().toFixed(2), gate: nm, call: 'abandon', gen: r }); return r; };
+            g.report = function(gen, readiness, ctx){
+              var r = _rep.apply(g, arguments);
+              out.obs.gates.push({ t: +now().toFixed(2), gate: nm, call: 'report', gen: gen,
+                state: readiness && readiness.state, code: readiness && readiness.code,
+                accepted: r && r.accepted, reason: r && r.reason, revealed: r && r.revealed, ctx: ctx });
+              return r; };
+            return g;
+          };
+        } else { out.obs.gates.push({ note: 'NO_IRPLANNINGREVEAL_AT_INSTALL' }); }
+      } catch(e) { out.obs.gates.push({ note: 'WRAP_THREW:' + e.message }); }
+
       var el = document.querySelector('[onclick*="showSection(\\'ops\\')"]');
       if (el) el.click(); else if (window.showSection) window.showSection('ops');
+      var SKU0 = ${JSON.stringify(skuOf(1))};
 
       var sec = await waitFor(function(){ return document.getElementById('replenCountry'); }, 20000, 'filter-bar');
       step('filter-bar', sec.ok ? sec.waitedMs : 'MISSING');
@@ -273,17 +477,21 @@ function measureScript(capId, opts) {
 
       var tbl = await waitFor(function(){ var r = fixedRows(); return r.length > 1 ? r.length : null; }, 30000, 'table');
       step('table', tbl.ok ? tbl.v : 'NO_ROWS');
-      if (!tbl.ok) return report();
+      if (!tbl.ok) { diagnose('NO_ROWS', SKU0); return report(); }
       await sleep(OPT.settleMs);
 
       /* The first workspace read must have landed, or the "second arrival" below would be the first. */
       var first = await waitFor(function(){
-        var t = cellText(${JSON.stringify(skuOf(1))}, 'replen-avg-cell');
-        return (t && t !== '--') ? t : null;
+        var i = cellInfo(${JSON.stringify(skuOf(1))}, 'replen-avg-cell');
+        return isReadyNumber(i, OPT.expectFirst) ? i : null;
       }, 20000, 'first-reco');
-      step('first-reco-cell', first.ok ? first.v : 'NEVER_RESOLVED');
+      var firstInfo = first.ok ? first.v : cellInfo(${JSON.stringify(skuOf(1))}, 'replen-avg-cell');
+      step('first-reco-cell', first.ok ? first.v.text : { got: firstInfo, expected: OPT.expectFirst });
       out.verdict.firstReadResolved = first.ok;
-      out.verdict.firstCell = first.ok ? first.v : null;
+      out.verdict.firstCell = firstInfo ? firstInfo.text : null;
+      out.verdict.firstCellExpected = OPT.expectFirst;
+      out.firstCellInfo = firstInfo;
+      if (!first.ok) { out.fatal = 'FIRST_READ_NOT_READY'; diagnose('FIRST_READ_NOT_READY', SKU0); return report(); }
 
       /* ---- expand a row and start working in it ------------------------------------------------ */
       var SKU = ${JSON.stringify(skuOf(1))};
@@ -291,7 +499,7 @@ function measureScript(capId, opts) {
       fr[1].click();
       var card = await waitFor(function(){ return document.getElementById('execution-plan-' + SKU); }, 25000, 'exec-card');
       step('exec-card', card.ok ? card.waitedMs : 'MISSING');
-      if (!card.ok) return report();
+      if (!card.ok) { diagnose('NO_EXEC_CARD', SKU0); return report(); }
       await sleep(OPT.settleMs);
 
       var panel = document.getElementById('execution-plan-' + SKU);
@@ -324,7 +532,8 @@ function measureScript(capId, opts) {
       out.notes.push('panel fields: ' + typeList.join(',').slice(0, 300));
       var selectionCapable = !!input;
       if (!input) input = host.querySelector('input:not([type=hidden])');
-      if (!input) { out.notes.push('no input inside the expanded panel'); out.fatal = 'NO_INPUT'; return report(); }
+      if (!input) { out.notes.push('no input inside the expanded panel'); out.fatal = 'NO_INPUT';
+        diagnose('NO_INPUT', SKU); return report(); }
       if (!selectionCapable) out.notes.push('no selection-capable field in the panel; using ' + (input.type || input.tagName));
       out.selectionCapable = selectionCapable;
       input.__cp2sMark = 'INPUT';
@@ -373,11 +582,15 @@ function measureScript(capId, opts) {
       if (typeof window.loadRecommendationWorkspace_ !== 'function') { out.fatal = 'NO_LOADER'; return report(); }
       window.loadRecommendationWorkspace_();
 
+      /* NOT "the text changed". A cell that goes from 7.0 to the loading marker has changed, and so has a
+         cell that goes from 7.0 to a failure sentence; neither is the second answer arriving. */
       var changed = await waitFor(function(){
-        var t = cellText(SKU, 'replen-avg-cell');
-        return (t && t !== out.before.avgCell) ? t : null;
+        var i = cellInfo(SKU, 'replen-avg-cell');
+        return isReadyNumber(i, OPT.expectSecond) ? i : null;
       }, 25000, 'second-arrival');
-      step('second-arrival', changed.ok ? changed.v : 'CELL_NEVER_CHANGED');
+      step('second-arrival', changed.ok ? changed.v.text
+        : { got: cellInfo(SKU, 'replen-avg-cell'), expected: OPT.expectSecond });
+      out.secondCellInfo = changed.ok ? changed.v : cellInfo(SKU, 'replen-avg-cell');
       await sleep(250);
 
       out.after = {
@@ -399,6 +612,12 @@ function measureScript(capId, opts) {
         firstReadResolved: out.verdict.firstReadResolved,
         firstCell: out.verdict.firstCell,
         cellUpdated: out.after.avgCell !== out.before.avgCell && !!out.after.avgCell && out.after.avgCell !== '--',
+        /* CP2U-R3 - the three the old verdict could not distinguish. */
+        firstCellExpected: out.verdict.firstCellExpected,
+        secondCellExpected: OPT.expectSecond,
+        secondCellIsExpectedNumber: isReadyNumber(out.secondCellInfo, OPT.expectSecond),
+        dosMovedToNumber: (out.after.dosCell !== out.before.dosCell)
+          && /^[0-9]+(\.[0-9]+)?$/.test(String(out.after.dosCell || '')),
         focusKept: out.after.activeMark === 'INPUT',
         selectionKept: out.selectionCapable
           ? (out.after.selStart === 2 && out.after.selEnd === 2)
@@ -415,6 +634,113 @@ function measureScript(capId, opts) {
         noFullRebuild: renderCalls === 0
       };
       step('done', out.verdict);
+
+      /* CP2U-R3 item 3 - EVERY TRANSITION, IN THE SAME BROWSER, WITH THE OPERATOR'S WORK STILL ON SCREEN.
+         Each arrival goes through the real cache invalidation and the real loader, so the envelope crosses
+         the network stub and the page's own arrival path runs; nothing calls a painter directly. After each
+         one the CELL is read back - text, class and title, because a dash alone does not say which kind of
+         absence it is - and the five things that must survive are measured again. A state that reaches the
+         screen by destroying the operator's half-typed quantity is not a fix. */
+      if (OPT.states) {
+        function avgI(){ return cellInfo(SKU, 'replen-avg-cell'); }
+        function keep(label){
+          return { label: label,
+            avg: avgI(), dos: cellInfo(SKU, 'replen-dos-cell'),
+            value: input.value,
+            activeMark: document.activeElement ? (document.activeElement.__cp2sMark || null) : null,
+            inputStillInDocument: document.contains(input),
+            panelSameNode: document.getElementById('execution-plan-' + SKU) === panel,
+            scrollTop: SC.v ? SC.v.scrollTop : null, scrollLeft: SC.h ? SC.h.scrollLeft : null,
+            renderCalls: renderCalls };
+        }
+        out.states = { before: keep('before-states'), arrivals: [] };
+
+        async function arrive(label, settled){
+          var prev = (avgI() || {}).text;
+          if (typeof window.invalidateRecommendationSessionCache === 'function') window.invalidateRecommendationSessionCache();
+          if (typeof window._irRecoInvalidate === 'function') window._irRecoInvalidate('CONTEXT_NOT_READY');
+          window.loadRecommendationWorkspace_();
+          /* THE LOADING FRAME, sampled in the same turn the request is dispatched. CP2U-R2 made the
+             in-flight cell say so; this is where that claim is either seen or not. */
+          var loading = avgI();
+          var got = await waitFor(function(){
+            var i = avgI();
+            return (i && settled(i)) ? i : null;
+          }, 15000, 'state-' + label);
+          var snap = keep(label);
+          snap.loadingFrame = loading;
+          snap.settled = got.ok;
+          snap.previousText = prev;
+          out.states.arrivals.push(snap);
+          step('state-' + label, { settled: got.ok, text: (snap.avg || {}).text });
+          return snap;
+        }
+
+        var PEND = PENDING_MARK;
+        await arrive('failed',    function(i){ return /read failed/i.test(i.text); });
+        await arrive('empty',     function(i){ return i.text === '--' && /no destination line for any SKU/i.test(i.title); });
+        await arrive('withheld',  function(i){ return i.text === '--' && /withheld/i.test(i.title); });
+        await arrive('zero',      function(i){ return /^0(\.0+)?$/.test(i.text); });
+        await arrive('recovered', function(i){ return /^23(\.0+)?$/.test(i.text); });
+
+        var A = {}; out.states.arrivals.forEach(function(a){ A[a.label] = a; });
+        out.states.verdict = {
+          /* each state is TOLD APART on the cell, not merely "different from before" */
+          failedSaysFailed:      /read failed/i.test(((A.failed || {}).avg || {}).text || ''),
+          failedCarriesErrorClass: /replen-cell--avg-error/.test(((A.failed || {}).avg || {}).cls || ''),
+          failedIsNotZero:       !/^0/.test(((A.failed || {}).avg || {}).text || ''),
+          failedDosNotZero:      (((A.failed || {}).dos || {}).text || '') === '--',
+          loadingMarkSeen:       ((A.failed || {}).loadingFrame || {}).text === PEND,
+          emptySaysNoLines:      /no destination line for any SKU/i.test(((A.empty || {}).avg || {}).title || ''),
+          emptyIsNotError:       !/replen-cell--avg-error/.test(((A.empty || {}).avg || {}).cls || ''),
+          withheldSaysWithheld:  /withheld/i.test(((A.withheld || {}).avg || {}).title || ''),
+          withheldIsDistinctFromEmpty:
+            (((A.withheld || {}).avg || {}).title || '') !== (((A.empty || {}).avg || {}).title || ''),
+          zeroIsARealZero:       /^0(\.0+)?$/.test(((A.zero || {}).avg || {}).text || ''),
+          zeroHasNoFailureText:  !/read failed|unavailable/i.test(((A.zero || {}).avg || {}).text || ''),
+          recoveredShowsNumber:  /^23(\.0+)?$/.test(((A.recovered || {}).avg || {}).text || ''),
+          recoveredClearedTitle: (((A.recovered || {}).avg || {}).title || '') === '',
+          everyArrivalSettled:   out.states.arrivals.every(function(a){ return a.settled === true; }),
+          /* and none of it cost the operator anything */
+          valueKeptThroughout:   out.states.arrivals.every(function(a){ return a.value === '1234'; }),
+          focusKeptThroughout:   out.states.arrivals.every(function(a){ return a.activeMark === 'INPUT'; }),
+          inputSameNodeThroughout: out.states.arrivals.every(function(a){ return a.inputStillInDocument === true; }),
+          panelKeptThroughout:   out.states.arrivals.every(function(a){ return a.panelSameNode === true; }),
+          scrollKeptThroughout:  out.states.arrivals.every(function(a){
+            return a.scrollTop === out.states.before.scrollTop && a.scrollLeft === out.states.before.scrollLeft; }),
+          noFullRebuildThroughout: out.states.arrivals.every(function(a){ return a.renderCalls === 0; })
+        };
+        step('states-done', out.states.verdict);
+
+        /* ---- AND THE FAILURE MUST NOT FOLLOW THE OPERATOR TO THE NEXT SITE ------------------ */
+        var sw = { ran: false };
+        var sel = document.getElementById('replenMarketplace');
+        if (sel) {
+          await arrive('failed-again', function(i){ return /read failed/i.test(i.text); });
+          sw.failedBeforeSwitch = /read failed/i.test((avgI() || {}).text || '');
+          var moved = await setSelect(sel, ${JSON.stringify(MKT2_ID)}, 'marketplace-2', 20000);
+          sw.selectMoved = moved.ok;
+          if (moved.ok) {
+            var sbtn = document.querySelector('#ops-section .replen-btn--search');
+            if (sbtn) sbtn.click(); else if (window.searchReplenishment) window.searchReplenishment();
+            var after = await waitFor(function(){
+              var i = cellInfo(SKU, 'replen-avg-cell');
+              return (i && /^31(\.0+)?$/.test(i.text)) ? i : null;
+            }, 25000, 'new-site');
+            sw.ran = true;
+            sw.newSiteCell = after.ok ? after.v : cellInfo(SKU, 'replen-avg-cell');
+            sw.newSiteShowsItsOwnNumber = after.ok;
+            sw.newSiteFreeOfOldFailure = !/read failed/i.test((sw.newSiteCell || {}).text || '')
+              && !/replen-cell--avg-error/.test((sw.newSiteCell || {}).cls || '');
+            /* no row anywhere may still be carrying the previous site's failure */
+            sw.anyRowStillFailed = Array.prototype.some.call(
+              document.querySelectorAll('#ops-section .scroll-row[data-sku] .replen-avg-cell'),
+              function(c){ return /read failed/i.test(c.textContent || ''); });
+          }
+        }
+        out.states.siteSwitch = sw;
+        step('site-switch', sw);
+      }
       report();
     } catch (e) {
       out.fatal = String(e && e.message || e);
@@ -432,6 +758,10 @@ function buildPage(port, capId, opts) {
   html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/[^"']+/g, 'http://127.0.0.1:' + port + '/__stub.js');
   const preamble = `
 <script>
+window.__cp2uScriptErrors=[];
+window.addEventListener('error',function(e){
+  if(e&&e.target&&e.target.tagName==='SCRIPT'){window.__cp2uScriptErrors.push(String(e.target.src||''));}
+},true);
 (function(){
   var LOCAL='http://127.0.0.1:${port}';
   var _f=window.fetch;
@@ -451,7 +781,7 @@ function buildPage(port, capId, opts) {
   return html;
 }
 
-function startServer(pages, held, results, cfg) {
+function startServer(pages, held, results, cfg, onMeasured) {
   return http.createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
     const p = decodeURIComponent(u.pathname);
@@ -466,6 +796,7 @@ function startServer(pages, held, results, cfg) {
         res.writeHead(204); res.end();
         const h = held[id];
         if (h) { delete held[id]; clearTimeout(h.timer); h.release('measured'); }
+        if (typeof onMeasured === 'function') setTimeout(onMeasured, 150);
       });
       return;
     }
@@ -491,8 +822,14 @@ function startServer(pages, held, results, cfg) {
         const kmBody = u.searchParams.get('km_body');
         if (kmBody) { try { const j = JSON.parse(kmBody); action = action || j.action || ''; rid = rid || j.requestId || ''; } catch (e) {} }
         if (!action && body) { try { const j = JSON.parse(body); action = j.action || ''; rid = rid || j.requestId || ''; } catch (e) {} }
-        cfg.log.push({ action: action, t: Date.now() - cfg.t0 });
         const payload = apiAnswer(action, cfg.skus, cfg.state);
+        // CP2U-R3 - WHAT WAS ANSWERED, not merely what was asked. A fixture that answers the wrong shape is
+        // invisible in an action-only log, and that is precisely the failure item 2 asks to rule out.
+        const d0 = (payload && payload.data) || {};
+        cfg.log.push({ action: action, t: Date.now() - cfg.t0, success: payload && payload.success !== false,
+          dataKeys: Object.keys(d0).slice(0, 24),
+          counts: Object.keys(d0).reduce(function (acc, k) {
+            if (Array.isArray(d0[k])) acc[k] = d0[k].length; return acc; }, {}) });
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(withCorrelation(payload, action, rid)));
       });
@@ -513,12 +850,17 @@ function startServer(pages, held, results, cfg) {
   });
 }
 
-function runChromeAsync(browser, args, timeoutMs) {
+function runChromeAsync(browser, args, timeoutMs, onChild) {
   return new Promise(resolve => {
     const child = cp.spawn(browser, args, { stdio: 'ignore' });
     let done = false;
-    const t = setTimeout(() => { if (!done) { done = true; try { child.kill(); } catch (e) {} resolve('timeout'); } }, timeoutMs);
+    const finish = (why) => { if (done) return; done = true; clearTimeout(t); try { child.kill(); } catch (e) {} resolve(why); };
+    const t = setTimeout(() => finish('timeout'), timeoutMs);
     child.on('exit', () => { if (!done) { done = true; clearTimeout(t); resolve('exit'); } });
+    // THE RUN IS OVER WHEN THE PAGE HAS REPORTED, and the watchdog stays as the only other way out. A
+    // browser left open until the timeout is not a longer measurement, it is the same measurement and
+    // three minutes of waiting.
+    if (typeof onChild === 'function') onChild(function () { finish('measured'); });
   });
 }
 
@@ -535,21 +877,30 @@ async function main() {
   if (!browser) { console.error('no Chrome found'); process.exit(3); }
 
   const skus = parseInt(arg('--skus', '60'), 10);
-  const cfg = { skus: skus, log: [], t0: Date.now(), state: { recoReads: 0 } };
+  // CP2U-R3 - OPT-IN. Without --states every path below is the one that produced inplace-dom.json.
+  const STATES = process.argv.indexOf('--states') !== -1;
+  const cfg = { skus: skus, log: [], t0: Date.now(), state: { recoReads: 0, statesMode: STATES } };
   const pages = {}, held = {}, results = {};
   const capId = 'inplace-' + Date.now();
-  const srv = startServer(pages, held, results, cfg);
+  let closeBrowser = null;
+  const srv = startServer(pages, held, results, cfg, function () { if (closeBrowser) closeBrowser(); });
   await new Promise(r => srv.listen(0, '127.0.0.1', r));
   const port = srv.address().port;
-  pages['/__page'] = buildPage(port, capId, { settleMs: 900 });
+  // The two rates recoLines() is built to serve, named ONCE and handed to both the page and the evidence
+  // so the harness cannot drift from the fixture it is asserting against.
+  pages['/__page'] = buildPage(port, capId, { settleMs: 900, expectFirst: '7.0', expectSecond: '11.0',
+    states: STATES });
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cp2s-r2-'));
   const why = await runChromeAsync(browser, [
+    // CP2U-R3 - NO --virtual-time-budget. Under virtual time this browser produced NO animation frames at
+    // all (measured: 0 in a whole session), and every reveal in the page is scheduled on one - so the
+    // Execution Plan never left its skeleton, never rendered a composer, and the harness reported NO_INPUT
+    // against a page that was behaving correctly. Real time produces frames (measured: 120-164 per run).
     '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
     '--user-data-dir=' + profile, '--window-size=1600,1000',
-    '--virtual-time-budget=180000',
     'http://127.0.0.1:' + port + '/__page'
-  ], 180000);
+  ], 180000, function (stop) { closeBrowser = stop; });
 
   const r = results[capId] || { fatal: 'NO_RESULT (' + why + ')' };
   const evidence = {
@@ -559,6 +910,7 @@ async function main() {
     browser: browser,
     skus: skus,
     recoReadsServed: cfg.state.recoReads,
+    expected: { firstAvgCell: '7.0', secondAvgCell: '11.0' },
     sources: {
       'index.html': sha('index.html'),
       'assets/js/pages/inventory-replenishment.js': sha('assets/js/pages/inventory-replenishment.js'),
@@ -567,7 +919,18 @@ async function main() {
     actionLog: cfg.log,
     result: r
   };
-  fs.writeFileSync(path.join(outDir, 'inplace-dom.json'), JSON.stringify(evidence, null, 2));
+  // A DIFFERENT EXPERIMENT GETS A DIFFERENT FILE. Writing the states run over inplace-dom.json would
+  // destroy the capture that proves the in-place update.
+  const outName = STATES ? 'state-transitions.json' : 'inplace-dom.json';
+  fs.writeFileSync(path.join(outDir, outName), JSON.stringify(evidence, null, 2));
+  // The long-poll that kept the page alive is RELEASED here rather than left to its own 120s timer: an
+  // open socket holds the server open, which holds the event loop open, which made a four-second
+  // measurement take two minutes to exit.
+  Object.keys(held).forEach(function (id) {
+    const h = held[id]; delete held[id];
+    try { clearTimeout(h.timer); h.release('run-complete'); } catch (e) {}
+  });
+  if (typeof srv.closeAllConnections === 'function') srv.closeAllConnections();
   srv.close();
 
   const v = (r && r.verdict) || {};
@@ -577,7 +940,8 @@ async function main() {
   if (r.notes && r.notes.length) console.log('notes             :', r.notes.join(' | '));
   if (r.before) console.log('before            :', JSON.stringify(r.before));
   if (r.after) console.log('after             :', JSON.stringify(r.after));
-  const KEYS = ['firstReadResolved', 'cellUpdated', 'focusKept', 'selectionKept', 'valueKept', 'inputSameNode',
+  const KEYS = ['firstReadResolved', 'cellUpdated', 'secondCellIsExpectedNumber', 'dosMovedToNumber',
+    'focusKept', 'selectionKept', 'valueKept', 'inputSameNode',
     'panelKept', 'scrollKept', 'windowScrollKept', 'noFullRebuild'];
   /* A check the PAGE makes impossible is not a check the page failed. NOT_MEASURABLE_* is printed as n/a
      with its reason attached and does not set the exit code - and it is never silently omitted, because a
@@ -590,7 +954,13 @@ async function main() {
     console.log((val === true ? 'ok   ' : na ? 'n/a  ' : 'FAIL ') + k + ' = ' + val);
   });
   console.log('scrollers         : v=' + (r.scrollerV || 'NONE') + '  h=' + (r.scrollerH || 'NONE'));
-  console.log('\nwrote ' + path.join(outDir, 'inplace-dom.json'));
+  if (STATES && r.states && r.states.verdict) {
+    console.log('\n== state transitions ==');
+    Object.keys(r.states.verdict).forEach(k => console.log((r.states.verdict[k] === true ? 'ok   ' : 'FAIL ') + k + ' = ' + r.states.verdict[k]));
+    if (r.states.siteSwitch) console.log('site switch       :', JSON.stringify(r.states.siteSwitch.newSiteCell || null),
+      'freeOfOldFailure=' + r.states.siteSwitch.newSiteFreeOfOldFailure);
+  }
+  console.log('\nwrote ' + path.join(outDir, outName));
   process.exitCode = (bad === 0 && !r.fatal) ? 0 : 1;
 }
 

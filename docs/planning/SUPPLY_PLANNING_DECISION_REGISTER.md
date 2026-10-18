@@ -4868,3 +4868,88 @@ loaders and reads the real cells.
 - D-S8-B3-98 remains OPEN; naming a withheld basis is not repairing it. C9, the Gap timeout diagnostic and
   the FC historical-sales features are untouched.
 
+### D-S8-B3-110 — NO_INPUT was a browser that produced no frames — **FIXED (harness only, CP2U-R3)**
+
+For three rounds the real-browser harness died at the expand step with `NO_INPUT` — two expanded panels,
+neither holding a field — and the word was treated as a symptom with no mechanism. It has one.
+
+**`requestAnimationFrame` fired ZERO times in an entire session.** Not throttled, not late: never. The
+Execution Plan panel reveals through `_irRevealFrame_`, which is rAF, so the paint was scheduled and never
+ran. The skeleton has no `shipping-methods-` host; `initializeShippingAllocation` returns immediately when
+that host is absent; the pristine composer is what carries the only `<input>` in the panel. No frame, no
+paint, no host, no composer, no input. **The page was correct the whole time** — it was waiting for a
+frame the harness's browser never produced.
+
+**THE OBSERVATION THAT WAS MISLEADING ME.** The gate's log said `revealed: true`, and I read that as
+painted. `settle()` sets the flag when the paint is SCHEDULED and calls `onReveal` a frame later, so the
+flag is true for a panel that never painted. Only wrapping `onReveal` separated the two, and that is what
+turned a contradiction into a diagnosis. Each earlier hypothesis — the barrier module missing, the
+catalogue failing, the scope key disagreeing — was killed by a probe rather than by argument: the module
+was present, `requestCount` was 0 because `ensureLoaded` short-circuits on a cache hit, and the exposure
+read was READY.
+
+**THE CAUSE IS `--virtual-time-budget`.** Removing it yields 103—175 frames per run. It is removed, not
+raised: nothing here lengthens a wait, enlarges a budget or retries for a pass. The same flag was also what
+ENDED the process, so the browser is now closed when the measurement arrives and the long-poll is released
+explicitly instead of expiring on its own 120 s timer — a run takes **~6 s instead of ~125 s**.
+
+### D-S8-B3-111 — The completion condition accepted a cell that was still loading — **FIXED (CP2U-R3)**
+
+The harness scored the first read as resolved when the Avg cell held anything that was not `--`:
+
+```js
+return (t && t !== '--') ? t : null;
+```
+
+**CP2U-R2 walked under that bar with its own change.** Giving the in-flight cell a pending marker means
+"not a dash" now accepts a cell that is STILL LOADING — and it always accepted a cell that says
+`read failed`. The second arrival was scored the same way, as "the text differs from before", which a
+loading marker and a failure sentence both satisfy. A harness that cannot tell an answer from an apology
+cannot accept this feature.
+
+The condition is now the NUMBER the fixture serves — 7.0, then 11.0 — with the pending marker, the
+failure wording and the error class each excluded explicitly, and Days of Supply required to move TO A
+NUMBER rather than merely to move. The two expected values are written into the capture, so the suite and
+the harness cannot drift apart.
+
+### D-S8-B3-112 — The read states, verified in a real browser — **RECORDED (CP2U-R3)**
+
+`--states` drives five arrivals through the real loader with a row expanded and a half-typed quantity in
+it: failed, empty, withheld, a legitimate zero, and recovery. Every absence renders as a dash, so the dash
+is not what is asserted — each state is identified by its SENTENCE and its CLASS, and "empty" and
+"withheld" are required to carry DIFFERENT sentences. The in-flight cell is sampled in the dispatching turn,
+which is where "loading and failed are two states on screen" stops being a claim. Then the marketplace is
+switched WHILE A FAILURE IS ON SCREEN: the new site shows its own number and no row carries the old
+failure. Across all of it: zero `renderReplenishment` calls, the value, the focus, both node identities and
+both scroll offsets unchanged. **37 assertions, 0 failed.** Eight consecutive runs on fresh profiles, 4/4
+and 4/4; the stored capture is the fourth, not a selected success.
+
+### D-S8-B3-113 — Two claims from CP2U-R2 that were stated more strongly than the evidence — **CORRECTED**
+
+**1. "The baseline also fails, therefore it is not a regression from this round."** The conclusion was
+right and the REASONING WAS NOT, which is worth separating because the reasoning is what I would have
+reused. A harness defect that is independent of the page fails against every version of the page, so that
+observation cannot distinguish "this round introduced nothing" from "this round introduced something AND an
+independent harness defect hides it". What the baseline run actually established is narrower: the page
+changes were not the SOLE cause. Only the mechanism settles it, and the mechanism — a paint scheduled on
+a frame the browser never produced — is now known and is independent of everything this branch touched.
+D-S8-B3-108 is closed on that basis, not on the baseline comparison.
+
+**2. The "0 failed" summary.** CP2U-R2 reported **68,070 assertions passed / 0 failed** in the same table as
+**CLEAN 674 / NOT_CLEAN 1**, and those two cannot both be read plainly: the NOT_CLEAN suite was failing an
+assertion (`24 passed, 1 failed`) at that moment. The aggregate was computed over the suites that completed
+cleanly, so the one red suite's failure was outside it. Quoting it beside the suite counts made a run with a
+known red look green. A per-suite aggregate is only honest when the suite census agrees with it, and from
+here the two are reported together or not at all.
+
+### D-S8-B3-114 — What CP2U-R3 does NOT claim — **RECORDED**
+
+- **Nothing about production, and nothing about speed.** This is a fixture over a local stub. It shows what
+  the page does when an answer arrives; it says nothing about how long a real answer takes.
+- **The caret is still not measured.** The only editable field in the open panel is `<input type="number">`,
+  which exposes no `selectionStart` in Chrome. Recorded as `NOT_MEASURABLE_NO_TEXT_FIELD`.
+- **D-S8-B3-98 is not repaired.** `MARKETPLACE_DESTINATION_INACTIVE` withholding is now visible and named on
+  screen, which is not the same as fixed.
+- **No page source changed this round.** C9, the dynamic Gap, the Gap timeout diagnostic and the FC
+  historical-sales features are untouched, and the EU member-row asymmetry is unchanged.
+
