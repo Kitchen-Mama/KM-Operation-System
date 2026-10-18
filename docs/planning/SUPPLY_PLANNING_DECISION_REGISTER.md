@@ -5572,3 +5572,37 @@ taken with. That is a decision for the Owner, not a repair to slip into an IR pe
 **Boot census re-measured, not re-stamped:** `bootScriptBytes` 3,813,586 → 3,813,599. The token grew by one
 character across its 13 occurrences in `app.js`; 1 × 13 = 13 exactly. `pageScriptBytes` is unchanged because
 `inventory-replenishment.js` is router-loaded and is not a boot script.
+
+---
+
+### D-S8-B3-138 — `s4-r3-route-owned-code` fails the same way `s4-r4-deferred-reads` did — **OPEN, and now a FAMILY**
+
+The final CP2X sweep reported `s4-r3-route-owned-code` NOT_CLEAN. It is **not fixed and not explained**,
+and the signature is the one D-S8-B3-127 already carries:
+
+| | `s4-r4-deferred-reads` (CP2V-R2) | `s4-r3-route-owned-code` (CP2X) |
+|---|---|---|
+| exit | **1** | **1** |
+| classification | **NO_SUMMARY** | **NO_SUMMARY** |
+| fail lines | 0 | 0 |
+| `timed_out` | false | false |
+| duration in the sweep | **6,788 ms** | **11,706 ms** |
+| healthy duration | 14,258 ms | **16,447 / 16,817 ms** (two runs, timed) |
+| standalone | CLEAN, 3 consecutive runs | CLEAN, exit 0, 134 passed, 9 mutants killed |
+| sweep integrity that run | INTACT, executed 680/680 | INTACT, executed 682/682, `dirty_after: []` |
+
+**Both are `s4-*` suites that plant mutants in real source files, and both died before printing a
+summary at roughly two thirds to one half of their healthy runtime, without timing out.** One occurrence
+was an anomaly worth leaving open; two in the same family, four rounds apart, is a pattern — so
+D-S8-B3-127 is no longer a single unexplained event and should not be closed as flakiness.
+
+**What is NOT claimed.** No cause. The standalone runs are **non-reproductions, not explanations**, and
+nothing here was re-run until it went green and then called repaired. No `s4-*` suite was modified and no
+test tooling was refactored to chase it.
+
+**The evidence gap is the same one, and it is still open.** `runOne` attaches stdout and stderr as
+`rec.raw` and the writer strips that key, so the bytes of the failing run existed only in that sweep
+process's memory. What survives is the classification table above. The one change that would close it —
+persisting `raw` for non-clean suites — is a change to the sweep tool and still awaits a round that
+authorises it. **It is now worth more than it was**: with two members, the next occurrence is the one
+that could be diagnosed instead of merely counted.
