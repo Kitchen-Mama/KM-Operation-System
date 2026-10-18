@@ -1,65 +1,65 @@
 {
   "round": "S8-B3-R3-CP2T P1",
   "what": "FC Regular builder, prevMonth: derived Based period, non-editability, preview revocation, growth base still editable",
-  "takenAt": "2026-10-16T14:51:56.277Z",
+  "takenAt": "2026-10-18T12:51:46.492Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "index.html": "5a2bdbcaf91d9f95",
+    "index.html": "57ec2ec2b5900ecf",
     "assets/js/pages/fc-summary.js": "81af8665cbea6075",
     "assets/html/pages/fc-summary.html": "274936c74f1c44ca"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 754
+      "t": 926
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 834
+      "t": 1135
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 836
+      "t": 1135
     },
     {
       "action": "getTable",
-      "t": 1871
+      "t": 2167
     },
     {
       "action": "getTable",
-      "t": 1872
+      "t": 2168
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 1872
+      "t": 2169
     }
   ],
   "result": {
-    "capId": "fcprev-1792162136232",
+    "capId": "fcprev-1792327726437",
     "steps": [
       {
         "step": "fc-section",
-        "t": 401.7,
-        "v": 30.3
+        "t": 543.6,
+        "v": 30.8
       },
       {
         "step": "mode-select",
-        "t": 1323.3,
-        "v": 10.3
+        "t": 1448.9,
+        "v": 3.8
       },
       {
         "step": "builder",
-        "t": 1514.9,
-        "v": 30.7
+        "t": 1645.5,
+        "v": 31.3
       },
       {
         "step": "method",
-        "t": 2217.5,
+        "t": 2373.2,
         "v": "prevMonth"
       },
       {
         "step": "derived",
-        "t": 2739.5,
+        "t": 2885.5,
         "v": {
           "basedYear": "2026",
           "basedMonth": "11",
@@ -68,7 +68,7 @@
       },
       {
         "step": "done",
-        "t": 6381.5,
+        "t": 6529,
         "v": {
           "addButtonFound": true,
           "modeSelectVisible": true,
