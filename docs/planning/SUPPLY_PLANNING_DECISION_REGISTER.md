@@ -4953,3 +4953,31 @@ here the two are reported together or not at all.
 - **No page source changed this round.** C9, the dynamic Gap, the Gap timeout diagnostic and the FC
   historical-sales features are untouched, and the EU member-row asymmetry is unchanged.
 
+### D-S8-B3-115 — A surviving mutant is left INSTALLED, and it poisons the suites that follow — **OPEN (product-strategy harness, not repaired here)**
+
+The first CP2U-R3 full regression returned **CLEAN 673 / NOT_CLEAN 3** and, more importantly,
+`worktree: DIRTY_AFTER_SWEEP` — a live mutant still in `assets/js/product-strategy/psb-board-ui.js`:
+
+```
+-    if (SHOW_CHART_FULLSCREEN) {
++    if (true) {
+```
+
+**TWO OF THE THREE FAILURES WERE NOT FAILURES.** `product-strategy-corrections-p1-b8d-r9` and
+`product-strategy-site-selection-p1-b8d-r5` both pass on a restored tree; they had been reading a mutated
+source left behind by an earlier suite. Only `product-strategy-lifecycle-p1-b8d-r8` was genuinely red, and
+it is **FLAKY**: one red in seven runs, and the clean runs report 183 assertions / 18 mutants where the red
+one reported 182 / 17, so the suite's own assertion census varies between runs. It is not a timeout —
+five standalone runs took ~90 s against a 600 s per-suite limit.
+
+**THE SHAPE OF THE DEFECT.** The red run is exactly the run in which a mutant SURVIVED, and that is the run
+that left the file mutated. A harness that restores on the caught path and not on the survived path turns
+its own worst finding into contamination of every later suite that reads the file — which is how one
+flaky suite produced three red records. Not repaired here: it is product-strategy harness code, untouched
+by this round, and repairing it is a round of its own with its own evidence.
+
+**WHAT THIS MEANS FOR READING A SWEEP.** `worktree_integrity` is not a footnote. A sweep that ends
+`DIRTY_AFTER_SWEEP` cannot be read as a verdict on anything, including the suites it marked CLEAN, because
+the contamination is positional: whatever ran after the leak saw a source no commit contains. The run was
+discarded, the file restored from git, and the regression re-run on a clean tree.
+
