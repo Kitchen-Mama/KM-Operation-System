@@ -1,0 +1,103 @@
+{
+  "what": "CP2U-R3 sweep run 1 - the run that ended DIRTY_AFTER_SWEEP. Preserved because it is the only direct record of the leak.",
+  "preserved_at": "2026-10-18T03:10:13.309Z",
+  "raw_json_source_path": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/sweep-cp2u-r3.json",
+  "note": "The scratchpad path is session-scoped and will not survive; the fields that matter are copied here.",
+  "candidate_head": "259bb7a8",
+  "registered_count": 676,
+  "clean": 673,
+  "not_clean": 3,
+  "worktree_integrity": "DIRTY_AFTER_SWEEP",
+  "worktree_dirty_before": [],
+  "worktree_dirty_after": [
+    " M assets/js/product-strategy/psb-board-ui.js"
+  ],
+  "leaked_mutant": {
+    "file": "assets/js/product-strategy/psb-board-ui.js",
+    "from": "if (SHOW_CHART_FULLSCREEN) {",
+    "to": "if (true) {"
+  },
+  "execution_order_alphabetical": [
+    "product-strategy-corrections-p1-b8d-r9",
+    "product-strategy-lifecycle-p1-b8d-r8",
+    "product-strategy-site-selection-p1-b8d-r5"
+  ],
+  "records": [
+    {
+      "suite_name": "product-strategy-corrections-p1-b8d-r9",
+      "exit_code": null,
+      "output_classification": "NO_SUMMARY",
+      "passed_assertions": null,
+      "failed_assertions": null,
+      "fail_lines": 0,
+      "fail_line_samples": [],
+      "mutant_count": null,
+      "survived_mutants": null,
+      "vacuity_verdict": "NOT_REPORTED",
+      "verdict": "NOT_CLEAN",
+      "reason_codes": [
+        "NONZERO_EXIT",
+        "MISSING_SUMMARY"
+      ],
+      "timed_out": true,
+      "duration_ms": 629317
+    },
+    {
+      "suite_name": "product-strategy-lifecycle-p1-b8d-r8",
+      "exit_code": 1,
+      "output_classification": "SUMMARY_PRESENT",
+      "passed_assertions": 180,
+      "failed_assertions": 3,
+      "fail_lines": 3,
+      "fail_line_samples": [
+        "FAIL E9  and the ONE control R9 keeps out is out — no fullscreen button",
+        "FAIL E10a and nothing matching fullscreen is anywhere in it",
+        "FAIL K3  the Fullscreen control is rendered and triggerable again — PROBE ERROR: ANCHOR MATCHED 0 TIMES in assets/js/product-strategy/psb-board-ui.js"
+      ],
+      "mutant_count": 17,
+      "survived_mutants": 1,
+      "vacuity_verdict": "NOT_REPORTED",
+      "verdict": "NOT_CLEAN",
+      "reason_codes": [
+        "NONZERO_EXIT",
+        "FAIL_LINES",
+        "SUMMARY_FAILED",
+        "MUTANTS_SURVIVED"
+      ],
+      "timed_out": false,
+      "duration_ms": 88654
+    },
+    {
+      "suite_name": "product-strategy-site-selection-p1-b8d-r5",
+      "exit_code": 1,
+      "output_classification": "SUMMARY_PRESENT",
+      "passed_assertions": 98,
+      "failed_assertions": 2,
+      "fail_lines": 2,
+      "fail_line_samples": [
+        "FAIL G7  the fullscreen control is NOT on the production board (R8, kept by R9)",
+        "FAIL G9a and not one of them is a fullscreen control"
+      ],
+      "mutant_count": 11,
+      "survived_mutants": 0,
+      "vacuity_verdict": "NOT_REPORTED",
+      "verdict": "NOT_CLEAN",
+      "reason_codes": [
+        "NONZERO_EXIT",
+        "FAIL_LINES",
+        "SUMMARY_FAILED"
+      ],
+      "timed_out": false,
+      "duration_ms": 403
+    }
+  ],
+  "comparison_run2": {
+    "note": "the same commit, re-run on a clean tree after restoring the file",
+    "corrections_duration_ms": 68701,
+    "corrections_verdict": "CLEAN",
+    "lifecycle_duration_ms": 90852,
+    "lifecycle_verdict": "CLEAN",
+    "site_selection_duration_ms": 403,
+    "site_selection_verdict": "CLEAN"
+  }
+}

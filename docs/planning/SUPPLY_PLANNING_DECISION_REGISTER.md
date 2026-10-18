@@ -4963,21 +4963,101 @@ The first CP2U-R3 full regression returned **CLEAN 673 / NOT_CLEAN 3** and, more
 +    if (true) {
 ```
 
-**TWO OF THE THREE FAILURES WERE NOT FAILURES.** `product-strategy-corrections-p1-b8d-r9` and
-`product-strategy-site-selection-p1-b8d-r5` both pass on a restored tree; they had been reading a mutated
-source left behind by an earlier suite. Only `product-strategy-lifecycle-p1-b8d-r8` was genuinely red, and
-it is **FLAKY**: one red in seven runs, and the clean runs report 183 assertions / 18 mutants where the red
-one reported 182 / 17, so the suite's own assertion census varies between runs. It is not a timeout —
-five standalone runs took ~90 s against a 600 s per-suite limit.
+**TWO OF THE THREE FAILURES WERE NOT FAILURES** — and D-S8-B3-116 shows it was **all three**.
+`product-strategy-corrections-p1-b8d-r9` and `product-strategy-site-selection-p1-b8d-r5` both pass on a
+restored tree. This entry then called `product-strategy-lifecycle-p1-b8d-r8` "genuinely red" and "FLAKY";
+that was a misreading of a single standalone failure, and the preserved record shows its three FAIL lines
+are all about the mutated line — one of them is not an assertion at all but
+`PROBE ERROR: ANCHOR MATCHED 0 TIMES`, which is what that suite prints when the anchor it searches for has
+been overwritten. It was a victim too.
 
-**THE SHAPE OF THE DEFECT.** The red run is exactly the run in which a mutant SURVIVED, and that is the run
-that left the file mutated. A harness that restores on the caught path and not on the survived path turns
-its own worst finding into contamination of every later suite that reads the file — which is how one
-flaky suite produced three red records. Not repaired here: it is product-strategy harness code, untouched
-by this round, and repairing it is a round of its own with its own evidence.
+**~~THE SHAPE OF THE DEFECT.~~ SUPERSEDED BY D-S8-B3-116 — THE PARAGRAPH BELOW WAS WRONG.** It read: *"The
+red run is exactly the run in which a mutant SURVIVED, and that is the run that left the file mutated. A
+harness that restores on the caught path and not on the survived path..."* That attribution was never
+tested and is false. It is left visible rather than deleted, because the correction is the useful part:
+`withSrc` restores in a `finally`, which cannot tell a caught mutant from a surviving one, and the suite
+I blamed was itself a victim. See D-S8-B3-116.
 
 **WHAT THIS MEANS FOR READING A SWEEP.** `worktree_integrity` is not a footnote. A sweep that ends
 `DIRTY_AFTER_SWEEP` cannot be read as a verdict on anything, including the suites it marked CLEAN, because
 the contamination is positional: whatever ran after the leak saw a source no commit contains. The run was
 discarded, the file restored from git, and the regression re-run on a clean tree.
+
+### D-S8-B3-116 — A killed process runs no `finally` — **DIAGNOSED AND GUARDED (CP2U-R3-R1)**
+
+**THE CORRECTION FIRST.** D-S8-B3-115 blamed a missing restore on the "survived" path. `withSrc` restores
+in a `finally`; `finally` cannot distinguish a caught mutant from a surviving one, because both are the
+same event — *the probe returned*. The caught/survived judgement is made by the CALLER, after the restore
+has already happened. There was no survived-path hole. Adding a second `finally` would have been a change
+made to a guess, and it would have "fixed" nothing while appearing to.
+
+**WHAT ACTUALLY HAPPENED**, from the preserved record
+(`docs/evidence/cp2u-r3-r1-mutation-leak/leaked-sweep-records.json`):
+
+| suite, in execution order | duration | outcome |
+|---|---|---|
+| `product-strategy-corrections-p1-b8d-r9` | **629,317 ms** | **`timed_out: true`, `exit_code: null`** |
+| `product-strategy-lifecycle-p1-b8d-r8` | 88,654 ms | exit 1, 3 FAIL lines, all about fullscreen |
+| `product-strategy-site-selection-p1-b8d-r5` | 403 ms | exit 1, 2 FAIL lines, both about fullscreen |
+
+The limit is 600,000 ms. The first suite exceeded it and was **killed**, and a terminated process runs no
+further JavaScript — so the mutant it had installed stayed on disk. Everything after it read
+`if (true)` where the source says `if (SHOW_CHART_FULLSCREEN)`. **All three records were artefacts**: on a
+restored tree all three pass, and the suite that took 629 s took 68.7 s on the re-run.
+
+**PROVEN, NOT ARGUED.** `mutation-harness-restore-contract-s8-b3-r3-cp2u-r3-r1.test.js` extracts the
+SHIPPED `withSrc` by name and drives it over an isolated temp file: caught, survived, throw,
+assertion-failure and anchor-miss all restore **byte-exactly, CRLF included**; a failing restore write
+PROPAGATES rather than being swallowed; and a child killed mid-probe leaves the mutant installed. The
+suite writes nothing inside the repository, which is the only honest way to test a source-corruption bug.
+
+**WHY THE WINDOW IS WIDE.** `corrections-r9` launches a real browser for EVERY probe, and all 17 mutation
+windows stay open across a launch and a render. The kill-exposed window is therefore seconds long and a
+large share of the suite's runtime, which is why a kill landed inside one rather than between them.
+
+**WHAT IS NOT ESTABLISHED, and is not being closed by re-running.** Why that suite took 9x longer on that
+run. It is browser-bound and load-sensitive, and a contention tail fits, but no specific contender was
+identified: no concurrent mutation process was found, and the 16 Chrome processes alive at the time
+belonged to a long-running user-owned browser (parent pid 24684, started the previous day), not to this
+harness. The per-suite timeout is left at 600 s — raising it would be tuning against an unknown.
+
+**THE GUARDS DO NOT DEPEND ON ANSWERING IT**, which is the point of them
+(`sweep-pollution-guards-s8-b3-r3-cp2u-r3-r1.test.js`, 32 assertions):
+
+- the sweep **refuses to start on a dirty tree**; `--allow-dirty` overrides and forfeits detection, and
+  pre-existing dirt is never mistaken for pollution while NEW dirt on top of it still aborts;
+- pollution is checked **after every suite**, not only at the end — an end-of-run check cannot help,
+  because by then every later suite has already run against the poisoned file;
+- on detection the sweep **ABORTS**, naming the suite, whether it timed out, the paths, how many suites
+  were skipped, and the exact `git checkout --` command;
+- it deliberately does **not** auto-restore: the polluted file is the evidence, and a tool that quietly
+  rewrites a working tree is a worse hazard than the one it is fixing;
+- a **worktree lock** prevents two sweeps in one tree and is reclaimed when its owner has died. It lives
+  in the OS temp directory, so taking it cannot dirty the tree it protects.
+
+**THE LIMIT OF THE LOCK, STATED.** It is taken by the sweep. A mutation suite run BY HAND during a sweep
+still bypasses it; what catches that is the per-suite abort, which fires on any unexpected dirt whatever
+produced it.
+
+### D-S8-B3-117 — The browser harness could not fail — **FIXED (CP2U-R3-R1)**
+
+The `--states` scenario added in CP2U-R3 checks twenty things about the cells and a six-part site switch,
+printed all of it — and **exited 0 whatever it said**. The exit code was computed from the in-place
+checks alone; the states verdict was walked with `Object.keys(...)` purely to print it. Two consequences,
+and the second is worse than the first: a run in which every state assertion failed still exited 0, and a
+run that produced NO states section at all printed nothing and also exited 0, because the whole block sat
+behind `if (STATES && r.states && r.states.verdict)`. **The capture such a run writes would have been
+promoted into `docs/evidence` by a green run that proved nothing.**
+
+The decision is now a pure exported function over the evidence, driven by REQUIRED LISTS rather than by
+whatever keys happen to exist — a missing key is a FAILURE, not an absence. `NOT_MEASURABLE_*` remains
+acceptable for exactly two in-place checks the page genuinely makes impossible, and no state key may be
+waived that way. The site switch requires its SETUP as well as its outcome: a switch that never ran, or
+ran without a failure on screen, proves nothing about contamination and no longer passes.
+
+**THE COUNTER-EXAMPLE IS IN THE SUITE.**
+`ir-browser-harness-exit-code-s8-b3-r3-cp2u-r3-r1.test.js` re-implements the OLD algorithm verbatim and
+feeds it nineteen runs that are each broken in exactly one way, asserting it returns **0** for every one;
+then feeds the same nineteen to the shipped function and requires **1** with a stated reason. Without the
+first half the second would only assert that today's code does what today's code does. 70 assertions.
 

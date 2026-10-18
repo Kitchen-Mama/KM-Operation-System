@@ -864,6 +864,104 @@ function runChromeAsync(browser, args, timeoutMs, onChild) {
   });
 }
 
+/* ===============================================================================================
+   CP2U-R3-R1 §A - THE RUN'S VERDICT, AS A PURE FUNCTION OF THE EVIDENCE.
+
+   WHAT WAS WRONG. The exit code was computed from the in-place KEYS alone. The states scenario printed
+   its verdict by walking `Object.keys(result.states.verdict)` and never contributed to the exit code,
+   so a --states run in which EVERY state assertion failed still exited 0. Worse, the whole block was
+   guarded by `if (STATES && r.states && r.states.verdict)`, so a run that produced no states section at
+   all printed nothing and also exited 0 - the two failures that most need to be loud were the two that
+   were silent.
+
+   TWO RULES FOLLOW, and they are why this reads from a LIST rather than from the object:
+     1. A missing key is a FAILURE, not an absence. Walking the keys that happen to exist can only ever
+        check the work that was done; it cannot notice work that never ran.
+     2. NOT_MEASURABLE_* is the one non-true value that passes, and ONLY for the two in-place checks the
+        page genuinely makes impossible. No state key may be waived that way.
+   =============================================================================================== */
+const REQUIRED_INPLACE_KEYS = ['firstReadResolved', 'cellUpdated', 'secondCellIsExpectedNumber',
+  'dosMovedToNumber', 'focusKept', 'selectionKept', 'valueKept', 'inputSameNode',
+  'panelKept', 'scrollKept', 'windowScrollKept', 'noFullRebuild'];
+// Only these two may answer NOT_MEASURABLE_*: no text field exists in the panel, and the window does
+// not scroll. Any other key doing so is a harness that stopped measuring, and it fails.
+const WAIVABLE_KEYS = { selectionKept: 1, windowScrollKept: 1 };
+const REQUIRED_STATE_KEYS = ['failedSaysFailed', 'failedCarriesErrorClass', 'failedIsNotZero',
+  'failedDosNotZero', 'loadingMarkSeen', 'emptySaysNoLines', 'emptyIsNotError', 'withheldSaysWithheld',
+  'withheldIsDistinctFromEmpty', 'zeroIsARealZero', 'zeroHasNoFailureText', 'recoveredShowsNumber',
+  'recoveredClearedTitle', 'everyArrivalSettled', 'valueKeptThroughout', 'focusKeptThroughout',
+  'inputSameNodeThroughout', 'panelKeptThroughout', 'scrollKeptThroughout', 'noFullRebuildThroughout'];
+// The site switch is a claim about CONTAMINATION, so the setup matters as much as the outcome: a switch
+// that never ran, or ran without a failure on screen, proves nothing and must not pass.
+const REQUIRED_SWITCH_TRUE = ['ran', 'failedBeforeSwitch', 'selectMoved', 'newSiteShowsItsOwnNumber',
+  'newSiteFreeOfOldFailure'];
+const MIN_STATE_ARRIVALS = 5;
+
+function evaluateRun(evidence, opts) {
+  opts = opts || {};
+  const r = (evidence && evidence.result) || {};
+  const v = r.verdict || {};
+  const rows = [], failures = [];
+
+  if (r.fatal) failures.push('fatal: ' + r.fatal);
+
+  REQUIRED_INPLACE_KEYS.forEach(k => {
+    const val = v[k];
+    const na = typeof val === 'string' && val.indexOf('NOT_MEASURABLE') === 0 && !!WAIVABLE_KEYS[k];
+    const okv = val === true;
+    if (!okv && !na) failures.push('in-place check ' + k + ' = ' + JSON.stringify(val)
+      + (val === undefined ? ' (MISSING - the harness never produced this check)' : ''));
+    rows.push((okv ? 'ok   ' : na ? 'n/a  ' : 'FAIL ') + k + ' = ' + val);
+  });
+
+  if (opts.states) {
+    const st = r.states;
+    if (!st || typeof st !== 'object') {
+      failures.push('states: the run was asked for the state scenario and produced NO states section');
+    } else {
+      const sv = st.verdict;
+      if (!sv || typeof sv !== 'object') {
+        failures.push('states: no verdict was computed');
+      } else {
+        rows.push('');
+        rows.push('== state transitions ==');
+        REQUIRED_STATE_KEYS.forEach(k => {
+          const val = sv[k];
+          if (val !== true) failures.push('state check ' + k + ' = ' + JSON.stringify(val)
+            + (val === undefined ? ' (MISSING)' : ''));
+          rows.push((val === true ? 'ok   ' : 'FAIL ') + k + ' = ' + val);
+        });
+      }
+      const arrivals = Array.isArray(st.arrivals) ? st.arrivals.length : 0;
+      if (arrivals < MIN_STATE_ARRIVALS) {
+        failures.push('states: only ' + arrivals + ' arrivals were driven, ' + MIN_STATE_ARRIVALS + ' required');
+      }
+      rows.push('arrivals          : ' + arrivals);
+
+      const sw = st.siteSwitch;
+      if (!sw || typeof sw !== 'object') {
+        failures.push('site switch: never attempted - the cross-site contamination claim is unproven');
+      } else {
+        REQUIRED_SWITCH_TRUE.forEach(k => {
+          const val = sw[k];
+          if (val !== true) failures.push('site switch ' + k + ' = ' + JSON.stringify(val)
+            + (val === undefined ? ' (MISSING)' : ''));
+          rows.push((val === true ? 'ok   ' : 'FAIL ') + 'siteSwitch.' + k + ' = ' + val);
+        });
+        // The one that must be FALSE: no row may still carry the previous station's failure.
+        if (sw.anyRowStillFailed !== false) {
+          failures.push('site switch anyRowStillFailed = ' + JSON.stringify(sw.anyRowStillFailed)
+            + ' (must be exactly false)');
+        }
+        rows.push((sw.anyRowStillFailed === false ? 'ok   ' : 'FAIL ') + 'siteSwitch.anyRowStillFailed = '
+          + sw.anyRowStillFailed);
+      }
+    }
+  }
+
+  return { exitCode: failures.length ? 1 : 0, rows: rows, failures: failures };
+}
+
 function arg(name, dflt) {
   const i = process.argv.indexOf(name);
   return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : dflt;
@@ -940,28 +1038,20 @@ async function main() {
   if (r.notes && r.notes.length) console.log('notes             :', r.notes.join(' | '));
   if (r.before) console.log('before            :', JSON.stringify(r.before));
   if (r.after) console.log('after             :', JSON.stringify(r.after));
-  const KEYS = ['firstReadResolved', 'cellUpdated', 'secondCellIsExpectedNumber', 'dosMovedToNumber',
-    'focusKept', 'selectionKept', 'valueKept', 'inputSameNode',
-    'panelKept', 'scrollKept', 'windowScrollKept', 'noFullRebuild'];
-  /* A check the PAGE makes impossible is not a check the page failed. NOT_MEASURABLE_* is printed as n/a
-     with its reason attached and does not set the exit code - and it is never silently omitted, because a
-     dropped row is how an unmeasured thing turns into a claimed one. */
-  let bad = 0;
-  KEYS.forEach(k => {
-    const val = v[k];
-    const na = typeof val === 'string' && val.indexOf('NOT_MEASURABLE') === 0;
-    if (val !== true && !na) bad++;
-    console.log((val === true ? 'ok   ' : na ? 'n/a  ' : 'FAIL ') + k + ' = ' + val);
-  });
+
+  const ev = evaluateRun(evidence, { states: STATES });
+  ev.rows.forEach(row => console.log(row));
   console.log('scrollers         : v=' + (r.scrollerV || 'NONE') + '  h=' + (r.scrollerH || 'NONE'));
-  if (STATES && r.states && r.states.verdict) {
-    console.log('\n== state transitions ==');
-    Object.keys(r.states.verdict).forEach(k => console.log((r.states.verdict[k] === true ? 'ok   ' : 'FAIL ') + k + ' = ' + r.states.verdict[k]));
-    if (r.states.siteSwitch) console.log('site switch       :', JSON.stringify(r.states.siteSwitch.newSiteCell || null),
-      'freeOfOldFailure=' + r.states.siteSwitch.newSiteFreeOfOldFailure);
+  if (ev.failures.length) {
+    console.log('\n== WHY THIS RUN FAILED ==');
+    ev.failures.forEach(f => console.log('  ' + f));
   }
   console.log('\nwrote ' + path.join(outDir, outName));
-  process.exitCode = (bad === 0 && !r.fatal) ? 0 : 1;
+  process.exitCode = ev.exitCode;
 }
 
-main();
+module.exports = { evaluateRun: evaluateRun, REQUIRED_INPLACE_KEYS: REQUIRED_INPLACE_KEYS,
+  REQUIRED_STATE_KEYS: REQUIRED_STATE_KEYS, REQUIRED_SWITCH_TRUE: REQUIRED_SWITCH_TRUE,
+  MIN_STATE_ARRIVALS: MIN_STATE_ARRIVALS, WAIVABLE_KEYS: WAIVABLE_KEYS };
+
+if (require.main === module) main();
