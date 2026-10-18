@@ -57,6 +57,23 @@ var CURRENT = US, CURRENT_TAG = 'US';
 
 // ---- the counting transport ------------------------------------------------------------------------
 var HTTP = 0, REPAINT = 0, pending = [];
+var GAP_NET = 0, GAP_PENDING = [];
+function gapRowsFor(scope) {
+  return [{ sku: 'CO1150-AG', calculation_status: 'READY', note: null,
+    calculation_date: '2026-11-01', calculated_at: '2026-10-18T02:00:00Z',
+    d90_gap_qty: (scope.country === 'US') ? 300 : 120,
+    d90_suggested_qty: (scope.country === 'US') ? 70 : 25 }];
+}
+function settleGap(ok) {
+  var batch = GAP_PENDING; GAP_PENDING = [];
+  batch.forEach(function (rec) {
+    rec.resolve(ok === false
+      ? { success: false, error: { code: 'READ_FAILED', message: 'boom' } }
+      : { success: true, data: { rows: gapRowsFor(rec.scope) },
+          envelope: { meta: { gapMaterializationHandlerVersion: 'fm5-r4ui-r5c' } } });
+  });
+  return new Promise(function (r) { setTimeout(r, 0); });
+}
 function envelopeFor(scope, n) {
   return {
     success: true,
@@ -73,7 +90,8 @@ function envelopeFor(scope, n) {
       planningCycle: 'RECO-2026-11',
       calculationDate: '2026-10-18',                     // the window anchor the server always stamps
       recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e',
-      serverDurationMs: 1234
+      serverDurationMs: 1234,
+      canonicalRead: { mode: 'BATCH', remoteCalls: 2, readMs: 900, normalizeMs: 40, afterReadMs: 294 }
     },
     errors: []
   };
@@ -81,7 +99,14 @@ function envelopeFor(scope, n) {
 global.window = {
   IRContext: { toScopeRequest: function () { return CURRENT; } },
   KM_FLAGS: {},
-  KM: { api: { workspaceApiActive: function (w) { return w === 'recommendation'; },
+  KM: { DB: { getInventoryReplenishmentGap: function (scopeReq) {
+    GAP_NET++;
+    var rec = { scope: scopeReq };
+    rec.promise = new Promise(function (res) { rec.resolve = res; });
+    GAP_PENDING.push(rec);
+    return rec.promise;
+  } },
+    api: { workspaceApiActive: function (w) { return w === 'recommendation'; },
     getWorkspace: function (ws, params, opts) {
     HTTP++;
     var scope = CURRENT, n = HTTP;
@@ -113,6 +138,10 @@ function renderReplenishment() {}
 eval(F1A.guardPreamble(IRSRC));
 eval(IRSRC.slice(IRSRC.indexOf('var IR_AVG_QUALITY_TEXT'), IRSRC.indexOf('function _irScrollRowHtml_')));
 eval(IRREGION);
+// `_irSuggestedQtyState_` is the Suggested Qty AUTHORITY and lives outside the region. It is
+// extracted VERBATIM by name, the way the F1A guards are - a stub would answer for the thing under
+// test, which is precisely that one result feeds this cell and the summary.
+eval(F1A.sliceFn(IRSRC, '_irSuggestedQtyState_'));
 
 // Wrap the REAL render entry point so a repaint is counted without being replaced.
 var _realRerender = _irRecoRerenderSummaries;
@@ -328,11 +357,22 @@ function main() {
       'H4  and the condition that disables caching ENTIRELY is named rather than inferred from slowness');
     eq(_irRecoCacheGet(US), null, 'H5  nothing was stored, so the next lookup misses');
 
-    var t = _irRecoReadDiag_().timing;
+    var d = _irRecoReadDiag_(), t = d.timing;
     ok(typeof t.responseMs === 'number' && t.responseMs >= 0, 'H6  responseMs was measured', t);
-    ok(typeof t.domUpdateMs === 'number' && t.domUpdateMs >= 0, 'H7  domUpdateMs was measured', t);
-    ok(/not server time/.test(_irRecoReadDiag_().note),
+    ok(typeof t.domWorkMs === 'number' && t.domWorkMs >= 0, 'H7  domWorkMs was measured', t);
+    ok(/never server time/.test(d.note),
       'H8  and the reading states that responseMs is server AND network, so it is never quoted as server time');
+    // CP2X-R1 §C - the server's own numbers are carried rather than dropped.
+    eq(d.server.serverDurationMs, 1234, 'H8a serverDurationMs is kept');
+    ok(/^REQ-/.test(String(d.server.requestId)), 'H8b and the requestId, so a response can be correlated server-side');
+    eq(d.server.canonicalRead && d.server.canonicalRead.mode, 'BATCH',
+      'H8b1 and canonicalRead, which is the only thing that says WHICH transport answered');
+    eq(d.server.canonicalRead && d.server.canonicalRead.readMs, 900, 'H8b2 with the server read split intact');
+    // CP2X-R1 §C - DOM WORK IS NOT A PAINT. There is no rAF in this harness, so visibleMs must stay NULL
+    // rather than borrow the synchronous figure; the note has to say which is which.
+    eq(t.visibleMs, null, 'H8c with no animation frame, visibleMs is NULL rather than the DOM-work number');
+    ok(/SYNCHRONOUS DOM WORK ONLY and is NOT a paint/.test(d.note),
+      'H8d and the reading refuses to call the DOM write a paint');
 
     reset();
     invalidateRecommendationSessionCache();
@@ -372,7 +412,142 @@ function main() {
     });
   }).then(function () {
     // ==============================================================================================
-    section('§X  mutants');
+    section('§K  the materialized Gap read (CP2X-R1 A)');
+    // ==============================================================================================
+    var ITEM2 = { sku: 'CO1150-AG' };
+    GAP_NET = 0;
+    gotoSite('US');
+    loadInventoryGap_();
+    eq(GAP_NET, 1, 'K1  a cold scope issues exactly one gap read');
+    loadInventoryGap_();
+    loadInventoryGap_();
+    eq(GAP_NET, 1, 'K2  two more calls DURING the flight add none - the in-flight dedup CP2X-R1 added');
+    eq(_irMatReadDiag_().outcome, 'DEDUPED', 'K2a and the second call says why it did not read');
+    return settleGap().then(function () {
+      eq(_irMatState.status, 'READY', 'K3  the answer landed');
+      eq(_irSuggestedQtyState_(ITEM2), { state: 'READY', value: 70 },
+        'K4  Suggested Qty reads the US number from it');
+
+      gotoSite('EU');
+      loadInventoryGap_();
+      eq(GAP_NET, 2, 'K5  a new site costs one read');
+      return settleGap();
+    }).then(function () {
+      eq(_irSuggestedQtyState_(ITEM2), { state: 'READY', value: 25 }, 'K6  and EU shows the EU number');
+      var before = GAP_NET;
+      gotoSite('US');
+      loadInventoryGap_();
+      eq(GAP_NET - before, 0, 'K7  returning to US REUSES the stored gap result - zero reads');
+      eq(_irMatReadDiag_().outcome, 'REUSE', 'K7a and says so');
+      eq(_irSuggestedQtyState_(ITEM2), { state: 'READY', value: 70 },
+        'K8  and the SAME result drives Suggested Qty again');
+      // THE SECOND CONSUMER, rendered from the SAME restored state and counted: the summary body asks
+      // _irMatState for the row, so if reuse were not real this would have to issue its own read.
+      var netBeforeSummary = GAP_NET;
+      var summaryHtml = _irMatOutlookBody({ sku: 'CO1150-AG' }) || '';
+      ok(/replen-horizon-summary/.test(summaryHtml),
+        'K9  the Recommendation Summary renders the outlook table from that same result');
+      ok(/replen-recsum-ws--ready/.test(summaryHtml),
+        'K9a in its READY state, so it is reading the restored rows rather than an empty shell');
+      eq(GAP_NET - netBeforeSummary, 0, 'K9b and rendering it issued no read of its own');
+
+      _irSearch.applied = APPLIED.EU;
+      eq(_irSuggestedQtyState_(ITEM2), { state: 'PENDING', value: null },
+        'K10 with EU applied, the restored US result is PENDING - never EU showing a US number');
+      _irSearch.applied = APPLIED.US;
+
+      var probe = _irMatAnswerSource_('CO1150-AG');
+      ok(typeof probe.applied_at === 'number' && /NOT A REVISION/.test(probe.applied_at_note),
+        'K11 appliedAt is reported as a local clock reading, never as source freshness');
+      eq(probe.source_revision.handlerVersion, 'fm5-r4ui-r5c', 'K12 the SOURCE revision carries the 43_ marker');
+      eq(probe.source_revision.calculationDate, '2026-11-01', 'K12a the calculation date');
+      eq(probe.source_revision.calculatedAt, '2026-10-18T02:00:00Z', 'K12b and the newest calculated_at');
+      eq(probe.source_revision_complete, true, 'K13 and it is complete');
+      eq(probe.from_reuse, true, 'K13a and the answer says it came from reuse rather than a read');
+
+      var R = probe.source_revision;
+      eq(_irMatRevisionVerdict_(R, R), 'SAME', 'K14 two complete identical source revisions are SAME');
+      eq(_irMatRevisionVerdict_(R, { handlerVersion: 'fm5-r4ui-r5c', calculationDate: '2026-11-01', calculatedAt: null }),
+        'UNKNOWN', 'K15 an absent calculated_at makes it UNKNOWN, never SAME');
+      eq(_irMatRevisionVerdict_({ handlerVersion: null, calculationDate: null, calculatedAt: null },
+        { handlerVersion: null, calculationDate: null, calculatedAt: null }), 'UNKNOWN',
+        'K16 and two unknown revisions are still UNKNOWN - absence is not evidence the source held still');
+
+      var beforeErr = GAP_NET;
+      loadInventoryGap_(true);
+      eq(GAP_NET - beforeErr, 1, 'K17 a forced refresh really reads');
+      return settleGap(false);
+    }).then(function () {
+      eq(_irMatState.status, 'READ_ERROR', 'K18 the failure is surfaced');
+      eq(_irSuggestedQtyState_(ITEM2).reason, 'READ_FAILED', 'K19 and reaches the cell as a named failure');
+      var beforeRetry = GAP_NET;
+      loadInventoryGap_();
+      eq(GAP_NET - beforeRetry, 1, 'K20 the next call READS again - a failure was never stored for reuse');
+      return settleGap();
+    }).then(function () {
+      GAP_PENDING = [];
+      _irMatByScope = {};
+      _irMatState = { status: 'IDLE', scopeKey: null, appliedScopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null };
+      var beforeEmpty = GAP_NET;
+      loadInventoryGap_();
+      eq(GAP_NET - beforeEmpty, 1, 'K21 a cold scope reads');
+      var batch = GAP_PENDING; GAP_PENDING = [];
+      batch.forEach(function (rec) { rec.resolve({ success: true, data: { rows: [] },
+        envelope: { meta: { gapMaterializationHandlerVersion: 'fm5-r4ui-r5c' } } }); });
+      return new Promise(function (r) { setTimeout(r, 0); });
+    }).then(function () {
+      eq(_irMatState.status, 'EMPTY', 'K22 an answer over zero rows is EMPTY, not an error');
+      eq(_irSuggestedQtyState_({ sku: 'CO1150-AG' }).reason, 'READ_EMPTY',
+        'K23 and the cell says the scope resolved with no rows');
+      var beforeReuse = GAP_NET;
+      _irMatState = { status: 'IDLE', scopeKey: null, appliedScopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null };
+      loadInventoryGap_();
+      eq(GAP_NET - beforeReuse, 0, 'K24 and EMPTY is REUSED - a resolved-with-no-rows answer is still an answer');
+      eq(_irMatState.status, 'EMPTY', 'K24a restored as EMPTY, not as a fresh unknown');
+
+      // ==============================================================================================
+      section('§L  the per-SKU row-object conversion, shared within one request (CP2X-R1 D)');
+      // ==============================================================================================
+      var GS42 = fs.readFileSync(path.join(ROOT, 'assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs'), 'utf8').split('\r\n').join('\n');
+      function sliceGs(name) {
+        var a = GS42.indexOf('function ' + name + '(');
+        var b = GS42.indexOf('\n}\n', a);
+        return GS42.slice(a, b + 3);
+      }
+      var gsBox = {};
+      new Function('x', [sliceGs('recoWsIsObj_'), sliceGs('recoWsStr_'), sliceGs('recoWsToRowObjects_')].join('\n')
+        + '\nx.conv = recoWsToRowObjects_;')(gsBox);
+      var conv = gsBox.conv;
+
+      var snapA = { headers: ['sku', 'units'], rows: [['A', 1], ['B', 2]] };
+      var expected = [{ sku: 'A', units: 1 }, { sku: 'B', units: 2 }];
+      eq(conv(snapA), expected, 'L1  the conversion is unchanged in VALUE');
+      var first = conv(snapA), second = conv(snapA);
+      eq(second, expected, 'L2  and a repeated call returns the same value');
+      ok(first === second, 'L3  by SHARING the array rather than rebuilding it - which is the whole saving');
+
+      // a DIFFERENT snapshot object must get its own conversion; the memo is per object, never global
+      var snapB = { headers: ['sku', 'units'], rows: [['C', 9]] };
+      eq(conv(snapB), [{ sku: 'C', units: 9 }], 'L4  a different snapshot converts on its own');
+      ok(conv(snapB) !== first, 'L5  and never borrows another table result');
+
+      // the per-request boundary: 43_ hands a FRESH snapshot object per read, so a new object is a new
+      // conversion. Sharing is within one request, not across them.
+      var snapA2 = { headers: ['sku', 'units'], rows: [['A', 1], ['B', 2]] };
+      ok(conv(snapA2) !== first, 'L6  a new snapshot object converts again - the memo is not a cross-request cache');
+
+      // the malformed guard still answers [] and stores nothing
+      eq(conv(null), [], 'L7  a missing snapshot is still []');
+      eq(conv({ headers: 'nope', rows: [] }), [], 'L8  and a malformed one too');
+
+      // THE SAFETY CLAIM, checked rather than asserted: the three .sort() sites in 42_ sort a FILTERED
+      // copy, never the shared array. A sort of the shared array would persist an order to later callers.
+      var sortsOnShared = /recoWsToRowObjects_\([^)]*\)\s*\.(sort|reverse|splice|push|pop|shift|unshift)/.test(GS42);
+      ok(!sortsOnShared, 'L9  no caller mutates a converted array in place');
+      var sortLines = GS42.split('\n').filter(function (l) { return /\.sort\(/.test(l); });
+      ok(sortLines.length >= 3, 'L10 there ARE sorts in the file, so L9 is not vacuous');
+      // ==============================================================================================
+      section('§X  mutants');
     // ==============================================================================================
     function mutant(id, what, fn) { ok(fn(), 'X  MUTANT CAUGHT — ' + id + ' ' + what); }
     mutant('X1', 'the harness counts a cache restore as an HTTP call', function () {
@@ -383,6 +558,23 @@ function main() {
       var wasPending = pending.length === 1 && HTTP === h + 1;
       pending.forEach(function (r) { r.aborted = true; }); pending = [];
       return wasPending;
+    });
+    mutant('X11', 'the row-object memo is removed and every per-SKU call rebuilds the table', function () {
+      var sn = { headers: ['a'], rows: [[1]] };
+      var one = conv(sn);
+      return conv(sn) === one;
+    });
+    mutant('X8', 'the gap in-flight dedup is removed and re-entry during a flight reads twice', function () {
+      GAP_PENDING = []; _irMatByScope = {};
+      _irMatState = { status: 'IDLE', scopeKey: null, appliedScopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null };
+      var n = GAP_NET;
+      loadInventoryGap_(); loadInventoryGap_();
+      var deduped = (GAP_NET - n) === 1;
+      GAP_PENDING = [];
+      return deduped;
+    });
+    mutant('X10', 'a failed gap read is stored and replayed as an answer', function () {
+      return !Object.keys(_irMatByScope).some(function (k) { return _irMatByScope[k].status === 'READ_ERROR'; });
     });
     mutant('X6', 'the cache stops naming WHY it missed and every miss looks alike', function () {
       invalidateRecommendationSessionCache(); _irRecoCacheGet(US);
@@ -413,6 +605,7 @@ function main() {
 
     console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed');
     if (failed > 0) process.exitCode = 1;
+    });
   });
 }
 

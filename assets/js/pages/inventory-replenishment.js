@@ -11273,6 +11273,15 @@ function searchReplenishment() {
 
     if (_irSearch.inFlight) return;   // single-flight — repeated rapid clicks share the in-flight read
 
+    // CP2X-R1 §C — THE SEARCH LEG STARTS HERE, AT THE USER ACTION AND BEFORE THE MAIN TABLE READ.
+    //
+    // CP2X marked it where `_irSearch.applied` is assigned, which is inside _irApplySearch_ — and that
+    // runs AFTER the workspace read has already resolved. Everything the operator actually waits for
+    // between clicking Search and seeing a number was therefore OUTSIDE the measurement, which is the
+    // half that matters. This is the first instant at which the click is known to cause work: the
+    // selectors have validated and the single-flight gate has let it through.
+    if (typeof _irRecoMarkSearch_ === 'function') _irRecoMarkSearch_();
+
     // Canonical: scoped inventoryReplenishment workspace (NO broad Operation DB for the primary render). The
     // read model is scope-INDEPENDENT, so once it is loaded a Search is pure client-side filtering and costs
     // ZERO further requests. Fail-closed — a bounded region error, never a silent legacy broad fallback.
@@ -11359,10 +11368,6 @@ function _irApplySearch_(pending, mySeq) {
         }
     } catch (_eGen) {}
     _irSearch.applied = { country: pending.country, marketplaceId: pending.marketplaceId };
-    // CP2X §3 — the Search leg has a START now. This is the single place `applied` is assigned, so it is
-    // the only instant that means "the operator asked for this site". typeof-guarded because the suites
-    // that eval only part of this file never reach the declaration.
-    if (typeof _irRecoMarkSearch_ === 'function') _irRecoMarkSearch_();
     // F1-7N-FB-4E-R3 §B.4 — remember the scope of a SUCCESSFUL Search, and only here. This is already the one
     // place `applied` is assigned, so it is the only place a scope is known to be valid AND to have produced a
     // real result. Remembering a merely SELECTED scope would persist something that was never proven to work.
@@ -14181,7 +14186,9 @@ function _irRecoEnvHandler_(env) {
 //
 // NOT ADDED: a store, a TTL, a retry, a request, an upload, a sampler, a timer, or any change to what
 // is read, cached, computed or rendered. Three numbers and a reason, overwritten in place.
-var _IR_RECO_DIAG_ = { cache: { outcome: null, reason: null }, timing: { searchToDispatchMs: null, responseMs: null, domUpdateMs: null },
+var _IR_RECO_DIAG_ = { cache: { outcome: null, reason: null },
+  timing: { searchToDispatchMs: null, responseMs: null, domWorkMs: null, visibleMs: null },
+  server: { serverDurationMs: null, requestId: null, canonicalRead: null },
   marks: { searchAt: null, dispatchAt: null, responseAt: null } };
 function _irRecoNowMs_() {
   try { if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') return performance.now(); } catch (e) {}
@@ -14192,15 +14199,24 @@ function _irRecoNowMs_() {
 function _irRecoMarkSearch_() {
   _IR_RECO_DIAG_.marks.searchAt = _irRecoNowMs_();
   _IR_RECO_DIAG_.marks.dispatchAt = null; _IR_RECO_DIAG_.marks.responseAt = null;
-  _IR_RECO_DIAG_.timing = { searchToDispatchMs: null, responseMs: null, domUpdateMs: null };
+  _IR_RECO_DIAG_.timing = { searchToDispatchMs: null, responseMs: null, domWorkMs: null, visibleMs: null };
+  _IR_RECO_DIAG_.server = { serverDurationMs: null, requestId: null, canonicalRead: null };
 }
 function _irRecoCacheDecision_(outcome, reason) { _IR_RECO_DIAG_.cache = { outcome: outcome, reason: reason }; }
 function _irRecoReadDiag_() {
+  var t = _IR_RECO_DIAG_.timing;
   return { cache: { outcome: _IR_RECO_DIAG_.cache.outcome, reason: _IR_RECO_DIAG_.cache.reason },
-    timing: { searchToDispatchMs: _IR_RECO_DIAG_.timing.searchToDispatchMs,
-      responseMs: _IR_RECO_DIAG_.timing.responseMs, domUpdateMs: _IR_RECO_DIAG_.timing.domUpdateMs },
-    note: 'searchToDispatchMs is page work; responseMs is server AND network, not server time (read '
-      + 'meta.canonicalRead for that split); domUpdateMs ends at the last of the three repaints.' };
+    timing: { searchToDispatchMs: t.searchToDispatchMs, responseMs: t.responseMs,
+      domWorkMs: t.domWorkMs, visibleMs: t.visibleMs },
+    // CP2X-R1 §C - THE SERVER'S OWN NUMBERS, CARRIED RATHER THAN RE-DERIVED. The page used to drop all
+    // three; `canonicalRead` in particular is the only thing that says which transport answered.
+    server: { serverDurationMs: _IR_RECO_DIAG_.server.serverDurationMs,
+      requestId: _IR_RECO_DIAG_.server.requestId, canonicalRead: _IR_RECO_DIAG_.server.canonicalRead },
+    note: 'searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is '
+      + 'server AND network, never server time - server.serverDurationMs is the server half and '
+      + 'server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a '
+      + 'paint; visibleMs is measured after two animation frames and is the first instant the browser '
+      + 'can have shown it. A null visibleMs means no frame was observed, not that nothing rendered.' };
 }
 var _IR_RECO_REVISION_FIELDS = ['calculationDate', 'calculationMonth', 'planningCycle', 'formulaVersion', 'sourceDataAsOf'];
 // The planning context + source revision an ANSWER was computed under, read from where the server
@@ -14714,14 +14730,35 @@ function loadRecommendationWorkspace_() {
     if (_IR_RECO_DIAG_.marks.dispatchAt != null) {
       _IR_RECO_DIAG_.timing.responseMs = _IR_RECO_DIAG_.marks.responseAt - _IR_RECO_DIAG_.marks.dispatchAt;
     }
+    // §C - what the SERVER said about itself, kept instead of discarded.
+    try {
+      var _m = (env && env.meta) || {};
+      _IR_RECO_DIAG_.server.serverDurationMs = (typeof _m.serverDurationMs === 'number') ? _m.serverDurationMs : null;
+      _IR_RECO_DIAG_.server.requestId = _m.requestId || null;
+      _IR_RECO_DIAG_.server.canonicalRead = _m.canonicalRead || null;
+    } catch (_eSrv) {}
     _irRecoApplyEnvelope(env, ctxKey, scopeReq);
     _irRecoCacheSet(scopeReq, env);   // FM3a: cache ONLY a successful canonical envelope (guarded inside)
     _irRecoRerenderSummaries();
     _irRecoUpdateSuggestedCells();
     _irRecoRefreshVelocityCells_();   // LIVE9V: re-render Avg Sales/day + Days of Supply with the now-loaded canonical rate
-    // The repaint leg ends HERE, after the last of the three, because the Avg cells are painted by the
-    // third one - measuring to the first would report a number that excludes the column being waited for.
-    _IR_RECO_DIAG_.timing.domUpdateMs = _irRecoNowMs_() - _IR_RECO_DIAG_.marks.responseAt;
+    // §C - SYNCHRONOUS DOM WORK, and it is named that rather than "rendered". It ends after the last of
+    // the three repaints, because the Avg cells are written by the third - but writing a cell is not the
+    // browser having shown it, and calling this a paint would overstate it by exactly the interesting part.
+    _IR_RECO_DIAG_.timing.domWorkMs = _irRecoNowMs_() - _IR_RECO_DIAG_.marks.responseAt;
+    // §C - THE VISIBLE INSTANT, measured rather than assumed. Two animation frames: the first fires
+    // before the paint that includes this mutation, the second after it. Scheduling is not painting and
+    // neither is a style write, so this is the earliest moment the operator can actually have seen the
+    // number. Where there is no rAF (a headless harness, a background tab) it stays NULL and the reading
+    // says so, instead of quietly reporting the synchronous figure as though it were the visible one.
+    try {
+      if (typeof requestAnimationFrame === 'function') {
+        var _rAt = _IR_RECO_DIAG_.marks.responseAt;
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () { _IR_RECO_DIAG_.timing.visibleMs = _irRecoNowMs_() - _rAt; });
+        });
+      }
+    } catch (_eRaf) {}
   }).catch(function (err) {
     if (my !== _irRecoSeq) return;
     _irRecoRecordDiag(_t0);
@@ -14969,6 +15006,72 @@ function _irUseMaterializedGapRead() {
 // S8-R4D-F1A — appliedScopeKey null until a real load stamps it; an unstamped state is always refused.
 var _irMatState = { status: 'IDLE', scopeKey: null, appliedScopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null };
 var _irMatSeq = 0;
+// S8-B3-R3-CP2X-R1 §A - RESULTS KEPT PER SCOPE, IN MEMORY, FOR THE LIFE OF THE PAGE.
+//
+// `_irMatState` holds ONE scope, so US -> EU -> US re-read US every time even though the answer had
+// already been fetched and nothing about it had changed. This keeps the completed answers beside it,
+// keyed by the SAME scope key, and hands one back instead of issuing a second read.
+//
+// IN MEMORY, NOT IN A STORE. Nothing is written to sessionStorage, localStorage or anywhere else: this
+// is reuse within one page session and it dies with the page. The recommendation cache is a different
+// thing with a different contract, and no persistent cross-request cache is added here.
+//
+// SUCCESSES ONLY, AND EMPTY IS A SUCCESS. READY and EMPTY are both answers the server gave - EMPTY means
+// the scope resolved and has no rows, which is a fact worth not re-asking for. READ_ERROR, LOADING and
+// CONTEXT_NOT_READY are never stored, so a failure is never replayed as an answer.
+//
+// THE F1A GUARD IS NOT WEAKENED. An entry records the appliedScopeKey it was fetched under and is reused
+// ONLY when the currently applied scope matches it. A stored answer can therefore never be painted
+// against a site it was not read for; a mismatch is a miss and costs a real read.
+var _irMatByScope = {};
+// §A - WHAT THE SOURCE SAYS ABOUT ITSELF, which is not what the browser says about when it stored it.
+// `appliedAt` is a local clock reading and is NOT a revision: it moves every time the page re-reads the
+// same unchanged rows. The source revision is 43_'s handler marker plus the calculation date and the
+// newest calculated_at across the rows - all three written by the batch that computed them.
+function _irMatRevisionOf_(handlerVersion, rows) {
+  var calcDate = null, calcAt = null;
+  (rows || []).forEach(function (r) {
+    if (!r) return;
+    if (calcDate === null && r.calculation_date != null && String(r.calculation_date) !== '') calcDate = String(r.calculation_date);
+    if (r.calculated_at != null && String(r.calculated_at) !== '') {
+      var v = String(r.calculated_at);
+      if (calcAt === null || v > calcAt) calcAt = v;
+    }
+  });
+  return { handlerVersion: handlerVersion || null, calculationDate: calcDate, calculatedAt: calcAt };
+}
+var _IR_MAT_REVISION_FIELDS = ['handlerVersion', 'calculationDate', 'calculatedAt'];
+function _irMatRevisionComplete_(rev) {
+  if (!rev || typeof rev !== 'object') return false;
+  for (var i = 0; i < _IR_MAT_REVISION_FIELDS.length; i++) {
+    var v = rev[_IR_MAT_REVISION_FIELDS[i]];
+    if (v === null || v === undefined || v === '') return false;
+  }
+  return true;
+}
+// Same rule as the recommendation contract, for the same reason: a missing field is not a match. An
+// absent revision is the absence of evidence, never evidence that the source has not moved.
+function _irMatRevisionVerdict_(a, b) {
+  if (!a || !b) return 'UNKNOWN';
+  var unknown = false;
+  for (var i = 0; i < _IR_MAT_REVISION_FIELDS.length; i++) {
+    var f = _IR_MAT_REVISION_FIELDS[i], x = a[f], y = b[f];
+    var xm = (x === null || x === undefined || x === '');
+    var ym = (y === null || y === undefined || y === '');
+    if (xm || ym) { unknown = true; continue; }
+    if (String(x) !== String(y)) return 'SUPERSEDED';
+  }
+  return unknown ? 'UNKNOWN' : 'SAME';
+}
+// §A/§B - which way the last gap lookup went, so a reuse and a read can be told apart from outside.
+var _IR_MAT_DIAG_ = { outcome: null, reason: null, readerCalls: 0, networkReads: 0 };
+function _irMatDecision_(outcome, reason) { _IR_MAT_DIAG_.outcome = outcome; _IR_MAT_DIAG_.reason = reason || null; }
+function _irMatReadDiag_() {
+  return { outcome: _IR_MAT_DIAG_.outcome, reason: _IR_MAT_DIAG_.reason,
+    readerCalls: _IR_MAT_DIAG_.readerCalls, networkReads: _IR_MAT_DIAG_.networkReads,
+    note: 'readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached '
+      + 'KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second.' };
+}
 // Explicit numeric coercion: '' / null / undefined → null (renders "—", never a fabricated 0); a real number
 // (including 0) is preserved. NO arithmetic — the stored value is displayed verbatim.
 function _irMatNum(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
@@ -15054,7 +15157,35 @@ function loadInventoryGap_(force) {
   // S8-R4D-F1A — the APPLIED scope this read is being performed for, captured at issue time so a response
   // can always be told which rendered scope it belongs to, independently of the sequence guard.
   var appliedKey = _irAppliedScopeKey_();
-  if (!force && _irMatState.scopeKey === key && _irMatState.appliedScopeKey === appliedKey && _irMatState.loadedOk) { _irRecoRerenderSummaries(); return null; }
+  _IR_MAT_DIAG_.readerCalls++;
+  // ALREADY LOADED for this exact scope - repaint, no read. Unchanged behaviour.
+  if (!force && _irMatState.scopeKey === key && _irMatState.appliedScopeKey === appliedKey && _irMatState.loadedOk) {
+    _irMatDecision_('REPAINT', 'ALREADY_LOADED');
+    _irRecoRerenderSummaries(); return null;
+  }
+  // CP2X-R1 §A - ALREADY IN FLIGHT for this exact scope. This case was missing: the guard above only
+  // caught a COMPLETED read, so a second call during the flight fell through and issued a SECOND request,
+  // bumping the sequence and orphaning the first after it had already been sent. Re-entry while loading -
+  // a re-render, a re-expand, a second mount - therefore cost a duplicate read every time.
+  if (!force && _irMatState.scopeKey === key && _irMatState.appliedScopeKey === appliedKey && _irMatState.status === 'LOADING') {
+    _irMatDecision_('DEDUPED', 'ALREADY_IN_FLIGHT');
+    return null;
+  }
+  // CP2X-R1 §A - REUSE an answer already fetched for this scope in this page session. Keyed by the same
+  // scope key AND the applied scope it was read under, so the F1A guard is enforced rather than bypassed.
+  if (!force) {
+    var hit = Object.prototype.hasOwnProperty.call(_irMatByScope, key) ? _irMatByScope[key] : null;
+    if (hit && hit.appliedScopeKey === appliedKey) {
+      _irMatState = { status: hit.status, scopeKey: key, appliedScopeKey: appliedKey, bySku: hit.bySku,
+        rows: hit.rows, loadedOk: true, error: null, handlerVersion: hit.handlerVersion,
+        revision: hit.revision, scope: hit.scope, appliedAt: hit.appliedAt, fromReuse: true };
+      _irMatDecision_('REUSE', _irMatRevisionComplete_(hit.revision) ? null : 'REUSED_REVISION_INCOMPLETE');
+      // BOTH consumers are repainted from the ONE restored result - the Suggested Qty cells and the
+      // Recommendation Summary read the same `_irMatState`, so they cannot disagree about it.
+      _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells();
+      return null;
+    }
+  }
   if (!(window.KM && window.KM.DB && typeof window.KM.DB.getInventoryReplenishmentGap === 'function')) {
     _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: { code: 'READER_UNAVAILABLE', message: 'materialized gap reader unavailable' } };
     _irRecoRerenderSummaries(); return null;
@@ -15063,9 +15194,17 @@ function loadInventoryGap_(force) {
   _irMatState = { status: 'LOADING', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: null };
   _irRecoRerenderSummaries();
   _irRecoUpdateSuggestedCells();   // CP2U-R2: the cell says "loading" rather than holding the last site number
+  _irMatDecision_('READ', force ? 'FORCED' : 'NO_REUSABLE_RESULT');
+  _IR_MAT_DIAG_.networkReads++;
   return Promise.resolve(window.KM.DB.getInventoryReplenishmentGap(scopeReq)).then(function (res) {
     if (my !== _irMatSeq) return;
-    if (!res || !res.success) { _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: (res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' } };
+    if (!res || !res.success) {
+      // CP2X-R1 §A - A FAILURE INVALIDATES THE STORED ANSWER FOR THIS SCOPE. Without this the next
+      // re-render reuses the answer fetched BEFORE the failure, so a read the operator watched fail is
+      // quietly replaced by the old numbers and the error disappears from the screen. The stored result
+      // is dropped, the failure stands, and the next call does a real read.
+      delete _irMatByScope[key];
+      _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: (res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' } };
       _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells(); return; }   // CP2U-R2: a failed read reaches the cell
     var rows = (res.data && res.data.rows) || [];
     var bySku = {}; rows.forEach(function (r) { if (r && r.sku != null) bySku[String(r.sku)] = r; });
@@ -15086,9 +15225,17 @@ function loadInventoryGap_(force) {
       handlerVersion: (res.envelope && res.envelope.meta && res.envelope.meta.gapMaterializationHandlerVersion)
         || (res.meta && res.meta.gapMaterializationHandlerVersion) || null,
       scope: scopeReq, appliedAt: ((typeof Date !== 'undefined' && Date.now) ? Date.now() : null) };
+    // CP2X-R1 §A - the SOURCE revision, derived from what the batch wrote, never from appliedAt.
+    _irMatState.revision = _irMatRevisionOf_(_irMatState.handlerVersion, rows);
+    // Kept for reuse. READY and EMPTY only - the error branches above return before reaching this point,
+    // so a failed read is never stored and can never be replayed as an answer.
+    _irMatByScope[key] = { status: _irMatState.status, appliedScopeKey: appliedKey, bySku: bySku, rows: rows,
+      handlerVersion: _irMatState.handlerVersion, revision: _irMatState.revision, scope: scopeReq,
+      appliedAt: _irMatState.appliedAt };
     _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells();
   }).catch(function (err) {
     if (my !== _irMatSeq) return;
+    delete _irMatByScope[key];        // CP2X-R1 §A - a thrown read invalidates the stored answer too
     _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: { code: 'READ_FAILED', message: String(err && err.message || err) } };
     _irRecoRerenderSummaries();
     _irRecoUpdateSuggestedCells();   // CP2U-R2: so does a thrown one
@@ -15149,6 +15296,13 @@ function _irMatAnswerSource_(skus) {
       ? _irResultMatchesAppliedScope_(st) : null,
     loaded_ok: st.loadedOk === true,
     applied_at: (typeof st.appliedAt === 'number') ? st.appliedAt : null,
+    applied_at_note: 'A LOCAL CLOCK READING, NOT A REVISION. It moves every time this browser stores the '
+      + 'same unchanged rows again, so it can never say whether the source has changed.',
+    // CP2X-R1 §A - what the SOURCE says about itself. Incomplete is reported as incomplete; an absent
+    // field is never read as "unchanged".
+    source_revision: st.revision || null,
+    source_revision_complete: _irMatRevisionComplete_(st.revision || null),
+    from_reuse: st.fromReuse === true,
     error: st.error || null,
     row_count: Array.isArray(st.rows) ? st.rows.length : null,
     // 43_'s marker, reported ALONE. There is no accept list for it and none is implied.
@@ -15161,6 +15315,7 @@ function _irMatAnswerSource_(skus) {
   };
 }
 window._irMatAnswerSource_ = _irMatAnswerSource_;
+window._irMatReadDiag_ = _irMatReadDiag_;        // CP2X-R1 - gap reader calls vs real network reads
 
 // Manual-recalc refresh: invalidate the materialized cache + refetch the stored rows (no per-SKU live calc).
 function refreshInventoryGapAfterRecalc_() { _irMatState.loadedOk = false; _irMatState.scopeKey = null; return loadInventoryGap_(true); }

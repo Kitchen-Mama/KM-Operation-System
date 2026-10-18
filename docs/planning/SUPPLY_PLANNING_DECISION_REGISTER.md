@@ -5606,3 +5606,146 @@ process's memory. What survives is the classification table above. The one chang
 persisting `raw` for non-clean suites — is a change to the sweep tool and still awaits a round that
 authorises it. **It is now worth more than it was**: with two members, the next occurrence is the one
 that could be diagnosed instead of merely counted.
+
+---
+
+### D-S8-B3-139 — The Gap read deduped a FINISHED read and nothing else — **FIXED (CP2X-R1 §A)**
+
+`loadInventoryGap_` returned early when the same scope was already `loadedOk`. It had no branch for
+`LOADING`, so a second call DURING the flight fell through, bumped `_irMatSeq` and issued a **second
+request**, orphaning the first after it had already been sent. Re-entry while loading — a re-render, a
+re-expand, a second mount — cost a duplicate read every time. It also had no cross-scope reuse at all:
+`_irMatState` holds one scope, so A → B → A re-read A.
+
+Both are closed. Completed answers are kept per scope **in memory, for the life of the page** — not in
+sessionStorage, not anywhere persistent, and no cross-request cache was added. **EMPTY is reused**
+because a scope that resolved with no rows is an answer; `READ_ERROR` is never stored.
+
+**The F1A guard is enforced, not bypassed:** an entry records the appliedScopeKey it was fetched under
+and is reused only when the applied scope still matches, so a stored answer can never be painted
+against a site it was not read for.
+
+**A defect this round introduced and its own test caught.** The first version kept the stored answer
+after a failed read, so the next re-render silently restored the pre-failure numbers and the error the
+operator had just watched vanished from the screen. **A failure now invalidates the stored entry**, the
+failure stands, and the next call does a real read.
+
+**`appliedAt` is not a revision, and is now labelled as one that is not.** It is a local clock reading
+that moves every time the browser stores the same unchanged rows. The SOURCE revision is 43_'s handler
+marker plus the calculation date and the newest `calculated_at` across the rows, and it obeys the
+CP2X rule: a missing field answers UNKNOWN, never SAME.
+
+---
+
+### D-S8-B3-140 — Reuse and dedup in real Chrome, counted at the SERVER — **MEASURED (CP2X-R1 §B)**
+
+`_cp2s-r2-inplace-dom-runner.js --scopes` (opt-in, nothing existing changed) drives the real page
+through the real router and brackets each scenario with a server-side mark, so the counts are the
+server's and a page that lied about its own reads could not move them.
+
+| phase | recommendation requests | gap requests |
+|---|---|---|
+| cold read | **1** | 0 |
+| route away and back | **0** | **0** |
+| three loader calls during one flight (+2 gap calls) | **1** | **0** |
+
+Across the session the gap reader was **entered 7 times and reached the network once** — which is the
+distinction the round asks for, and the reason both numbers are reported: a reader call answered from a
+stored result is not a network request, and reporting one of them alone makes a working cache
+indistinguishable from a dead page.
+
+**WHAT THIS CAPTURE DOES NOT ESTABLISH.** The cross-SITE switch. Both the country axis and the
+marketplace axis were attempted and **neither select ever offered the second site** in this harness —
+the capture records `mktMoved: false` and the acceptance asserts that it did, so the limitation cannot
+be quietly forgotten. Every phase after the first therefore ran against the SAME scope: the reuse shown
+is same-scope reuse, which is what leave/return and re-entry are about, but it is not evidence about
+switching sites. Cross-scope reuse is established offline instead, where the scope key is built
+directly.
+
+---
+
+### D-S8-B3-141 — The Search leg was measured from after the thing it was measuring — **FIXED (CP2X-R1 §C)**
+
+CP2X marked the Search start where `_irSearch.applied` is assigned. That assignment is inside
+`_irApplySearch_`, which runs **after the workspace read has already resolved**, so everything the
+operator waits for between clicking Search and seeing a number sat outside the measurement. The mark
+moved to `searchReplenishment`, after validation and the single-flight gate and **before the main table
+read** — the first instant at which the click is known to cause work.
+
+`serverDurationMs`, `requestId` and `canonicalRead` are now carried rather than discarded;
+`canonicalRead` is the only thing that says which transport answered.
+
+**And a DOM write stopped being called a paint.** `domUpdateMs` is renamed `domWorkMs` and is
+synchronous DOM work only; `visibleMs` is measured after two animation frames and is the earliest
+instant the browser can have shown it. Where there is no rAF, `visibleMs` stays **null** and the reading
+says so, rather than quietly reporting the synchronous figure as the visible one.
+
+---
+
+### D-S8-B3-142 — The remaining eight tables cannot be batched yet, and the real cost is elsewhere — **MEASURED (CP2X-R1 §D)**
+
+**The eight.** Of 21 canonical tables, 12 are batched and 9 are not; one of those nine
+(`replenishment_demand_allocation_rules`) is skipped because 50_'s Script-Property blob replaces it, so
+**eight are actually read per sheet**: `shipping_plans`, `shipments`, `shipment_lines`,
+`shipping_plan_lines`, `campaigns`, `campaign_sku_lines`, `purchase_order_lines`,
+`request_order_line_sources`.
+
+**They cannot be batched safely today.** Under `UNFORMATTED_VALUE` + `SERIAL_NUMBER` a date returns a
+serial number indistinguishable from a real number, and none of the eight has a declared,
+census-verified date map. At least four demonstrably carry date columns — `shipping_plans`
+(`created_at`, `completed_at`), `shipments` (`actual_departure_date`, `eta`), `campaigns`
+(`start_date`, `end_date`), `purchase_order_lines` (`expected_ship_date`, `inspection_date`,
+`expected_completion_date`, `created_at`). **`campaigns` is the most dangerous of them**: its
+start/end dates are consumed by the exclusion machinery, so batching it without a map would not slow
+the campaign filter down, it would break it. The prize is real — eight of the ten remaining round
+trips — and the route to it is the one 60_ already defines: add each table to `SIR_B1_DATE_MAP_` after
+a live column census, under its drift detector. That is a 60_ change and a live census, neither of
+which is available offline.
+
+**The afterReadMs finding, which is bigger.** Every per-SKU helper converts whole tables to row objects
+by calling `recoWsToRowObjects_(snaps.X)` directly, bypassing the `recoWsRows_` cache that already
+exists — because those helpers receive `snaps`, not `read`. `recoWsResolvePlanningModel_`,
+`recoWsBuildContaminationFacts_` and `recoWsResolveSalesRate_` all take `sku`, and the last two run on
+both the MARKETPLACE and the WAREHOUSE lane: roughly **20 full-table conversions per SKU**, of which
+**four are over `amazon_daily_sales_snapshot`**, the largest table in the set.
+
+Measured OFFLINE over a 5,400-row × 20-column snapshot (90 days × 60 SKUs) with the source's own call
+pattern of 4 conversions per SKU:
+
+| | conversions | row objects materialised | time |
+|---|---|---|---|
+| before | 240 | **1,296,000** | **963 ms** |
+| after | 240 calls, 1 conversion | 5,400 | **6.8 ms** |
+
+**That is an offline figure on a different engine and is NOT a production duration.** What it
+establishes is the SHAPE: the cost is multiplicative in SKUs and this one table alone rebuilt over a
+million row objects per request.
+
+**The fix is the sharing the round prioritises**, and it is one hunk: `recoWsToRowObjects_` memoises on
+the snapshot object, so no call site changes and nothing is threaded. The purity argument is the one
+`recoWsRows_` already records, and it was re-checked rather than inherited — all three `.sort()` sites
+in 42_ sort a `.filter()` copy, never the shared array, and the two direct holders of a converted array
+only read `.length` and count. The memo is per snapshot OBJECT, so it is intra-request by construction:
+43_'s injected pre-read shares one immutable snapshot across the scopes of a batch, which is exactly
+what it is for, and a new request brings new objects.
+
+**GS: +146, total 4,629,983 / 4,630,000 — headroom 17.** The first draft was +353 and over; the comment
+was cut to fit rather than the budget raised. **This leaves almost nothing**, and that is reported
+rather than buried: the next `.gs` change needs a decision, and this one hunk is revertible if the
+bytes are wanted back.
+
+---
+
+### D-S8-B3-143 — Why the live Avg cache may not be reused, narrowed to a check — **OPEN, but now one call (CP2X-R1 §B)**
+
+There are exactly five ways the recommendation session cache fails to serve, and CP2X made each of them
+name itself. Four are read-side (`NO_ENTRY`, `SHAPE_SUPERSEDED`, `HANDLER_NOT_ACCEPTED`,
+`REVISION_ABSENT_LEGACY`) and the fifth is the write-side one that matters most:
+**`NOT_STORED / HANDLER_NOT_ACCEPTED`**, where the deployed handler's marker is not on this build's
+accept list — nothing is ever stored, every site switch pays a full request, and the only symptom is
+slowness.
+
+That is the leading hypothesis for the live report, because Production's release is **UNKNOWN** and a
+pre-R53 42_ may send a different marker or none at all. It is not confirmed: confirming it needs one
+reading from the deployed site, `_irRecoReadDiag_().cache` on a SERVER answer. Until then it stays a
+hypothesis with a named check, not a cause.

@@ -54,6 +54,7 @@ const MAX_HOLD_MS = 120000;
 const MKT_ID = 'MP-FIXTURE-US-AMZ';
 // CP2U-R3 - the SECOND site, used only by the states scenario, to prove a failure on one site does not
 // follow the operator to the next one.
+const MKT3_ID = 'MP-EU-AMZ-FIXTURE';
 const MKT2_ID = 'MP-FIXTURE-US-WMT';
 const skuOf = (i) => 'FIXTURE-SKU-' + String(i).padStart(3, '0');
 
@@ -154,12 +155,21 @@ function withCorrelation(payload, action, rid) {
 }
 
 function apiAnswer(action, n, state) {
+  // CP2X-R1 B - EVERY request is counted by action, server side. This is the "actual network request"
+  // half of the measurement; the page-side reader-call counts come from the page diagnostics.
+  if (state) { state.hits = state.hits || {}; state.hits[action] = (state.hits[action] || 0) + 1; }
   if (action === 'getClientCapabilities') {
     return { success: true, data: { product_strategy_enabled: true, inventoryAiPlanDbGenerationEnabled: false,
       capabilitiesVersion: 'fixture-cp2s-r2' } };
   }
   if (action === 'inventoryScope.registry.get') {
-    const two = !!(state && state.statesMode);
+    // CP2X-R1 B - the scopes scenario needs a SECOND SITE, and takes the marketplace axis rather than the
+    // country one. A cross-COUNTRY switch was attempted first and the country select never offered the
+    // second country (observed: options ["", "US"]), so driving it would have measured a scenario that
+    // silently did not switch. The scope key is company|country|marketplace and the marketplace axis
+    // changes it just as a country would; the country axis is covered offline, where the key is built
+    // directly. The limitation is recorded in the capture rather than worked around.
+    const two = !!(state && (state.statesMode || state.scopesMode));
     return { success: true, data: {
       marketplaces: [{ marketplace_id: MKT_ID, company: 'FixtureCo', country: 'US', marketplace: 'Amazon',
         marketplace_display_name: 'Amazon' }].concat(two ? [{ marketplace_id: MKT2_ID, company: 'FixtureCo',
@@ -197,6 +207,19 @@ function apiAnswer(action, n, state) {
       // 9+: the NEW site answers normally. Its cells must show this, not the previous site's failure.
       if (k >= 9) return { success: true, data: { lines: recoLines(n, 31),
         dataVersion: { sourceDataAsOf: '2026-10-13' } } };
+    }
+    // CP2X-R1 B - THE SCOPES SCENARIO ANSWERS LIKE THE REAL HANDLER DOES. Without the handler marker the
+    // page refuses to STORE the answer (by design, CP2T-R1), so a reuse scenario run against a markerless
+    // fixture would measure the refusal and call it "no reuse". The marker, the planning context and the
+    // data version are all present here, exactly as 42_ sends them.
+    if (state.scopesMode) {
+      var euNow = state.scopeHint === 'B';
+      return { success: true,
+        data: { lines: recoLines(n, euNow ? 31 : 7), dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-13' } },
+        meta: { requestId: 'fixture-' + state.recoReads, serverDurationMs: 1234,
+          recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e',
+          calculationDate: '2026-10-18', calculationMonth: '2026-11', planningCycle: 'RECO-2026-11',
+          canonicalRead: { mode: 'BATCH', remoteCalls: 2, readMs: 900, normalizeMs: 40, afterReadMs: 294 } } };
     }
     // read 1 -> 7, read 2 -> 11. The second number is what must appear in the cell afterwards.
     return { success: true, data: { lines: recoLines(n, state.recoReads >= 2 ? 11 : 7),
@@ -741,6 +764,101 @@ function measureScript(capId, opts) {
         out.states.siteSwitch = sw;
         step('site-switch', sw);
       }
+
+      /* CP2X-R1 B - SCOPE REUSE, IN-FLIGHT DEDUP AND RE-ENTRY, through the real page and the real router.
+         Every phase is bracketed by a server-side mark, so the requests a phase caused are counted at the
+         SERVER rather than inferred from the page. The page-side reader counts come from the two
+         diagnostics the round added, which is the distinction the task asks for: a reader CALL that
+         answers from a stored result is not a network request. */
+      if (OPT.scopes) {
+        var SC2 = { phases: [] };
+        async function mark(label, scope){
+          await fetch('/__mark?label=' + encodeURIComponent(label) + (scope ? ('&scope=' + scope) : ''), { cache: 'no-store' });
+        }
+        function diags(){
+          return { reco: (typeof window._irRecoReadDiag_ === 'function') ? window._irRecoReadDiag_() : null,
+                   gap: (typeof window._irMatReadDiag_ === 'function') ? window._irMatReadDiag_() : null,
+                   answer: (typeof window._irRecoAnswerSource_ === 'function') ? window._irRecoAnswerSource_() : null };
+        }
+        async function phase(label, scope, fn){
+          await mark('begin:' + label, scope);
+          var err = null;
+          try { await fn(); } catch (e) { err = String(e && e.message || e); }
+          await mark('end:' + label, scope);
+          var d = diags();
+          SC2.phases.push({ label: label, error: err, diag: d,
+            avg: cellInfo(SKU, 'replen-avg-cell') });
+          step('scope-' + label, { err: err, recoCache: d.reco && d.reco.cache, gap: d.gap && { o: d.gap.outcome, net: d.gap.networkReads } });
+        }
+        /* WHETHER THE SELECTS ACTUALLY MOVED IS PART OF THE MEASUREMENT. A scenario that silently failed
+           to switch site reports zero requests for a flattering reason, so each move is recorded and the
+           phase carries it. setSelect waits for the option to EXIST before setting it, so "never held"
+           means the registry did not offer that site rather than that the click was too early. */
+        async function searchSite(countryVal, mktVal, waitText){
+          var r = { country: null, mkt: null, settled: null };
+          var cs = document.getElementById('replenCountry');
+          if (cs && countryVal) { r.country = await setSelect(cs, countryVal, 'country-' + countryVal, 20000); }
+          var ms = document.getElementById('replenMarketplace');
+          if (ms && mktVal) { r.mkt = await setSelect(ms, mktVal, 'mkt-' + mktVal, 20000); }
+          var sbtn = document.querySelector('#ops-section .replen-btn--search');
+          if (sbtn) sbtn.click(); else if (window.searchReplenishment) window.searchReplenishment();
+          if (waitText) {
+            r.settled = (await waitFor(function(){ var i = cellInfo(SKU, 'replen-avg-cell');
+              return (i && waitText.test(i.text)) ? i : null; }, 25000, 'site-' + mktVal)).ok;
+          }
+          r.countryOptions = cs ? Array.prototype.map.call(cs.options, function(o){ return o.value; }) : null;
+          r.mktOptions = ms ? Array.prototype.map.call(ms.options, function(o){ return o.value; }) : null;
+          SC2.moves = SC2.moves || []; SC2.moves.push({ country: countryVal, mkt: mktVal, result: r });
+          return r;
+        }
+
+        /* COLD FIRST. The in-place experiment above has already read and STORED the US answer, so without
+           this the first phase would report zero requests for the right reason and the wrong measurement:
+           reuse would be indistinguishable from a scenario that did nothing. */
+        if (typeof window.invalidateRecommendationSessionCache === 'function') window.invalidateRecommendationSessionCache();
+        if (typeof window._irRecoInvalidate === 'function') window._irRecoInvalidate('CONTEXT_NOT_READY');
+        await phase('siteA-first', 'A', async function(){ await searchSite('US', ${JSON.stringify(MKT_ID)}, /^7(\.0+)?$/); });
+        await phase('siteB-first', 'B', async function(){ await searchSite('US', ${JSON.stringify(MKT2_ID)}, /^31(\.0+)?$/); });
+        await phase('siteA-again', 'A', async function(){ await searchSite('US', ${JSON.stringify(MKT_ID)}, /^7(\.0+)?$/); });
+
+        /* LEAVE AND RETURN - the real router, not a re-render. */
+        await phase('leave-return', 'A', async function(){
+          if (window.KM && window.KM.lifecycle && typeof window.KM.lifecycle.switchTo === 'function') {
+            await window.KM.lifecycle.switchTo('home');
+            await new Promise(function(r){ setTimeout(r, 400); });
+            await window.KM.lifecycle.switchTo('inventory-replenishment');
+            await new Promise(function(r){ setTimeout(r, 600); });
+          } else { SC2.lifecycleAbsent = true; }
+        });
+
+        /* RE-ENTRY WHILE PENDING - two further loader calls in the same turn as the first. */
+        await phase('pending-reentry', 'A', async function(){
+          if (typeof window.invalidateRecommendationSessionCache === 'function') window.invalidateRecommendationSessionCache();
+          if (typeof window._irRecoInvalidate === 'function') window._irRecoInvalidate('CONTEXT_NOT_READY');
+          window.loadRecommendationWorkspace_();
+          window.loadRecommendationWorkspace_();
+          window.loadRecommendationWorkspace_();
+          if (typeof window.loadInventoryGap_ === 'function') {
+            window.loadInventoryGap_(); window.loadInventoryGap_();
+          }
+          await new Promise(function(r){ setTimeout(r, 1200); });
+        });
+
+        /* SITE SWITCH WHILE IN FLIGHT - issue, then switch before it can land. */
+        await phase('switch-in-flight', 'B', async function(){
+          if (typeof window.invalidateRecommendationSessionCache === 'function') window.invalidateRecommendationSessionCache();
+          if (typeof window._irRecoInvalidate === 'function') window._irRecoInvalidate('CONTEXT_NOT_READY');
+          window.loadRecommendationWorkspace_();
+          await searchSite('US', ${JSON.stringify(MKT2_ID)}, null);
+          await new Promise(function(r){ setTimeout(r, 1500); });
+        });
+        SC2.axis = 'marketplace (company|country|marketplace differs in the marketplace component)';
+        SC2.countryAxisNote = 'A cross-country switch was attempted and the country select never offered '
+          + 'the second country; it is covered by the offline suite instead. See the capture note.';
+
+        out.scopes = SC2;
+        step('scopes-done', { phases: SC2.phases.length });
+      }
       report();
     } catch (e) {
       out.fatal = String(e && e.message || e);
@@ -798,6 +916,17 @@ function startServer(pages, held, results, cfg, onMeasured) {
         if (h) { delete held[id]; clearTimeout(h.timer); h.release('measured'); }
         if (typeof onMeasured === 'function') setTimeout(onMeasured, 150);
       });
+      return;
+    }
+    // CP2X-R1 B - a phase boundary. The page calls this between scenarios and the server snapshots its
+    // per-action request counts, so every scenario reports the requests IT caused rather than a total.
+    if (p === '/__mark') {
+      cfg.marks = cfg.marks || [];
+      cfg.marks.push({ label: u.searchParams.get('label') || '',
+        hits: JSON.parse(JSON.stringify((cfg.state && cfg.state.hits) || {})) });
+      if (cfg.state) cfg.state.scopeHint = u.searchParams.get('scope') || cfg.state.scopeHint || null;
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end('{"ok":true}');
       return;
     }
     if (p === '/__hold') {
@@ -977,7 +1106,10 @@ async function main() {
   const skus = parseInt(arg('--skus', '60'), 10);
   // CP2U-R3 - OPT-IN. Without --states every path below is the one that produced inplace-dom.json.
   const STATES = process.argv.indexOf('--states') !== -1;
-  const cfg = { skus: skus, log: [], t0: Date.now(), state: { recoReads: 0, statesMode: STATES } };
+  // CP2X-R1 B - a third opt-in scenario. Without the flag nothing below behaves differently.
+  const SCOPES = process.argv.indexOf('--scopes') !== -1;
+  const cfg = { skus: skus, log: [], t0: Date.now(), marks: [],
+    state: { recoReads: 0, statesMode: STATES, scopesMode: SCOPES, hits: {}, scopeHint: 'US' } };
   const pages = {}, held = {}, results = {};
   const capId = 'inplace-' + Date.now();
   let closeBrowser = null;
@@ -987,7 +1119,7 @@ async function main() {
   // The two rates recoLines() is built to serve, named ONCE and handed to both the page and the evidence
   // so the harness cannot drift from the fixture it is asserting against.
   pages['/__page'] = buildPage(port, capId, { settleMs: 900, expectFirst: '7.0', expectSecond: '11.0',
-    states: STATES });
+    states: STATES, scopes: SCOPES });
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cp2s-r2-'));
   const why = await runChromeAsync(browser, [
@@ -1015,11 +1147,15 @@ async function main() {
       'assets/css/pages/inventory-replenishment.css': sha('assets/css/pages/inventory-replenishment.css')
     },
     actionLog: cfg.log,
+    // CP2X-R1 B - the SERVER side of the measurement: every request it served, by action, snapshotted at
+    // each phase boundary the page declared. The page cannot fake these and does not supply them.
+    requestMarks: cfg.marks,
+    requestTotals: cfg.state.hits,
     result: r
   };
   // A DIFFERENT EXPERIMENT GETS A DIFFERENT FILE. Writing the states run over inplace-dom.json would
   // destroy the capture that proves the in-place update.
-  const outName = STATES ? 'state-transitions.json' : 'inplace-dom.json';
+  const outName = SCOPES ? 'scope-reuse.json' : (STATES ? 'state-transitions.json' : 'inplace-dom.json');
   fs.writeFileSync(path.join(outDir, outName), JSON.stringify(evidence, null, 2));
   // The long-poll that kept the page alive is RELEASED here rather than left to its own 120s timer: an
   // open socket holds the server open, which holds the event loop open, which made a four-second

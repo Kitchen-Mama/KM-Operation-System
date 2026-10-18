@@ -167,12 +167,15 @@ var FIXTURE_B = {
 //   pooled over days   423 / 81  = 5.222...   <- what you get by ignoring the rule
 //   equal weight       (12+3+3)/3 = 6         <- what the rule asks for
 //
-// MONTHLY RESTORATION is asserted through its COMPONENTS rather than as one composed figure. Two
-// compositions are defensible once a month is restored - average the monthly RATES and multiply by the
-// target month's length, or restore each month to a quantity and average THOSE - and they differ here
-// (216 against 222) exactly because the months differ in length. Both are declared. This is not a rule
-// being reopened: the components below are unambiguous, and whichever composition the implementation
-// adopts, it is measured against a number written down in advance.
+// THE ORDER IS SETTLED, and CP2X-R1 states it: restore each month to a quantity, THEN equal-weight
+// those quantities, THEN apply growth. On this fixture that is 222, and it is the expected value rather
+// than one of two candidates.
+//
+// 216 IS KEPT, AS A COUNTER-EXAMPLE. It is what the other order produces - equal-weight the monthly
+// RATES first and multiply by the target month's length afterwards - and the two differ here only
+// because the months differ in length. Keeping it is what makes the expectation discriminating: an
+// implementation that composes in the wrong order lands on 216 exactly, and a suite that declared only
+// 222 could not tell that apart from arithmetic noise.
 var C_MONTHS = ['2026-07', '2026-08', '2026-09'];
 var C_EVENT = { start: '2026-07-10', end: '2026-07-20' };            // 11 days, all inside July
 var C_JUL_HOT = PORT.enumerateRange(C_EVENT.start, C_EVENT.end);
@@ -210,8 +213,10 @@ var FIXTURE_C = {
     monthEqualWeightRate: 6,              // (12 + 3 + 3) / 3
     monthEqualWeightRestoredQty: 185,     // (372 + 93 + 90) / 3
     targetMonthDays: 30,
-    grownFromRate: 216,                   // 6 × 30 × 1.20
-    grownFromRestoredQty: 222             // 185 × 1.20
+    // THE RULE (CP2X-R1): restore -> equal-weight -> growth.
+    grownMonthlyQty: 222,                 // 185 × 1.20
+    // THE COUNTER-EXAMPLE: equal-weight the rates first, restore afterwards. Wrong order, 216.
+    wrongOrderGrownQty: 216               // 6 × 30 × 1.20
   }
 };
 
@@ -235,12 +240,12 @@ var OPEN_QUESTIONS = [
     why: 'Settled by CP2X naming monthly restoration and growth together: the month quantity is restored '
        + 'first and growth is applied to it. The daily rate survives only as an intermediate, and it is '
        + 'still never rounded the way a quantity is. What remains is narrower and is OPEN_C1.' },
-  { id: 'OPEN_C1', mode: 'month-equal-weight',
+  { id: 'OPEN_C1', mode: 'month-equal-weight', resolved: 'CP2X-R1 — restore each month, then equal-weight, then growth (222)',
     question: 'Equal-weight the monthly RATES and multiply by the target month length, or restore each '
             + 'month to a quantity and equal-weight THOSE?',
-    why: 'The two agree only when every month is the same length. On fixture C they are 216 and 222. '
-       + 'Both are declared; the components each is built from are asserted individually, so this is a '
-       + 'composition to confirm rather than a rule to decide again.' },
+    why: 'Settled: the order is restore -> equal-weight -> growth, so 222 is the expected value. 216 is '
+       + 'retained as the counter-example the other order produces, which is what makes the expectation '
+       + 'discriminating rather than merely satisfiable.' },
   { id: 'OPEN_B2', mode: 'interval-average',
     question: 'Is there a minimum normal-day count below which the interval is refused?',
     why: 'The frozen owner has a ladder (<7 warns, <3 falls back to weekly_7d) and the contract says the '

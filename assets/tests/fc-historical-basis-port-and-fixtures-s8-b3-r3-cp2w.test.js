@@ -293,8 +293,10 @@ eq(FX.OPEN_QUESTIONS.map(function (q) { return q.id; }),
 ok(FX.OPEN_QUESTIONS.every(function (q) { return q.question && q.why; }),
   'G12 and each carries the reason it cannot be answered here');
 eq(FX.OPEN_QUESTIONS.filter(function (q) { return q.resolved; }).map(function (q) { return q.id; }),
-  ['OPEN_B1'],
-  'G13 a question CP2X settled is marked resolved in place rather than deleted, so the decision keeps its trail');
+  ['OPEN_B1', 'OPEN_C1'],
+  'G13 a settled question is marked resolved IN PLACE rather than deleted, so the decision keeps its trail');
+ok(/restore/i.test(FX.OPEN_QUESTIONS.filter(function (q) { return q.id === 'OPEN_C1'; })[0].resolved),
+  'G13a and OPEN_C1 records the order it was settled on, so it is not reopened as a question');
 
 // ==================================================================================================
 section('§J  FIXTURE C — complete months, monthly restoration, month equal weight, growth (CP2X §5)');
@@ -338,13 +340,15 @@ ok(Math.abs(ewRate - C.expect.pooledDailyAverage) > 0.5,
   'J10 and it DIFFERS from the pooled answer, so the rule is exercised rather than merely satisfied');
 
 var ewQty = C.months.reduce(function (s, m) { return s + perMonth[m].rate * C.expect.daysInMonth[m]; }, 0) / C.months.length;
-near(ewQty, C.expect.monthEqualWeightRestoredQty, 'J11 equal-weighting the RESTORED quantities instead');
-eq(Math.round(ewRate * C.expect.targetMonthDays * (1 + C.growthPercent / 100)), C.expect.grownFromRate,
-  'J12 growth on the rate-then-restore composition');
-eq(Math.round(ewQty * (1 + C.growthPercent / 100)), C.expect.grownFromRestoredQty,
-  'J13 growth on the restore-then-equal-weight composition');
-ok(C.expect.grownFromRate !== C.expect.grownFromRestoredQty,
-  'J14 the two compositions differ, which is why OPEN_C1 is a real question and both are declared');
+near(ewQty, C.expect.monthEqualWeightRestoredQty, 'J11 each month restored over its own length, then equal-weighted');
+// THE RULE, in the order CP2X-R1 fixes it: restore -> equal-weight -> growth.
+eq(Math.round(ewQty * (1 + C.growthPercent / 100)), C.expect.grownMonthlyQty,
+  'J12 and growth applied LAST gives the expected monthly quantity');
+// THE COUNTER-EXAMPLE, computed the other way round and asserted to be WRONG rather than alternative.
+eq(Math.round(ewRate * C.expect.targetMonthDays * (1 + C.growthPercent / 100)), C.expect.wrongOrderGrownQty,
+  'J13 equal-weighting the RATES first and restoring afterwards lands on the counter-example');
+ok(C.expect.grownMonthlyQty !== C.expect.wrongOrderGrownQty,
+  'J14 the two orders differ on this fixture, so J12 discriminates instead of merely being satisfiable');
 
 var cAll = portC.readDailySales({ scope: C.scope, from: '2026-08-01', to: '2026-08-31' }).rows;
 eq(cAll.filter(function (r) { return r.company === FX.OTHER_COMPANY; })
@@ -373,6 +377,9 @@ mutant('X4', 'the interval mode inherits the frozen 30-day cap', function () {
 });
 mutant('X5', 'the campaign/event overlap is counted twice', function () {
   return naive === 6 && frozen.excludedDates.length === 5;
+});
+mutant('X9', 'the composition order is inverted - rates equal-weighted first, restored afterwards', function () {
+  return C.expect.wrongOrderGrownQty !== C.expect.grownMonthlyQty;
 });
 mutant('X7', 'month equal weight is replaced by pooling every day', function () {
   return Math.abs(C.expect.monthEqualWeightRate - C.expect.pooledDailyAverage) > 0.5;
