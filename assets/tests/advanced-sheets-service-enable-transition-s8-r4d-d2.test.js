@@ -177,20 +177,29 @@ ok(new RegExp("var SYS_DEPLOYMENT_RELEASE_ = '" + R43_ID + "'").test(showAt(D2_E
 eq(RUNTIME_AT_D2.filter(function (f) { return /R44/.test(showAt(D2_END, GS + f)); }), [],
   'U4b and the string R44 appeared in no runtime file at all');
 
-// THE HEAD HALF — what R44 did on purpose, stated rather than inherited. Adoption is now EXPECTED, and it is
-// expected in exactly one file: a second Product consumer appearing without its own round would still fail.
+// THE HEAD HALF — what R44 did on purpose, stated rather than inherited. Adoption is EXPECTED, and in
+// exactly the files that earned it with a round of their own. R44 approved the first (60_, the first-layer
+// workspace read). R53 approves the second (42_, the canonical snapshot read behind the recommendation),
+// and nothing else: a THIRD consumer appearing without its own round still fails here, which is the whole
+// point of naming them rather than counting them.
 // CONSUMING the service and ATTESTING it are different things, and 63_ does the second: it asks
 // `typeof Sheets` so a deployment that lost the service says so in system.health. That is a namespace
 // check, not a read, and it issues no request. So the detector matches CALL SITES over comment-stripped
 // source — otherwise the health attestation, and the prose describing it, would count as adoption.
 var CALL_RE = /Sheets\.Spreadsheets\.(get|Values\.batchGet)\s*\(/;
 eq(RUNTIME_GS.filter(function (f) { return CALL_RE.test(stripComments(read(GS + f))); }),
-  ['60_api_v1_inventory_replenishment_workspace.gs'],
-  'U5  AT HEAD exactly ONE Product runtime file CALLS the advanced service — the first-layer reader, '
-  + 'and nothing else drifted onto the dependency');
+  ['42_api_v1_recommendation_workspace.gs', '60_api_v1_inventory_replenishment_workspace.gs'],
+  'U5  AT HEAD exactly TWO Product runtime files CALL the advanced service — the first-layer reader (R44) '
+  + 'and the canonical snapshot read (R53) — and nothing else drifted onto the dependency');
 eq(RUNTIME_GS.filter(function (f) { return /Values\.batchGet\s*\(/.test(stripComments(read(GS + f))); }),
-  ['60_api_v1_inventory_replenishment_workspace.gs'],
-  'U5a and exactly one calls batchGet');
+  ['42_api_v1_recommendation_workspace.gs', '60_api_v1_inventory_replenishment_workspace.gs'],
+  'U5a and exactly those two call batchGet');
+// 42_ DEGRADES where 60_ cannot. 60_ needs the service for its PRIMARY read, so a project without it
+// cannot answer; 42_ checks every prerequisite and routes back to the per-sheet read, so the worst case
+// there is today's speed. The two consumers are therefore not the same kind of dependency, and this
+// records which is which.
+ok(/RECO_WS_CANON_FALLBACK_/.test(read(GS + '42_api_v1_recommendation_workspace.gs')),
+  'U5c and the second consumer carries a fallback to the per-sheet read — it adds no hard dependency');
 ok(/typeof Sheets/.test(stripComments(read(GS + '63_api_v1_system_health.gs')))
   && !CALL_RE.test(stripComments(read(GS + '63_api_v1_system_health.gs'))),
   'U5b 63_ ATTESTS the service without calling it — a typeof check costs no API call, which is what lets '
@@ -332,7 +341,14 @@ var dScope = function (t) { return JSON.stringify(JSON.parse(t.manifest).oauthSc
 var dWebapp = function (t) { return JSON.stringify(JSON.parse(t.manifest).webapp) !== JSON.stringify(preManifest.webapp); };
 var dTimeZone = function (t) { return JSON.parse(t.manifest).timeZone !== preManifest.timeZone; };
 var B1_OWNER_ = '60_api_v1_inventory_replenishment_workspace.gs';
-function otherRuntime(t) { return Object.keys(t.runtime).filter(function (f) { return f !== B1_OWNER_; })[0]; }
+// S8-B3-R3-CP2V (R53) - THE APPROVED SET, not the approved FILE. R44 made 60_ the only consumer; R53 adds
+// 42_ with a round of its own. The detectors below compare against this SET, so a file drifting onto the
+// dependency without a round still fails - which is the property, not the number one.
+var ADV_OWNERS_ = [B1_OWNER_, '42_api_v1_recommendation_workspace.gs'].sort();
+function isAdvOwner(f) { return ADV_OWNERS_.indexOf(f) !== -1; }
+// M10/M11 must mutate a file that is NOT already an approved consumer, or the "mutation" adds a call to a
+// file that already makes one and the detector fires on the clean tree - a vacuous mutant, not a finding.
+function otherRuntime(t) { return Object.keys(t.runtime).filter(function (f) { return !isAdvOwner(f); })[0]; }
 // S8-B3-R1A — M12 NEEDS A FILE THAT DOES NOT ALREADY CARRY THE RELEASE ID, for the same reason STAMPED_FILE
 // above needs one that does. dR44 catches a file that MENTIONS the release without DECLARING it, so pointing
 // the mutation at a file that already declares it adds a mention to a file already in BOTH lists — a silent
@@ -341,18 +357,22 @@ function otherRuntime(t) { return Object.keys(t.runtime).filter(function (f) { r
 // that neither declares nor mentions the id, and the mutation can diverge again.
 function unstampedRuntime(t) {
   return Object.keys(t.runtime).filter(function (f) {
-    return f !== B1_OWNER_ && t.runtime[f].indexOf(RELEASE_ID_NOW) === -1;
+    return !isAdvOwner(f) && t.runtime[f].indexOf(RELEASE_ID_NOW) === -1;
   })[0];
 }
 // EXACTLY ONE owner, named. 'none' stopped being the right answer at R44; 'exactly the declared one' is
 // stronger than either, because it still fails when a second file drifts onto the dependency.
+function sameSet(hits) {
+  var h = hits.slice().sort();
+  return h.length === ADV_OWNERS_.length && h.every(function (f, i) { return f === ADV_OWNERS_[i]; });
+}
 var dRuntimeConsumes = function (t) {
   var hits = Object.keys(t.runtime).filter(function (f) { return /Sheets\.Spreadsheets\.(get|Values\.batchGet)\s*\(/.test(stripComments(t.runtime[f])); });
-  return hits.length !== 1 || hits[0] !== B1_OWNER_;
+  return !sameSet(hits.filter(function (f) { return Object.prototype.hasOwnProperty.call(t.runtime, f); }));
 };
 var dRuntimeBatchGet = function (t) {
   var hits = Object.keys(t.runtime).filter(function (f) { return /Values\.batchGet\s*\(/.test(stripComments(t.runtime[f])); });
-  return hits.length !== 1 || hits[0] !== B1_OWNER_;
+  return !sameSet(hits);
 };
 // R44 is now EXPECTED in the two owners and forbidden everywhere else — the same shape, one release later.
 // S8-R5-B — THE EXPECTED SET IS DERIVED, NOT HARDCODED, BECAUSE THE OWNER SET IS NOT A CONSTANT.

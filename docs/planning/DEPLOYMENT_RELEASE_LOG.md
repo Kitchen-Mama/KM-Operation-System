@@ -5485,3 +5485,106 @@ This ledger records that, and records just as plainly what it does **not** estab
 **STATUS: LOCAL ONLY — NOT PUSHED — NOT SYNCED (CP2U-R2). No `.gs` changed this round, so there is
 nothing to sync for it.**
 
+
+## S8-B3-R3-CP2V — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R53` — THE RECOMMENDATION READ STOPS CROSSING THE BRIDGE TWENTY-ONE TIMES
+
+```
+BASE    1e2f8dae  S8-B3-R3-CP2U-R3-R3. R50, R51 and R52 are CUT but NOT SYNCED and NOT DEPLOYED.
+        Production is R49.
+BRANCH  feature/product-strategy-board-p0
+DATE    2026-10-18
+SCOPE   ONE read transport, inside one handler. No DB schema, no new table, no new action, no formula,
+        no eligibility change, no allocation change, no timeout, no schedule, no cache policy. The
+        request and the business response of recommendation.workspace.get are byte-identical.
+        Action contract stays 20. Transport contract stays 1. The generated bundle IS rebuilt.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R53
+PURPOSE                      recommendation.workspace.get opened twenty-one sheets per request and called
+                             getDataRange().getValues() on each, ONCE PER SITE, so US + CA + EU paid it
+                             three times. An Apps Script sheet read is priced by the COUNT of sheets, not
+                             by rows. R53 reads the twelve tables whose date columns 60_ has already
+                             PROVEN (SIR_B1_DATE_MAP_) with two Sheets v4 calls, and leaves the other nine
+                             on the existing per-sheet reader. Measured here: 21 sheet reads -> 2 remote
+                             calls + 8 per-sheet reads in production (9 where 50_ is absent).
+SUPERSEDES                   nothing. R50, R51 and R52 are cut and unshipped; R53 follows them and all
+                             four travel in the SAME paste set. Production is R49.
+OWNERS                       42_api_v1_recommendation_workspace.gs        (RECO_WS_BUILD_VERSION_) — NEW STAMP
+                             63_api_v1_system_health.gs                   (SYS_BUILD_VERSION_)
+CARRIED                      01_ stays R52. 03_ stays R52. 00_ stays R51. 74_ stays R51. 66_ stays R49.
+                             61_ stays R47. 60_ stays R45 — it is READ FROM, not changed: R53 reuses its
+                             date map and its helpers rather than copying either.
+ACTION CONTRACT              UNCHANGED at 20. No route, no action, no request field and no response field
+                             of the business payload moved. `meta.canonicalRead` is ADDITIVE diagnostic.
+HANDLER VERSION              UNCHANGED at fm5-r4ui-r5e, deliberately. That symbol names the ANSWER
+                             CONTRACT, and the browser's session cache keys on it: bumping it would
+                             discard every cached answer to announce a change no answer can show. The
+                             file's own identity moves instead, in RECO_WS_BUILD_VERSION_.
+MODULE MANIFEST              42_api_v1_recommendation_workspace.gs ENTERS SYS_MODULE_BUILD_STAMPS_ for the
+                             first time. It has owned the recommendation read for its whole existence
+                             with no row here. From R53 a stale copy is no longer merely old code: beside
+                             an R53 bundle it returns the SAME numbers while spending twenty-one sheet
+                             reads, which a contract comparison cannot see at all.
+ADVANCED SERVICE             42_ becomes the SECOND Product runtime file to call Sheets v4 — the first
+                             since 60_ at R44 — and that is why this is its own cut rather than a rider
+                             on R52: the R4D-D2 suite refuses a consumer that arrives without a round.
+                             IT IS NOT A HARD DEPENDENCY. Unlike 60_, whose PRIMARY read needs the
+                             service, 42_ checks every prerequisite (service, 60_'s helpers, bundle
+                             `only` capability, spreadsheet timezone) and routes back to the
+                             twenty-one-sheet read when any is missing. Worst case is today's speed.
+BUNDLE                       REBUILT. assets/js/core/supply-planning-production-source.js gains
+                             `config.only` (opt-in, subtractive, refuses an unknown key).
+                             KM_BUNDLE_CONTENT_HASH_
+                             3de64364ba358468c39142aac212d663b41075f454dc6d86218fc066cdbc7e25
+                             -> 0e40bada359bccd27da12117a792ae167fe84db732bb0e2dd56b7e29315acaa8.
+EDITOR-APPLIED               none. appsscript.json UNCHANGED — Sheets v4 was enabled at R44 and no OAuth
+                             scope moves. Verified against the file in this commit, not assumed.
+FRONTEND                     UNCHANGED, AND THE CACHE TOKEN DOES NOT ROTATE. No file under assets/js/
+                             pages, assets/js/api, index.html or app.js is touched by this release. R51
+                             set the precedent in the other direction: rotating a token for a release
+                             that changed no served byte asserts a frontend change that did not happen,
+                             and every browser would re-download an identical bundle. The accept-list
+                             `_IR_RECO_CACHE_HANDLERS` is correspondingly untouched, because the handler
+                             version it gates did not move.
+GS LOAD SURFACE              4,609,902 -> 4,629,739 bytes (+19,837) against the ceiling of 4,630,000
+                             approved for this round. 261 bytes remain. Measured on LF-normalised
+                             working-tree bytes, the same quantity `git show <rev>:<file>` yields under
+                             core.autocrlf=true, and the method reproduces 4,609,902 exactly at BASE.
+
+APPS_SCRIPT_SYNC_REQUIRED    42_api_v1_recommendation_workspace.gs
+                             63_api_v1_system_health.gs
+                             90_generated_supply_planning_bundle.gs   (BUNDLE_REBUILD_REQUIRED)
+
+STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries R53, no
+                             Web App version exists for it, and Production is NOT R53 — Production is R49.
+```
+
+### Why the batch is a split and not a sweep
+
+Under `UNFORMATTED_VALUE` + `SERIAL_NUMBER` a date and a number are the same value on the wire. `getValues()`
+could tell them apart because the Sheet told it; `batchGet` cannot. 60_ answered that at R44 with
+`SIR_B1_DATE_MAP_` — a DECLARED, never-inferred, per-column map, validated against the live reader over 41
+columns and five pairs, and watched by a drift detector.
+
+R53 batches **only** the canonical tables already in that proven map, and asks for membership at runtime
+through `sirWsIsB1Table_` rather than copying the list. The other nine stay on the per-sheet reader and are
+therefore unchanged by construction. **42_ declares no date columns of its own**: promoting a table into the
+batch means adding it to 60_'s map, under 60_'s drift detector, after a live census — never a second list in
+a second file that nobody validated.
+
+### One table is no longer read at all, and that is not a saving taken on faith
+
+`replenishment_demand_allocation_rules` was read from the Sheet and then overwritten, unconditionally, by
+`warehouseAllocationSnapshot_()` — the Script-Property blob 50_ owns — before anything read it. The Sheet tab
+is retired. R53 skips that read, guarded on the SAME condition as the override, so a runtime without 50_
+still reads it. `meta.tablesRead` therefore reports 20 rather than 21 in production: that number counts what
+was read, so 21 would have been the inaccurate answer.
+
+### What a failed batch costs, stated as a cost
+
+A fallback pays for the failed batch **and then** the full twenty-one-sheet read, so a request that falls back
+is **slower than it would have been without this release**. That is the right trade for a transient fault and
+the wrong one for a standing condition, which is why `RECO_WS_CANON_MAX_FALLBACK_` is 1: a second attempt in
+the same execution is refused by name (`CANONICAL_BATCH_FALLBACK_EXHAUSTED`) rather than buying the same loss
+twice. `meta.canonicalRead.fallback.batchMsWasted` reports the loss instead of hiding it. Only the transient
+classes fall back at all; a permission or schema fault fails closed, because a deployment error that quietly
+becomes a permanent slow path is the one outcome a performance change must never buy.

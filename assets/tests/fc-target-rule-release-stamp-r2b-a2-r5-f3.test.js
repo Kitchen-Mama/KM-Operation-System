@@ -135,18 +135,14 @@ var STAMPLESS_OWNERS = {
     + 'UNREAD and renders as the bare id, i.e. exactly the behaviour this release set out to fix, failing '
     + 'quietly rather than loudly. It authors no business logic and no action was added, so the router and '
     + 'the action-contract version are untouched.',
-  // S8-R5-B — 42_ JOINS, as the THIRD stampless owner and for the same reason as the first two: it declares
-  // no build symbol, so it is copied and stamped by nobody. Putting it in RELEASE_OWNERS would satisfy I1
-  // and break C3, which is the trade this list was created to avoid.
-  '42_api_v1_recommendation_workspace.gs':
-    'THE RECOMMENDATION WORKSPACE. R46 stops gating the canonical §22 Avg Sales resolver on the Planning '
-    + 'Model. The resolver was CALLED only under sales_driven, so a Forecast-Driven SKU had no historical '
-    + 'rate to publish and the page showed "--" forever. It now runs for every SKU and its result serves '
-    + 'DISPLAY; the planning basis (salesRate) and the fail-closed horizon reason (salesReason) stay '
-    + 'sales_driven-only, so recoWsBuildHorizons_ receives byte-identical inputs and no Forecast-Driven '
-    + 'horizon can be mislabelled SALES_BASIS_UNAVAILABLE. horizonBasis gains four additive diagnostic '
-    + 'fields that already existed on the resolver\'s own return — no normalization engine was added, no '
-    + 'formula moved, and no action, request field or response field changed.',
+  // S8-R5-B — 42_ JOINED HERE as the THIRD stampless owner, because it declared no build symbol: copied,
+  // and stamped by nobody. The entry noted that putting it in RELEASE_OWNERS would satisfy I1 and break C3,
+  // which is the trade this list was created to avoid.
+  //
+  // S8-B3-R3-CP2V-R53 — IT GRADUATES. 42_ now declares RECO_WS_BUILD_VERSION_ and holds a manifest row, so
+  // the trade no longer exists: it is a stamped owner in RELEASE_OWNERS and C3 is satisfied by the stamp
+  // rather than avoided. The paragraph above is kept rather than deleted because it records WHY the file
+  // spent seven releases here, and that is what makes the promotion evidence rather than drift.
   // S8-B1-R50 - 43_ JOINS, as the FOURTH stampless owner and for the same reason as the other three: it
   // declares no build symbol and has no manifest row, so it is copied and stamped by nobody. Putting it in
   // RELEASE_OWNERS would satisfy I1 and break C3, which is the trade this list was created to avoid, and
@@ -296,104 +292,29 @@ var RELEASE_OWNERS = {
   // router in nine releases — and, as before, that is not churn. R41 changed its routing table and R42..R50 did
   // not, so the stamp held R41 and said something true for nine releases. R51 adds FOUR routes for real, which
   // is also why SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moves 18 -> 19.
-  '01_router.gs':
-    'THE ROUTER. R51 adds the four Overseas Allocation Preview routes - overseasAllocationPreview.job.start, '
-    + '.job.status, .result.get and .job.cancel. Four actions rather than one because the proven async pattern '
-    + 'separates a job from its output: START is a quick write that returns immediately, STATUS carries progress '
-    + 'and never the payload, and the RESULT has its own read. A deployment carrying 74_ but not this file routes '
-    + 'none of them; one carrying this file but not 74_ dispatches four actions into a reference error.',
-  // 00_config.gs JOINS, and it is the reason the feature can ship INACTIVE at all. The flag is what makes
-  // "staged off" mean INERT rather than merely hidden: the four handlers check it BEFORE the default env is
-  // built, so a disabled Preview opens no spreadsheet, writes no job state and arms no trigger.
-  // 74_ JOINS as a NEW FILE, which is the partial-sync case the stamped owner set exists for. It declares its
-  // own OAP_BUILD_VERSION_ precisely so a project that copied the router but not the module reports itself
-  // unsynced rather than answering four actions with a reference error.
+  // S8-B3-R3-CP2V-R53 - 01_ AND 03_ BOTH LEAVE OWNERSHIP TOGETHER and keep the R52 they earned. R53 adds no
+  // route and no action - the action contract stays at 20 - and touches no master-data write. Marching
+  // either to R53 would erase the single fact a per-module stamp carries, which is the round the FILE
+  // changed; both move to RELEASE_CARRIED below, where an unshipped R52 still has to be pasted.
+  // S8-B3-R3-CP2V-R53 - 42_ ARRIVES AS A STAMPED OWNER, and the reason is a dependency rather than a route.
+  // R53 makes it the SECOND Product runtime file to call the Sheets v4 advanced service, the first since
+  // 60_ at R44, and the R4D-D2 suite refuses a consumer that arrives without a round of its own. It could
+  // not ride R52: that release is CUT, and a runtime change landing after a cut needs its own cut.
+  '42_api_v1_recommendation_workspace.gs':
+    'THE RECOMMENDATION READ TRANSPORT. R53 replaces twenty-one getDataRange().getValues() calls with two '
+    + 'Sheets v4 calls for the twelve tables whose date columns 60_ has PROVEN in SIR_B1_DATE_MAP_, leaving '
+    + 'the other nine on the existing per-sheet reader - so those nine are unchanged by construction and '
+    + 'this file declares no date column of its own. It also stops reading the retired '
+    + 'replenishment_demand_allocation_rules sheet, whose value 50_ overwrites before anything reads it. '
+    + 'NO formula, NO line shape, NO request or business response field moved: RECO_WS_HANDLER_VERSION_ '
+    + 'names that contract and deliberately stays at fm5-r4ui-r5e, because the browser session cache keys '
+    + 'on it and bumping it would discard every cached answer to announce a change no answer can show.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R46 moves the release and its OWN build, and nothing else - which is the first time this '
-    + 'file has moved WITHOUT a second owner\'s row moving beside it. The reason is that R46\'s runtime change '
-    + 'is in 42_, which declares no build symbol at all, so it is a STAMPLESS owner: copied, and stamped by '
-    + 'nobody. 60_ LEAVES ownership and is carried at R45. R45 CANNOT BE FOLDED INTO R46 even though it was '
-    + 'never deployed - the usual precedent runs the other way here, and still forbids it: a pending release '
-    + 'has bytes sitting in the operator\'s paste queue, so folding would silently re-label 60_\'s R45 work as '
-    + 'R46 and leave an acceptance unable to say which tree it measured. The two travel to Production as ONE '
-    + 'paste set and keep SEPARATE identities. The action-contract version stays 18 and '
-    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14 - no action was added or removed, and horizonBasis gains '
-    + 'four additive diagnostic fields that already existed on the resolver\'s own return. 90_ is not rebuilt: '
-    + 'no assets/js/core module changed, so KMCALC - the frozen owner that computes the rate - is untouched. '
-    + 'WHAT R43 CHANGED HERE IS STILL TRUE AND IS KEPT RATHER THAN OVERWRITTEN: '
-    + 'R43 moves the release, its own build, and the row that names 60_ - the same three '
-    + 'constants R42 moved, and for the same structural reason: 60_ changed, so its row moves, and this '
-    + 'file moves because it is where that row is written down. 01_ STAYS at R41. The action-contract '
-    + 'version stays 18 and SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14 - no action was added or removed '
-    + 'and no page gained a mount dependency - and 90_ is not rebuilt. R43 CANNOT BE FOLDED INTO R42, '
-    + 'and here the usual precedent is not even needed: R42 is cut, DEPLOYED and ACCEPTED in Production, '
-    + 'so folding would leave the live system reporting ONE id for TWO different trees - and the entire '
-    + 'purpose of R43 is to let the acceptance that follows say which of them it measured. '
-    + 'WHAT R42 CHANGED HERE IS STILL TRUE AND IS KEPT RATHER THAN OVERWRITTEN: '
-    + 'R42 moves the release, its own build, and 60_\'s expected stamp - which is the whole '
-    + 'reason those are separate constants: 60_ changed, so its row moves, and this file moves because it is '
-    + 'where that row is written down. 01_\'s expected stamp STAYS at R41 because 01_ did not change. The '
-    + 'action-contract version stays 18 and SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14: no action was added '
-    + 'or removed, and no page gained a mount dependency. 90_ is not rebuilt - no core module moved. '
-    + 'WHAT R41 CHANGED HERE IS STILL TRUE AND IS KEPT RATHER THAN OVERWRITTEN: '
-    + 'R41 moves the release, its own build, and the ROUTER ROW IT CARRIES - which is the '
-    + 'whole reason those are separate constants: 01_ changed, so its expected stamp moves, and this file '
-    + 'moves because it is where that stamp is written down. The action-contract version stays 18 and '
-    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14: no action was added or removed, and no page gained a '
-    + 'mount dependency. 90_ is not rebuilt - no core module changed. WHAT R40 CHANGED HERE IS STILL TRUE '
-    + 'AND IS KEPT RATHER THAN OVERWRITTEN: '
-    + 'R40 moves TWO values and no behaviour: the release, and its own build. 01_\'s expected '
-    + 'stamp stays at R39 because 01_ did not change - which is the entire reason those are separate '
-    + 'constants. The action-contract version stays 18: no router action was added or removed, and '
-    + 'bumping it to look current is the self-reference this file\'s own header warns about. '
-    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14 for the same reason - no page gained a mount dependency. '
-    + 'WHAT CHANGED IS A COMMENT, AND IT IS LOAD-BEARING. This manifest justified an OPTIONAL row for the '
-    + 'AI-lifecycle migration by saying it "has a row because it lives in that folder". S7-R4 moved that '
-    + 'file to assets/tools/apps-script-migrations/ and the row stayed, so the stated rule now predicts '
-    + 'the opposite of what this file does. The real reason was always the one given four lines above the '
-    + 'row - absence is ACTIONABLE, because 69_ refuses until the columns exist and that tool is the only '
-    + 'supported way to add them. A manifest that mis-states its own admission rule is the comment-versus-'
-    + 'assertion drift S7-R2B1 was convened to repair, so it is repaired rather than carried. 90_\'s '
-    + 'content hash is untouched - no core module changed.',
-  // S8-R49-L - THE TWENTY-SECOND SWAP, and the first release in this ledger to own a TWO-STAMP FILE.
-  //
-  // 66_ JOINS OWNERSHIP AT R49 carrying ONE of its two stamps. S8-R49-D changed Send ORCHESTRATION -
-  // rosBuildWorkset_ resolves units_per_carton and the tier loop refuses a line that has none, and
-  // handleRequestOrderSendOrchestrate_ stops hardcoding DUPLICATE_BUSINESS_IDENTITY - so ROS_BUILD_VERSION_
-  // moves and ROSEND_DIAG_BUILD_VERSION_ does not. That asymmetry is the point of two stamps, and C3 below
-  // depends on it: C3 maps manifest ROWS to file names without de-duplicating, so if BOTH of 66_'s rows
-  // expected the release this file would appear twice in a list compared against a KEY set and could never
-  // match. Exactly one row may carry the release, and the one that carries it is the one whose concern
-  // actually changed.
-  //
-  // 61_ IS NOT HERE AND THAT IS NOT AN OMISSION. It changed in S8-R49-I under R47, a token minted as a
-  // module-stamp rotation by a round forbidden to cut. It is CARRIED below at R47: it ships in this paste
-  // set while still declaring the round it last changed in, which is what a per-module stamp is for.
-  // S8-B1-R50 - 66_ IS NO LONGER HERE. It owned R49 and did not change in R50, so it moves to
-  // RELEASE_CARRIED below at R49: it still ships in this paste set while declaring the round it last
-  // changed in. That is the twenty-first swap and the ordinary life of a module stamp.
-  //
-  // S8-B3-R3-CP2I-R52 - THE TWENTY-THIRD SWAP, AND IT MOVES TWO FILES OUT AND ONE IN.
-  //
-  // 00_config.gs and 74_ BOTH LEAVE. They owned R51 - the Preview feature flag and the Preview job itself -
-  // and R52 touches neither. They are carried below at R51: still in the paste set, still declaring the round
-  // they actually changed in. Marching them to R52 would erase the one fact a per-module stamp carries, and
-  // it would do so while R51 is still unshipped, which is the case where "stale" and "correct" are hardest to
-  // tell apart from the outside.
-  //
-  // 03_master_data_handlers.gs ARRIVES, and it arrives with a stamp it has never had. It has owned a
-  // master-table WRITE since this ledger began and was absent from the manifest the whole time, so a stale
-  // copy of it was invisible to mixed_deployment - the same omission R21 fixed for 73_ and R33 for 05_,
-  // discovered late for the same reason: nothing dispatched into it that a reference error would reveal.
-  // R52 changes that. The router now dispatches marketplace.allocationPriority.set here, so a pre-R52 03_
-  // beside an R52 01_ routes a live write into an undefined handler.
-  '03_master_data_handlers.gs':
-    'THE MASTER-DATA WRITE SURFACE. R52 adds handleSetMarketplaceAllocationPriority_ - the ONLY writer of '
-    + 'marketplaces.allocation_priority, with the canonical-collision refusal, the marketplace_id identity '
-    + 'guard, the mandatory compare-and-set and a three-column write limit - and makes handleUpsertMarketplace_ '
-    + 'REFUSE any payload carrying allocation_priority, so the unguarded path is closed rather than merely '
-    + 'unused. Both writers now take the shared script lock, which the sheet previously had NO writer taking. '
-    + 'No schema change: the live columns are unchanged and no column was invented.',
+    'THE MANIFEST. R53 moves the release, its OWN build, the bundle content hash, and admits 42_ to the '
+    + 'module manifest. R46 recorded 42_ as a STAMPLESS owner - changed by a release and stamped by nobody '
+    + '- and said so in this very entry; R53 is the round that stops being true. 42_ now declares '
+    + 'RECO_WS_BUILD_VERSION_, so a stale copy of the recommendation read is finally visible to '
+    + 'mixed_deployment instead of being invisible by construction.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -412,6 +333,11 @@ var RELEASE_CARRIED = {
   // files must still be PASTED while declaring R51 rather than R52. A carried stamp under an unshipped
   // release is the one situation where a stale file and a correct one look identical from outside, and these
   // rows are how an acceptance tells them apart.
+  // S8-B3-R3-CP2V-R53 - the two R52 owners arrive together, under a release that is STILL unshipped. Their
+  // bytes must be pasted and their stamps must read R52, which is the state a carried entry exists to make
+  // checkable: from outside, a correct R52 file and a stale one look identical without this row.
+  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52',
+  '03_master_data_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51',
   '74_api_v1_overseas_allocation_preview_job.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51',
   '66_api_v1_request_order_send.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49',
@@ -1141,8 +1067,8 @@ var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 // now routes a live write into this file.
 eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }),
    ['05_overseas_inventory_handlers.gs', '74_api_v1_overseas_allocation_preview_job.gs',
-    '03_master_data_handlers.gs'],
-  'H5  the manifest gained EXACTLY the rows this span declares — 05_, 74_ and 03_, in manifest order');
+    '42_api_v1_recommendation_workspace.gs', '03_master_data_handlers.gs'],
+  'H5  the manifest gained EXACTLY the rows this span declares — 05_, 74_, 42_ and 03_, in manifest order');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none either — a probe silently dropped is a partial sync nobody can see');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
@@ -1380,12 +1306,15 @@ mutant('M13', 'an owner is stamped at the release but left out of the release ow
 // lives entirely in a stampless file, so "the stamp ledger has no row for it" stops being a footnote and
 // becomes this release's main surface. The COPY ledger is what covers it, and this proves that: drop 42_
 // from the stampless list and I1's equality against git must refuse the result.
-mutant('M13a', 'the stampless runtime owner is dropped from the copy list', function () {
+// CP2V-R53 - DERIVED, not named. This dropped '42_' by name, and 42_ left the stampless list at R53, so
+// the filter silently stopped removing anything and the mutant stopped mutating. A no-op reported as caught
+// is a lie about coverage, so the file is taken FROM the list it is testing.
+mutant('M13a', 'a stampless runtime owner is dropped from the copy list', function () {
   if (!I1_COPY_LIST) throw new Error('M13a anchor drifted — I1 did not capture the real git copy list');
   // Mutate the DECLARED side, exactly as I1 compares it, and keep the git side real.
   var declaredWithout42 = Object.keys(RELEASE_OWNERS).concat(Object.keys(RELEASE_CARRIED))
     .concat(Object.keys(GENERATED_OWNERS))
-    .concat(Object.keys(STAMPLESS_OWNERS).filter(function (f) { return f !== '42_api_v1_recommendation_workspace.gs'; }))
+    .concat(Object.keys(STAMPLESS_OWNERS).filter(function (f) { return f !== Object.keys(STAMPLESS_OWNERS)[0]; }))
     .sort();
   var split = partitionCopyList(I1_COPY_LIST, EDITOR_APPLIED_MEMBERS);
   return JSON.stringify(split.pasted) !== JSON.stringify(declaredWithout42);

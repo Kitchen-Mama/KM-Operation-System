@@ -39,6 +39,12 @@ var RECO_WS_PAGE_DEFAULT_ = 50;
 // weekly rung had no readable source. All three differ in what they COMPUTE, so neither a cached r5c nor an r5d
 // answer may be replayed — the page accepts r5e alone (_IR_RECO_CACHE_HANDLERS).
 var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5e';
+// S8-B3-R3-CP2V-R53 - THE MODULE STAMP, a different fact from the handler version above.
+// HANDLER_VERSION names the ANSWER CONTRACT; CP2V changed neither request nor business response, so it does
+// not move - and must not, since the browser's session cache keys on it. BUILD_VERSION names the FILE: the
+// read transport changed underneath that contract, and a pre-R53 copy answers identically while spending
+// twenty-one sheet reads. A contract comparison cannot see that; the 63_ manifest can.
+var RECO_WS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R53';
 
 // --------------------------------------------------------------------------------------------------------
 // PURE helpers (deterministic; no clock / no Spreadsheet / no formula)
@@ -980,6 +986,246 @@ function recommendationWorkspaceBuild_(v, calc, lines) {
   };
 }
 
+// ============================================================================================================
+// CP2V-R1/R2 - THE CANONICAL READ, IN TWO REMOTE CALLS INSTEAD OF TWENTY-ONE.
+//
+// THE COST IS THE SHEET COUNT, NOT THE ROWS. readCanonicalSnapshots opens twenty-one sheets and calls
+// getDataRange().getValues() on each. 60_ measured the same point on the same spreadsheet: thirteen tables,
+// 22,006 ms -> 2,265 ms, once they stopped crossing the range bridge thirteen times (R44). This handler
+// pays ONCE PER SITE.
+//
+// A SPLIT, NOT A SWEEP. Under UNFORMATTED_VALUE + SERIAL_NUMBER a date and a number are the same wire
+// value. 60_ answers that with SIR_B1_DATE_MAP_, a declared, never-inferred, per-column map validated
+// against the live reader; only canonical tables already in it are batched, and the rest keep the existing
+// per-sheet reader - unchanged by construction. THIS FILE DECLARES NO DATE COLUMNS: promoting a table means
+// adding it to 60_'s map, under 60_'s drift detector, after a live census. Membership is ASKED at runtime
+// (`sirWsIsB1Table_`), so the split follows that map instead of copying it.
+//
+// DEGRADING IS NOT FAILING. Every prerequisite - advanced service, 60_'s helpers, bundle capability,
+// spreadsheet timezone - is checked, and anything missing routes back to the read that ships today.
+// ============================================================================================================
+
+// Transient-only, and deliberately the same list 60_ uses. A 403 or a schema fault must NOT fall back: that
+// would turn a deployment error into a permanent silent slow path.
+var RECO_WS_CANON_FALLBACK_ = ['SHEETS_QUOTA_EXCEEDED', 'SHEETS_SERVICE_ERROR', 'ADVANCED_SHEETS_SERVICE_UNAVAILABLE'];
+
+// CP2V-R2 - ONE fallback per execution, and never a quiet one. A fallback pays for the failed batch AND
+// then the full twenty-one-sheet read, so a request that falls back is SLOWER than it would have been
+// without this reader at all. Right for a transient fault, wrong for a standing condition - hence a CAP,
+// not just a count. `profile.fallback.batchMsWasted` reports that loss rather than hiding it.
+var RECO_WS_CANON_MAX_FALLBACK_ = 1;
+var RECO_WS_CANON_FALLBACKS_ = 0;
+
+// A refusal the handler can NAME. The generic catch reads `apiCode`, so this token reaches the envelope as
+// itself instead of collapsing into INTERNAL_ERROR - a malformed reply is not a bug in the projection.
+function recoWsCanonError_(code, detail) {
+  var e = new Error(code + (detail ? ': ' + detail : ''));
+  e.apiCode = code; e.safetyToken = code; e.canonicalReadFault = true;
+  return e;
+}
+
+// `(vr && vr.values) || null` cannot tell a legitimately EMPTY range from a BROKEN entry, and those must
+// not share a branch: the first is an empty business table, the second is an unknown one. A null entry, a
+// non-array `values`, or a non-array row all mean the reply is not one this code can read, and the only
+// safe answer is to stop - an empty table here would publish an answer computed from a table never read.
+function recoWsCanonValidRange_(vr) {
+  if (vr === null || vr === undefined) return 'entry is null';
+  if (typeof vr !== 'object' || Array.isArray(vr)) return 'entry is not an object';
+  if (!Object.prototype.hasOwnProperty.call(vr, 'values')) return null;      // legitimately empty range
+  var v = vr.values;
+  if (v === null || v === undefined) return null;                            // also legitimately empty
+  if (!Array.isArray(v)) return 'values is ' + (typeof v) + ', not an array';
+  for (var i = 0; i < v.length; i++) { if (!Array.isArray(v[i])) return 'row ' + i + ' is not an array'; }
+  return null;
+}
+
+// Registry order is preserved on both sides, so the merged object is key-for-key what the old reader built.
+function recoWsCanonSplit_() {
+  var reg = (typeof KMPS !== 'undefined' && KMPS && KMPS.CANONICAL_TABLES) || [];
+  var batch = [], rest = [];
+  for (var i = 0; i < reg.length; i++) {
+    if (sirWsIsB1Table_(reg[i].sheet)) batch.push(reg[i]); else rest.push(reg[i]);
+  }
+  return { batch: batch, rest: rest };
+}
+
+// Rebuild the rectangle getDataRange() would have returned. batchGet omits trailing empty cells PER ROW, so
+// the width is the WIDEST ROW, not the header length: data running past the last populated header cell is
+// still inside getDataRange()'s rectangle, and padding to the header would drop those columns.
+function recoWsCanonRect_(values) {
+  var w = 0, i;
+  for (i = 0; i < values.length; i++) { var r = values[i]; if (r && r.length > w) w = r.length; }
+  return sirWsPadRows_(values, w);
+}
+
+/**
+ * { snapshots, issues } - the SAME shape, keys and issue vocabulary as KMPS.readCanonicalSnapshots(ss, null).
+ * SOURCE_NOT_AVAILABLE = no such sheet; MISSING_SNAPSHOT = it exists and holds nothing. Two different facts,
+ * kept apart here because the per-sheet reader keeps them apart.
+ */
+function recoWsCanonicalRead_(ss, nowFn) {
+  var now = (typeof nowFn === 'function') ? nowFn : function () { return Date.now(); };
+  var t0 = now();
+  var canFull = (typeof KMPS !== 'undefined' && KMPS && typeof KMPS.readCanonicalSnapshots === 'function');
+  if (!canFull) return { snapshots: {}, issues: [], profile: recoWsCanonProfile_('UNAVAILABLE', 0, 0, 0, 0, 0, null) };
+
+  // `reason` names WHY the slow path is running, so a deployment that silently never batches is visible in
+  // the response rather than only in a stopwatch.
+  var full = function (mode, reason, wasted, startedAt) {
+    var fr = now();
+    var r = KMPS.readCanonicalSnapshots(ss, null);
+    var nTables = Object.keys(r.snapshots || {}).length;
+    r.profile = recoWsCanonProfile_(mode, 0, nTables, nTables, (now() - (startedAt === undefined ? fr : startedAt)), 0,
+      reason ? { count: RECO_WS_CANON_FALLBACKS_, max: RECO_WS_CANON_MAX_FALLBACK_, reason: reason,
+        batchMsWasted: wasted || 0 } : null);
+    return r;
+  };
+
+  // Every prerequisite, checked before anything is attempted. Missing one is not an error - it is the
+  // deployment this code was written to survive - but it IS named.
+  if (typeof Sheets === 'undefined' || !Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
+    return full('PER_SHEET', null, 0, t0);
+  }
+  if (typeof sirWsIsB1Table_ !== 'function' || typeof sirWsApplyDateMap_ !== 'function'
+    || typeof sirWsPadRows_ !== 'function' || typeof sirWsColumnLetter_ !== 'function') {
+    return full('PER_SHEET', null, 0, t0);
+  }
+
+  // HALF A DEPLOYMENT: this file beside a PRE-CP2V 90_. `config.only` would be silently ignored, so the
+  // per-sheet pass would read all twenty-one tables - re-reading by hand the twelve just fetched in bulk.
+  // Still correct, but SLOWER than before the optimisation existed. KM_BUNDLE_CONTENT_HASH_ reports a
+  // stale 90_ to a person afterwards; this runs first, costs one pure call, and turns the bad pairing
+  // into the ordinary slow path, named as such.
+  if (!(function () {
+    try { return KMPS.tablesFor({ only: [] }).length === 0; } catch (e) { return false; }
+  })()) return full('PER_SHEET', null, 0, t0);
+
+  var split = recoWsCanonSplit_();
+  if (!split.batch.length) return full('PER_SHEET', null, 0, t0);
+
+  var snapshots = {}, issues = [], id = ss.getId();
+  var tz = (typeof ss.getSpreadsheetTimeZone === 'function') ? ss.getSpreadsheetTimeZone() : null;
+  if (!tz) return full('PER_SHEET', null, 0, t0);   // no zone, no provable serial conversion, no batch
+  var remoteCalls = 0, normalizeMs = 0;
+
+  try {
+    // CALL 1 - existence and width. Metadata only. It cannot be range-filtered: naming a missing sheet makes
+    // the call throw, and "missing" is the state SOURCE_NOT_AVAILABLE has to report.
+    remoteCalls++;
+    var meta = Sheets.Spreadsheets.get(id, { fields: 'sheets.properties(title,gridProperties(columnCount))' });
+    var width = {}, present = {}, sh = (meta && meta.sheets) || [], m;
+    for (m = 0; m < sh.length; m++) {
+      var pr = sh[m].properties || {};
+      if (!pr.title) continue;
+      present[String(pr.title)] = true;
+      width[String(pr.title)] = Number((pr.gridProperties && pr.gridProperties.columnCount) || 0);
+    }
+
+    // Only EXISTING sheets become ranges: batchGet rejects the WHOLE request over one missing sheet.
+    var ranges = [], ordered = [], i;
+    for (i = 0; i < split.batch.length; i++) {
+      var e = split.batch[i];
+      if (!present[e.sheet]) { issues.push({ sourceType: e.key, sheetName: e.sheet, reason: 'SOURCE_NOT_AVAILABLE' }); continue; }
+      var cols = width[e.sheet] > 0 ? width[e.sheet] : 1;
+      // Column-bounded, ROW-OPEN: rowCount is the ALLOCATED grid, so bounding on it would ask for a thousand
+      // empty rows and make an empty sheet look like a full one.
+      ranges.push("'" + e.sheet.replace(/'/g, "''") + "'!A:" + sirWsColumnLetter_(cols));
+      ordered.push(e);
+    }
+
+    if (ranges.length) {
+      // CALL 2 - the values. UNFORMATTED_VALUE is required for IDENTITY as much as arithmetic: sku columns are
+      // mixed number/string, and a formatted render would stringify them and change row identity.
+      remoteCalls++;
+      var resp = Sheets.Spreadsheets.Values.batchGet(id, { ranges: ranges,
+        valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER' });
+      var vrs = (resp && resp.valueRanges) || [];
+      // A MISSING valueRange IS NOT AN EMPTY TABLE. One entry comes back per requested range; a range with no
+      // data has no `values` KEY, which is a different thing from the ENTRY being absent. Treating the first
+      // as empty is correct; treating the second as empty fabricates an empty business table.
+      if (vrs.length !== ordered.length) {
+        throw recoWsCanonError_('CANONICAL_BATCH_PARTIAL_RESPONSE',
+          'requested ' + ordered.length + ' ranges, received ' + vrs.length);
+      }
+      // SHAPE FIRST, FOR EVERY ENTRY, BEFORE ANY IS USED. Validating as we go would leave the tables before a
+      // broken entry in `snapshots` and the rest unread - a partial read that looks complete.
+      for (i = 0; i < ordered.length; i++) {
+        var bad = recoWsCanonValidRange_(vrs[i]);
+        if (bad) {
+          throw recoWsCanonError_('CANONICAL_BATCH_MALFORMED_RESPONSE',
+            'range ' + i + ' [' + ordered[i].sheet + '] ' + bad);
+        }
+      }
+      var tN = now();
+      for (i = 0; i < ordered.length; i++) {
+        var sp = ordered[i], vrv = vrs[i].values;
+        var vals = (vrv && vrv.length) ? vrv : null;
+        if (!vals) { issues.push({ sourceType: sp.key, sheetName: sp.sheet, reason: 'MISSING_SNAPSHOT' }); continue; }
+        var rect = recoWsCanonRect_(vals);
+        sirWsApplyDateMap_(sp.sheet, rect, tz);          // declared columns only, and type-gated inside
+        var headers = rect[0].map(function (h) { return recoWsStr_(h); });
+        snapshots[sp.key] = { headers: headers, rows: rect.slice(1) };
+      }
+      normalizeMs += (now() - tN);
+    }
+  } catch (eB) {
+    // A fault this reader raised about the RESPONSE is never transient: it says the reply was not readable,
+    // and reading it again the slow way would not make the first reply correct. It fails closed, by name.
+    if (eB && eB.canonicalReadFault) throw eB;
+    var cls = (typeof sirWsClassifySheetsError_ === 'function') ? sirWsClassifySheetsError_(eB) : '';
+    if (RECO_WS_CANON_FALLBACK_.indexOf(cls) === -1) throw eB;   // 403 / schema faults fail closed
+    if (RECO_WS_CANON_FALLBACKS_ >= RECO_WS_CANON_MAX_FALLBACK_) {
+      throw recoWsCanonError_('CANONICAL_BATCH_FALLBACK_EXHAUSTED',
+        'already fell back ' + RECO_WS_CANON_FALLBACKS_ + ' time(s) in this execution; last class ' + cls);
+    }
+    RECO_WS_CANON_FALLBACKS_++;
+    return full('FALLBACK', cls, now() - t0, t0);         // transient only, once, and never silently
+  }
+
+  // The remainder, through the UNCHANGED per-sheet reader - one `only` request rather than one call each.
+  var restKeys = [];
+  for (var k = 0; k < split.rest.length; k++) {
+    var rk = split.rest[k];
+    // The allocation-rule snapshot is replaced by the Script-Property blob below, every time, before anything
+    // reads it; reading the retired Sheet first buys a read and discards it. Guarded on the SAME condition as
+    // the override, so a runtime without 50_ still reads it.
+    if (rk.key === 'replenishmentDemandAllocationRules' && typeof warehouseAllocationSnapshot_ === 'function') continue;
+    restKeys.push(rk.key);
+  }
+  var perSheet = 0;
+  if (restKeys.length) {
+    var r2 = KMPS.readCanonicalSnapshots(ss, { only: restKeys });
+    var sn = r2.snapshots || {};
+    for (var key in sn) { if (Object.prototype.hasOwnProperty.call(sn, key)) snapshots[key] = sn[key]; }
+    issues = issues.concat(r2.issues || []);
+    perSheet = restKeys.length;
+  }
+  return { snapshots: snapshots, issues: issues,
+    profile: recoWsCanonProfile_('BATCH', remoteCalls, perSheet, Object.keys(snapshots).length,
+      (now() - t0), normalizeMs, null) };
+}
+
+// A BOUNDED diagnostic: fixed keys, numbers, one short token. No table names, no row counts, no array that
+// grows with the registry - a response is not a log. `readMs` covers obtaining the bytes (normalizeMs, the
+// padding and declared date conversion, is INSIDE it); the handler derives computeMs from its own total.
+function recoWsCanonProfile_(mode, remoteCalls, perSheetReads, tables, readMs, normalizeMs, fallback) {
+  return { mode: mode, remoteCalls: remoteCalls, perSheetReads: perSheetReads, tables: tables,
+    readMs: readMs, normalizeMs: normalizeMs, fallback: fallback || null };
+}
+
+// The response projection. `computeMs` is derived here rather than in the reader because only the handler
+// knows its own total. An injected pre-read carries no profile; INJECTED says so rather than pretending
+// this handler chose a transport it never ran.
+function recoWsCanonMeta_(profile, serverMs) {
+  if (!profile) return { mode: 'INJECTED', remoteCalls: 0, perSheetReads: 0, tables: null,
+    readMs: null, normalizeMs: null, computeMs: null, fallback: null };
+  var rm = (typeof profile.readMs === 'number') ? profile.readMs : null;
+  return { mode: profile.mode, remoteCalls: profile.remoteCalls, perSheetReads: profile.perSheetReads,
+    tables: profile.tables, readMs: rm, normalizeMs: profile.normalizeMs,
+    computeMs: (rm === null || typeof serverMs !== 'number') ? null : (serverMs - rm),
+    fallback: profile.fallback };
+}
+
 // --------------------------------------------------------------------------------------------------------
 // IMPURE orchestrator — injectable io (default = live Apps Script). NEVER calls getOperationDb / never writes.
 // --------------------------------------------------------------------------------------------------------
@@ -997,7 +1243,11 @@ function recommendationWorkspaceDefaultIo_() {
       var ss = SpreadsheetApp.openById(id);
       prodAssertDbTarget_(ss, id);                                       // exact-ID gate (fail closed) before any read
       return ss;
-    }
+    },
+    // CP2V-R1 - the seam at the read site is UNCHANGED (`io.readCanonicalSnapshots ? ... : KMPS...`); what
+    // changed is that the DEFAULT io now answers it. An injected io - the Gap batch's shared pre-read -
+    // still wins, because it replaces this whole object.
+    readCanonicalSnapshots: function (ss) { return recoWsCanonicalRead_(ss, function () { return Date.now(); }); }
   };
 }
 
@@ -1024,6 +1274,12 @@ function handleRecommendationWorkspaceGet_(body, io) {
     // io has no such method → the canonical per-request read is UNCHANGED.
     var read = io.readCanonicalSnapshots ? io.readCanonicalSnapshots(ss) : KMPS.readCanonicalSnapshots(ss, null);   // ONE targeted read (never getOperationDb)
     var tablesRead = read && read.snapshots ? Object.keys(read.snapshots).length : 0;
+    // CP2V-R2 - WHICH TRANSPORT ANSWERED, IN THE RESPONSE ITSELF. A deployment missing the advanced
+    // service, or falling back on every request, would otherwise look exactly like one that is simply
+    // slow. `canonicalRead.mode` names it (BATCH / PER_SHEET / FALLBACK / INJECTED) and `fallback.reason`
+    // says why. computeMs = serverDurationMs - readMs, which is what says whether the remaining cost is
+    // transport or calculation.
+    var readProfile = (read && read.profile) || null;
     var snaps = read.snapshots || (read.snapshots = {});
     // F1-7N-D-2k-R1 — Warehouse Allocation demand rules are the KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob
     // (owner 50_api_v1_warehouse_allocation_config.gs), NOT the `replenishment_demand_allocation_rules` Sheet tab.
@@ -1035,7 +1291,7 @@ function handleRecommendationWorkspaceGet_(body, io) {
     if (typeof warehouseAllocationSnapshot_ === 'function') snaps.replenishmentDemandAllocationRules = warehouseAllocationSnapshot_();
 
     var scopeSkus = recoWsScopeSkus_(snaps.marketplaceSkus, v.scope, v.scope.sku || null);
-    if (!scopeSkus.length) return recoWsEnvelope_(false, null, [recoWsErr_('MISSING_SKU_MAPPING', 'no marketplace_skus row for the scope (company/country/marketplace)')], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle });
+    if (!scopeSkus.length) return recoWsEnvelope_(false, null, [recoWsErr_('MISSING_SKU_MAPPING', 'no marketplace_skus row for the scope (company/country/marketplace)')], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
     var siteSkuBySku = recoWsSiteSkuBySku_(recoWsToRowObjects_(snaps.marketplaceSkus), v.scope);
     var ful = recoWsResolveFulfillment_(recoWsToRowObjects_(snaps.marketplaces), v.scope);
     var vmeta = { formulaVersion: v.formulaVersion, sourceDataAsOf: v.sourceDataAsOf };
@@ -1072,10 +1328,10 @@ function handleRecommendationWorkspaceGet_(body, io) {
         seen[ln.recommendationLineId] = 1; lines.push(ln);
       }
     }
-    if (!lines.length && issues.length) return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle });
+    if (!lines.length && issues.length) return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
 
     var vm = recommendationWorkspaceBuild_(v, calc, lines);
-    return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, conflicts: issues.length });
+    return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, conflicts: issues.length, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INTERNAL_ERROR';
     return recoWsEnvelope_(false, null, [recoWsErr_(code, String(e && e.message || e), (e && e.schemaDetail) || null)], { requestId: reqId, serverDurationMs: (io.now() - t0) });

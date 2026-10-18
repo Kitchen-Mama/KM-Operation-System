@@ -73,9 +73,52 @@
     { key: 'requestOrderLineSources', sheet: 'request_order_line_sources', required: false }
   ];
 
+  // CP2V-R1 - `config.only` NAMES THE TABLES A CALLER ACTUALLY NEEDS, and nothing else changes.
+  //
+  // WHY THIS EXISTS. The reader takes no scope: every caller pays for all twenty-one tables because the
+  // registry is a list, not a request. The price of a sheet read is the COUNT, so the only way to lower it
+  // is to stop asking for tables the caller provably does not consume. CP2V-R1 established that consumed
+  // set by EXECUTION - a recording proxy over the snapshots object across the sales/forecast,
+  // MARKETPLACE/WAREHOUSE, hybrid, EU, blocked, campaign-exclusion and missing-data paths - not by reading
+  // the source, because a static reference cannot tell which branch runs.
+  //
+  // IT IS OPT-IN AND IT SUBTRACTS ONLY. Absent (the default for every existing caller) the entries are
+  // exactly the entries of CANONICAL_TABLES, in REGISTRY order - never the caller's order, so the shape of
+  // the result cannot depend on how the request was written. Present, it is a FILTER over that same list:
+  // it can never add a table or rename one.
+  //
+  // THE EMPTY SET IS A REQUEST, NOT A MISTAKE. `only: []` reads nothing and returns nothing. It is
+  // distinguishable from `only` absent, which reads everything, and both are deliberate: a caller that
+  // computed an empty work list should perform an empty read, not a full one.
+  //
+  // AN UNKNOWN KEY IS REFUSED. A misspelled key simply fails to match, so the table it was meant to name is
+  // NOT READ, and the caller gets `undefined` at the consumer and a fail-closed refusal somewhere far away
+  // with nothing connecting the two. A typo must be loud at the point of the typo. Refusing also keeps the
+  // list honest as the registry evolves: a key removed from CANONICAL_TABLES breaks its callers at once
+  // instead of quietly shrinking their read.
+  //
+  // A TABLE LEFT OUT IS NOT A TABLE THAT FAILED. It is simply not read, so it raises no SOURCE_NOT_AVAILABLE
+  // and appears nowhere in `issues`. That distinction is the whole safety property: a caller that omits a
+  // table it DOES consume gets `undefined` at the consumer - the same thing it would see for a missing
+  // sheet - and the frozen fail-closed gates refuse, rather than a zero being invented on its behalf.
   function tablesFor(config) {
     var over = (config && config.sheetNames) || {};
-    return CANONICAL_TABLES.map(function (e) { var c = { key: e.key, sheet: over[e.key] ? str(over[e.key]) : e.sheet, required: e.required }; return c; });
+    var only = (config && Array.isArray(config.only)) ? config.only : null;
+    if (only) {
+      var known = {};
+      CANONICAL_TABLES.forEach(function (e) { known[e.key] = 1; });
+      var bad = only.filter(function (k) { return !Object.prototype.hasOwnProperty.call(known, k); });
+      if (bad.length) {
+        throw new Error('readCanonicalSnapshots: config.only names unknown canonical table key(s): '
+          + bad.join(', ') + '. Known keys: ' + Object.keys(known).join(', '));
+      }
+    }
+    var out = [];
+    CANONICAL_TABLES.forEach(function (e) {
+      if (only && only.indexOf(e.key) === -1) return;
+      out.push({ key: e.key, sheet: over[e.key] ? str(over[e.key]) : e.sheet, required: e.required });
+    });
+    return out;
   }
 
   // ---- INJECT-testable raw canonical-table reader (the `.gs` passes SpreadsheetApp; tests pass a fake) --------

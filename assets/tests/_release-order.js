@@ -2053,7 +2053,17 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   //
   // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES. Inserting this anywhere but the end would
   // silently re-order every floor written against this list.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52',
+  // S8-B3-R3-CP2V-R53. The recommendation workspace read transport. R52 is CUT, so this could not ride it:
+  // a runtime change landing after a cut needs its own cut, and the three gates that enforce that are all
+  // correct. R53 makes 42_api_v1_recommendation_workspace.gs the SECOND Product file to call the Sheets v4
+  // advanced service - the first since 60_ at R44 - and an advanced-service consumer appearing without its
+  // own round is exactly what the R4D-D2 suite refuses. 42_ becomes a manifest owner here for the same
+  // reason 03_ did at R52: it had owned a read path with no stamp, and a stale copy of it is now the
+  // difference between two remote calls and twenty-one sheet reads.
+  //
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R53'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

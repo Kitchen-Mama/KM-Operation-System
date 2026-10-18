@@ -5148,3 +5148,92 @@ Unchanged: atomic `link()` acquisition, token-verified release, the tests' priva
 per-suite pollution check, the immediate abort, the refusal to auto-restore a polluted source, the
 dirty-start refusal, and the 600 s per-suite timeout.
 
+
+### D-S8-B3-120 — The canonical read is priced by SHEET COUNT, and the consumed set was derived by EXECUTION — **FIXED (CP2V-R1/R2, R53)**
+
+`recommendation.workspace.get` opened twenty-one sheets and called `getDataRange().getValues()` on each,
+**once per site**, so US + CA + EU paid it three times. The cost is the count of sheets, not the rows — the
+same thing 60_ established by measurement at R44 (thirteen tables, 22,006 ms → 2,265 ms).
+
+**The obvious fix was measured and REJECTED.** Reading fewer tables requires knowing which are consumed, and
+CP2V-R1 derived that by EXECUTION — a recording proxy over the snapshots object, driving the real handler
+across sales/forecast, MARKETPLACE/WAREHOUSE, hybrid, EU, blocked, campaign-exclusion, special-event,
+ongoing-PO and missing-data paths. The answer was **all twenty-one**: `overseasInventorySnapshot` and
+`factoryStock` are touched only on the WAREHOUSE lane, which is exactly why a static reference count could
+not have answered this and a single-scenario trace would have answered it wrongly.
+
+> The first trace was itself wrong, and the fixture is why. Every scenario came back `ok=false`, `avg=null`,
+> blocked on `MISSING_FORECAST_WEIGHT_SOURCE`, because the forecast fixture did not cover the months the
+> horizon reaches. That trace reported **which tables a blocked path reads**. Only after the fixture
+> resolved (`avgSalesPerDay=10`, `normalDayCount=30`, unblocked) did the trace mean what it claimed.
+
+So the saving is TRANSPORT, not scope. The twelve canonical tables whose date columns 60_ has already proven
+in `SIR_B1_DATE_MAP_` are read with two Sheets v4 calls; the other nine keep the existing per-sheet reader
+and are unchanged by construction. **42_ declares no date columns of its own** — membership is asked at
+runtime through `sirWsIsB1Table_`, so the split follows 60_'s map instead of copying it.
+
+Measured: **21 sheet reads → 2 remote calls + 8 per-sheet reads** in production (9 without 50_). Exactly one
+table stopped being read at all: `replenishment_demand_allocation_rules` was read and then overwritten,
+unconditionally, by the Script-Property blob 50_ owns, before anything read it. `meta.tablesRead` now reports
+20 — that number counts what was read, so 21 would have been the inaccurate answer.
+
+**Offline numbers are read counts, not durations.** No production latency is claimed here.
+
+---
+
+### D-S8-B3-121 — A malformed `valueRange` was becoming an EMPTY BUSINESS TABLE — **FIXED (CP2V-R2)**
+
+The first implementation used `(vrs[i] && vrs[i].values) || null` and treated a falsy result as
+`MISSING_SNAPSHOT`. That is the same branch a legitimately empty range takes, so a **null entry, a `values`
+that is not an array, or a row that is not an array** all became "this table is empty" — a business answer
+computed from a table that was never read.
+
+Counter-examples were written **before** the fix (§B of
+`ir-canonical-batch-read-boundaries-s8-b3-r3-cp2v-r2.test.js`) and all five failed against the unfixed code,
+returning twenty or twenty-one tables instead of refusing. The shape of every entry is now validated
+**before any entry is used** — validating as it goes would leave the tables before a broken entry in
+`snapshots` and the rest unread, a partial read that looks complete — and the refusal is NAMED
+(`CANONICAL_BATCH_MALFORMED_RESPONSE`, carried on `apiCode`) so it reaches the envelope as itself rather
+than collapsing into `INTERNAL_ERROR`. It is never transient: reading again the slow way would not make the
+first reply correct.
+
+---
+
+### D-S8-B3-122 — `config.only` refuses an unknown key instead of silently under-reading — **FIXED (CP2V-R2)**
+
+The subset capability first IGNORED an unrecognised key, on the reasoning that the list is a performance
+request rather than a schema. That is wrong in the one way that matters: a misspelled key simply fails to
+match, so the table it was meant to name is **not read**, and the caller — believing it asked for that
+source — receives `undefined` at the consumer and a fail-closed refusal somewhere far away, with nothing
+connecting the two. A typo must be loud at the point of the typo.
+
+The contract is now explicit at all four points, each with a test: **absent** → the whole registry;
+**subset** → exactly those, in REGISTRY order, never caller order; **empty set** → reads nothing, which is a
+real request and distinguishable from absent; **unknown key** → refused, naming the offending key.
+
+---
+
+### D-S8-B3-123 — A second advanced-service consumer cannot ride someone else's cut — **ACCEPTED (CP2V-R2 → R53)**
+
+42_ became the second Product runtime file to call Sheets v4, the first since 60_ at R44. Three gates failed
+together and none of them was wrong:
+
+- `advanced-sheets-service-enable-transition-s8-r4d-d2` §U5 — *"a second Product consumer appearing without
+  its own round would still fail"*, written in advance of this exact situation;
+- its own mutants M10/M11 went **VACUOUS**, because their detectors still encoded "exactly 60_";
+- `…-r5` §E4 — a manifest owner (63_) edited while still stamped R52.
+
+R52 is CUT, and a runtime change landing after a cut needs its own cut, so **R53** was cut rather than
+joined: the token appended at the END of `OWNER_STAMPS` (the list is positional), 42_ given
+`RECO_WS_BUILD_VERSION_` and a manifest row, 63_ moved to R53, the bundle hash re-pinned, and the U5
+detectors generalised from the approved FILE to the approved SET so a *third* consumer still fails.
+
+**`RECO_WS_HANDLER_VERSION_` deliberately did NOT move.** It names the answer contract, and the browser's
+session cache keys on it; the request and business response are byte-identical, so bumping it would discard
+every cached answer to announce a change no answer can show. The file's identity moved instead. For the same
+reason no served byte changed and the **application token does not rotate** — R51 set that precedent in the
+other direction.
+
+**Carried, not fixed:** a trailing all-blank row is kept by `getDataRange()` and dropped by `batchGet`, so
+the intermediate rectangle can differ by such rows. §A5 records the difference explicitly and asserts the
+**handler output is identical**; the business answer does not depend on it.

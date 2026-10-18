@@ -212,8 +212,18 @@ eq((sir.match(/var SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R45,
   'G3  60_ STAYS at R45 — it did not change in R46, and marching it would claim a round it had no part in');
 ok(RO.stampAtOrAfter(R46, R45) && !RO.stampAtOrAfter(R45, R46),
   'G4  R46 is ordered strictly after R45 in the append-only stamp list');
-ok(!/BUILD_VERSION_|_RELEASE_ =/.test(RECO_CODE),
-  'G5  42_ declares no build symbol — it is a STAMPLESS owner, copied and stamped by nobody');
+// S8-B3-R3-CP2V-R53 — THIS ASSERTION IS INVERTED, AND THAT IS THE POINT OF THE ROUND THAT INVERTED IT.
+// At R46 this recorded a real gap: 42_ was changed by a release and stamped by nobody, so a stale copy was
+// invisible to mixed_deployment. R53 makes it the second Product file to call the Sheets v4 advanced
+// service, which is a dependency a partial sync must be able to expose, so the file finally declares
+// RECO_WS_BUILD_VERSION_ and holds a manifest row. The claim kept here is the DURABLE one — the stamp
+// names the round the FILE changed — rather than the count of symbols, which was only ever a proxy for it.
+var RECO_STAMP = (RECO_CODE.match(/var RECO_WS_BUILD_VERSION_ = '([^']+)'/) || [])[1] || null;
+ok(RECO_STAMP !== null,
+  'G5  42_ declares a build symbol — it stopped being a STAMPLESS owner at R53, when it took on the '
+  + 'advanced-service dependency a stale copy has to be able to reveal', String(RECO_STAMP));
+ok(RO_ORDER.stampAtOrAfter(RECO_STAMP, R46),
+  'G5a and that stamp is at or after R46 — the round this suite was written for', String(RECO_STAMP));
 var LOG = fs.readFileSync(path.join(ROOT, 'docs/planning/DEPLOYMENT_RELEASE_LOG.md'), 'utf8');
 ok(LOG.indexOf(R46) !== -1, 'G6  R46 has a ledger entry');
 ok(/NOT DEPLOYED/.test(LOG.slice(LOG.indexOf(R46))), 'G7  ...which records that nobody has deployed it');
