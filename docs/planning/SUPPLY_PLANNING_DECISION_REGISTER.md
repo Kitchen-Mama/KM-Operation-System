@@ -5949,3 +5949,42 @@ deleted. It now asserts the opposite, and L12a pins where the memo is allowed to
 
 ---
 
+---
+
+### D-S8-B3-150 — Four captures the page change invalidated, RE-RUN rather than re-pinned (CP2X-R2)
+
+The full sweep came back 681/685 with four NOT_CLEAN, and the raw output said all four were the same
+single assertion: each pins the SHA-256 of `assets/js/pages/inventory-replenishment.js`, which §A and §C
+changed. Nothing about any of the four measurements was in question; their captures had simply stopped
+describing the page on disk. The rule is unchanged — **a capture is RE-RUN, never re-pinned** — and
+editing a hash would have turned four live measurements into four decorations.
+
+| capture | instrument | result |
+|---|---|---|
+| `cp2s-r2-inplace/inplace-dom.json` | `_cp2s-r2-inplace-dom-runner.js` | 29/0 |
+| `cp2u-r3-state-transitions/state-transitions.json` | same, `--states` | 37/0 |
+| `cp2s-r2-c9/c9-frames.json` | `_cp2s-r2-c9-frame-runner.js` | 36/0 |
+| `cp2r-reveal-scope/` (12 files + `pairs.json`) | `_cp2r-warm-expand-runner.js` | 45/0 |
+
+**The fourth is an A/B and was re-run as one.** Six pairs, unscoped then scoped INSIDE each pair, never
+pooled — the discipline the CP2R README records after CP2P's four pooled runs per side pointed the
+opposite way to ten interleaved pairs. The unscoped arm is the shipped file with exactly two identifiers
+swapped (`onReveal: _irRecoRevealOnce_`/`_irExecRevealOnce_` → `…Paint_`), applied before each unscoped
+run and reverted by git before the scoped run of the same pair; the driver asserts the page is restored
+at every boundary and aborts rather than continue against a tree it did not leave clean. All twelve runs
+returned `ok: true` and the page was clean at the end.
+
+**The conclusion reproduced, and by a wider margin than CP2R's own threshold:**
+
+| | pairs better | median |
+|---|---|---|
+| `ms_data_after_handler` | 6 / 6 | **−100.5 ms** |
+| `ms_click_to_exec_resolved` | 6 / 6 | **−106.1 ms** |
+| `ms_click_to_paint` | 5 / 6 | −5.3 ms (bound: no regression above +15) |
+| `ms_handler_sync` | 6 / 6 | −4.6 ms (bound: unchanged, |median| < 15) |
+
+First paint is still not claimed as a win and still could not be: every scoped callback runs after the
+frame in which the panel first has a layout box.
+
+---
+
