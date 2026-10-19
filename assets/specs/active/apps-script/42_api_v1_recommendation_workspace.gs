@@ -44,7 +44,7 @@ var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5e';
 // not move - and must not, since the browser's session cache keys on it. BUILD_VERSION names the FILE: the
 // read transport changed underneath that contract, and a pre-R53 copy answers identically while spending
 // twenty-one sheet reads. A contract comparison cannot see that; the 63_ manifest can.
-var RECO_WS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R53';
+var RECO_WS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54';
 
 // --------------------------------------------------------------------------------------------------------
 // PURE helpers (deterministic; no clock / no Spreadsheet / no formula)

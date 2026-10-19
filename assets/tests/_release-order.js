@@ -2082,7 +2082,21 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // difference between two remote calls and twenty-one sheet reads.
   //
   // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R53'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R53',
+  // S8-B3-R3-CP2X-R3-R54. A RELEASE IDENTITY ROUND AND NOTHING ELSE. R53 is CUT and was never
+  // synced, and that is not a reason to reuse its id - the same rule R53 records about R52 and R51
+  // records about R50. CP2X-R2 changed 42_api_v1_recommendation_workspace.gs AFTER the R53 cut
+  // (the three per-SKU helpers now take `read` and share the per-request row cache), and a runtime
+  // change landing after a cut needs its own cut. R54 absorbs R53 exactly as R49 absorbed R47/R48.
+  //
+  // WHAT DOES NOT MOVE WITH IT: RECO_WS_HANDLER_VERSION_ stays fm5-r4ui-r5e. It names the ANSWER
+  // CONTRACT, the change is proven output-equivalent, and the browser session cache keys on it -
+  // bumping it would discard every cached answer to announce a result that is byte-identical.
+  // The action contract does not move either: no action added, none removed, no shape changed.
+  // 90_ is NOT rebuilt - no core module changed - so its content hash row is untouched.
+  //
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

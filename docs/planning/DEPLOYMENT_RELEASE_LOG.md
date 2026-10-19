@@ -5815,3 +5815,152 @@ is router-loaded and is not a boot script.
 
 **GS load surface unchanged at 4,629,837 / 4,630,000 (headroom 163)** — §A/§B/§C touch no `.gs` file.
 
+---
+
+## S8-B3-R3-CP2X-R3 — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54` — A RELEASE IDENTITY, AND NOTHING ELSE
+
+```
+BASE    781b9f54  S8-B3-R3-CP2X-R2. R50, R51, R52 and R53 are CUT but NOT SYNCED and NOT DEPLOYED.
+        Production is R49 according to this ledger; see VERIFIED / NOT VERIFIED below.
+BRANCH  feature/product-strategy-board-p0
+DATE    2026-10-19
+SCOPE   NO behaviour changes in this round. One module stamp, one release, two manifest rows, one
+        ledger append. The runtime change this cut exists to carry landed in CP2X-R2 and is already
+        proven output-equivalent. No DB schema, no table, no action, no formula, no eligibility, no
+        allocation, no timeout, no schedule, no cache policy. Action contract stays 20. Transport
+        contract stays 1. The generated bundle is NOT rebuilt.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54
+PURPOSE                      CP2X-R2 changed 42_api_v1_recommendation_workspace.gs AFTER the R53 cut:
+                             the three per-SKU helpers now take `read` and share the per-request row
+                             cache, taking one request of 24 SKUs from 264 row-object conversions to 7
+                             with byte-identical output. A runtime change landing after a cut needs its
+                             own cut. Without R54 the deployed tree could not be told apart from R53 by
+                             anything a client can read.
+SUPERSEDES                   nothing. R50, R51, R52 and R53 are cut and unshipped; R54 follows them and
+                             all five travel in the SAME paste set. R53 being unsynced is NOT a reason
+                             to reuse its id — the same rule R53 records about R52, and R49 about the
+                             R47/R48 pair it absorbed.
+OWNERS                       42_api_v1_recommendation_workspace.gs        (RECO_WS_BUILD_VERSION_)
+                             63_api_v1_system_health.gs                   (SYS_BUILD_VERSION_)
+CARRIED                      01_ stays R52. 03_ stays R52. 00_ stays R51. 74_ stays R51. 66_ stays R49.
+                             61_ stays R47. 60_ stays R45. 43_ is unchanged since R50. None of them
+                             moved this round and marching any of them to R54 would erase the one fact
+                             a per-module stamp carries.
+ACTION CONTRACT              UNCHANGED at 20. No route, no action, no request field, no response field.
+HANDLER VERSION              UNCHANGED at fm5-r4ui-r5e, and this one is load-bearing. That symbol names
+                             the ANSWER CONTRACT and the browser session cache keys on it
+                             (_IR_RECO_CACHE_HANDLERS). CP2X-R2 §D is proven output-equivalent — same
+                             planning model, same sales rate, same contamination facts, for every SKU —
+                             so bumping it would discard every cached answer in every open session to
+                             announce a result that is byte-identical. The FILE's identity moves
+                             instead, in RECO_WS_BUILD_VERSION_. That is exactly the split R53
+                             introduced this symbol pair for.
+MODULE MANIFEST              Two rows move and no row is added or removed: 42_'s expected stamp and
+                             63_'s own. 90_'s expected content hash is UNTOUCHED.
+GENERATED BUNDLE             NOT REBUILT. No file under assets/js/core/ changed since R49 was cut
+                             (`git diff --name-only d2989491 HEAD -- 'assets/js/core/**'` is empty), so
+                             there is nothing for a rebuild to pick up and KM_BUNDLE_CONTENT_HASH_ still
+                             matches the bundle on disk. NOT REBUILT IS NOT THE SAME AS NOT COPIED —
+                             see the sync set.
+GS LOAD SURFACE              4,629,942 / 4,630,000 — UNCHANGED, delta exactly 0 bytes. 'R53' and 'R54'
+                             are the same length, so all five stamp edits are byte-neutral.
+                             THE CEILING COST THIS ROUND ITS IN-FILE LOG ENTRY, and that is reported
+                             rather than absorbed. 63_ maintains a running per-round comment explaining
+                             why each stamp moved, and 42_ carries the same for its own. Two such lines
+                             measured +174 bytes, which does NOT fit in the 58 bytes of headroom
+                             (4,630,116 against a 4,630,000 ceiling). No budget was granted to make them
+                             fit. The reasoning is recorded in assets/tests/_release-order.js — which is
+                             test-enforced and carries no load surface — in this entry, and in
+                             D-S8-B3-151. A reader of 63_ will not find it beside the symbol.
+                             THIS IS NOW A STANDING CONSTRAINT, NOT A ONE-OFF: CP2X-R2 §D already had to
+                             move its commentary out for the same reason. At 58 bytes the ceiling is
+                             binding on DOCUMENTATION, and the next .gs change of any size is blocked
+                             before it starts. Raising it is the Owner's call and is NOT assumed here.
+
+VERIFIED                     • R54 is appended to OWNER_STAMPS in assets/tests/_release-order.js, at the
+                               end, as the append-only index order requires.
+                             • 42_ and 63_ both declare R54, both manifest rows expect R54, and both
+                               files' last change and stamp rotation are the SAME commit, which is what
+                               the E4 stamp gate requires.
+                             • RECO_WS_HANDLER_VERSION_ is still fm5-r4ui-r5e.
+                             • KM_BUNDLE_CONTENT_HASH_ is unchanged and still matches the bundle.
+NOT VERIFIED                 WHAT PRODUCTION ACTUALLY RUNS. This ledger says R49 and the repo agrees that
+                             nothing since has been recorded as deployed, but a ledger records INTENT.
+                             Only a live `system.health` says what the Apps Script project carries, and
+                             none was taken this round. Every sync set below is therefore stated as a
+                             function of the deployed release, with the command to recompute it once the
+                             Owner reports one. If Production is NOT R49, the eight-file set below is
+                             wrong in a direction this round cannot see.
+
+STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries R54, no
+                             Web App version exists for it, and Production is NOT R54.
+```
+
+### The sync set, and why it is eight files rather than three
+
+The CP2V precheck asked whether syncing `42_`, `63_` and `90_` would be enough. **It is not**, and the
+reason is that the question has two different answers depending on which one is being asked:
+
+| question | answer |
+|---|---|
+| which `.gs` files did THIS ROUND change? | `42_`, `63_` |
+| which `.gs` files does the deployed project need to become R54? | **eight** |
+
+Production is R49 (per this ledger). R50, R51, R52 and R53 were all cut and never synced, so their
+bytes are not in the project either. The paste set is everything that changed between the R49 cut and
+R54:
+
+```
+git diff --name-only d2989491 HEAD -- 'assets/specs/active/apps-script/*.gs'
+```
+
+```
+00_config.gs
+01_router.gs
+03_master_data_handlers.gs
+42_api_v1_recommendation_workspace.gs
+43_api_v1_gap_materialization.gs
+63_api_v1_system_health.gs
+74_api_v1_overseas_allocation_preview_job.gs
+90_generated_supply_planning_bundle.gs
+```
+
+**`90_` is in the set although this round does not rebuild it.** Those two facts are independent: no core
+module changed since R49, so there is nothing to regenerate — but the R51 rebuild has never been pasted
+into the project, so the file still has to be COPIED. A sync that skips it leaves an R49 bundle under an
+R54 manifest, and `KM_BUNDLE_CONTENT_HASH_` is exactly the gate that will refuse that.
+
+**Recompute before pasting.** If the Owner's `system.health` reports a deployed release other than R49,
+substitute that release's cut commit for `d2989491` and re-run the command above. Do not paste this list
+on the strength of this entry.
+
+### Acceptance after publishing — performance and cache
+
+Run in this order. Steps 1–3 need no page; 4–6 are on the Inventory Replenishment screen.
+
+1. **`system.health`** — `identity.build_id` and `deployment_release` must BOTH read
+   `…-R6-R7-R54`, and `mixed_deployment` must be false. A `build_id` of R54 beside a module row still
+   expecting R53 means the paste was partial; the manifest names the file.
+2. **Module manifest** — in the same response, `42_api_v1_recommendation_workspace.gs` must report
+   `RECO_WS_BUILD_VERSION_ = …R54`, and the `90_` row's content hash must match. A mismatch here is the
+   un-copied bundle described above, not a code fault.
+3. **Handler version** — `recommendationWorkspaceHandlerVersion` must still be **`fm5-r4ui-r5e`**. If it
+   reads anything else, something bumped the answer contract and every browser session cache has been
+   discarded for no behavioural reason. That is a defect, not a success.
+4. **One real Search, one site, DevTools Network open.** On the `recommendation.workspace.get` response,
+   `meta.canonicalRead.mode` must be `BATCH` with `remoteCalls: 2`. `FALLBACK` means this request was
+   SLOWER than before R53 and `fallback.reason` says why. Record `meta.serverDurationMs` and
+   `canonicalRead.afterReadMs` — R54's whole content is a reduction in the second of those, and this is
+   the first deployment in which it can be observed at all.
+5. **Cache reuse, counted rather than assumed.** In the console, `_irRecoReadDiag_()` after a SERVER
+   answer must report `cache.outcome: 'STORED'`. Switch site, switch back, and read it again: it must
+   report `'HIT'` with no new Network entry. `_irMatReadDiag_()` must show `readerCalls` greater than
+   `networkReads`. If `cache.outcome` is `MISS / HANDLER_NOT_ACCEPTED`, step 3 was violated.
+6. **Recalculation invalidates what it rewrote (CP2X-R2 §A2).** Note the Suggested Qty on site A, switch
+   to site B and back — zero gap requests. Now run Recalculate, and visit the OTHER site: that visit MUST
+   cost a real `inventoryReplenishmentGap.get`. A zero there means the page is serving rows the job
+   replaced, which is the defect this round's predecessor closed.
+
+**What none of this measures:** first load from cold on a real spreadsheet. The 3–5 second goal is not
+claimed by any step above, and a SESSION_CACHE hit must never be reported as one.

@@ -5988,3 +5988,48 @@ frame in which the panel first has a layout box.
 
 ---
 
+---
+
+### D-S8-B3-151 — R54 is cut, and the GS ceiling is now binding on DOCUMENTATION — **CP2X-R3**
+
+**The cut.** CP2X-R2 changed `42_api_v1_recommendation_workspace.gs` after the R53 cut, and a runtime
+change landing after a cut needs its own cut. `SYS_DEPLOYMENT_RELEASE_`, `SYS_BUILD_VERSION_`,
+`RECO_WS_BUILD_VERSION_` and the two manifest rows that expected R53 all move to
+`F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54`, in ONE commit, which is what the E4 stamp gate requires — it
+compares the commit of a file's last change against the commit that introduced its stamp declaration.
+R53 being unsynced is not a reason to reuse its id; R54 absorbs it exactly as R49 absorbed R47 and R48.
+
+**What deliberately did NOT move.** `RECO_WS_HANDLER_VERSION_` stays `fm5-r4ui-r5e`. It names the ANSWER
+CONTRACT and the browser session cache keys on it; CP2X-R2 §D is proven output-equivalent, so bumping it
+would discard every cached answer in every open session to announce a byte-identical result. The action
+contract stays at 20 and the transport contract at 1. `90_` is not rebuilt: nothing under
+`assets/js/core/` has changed since R49 was cut, so `KM_BUNDLE_CONTENT_HASH_` still matches the bundle.
+
+**The sync set is EIGHT files, not three, and the CP2V precheck answer was for a different question.**
+That round asked whether `42_`, `63_` and `90_` would suffice. It would, for "what changed this round" —
+but the project is at R49 and R50–R53 were cut and never synced, so the paste set is everything between
+the R49 cut and R54: `00_`, `01_`, `03_`, `42_`, `43_`, `63_`, `74_`, `90_`. **`90_` is in the set
+although it is not rebuilt** — not rebuilt and not copied are independent, and a sync that skips it
+leaves an R49 bundle under an R54 manifest, which is precisely what the content-hash row refuses.
+
+**NOT VERIFIED: what Production actually runs.** The ledger says R49 and nothing since is recorded as
+deployed, but a ledger records intent. No live `system.health` was taken this round, so the eight-file
+set is stated as a function of the deployed release with the command to recompute it. If Production is
+not R49, that set is wrong in a direction this round cannot see.
+
+**THE FINDING THAT NEEDS AN OWNER DECISION.** The stamp edits are byte-neutral — 'R53' and 'R54' are the
+same length — so the cut itself cost **0 bytes** and the surface stays at **4,629,942 / 4,630,000,
+headroom 58**. But `63_` maintains a running per-round comment explaining why each stamp moved, and `42_`
+carries the same for its own; both are part of how this repo makes a release legible. Writing those two
+lines measured **+174 bytes → 4,630,116, which does not fit.** No budget was granted. The reasoning moved
+to `assets/tests/_release-order.js` (test-enforced, no load surface), the ledger entry and this record —
+so nothing is lost, but a reader of `63_` will no longer find it beside the symbol.
+
+**This is the second consecutive round in which the ceiling pushed prose out of a `.gs` file** (CP2X-R2
+§D was the first, at +338 bytes for the same reason). At 58 bytes the ceiling is no longer constraining
+code — it is constraining the ability to explain code, and the next `.gs` change of any size is blocked
+before it starts. Raising the gate is the Owner's call and is not assumed here; what this entry records
+is that the cost has stopped being hypothetical.
+
+---
+
