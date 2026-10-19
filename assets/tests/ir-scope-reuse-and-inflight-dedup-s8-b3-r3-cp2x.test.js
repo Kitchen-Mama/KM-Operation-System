@@ -370,7 +370,11 @@ function main() {
     eq(d.server.canonicalRead && d.server.canonicalRead.readMs, 900, 'H8b2 with the server read split intact');
     // CP2X-R1 §C - DOM WORK IS NOT A PAINT. There is no rAF in this harness, so visibleMs must stay NULL
     // rather than borrow the synchronous figure; the note has to say which is which.
-    eq(t.visibleMs, null, 'H8c with no animation frame, visibleMs is NULL rather than the DOM-work number');
+    // CP2X-R2 §C - renamed. `visibleMs` claimed an observation the page cannot make; the figure is the
+    // earliest paint OPPORTUNITY and is now named that. The assertion is the same one: with no frame,
+    // there is no figure, and the synchronous number is never promoted into its place.
+    eq(t.paintOpportunityMs, null, 'H8c with no animation frame, paintOpportunityMs is NULL rather than the DOM-work number');
+    ok(!/visibleMs/.test(JSON.stringify(_irRecoReadDiag_())), 'H8d and nothing in the reading is called "visible"');
     ok(/SYNCHRONOUS DOM WORK ONLY and is NOT a paint/.test(d.note),
       'H8d and the reading refuses to call the DOM write a paint');
 

@@ -5789,3 +5789,29 @@ clear site data, reopen, then:
 
 **Still outstanding and NOT answered here:** the four-way cost split needs the Owner deployment
 measurement referenced as "313", which was not supplied. No optimisation was chosen (D-S8-B3-132).
+
+---
+
+## S8-B3-R3-CP2X-R2 — the token is NOT rotated this round, and the reason is the rule
+
+`r61-scopereuse-20261018` stays. The D-S8-B3-63 rule is that **a token is spent when its bytes have been
+SERVED**, and it is checked against the remote rather than read off the ledger:
+
+```
+git ls-remote origin main            -> eb48e4c35fad...
+git merge-base --is-ancestor 7b945222 origin/main   -> NOT an ancestor
+```
+
+`7b945222` is the commit that introduced r61. It has never reached `origin`, so no browser has ever been
+served a `?v=r61-scopereuse-20261018` asset, so the token is unspent and this round's page change ships
+under it. Rotating now would burn a token for nothing and would move `bootScriptBytes` for nothing.
+
+**If the three files are published without CP2X-R2**, r61 becomes spent at that moment and the next page
+change needs r62. The check above is cheap and must be re-run at publish time rather than inferred from
+this note.
+
+`bootScriptBytes` is unchanged (3,813,599): no token moved, and `assets/js/pages/inventory-replenishment.js`
+is router-loaded and is not a boot script.
+
+**GS load surface unchanged at 4,629,837 / 4,630,000 (headroom 163)** — §A/§B/§C touch no `.gs` file.
+

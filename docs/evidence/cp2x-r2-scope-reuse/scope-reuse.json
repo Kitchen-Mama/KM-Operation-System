@@ -1,0 +1,2098 @@
+{
+  "round": "S8-B3-R3-CP2S-R2",
+  "what": "in-place velocity update: what survives a real workspace arrival in a real browser",
+  "takenAt": "2026-10-19T02:07:22.171Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "skus": 60,
+  "recoReadsServed": 7,
+  "expected": {
+    "firstAvgCell": "7.0",
+    "secondAvgCell": "11.0"
+  },
+  "sources": {
+    "index.html": "57ec2ec2b5900ecf",
+    "assets/js/pages/inventory-replenishment.js": "7ff4762df011ceec",
+    "assets/css/pages/inventory-replenishment.css": "74872c1b61ce9d47"
+  },
+  "actionLog": [
+    {
+      "action": "getClientCapabilities",
+      "t": 923,
+      "success": true,
+      "dataKeys": [
+        "product_strategy_enabled",
+        "inventoryAiPlanDbGenerationEnabled",
+        "capabilitiesVersion"
+      ],
+      "counts": {}
+    },
+    {
+      "action": "inventoryScope.registry.get",
+      "t": 1104,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "countries",
+        "marketplace_ids_by_country",
+        "empty",
+        "empty_reason"
+      ],
+      "counts": {
+        "marketplaces": 2,
+        "countries": 1
+      }
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 1762,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 2,
+        "marketplace_skus": 120,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 60,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      }
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "t": 1792,
+      "success": true,
+      "dataKeys": [
+        "rows"
+      ],
+      "counts": {
+        "rows": 240
+      }
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 1794,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      }
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 2725,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 2,
+        "marketplace_skus": 120,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 60,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      }
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 3811,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      }
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 4631,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      }
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "t": 5194,
+      "success": true,
+      "dataKeys": [
+        "rows"
+      ],
+      "counts": {
+        "rows": 240
+      }
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 5196,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      }
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 6850,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      }
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 8053,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      }
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 8586,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      }
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "t": 18096,
+      "success": true,
+      "dataKeys": [
+        "rows"
+      ],
+      "counts": {
+        "rows": 240
+      }
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "t": 20132,
+      "success": true,
+      "dataKeys": [
+        "rows"
+      ],
+      "counts": {
+        "rows": 240
+      }
+    }
+  ],
+  "requestMarks": [
+    {
+      "label": "begin:siteA-first",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 1,
+        "recommendation.workspace.get": 2
+      }
+    },
+    {
+      "label": "end:siteA-first",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 1,
+        "recommendation.workspace.get": 3
+      }
+    },
+    {
+      "label": "begin:siteB-first",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 1,
+        "recommendation.workspace.get": 3
+      }
+    },
+    {
+      "label": "end:siteB-first",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 4
+      }
+    },
+    {
+      "label": "begin:siteA-again",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 4
+      }
+    },
+    {
+      "label": "end:siteA-again",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 4
+      }
+    },
+    {
+      "label": "begin:leave-return",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 4
+      }
+    },
+    {
+      "label": "end:leave-return",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 4
+      }
+    },
+    {
+      "label": "begin:pending-reentry",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 4
+      }
+    },
+    {
+      "label": "end:pending-reentry",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 5
+      }
+    },
+    {
+      "label": "begin:switch-in-flight",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 5
+      }
+    },
+    {
+      "label": "end:switch-in-flight",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 7
+      }
+    },
+    {
+      "label": "begin:revisit-B-before-job",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 7
+      }
+    },
+    {
+      "label": "end:revisit-B-before-job",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 7
+      }
+    },
+    {
+      "label": "begin:pending-return-to-cached",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 7
+      }
+    },
+    {
+      "label": "end:pending-return-to-cached",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 7
+      }
+    },
+    {
+      "label": "begin:job-complete",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 2,
+        "recommendation.workspace.get": 7
+      }
+    },
+    {
+      "label": "end:job-complete",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 3,
+        "recommendation.workspace.get": 7
+      }
+    },
+    {
+      "label": "begin:after-job-other-site",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 3,
+        "recommendation.workspace.get": 7
+      }
+    },
+    {
+      "label": "end:after-job-other-site",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 2,
+        "inventoryReplenishmentGap.get": 4,
+        "recommendation.workspace.get": 7
+      }
+    }
+  ],
+  "requestTotals": {
+    "getClientCapabilities": 1,
+    "inventoryScope.registry.get": 1,
+    "inventoryReplenishment.workspace.get": 2,
+    "inventoryReplenishmentGap.get": 4,
+    "recommendation.workspace.get": 7
+  },
+  "requestScopes": [
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "country": "US",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "country": "US",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "country": "US",
+      "marketplace": "Walmart"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Walmart"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Walmart"
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "country": "US",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "country": "US",
+      "marketplace": "Walmart"
+    }
+  ],
+  "result": {
+    "capId": "inplace-1792375620362",
+    "steps": [
+      {
+        "step": "app-ready",
+        "t": 491.1,
+        "v": 0.1
+      },
+      {
+        "step": "filter-bar",
+        "t": 538.7,
+        "v": 46.6
+      },
+      {
+        "step": "table",
+        "t": 1222.3,
+        "v": 60
+      },
+      {
+        "step": "first-reco-cell",
+        "t": 2123.7,
+        "v": "7.0"
+      },
+      {
+        "step": "exec-card",
+        "t": 2153.7,
+        "v": 0
+      },
+      {
+        "step": "edit-state-captured",
+        "t": 3229.7,
+        "v": {
+          "activeMark": "INPUT",
+          "activeTag": "INPUT",
+          "selStart": null,
+          "selEnd": null,
+          "value": "1234",
+          "panelMark": "PANEL",
+          "panelPresent": true,
+          "scrollTop": 120,
+          "scrollLeft": 40,
+          "windowY": 0,
+          "avgCell": "7.0",
+          "dosCell": "155.6",
+          "inputTag": "INPUT",
+          "inputType": "number",
+          "inputId": ""
+        }
+      },
+      {
+        "step": "second-arrival",
+        "t": 3276,
+        "v": "11.0"
+      },
+      {
+        "step": "done",
+        "t": 3527.6,
+        "v": {
+          "firstReadResolved": true,
+          "firstCell": "7.0",
+          "cellUpdated": true,
+          "firstCellExpected": "7.0",
+          "secondCellExpected": "11.0",
+          "secondCellIsExpectedNumber": true,
+          "dosMovedToNumber": true,
+          "focusKept": true,
+          "selectionKept": "NOT_MEASURABLE_NO_TEXT_FIELD",
+          "valueKept": true,
+          "inputSameNode": true,
+          "panelKept": true,
+          "scrollKept": true,
+          "windowScrollKept": "NOT_MEASURABLE_WINDOW_DOES_NOT_SCROLL",
+          "noFullRebuild": true
+        }
+      },
+      {
+        "step": "scope-siteA-first",
+        "t": 4092.5,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "gap": {
+            "o": "REPAINT",
+            "net": 1
+          }
+        }
+      },
+      {
+        "step": "scope-siteB-first",
+        "t": 4685.3,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "gap": {
+            "o": "READ",
+            "net": 2
+          }
+        }
+      },
+      {
+        "step": "scope-siteA-again",
+        "t": 5261.5,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "gap": {
+            "o": "REUSE",
+            "net": 2
+          }
+        }
+      },
+      {
+        "step": "scope-leave-return",
+        "t": 6273.6,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "gap": {
+            "o": "REUSE",
+            "net": 2
+          }
+        }
+      },
+      {
+        "step": "scope-pending-reentry",
+        "t": 7480,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "gap": {
+            "o": "REPAINT",
+            "net": 2
+          }
+        }
+      },
+      {
+        "step": "scope-switch-in-flight",
+        "t": 9528.9,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "gap": {
+            "o": "REUSE",
+            "net": 2
+          }
+        }
+      },
+      {
+        "step": "scope-revisit-B-before-job",
+        "t": 10980.2,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "gap": {
+            "o": "REPAINT",
+            "net": 2
+          }
+        }
+      },
+      {
+        "step": "scope-pending-return-to-cached",
+        "t": 17520.6,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "gap": {
+            "o": "REUSE",
+            "net": 2
+          }
+        }
+      },
+      {
+        "step": "scope-job-complete",
+        "t": 19030.1,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "gap": {
+            "o": "READ",
+            "net": 3
+          }
+        }
+      },
+      {
+        "step": "scope-after-job-other-site",
+        "t": 21080.6,
+        "v": {
+          "err": null,
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "gap": {
+            "o": "READ",
+            "net": 4
+          }
+        }
+      },
+      {
+        "step": "scopes-done",
+        "t": 21080.6,
+        "v": {
+          "phases": 10
+        }
+      }
+    ],
+    "notes": [
+      "panel fields: INPUT:number",
+      "no selection-capable field in the panel; using number"
+    ],
+    "fatal": null,
+    "before": {
+      "activeMark": "INPUT",
+      "activeTag": "INPUT",
+      "selStart": null,
+      "selEnd": null,
+      "value": "1234",
+      "panelMark": "PANEL",
+      "panelPresent": true,
+      "scrollTop": 120,
+      "scrollLeft": 40,
+      "windowY": 0,
+      "avgCell": "7.0",
+      "dosCell": "155.6",
+      "inputTag": "INPUT",
+      "inputType": "number",
+      "inputId": ""
+    },
+    "after": {
+      "activeMark": "INPUT",
+      "activeTag": "INPUT",
+      "selStart": null,
+      "selEnd": null,
+      "value": "1234",
+      "inputStillInDocument": true,
+      "panelMark": "PANEL",
+      "panelPresent": true,
+      "panelSameNode": true,
+      "scrollTop": 120,
+      "scrollLeft": 40,
+      "windowY": 0,
+      "avgCell": "11.0",
+      "dosCell": "99",
+      "renderReplenishmentCalls": 0
+    },
+    "verdict": {
+      "firstReadResolved": true,
+      "firstCell": "7.0",
+      "cellUpdated": true,
+      "firstCellExpected": "7.0",
+      "secondCellExpected": "11.0",
+      "secondCellIsExpectedNumber": true,
+      "dosMovedToNumber": true,
+      "focusKept": true,
+      "selectionKept": "NOT_MEASURABLE_NO_TEXT_FIELD",
+      "valueKept": true,
+      "inputSameNode": true,
+      "panelKept": true,
+      "scrollKept": true,
+      "windowScrollKept": "NOT_MEASURABLE_WINDOW_DOES_NOT_SCROLL",
+      "noFullRebuild": true
+    },
+    "obs": {
+      "gates": [
+        {
+          "t": 1215.1,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 1
+        },
+        {
+          "t": 1215.2,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 1
+        },
+        {
+          "t": 2124.4,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 2
+        },
+        {
+          "t": 2124.4,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 2
+        },
+        {
+          "t": 2134.8,
+          "gate": "recommendation",
+          "call": "begin",
+          "gen": 3,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 2134.8,
+          "gate": "execution",
+          "call": "begin",
+          "gen": 3,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 2135.1,
+          "gate": "recommendation",
+          "call": "report",
+          "gen": 3,
+          "state": "READY",
+          "code": "",
+          "accepted": true,
+          "reason": "",
+          "revealed": true,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 2144,
+          "gate": "execution",
+          "call": "report",
+          "gen": 3,
+          "state": "LOADING",
+          "code": "",
+          "accepted": true,
+          "reason": "",
+          "revealed": false,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 2153.7,
+          "gate": "execution",
+          "call": "report",
+          "gen": 3,
+          "state": "LOADING",
+          "code": "",
+          "accepted": true,
+          "reason": "",
+          "revealed": false,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 2154.2,
+          "gate": "recommendation",
+          "call": "PAINTED",
+          "gen": 3,
+          "frameId": 1
+        },
+        {
+          "t": 2219.7,
+          "gate": "execution",
+          "call": "report",
+          "gen": 3,
+          "state": "LOADING",
+          "code": "",
+          "accepted": true,
+          "reason": "",
+          "revealed": false,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 2228.3,
+          "gate": "execution",
+          "call": "report",
+          "gen": 3,
+          "state": "READY",
+          "code": "",
+          "accepted": true,
+          "reason": "",
+          "revealed": true,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 2228.6,
+          "gate": "execution",
+          "call": "PAINTED",
+          "gen": 3,
+          "frameId": 1
+        },
+        {
+          "t": 3239,
+          "gate": "recommendation",
+          "call": "report",
+          "gen": 3,
+          "state": "READY",
+          "code": "",
+          "accepted": true,
+          "reason": "",
+          "revealed": true,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 3258.9,
+          "gate": "recommendation",
+          "call": "report",
+          "gen": 3,
+          "state": "READY",
+          "code": "",
+          "accepted": true,
+          "reason": "",
+          "revealed": true,
+          "ctx": {
+            "sku": "FIXTURE-SKU-001",
+            "scopeKey": "|us|",
+            "searchGen": 1,
+            "rowGen": 2
+          }
+        },
+        {
+          "t": 4051.7,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 4
+        },
+        {
+          "t": 4051.7,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 4
+        },
+        {
+          "t": 4615.7,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 5
+        },
+        {
+          "t": 4615.7,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 5
+        },
+        {
+          "t": 5209.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 6
+        },
+        {
+          "t": 5209.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 6
+        },
+        {
+          "t": 8007.8,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 7
+        },
+        {
+          "t": 8007.8,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 7
+        },
+        {
+          "t": 10058.6,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 8
+        },
+        {
+          "t": 10058.6,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 8
+        },
+        {
+          "t": 11512.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 9
+        },
+        {
+          "t": 11512.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 9
+        },
+        {
+          "t": 12944,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 10
+        },
+        {
+          "t": 12944,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 10
+        },
+        {
+          "t": 13489.8,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 11
+        },
+        {
+          "t": 13489.9,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 11
+        },
+        {
+          "t": 19556.7,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 12
+        },
+        {
+          "t": 19556.7,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 12
+        }
+      ],
+      "ensureLoaded": [
+        {
+          "t": 2135,
+          "scope": {
+            "company": "",
+            "country": "US",
+            "marketplace": ""
+          },
+          "opts": null,
+          "settled": "READY"
+        }
+      ],
+      "errors": [],
+      "raf": {
+        "fired": 1177,
+        "firstAt": 1342.3,
+        "lastAt": 21078.4
+      }
+    },
+    "firstCellInfo": {
+      "text": "7.0",
+      "cls": "scroll-cell replen-avg-cell",
+      "title": ""
+    },
+    "selectionCapable": false,
+    "scrollerV": "DIV.main-content",
+    "scrollerH": "DIV.scroll-header-viewport",
+    "scrollerVTop": 120,
+    "scrollerHLeft": 40,
+    "windowScrollable": false,
+    "secondCellInfo": {
+      "text": "11.0",
+      "cls": "scroll-cell replen-avg-cell",
+      "title": ""
+    },
+    "scopes": {
+      "phases": [
+        {
+          "label": "siteA-first",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "STORED",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": 15.300000011920929,
+                "responseMs": 16,
+                "domWorkMs": 10.800000011920929,
+                "paintOpportunityMs": null,
+                "forSeq": null
+              },
+              "server": {
+                "serverDurationMs": 1234,
+                "requestId": "REQ-C000005",
+                "canonicalRead": {
+                  "mode": "BATCH",
+                  "remoteCalls": 2,
+                  "readMs": 900,
+                  "normalizeMs": 40,
+                  "afterReadMs": 294
+                }
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "REPAINT",
+              "reason": "ALREADY_LOADED",
+              "readerCalls": 2,
+              "networkReads": 1,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SERVER",
+              "status": "READY",
+              "requestId": "REQ-C000005",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "7.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "siteB-first",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "STORED",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": 26.5,
+                "responseMs": 30.400000005960464,
+                "domWorkMs": 19.099999994039536,
+                "paintOpportunityMs": 29.900000005960464,
+                "forSeq": 6
+              },
+              "server": {
+                "serverDurationMs": 1234,
+                "requestId": "REQ-C000006",
+                "canonicalRead": {
+                  "mode": "BATCH",
+                  "remoteCalls": 2,
+                  "readMs": 900,
+                  "normalizeMs": 40,
+                  "afterReadMs": 294
+                }
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "READ",
+              "reason": "NO_REUSABLE_RESULT",
+              "readerCalls": 3,
+              "networkReads": 2,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SERVER",
+              "status": "READY",
+              "requestId": "REQ-C000006",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "31.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "siteA-again",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "HIT",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": null,
+                "responseMs": null,
+                "domWorkMs": null,
+                "paintOpportunityMs": null,
+                "forSeq": null
+              },
+              "server": {
+                "serverDurationMs": null,
+                "requestId": null,
+                "canonicalRead": null
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "REUSE",
+              "reason": null,
+              "readerCalls": 4,
+              "networkReads": 2,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SESSION_CACHE",
+              "status": "READY",
+              "requestId": "REQ-C000005",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "7.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "leave-return",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "HIT",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": null,
+                "responseMs": null,
+                "domWorkMs": null,
+                "paintOpportunityMs": null,
+                "forSeq": null
+              },
+              "server": {
+                "serverDurationMs": null,
+                "requestId": null,
+                "canonicalRead": null
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "REUSE",
+              "reason": null,
+              "readerCalls": 4,
+              "networkReads": 2,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "NONE",
+              "status": "DISABLED",
+              "requestId": null,
+              "calculationMonth": null,
+              "calculationDate": null,
+              "planningCycle": null,
+              "sourceDataAsOf": null,
+              "shape": "horizonBasis.v2",
+              "handlerVersion": null,
+              "handlerAccepted": false,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": null,
+                "calculationMonth": null,
+                "planningCycle": null,
+                "formulaVersion": null,
+                "sourceDataAsOf": null
+              },
+              "revisionComplete": false
+            }
+          },
+          "avg": {
+            "text": "7.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "pending-reentry",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "STORED",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": 1081.300000011921,
+                "responseMs": 5.0999999940395355,
+                "domWorkMs": 19.799999982118607,
+                "paintOpportunityMs": 30.299999982118607,
+                "forSeq": 10
+              },
+              "server": {
+                "serverDurationMs": 1234,
+                "requestId": "REQ-C000007",
+                "canonicalRead": {
+                  "mode": "BATCH",
+                  "remoteCalls": 2,
+                  "readMs": 900,
+                  "normalizeMs": 40,
+                  "afterReadMs": 294
+                }
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "REPAINT",
+              "reason": "ALREADY_LOADED",
+              "readerCalls": 6,
+              "networkReads": 2,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SERVER",
+              "status": "READY",
+              "requestId": "REQ-C000007",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "7.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "switch-in-flight",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "STORED",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": 19.100000023841858,
+                "responseMs": 3.5999999940395355,
+                "domWorkMs": 12,
+                "paintOpportunityMs": 27.299999982118607,
+                "forSeq": 13
+              },
+              "server": {
+                "serverDurationMs": 1234,
+                "requestId": "REQ-C000009",
+                "canonicalRead": {
+                  "mode": "BATCH",
+                  "remoteCalls": 2,
+                  "readMs": 900,
+                  "normalizeMs": 40,
+                  "afterReadMs": 294
+                }
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "REUSE",
+              "reason": null,
+              "readerCalls": 7,
+              "networkReads": 2,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SERVER",
+              "status": "READY",
+              "requestId": "REQ-C000009",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "31.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "revisit-B-before-job",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "STORED",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": null,
+                "responseMs": null,
+                "domWorkMs": null,
+                "paintOpportunityMs": null,
+                "forSeq": null
+              },
+              "server": {
+                "serverDurationMs": null,
+                "requestId": null,
+                "canonicalRead": null
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "REPAINT",
+              "reason": "ALREADY_LOADED",
+              "readerCalls": 8,
+              "networkReads": 2,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SERVER",
+              "status": "READY",
+              "requestId": "REQ-C000009",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "31.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "pending-return-to-cached",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "HIT",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": null,
+                "responseMs": null,
+                "domWorkMs": null,
+                "paintOpportunityMs": null,
+                "forSeq": null
+              },
+              "server": {
+                "serverDurationMs": null,
+                "requestId": null,
+                "canonicalRead": null
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "REUSE",
+              "reason": null,
+              "readerCalls": 11,
+              "networkReads": 2,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SESSION_CACHE",
+              "status": "READY",
+              "requestId": "REQ-C000008",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "7.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "job-complete",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "HIT",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": null,
+                "responseMs": null,
+                "domWorkMs": null,
+                "paintOpportunityMs": null,
+                "forSeq": null
+              },
+              "server": {
+                "serverDurationMs": null,
+                "requestId": null,
+                "canonicalRead": null
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "READ",
+              "reason": "FORCED",
+              "readerCalls": 12,
+              "networkReads": 3,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SESSION_CACHE",
+              "status": "READY",
+              "requestId": "REQ-C000008",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "7.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        },
+        {
+          "label": "after-job-other-site",
+          "error": null,
+          "diag": {
+            "reco": {
+              "cache": {
+                "outcome": "HIT",
+                "reason": null
+              },
+              "timing": {
+                "searchToDispatchMs": null,
+                "responseMs": null,
+                "domWorkMs": null,
+                "paintOpportunityMs": null,
+                "forSeq": null
+              },
+              "server": {
+                "serverDurationMs": null,
+                "requestId": null,
+                "canonicalRead": null
+              },
+              "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+            },
+            "gap": {
+              "outcome": "READ",
+              "reason": "NO_REUSABLE_RESULT",
+              "readerCalls": 13,
+              "networkReads": 4,
+              "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+            },
+            "answer": {
+              "source": "SESSION_CACHE",
+              "status": "READY",
+              "requestId": "REQ-C000009",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
+              "shape": "horizonBasis.v2",
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
+              "handlersAccepted": [
+                "fm5-r4ui-r5e"
+              ],
+              "revision": {
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
+              },
+              "revisionComplete": true
+            }
+          },
+          "avg": {
+            "text": "31.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          }
+        }
+      ],
+      "moves": [
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 261.4
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 250.7
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 251.8
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 251.2
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 255.1
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 254
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 256.5
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 256.7
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 259.4
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 255
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 259
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 255.3
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 251.4
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 251.5
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 261.8
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 254.6
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 260.3
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 253.4
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        }
+      ],
+      "duringPending": {
+        "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+        "gap": {
+          "outcome": "REUSE",
+          "reason": null,
+          "readerCalls": 11,
+          "networkReads": 2,
+          "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
+        }
+      },
+      "afterLateArrival": {
+        "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+        "suggested": {
+          "text": "81",
+          "cls": "scroll-cell replen-suggested-cell",
+          "title": ""
+        },
+        "avg": {
+          "text": "7.0",
+          "cls": "scroll-cell replen-avg-cell",
+          "title": ""
+        }
+      },
+      "axis": "marketplace (company|country|marketplace differs in the marketplace component)",
+      "countryAxisNote": "The cross-site axis here is MARKETPLACE. A cross-COUNTRY switch was attempted in CP2X-R1 and the country select never offered a second country, so the country axis is covered by the offline suite instead; the marketplace component is part of the same scope key and is driven here for real."
+    }
+  }
+}

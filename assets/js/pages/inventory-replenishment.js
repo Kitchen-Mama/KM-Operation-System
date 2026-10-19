@@ -11478,7 +11478,9 @@ function handleRecalcAllInventoryGap(scopeSpec) {
   var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
   var startFn = function () { return window.KM.DB.startInventoryReplenishmentGapJob(scopeSpec ? { payload: { scope: scopeSpec } } : {}); };   // the WRITE POST — exactly ONCE (optional bounded scope §13)
   var statusFn = function () { return window.KM.DB.getGapJobStatus('INVENTORY'); };            // READ-ONLY poll
-  var refreshFn = function () { if (typeof refreshInventoryGapAfterRecalc_ === 'function') return refreshInventoryGapAfterRecalc_(); };
+  // CP2X-R2 §A2 - the job's OWN scope is handed to the invalidation. This handler is the one call site
+  // that knows what was recalculated; the resumed-job and retry sites do not, and pass nothing.
+  var refreshFn = function () { if (typeof refreshInventoryGapAfterRecalc_ === 'function') return refreshInventoryGapAfterRecalc_(scopeSpec); };
   if (!gr || typeof gr.runJob !== 'function') {                                                // module absent → start + single refresh
     setBtn('Starting…', true);
     return Promise.resolve(startFn()).then(function () { refreshFn(); restore(); }).catch(function () { restore(); });
@@ -14187,7 +14189,7 @@ function _irRecoEnvHandler_(env) {
 // NOT ADDED: a store, a TTL, a retry, a request, an upload, a sampler, a timer, or any change to what
 // is read, cached, computed or rendered. Three numbers and a reason, overwritten in place.
 var _IR_RECO_DIAG_ = { cache: { outcome: null, reason: null },
-  timing: { searchToDispatchMs: null, responseMs: null, domWorkMs: null, visibleMs: null },
+  timing: { searchToDispatchMs: null, responseMs: null, domWorkMs: null, paintOpportunityMs: null, forSeq: null },
   server: { serverDurationMs: null, requestId: null, canonicalRead: null },
   marks: { searchAt: null, dispatchAt: null, responseAt: null } };
 function _irRecoNowMs_() {
@@ -14199,7 +14201,7 @@ function _irRecoNowMs_() {
 function _irRecoMarkSearch_() {
   _IR_RECO_DIAG_.marks.searchAt = _irRecoNowMs_();
   _IR_RECO_DIAG_.marks.dispatchAt = null; _IR_RECO_DIAG_.marks.responseAt = null;
-  _IR_RECO_DIAG_.timing = { searchToDispatchMs: null, responseMs: null, domWorkMs: null, visibleMs: null };
+  _IR_RECO_DIAG_.timing = { searchToDispatchMs: null, responseMs: null, domWorkMs: null, paintOpportunityMs: null, forSeq: null };
   _IR_RECO_DIAG_.server = { serverDurationMs: null, requestId: null, canonicalRead: null };
 }
 function _irRecoCacheDecision_(outcome, reason) { _IR_RECO_DIAG_.cache = { outcome: outcome, reason: reason }; }
@@ -14207,7 +14209,7 @@ function _irRecoReadDiag_() {
   var t = _IR_RECO_DIAG_.timing;
   return { cache: { outcome: _IR_RECO_DIAG_.cache.outcome, reason: _IR_RECO_DIAG_.cache.reason },
     timing: { searchToDispatchMs: t.searchToDispatchMs, responseMs: t.responseMs,
-      domWorkMs: t.domWorkMs, visibleMs: t.visibleMs },
+      domWorkMs: t.domWorkMs, paintOpportunityMs: t.paintOpportunityMs, forSeq: t.forSeq },
     // CP2X-R1 §C - THE SERVER'S OWN NUMBERS, CARRIED RATHER THAN RE-DERIVED. The page used to drop all
     // three; `canonicalRead` in particular is the only thing that says which transport answered.
     server: { serverDurationMs: _IR_RECO_DIAG_.server.serverDurationMs,
@@ -14215,8 +14217,11 @@ function _irRecoReadDiag_() {
     note: 'searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is '
       + 'server AND network, never server time - server.serverDurationMs is the server half and '
       + 'server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a '
-      + 'paint; visibleMs is measured after two animation frames and is the first instant the browser '
-      + 'can have shown it. A null visibleMs means no frame was observed, not that nothing rendered.' };
+      + 'paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the '
+      + 'earliest moment the browser COULD have painted, never an observation that anything was shown '
+      + '- the page cannot see the operator screen, and no figure here may be quoted as a visible '
+      + 'instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran '
+      + 'for THAT request, not that nothing rendered.' };
 }
 var _IR_RECO_REVISION_FIELDS = ['calculationDate', 'calculationMonth', 'planningCycle', 'formulaVersion', 'sourceDataAsOf'];
 // The planning context + source revision an ANSWER was computed under, read from where the server
@@ -14746,16 +14751,28 @@ function loadRecommendationWorkspace_() {
     // the three repaints, because the Avg cells are written by the third - but writing a cell is not the
     // browser having shown it, and calling this a paint would overstate it by exactly the interesting part.
     _IR_RECO_DIAG_.timing.domWorkMs = _irRecoNowMs_() - _IR_RECO_DIAG_.marks.responseAt;
-    // §C - THE VISIBLE INSTANT, measured rather than assumed. Two animation frames: the first fires
-    // before the paint that includes this mutation, the second after it. Scheduling is not painting and
-    // neither is a style write, so this is the earliest moment the operator can actually have seen the
-    // number. Where there is no rAF (a headless harness, a background tab) it stays NULL and the reading
-    // says so, instead of quietly reporting the synchronous figure as though it were the visible one.
+    // CP2X-R2 §C - THE EARLIEST PAINT OPPORTUNITY, AND IT IS BOUND TO THIS REQUEST.
+    //
+    // Two animation frames: the first fires before the paint that would include this mutation, the
+    // second after it. That is an upper bound on when the browser COULD have shown the number. CP2X-R1
+    // called it `visibleMs` and described it as the first instant the operator can have seen it, which
+    // claims an observation the page cannot make - a background tab, an occluded window or a frame the
+    // compositor dropped all produce the same number. It is named for what it measures instead.
+    //
+    // THE BINDING IS THE OTHER HALF. The callback wrote the shared diagnostic unconditionally, so frames
+    // scheduled by a request the operator had already navigated away from were attributed to whichever
+    // scope was on screen when they ran - a figure for one site filed under another. It now carries the
+    // sequence and the applied scope it was issued under and writes nothing unless both still hold.
     try {
       if (typeof requestAnimationFrame === 'function') {
-        var _rAt = _IR_RECO_DIAG_.marks.responseAt;
+        var _rAt = _IR_RECO_DIAG_.marks.responseAt, _rSeq = my, _rScope = appliedKeyAtIssue;
         requestAnimationFrame(function () {
-          requestAnimationFrame(function () { _IR_RECO_DIAG_.timing.visibleMs = _irRecoNowMs_() - _rAt; });
+          requestAnimationFrame(function () {
+            if (_rSeq !== _irRecoSeq) return;
+            if (typeof _irAppliedScopeKey_ === 'function' && _irAppliedScopeKey_() !== _rScope) return;
+            _IR_RECO_DIAG_.timing.paintOpportunityMs = _irRecoNowMs_() - _rAt;
+            _IR_RECO_DIAG_.timing.forSeq = _rSeq;
+          });
         });
       }
     } catch (_eRaf) {}
@@ -15006,6 +15023,13 @@ function _irUseMaterializedGapRead() {
 // S8-R4D-F1A — appliedScopeKey null until a real load stamps it; an unstamped state is always refused.
 var _irMatState = { status: 'IDLE', scopeKey: null, appliedScopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null };
 var _irMatSeq = 0;
+// S8-B3-R3-CP2X-R2 §A1 - WHICH READ IS ON THE WIRE, recorded as a fact rather than inferred from
+// `_irMatState`. CP2X-R1 inferred it: a read counted as in flight while the state said LOADING. The
+// reuse branch then OVERWROTE that state with the restored answer, so the inference disappeared while
+// the request was still outstanding - and the superseded response landed, passed the sequence guard
+// and replaced the answer the operator had just come back to, or replaced it with the other site's
+// FAILURE. The flight is kept here instead, beside the sequence it was issued under.
+var _irMatInFlight = null;
 // S8-B3-R3-CP2X-R1 §A - RESULTS KEPT PER SCOPE, IN MEMORY, FOR THE LIFE OF THE PAGE.
 //
 // `_irMatState` holds ONE scope, so US -> EU -> US re-read US every time even though the answer had
@@ -15071,6 +15095,21 @@ function _irMatReadDiag_() {
     readerCalls: _IR_MAT_DIAG_.readerCalls, networkReads: _IR_MAT_DIAG_.networkReads,
     note: 'readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached '
       + 'KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second.' };
+}
+// S8-B3-R3-CP2X-R2 §A1 - A REUSE HIT RETIRES THE REQUEST IT SUPERSEDES. Serving a stored answer for one
+// scope IS the decision that an outstanding read for ANOTHER scope is no longer wanted: nothing will
+// display it, and letting it land can only overwrite the answer that replaced it. Bumping the sequence
+// is what "no longer wanted" means here - the response's own `my !== _irMatSeq` check then discards it,
+// so neither its rows nor its failure reach `_irMatState` or the per-scope map.
+//
+// SURGICAL BY CONSTRUCTION. A flight for the SAME scope key is the request that is about to answer the
+// very question being asked, and is left alone; retiring it would turn CP2X-R1's in-flight dedup back
+// into the duplicate read that round removed.
+function _irMatSupersedeInFlight_(key) {
+  if (!_irMatInFlight || _irMatInFlight.key === key) return false;
+  _irMatSeq++;
+  _irMatInFlight = null;
+  return true;
 }
 // Explicit numeric coercion: '' / null / undefined → null (renders "—", never a fabricated 0); a real number
 // (including 0) is preserved. NO arithmetic — the stored value is displayed verbatim.
@@ -15160,6 +15199,7 @@ function loadInventoryGap_(force) {
   _IR_MAT_DIAG_.readerCalls++;
   // ALREADY LOADED for this exact scope - repaint, no read. Unchanged behaviour.
   if (!force && _irMatState.scopeKey === key && _irMatState.appliedScopeKey === appliedKey && _irMatState.loadedOk) {
+    _irMatSupersedeInFlight_(key);   // CP2X-R2 §A1
     _irMatDecision_('REPAINT', 'ALREADY_LOADED');
     _irRecoRerenderSummaries(); return null;
   }
@@ -15176,6 +15216,7 @@ function loadInventoryGap_(force) {
   if (!force) {
     var hit = Object.prototype.hasOwnProperty.call(_irMatByScope, key) ? _irMatByScope[key] : null;
     if (hit && hit.appliedScopeKey === appliedKey) {
+      _irMatSupersedeInFlight_(key);   // CP2X-R2 §A1 - the read for the scope being left is now dead
       _irMatState = { status: hit.status, scopeKey: key, appliedScopeKey: appliedKey, bySku: hit.bySku,
         rows: hit.rows, loadedOk: true, error: null, handlerVersion: hit.handlerVersion,
         revision: hit.revision, scope: hit.scope, appliedAt: hit.appliedAt, fromReuse: true };
@@ -15191,6 +15232,7 @@ function loadInventoryGap_(force) {
     _irRecoRerenderSummaries(); return null;
   }
   var my = ++_irMatSeq;
+  _irMatInFlight = { key: key, appliedScopeKey: appliedKey, seq: my };   // CP2X-R2 §A1
   _irMatState = { status: 'LOADING', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: null };
   _irRecoRerenderSummaries();
   _irRecoUpdateSuggestedCells();   // CP2U-R2: the cell says "loading" rather than holding the last site number
@@ -15198,6 +15240,7 @@ function loadInventoryGap_(force) {
   _IR_MAT_DIAG_.networkReads++;
   return Promise.resolve(window.KM.DB.getInventoryReplenishmentGap(scopeReq)).then(function (res) {
     if (my !== _irMatSeq) return;
+    _irMatInFlight = null;   // CP2X-R2 §A1 - this flight is over; only the CURRENT sequence may clear it
     if (!res || !res.success) {
       // CP2X-R1 §A - A FAILURE INVALIDATES THE STORED ANSWER FOR THIS SCOPE. Without this the next
       // re-render reuses the answer fetched BEFORE the failure, so a read the operator watched fail is
@@ -15235,6 +15278,7 @@ function loadInventoryGap_(force) {
     _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells();
   }).catch(function (err) {
     if (my !== _irMatSeq) return;
+    _irMatInFlight = null;            // CP2X-R2 §A1
     delete _irMatByScope[key];        // CP2X-R1 §A - a thrown read invalidates the stored answer too
     _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: { code: 'READ_FAILED', message: String(err && err.message || err) } };
     _irRecoRerenderSummaries();
@@ -15317,9 +15361,49 @@ function _irMatAnswerSource_(skus) {
 window._irMatAnswerSource_ = _irMatAnswerSource_;
 window._irMatReadDiag_ = _irMatReadDiag_;        // CP2X-R1 - gap reader calls vs real network reads
 
+// S8-B3-R3-CP2X-R2 §A2 - WHAT A FINISHED RECALCULATION INVALIDATES.
+//
+// The job rewrites the stored gap rows for the scopes it ran over. Before CP2X-R1 the page held exactly
+// ONE scope's answer and the refresh below cleared it, so there was nothing left to go stale. CP2X-R1
+// added `_irMatByScope`, which keeps every scope visited in this page session, and said nothing about
+// recalculation - a cache that outlives the data it describes. The operator recalculates, moves to the
+// next site, and is handed the numbers the job just replaced: no read, no indicator, no way to tell.
+//
+// THE DROP IS MATCHED TO WHAT THE JOB RAN:
+//   CURRENT_SCOPE    - that company/country/marketplace only.
+//   CURRENT_COUNTRY  - every marketplace of that company in that country.
+//   ALL_SITES        - everything.
+//   anything else    - everything. The resumed-job and panel-retry call sites pass no spec at all, and a
+//                      spec missing a field describes a blast radius nobody can bound. Serving a row the
+//                      job replaced puts a wrong number on screen; dropping a row it did not touch costs
+//                      one read. The conservative side is also the cheap side.
+//
+// IN-FLIGHT RESPONSES ARE RETIRED FIRST, and deliberately before anything that can return early.
+// Whatever is on the wire now was computed from rows the job has since replaced, so it is discarded by
+// its own sequence guard rather than allowed to refill the map that was just cleared. The force-read
+// below also bumps the sequence, but it does not always get that far - it returns before doing so when
+// no scope is selected or the reader is unavailable - and the invalidation has to hold in those cases
+// too. ONLY the current site is read; the other scopes are re-read if and when they are visited.
+function _irMatInvalidateForRecalc_(scopeSpec) {
+  _irMatSeq++;
+  _irMatInFlight = null;
+  var mode = (scopeSpec && scopeSpec.mode) ? String(scopeSpec.mode) : '';
+  var co = scopeSpec ? scopeSpec.company : null;
+  var ct = scopeSpec ? scopeSpec.country : null;
+  var mk = scopeSpec ? scopeSpec.marketplace : null;
+  var bounded = (mode === 'CURRENT_SCOPE' && co && ct && mk) || (mode === 'CURRENT_COUNTRY' && co && ct);
+  Object.keys(_irMatByScope).forEach(function (k) {
+    if (!bounded) { delete _irMatByScope[k]; return; }
+    var s = _irMatByScope[k] && _irMatByScope[k].scope;
+    if (!s) { delete _irMatByScope[k]; return; }   // an entry that cannot say which scope it holds cannot be kept
+    if (String(s.company) !== String(co) || String(s.country) !== String(ct)) return;
+    if (mode === 'CURRENT_COUNTRY' || String(s.marketplace) === String(mk)) delete _irMatByScope[k];
+  });
+}
 // Manual-recalc refresh: invalidate the materialized cache + refetch the stored rows (no per-SKU live calc).
-function refreshInventoryGapAfterRecalc_() { _irMatState.loadedOk = false; _irMatState.scopeKey = null; return loadInventoryGap_(true); }
+function refreshInventoryGapAfterRecalc_(scopeSpec) { _irMatInvalidateForRecalc_(scopeSpec); _irMatState.loadedOk = false; _irMatState.scopeKey = null; return loadInventoryGap_(true); }
 window.loadInventoryGap_ = loadInventoryGap_;
+window.refreshInventoryGapAfterRecalc_ = refreshInventoryGapAfterRecalc_;   // CP2X-R2 §B - drivable by the isolated capture
 // Re-render any OPEN Recommendation Summary card(s) from the current read state (no full-page overlay).
 // F1-7N-FB-4G-A1 - the RENDER half, kept under its own name. _irRecoRerenderSummaries below is the name
 // every existing caller uses and now also reports the recommendation side's settle to the reveal barrier.

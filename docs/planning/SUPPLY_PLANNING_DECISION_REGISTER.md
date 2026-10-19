@@ -5788,3 +5788,107 @@ conversions per SKU, four of them over `amazon_daily_sales_snapshot` — and off
 conversions, 1,296,000 row objects and 963 ms for one table. §L of the CP2X suite now asserts that all
 three helpers still bypass the cache, so the finding cannot quietly lapse and the next round starts
 from a fact rather than a memory.
+
+---
+
+### D-S8-B3-145 — A reuse hit did not retire the request it superseded — **FIXED (CP2X-R2 §A1)**
+
+**The case.** Site A is held, site B is read and is still on the wire, the operator goes back to A. The
+reuse branch in `loadInventoryGap_` returns before `++_irMatSeq`, so B's request is still the current
+sequence. When it lands it passes its own `my !== _irMatSeq` check and overwrites `_irMatState` — the
+answer the operator just came back to is replaced by the other site's, or, on the failure branch, by the
+other site's READ_ERROR. Reuse that does not invalidate the request it replaces is not reuse; it is a
+race with a cache in front of it.
+
+**Counter-example first.** `ir-cache-invalidation-counterexamples-s8-b3-r3-cp2x-r2.test.js` §A1 was
+written and run against the unmodified page: A1f/A1g/A1h/A1i failed on the late SUCCESS and A1k/A1l on
+the late FAILURE. The repair came after.
+
+**The fix.** The flight is now RECORDED (`_irMatInFlight`) instead of inferred from `_irMatState`, which
+the reuse branch overwrites. `_irMatSupersedeInFlight_(key)` bumps the sequence when a flight for a
+DIFFERENT scope key exists, so the superseded response is discarded by its own guard and reaches neither
+the state nor `_irMatByScope`. A flight for the SAME key is left alone — retiring it would turn CP2X-R1's
+in-flight dedup back into the duplicate read that round removed, and A1n asserts it did not.
+
+**Already correct, and checked rather than assumed:** the recommendation path has aborted and bumped on
+a session-cache hit since FM3a. Only the gap path was missing it.
+
+---
+
+### D-S8-B3-146 — The per-scope gap cache outlived the recalculation that rewrote it — **FIXED (CP2X-R2 §A2)**
+
+**A defect CP2X-R1 created.** Before the per-scope map the page held exactly one scope's answer and
+`refreshInventoryGapAfterRecalc_` cleared it, so a finished job left nothing stale behind. CP2X-R1 added
+`_irMatByScope`, which keeps every scope visited in the page session, and said nothing about
+recalculation. The operator recalculates, moves to the next site, and is served the numbers the job just
+replaced — no read, no indicator, nothing on screen that could tell them. A cache and its invalidation
+belong in the same round; this is the round that pays for that.
+
+**The fix.** `_irMatInvalidateForRecalc_(scopeSpec)` drops by what the job actually ran: CURRENT_SCOPE →
+that company/country/marketplace; CURRENT_COUNTRY → every marketplace of that company in that country;
+ALL_SITES → everything; **anything else → everything.** The resumed-job and panel-retry call sites pass no
+spec at all and a spec with a missing field bounds nothing, so the unknown case is conservative by rule
+rather than by accident (X4 pins that a CURRENT_SCOPE spec without a marketplace is UNBOUNDED, not a
+country-wide match and not a no-op). Only the CURRENT site is re-read; the others are read if and when
+they are visited.
+
+**In-flight responses are retired FIRST**, before anything that can return early. Whatever is on the wire
+was computed from rows the job has replaced. The force-read also bumps the sequence, but it returns
+before doing so when no scope is selected — A2o is that exact case and it failed before the fix.
+
+**WHICH caches are affected, decided from the source.** A gap recalculation rewrites
+`inventory_replenishment_gap`. 42_, which answers `recommendation.workspace.get` and feeds the session
+cache, does not read that table — A2p asserts that, and A2q asserts 43_ does, so the premise is not
+vacuous. Clearing the recommendation cache would throw away a correct answer and buy a request. It is
+left alone, and the day 42_ starts reading the gap table A2p fails.
+
+---
+
+### D-S8-B3-147 — The cross-site capture failed in the FIXTURE, not the page — **CORRECTS D-S8-B3-140 (CP2X-R2 §B)**
+
+D-S8-B3-140 recorded that the real-Chrome capture could not establish the cross-site switch: the
+Marketplace select never offered the second site, so every phase after the first ran against the same
+scope, and the limitation was asserted rather than worked around. **The cause has been found and it was
+the fixture.** `inventoryScope.registry.get` offered two marketplaces; `inventoryReplenishment.workspace.get`
+described one. `refreshReplenMarketplaceOptions` builds the select from `_irWsGet('getMarketplaces')`,
+which prefers the read model THAT read hydrates over the registry — so the registry drew a two-site
+select, the first search replaced the read model with a one-site workspace, the select was rebuilt from
+it, and the second option was gone before anything could choose it.
+
+**What the corrected capture establishes.** Three sources agree, every move holds, and two distinct
+scopes are APPLIED (`us|MP-FIXTURE-US-AMZ`, `us|MP-FIXTURE-US-WMT`). The server — which the page cannot
+fake — was asked for both marketplaces by name. Site B cold costs 1 recommendation + 1 gap request;
+returning to site A costs **0 and 0**, with the recommendation from the session cache and the gap from
+the per-scope results, revision COMPLETE. Cross-scope reuse is no longer offline-only.
+
+Two further fixture repairs were needed for the capture to measure the contract rather than itself: the
+recommendation rate is now chosen by the marketplace the REQUEST named (CP2X-R1 chose it from a
+harness-set label, so the "site B" number appeared whether or not the select had moved — the capture
+could not have detected the failed switch it in fact contained), and the gap envelope carries 43_'s
+handler marker, without which every reuse was flagged REUSED_REVISION_INCOMPLETE.
+
+`docs/evidence/cp2x-r1-scope-reuse/` is kept as the record of what the earlier harness could and could
+not show; `docs/evidence/cp2x-r2-scope-reuse/` is the current capture.
+
+---
+
+### D-S8-B3-148 — `visibleMs` claimed an observation the page cannot make — **FIXED (CP2X-R2 §C)**
+
+Two animation frames bound the earliest moment the browser COULD have painted. CP2X-R1 called that
+`visibleMs` and described it as the first instant the operator can have seen the number — a background
+tab, an occluded window and a dropped compositor frame all produce the same figure, and none of them is
+an operator seeing anything. It is now `paintOpportunityMs`, and the reading says in words that it is an
+APPROXIMATION of a paint opportunity and never an observation.
+
+**The binding is the other half, and it was a real defect.** The callback wrote the shared diagnostic
+unconditionally, so frames scheduled by a request the operator had already navigated away from were
+attributed to whichever scope was on screen when they ran — one site's figure filed under another. It now
+carries the sequence and the applied scope it was issued under and writes nothing unless both still hold;
+`timing.forSeq` names the request every figure belongs to. In the capture, a response superseded before
+its frames ran carries no figure and no sequence rather than someone else's.
+
+**What the figure still is not:** a measured visible instant. Two frames is an upper bound on scheduling.
+The page has no way to know what reached the screen, and no number in this reading may be quoted as if it
+did.
+
+---

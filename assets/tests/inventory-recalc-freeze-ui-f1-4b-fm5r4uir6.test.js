@@ -99,7 +99,13 @@ ok(/blockedReason:\s*blockedReason/.test(WS_SRC), 'W1 the line carries its speci
 ok(/resolveMarketplaceCurrentStock\(\{\s*rows:\s*amazonRows/.test(WS_SRC) && /horizonOpening/.test(WS_SRC), 'W2 the Site-Stock horizon-opening fallback is present (sales-driven, no-forecast SKUs still get horizons)');
 
 section('§3/§13 frontend invalidates the materialized cache + force-refetches after a manual recalc');
-ok(/function refreshInventoryGapAfterRecalc_\(\)\s*\{[^}]*loadedOk\s*=\s*false[^}]*scopeKey\s*=\s*null[^}]*loadInventoryGap_\(true\)/.test(JS), 'C1 refreshInventoryGapAfterRecalc_ clears loadedOk+scopeKey then force-refetches (no stale BLOCKED left in memory)');
+// S8-B3-R3-CP2X-R2 §A2 - the ARITY was widened, the BEHAVIOUR was not. This guard is about what the
+// refresh DOES (clear the two fields, then force-refetch) and that is asserted unchanged below. CP2X-R2
+// gave the function the recalculated scope so it can also drop the per-scope answers the job rewrote,
+// and `\(\)` would have failed on the parameter alone while every behaviour it names still held. C1a
+// pins the new precondition so the widening is not a quiet loosening.
+ok(/function refreshInventoryGapAfterRecalc_\([^)]*\)\s*\{[^}]*loadedOk\s*=\s*false[^}]*scopeKey\s*=\s*null[^}]*loadInventoryGap_\(true\)/.test(JS), 'C1 refreshInventoryGapAfterRecalc_ clears loadedOk+scopeKey then force-refetches (no stale BLOCKED left in memory)');
+ok(/function refreshInventoryGapAfterRecalc_\([^)]*\)\s*\{\s*_irMatInvalidateForRecalc_\(/.test(JS), 'C1a and invalidates the per-scope gap answers the recalculation rewrote BEFORE it refetches');
 
 section('§2 (superseded by R7) active row + detail scroll as ONE natural unit — no pin/overlay');
 ok(!/is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS) && !/\.ir-sticky-overlay\s*\{[\s\S]*?position:\s*fixed/.test(CSS), 'S1 NO pin: the real row is never position:sticky AND there is no fixed overlay (R7 §2 — a pin floats over / occludes the detail)');

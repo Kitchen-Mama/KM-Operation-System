@@ -135,13 +135,23 @@ function recoLines(n, rate, opts) {
   return out;
 }
 
-function gapRows(n) {
+// CP2X-R2 B - the gap rows answer for the scope the REQUEST named, and carry a different number per
+// site. A fixture that returns the same rows whatever it is asked makes a wrong-site answer and a
+// right-site answer indistinguishable, which is the one thing a cross-site capture has to tell apart.
+function gapRows(n, twoSites, reqScope) {
   const W = ['D18', 'D30', 'D45', 'D90'];
+  const mkt = (twoSites && reqScope && reqScope.marketplace) ? String(reqScope.marketplace) : 'Amazon';
+  const bump = (mkt === 'Walmart') ? 500 : 0;
   const out = [];
   for (let i = 0; i < n; i++) W.forEach((w, k) => out.push({
-    sku: skuOf(i), company: 'FixtureCo', country: 'US', marketplace: 'Amazon',
-    window_code: w, gap_qty: 10 * (k + 1) + i, suggested_order_qty: 20 * (k + 1) + i,
-    note: '', calculated_at: '2026-10-13T00:00:00Z'
+    sku: skuOf(i), company: 'FixtureCo', country: 'US', marketplace: mkt,
+    window_code: w, gap_qty: bump + 10 * (k + 1) + i, suggested_order_qty: bump + 20 * (k + 1) + i,
+    note: '', calculated_at: '2026-10-13T00:00:00Z',
+    calculation_status: 'READY', calculation_date: '2026-11-01',
+    d18_gap_qty: bump + 10 + i, d18_suggested_qty: bump + 20 + i,
+    d30_gap_qty: bump + 20 + i, d30_suggested_qty: bump + 40 + i,
+    d45_gap_qty: bump + 30 + i, d45_suggested_qty: bump + 60 + i,
+    d90_gap_qty: bump + 40 + i, d90_suggested_qty: bump + 80 + i
   }));
   return out;
 }
@@ -154,10 +164,17 @@ function withCorrelation(payload, action, rid) {
   return out;
 }
 
-function apiAnswer(action, n, state) {
+function apiAnswer(action, n, state, reqScope) {
   // CP2X-R1 B - EVERY request is counted by action, server side. This is the "actual network request"
   // half of the measurement; the page-side reader-call counts come from the page diagnostics.
   if (state) { state.hits = state.hits || {}; state.hits[action] = (state.hits[action] || 0) + 1; }
+  // CP2X-R2 B - AND THE SCOPE IT WAS ASKED FOR. "The applied scope really changed" is then a server
+  // observation rather than a claim the page makes about itself: a switch that did not take cannot
+  // produce a request naming the second site.
+  if (state && reqScope && (reqScope.country || reqScope.marketplace)) {
+    state.scopeLog = state.scopeLog || [];
+    state.scopeLog.push({ action: action, country: reqScope.country || null, marketplace: reqScope.marketplace || null });
+  }
   if (action === 'getClientCapabilities') {
     return { success: true, data: { product_strategy_enabled: true, inventoryAiPlanDbGenerationEnabled: false,
       capabilitiesVersion: 'fixture-cp2s-r2' } };
@@ -177,8 +194,20 @@ function apiAnswer(action, n, state) {
       countries: ['US'], marketplace_ids_by_country: { US: two ? [MKT_ID, MKT2_ID] : [MKT_ID] },
       empty: false, empty_reason: '' } };
   }
-  if (action === 'inventoryReplenishment.workspace.get') return { success: true, data: fixtureWorkspace(n, state.statesMode) };
-  if (action === 'inventoryReplenishmentGap.get') return { success: true, data: { rows: gapRows(n) } };
+  // CP2X-R2 B - THE FIXTURE INCONSISTENCY THAT MADE THE CP2X-R1 CROSS-SITE CAPTURE UNPROVABLE.
+  //
+  // The registry offered two marketplaces; this read described ONE. `refreshReplenMarketplaceOptions`
+  // builds the Marketplace select from `_irWsGet('getMarketplaces')`, which prefers `_irReadModel` -
+  // hydrated by THIS read - over the registry. So the registry populated the select, the first search
+  // replaced the read model with a one-site workspace, the select was rebuilt from it, and the second
+  // site disappeared before anything could select it. The capture recorded `mkt-...-WMT never held` and
+  // every later phase silently ran against the first site. The three sources now agree.
+  if (action === 'inventoryReplenishment.workspace.get') return { success: true, data: fixtureWorkspace(n, state.statesMode || state.scopesMode) };
+  // CP2X-R2 B - the gap envelope carries 43_'s handler marker, as the real one does. Without it the
+  // page's source revision is incomplete and every reuse is flagged REUSED_REVISION_INCOMPLETE, so the
+  // capture would measure the fixture's missing field rather than the contract.
+  if (action === 'inventoryReplenishmentGap.get') return { success: true, meta: { gapMaterializationHandlerVersion: 'fm5-r4ui-r5c' },
+    data: { rows: gapRows(n, state.statesMode || state.scopesMode, reqScope) } };
   if (action === 'gapJob.status.get') return { success: true, data: { status: 'IDLE', jobs: [] } };
   if (action === 'recommendation.workspace.get') {
     state.recoReads++;
@@ -213,7 +242,17 @@ function apiAnswer(action, n, state) {
     // fixture would measure the refusal and call it "no reuse". The marker, the planning context and the
     // data version are all present here, exactly as 42_ sends them.
     if (state.scopesMode) {
-      var euNow = state.scopeHint === 'B';
+      // CP2X-R2 B - READS 1 AND 2 STAY THE IN-PLACE EXPERIMENT. The scopes flag used to take over from
+      // the first read, which served the same rate twice and made the in-place verdict fail for a reason
+      // that had nothing to do with in-place updating. The experiment runs first and is left alone; the
+      // scope-driven answers begin where the scopes scenario does.
+      if (state.recoReads <= 2) return { success: true, data: { lines: recoLines(n, state.recoReads >= 2 ? 11 : 7),
+        dataVersion: { sourceDataAsOf: '2026-10-13' } } };
+      // the rate is chosen by the marketplace the REQUEST named. CP2X-R1 chose it from
+      // `state.scopeHint`, a label the harness set around each phase - so the "site B" number appeared
+      // whether or not the select had actually moved, and the capture could not have detected the
+      // failed switch it in fact contained.
+      var euNow = (reqScope && String(reqScope.marketplace) === 'Walmart');
       return { success: true,
         data: { lines: recoLines(n, euNow ? 31 : 7), dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-13' } },
         meta: { requestId: 'fixture-' + state.recoReads, serverDurationMs: 1234,
@@ -808,8 +847,18 @@ function measureScript(capId, opts) {
           }
           r.countryOptions = cs ? Array.prototype.map.call(cs.options, function(o){ return o.value; }) : null;
           r.mktOptions = ms ? Array.prototype.map.call(ms.options, function(o){ return o.value; }) : null;
+          /* CP2X-R2 B - THE APPLIED SCOPE, FROM THE PAGE, AFTER THE SEARCH. The select holding a value
+             is not the same fact as the page having applied it: F1A keys every result on
+             _irSearch.applied, and a search that was refused leaves the select moved and the applied
+             scope where it was. Both are recorded so the acceptance can require that they agree. */
+          r.appliedScopeKey = (typeof window._irAppliedScopeKey_ === 'function') ? window._irAppliedScopeKey_() : null;
+          r.selectedScope   = (typeof window._replenSelectedScope === 'function') ? window._replenSelectedScope() : null;
           SC2.moves = SC2.moves || []; SC2.moves.push({ country: countryVal, mkt: mktVal, result: r });
           return r;
+        }
+        /* Hold the fixture's answers back, so "in flight" is a real interval rather than a label. */
+        async function setDelay(ms){
+          try { await fetch('/__delay?ms=' + ms, { cache: 'no-store' }); } catch (e) { out.notes.push('setDelay failed: ' + e.message); }
         }
 
         /* COLD FIRST. The in-place experiment above has already read and STORED the US answer, so without
@@ -852,9 +901,49 @@ function measureScript(capId, opts) {
           await searchSite('US', ${JSON.stringify(MKT2_ID)}, null);
           await new Promise(function(r){ setTimeout(r, 1500); });
         });
+        /* CP2X-R2 A1 - RETURN TO A CACHED SITE WHILE THE OTHER ONE IS STILL IN FLIGHT.
+           Site B's reads are held by the fixture for three seconds; the operator goes back to A inside
+           that window and A is served from the per-scope results. B's answers then arrive with nobody
+           waiting for them, and must not land on A's screen. */
+        await phase('revisit-B-before-job', 'B', async function(){
+          await searchSite('US', ${JSON.stringify(MKT2_ID)}, null);
+          await new Promise(function(r){ setTimeout(r, 900); });
+        });
+        await phase('pending-return-to-cached', 'A', async function(){
+          await searchSite('US', ${JSON.stringify(MKT_ID)}, null);
+          await new Promise(function(r){ setTimeout(r, 900); });
+          await setDelay(3000);
+          await searchSite('US', ${JSON.stringify(MKT2_ID)}, null);   /* B dispatched, answer held back */
+          await searchSite('US', ${JSON.stringify(MKT_ID)}, null);    /* back to A before B can answer */
+          SC2.duringPending = { appliedScopeKey: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null,
+                                gap: window._irMatReadDiag_ ? window._irMatReadDiag_() : null };
+          await new Promise(function(r){ setTimeout(r, 4000); });     /* B's late answers arrive here */
+          await setDelay(0);
+        });
+        SC2.afterLateArrival = { appliedScopeKey: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null,
+                                 suggested: cellInfo(SKU, 'replen-suggested-cell'),
+                                 avg: cellInfo(SKU, 'replen-avg-cell') };
+
+        /* CP2X-R2 A2 - A FINISHED RECALCULATION, SIMULATED AT THE PAGE'S OWN CALLBACK.
+           No job is started and nothing is written: this calls the function the gap-job poller calls on
+           terminal DONE, with the scope the job ran. Both sites are held at this point, so what the
+           next visit to the OTHER site costs is the whole question. */
+        await phase('job-complete', 'A', async function(){
+          if (typeof window.refreshInventoryGapAfterRecalc_ === 'function') {
+            window.refreshInventoryGapAfterRecalc_({ mode: 'ALL_SITES' });
+          } else { SC2.recalcRefreshAbsent = true; }
+          await new Promise(function(r){ setTimeout(r, 1500); });
+        });
+        await phase('after-job-other-site', 'B', async function(){
+          await searchSite('US', ${JSON.stringify(MKT2_ID)}, null);
+          await new Promise(function(r){ setTimeout(r, 1500); });
+        });
+
         SC2.axis = 'marketplace (company|country|marketplace differs in the marketplace component)';
-        SC2.countryAxisNote = 'A cross-country switch was attempted and the country select never offered '
-          + 'the second country; it is covered by the offline suite instead. See the capture note.';
+        SC2.countryAxisNote = 'The cross-site axis here is MARKETPLACE. A cross-COUNTRY switch was '
+          + 'attempted in CP2X-R1 and the country select never offered a second country, so the country '
+          + 'axis is covered by the offline suite instead; the marketplace component is part of the same '
+          + 'scope key and is driven here for real.';
 
         out.scopes = SC2;
         step('scopes-done', { phases: SC2.phases.length });
@@ -936,6 +1025,16 @@ function startServer(pages, held, results, cfg, onMeasured) {
       held[id] = { release, timer };
       return;
     }
+    // CP2X-R2 B - AN ANSWER CAN BE HELD BACK. Re-entry and switch-while-pending are only real if the
+    // first read is still outstanding when the second thing happens, and a fixture that answers in a
+    // millisecond cannot stage that. The page sets the delay for the phase that needs it and clears it
+    // afterwards; nothing is held by default, so every other scenario is timed exactly as before.
+    if (p === '/__delay') {
+      cfg.state.delayMs = parseInt(u.searchParams.get('ms') || '0', 10) || 0;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, delayMs: cfg.state.delayMs }));
+      return;
+    }
     if (p === '/__stub.js') {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end('window.Chart=window.Chart||function(){return{destroy:function(){},update:function(){},resize:function(){},data:{},options:{}};};'
@@ -951,7 +1050,22 @@ function startServer(pages, held, results, cfg, onMeasured) {
         const kmBody = u.searchParams.get('km_body');
         if (kmBody) { try { const j = JSON.parse(kmBody); action = action || j.action || ''; rid = rid || j.requestId || ''; } catch (e) {} }
         if (!action && body) { try { const j = JSON.parse(body); action = j.action || ''; rid = rid || j.requestId || ''; } catch (e) {} }
-        const payload = apiAnswer(action, cfg.skus, cfg.state);
+        // CP2X-R2 B - find the scope wherever the caller put it. The recommendation read nests it under
+        // params.scope; the gap read sends it flat. A deep scan avoids coupling the fixture to either shape.
+        let reqScope = null;
+        try {
+          const j = JSON.parse(kmBody || body || '{}');
+          const found = {};
+          (function dig(o, d) {
+            if (!o || typeof o !== 'object' || d > 6) return;
+            Object.keys(o).forEach(function (k) {
+              if ((k === 'country' || k === 'marketplace' || k === 'company') && typeof o[k] === 'string' && o[k] && !found[k]) found[k] = o[k];
+              else dig(o[k], d + 1);
+            });
+          }(j, 0));
+          if (found.country || found.marketplace) reqScope = found;
+        } catch (e) {}
+        const payload = apiAnswer(action, cfg.skus, cfg.state, reqScope);
         // CP2U-R3 - WHAT WAS ANSWERED, not merely what was asked. A fixture that answers the wrong shape is
         // invisible in an action-only log, and that is precisely the failure item 2 asks to rule out.
         const d0 = (payload && payload.data) || {};
@@ -959,8 +1073,12 @@ function startServer(pages, held, results, cfg, onMeasured) {
           dataKeys: Object.keys(d0).slice(0, 24),
           counts: Object.keys(d0).reduce(function (acc, k) {
             if (Array.isArray(d0[k])) acc[k] = d0[k].length; return acc; }, {}) });
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-        res.end(JSON.stringify(withCorrelation(payload, action, rid)));
+        const send = function () {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify(withCorrelation(payload, action, rid)));
+        };
+        const slow = cfg.state.delayMs && (action === 'recommendation.workspace.get' || action === 'inventoryReplenishmentGap.get');
+        if (slow) setTimeout(send, cfg.state.delayMs); else send();
       });
       return;
     }
@@ -1151,6 +1269,7 @@ async function main() {
     // each phase boundary the page declared. The page cannot fake these and does not supply them.
     requestMarks: cfg.marks,
     requestTotals: cfg.state.hits,
+    requestScopes: cfg.state.scopeLog || [],   // CP2X-R2 B - which site each request actually named
     result: r
   };
   // A DIFFERENT EXPERIMENT GETS A DIFFERENT FILE. Writing the states run over inplace-dom.json would
