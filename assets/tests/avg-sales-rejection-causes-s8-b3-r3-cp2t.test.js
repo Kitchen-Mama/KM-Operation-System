@@ -84,7 +84,9 @@ function baseSnaps(units, o) {
   };
 }
 function resolve(snaps, calcDate) {
-  srvBox.__s = snaps;
+  srvBox.__s = { snapshots: snaps };   // CP2X-R2 D - the three per-SKU helpers take `read` now, so they can reach the per-request
+  // row cache (recoWsRows_). The fixture is the same; it is handed over in the envelope the
+  // runtime hands over. A FRESH object per call, so no caching is shared between cases.
   return vm.runInContext('recoWsResolveSalesRate_(__s, ' + JSON.stringify(SCOPE) + ', ' + JSON.stringify(SKU) + ', '
     + JSON.stringify(calcDate === undefined ? CALC_DATE : calcDate) + ')', srvCtx);
 }

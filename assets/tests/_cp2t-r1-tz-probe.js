@@ -28,12 +28,12 @@ var LOCAL_MIDNIGHT = new Date(2026, 8, 5);              // 2026-09-05 00:00 loca
 var LOCAL_LATE = new Date(2026, 8, 5, 23, 30, 0);       // 2026-09-05 23:30 local
 
 function snap(headers, rows) { return { headers: headers, rows: rows }; }
-box.__s = {
+box.__s = { snapshots: {
   campaigns: snap(['campaign_id', 'status', 'start_date', 'end_date'], [['CMP-1', 'active', LOCAL_MIDNIGHT, LOCAL_MIDNIGHT]]),
   campaignSkuLines: snap(['campaign_id', 'marketplace_sku_id', 'sku'], [['CMP-1', 'MSKU-1', SKU]]),
   fcSpecialEvents: snap(['sku', 'status', 'marketplace_id', 'company', 'country', 'marketplace', 'event_start_date', 'event_end_date'],
     [[SKU, 'active', 'MKT-1', COMPANY, 'US', 'Amazon', LOCAL_MIDNIGHT, LOCAL_MIDNIGHT]])
-};
+} };
 var facts = vm.runInContext('recoWsBuildContaminationFacts_(__s, ' + JSON.stringify(SCOPE) + ', '
   + JSON.stringify(SKU) + ', "MSKU-1")', ctx);
 

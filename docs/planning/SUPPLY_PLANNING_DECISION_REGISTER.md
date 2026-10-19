@@ -5892,3 +5892,60 @@ The page has no way to know what reached the screen, and no number in this readi
 did.
 
 ---
+
+---
+
+### D-S8-B3-149 — The per-SKU helpers reach the per-request row cache — **FIXED (CP2X-R2 §D), CLOSES D-S8-B3-144**
+
+D-S8-B3-142 measured it and D-S8-B3-144 withdrew the first attempt at it. The finding was never in doubt:
+the recommendation runtime loops once PER SKU, and `recoWsResolvePlanningModel_`,
+`recoWsBuildContaminationFacts_` and `recoWsResolveSalesRate_` each re-materialized whole tables that are
+CONSTANT across that loop, because they held a bare `snaps` object and `recoWsRows_` — the per-request row
+cache sitting two hundred lines below them — takes `read`.
+
+**The route that was wrong, and why this one is not.** CP2X-R1 memoised on the snapshot OBJECT: one hunk,
+no call-site changes, and offline it cut 240 conversions of a 5,400-row table from 963 ms to 6.8 ms. It
+also made two different `read`s over the same `snapshots` share a cache, which
+`api-recommendation-reuse-map-f1-7m-e-r1` exists to forbid, so it was withdrawn rather than the guard
+relaxed. This round threads `read` through instead and uses the cache that was built for this and is
+keyed per REQUEST. That guard passes untouched, and D1–D4 of the new suite assert the property from the
+other side: within one read the array is shared, a different read over the SAME snapshots object gets its
+own, and nothing is attached to a snapshot, a module global or any cross-request object.
+
+**Measured, by counting rather than by timing.**
+`reco-row-cache-per-request-s8-b3-r3-cp2x-r2.test.js` compiles the shipped file AND a baseline built by
+INVERTING this round's edit (`recoWsRows_(read, 'X')` → `recoWsToRowObjects_((read.snapshots||{}).X)`),
+then runs one request of 24 SKUs through both:
+
+| | conversions, one request, 24 SKUs |
+|---|---|
+| baseline (the edit undone) | **264** |
+| shipped | **7** — one per distinct table |
+
+and asserts the two produce **byte-identical planning models, sales rates and contamination facts for
+every SKU**, with the fixture checked for non-vacuity (two planning models, ≥20 resolved rates, a non-zero
+rate, and campaigns actually marshalled). The baseline is DERIVED from the file on every run rather than
+pinned, so it cannot freeze and stop testing anything. **No duration is claimed:** this is a conversion
+count, not a production measurement.
+
+**GS: 4,629,837 → 4,629,942 / 4,630,000, headroom 58** (+105 bytes, measured LF-normalized on the
+committed blob). 42_ is NOT inside `90_generated_supply_planning_bundle.gs`, so there is no bundle rebuild
+and no doubling; no manifest or build artefact changes. An earlier draft of this change carried fuller
+in-file commentary and measured **+338 bytes, which does not fit** — 4,630,175 against a 4,630,000
+ceiling. No budget was granted to make it fit: the commentary moved here, where it costs no load surface,
+and the code change landed unchanged.
+
+**Blast radius, which is why it was a separate batch and a separate commit.** Eleven direct call sites
+across nine suites passed a bare `snaps` object; each now hands over the read envelope, in a FRESH object
+per call so no case shares a cache with another. Two suites that extract functions BY NAME needed
+`recoWsRows_` added to their extraction list — a region-sliced function may not depend on a helper the
+slice leaves behind — and two source-regex guards pinned `snaps` as the first argument where what they
+are actually about is WHERE the call sits; both were widened to `read` with the claim unchanged.
+
+**§L of the CP2X suite did its job.** CP2X-R1 wrote L11 to assert that the three helpers STILL bypassed
+the cache, specifically so the finding could not quietly lapse and so a repair could not land without the
+record being updated. The repair landed, L11 failed, and the record was updated rather than the assertion
+deleted. It now asserts the opposite, and L12a pins where the memo is allowed to live.
+
+---
+

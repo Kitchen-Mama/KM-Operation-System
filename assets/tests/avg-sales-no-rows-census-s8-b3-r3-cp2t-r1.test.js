@@ -89,7 +89,9 @@ function snaps(o) {
   return s;
 }
 function resolve(s) {
-  srvBox.__s = s;
+  srvBox.__s = { snapshots: s };   // CP2X-R2 D - the three per-SKU helpers take `read` now, so they can reach the per-request
+  // row cache (recoWsRows_). The fixture is the same; it is handed over in the envelope the
+  // runtime hands over. A FRESH object per call, so no caching is shared between cases.
   return vm.runInContext('recoWsResolveSalesRate_(__s, ' + JSON.stringify(SCOPE) + ', ' + JSON.stringify(SKU)
     + ', ' + JSON.stringify(CALC_DATE) + ')', srvCtx);
 }
@@ -199,7 +201,7 @@ section('E  the planning model is NOT one of the four');
 // A SKU with NO marketplace_skus row at all resolves to the DB default model, and still has a history.
 var E2 = resolve(snaps({ mskRows: [], daily: inWindow(30, 4), weekly: [] }));
 eq(E2.ok, true, 'E2  and a SKU with no marketplace_skus row still resolves its sales history');
-srvBox.__s2 = snaps({ mskRows: [] });
+srvBox.__s2 = { snapshots: snaps({ mskRows: [] }) };
 eq(vm.runInContext('recoWsResolvePlanningModel_(__s2, ' + JSON.stringify(SCOPE) + ', ' + JSON.stringify(SKU) + ')', srvCtx),
   'sales_driven', 'E2a its model falls back to the documented DB default, not to a blocked line');
 

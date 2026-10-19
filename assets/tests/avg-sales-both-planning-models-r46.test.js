@@ -86,7 +86,10 @@ var callLine = RECO_CODE.split('\n').filter(function (l) { return /var sr = reco
 eq(callLine.length, 1, 'A1  the MARKETPLACE branch calls recoWsResolveSalesRate_ exactly once');
 ok(!/if \(planModel === 'sales_driven'\) \{ var sr = recoWsResolveSalesRate_/.test(RECO_CODE),
   'A2  and that call is NO LONGER inside the sales_driven branch — the gate that caused the defect is gone');
-ok(/^\s*var sr = recoWsResolveSalesRate_\(snaps, scope, sku, calc\.calculationDate\);\s*$/m.test(RECO_CODE),
+// CP2X-R2 D - `snaps` -> `read`: the helper now takes the read envelope so it can reach the
+// per-request row cache. What A3 is about is that the call STANDS ALONE, outside the sales_driven
+// gate, and that is asserted unchanged.
+ok(/^\s*var sr = recoWsResolveSalesRate_\(read, scope, sku, calc\.calculationDate\);\s*$/m.test(RECO_CODE),
   'A3  it stands alone, so it runs for EVERY SKU in both Planning Models');
 
 // =============================================================================================================

@@ -20,9 +20,17 @@ function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass+
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; } }
 function section(n) { console.log('\n== ' + n + ' =='); }
 
-var H = (new Function(BUNDLE + '\n' + F42 + '\n return {' +
+var _H = (new Function(BUNDLE + '\n' + F42 + '\n return {' +
   ' resolveModel: recoWsResolvePlanningModel_,' +
   ' resolveRate: recoWsResolveSalesRate_ };'))();
+// CP2X-R2 D - the two helpers take the read ENVELOPE now, so they can reach the per-request row
+// cache through recoWsRows_. Every case below still passes a bare snapshots object, which is the
+// right shape for a unit fixture; it is wrapped HERE, once, in a FRESH envelope per call - so no
+// case shares a cache with another, and the shipped functions are still called directly.
+var H = {
+  resolveModel: function (s, sc, sku) { return _H.resolveModel({ snapshots: s }, sc, sku); },
+  resolveRate: function (s, sc, sku, d) { return _H.resolveRate({ snapshots: s }, sc, sku, d); }
+};
 
 function snap(headers, rows) { return { headers: headers, rows: rows }; }
 var SCOPE = { company: 'KM', country: 'US', marketplace: 'Amazon' };

@@ -325,7 +325,9 @@ section('F  the skip count survives every failure that happens AFTER it was take
 // the number; returning null there says "not counted", which is a different fact. 0 is a third one, and
 // it may only be reported by a scope that actually had none.
 function resolveRate(snapshots) {
-  srvBox.__snaps = snapshots;
+  srvBox.__snaps = { snapshots: snapshots };   // CP2X-R2 D - the three per-SKU helpers take `read` now, so they can reach the per-request
+  // row cache (recoWsRows_). The fixture is the same; it is handed over in the envelope the
+  // runtime hands over. A FRESH object per call, so no caching is shared between cases.
   return vm.runInContext('recoWsResolveSalesRate_(__snaps, ' + JSON.stringify(SCOPE) + ', ' + JSON.stringify(SKU) + ', "2026-10-15")', srvCtx);
 }
 var sF = baseSnapshots(10);
@@ -345,7 +347,7 @@ sF3.amazonDailySalesSnapshot.rows = sF3.amazonDailySalesSnapshot.rows.filter(fun
 eq(resolveRate(sF3).blankDateRows, 0, 'F3  a scope with no undated rows reports 0 - it counted, and found none');
 
 // before the count, null is the only honest answer
-srvBox.__snaps = baseSnapshots(10);
+srvBox.__snaps = { snapshots: baseSnapshots(10) };
 var f4 = vm.runInContext('recoWsResolveSalesRate_(__snaps, ' + JSON.stringify(SCOPE) + ', ' + JSON.stringify(SKU) + ', "")', srvCtx);
 eq(f4.reason, 'CALCULATION_DATE_NOT_CONFIGURED', 'F4  a failure BEFORE the filter runs');
 eq(f4.blankDateRows, undefined, 'F4a reports no count at all - it did not count zero, it did not count');

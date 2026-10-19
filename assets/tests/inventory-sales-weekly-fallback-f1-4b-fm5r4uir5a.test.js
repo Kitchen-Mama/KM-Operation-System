@@ -32,13 +32,16 @@ var wkHdr = ['snapshot_week', 'week_end_date', 'country', 'marketplace', 'channe
 var MKT_H = ['marketplace_id', 'company', 'country', 'marketplace'];
 var SCOPE = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };   // the live scope
 
+// CP2X-R2 D - wrapped in the read ENVELOPE, because the three per-SKU helpers now take `read`
+// and reach the per-request row cache through recoWsRows_. Each call builds a fresh envelope, so
+// no case shares a cache with another.
 function facts(dailyRows, weeklyRows) {
-  return {
+  return { snapshots: {
     marketplaceSkus: snap(mskHdr, [['ResUS', 'US', 'Amazon', 'CO1100-R', 'MSK-1', 'sales_driven']]),
     amazonDailySalesSnapshot: snap(dsHdr, dailyRows || []),
     amazonWeeklySalesSnapshot: snap(wkHdr, weeklyRows || []),
     marketplaces: snap(MKT_H, [['MP1', 'ResUS', 'US', 'Amazon']])
-  };
+  } };
 }
 
 section('§1/§2 weekly-only SKU: 0 daily rows + a weekly row → READY via the weekly_7d rung (reconciles with the UI)');

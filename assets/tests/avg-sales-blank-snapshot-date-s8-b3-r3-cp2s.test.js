@@ -55,7 +55,10 @@ function extractFn(src, name) {
 
 var sandbox = { KMCALC: KMCALC, KMCID: KMCID, console: console };
 var ctx = vm.createContext(sandbox);
-['recoWsStr_', 'recoWsNum_', 'recoWsIsObj_', 'recoWsYmd_', 'recoWsToRowObjects_', 'recoWsCmp_',
+// CP2X-R2 D - recoWsRows_ joins the list because the resolver now reaches the per-request row
+// cache through it. A region-sliced function may not depend on a helper the slice leaves behind, and
+// this harness extracts by NAME, so the dependency is extracted the same way rather than stubbed.
+['recoWsStr_', 'recoWsNum_', 'recoWsIsObj_', 'recoWsYmd_', 'recoWsToRowObjects_', 'recoWsRows_', 'recoWsCmp_',
   'recoWsBuildContaminationFacts_', 'recoWsResolveSalesRate_'].forEach(function (fn) {
     vm.runInContext(extractFn(RECO, fn), ctx);
   });
@@ -90,7 +93,9 @@ function resolve(dailyRows, over, country) {
     marketplaces: MKT, campaigns: NO_CAMP, campaignSkuLines: NO_LINES, fcSpecialEvents: NO_EVENTS
   };
   if (over) Object.keys(over).forEach(function (k) { s[k] = over[k]; });
-  sandbox.__s = s;
+  sandbox.__s = { snapshots: s };   // CP2X-R2 D - the three per-SKU helpers take `read` now, so they can reach the per-request
+  // row cache (recoWsRows_). The fixture is the same; it is handed over in the envelope the
+  // runtime hands over. A FRESH object per call, so no caching is shared between cases.
   sandbox.__scope = { company: 'KM', country: country || 'US', marketplace: 'Amazon' };
   return vm.runInContext('recoWsResolveSalesRate_(__s, __scope, "SKU-BD", "' + CALC + '")', ctx);
 }

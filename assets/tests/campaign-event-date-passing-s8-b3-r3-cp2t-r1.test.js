@@ -109,12 +109,14 @@ function campaignOn(start, end) { return [['CMP-1', 'active', start, end]]; }
 var CAMP_LINES = [['CMP-1', 'MSKU-1', SKU]];
 
 function resolve(snaps, calcDate) {
-  srvBox.__s = snaps;
+  srvBox.__s = { snapshots: snaps };   // CP2X-R2 D - the three per-SKU helpers take `read` now, so they can reach the per-request
+  // row cache (recoWsRows_). The fixture is the same; it is handed over in the envelope the
+  // runtime hands over. A FRESH object per call, so no caching is shared between cases.
   return vm.runInContext('recoWsResolveSalesRate_(__s, ' + JSON.stringify(SCOPE) + ', ' + JSON.stringify(SKU)
     + ', ' + JSON.stringify(calcDate === undefined ? CALC_DATE : calcDate) + ')', srvCtx);
 }
 function contamFacts(snaps, mSkuId) {
-  srvBox.__s = snaps;
+  srvBox.__s = { snapshots: snaps };
   return vm.runInContext('recoWsBuildContaminationFacts_(__s, ' + JSON.stringify(SCOPE) + ', '
     + JSON.stringify(SKU) + ', ' + JSON.stringify(mSkuId === undefined ? 'MSKU-1' : mSkuId) + ')', srvCtx);
 }

@@ -29,13 +29,16 @@ var DATES = ['2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31', '2026-08-01
 var CALC = '2026-08-07';
 
 // facts(dailyRows, weeklyRows, scope) — marketplaceSkus/marketplaces seeded for the given scope country.
+// CP2X-R2 D - wrapped in the read ENVELOPE, because the three per-SKU helpers now take `read`
+// and reach the per-request row cache through recoWsRows_. Each call builds a fresh envelope, so
+// no case shares a cache with another.
 function facts(dailyRows, weeklyRows, scope) {
-  return {
+  return { snapshots: {
     marketplaceSkus: snap(mskHdr, [[scope.company, scope.country, scope.marketplace, 'CO1100-R', 'MSK-1', 'sales_driven']]),
     amazonDailySalesSnapshot: snap(dsHdr, dailyRows || []),
     amazonWeeklySalesSnapshot: snap(wkHdr, weeklyRows || []),
     marketplaces: snap(MKT_H, [['MP1', scope.company, scope.country, scope.marketplace]])
-  };
+  } };
 }
 function dailyFor(country, units, ch, sku) { return DATES.map(function (d) { return [d, country, 'Amazon', ch || ('amazon.' + country.toLowerCase()), sku || 'CO1100-R', units]; }); }
 var EU = { company: 'ResEU', country: 'EU', marketplace: 'Amazon' };
@@ -120,7 +123,9 @@ ok(/^\s*var sr = recoWsResolveSalesRate_\(/m.test(F42),
 // BOTH modes in that lane too. What this suite actually protects is untouched and is asserted immediately
 // above: the PLANNING basis (whSalesRate) is still assigned only under sales_driven, so Forecast-Driven
 // demand still never acquires one.
-ok(/var wsr = recoWsResolveSalesRate_\(snaps, scope, sku, calc\.calculationDate\);/.test(F42),
+// CP2X-R2 D - `snaps` -> `read`, for the reason above; the claim is about the WAREHOUSE lane calling
+// the resolver for both modes, and that is unchanged.
+ok(/var wsr = recoWsResolveSalesRate_\(read, scope, sku, calc\.calculationDate\);/.test(F42),
   'M2 the WAREHOUSE lane resolves the historical rate for BOTH modes (CP2S-R1) - displaying a rate and '
   + 'driving demand with it are different questions');
 ok(/if \(whPlanModel === 'sales_driven'\) \{ if \(wsr\.ok\) whSalesRate = wsr\.avgSalesPerDay;/.test(F42),

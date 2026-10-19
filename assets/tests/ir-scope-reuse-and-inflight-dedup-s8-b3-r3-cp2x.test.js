@@ -549,19 +549,23 @@ function main() {
       eq(conv(null), [], 'L7  a missing snapshot is still []');
       eq(conv({ headers: 'nope', rows: [] }), [], 'L8  and a malformed one too');
 
-      // THE COST THE WITHDRAWAL LEAVES ON THE TABLE, kept as a measurement rather than a memory: the
-      // per-SKU helpers still convert whole tables because they hold `snaps` and cannot reach
-      // `recoWsRows_`, which takes `read`. This counts the call sites so the finding cannot quietly
-      // lapse, and fails if someone fixes it without updating the record.
+      // CP2X-R2 D - AND THIS IS THE ASSERTION DOING ITS JOB. CP2X-R1 wrote L11 to say the three
+      // per-SKU helpers STILL bypassed the per-request cache, specifically so the finding could not
+      // quietly lapse and so a repair could not land without the record being updated. The repair has
+      // landed; the record is updated here rather than deleted. The withdrawn memo is still withdrawn -
+      // L3 above still holds - because the fix is the other one: the helpers take `read` and go through
+      // `recoWsRows_`, which caches PER REQUEST and therefore keeps the isolation the memo broke.
       var perSkuFns = ['recoWsResolvePlanningModel_', 'recoWsBuildContaminationFacts_', 'recoWsResolveSalesRate_'];
-      var stillBypassing = perSkuFns.filter(function (fn) {
-        var body = sliceGs(fn);
-        return /recoWsToRowObjects_\(snaps\./.test(body);
-      });
-      eq(stillBypassing.length, 3,
-        'L11 all three per-SKU helpers still convert from `snaps`, bypassing the per-request cache');
+      var stillBypassing = perSkuFns.filter(function (fn) { return /recoWsToRowObjects_\(snaps\./.test(sliceGs(fn)); });
+      eq(stillBypassing.length, 0,
+        'L11 NONE of the three per-SKU helpers converts from `snaps` any more', stillBypassing);
+      var viaCache = perSkuFns.filter(function (fn) { return /recoWsRows_\(read, '/.test(sliceGs(fn)); });
+      eq(viaCache.length, 3, 'L11a all three reach the per-request cache instead', viaCache);
       ok(/function recoWsRows_\(read, key\)/.test(GS42),
-        'L12 while the per-request cache they cannot reach is right there, taking `read`');
+        'L12 and that cache still takes `read`, so it is still per REQUEST and not per snapshot');
+      // The prohibition, from the source: the memo may live on `read` and nowhere else.
+      ok(/read\.__rowCache/.test(GS42) && !/snap\.__ro|snaps\.__ro/.test(GS42),
+        'L12a the memo is on `read.__rowCache` - never on a snapshot, a module global or a shared object');
 
       // THE SAFETY CLAIM, checked rather than asserted: the three .sort() sites in 42_ sort a FILTERED
       // copy, never the shared array. A sort of the shared array would persist an order to later callers.

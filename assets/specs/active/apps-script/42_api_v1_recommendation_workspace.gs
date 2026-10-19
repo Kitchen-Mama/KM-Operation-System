@@ -149,8 +149,9 @@ function recoWsHorizonWindowMonths_(calcDate, maxDays) {
 // (00_config VALID_REPLENISHMENT_MODELS_ = sales_driven | forecast_driven; the master-data writer defaults new rows
 // to 'sales_driven'). scope+sku exact. A blank cell → 'sales_driven' (the DB default); any OTHER non-empty value is
 // returned verbatim so KMHP fails closed (PLANNING_MODEL_UNKNOWN) rather than this layer guessing a mode.
-function recoWsResolvePlanningModel_(snaps, scope, sku) {
-  var rows = recoWsToRowObjects_(snaps.marketplaceSkus);
+// CP2X-R2 D - this and the two below run PER SKU; they take read to share recoWsRows_. D-S8-B3-149.
+function recoWsResolvePlanningModel_(read, scope, sku) {
+  var rows = recoWsRows_(read, 'marketplaceSkus');
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (recoWsStr_(r.sku) !== sku) continue;
@@ -178,7 +179,8 @@ function recoWsResolvePlanningModel_(snaps, scope, sku) {
 // recoWsYmd_ shapes and nothing else: an unreadable date still reaches the owner unchanged and is still refused BY
 // NAME, no campaign is dropped, and a campaign outside the window is still passed for the OWNER to clip (this layer
 // owns no window and must never filter by date).
-function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
+function recoWsBuildContaminationFacts_(read, scope, sku, mSkuId) {
+  var snaps = read.snapshots || {};
   // F1-4B-FM5-R4UI-R4 §5 — contamination sources are OPTIONAL exclusion FILTERS: the frozen owner accepts empty
   // campaigns/events as a legitimate "no contaminated days". So a source that is PRESENT-BUT-EMPTY *or* genuinely
   // ABSENT must NOT block the run-rate (that was the R3a over-strict CONTAMINATION_SOURCE_UNAVAILABLE that turned
@@ -192,11 +194,11 @@ function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
   var campaigns = [];
   if (campPresent) {
     var linesByCampaign = {};
-    recoWsToRowObjects_(snaps.campaignSkuLines).forEach(function (r) {
+    recoWsRows_(read, 'campaignSkuLines').forEach(function (r) {
       var cid = recoWsStr_(r.campaign_id); if (!cid) return;
       (linesByCampaign[cid] = linesByCampaign[cid] || []).push({ marketplaceSkuId: recoWsStr_(r.marketplace_sku_id) || null, sku: recoWsStr_(r.sku) });
     });
-    recoWsToRowObjects_(snaps.campaigns).forEach(function (c) {
+    recoWsRows_(read, 'campaigns').forEach(function (c) {
       var cid = recoWsStr_(c.campaign_id); if (!cid) return;
       var lines = linesByCampaign[cid] || [];
       // Only campaigns that TOUCH this SKU (by our marketplace_sku_id or the master sku) are relevant. Their FULL
@@ -208,7 +210,7 @@ function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
   }
   var events = [];
   if (evtPresent) {
-    recoWsToRowObjects_(snaps.fcSpecialEvents).forEach(function (r) {
+    recoWsRows_(read, 'fcSpecialEvents').forEach(function (r) {
       if (recoWsStr_(r.sku) !== sku) return;
       events.push({ sku: recoWsStr_(r.sku), status: recoWsStr_(r.status), marketplaceId: recoWsStr_(r.marketplace_id) || null,
         company: recoWsStr_(r.company), country: recoWsStr_(r.country), marketplace: recoWsStr_(r.marketplace),
@@ -234,7 +236,8 @@ function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
 // reason the code returns is read by whoever is trying to find out why a row refused. A source that is
 // present-but-empty or absent still means "no exclusion" and still does not block (R4 §5); an UNRESOLVED
 // IDENTITY does, because an un-excluded average is not this average.
-function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
+function recoWsResolveSalesRate_(read, scope, sku, calcDate) {
+  var snaps = read.snapshots || {};
   if (typeof KMCALC === 'undefined' || !KMCALC || typeof KMCALC.normalizedAvgSalesPerDay !== 'function') return { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' };
   if (!calcDate) return { ok: false, reason: 'CALCULATION_DATE_NOT_CONFIGURED' };
   // F1-4B-FM5-R4UI-R7 §1 (audit Q3) — CANONICAL country identity when matching the sales snapshots. The daily/weekly
@@ -266,12 +269,12 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // included: the two returns ABOVE it carry none, because they genuinely never counted. null means "not
   // counted" and 0 means "counted none" - a failure that drops the number turns the first into the second.
   var blankDates = 0;
-  var daily = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot).filter(function (r) {
+  var daily = recoWsRows_(read, 'amazonDailySalesSnapshot').filter(function (r) {
     if (recoWsStr_(r.sku) !== sku || !recoWsInSrc_(r.country) || recoWsStr_(r.marketplace) !== scope.marketplace) return false;
     if (recoWsStr_(r.snapshot_date) === '') { blankDates++; return false; }
     return true;
   });
-  var weeklyAll = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot).filter(function (r) {
+  var weeklyAll = recoWsRows_(read, 'amazonWeeklySalesSnapshot').filter(function (r) {
     return recoWsStr_(r.sku) === sku && recoWsInSrc_(r.country) && recoWsStr_(r.marketplace) === scope.marketplace;
   });
   // F1-4B-FM5-R4UI-R5A §1/§2 — the weekly_7d rung MUST be reachable when there are ZERO scoped daily rows. Before,
@@ -295,7 +298,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // The first three reach the returns below as an empty `daily`; the FOURTH reaches the weekly rung instead (see
   // CP2T-R2). Diagnostics only: the reason code and every published value are unchanged.
   function srcNote() {
-    var dAll = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot), wAll = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot);
+    var dAll = recoWsRows_(read, 'amazonDailySalesSnapshot'), wAll = recoWsRows_(read, 'amazonWeeklySalesSnapshot');
     function forSku(rows) { var t = 0; for (var i = 0; i < rows.length; i++) { if (recoWsStr_(rows[i].sku) === sku) t++; } return t; }
     return ' [daily ' + (recoWsIsObj_(snaps.amazonDailySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + dAll.length + ' rows, ' + forSku(dAll) + ' for this SKU'
       + '; weekly ' + (recoWsIsObj_(snaps.amazonWeeklySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + wAll.length + ' rows, ' + forSku(wAll) + ' for this SKU]';
@@ -354,7 +357,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // id. Omitting company let sheet row order choose; taking the first of several is the same guess one step
   // later. Two ids for one scope is unrepairable here, so it refuses and names them.
   var mSkuSet = {};
-  recoWsToRowObjects_(snaps.marketplaceSkus).forEach(function (mr) {
+  recoWsRows_(read, 'marketplaceSkus').forEach(function (mr) {
     if (recoWsStr_(mr.sku) !== sku || recoWsStr_(mr.company) !== scope.company
       || recoWsStr_(mr.country) !== scope.country || recoWsStr_(mr.marketplace) !== scope.marketplace) return;
     var id = recoWsStr_(mr.marketplace_sku_id); if (id) mSkuSet[id] = 1;
@@ -365,11 +368,11 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // scope marketplace_id — the owner treats an event's marketplace_id as AUTHORITATIVE and fail-fasts on an
   // ID-bearing event when the scope marketplace_id is unresolved, so resolve it from the marketplaces registry.
   var scopeMktId = null;
-  recoWsToRowObjects_(snaps.marketplaces).forEach(function (m) { if (scopeMktId) return; if (recoWsStr_(m.company) === scope.company && recoWsStr_(m.country) === scope.country && recoWsStr_(m.marketplace) === scope.marketplace) scopeMktId = recoWsStr_(m.marketplace_id) || null; });
+  recoWsRows_(read, 'marketplaces').forEach(function (m) { if (scopeMktId) return; if (recoWsStr_(m.company) === scope.company && recoWsStr_(m.country) === scope.country && recoWsStr_(m.marketplace) === scope.marketplace) scopeMktId = recoWsStr_(m.marketplace_id) || null; });
   // S8-B3-R3-CP2R-R1 - present-but-empty and ABSENT both still mean "no exclusion" and still resolve. An
   // UNRESOLVED IDENTITY does not: recomputing without the filter published a rate inflated by the very
   // campaign days §22 removes, as though it were a normal average. It now fails closed with a named error.
-  var contam = recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId);
+  var contam = recoWsBuildContaminationFacts_(read, scope, sku, mSkuId);
   function compute(campaigns, events) {
     return KMCALC.normalizedAvgSalesPerDay({
       calcDate: calcYmd,
@@ -755,7 +758,7 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   // splits on the SKU's canonical Planning Model — sales_driven consumes the §22 run-rate (NOT regular FC / Target%),
   // forecast_driven keeps the adjusted-regular+special demand. A Sales-Driven SKU whose run-rate cannot be resolved
   // fail-closes (no horizons → materialized BLOCKED), never silently reverting to the forecast path.
-  var planModel = recoWsResolvePlanningModel_(snaps, scope, sku);
+  var planModel = recoWsResolvePlanningModel_(read, scope, sku);
   var salesRate = null, salesReason = null;
   // S8-R5-B (R46) — Avg Sales is a HISTORICAL performance metric, independent of the Planning Model. The
   // canonical §22 resolver used to be CALLED only under sales_driven, so a Forecast-Driven SKU had no rate
@@ -766,7 +769,7 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   // horizon reason) are still assigned ONLY under sales_driven, so a Forecast-Driven horizon can never be
   // labelled SALES_BASIS_UNAVAILABLE and recoWsBuildHorizons_ receives byte-identical inputs in both modes.
   // No second normalization engine is created — this layer still only marshals the frozen KMCALC owner.
-  var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate);
+  var sr = recoWsResolveSalesRate_(read, scope, sku, calc.calculationDate);
   if (planModel === 'sales_driven') { if (sr.ok) salesRate = sr.avgSalesPerDay; else salesReason = (sr.reason || 'SALES_BASIS_UNAVAILABLE') + (sr.detail ? ': ' + sr.detail : ''); }
   // F1-4B-FM5-R4UI-R5 §4 — the INVENTORY horizon opening is Site Stock, which is FORECAST-INDEPENDENT. The unified
   // resolver returns a null line (→ null L.currentStockQty) when the MONTHLY demand (regular forecast) is not
@@ -855,8 +858,8 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
   // resolver ever ran, so a site with no demand-allocation rule published no average at all and the column
   // printed the dash it prints for "no sales". The comment described the intent; the code returned first.
   // Both exits now go through whReturn_, so the attachment cannot be skipped by adding a third one.
-  var whPlanModel = recoWsResolvePlanningModel_(snaps, scope, sku);
-  var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate);
+  var whPlanModel = recoWsResolvePlanningModel_(read, scope, sku);
+  var wsr = recoWsResolveSalesRate_(read, scope, sku, calc.calculationDate);
   var whBasis = recoWsBasisOf_(wsr, whPlanModel);
   function whReturn_(ls) { ls.forEach(function (ln) { ln.horizonBasis = whBasis; }); return { lines: ls }; }
   var whSalesRate = null, whSalesReason = null;
