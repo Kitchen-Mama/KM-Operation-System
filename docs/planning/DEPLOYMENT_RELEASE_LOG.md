@@ -6144,3 +6144,20 @@ These are **in addition to** CP2X-R4's seven steps above, which still apply.
 
 None of these steps measures a real spreadsheet cold start: the evidence behind them runs against a local
 stub, so request counts and cell values are demonstrable and durations are not.
+
+### What the clean sweep found, and what it was
+
+The sweep came back **688 / 686 clean / 2 not clean** on the first pass, read from `not_clean_suites`
+in the JSON rather than from the console tail. Both were mine and both were real:
+
+- `ir-reveal-callback-scope-s8-b3-r3-cp2r` **E1** — the page source changed, so the twelve-run timing
+  batch no longer described the file on disk and the suite said so. Re-taken, both arms, one build,
+  alternating inside each pair, on a quiet machine: **−96.8 / −100.6 ms, 6 of 6 and 6 of 6**, no
+  outlier at all, shipped source restored and hash-verified. Recorded as the eleventh batch of that
+  design in `docs/evidence/cp2r-reveal-scope/README.md`.
+- `inventory-alloc-draft-panel-lifecycle` **C2** — the assertion sliced a **fixed 600 characters** after
+  the unmount marker to find `_removeLegacyBodyAllocPanel()`. Three comment lines added at the top of
+  the hook pushed that call past 600, so the guard failed for a reason unrelated to the behaviour it
+  protects. A larger number would only move the day it happens again; the window is now bounded by the
+  hook's own closing brace, so it grows with the hook and still cannot reach code outside it.
+  Mutation-proved after the change: removing the call from the unmount still fails C2.

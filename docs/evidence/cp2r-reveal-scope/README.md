@@ -189,3 +189,35 @@ works against the conclusion would be worse than that.
 
 `pairs.json` predates this batch and is **not** read by the acceptance suite (§E loads the twelve run
 files directly); it is left as the historical driver summary it has always been.
+
+---
+
+## CP2X-R4-R1 RE-TOOK IT AGAIN, BOTH ARMS — the eleventh batch of this design
+
+CP2X-R4-R1 changed `inventory-replenishment.js` again (three-state scope validation, the restore-path
+recommendation recovery, and per-attempt bootstrap records), so §E1 refused the previous batch for the
+same reason it has refused every one before it: the shipped arm no longer described the file on disk.
+**Both arms were re-taken on ONE build**, alternating inside each pair, twelve runs, 100 rows each, five
+expands each, no fatals. The shipped source was restored and **verified by hash** when the driver
+finished — `324eb2ca5d26be60`, matching — and the working tree was clean afterwards.
+
+| row | unscoped | scoped | paired delta | improved in |
+|---|---:|---:|---:|---|
+| click → first paint | 67.5 ms | 63.9 ms | −3.3 ms | 5 of 6 |
+| click → full ready | 240.4 ms | 136.4 ms | **−100.6 ms** | **6 of 6** |
+| assembly in handler | 29.3 ms | 29.3 ms | −0.5 ms | 5 of 6 |
+| assembly after handler | 186.1 ms | 85.8 ms | **−96.8 ms** | **6 of 6** |
+| handler sync | 30.3 ms | 29.8 ms | −0.4 ms | 3 of 6 |
+
+The two load-bearing rows reproduce for the eleventh time: **−96.8 / −100.6 ms, 6 of 6 and 6 of 6**,
+sitting close to the middle of the range this design has produced.
+
+**This batch has no outlier at all, and that is worth recording rather than celebrating.** The scan over
+`ms_click_to_exec_resolved` found 60 samples, median 199.1 ms, **max 390.8 ms** — nothing above
+`max(400 ms, 4 × median)`. Earlier batches carried large samples in both arms (−704.8 and −999.7 ms among
+them) and those were kept, because removing a sample for being large is how a batch stops being a
+measurement. A clean batch does not make the earlier ones suspect and does not make this one better
+evidence: it is one more batch whose direction and 6-of-6 agree with the other ten. The magnitude is
+still not the finding.
+
+Nothing else ran on the machine while these twelve runs were taken.

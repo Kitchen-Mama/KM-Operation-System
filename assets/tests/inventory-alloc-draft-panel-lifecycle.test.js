@@ -45,7 +45,19 @@ ok(!/getOperationDb/.test(ensureBlock) && /getShippingAllocationDraftWorkspace/.
 
 section('C. Lifecycle cleanup + legacy migration + secondary CSS fail-safe (§3/§5/§6)');
 ok(/function _removeLegacyBodyAllocPanel/.test(IR_CODE) && /querySelector\('body > #alloc-draft-persistence-panel'\)/.test(IR_CODE), 'C1 legacy body-level cleanup helper targets ONLY body > #alloc-draft-persistence-panel');
-var unmountBlock = IR.slice(IR.indexOf("console.log('[Replenishment] unmount')"), IR.indexOf("console.log('[Replenishment] unmount')") + 600);
+// THE UNMOUNT HOOK, BOUNDED BY ITS OWN CLOSING BRACE RATHER THAN BY A CHARACTER COUNT.
+//
+// This used to slice a fixed 600 characters after the marker. CP2X-R4-R1 added three comment lines at
+// the top of the hook, which pushed _removeLegacyBodyAllocPanel() past 600 and failed C2 for a reason
+// that had nothing to do with the behaviour it guards. A larger magic number would only move the day
+// it happens again: the window is now the method body, found by the eight-space closing brace that
+// ends it, so it grows with the hook and still cannot reach code outside it.
+var _umStart = IR.indexOf("console.log('[Replenishment] unmount')");
+var _umEnd = IR.indexOf("\r\n        }", _umStart);
+if (_umEnd < 0) _umEnd = IR.indexOf("\n        }", _umStart);
+var unmountBlock = (_umStart >= 0 && _umEnd > _umStart) ? IR.slice(_umStart, _umEnd) : '';
+ok(unmountBlock.length > 0 && unmountBlock.length < 4000,
+  'C1a the unmount hook was located and bounded by its own closing brace', unmountBlock.length);
 ok(/getElementById\('alloc-draft-persistence-panel'\)[\s\S]*?\.remove\(\)/.test(unmountBlock) && /_removeLegacyBodyAllocPanel\(\)/.test(unmountBlock), 'C2 Inventory unmount removes the panel + sweeps any legacy body node');
 ok(/body > #alloc-draft-persistence-panel\s*\{\s*display:\s*none\s*!important/.test(CSS), 'C3 secondary CSS fail-safe collapses a body-level instance (never a page-local one)');
 ok(!/#alloc-draft-persistence-panel\s*\{\s*display:\s*none/.test(CSS.replace(/body > #alloc-draft-persistence-panel\s*\{\s*display:\s*none\s*!important;?\s*\}/, '')), 'C4 the fail-safe is scoped to body-level only (does not hide all .alloc-draft-panel / page-local panels)');
