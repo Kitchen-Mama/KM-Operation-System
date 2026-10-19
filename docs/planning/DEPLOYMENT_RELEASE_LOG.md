@@ -5994,3 +5994,68 @@ Run in this order. Steps 1–3 need no page; 4–6 are on the Inventory Replenis
 
 **What none of this measures:** first load from cold on a real spreadsheet. The 3–5 second goal is not
 claimed by any step above, and a SESSION_CACHE hit must never be reported as one.
+
+---
+
+## S8-B3-R3-CP2X-R4 — the token IS rotated this round, because the previous one was served
+
+**APPLICATION TOKEN ROTATED — `r61-scopereuse-20261018` → `r62-revisitrestore-20261019`.**
+
+The CP2X-R2 entry above left a standing instruction: *"If the three files are published without CP2X-R2,
+r61 becomes spent at that moment and the next page change needs r62. The check above is cheap and must be
+re-run at publish time rather than inferred from this note."* That is what happened, and the check was
+re-run rather than inferred:
+
+```
+git ls-remote origin main                           -> 315b69da06a1...
+git merge-base --is-ancestor 315b69da origin/main   -> IS an ancestor
+```
+
+`315b69da` is published, so `index.html` carrying `?v=r61-scopereuse-20261018` has been **served**. Under
+D-S8-B3-63 the token is **spent** and can never be reused.
+
+**THE WHOLE CO-DEPLOYED SET MOVED**, as the rule requires: **54 entries in `index.html` and 13 in
+`assets/js/app.js`**, not the one file that changed. A half-rotated set leaves a browser holding some new
+files and some old. Verified: zero occurrences of `r61-scopereuse` remain in either file.
+
+**THE CSS TOKEN DOES NOT MOVE.** No stylesheet changed this round.
+
+**Why a browser on r61 must not keep it.** `inventory-replenishment.js` no longer discards a completed
+recommendation result when the page unmounts, restores the Marketplace options before the id so a
+returning page is whole rather than half-restored, refuses a Search whose country and marketplace_id
+disagree, and ends a superseded revalidation's own state. A browser left on r61 keeps the page that shows
+a restored table with **Avg Sales and Days of Supply blanked** — the defect this round exists to remove.
+Publishing without rotating would ship nothing.
+
+`bootScriptBytes` is unchanged (3,813,599): the token string is the same length, and
+`assets/js/pages/inventory-replenishment.js` is router-loaded and is not a boot script.
+
+### GS: ZERO
+
+This round is **pure frontend**. The Apps Script load surface is **78 files / 4,629,942 bytes**, byte-for-byte
+unchanged, headroom 58. No `.gs` file was touched, no formula, no calculation date, no schedule, no timeout,
+and nothing was written to production.
+
+### Sync set
+
+**`APPS_SCRIPT_SYNC_REQUIRED`: none** — no `.gs` changed.
+
+**GitHub Pages:** `index.html`, `assets/js/app.js`, `assets/js/pages/inventory-replenishment.js`.
+
+### Post-publish acceptance (read-only; no Recalculate, no AI Support)
+
+1. Hard-reload and confirm the page assets are requested as `?v=r62-revisitrestore-20261019`. A browser
+   still fetching r61 has a cached `index.html` and is not running this round.
+2. Search a site. Note Avg Sales, Days of Supply and Suggested Qty for one SKU.
+3. Navigate to another page and back. **All three must still be the same numbers**, with no "Searching…",
+   and **no new network request** for `recommendation.workspace.get` or `inventoryReplenishmentGap.get`.
+   Blank Avg/DoS here is the defect returning.
+4. Change only the Country, do not pick a Marketplace, leave and return. The page must come back on the
+   **last searched** country *and* its marketplace — not the half-applied draft, and never a marketplace
+   nobody chose.
+5. With the restored selectors untouched, press Search. It must return the same site's result.
+6. Set a Country and a Marketplace that belong to different countries. Search must **refuse**: no request,
+   no change to the applied scope, no mixed-site table. `_irBootstrapDiagnostic_().last_refusal` names it.
+7. `_irBootstrapDiagnostic_()` after a return: `mode: RESTORED`, `revalidating: false`, and either
+   `revalidated: true` or `revalidate_superseded` naming why it stood down. A `revalidating: true` that
+   never clears is the stale-flag defect returning.

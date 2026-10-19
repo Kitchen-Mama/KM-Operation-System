@@ -1181,7 +1181,28 @@ var ROUND_TOKENS = [
   // THE CSS TOKEN DOES NOT MOVE. No stylesheet changed this round.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r61-scopereuse-20261018'];
+  'r61-scopereuse-20261018',
+
+  // S8-B3-R3-CP2X-R4 - r62. THE PREVIOUS TOKEN IS SPENT, AND THAT WAS VERIFIED RATHER THAN ASSUMED.
+  //
+  // D-S8-B3-63 says a token is spent when its BYTES HAVE BEEN SERVED, and the check is git ls-remote
+  // plus merge-base --is-ancestor, never a reading of this note. Both were run: 315b69da is an
+  // ancestor of origin/main, so index.html carrying r61 is published and r61 can never be reused.
+  //
+  // WHAT CHANGED, and why a browser holding r61 must not keep it: inventory-replenishment.js no longer
+  // throws away a completed recommendation result when the page unmounts, restores the Marketplace
+  // options before the id so a returning page is whole rather than half-restored, and refuses a Search
+  // whose country and marketplace_id disagree. A browser left on r61 keeps the page that shows a
+  // restored table with Avg Sales and Days of Supply blanked - which is the defect this round exists
+  // to remove. Publishing without rotating would ship nothing.
+  //
+  // THE WHOLE CO-DEPLOYED SET MOVES: 54 entries in index.html and 13 in app.js, not the one file that
+  // changed. A half-rotated set leaves a browser holding some new files and some old.
+  //
+  // THE CSS TOKEN DOES NOT MOVE. No stylesheet changed this round.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r62-revisitrestore-20261019'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

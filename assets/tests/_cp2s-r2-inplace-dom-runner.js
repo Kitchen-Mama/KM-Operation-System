@@ -156,6 +156,106 @@ function gapRows(n, twoSites, reqScope) {
   return out;
 }
 
+// ===================================================================================================
+// CP2X-R4 — THE MULTI-COUNTRY FIXTURE.
+//
+// The Owner's counter-examples need a real COUNTRY axis. The fixture that existed offered exactly one
+// country ("options [\"\", \"US\"]", recorded in the registry branch above), which is why every earlier
+// cross-site capture had to use the marketplace axis and say so. Driving country restore against a
+// single-country registry would measure a scenario that silently could not move.
+//
+// EVERY SITE CARRIES ITS OWN NUMBERS. If EU and JP answered alike, "the right site answered" and "a
+// site answered" would be the same observation, and the restore could be wrong in the one way that
+// matters - showing yesterday's country - while every assertion still passed. The avg rate, the
+// suggested quantity and the canonical marketplace_id are all distinct per site.
+//
+// US/Amazon keeps 7 so the numbers the other scenarios already pin do not move.
+const RV_SITES = [
+  { id: 'MP-FIXTURE-US-AMZ', country: 'US', marketplace: 'Amazon',  company: 'FixtureCo', avg: 7,  gapBase: 0,    stock: 700 },
+  { id: 'MP-FIXTURE-US-WMT', country: 'US', marketplace: 'Walmart', company: 'FixtureCo', avg: 31, gapBase: 500,  stock: 3100 },
+  { id: 'MP-FIXTURE-EU-AMZ', country: 'EU', marketplace: 'Amazon',  company: 'FixtureCo', avg: 13, gapBase: 1300, stock: 1690 },
+  // A SECOND EU SITE, so "change only the marketplace, then Search" is a move that can actually be
+  // made. With one marketplace per country that scenario cannot be driven at all.
+  { id: 'MP-FIXTURE-EU-WMT', country: 'EU', marketplace: 'Walmart', company: 'FixtureCo', avg: 17, gapBase: 1700, stock: 850 },
+  { id: 'MP-FIXTURE-JP-AMZ', country: 'JP', marketplace: 'Amazon',  company: 'FixtureCo', avg: 23, gapBase: 2300, stock: 6900 },
+  { id: 'MP-FIXTURE-JP-RAK', country: 'JP', marketplace: 'Rakuten', company: 'FixtureCo', avg: 29, gapBase: 2900, stock: 580 }
+];
+const RV_COUNTRIES = ['US', 'EU', 'JP'];
+// The site a request named. Country ALONE is not enough (EU/Amazon and US/Amazon share a marketplace
+// name), and marketplace alone is not either - the pair is the identity, exactly as the scope key is.
+function rvSiteOf(reqScope) {
+  if (!reqScope) return null;
+  const c = reqScope.country ? String(reqScope.country) : '';
+  const m = reqScope.marketplace ? String(reqScope.marketplace) : '';
+  if (c && m) return RV_SITES.find(s => s.country === c && s.marketplace === m) || null;
+  if (c) return RV_SITES.find(s => s.country === c) || null;
+  if (m) return RV_SITES.find(s => s.marketplace === m) || null;
+  return null;
+}
+function rvWorkspace(n) {
+  const mk = (c, f) => Array.from({ length: c }, (_, i) => f(i));
+  const skus = [];
+  RV_SITES.forEach((s, si) => {
+    for (let i = 0; i < n; i++) skus.push({
+      marketplace_sku_id: 'MSKU-' + si + '-' + i, marketplace_id: s.id, company: s.company,
+      country: s.country, marketplace: s.marketplace, sku: skuOf(i), site_sku: 'SS' + si + '-' + i,
+      marketplace_product_id: 'B' + si + 'FIX' + String(i).padStart(3, '0'), currency: 'USD',
+      regular_price: 19.99 + i, minimum_price: 9.99, msrp: 29.99,
+      marketplace_sku_status: 'active', replenishment_model: 'sales_driven' });
+  });
+  const base = fixtureWorkspace(n, true);
+  // PER-SITE STOCK, so Days of Supply is a site-distinguishing number rather than a constant. The
+  // single-country fixture had stock only for US/Amazon, so every other site computed DoS from zero -
+  // and "0" is what a BROKEN restore shows too. A value that cannot tell success from failure is not
+  // an acceptance criterion, which is exactly what §C says about using "not --".
+  const stock = [];
+  RV_SITES.forEach(s => {
+    for (let i = 0; i < n; i++) stock.push({ snapshot_date: '2026-10-13', country: s.country,
+      marketplace: s.marketplace, sku: skuOf(i), available_qty: s.stock, fc_transfer_qty: 0,
+      fc_processing_qty: 0, customer_order_qty: 0, unfulfillable_qty: 0 });
+  });
+  return Object.assign({}, base, {
+    marketplaces: RV_SITES.map(s => ({ marketplace_id: s.id, company: s.company, country: s.country,
+      marketplace: s.marketplace, currency: 'USD', status: 'active', allocation_priority: 100 })),
+    marketplace_skus: skus,
+    amazon_inventory_snapshot: stock
+  });
+}
+function rvGapRows(n, reqScope) {
+  const site = rvSiteOf(reqScope);
+  // No resolvable site => NO ROWS. A fixture that invents rows for an unidentifiable scope would hide
+  // precisely the defect this round is about.
+  if (!site) return [];
+  const b = site.gapBase, W = ['D18', 'D30', 'D45', 'D90'], out = [];
+  for (let i = 0; i < n; i++) W.forEach((w, k) => out.push({
+    sku: skuOf(i), company: site.company, country: site.country, marketplace: site.marketplace,
+    window_code: w, gap_qty: b + 10 * (k + 1) + i, suggested_order_qty: b + 20 * (k + 1) + i,
+    note: '', calculated_at: '2026-10-13T00:00:00Z',
+    calculation_status: 'READY', calculation_date: '2026-11-01',
+    d18_gap_qty: b + 10 + i, d18_suggested_qty: b + 20 + i,
+    d30_gap_qty: b + 20 + i, d30_suggested_qty: b + 40 + i,
+    d45_gap_qty: b + 30 + i, d45_suggested_qty: b + 60 + i,
+    d90_gap_qty: b + 40 + i, d90_suggested_qty: b + 80 + i
+  }));
+  return out;
+}
+function rvRecoLines(n, reqScope) {
+  const site = rvSiteOf(reqScope);
+  if (!site) return [];
+  const basis = { demandMode: 'sales_driven', avgSalesPerDay: site.avg, source: 'normalized_30d',
+    warning: '', normalDayCount: 30, excludedDates: [], horizonOpeningQty: null,
+    qualifiedIncomingCount: null, blankDateRows: 2, basisQualityError: null,
+    contaminationSource: { campaigns: 'ABSENT', events: 'ABSENT' } };
+  const out = [];
+  for (let i = 0; i < n; i++) ['WH0', 'WH1'].forEach(w => out.push({
+    sku: skuOf(i), siteSku: 'SS-' + i, destinationType: 'WAREHOUSE', warehouseId: w,
+    destinationKey: ['WAREHOUSE', site.company, site.country, site.marketplace, w].join('||'),
+    recommendationMode: 'WAREHOUSE_REPLENISHMENT', blocked: true,
+    blockedReason: 'RECOMMENDATION_RUNTIME_BLOCKED', horizonBasis: basis
+  }));
+  return out;
+}
+
 function withCorrelation(payload, action, rid) {
   if (!payload || typeof payload !== 'object') return payload;
   const out = Object.assign({}, payload);
@@ -186,6 +286,16 @@ function apiAnswer(action, n, state, reqScope) {
     // silently did not switch. The scope key is company|country|marketplace and the marketplace axis
     // changes it just as a country would; the country axis is covered offline, where the key is built
     // directly. The limitation is recorded in the capture rather than worked around.
+    // CP2X-R4 — the revisit scenario gets the real country axis (US / EU / JP).
+    if (state && state.revisitMode) {
+      const byCountry = {};
+      RV_SITES.forEach(s => { (byCountry[s.country] = byCountry[s.country] || []).push(s.id); });
+      return { success: true, data: {
+        marketplaces: RV_SITES.map(s => ({ marketplace_id: s.id, company: s.company, country: s.country,
+          marketplace: s.marketplace, marketplace_display_name: s.marketplace })),
+        countries: RV_COUNTRIES.slice(), marketplace_ids_by_country: byCountry,
+        empty: false, empty_reason: '' } };
+    }
     const two = !!(state && (state.statesMode || state.scopesMode));
     return { success: true, data: {
       marketplaces: [{ marketplace_id: MKT_ID, company: 'FixtureCo', country: 'US', marketplace: 'Amazon',
@@ -202,15 +312,30 @@ function apiAnswer(action, n, state, reqScope) {
   // replaced the read model with a one-site workspace, the select was rebuilt from it, and the second
   // site disappeared before anything could select it. The capture recorded `mkt-...-WMT never held` and
   // every later phase silently ran against the first site. The three sources now agree.
-  if (action === 'inventoryReplenishment.workspace.get') return { success: true, data: fixtureWorkspace(n, state.statesMode || state.scopesMode) };
+  if (action === 'inventoryReplenishment.workspace.get') {
+    if (state.revisitMode) return { success: true, data: rvWorkspace(n) };
+    return { success: true, data: fixtureWorkspace(n, state.statesMode || state.scopesMode) };
+  }
   // CP2X-R2 B - the gap envelope carries 43_'s handler marker, as the real one does. Without it the
   // page's source revision is incomplete and every reuse is flagged REUSED_REVISION_INCOMPLETE, so the
   // capture would measure the fixture's missing field rather than the contract.
   if (action === 'inventoryReplenishmentGap.get') return { success: true, meta: { gapMaterializationHandlerVersion: 'fm5-r4ui-r5c' },
-    data: { rows: gapRows(n, state.statesMode || state.scopesMode, reqScope) } };
+    data: { rows: state.revisitMode ? rvGapRows(n, reqScope)
+      : gapRows(n, state.statesMode || state.scopesMode, reqScope) } };
   if (action === 'gapJob.status.get') return { success: true, data: { status: 'IDLE', jobs: [] } };
   if (action === 'recommendation.workspace.get') {
     state.recoReads++;
+    // CP2X-R4 — the rate is the SITE's rate, chosen from the scope the request actually named. An
+    // answer for a site the request did not name is what the cross-scope guards exist to refuse, so
+    // the fixture must be able to produce one and must never produce it by accident.
+    if (state.revisitMode) {
+      return { success: true,
+        data: { lines: rvRecoLines(n, reqScope), dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-13' } },
+        meta: { requestId: 'fixture-rv-' + state.recoReads, serverDurationMs: 1234,
+          recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e',
+          calculationDate: '2026-10-18', calculationMonth: '2026-11', planningCycle: 'RECO-2026-11',
+          canonicalRead: { mode: 'BATCH', remoteCalls: 2, readMs: 900, normalizeMs: 40, afterReadMs: 294 } } };
+    }
     // CP2U-R3 - THE STATES, each one a different way for an answer to be absent or present. Reached only
     // under the opt-in flag; reads 1 and 2 are unchanged so the in-place experiment is undisturbed.
     if (state.statesMode) {
@@ -948,6 +1073,278 @@ function measureScript(capId, opts) {
         out.scopes = SC2;
         step('scopes-done', { phases: SC2.phases.length });
       }
+
+      /* ============================================================================================
+         CP2X-R4 — LEAVING THE PAGE AND COMING BACK, through the REAL router.
+
+         THE IDS MATTER AND THE OLD ONES WERE WRONG. KM.lifecycle.register is keyed on the SECTION id
+         ('ops-section', 'home-section'); there is no page called 'inventory-replenishment' and none
+         called 'home'. switchTo with an unregistered name still unmounts whatever was mounted and then
+         mounts NOTHING, so the earlier leave/return phase unmounted Site Inventory and never brought it
+         back - and every assertion after it read module-global diagnostics that outlive the page. This
+         block uses the registered ids so mount() and unmount() both really run, and records the
+         lifecycle's own view so a future reader can prove they did.
+
+         WHAT IS ASSERTED, deliberately more than "no new requests": the two selectors AND the options
+         behind them, the applied scope, the three cell NUMBERS, the summary card, and the request
+         counts. A page that comes back blank also issues no requests. */
+      if (OPT.revisit) {
+        var RV = { phases: [], lifecycleIds: null };
+        RV.lifecycleIds = (function(){
+          try { return { registered: (window.KM.lifecycle.__debug ? window.KM.lifecycle.__debug() : null),
+                         current: (window.KM.lifecycle.getCurrentPage ? window.KM.lifecycle.getCurrentPage() : null) }; }
+          catch (e) { return { error: String(e && e.message || e) }; }
+        })();
+        async function rmark(label){
+          await fetch('/__mark?label=' + encodeURIComponent(label), { cache: 'no-store' });
+        }
+        function sel(id){ return document.getElementById(id); }
+        function optsOf(el){ return el ? Array.prototype.map.call(el.options, function(o){ return o.value; }) : null; }
+        function snap(label){
+          var cs = sel('replenCountry'), ms = sel('replenMarketplace');
+          var sec = document.getElementById('ops-section');
+          var card = document.getElementById('recommendation-summary-' + SKU);
+          var g = (typeof window._irMatReadDiag_ === 'function') ? window._irMatReadDiag_() : null;
+          var rc = (typeof window._irRecoReadDiag_ === 'function') ? window._irRecoReadDiag_() : null;
+          return { label: label,
+            country: cs ? cs.value : null, countryOptions: optsOf(cs),
+            marketplace: ms ? ms.value : null, mktOptions: optsOf(ms),
+            appliedScopeKey: (typeof window._irAppliedScopeKey_ === 'function') ? window._irAppliedScopeKey_() : null,
+            status: (typeof window._irSearchState_ === 'function') ? (window._irSearchState_() || {}).status : null,
+            bootstrap: (typeof window._irBootstrapDiagnostic_ === 'function') ? window._irBootstrapDiagnostic_() : null,
+            sectionActive: sec ? sec.classList.contains('active') : null,
+            rows: document.querySelectorAll('#ops-section .scroll-row[data-sku]').length,
+            avg: cellInfo(SKU, 'replen-avg-cell'),
+            dos: cellInfo(SKU, 'replen-dos-cell'),
+            suggested: cellInfo(SKU, 'replen-suggested-cell'),
+            summaryCard: card ? String(card.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 160) : null,
+            gapNet: g ? g.networkReads : null, gapOutcome: g ? g.outcome : null,
+            recoCache: rc ? rc.cache : null,
+            /* The operator's Execution Plan. _clearAllocationDraft removes this key, and the country
+               onchange handler calls it - so if a programmatic restore ever dispatches 'change', this
+               goes from a string to null and the operator's typed quantities are gone. */
+            execPlanRaw: (function(){ try { var v = sessionStorage.getItem('km_replen_alloc_draft_v1');
+              return v === null ? null : String(v).length; } catch (e) { return 'THREW'; } })(),
+            recoStatus: (function(){ try { return (window._irRecoReadDiag_ ? window._irRecoReadDiag_().status : null); } catch (e) { return null; } })() };
+        }
+        /* The REAL navigation, with the ids the registry actually holds. */
+        async function leaveReturn(awayMs, backMs){
+          var L = { ok: false };
+          try {
+            await window.KM.lifecycle.switchTo('home-section');
+            L.afterLeave = { current: window.KM.lifecycle.getCurrentPage ? window.KM.lifecycle.getCurrentPage() : null,
+                             opsActive: (function(){ var s = document.getElementById('ops-section');
+                               return s ? s.classList.contains('active') : null; })() };
+            await sleep(awayMs);
+            await window.KM.lifecycle.switchTo('ops-section');
+            await sleep(backMs);
+            L.ok = true;
+          } catch (e) { L.error = String(e && e.message || e); }
+          return L;
+        }
+        async function rphase(label, fn){
+          await rmark('begin:' + label);
+          var err = null, extra = null;
+          try { extra = await fn(); } catch (e) { err = String(e && e.message || e); }
+          await rmark('end:' + label);
+          var s = snap(label);
+          s.error = err; s.extra = extra;
+          RV.phases.push(s);
+          step('rv-' + label, { country: s.country, mkt: s.marketplace, applied: s.appliedScopeKey,
+            status: s.status, avg: s.avg && s.avg.text, gapNet: s.gapNet, rows: s.rows });
+          return s;
+        }
+        /* Reuse the scopes helper if it exists; otherwise a local one. */
+        async function doSearch(countryVal, mktVal){
+          var cs = sel('replenCountry');
+          if (cs && countryVal) await setSelect(cs, countryVal, 'rv-country', 20000);
+          var ms = sel('replenMarketplace');
+          if (ms && mktVal) await setSelect(ms, mktVal, 'rv-mkt', 20000);
+          var b = document.querySelector('#ops-section .replen-btn--search');
+          if (b) b.click(); else if (window.searchReplenishment) window.searchReplenishment();
+          await sleep(1500);
+        }
+
+        /* THE OWNER'S COUNTER-EXAMPLES (CP2X-R4 §A), driven on a real country axis.
+           Every site answers with its OWN numbers, so each assertion below distinguishes "the right
+           site answered" from "a site answered":
+             EU/Amazon  avg 13.0  suggested 1381      JP/Amazon  avg 23.0  suggested 2381
+             EU/Walmart avg 17.0  suggested 1781      US/Amazon  avg  7.0  suggested   81
+           The in-place experiment above consumed the fixture's first two reco reads, and those two
+           answer WITHOUT the handler marker on purpose, so a baseline taken there would measure the
+           session cache's refusal rather than the contract. Invalidate first. */
+        if (typeof window.invalidateRecommendationSessionCache === 'function') window.invalidateRecommendationSessionCache();
+        if (typeof window._irRecoInvalidate === 'function') window._irRecoInvalidate('CONTEXT_NOT_READY');
+
+        /* ---- 0. EU Search succeeds. This is the result every scenario below must come back to. */
+        await rphase('eu-searched', async function(){
+          await doSearch('EU', 'MP-FIXTURE-EU-AMZ');
+          await sleep(900);
+          return { note: 'baseline: EU/Amazon' };
+        });
+
+        /* Plant an Execution Plan. _clearAllocationDraft removes this key, and the country onchange
+           handler calls it - so if any restore path dispatches 'change', this goes null. */
+        try { sessionStorage.setItem('km_replen_alloc_draft_v1',
+          JSON.stringify({ bySku: { 'CP2XR4-SENTINEL': [{ qty: 1234 }] }, at: Date.now() })); } catch (e) {}
+
+        /* ---- A1. choose JP as COUNTRY ONLY (no marketplace), leave, return.
+           The marketplace select is rebuilt for JP when the country changes, so on return the EU id is
+           not among its options. Restoring in the wrong order sets the country and silently drops the
+           marketplace. Must come back fully EU. */
+        await rphase('A1-jp-country-only-then-leave', async function(){
+          var cs = sel('replenCountry');
+          if (cs) { cs.value = 'JP'; cs.dispatchEvent(new Event('change', { bubbles: true })); }
+          await sleep(400);
+          var mid = snap('A1:mid');
+          var L = await leaveReturn(500, 1400);
+          return { mid: { country: mid.country, mkt: mid.marketplace, mktOptions: mid.mktOptions,
+                          applied: mid.appliedScopeKey }, nav: L };
+        });
+
+        /* ---- A2. do NOT touch the country. Press Search. The result must be the restored EU scope. */
+        await rphase('A2-search-without-touching-country', async function(){
+          var b = document.querySelector('#ops-section .replen-btn--search');
+          if (b) b.click(); else if (window.searchReplenishment) window.searchReplenishment();
+          await sleep(1800);
+          return { note: 'search pressed with the restored selectors untouched' };
+        });
+
+        /* ---- A3. change ONLY the marketplace, within the restored country, then Search. */
+        await rphase('A3-marketplace-only-then-search', async function(){
+          var ms = sel('replenMarketplace');
+          var held = ms ? await setSelect(ms, 'MP-FIXTURE-EU-WMT', 'rv-eu-wmt', 15000) : null;
+          if (ms) ms.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(200);
+          var b = document.querySelector('#ops-section .replen-btn--search');
+          if (b) b.click(); else if (window.searchReplenishment) window.searchReplenishment();
+          await sleep(1800);
+          return { held: held, expect: { avg: '17.0', suggested: '1781' } };
+        });
+
+        /* Back to EU/Amazon so the remaining scenarios start from one known place. */
+        await rphase('A3b-back-to-eu-amazon', async function(){
+          await doSearch('EU', 'MP-FIXTURE-EU-AMZ');
+          await sleep(900);
+          return { note: 'restored baseline' };
+        });
+
+        /* ---- A4. choose JP COMPLETELY (country AND marketplace) but never Search, leave, return.
+           A fully-formed but unconfirmed selection is still a draft. The applied scope is EU. */
+        await rphase('A4-full-jp-never-searched', async function(){
+          var cs = sel('replenCountry');
+          if (cs) { cs.value = 'JP'; cs.dispatchEvent(new Event('change', { bubbles: true })); }
+          await sleep(400);
+          var ms = sel('replenMarketplace');
+          var held = ms ? await setSelect(ms, 'MP-FIXTURE-JP-AMZ', 'rv-jp-amz', 15000) : null;
+          if (ms) ms.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(300);
+          var mid = snap('A4:mid');
+          var L = await leaveReturn(500, 1400);
+          return { held: held, mid: { country: mid.country, mkt: mid.marketplace,
+                   applied: mid.appliedScopeKey }, nav: L };
+        });
+
+        /* ---- A5. now choose JP explicitly AND press Search. Only here may JP apply. */
+        await rphase('A5-jp-explicit-search', async function(){
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          await sleep(1800);
+          return { expect: { avg: '23.0', suggested: '2381' } };
+        });
+
+        /* ---- B. AN INCONSISTENT PAIR MUST NOT REACH THE SERVER.
+           The country select is moved to EU while the marketplace still holds a JP id - the exact state
+           a wrongly-ordered restore produces. Pressing Search must refuse: no request, no change to
+           the applied scope, and no mixed-site table. */
+        await rphase('B-illegal-pair-refused', async function(){
+          var cs = sel('replenCountry'), ms = sel('replenMarketplace');
+          var beforeApplied = (typeof window._irAppliedScopeKey_ === 'function') ? window._irAppliedScopeKey_() : null;
+          /* set BOTH directly, with no change event, so the pair is genuinely inconsistent */
+          if (cs) cs.value = 'EU';
+          if (ms) ms.value = 'MP-FIXTURE-JP-AMZ';
+          var pairBefore = { country: cs && cs.value, mkt: ms && ms.value };
+          var b = document.querySelector('#ops-section .replen-btn--search');
+          if (b) b.click(); else if (window.searchReplenishment) window.searchReplenishment();
+          await sleep(1200);
+          return { beforeApplied: beforeApplied, pairBefore: pairBefore,
+                   refusal: (typeof window._irBootstrapDiagnostic_ === 'function')
+                     ? window._irBootstrapDiagnostic_().last_refusal : null };
+        });
+
+        /* Return to a clean, applied JP scope. */
+        await rphase('B2-recover-to-jp', async function(){
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          await sleep(1200);
+          return { note: 'recovered' };
+        });
+
+        /* ---- C1. the ordinary leave and return, on the JP scope.
+               THE EXECUTION PLAN IS PLANTED HERE, not earlier: the A-scenarios each make a real country
+               change, whose onchange handler legitimately discards the draft, so a sentinel planted
+               before them would be cleared for the RIGHT reason and prove nothing. This phase makes no
+               selector change at all, so the only thing that could remove the key is the restore - and
+               it must not. */
+        try { sessionStorage.setItem('km_replen_alloc_draft_v1',
+          JSON.stringify({ bySku: { 'CP2XR4-SENTINEL': [{ qty: 1234 }] }, at: Date.now() })); } catch (e) {}
+        await rphase('C1-leave-return', async function(){
+          var planted = (function(){ try { return sessionStorage.getItem('km_replen_alloc_draft_v1') !== null; }
+                                     catch (e) { return 'THREW'; } })();
+          var L = await leaveReturn(500, 1400);
+          return { plantedBefore: planted, nav: L };
+        });
+
+        /* ---- C2. REPEATED Search: pressing it twice must not double-read or change the answer. */
+        await rphase('C2-repeated-search', async function(){
+          var b = document.querySelector('#ops-section .replen-btn--search');
+          if (b) { b.click(); b.click(); b.click(); }
+          await sleep(2000);
+          return { note: 'three clicks, single-flight' };
+        });
+
+        /* ---- C3. leaving WHILE a read is in flight, then coming back. */
+        await rphase('C3-leave-while-in-flight', async function(){
+          try { await fetch('/__delay?ms=2500', { cache: 'no-store' }); } catch (e) {}
+          var b = document.querySelector('#ops-section .replen-btn--search');
+          if (b) b.click();
+          await sleep(150);
+          var L = await leaveReturn(300, 2800);
+          try { await fetch('/__delay?ms=0', { cache: 'no-store' }); } catch (e) {}
+          await sleep(800);
+          return { nav: L };
+        });
+
+        /* ---- C4. rapid consecutive switching: the last navigation must win and the page must be
+               mounted and whole at the end of it. */
+        await rphase('C4-rapid-switching', async function(){
+          var seq = [];
+          for (var i = 0; i < 4; i++) {
+            window.KM.lifecycle.switchTo('home-section');
+            window.KM.lifecycle.switchTo('ops-section');
+            seq.push(window.KM.lifecycle.getCurrentPage ? window.KM.lifecycle.getCurrentPage() : null);
+            await sleep(120);
+          }
+          await sleep(1800);
+          return { seq: seq, mountedOps: (function(){ var s = document.getElementById('ops-section');
+            return s ? s.classList.contains('active') : null; })() };
+        });
+
+        /* ---- C5. A LATE ANSWER FOR A SITE THE OPERATOR HAS LEFT.
+               EU is dispatched with the fixture holding its reply, the operator returns to JP inside
+               that window, and EU's answer lands with nobody waiting for it. It must not paint. */
+        await rphase('C5-late-answer-after-switch', async function(){
+          await fetch('/__delay?ms=3000', { cache: 'no-store' }).catch(function(){});
+          await doSearch('EU', 'MP-FIXTURE-EU-AMZ');     /* dispatched, held */
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');     /* back to JP before EU can answer */
+          var during = { applied: (typeof window._irAppliedScopeKey_ === 'function') ? window._irAppliedScopeKey_() : null };
+          await sleep(4000);                              /* EU's late answer arrives here */
+          try { await fetch('/__delay?ms=0', { cache: 'no-store' }); } catch (e) {}
+          await sleep(800);
+          return { during: during };
+        });
+
+        out.revisit = RV;
+        step('revisit-done', { phases: RV.phases.length });
+      }
       report();
     } catch (e) {
       out.fatal = String(e && e.message || e);
@@ -1226,8 +1623,11 @@ async function main() {
   const STATES = process.argv.indexOf('--states') !== -1;
   // CP2X-R1 B - a third opt-in scenario. Without the flag nothing below behaves differently.
   const SCOPES = process.argv.indexOf('--scopes') !== -1;
+  // CP2X-R4 — the leave/return experiment. It needs the same two-site fixture the scopes run uses,
+  // so scopesMode is forced on: a revisit scenario with only one marketplace proves nothing.
+  const REVISIT = process.argv.indexOf('--revisit') !== -1;
   const cfg = { skus: skus, log: [], t0: Date.now(), marks: [],
-    state: { recoReads: 0, statesMode: STATES, scopesMode: SCOPES, hits: {}, scopeHint: 'US' } };
+    state: { recoReads: 0, statesMode: STATES, scopesMode: SCOPES, revisitMode: REVISIT, hits: {}, scopeHint: 'US' } };
   const pages = {}, held = {}, results = {};
   const capId = 'inplace-' + Date.now();
   let closeBrowser = null;
@@ -1237,7 +1637,7 @@ async function main() {
   // The two rates recoLines() is built to serve, named ONCE and handed to both the page and the evidence
   // so the harness cannot drift from the fixture it is asserting against.
   pages['/__page'] = buildPage(port, capId, { settleMs: 900, expectFirst: '7.0', expectSecond: '11.0',
-    states: STATES, scopes: SCOPES });
+    states: STATES, scopes: SCOPES, revisit: REVISIT });
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cp2s-r2-'));
   const why = await runChromeAsync(browser, [
@@ -1274,7 +1674,7 @@ async function main() {
   };
   // A DIFFERENT EXPERIMENT GETS A DIFFERENT FILE. Writing the states run over inplace-dom.json would
   // destroy the capture that proves the in-place update.
-  const outName = SCOPES ? 'scope-reuse.json' : (STATES ? 'state-transitions.json' : 'inplace-dom.json');
+  const outName = REVISIT ? 'revisit.json' : (SCOPES ? 'scope-reuse.json' : (STATES ? 'state-transitions.json' : 'inplace-dom.json'));
   fs.writeFileSync(path.join(outDir, outName), JSON.stringify(evidence, null, 2));
   // The long-poll that kept the page alive is RELEASED here rather than left to its own 120s timer: an
   // open socket holds the server open, which holds the event loop open, which made a four-second
@@ -1294,6 +1694,26 @@ async function main() {
   if (r.before) console.log('before            :', JSON.stringify(r.before));
   if (r.after) console.log('after             :', JSON.stringify(r.after));
 
+  // CP2X-R4 — the revisit run is judged by its OWN suite, not by the in-place checklist. Running the
+  // in-place evaluator over it would report a wall of failures about a scenario it never drove.
+  if (REVISIT) {
+    const RV = (r && r.revisit) || {};
+    console.log('\n== CP2X-R4 leave/return ==');
+    console.log('lifecycle ids     :', JSON.stringify(RV.lifecycleIds && RV.lifecycleIds.current));
+    (RV.phases || []).forEach(p => {
+      console.log('  ' + String(p.label).padEnd(24)
+        + ' country=' + JSON.stringify(p.country)
+        + ' mkt=' + JSON.stringify(p.marketplace)
+        + ' applied=' + JSON.stringify(p.appliedScopeKey)
+        + ' status=' + JSON.stringify(p.status)
+        + ' rows=' + p.rows
+        + ' avg=' + JSON.stringify(p.avg && p.avg.text)
+        + ' gapNet=' + p.gapNet);
+    });
+    console.log('\nwrote ' + path.join(outDir, outName));
+    process.exitCode = r.fatal ? 1 : 0;
+    return;
+  }
   const ev = evaluateRun(evidence, { states: STATES });
   ev.rows.forEach(row => console.log(row));
   console.log('scrollers         : v=' + (r.scrollerV || 'NONE') + '  h=' + (r.scrollerH || 'NONE'));

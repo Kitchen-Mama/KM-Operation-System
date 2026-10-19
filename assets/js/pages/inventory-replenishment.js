@@ -10195,11 +10195,32 @@ function _irScopeIsValid_(model, scope) {
     }
     return false;
 }
+// S8-B3-R3-CP2X-R4 — COUNTRY, THEN THE OPTIONS, THEN THE ID. The order is the fix.
+//
+// The Marketplace select is COUNTRY-SCOPED: refreshReplenMarketplaceOptions rebuilds it from the sites
+// belonging to the country currently selected. Assigning a marketplace_id that is not among the
+// select's CURRENT options is a silent no-op in the DOM - the value simply stays '' - and those options
+// still describe whatever country the operator was looking at when they navigated away. So restoring
+// "EU + its Amazon" onto a select still holding JP's marketplaces set the country and then quietly
+// dropped the marketplace, and the page came back half-restored: a country, no marketplace, and a
+// result the operator could no longer re-reach by pressing Search.
+//
+// THE OPTIONS ARE REBUILT PROGRAMMATICALLY, NEVER BY DISPATCHING 'change'. The country onchange handler
+// calls _clearAllocationDraft() and _irMarkSearchStale_(); firing it here to "repair" the select would
+// destroy the operator's Execution Plan and invalidate the very result being restored. A synthetic
+// event is not a repair - it is the next defect wearing this one's clothes.
+//
+// NO FALLBACK TO THE FIRST OPTION. If the remembered marketplace is no longer offered for that country,
+// the assignment leaves the select empty and the page asks again, which is the registry's answer and
+// the correct one; quietly selecting a neighbouring site would publish a scope nobody chose.
 function _irSetSelectors_(scope) {
     if (typeof document === 'undefined' || !scope) return;
     try {
-        var c = document.getElementById('replenCountry'); if (c) c.value = scope.country;
-        var m = document.getElementById('replenMarketplace'); if (m) m.value = scope.marketplaceId;
+        var c = document.getElementById('replenCountry');
+        if (c) c.value = scope.country;
+        if (typeof refreshReplenMarketplaceOptions === 'function') refreshReplenMarketplaceOptions();
+        var m = document.getElementById('replenMarketplace');
+        if (m) m.value = scope.marketplaceId;
     } catch (e) {}
 }
 // THE MOUNT ENTRY POINT. Replaces the bare _irEnsureRegistryLoaded_() call, and is the only thing that changed
@@ -10247,9 +10268,21 @@ function _irBootstrapScope_() {
         Promise.resolve(_irWorkspaceRefresh_({ quiet: true, carrier: true,
             owner: 'RESTORED_MOUNT_REVALIDATION',
             reason: 'a retained model was restored; this re-reads behind it without a loading state' })).then(function () {
-            if (qSeq !== _irSearch.seq) return;                  // a real Search superseded the restore
-            if (!_irSameScope_(_irSearch.applied, remembered)) return;   // the scope moved on
+            // CP2X-R4 §D — A SUPERSEDED REVALIDATION STILL HAS TO END ITS OWN STATE.
+            //
+            // The two guards below are right and are unchanged: a revalidation that a newer Search or a
+            // scope change has overtaken must not touch the new round's state. But they used to `return`
+            // BEFORE clearing `revalidating`, so the flag stayed true for the rest of the session and
+            // every later reader of the bootstrap diagnostic saw a revalidation that was still running
+            // when nothing was in flight at all. A stale flag is not evidence of a live request.
+            //
+            // Clearing it here is not "modifying the newer round": `revalidating` and
+            // `revalidateSuperseded` describe THIS attempt and are written by nobody else. The things
+            // that belong to the new round - status, applied, the painted model - are still untouched
+            // on both superseded paths.
             _irBootstrap.revalidating = false;
+            if (qSeq !== _irSearch.seq) { _irBootstrap.revalidateSuperseded = 'NEWER_SEARCH'; return; }
+            if (!_irSameScope_(_irSearch.applied, remembered)) { _irBootstrap.revalidateSuperseded = 'SCOPE_MOVED'; return; }
             _irBootstrap.revalidated = true;
             if (typeof renderReplenishment === 'function') renderReplenishment();
         }, function () { _irBootstrap.revalidating = false; _irBootstrap.revalidateFailed = true; });
@@ -10396,6 +10429,13 @@ window._irBootstrapDiagnostic_ = function () {
         revalidating: _irBootstrap.revalidating === true,
         revalidated: _irBootstrap.revalidated === true,
         revalidate_failed: _irBootstrap.revalidateFailed === true,
+        // CP2X-R4 §D — why a revalidation ended without revalidating, when that is what happened. A
+        // reader must be able to tell "overtaken and correctly stood down" from "still running", and
+        // `revalidating: false` alone says only that nothing is in flight NOW.
+        revalidate_superseded: _irBootstrap.revalidateSuperseded || null,
+        // CP2X-R4 §B — the last Search that was REFUSED for an inconsistent scope pair, and why. It is
+        // cleared by the next Search that validates, so it is never mistaken for a live condition.
+        last_refusal: (_irSearch && _irSearch.lastRefusal) ? _irSearch.lastRefusal : null,
         result_age_ms: _irReadModelAt ? (_irNowMs_() - _irReadModelAt) : null,
         result_ttl_ms: _IR_RESULT_TTL_MS,
         registry_requests: _irBootstrap.registryRequests, workspace_requests: _irBootstrap.workspaceRequests,
@@ -11270,6 +11310,24 @@ function searchReplenishment() {
     if (!pending.country && !pending.marketplaceId) { alert('Please select Country and Marketplace before searching.'); return; }
     if (!pending.country) { alert('Please select a Country.'); return; }
     if (!pending.marketplaceId) { alert('Please select a Marketplace.'); return; }
+
+    // CP2X-R4 — AND THE PAIR MUST BE CONSISTENT, not merely present. A refusal here issues NO request,
+    // does NOT move `applied`, and publishes nothing: the table keeps showing the last result it was
+    // honestly given. The reason is recorded for the diagnostic rather than only spoken in an alert.
+    var _scopeCheck = (typeof _irValidateScopeSelection_ === 'function')
+        ? _irValidateScopeSelection_(pending) : { ok: true };
+    if (!_scopeCheck.ok) {
+        _irSearch.lastRefusal = { code: _scopeCheck.code, at: _irNowMs_(),
+            selectedCountry: _scopeCheck.selectedCountry || null,
+            marketplaceId: _scopeCheck.marketplaceId || null,
+            marketplaceCountry: _scopeCheck.marketplaceCountry || null };
+        // Re-offer the LEGAL options for the country on screen. This never picks one - it rebuilds the
+        // list and drops an id that does not belong to it, so the operator chooses from what is real.
+        if (typeof refreshReplenMarketplaceOptions === 'function') refreshReplenMarketplaceOptions();
+        alert('Please select a Marketplace that belongs to the selected Country.');
+        return;
+    }
+    _irSearch.lastRefusal = null;
 
     if (_irSearch.inFlight) return;   // single-flight — repeated rapid clicks share the in-flight read
 
@@ -13602,6 +13660,48 @@ function _replenActiveMarketplaces() {
     return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
 }
 
+// S8-B3-R3-CP2X-R4 — WHAT "SELECTED" HAS TO MEAN BEFORE A SEARCH MAY SPEND A REQUEST.
+//
+// searchReplenishment's existing gate establishes only that two strings are NON-EMPTY. That cannot tell
+// a live marketplace_id from one that has outlived the options which justified it, and - the case that
+// actually reached the server - it cannot tell whether the id BELONGS to the country sitting beside it.
+// A <select> is a DOM node: its value survives a rebuild that drops it, a restore that ran in the wrong
+// order, and a registry that retired the site between visits. The pair is then internally inconsistent,
+// and _replenSelectedScope resolves that by trusting the marketplace record - so the request went out
+// naming the MARKETPLACE's country while the screen showed the operator a different one, and the table
+// that came back was a mixed-site result nobody asked for.
+//
+// The canonical record is the authority for all three facts: that the id exists, which country owns it,
+// and which company it belongs to. COMPANY IS NEVER TAKEN FROM THE SCREEN - there is no company select,
+// and deriving it from anything but the record is how a cross-company read starts.
+//
+// Validated against _replenActiveMarketplaces(), which is the SAME list refreshReplenMarketplaceOptions
+// builds the select from. Anything genuinely on offer therefore passes; only a value the select could
+// not legitimately be showing is refused. An empty list needs no special case: with no options the
+// value would be '' and the caller has already returned.
+function _irValidateScopeSelection_(pending) {
+    var country = (pending && pending.country) ? String(pending.country) : '';
+    var mpId = (pending && pending.marketplaceId) ? String(pending.marketplaceId) : '';
+    if (!country) return { ok: false, code: 'COUNTRY_NOT_SELECTED' };
+    if (!mpId) return { ok: false, code: 'MARKETPLACE_NOT_SELECTED' };
+    if (typeof _replenDemoOn === 'function' && _replenDemoOn()) {
+        return { ok: true, demo: true, scope: { company: '', country: country, marketplace: mpId, marketplaceId: '' } };
+    }
+    var list = (typeof _replenActiveMarketplaces === 'function') ? (_replenActiveMarketplaces() || []) : [];
+    var rec = null;
+    for (var i = 0; i < list.length; i++) {
+        if (String(list[i].marketplaceId) === mpId) { rec = list[i]; break; }
+    }
+    if (!rec) return { ok: false, code: 'MARKETPLACE_UNKNOWN', marketplaceId: mpId, selectedCountry: country };
+    if (String(rec.country || '') !== country) {
+        return { ok: false, code: 'MARKETPLACE_COUNTRY_MISMATCH', marketplaceId: mpId,
+            selectedCountry: country, marketplaceCountry: String(rec.country || '') };
+    }
+    return { ok: true, scope: { company: rec.company || '', country: String(rec.country || country),
+        marketplace: rec.marketplace || '', marketplaceId: rec.marketplaceId || mpId } };
+}
+window._irValidateScopeSelection_ = _irValidateScopeSelection_;
+
 // Resolve the CURRENT scope from the Marketplace dropdown. There is no Company select: in Cloud mode
 // the dropdown value is a marketplace_id, so company + country + marketplace are DERIVED from the
 // marketplaces master. In Demo mode the dropdown keeps its static marketplace-NAME options, so the
@@ -14676,6 +14776,35 @@ function _irRecoInvalidate(status) {
   if (_irRecoAbort && _irRecoAbort.abort) { try { _irRecoAbort.abort(); } catch (e) {} }
   _irRecoAbort = null;
   _irRecoState = _irRecoBlank(status || 'CONTEXT_NOT_READY');
+}
+
+// S8-B3-R3-CP2X-R4 — CANCEL WHAT IS IN FLIGHT; KEEP WHAT ALREADY SETTLED.
+//
+// The unmount hook used to call _irRecoInvalidate('DISABLED'), which did two different jobs under one
+// name. Bumping the sequence and aborting the response is the job it was added for: it stops an answer
+// that arrives after the operator has left from landing on a later mount. That half is kept here
+// verbatim and is still unconditional.
+//
+// The other half — blanking a COMPLETED result — is what cost the operator their screen. Leaving Site
+// Inventory and coming straight back re-entered the RESTORED bootstrap branch with the applied scope
+// unchanged and the primary model still in memory, so the table repainted with its rows, its Suggested
+// Qty and its summary intact — and Avg Sales and Days of Supply showing '--', because the one piece of
+// state those two read had just been thrown away. Nothing re-read it either (measured: zero new
+// recommendation requests across a leave and return), so the dashes stayed until the operator pressed
+// Search again for an answer the page already had.
+//
+// A SETTLED RESULT IS NOT IN FLIGHT. Keeping it is safe for the same reason the restore itself is: the
+// result carries its own appliedScopeKey, every consumer goes through _irResultMatchesAppliedScope_,
+// and a blank state is deliberately unstamped so it can never satisfy that guard. Nothing here widens
+// what may paint; it stops a valid answer being discarded for a reason that only applied to a pending
+// one. A load that never completed is still blanked, because a half-arrived read has nothing to keep.
+function _irRecoCancelInFlight_(status) {
+  _irRecoSeq++;
+  if (_irRecoAbort && _irRecoAbort.abort) { try { _irRecoAbort.abort(); } catch (e) {} }
+  _irRecoAbort = null;
+  if (!_irRecoState || !_irRecoState.loadedOk) {
+    _irRecoState = _irRecoBlank(status || 'CONTEXT_NOT_READY');
+  }
 }
 
 // The read cutover: at most ONE scope-only recommendation.workspace.get per READY scope. Deduped, stale-guarded.
@@ -16129,8 +16258,12 @@ if (window.KM && window.KM.lifecycle) {
                 scrollCol.removeEventListener('scroll', scrollCol._syncHandler);
             }
             // F1-4B-B: invalidate any in-flight Recommendation Workspace request (bump seq + abort the
-            // browser response) and reset the read state so it never applies to a later mount.
-            if (typeof _irRecoInvalidate === 'function') _irRecoInvalidate('DISABLED');
+            // browser response) so it never applies to a later mount.
+            // CP2X-R4: a result that ALREADY COMPLETED is kept, so returning to the page restores Avg
+            // Sales and Days of Supply instead of showing '--' for a scope that never changed. The
+            // cancellation above is unchanged — see _irRecoCancelInFlight_.
+            if (typeof _irRecoCancelInFlight_ === 'function') _irRecoCancelInFlight_('DISABLED');
+            else if (typeof _irRecoInvalidate === 'function') _irRecoInvalidate('DISABLED');
         }
     });
 }

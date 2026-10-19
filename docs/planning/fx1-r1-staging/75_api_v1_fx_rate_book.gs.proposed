@@ -1,7 +1,8 @@
-// 75_api_v1_fx_rate_book.gs — FX1-R1 — the FX RATE BOOK: stored coefficients with provenance and history.
+// 75_api_v1_fx_rate_book.gs — FX1-R2 — the FX RATE BOOK: stored coefficients with provenance, history,
+// an atomic commit, a capacity guard and an authorization that fails closed.
 //
 // STAGED, NOT DEPLOYED. This file is deliberately OUTSIDE assets/specs/active/apps-script/ and carries a
-// .proposed suffix so no build, audit or sync step can pick it up. It exists to make the GS cost of FX1
+// .proposed suffix so no build, audit or sync step can pick it up. It exists to make the GS cost of FX
 // a MEASURED number instead of an estimate. It becomes real only on an approved FX budget.
 //
 // WHAT IT ADDS: somewhere to KEEP a rate. 73_ already converts correctly and already refuses almost
@@ -18,13 +19,22 @@
 //   • pricingDecimalsFor_     (73_) — the frozen precision contract IS the supported-currency list.
 //   • pricingStr_ / pricingReadNumber_ (73_) — same coercion as the writer that consumes the rates.
 //   • Script Properties + injectable io + envelope (45_) — the established config-storage pattern.
-//   • automationScheduleAuthority_-style hook (45_) — the authority model is DEPLOYMENT_ACCESS and this
-//     file does not invent a per-user role gate. See fxBookAuthority_.
+//
+// FX1-R2 CLOSES FOUR THINGS THE FIRST DRAFT LEFT OPEN. Each is a counter-example in the verifier:
+//   1. the stored document was TRUSTED once it parsed as JSON;
+//   2. a book could grow past what a Script Property can hold, and the overflow was discovered by the
+//      platform at write time, after the change record had already been appended;
+//   3. the book and its change log were TWO properties, so a half-written save left them disagreeing;
+//   4. the write authority returned "allowed" unconditionally.
 
 var FX_BOOK_PROP_KEY_ = 'KM_FX_RATE_BOOK';
-var FX_BOOK_LOG_PROP_KEY_ = 'KM_FX_RATE_BOOK_LOG';
+var FX_BOOK_EDITORS_PROP_KEY_ = 'KM_FX_RATE_BOOK_EDITORS';
 var FX_BOOK_LOCK_MS_ = 30000;
-var FX_BOOK_LOG_MAX_ = 200;   // bounded: Script Properties is a 9 KB-per-value store, not a journal.
+var FX_BOOK_LOG_MAX_ = 50;
+// A Script Property VALUE is capped at 9 KB by the platform. The guard sits below it so the refusal is
+// ours, named and survivable, rather than a platform exception thrown halfway through a commit.
+var FX_BOOK_MAX_BYTES_ = 8192;
+var FX_BOOK_DOC_SHAPE_ = 1;
 var FX_BOOK_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';
 
 // ---- io ------------------------------------------------------------------------------------------------
@@ -32,18 +42,46 @@ function fxBookDefaultIo_() {
   var props = PropertiesService.getScriptProperties();
   return {
     get: function (k) { return props.getProperty(k); },
-    set: function (k, v) { props.setProperty(k, v); }
+    set: function (k, v) { props.setProperty(k, v); },
+    user: function () {
+      // The CALLER, not the deployment owner. Empty string when the deployment cannot identify them.
+      try { return pricingStr_(Session.getActiveUser().getEmail()); } catch (e) { return ''; }
+    }
   };
 }
 
 function fxBookIsYmd_(v) { return /^\d{4}-\d{2}-\d{2}$/.test(pricingStr_(v)); }
 
+// FX1-R2 — UTF-8 BYTES, NOT CHARACTERS. A JavaScript string's .length counts UTF-16 units; the platform
+// counts bytes. A source name like "Banco de Espana — referencia" or a note in Chinese costs two or three
+// bytes per character, so a book that measures 8,000 "characters" can be well over the cap. Measuring the
+// wrong unit here would move the failure to the platform, at write time, after the log was already built.
+function fxBookByteLen_(s) {
+  var str = String(s == null ? '' : s), n = 0;
+  for (var i = 0; i < str.length; i++) {
+    var c = str.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; }   // surrogate pair = one 4-byte code point
+    else n += 3;
+  }
+  return n;
+}
+
 // ---- the stored document -------------------------------------------------------------------------------
-// { doc_version: <int>, rates: [ entry... ] }. doc_version is the optimistic-concurrency token for the
-// WHOLE book; an entry's own `version` is its edit count and is carried for the change record.
+// ONE property holds EVERYTHING: { shape, doc_version, rates: [...], log: [...] }.
+//
+// FX1-R2 — THIS IS WHY THE COMMIT IS ATOMIC. The first draft kept the change log in a second property, so
+// a save was two writes: if the book landed and the log did not, the history silently lost a change that
+// HAD been applied, and if the log landed and the book did not, the history claimed a change that never
+// happened. There is no transaction across two Script Properties, and a lock does not provide one — a lock
+// serialises writers, it does not make two writes one. Folding the log into the same document makes the
+// commit a single setProperty: it either happened or it did not.
 function fxBookReadDoc_(io) {
   var raw = io.get(FX_BOOK_PROP_KEY_);
-  if (!raw) return { doc_version: 0, rates: [] };
+  if (raw === null || raw === undefined || pricingStr_(raw) === '') {
+    return { shape: FX_BOOK_DOC_SHAPE_, doc_version: 0, rates: [], log: [], absent: true };
+  }
   var parsed;
   try { parsed = JSON.parse(raw); }
   catch (e) {
@@ -51,13 +89,38 @@ function fxBookReadDoc_(io) {
     // nobody could read, destroying the history silently.
     throw new Error('FX_BOOK_CORRUPT: the stored rate book is not valid JSON and was not overwritten.');
   }
-  return {
-    doc_version: Number(parsed.doc_version) || 0,
-    rates: (parsed.rates && parsed.rates.length !== undefined) ? parsed.rates : []
-  };
+  // FX1-R2 — STRUCTURE AND VERSION ARE VALIDATED, NOT ASSUMED. "It parsed" says only that it is JSON.
+  // Everything below is a way the document can be well-formed JSON and still not be a rate book: a shape
+  // written by a newer build, a doc_version that is a string or a float, rates that is an object. Coercing
+  // any of them would publish a book this code does not understand; refusing leaves it exactly as found.
+  if (!parsed || typeof parsed !== 'object' || parsed.constructor === Array) {
+    throw new Error('FX_BOOK_SHAPE_INVALID: the stored value is not a rate-book object.');
+  }
+  // STRICT ON TYPE, not merely on value. `Number("2")` is 2, so a coercing check would accept a book
+  // whose version is a STRING — and the next save would compare 2 against "2" with !== and refuse every
+  // legitimate write, or, worse, a later reader would concatenate instead of adding. The stored type is
+  // part of the contract.
+  var shape = parsed.shape;
+  if (typeof shape !== 'number' || !isFinite(shape) || Math.floor(shape) !== shape || shape < 1) {
+    throw new Error('FX_BOOK_SHAPE_INVALID: the stored document carries no usable shape marker.');
+  }
+  if (shape > FX_BOOK_DOC_SHAPE_) {
+    // A NEWER BUILD WROTE THIS. Refusing is the only safe answer: this code cannot know which fields it
+    // would silently drop on the next save, and dropping them is how a rollback destroys data.
+    throw new Error('FX_BOOK_SHAPE_FUTURE: the book was written by a newer build (shape ' + shape
+      + ' > ' + FX_BOOK_DOC_SHAPE_ + '). Nothing was read and nothing was overwritten.');
+  }
+  var dv = parsed.doc_version;
+  if (typeof dv !== 'number' || !isFinite(dv) || Math.floor(dv) !== dv || dv < 0) {
+    throw new Error('FX_BOOK_VERSION_INVALID: doc_version is not a whole number of at least 0.');
+  }
+  if (parsed.rates === undefined || parsed.rates === null || parsed.rates.length === undefined
+      || typeof parsed.rates === 'string') {
+    throw new Error('FX_BOOK_SHAPE_INVALID: rates is not a list.');
+  }
+  var log = (parsed.log && parsed.log.length !== undefined && typeof parsed.log !== 'string') ? parsed.log : [];
+  return { shape: shape, doc_version: dv, rates: parsed.rates, log: log, absent: false };
 }
-
-function fxBookWriteDoc_(io, doc) { io.set(FX_BOOK_PROP_KEY_, JSON.stringify(doc)); }
 
 // ---- validation: ONLY what 73_ does not already check ---------------------------------------------------
 function fxBookValidateEntry_(e, n) {
@@ -224,21 +287,73 @@ function fxBookChangeRecords_(oldRates, newRates, who, whenIso) {
   return records;
 }
 
-function fxBookAppendLog_(io, records) {
-  if (!records || !records.length) return;
-  var prev = [];
-  try { prev = JSON.parse(io.get(FX_BOOK_LOG_PROP_KEY_) || '[]'); } catch (e) { prev = []; }
-  var next = prev.concat(records);
-  if (next.length > FX_BOOK_LOG_MAX_) next = next.slice(next.length - FX_BOOK_LOG_MAX_);
-  io.set(FX_BOOK_LOG_PROP_KEY_, JSON.stringify(next));
+// ---- the commit ------------------------------------------------------------------------------------------
+// FX1-R2 — ONE WRITE, MEASURED BEFORE IT IS ATTEMPTED.
+//
+// Returns { ok, bytes, trimmed } or { ok:false, code }. The caller gets a refusal it can report; the
+// property is either replaced in full or not touched at all.
+//
+// THE LOG IS TRIMMED BEFORE THE RATES ARE REFUSED, and that order is deliberate: history is valuable but
+// the rates are the thing the system runs on, so an oversized document sheds the oldest records first and
+// only refuses when the RATES themselves will not fit. Trimming is reported, never silent.
+function fxBookCommit_(io, doc) {
+  var d = { shape: FX_BOOK_DOC_SHAPE_, doc_version: doc.doc_version, rates: doc.rates, log: (doc.log || []).slice() };
+  var trimmed = 0;
+  var json = JSON.stringify(d);
+  while (fxBookByteLen_(json) > FX_BOOK_MAX_BYTES_ && d.log.length > 0) {
+    d.log.shift(); trimmed++;
+    json = JSON.stringify(d);
+  }
+  var bytes = fxBookByteLen_(json);
+  if (bytes > FX_BOOK_MAX_BYTES_) {
+    // The rates alone do not fit. NOTHING is written — not a truncated book, and not a book with the
+    // history thrown away for a save that was going to fail anyway.
+    return { ok: false, code: 'FX_BOOK_TOO_LARGE', bytes: bytes, limit: FX_BOOK_MAX_BYTES_,
+      detail: 'The rate book does not fit in one Script Property (' + bytes + ' > ' + FX_BOOK_MAX_BYTES_
+        + ' bytes, UTF-8). Retire rates that are no longer needed, or move the book to a table.' };
+  }
+  io.set(FX_BOOK_PROP_KEY_, json);
+  return { ok: true, bytes: bytes, trimmed: trimmed, doc: d };
 }
 
-// ---- authority -----------------------------------------------------------------------------------------
-function fxBookAuthority_(body) {
-  // No source-provable per-user role gate exists anywhere in this API layer: `getActiveUser` appears in
-  // none of the deployed modules and every existing write is gated by WHO CAN REACH THE DEPLOYMENT. This
-  // is the single integration point for a future real role owner; it does not fabricate an identity check.
-  return { ok: true, model: 'DEPLOYMENT_ACCESS' };
+// ---- authority -------------------------------------------------------------------------------------------
+// FX1-R2 — IT FAILS CLOSED, AND IT SAYS WHY.
+//
+// The first draft returned { ok: true } unconditionally and called that "the deployment model". That is a
+// true description of every OTHER write in this project, and it is not good enough for the one action that
+// can reprice an entire catalogue on the next reconciliation.
+//
+// The allowlist lives in KM_FX_RATE_BOOK_EDITORS, a comma-separated list of addresses. Reading the CALLER
+// is only possible in some deployment modes: a Web App that executes AS THE OWNER cannot see who called
+// it, and Session.getActiveUser() returns '' there. THAT CASE REFUSES. An unidentifiable caller is not an
+// authorised one, and treating it as one would make the allowlist decorative.
+//
+// The single documented escape is an explicit '*' in the property — the Owner recording, in the
+// configuration itself, that this deployment is open. A decision written down is a different thing from a
+// default nobody chose.
+function fxBookAuthority_(io, body) {
+  var raw = pricingStr_(io.get(FX_BOOK_EDITORS_PROP_KEY_));
+  if (!raw) {
+    return { ok: false, code: 'FX_AUTHORITY_NOT_CONFIGURED', model: 'ALLOWLIST',
+      detail: 'No editor allowlist is configured. Set ' + FX_BOOK_EDITORS_PROP_KEY_
+        + ' to the addresses permitted to change FX rates, or to * to record that this deployment is open.' };
+  }
+  var list = raw.split(',').map(function (s) { return pricingStr_(s).toLowerCase(); })
+    .filter(function (s) { return s !== ''; });
+  if (list.indexOf('*') !== -1) return { ok: true, model: 'OPEN_BY_CONFIGURATION', user: null };
+
+  var who = pricingStr_(io.user ? io.user() : '').toLowerCase();
+  if (!who) {
+    return { ok: false, code: 'FX_AUTHORITY_UNVERIFIABLE', model: 'ALLOWLIST',
+      detail: 'This deployment cannot identify the caller, so membership of the allowlist cannot be '
+        + 'checked. Nothing was written. Deploy so the caller is identifiable, or set '
+        + FX_BOOK_EDITORS_PROP_KEY_ + ' to * to record that this deployment is open.' };
+  }
+  if (list.indexOf(who) === -1) {
+    return { ok: false, code: 'FX_NOT_AUTHORIZED', model: 'ALLOWLIST', user: who,
+      detail: who + ' is not on the FX rate book editor allowlist.' };
+  }
+  return { ok: true, model: 'ALLOWLIST', user: who };
 }
 
 function fxBookEnvelope_(ok, data, errors) {
@@ -250,32 +365,38 @@ function handleFxRateBookGet_(body, io) {
   io = io || fxBookDefaultIo_();
   try {
     var doc = fxBookReadDoc_(io);
-    var log = [];
-    try { log = JSON.parse(io.get(FX_BOOK_LOG_PROP_KEY_) || '[]'); } catch (e) { log = []; }
+    var auth = fxBookAuthority_(io, body);
     return fxBookEnvelope_(true, {
       doc_version: doc.doc_version,
       rates: doc.rates,
-      change_log: log.slice(-50),
-      supported_currencies: Object.keys(PRICING_FX_DECIMALS_).sort()
+      change_log: doc.log.slice(-FX_BOOK_LOG_MAX_),
+      supported_currencies: Object.keys(PRICING_FX_DECIMALS_).sort(),
+      capacity: { used_bytes: fxBookByteLen_(io.get(FX_BOOK_PROP_KEY_) || ''), limit_bytes: FX_BOOK_MAX_BYTES_ },
+      // The page shows whether this caller may SAVE before they spend time editing. A read is never gated
+      // on it: seeing the rates that price the catalogue is not the same permission as changing them.
+      may_edit: auth.ok === true, authority_model: auth.model, authority_reason: auth.ok ? null : auth.code
     });
   } catch (e) {
     return fxBookEnvelope_(false, null, [{ code: 'FX_BOOK_GET_ERROR', message: String(e && e.message || e) }]);
   }
 }
 
-// ---- API: SAVE (authority -> LOCK -> re-read -> version CAS -> validate -> write -> log -> readback) -----
+// ---- API: SAVE (authority -> LOCK -> re-read -> version CAS -> validate -> ONE commit -> readback) --------
 function handleFxRateBookSave_(body, io) {
   io = io || fxBookDefaultIo_();
-  var auth = fxBookAuthority_(body);
-  if (!auth.ok) return fxBookEnvelope_(false, null, [{ code: 'NOT_AUTHORIZED', message: 'not authorized to change FX rates' }]);
+  var auth = fxBookAuthority_(io, body);
+  if (!auth.ok) {
+    return fxBookEnvelope_(false, null, [{ code: auth.code, message: auth.detail, model: auth.model }]);
+  }
 
   var payload = (body && body.payload && typeof body.payload === 'object') ? body.payload : (body || {});
   var expected = Number(payload.doc_version);
-  if (!isFinite(expected) || expected < 0) {
+  if (!isFinite(expected) || expected < 0 || Math.floor(expected) !== expected) {
     return fxBookEnvelope_(false, null, [{ code: 'FX_DOC_VERSION_REQUIRED',
-      message: 'A save must carry the doc_version it read, so a stale tab cannot overwrite a newer book.' }]);
+      message: 'A save must carry the whole-number doc_version it read, so a stale tab cannot overwrite a newer book.' }]);
   }
-  var incoming = (payload.rates && payload.rates.length !== undefined) ? payload.rates : null;
+  var incoming = (payload.rates && payload.rates.length !== undefined && typeof payload.rates !== 'string')
+    ? payload.rates : null;
   if (!incoming) {
     return fxBookEnvelope_(false, null, [{ code: 'FX_RATES_REQUIRED', message: 'rates[] is required (send [] to empty the book deliberately).' }]);
   }
@@ -300,14 +421,31 @@ function handleFxRateBookSave_(body, io) {
         message: v.errors.length + ' problem(s). ZERO rates were written.' }]));
     }
 
-    var next = { doc_version: current.doc_version + 1, rates: incoming };
-    fxBookWriteDoc_(io, next);
-    fxBookAppendLog_(io, fxBookChangeRecords_(current.rates, incoming,
-      pricingStr_(payload.changed_by) || 'unknown', pricingStr_(payload.changed_at)));
+    // The log is built from the SAME pair of states that is about to be committed, and travels in the same
+    // document, so the history and the rates cannot disagree about what happened.
+    var who = pricingStr_(payload.changed_by) || auth.user || 'unknown';
+    var records = fxBookChangeRecords_(current.rates, incoming, who, pricingStr_(payload.changed_at));
+    var nextLog = current.log.concat(records);
+    if (nextLog.length > FX_BOOK_LOG_MAX_) nextLog = nextLog.slice(nextLog.length - FX_BOOK_LOG_MAX_);
 
-    // Readback, so the page never renders a version it merely hopes was stored.
+    var commit = fxBookCommit_(io, { doc_version: current.doc_version + 1, rates: incoming, log: nextLog });
+    if (!commit.ok) {
+      return fxBookEnvelope_(false, null, [{ code: commit.code, message: commit.detail,
+        bytes: commit.bytes, limit: commit.limit }]);
+    }
+
+    // READBACK, so the page never renders a version it merely hopes was stored. A property that read back
+    // at the OLD version means the write did not take, and reporting success there is how a lost save
+    // becomes an operator's wrong price.
     var saved = fxBookReadDoc_(io);
-    return fxBookEnvelope_(true, { doc_version: saved.doc_version, rates: saved.rates, authority: auth.model });
+    if (saved.doc_version !== current.doc_version + 1) {
+      return fxBookEnvelope_(false, null, [{ code: 'FX_COMMIT_NOT_CONFIRMED',
+        stored_doc_version: saved.doc_version, expected_doc_version: current.doc_version + 1,
+        message: 'The book did not read back at the version just written. Treat this save as NOT applied.' }]);
+    }
+    return fxBookEnvelope_(true, { doc_version: saved.doc_version, rates: saved.rates,
+      change_log: saved.log.slice(-FX_BOOK_LOG_MAX_), authority: auth.model,
+      bytes: commit.bytes, limit: FX_BOOK_MAX_BYTES_, log_trimmed: commit.trimmed });
   } catch (e) {
     return fxBookEnvelope_(false, null, [{ code: 'FX_BOOK_SAVE_ERROR', message: String(e && e.message || e) }]);
   } finally {

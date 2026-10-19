@@ -1,7 +1,7 @@
 {
   "round": "S8-B3-R3-CP2S-R2",
   "what": "in-place velocity update: what survives a real workspace arrival in a real browser",
-  "takenAt": "2026-10-19T02:07:22.171Z",
+  "takenAt": "2026-10-19T06:25:55.011Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "skus": 60,
   "recoReadsServed": 7,
@@ -10,14 +10,14 @@
     "secondAvgCell": "11.0"
   },
   "sources": {
-    "index.html": "57ec2ec2b5900ecf",
-    "assets/js/pages/inventory-replenishment.js": "7ff4762df011ceec",
+    "index.html": "b00fc9cce9306369",
+    "assets/js/pages/inventory-replenishment.js": "6f6e69f67ef9b642",
     "assets/css/pages/inventory-replenishment.css": "74872c1b61ce9d47"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 923,
+      "t": 896,
       "success": true,
       "dataKeys": [
         "product_strategy_enabled",
@@ -28,7 +28,7 @@
     },
     {
       "action": "inventoryScope.registry.get",
-      "t": 1104,
+      "t": 1071,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -44,7 +44,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 1762,
+      "t": 1735,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -95,7 +95,7 @@
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 1792,
+      "t": 1766,
       "success": true,
       "dataKeys": [
         "rows"
@@ -106,7 +106,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 1794,
+      "t": 1767,
       "success": true,
       "dataKeys": [
         "lines",
@@ -118,7 +118,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 2725,
+      "t": 2706,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -169,7 +169,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 3811,
+      "t": 3783,
       "success": true,
       "dataKeys": [
         "lines",
@@ -193,7 +193,7 @@
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 5194,
+      "t": 5193,
       "success": true,
       "dataKeys": [
         "rows"
@@ -204,7 +204,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 5196,
+      "t": 5195,
       "success": true,
       "dataKeys": [
         "lines",
@@ -216,7 +216,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 6850,
+      "t": 6801,
       "success": true,
       "dataKeys": [
         "lines",
@@ -228,7 +228,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 8053,
+      "t": 8007,
       "success": true,
       "dataKeys": [
         "lines",
@@ -240,7 +240,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 8586,
+      "t": 8536,
       "success": true,
       "dataKeys": [
         "lines",
@@ -252,7 +252,7 @@
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 18096,
+      "t": 18017,
       "success": true,
       "dataKeys": [
         "rows"
@@ -263,7 +263,7 @@
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 20132,
+      "t": 20066,
       "success": true,
       "dataKeys": [
         "rows"
@@ -545,36 +545,36 @@
     }
   ],
   "result": {
-    "capId": "inplace-1792375620362",
+    "capId": "inplace-1792391133261",
     "steps": [
       {
         "step": "app-ready",
-        "t": 491.1,
-        "v": 0.1
+        "t": 504.8,
+        "v": 0
       },
       {
         "step": "filter-bar",
-        "t": 538.7,
-        "v": 46.6
+        "t": 552.3,
+        "v": 46.4
       },
       {
         "step": "table",
-        "t": 1222.3,
+        "t": 1242.7,
         "v": 60
       },
       {
         "step": "first-reco-cell",
-        "t": 2123.7,
+        "t": 2148.7,
         "v": "7.0"
       },
       {
         "step": "exec-card",
-        "t": 2153.7,
+        "t": 2180.5,
         "v": 0
       },
       {
         "step": "edit-state-captured",
-        "t": 3229.7,
+        "t": 3246.1,
         "v": {
           "activeMark": "INPUT",
           "activeTag": "INPUT",
@@ -595,12 +595,12 @@
       },
       {
         "step": "second-arrival",
-        "t": 3276,
+        "t": 3307.8,
         "v": "11.0"
       },
       {
         "step": "done",
-        "t": 3527.6,
+        "t": 3573.1,
         "v": {
           "firstReadResolved": true,
           "firstCell": "7.0",
@@ -621,7 +621,7 @@
       },
       {
         "step": "scope-siteA-first",
-        "t": 4092.5,
+        "t": 4140.4,
         "v": {
           "err": null,
           "recoCache": {
@@ -636,7 +636,7 @@
       },
       {
         "step": "scope-siteB-first",
-        "t": 4685.3,
+        "t": 4703.7,
         "v": {
           "err": null,
           "recoCache": {
@@ -651,7 +651,7 @@
       },
       {
         "step": "scope-siteA-again",
-        "t": 5261.5,
+        "t": 5260.8,
         "v": {
           "err": null,
           "recoCache": {
@@ -666,7 +666,7 @@
       },
       {
         "step": "scope-leave-return",
-        "t": 6273.6,
+        "t": 6272.9,
         "v": {
           "err": null,
           "recoCache": {
@@ -681,7 +681,7 @@
       },
       {
         "step": "scope-pending-reentry",
-        "t": 7480,
+        "t": 7479.2,
         "v": {
           "err": null,
           "recoCache": {
@@ -696,7 +696,7 @@
       },
       {
         "step": "scope-switch-in-flight",
-        "t": 9528.9,
+        "t": 9525.9,
         "v": {
           "err": null,
           "recoCache": {
@@ -711,7 +711,7 @@
       },
       {
         "step": "scope-revisit-B-before-job",
-        "t": 10980.2,
+        "t": 10962.7,
         "v": {
           "err": null,
           "recoCache": {
@@ -726,7 +726,7 @@
       },
       {
         "step": "scope-pending-return-to-cached",
-        "t": 17520.6,
+        "t": 17489.5,
         "v": {
           "err": null,
           "recoCache": {
@@ -741,7 +741,7 @@
       },
       {
         "step": "scope-job-complete",
-        "t": 19030.1,
+        "t": 19004.4,
         "v": {
           "err": null,
           "recoCache": {
@@ -756,7 +756,7 @@
       },
       {
         "step": "scope-after-job-other-site",
-        "t": 21080.6,
+        "t": 21057.1,
         "v": {
           "err": null,
           "recoCache": {
@@ -771,7 +771,7 @@
       },
       {
         "step": "scopes-done",
-        "t": 21080.6,
+        "t": 21057.1,
         "v": {
           "phases": 10
         }
@@ -836,31 +836,31 @@
     "obs": {
       "gates": [
         {
-          "t": 1215.1,
+          "t": 1234.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 1215.2,
+          "t": 1234.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 2124.4,
+          "t": 2149.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2124.4,
+          "t": 2149.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2134.8,
+          "t": 2160.6,
           "gate": "recommendation",
           "call": "begin",
           "gen": 3,
@@ -872,7 +872,7 @@
           }
         },
         {
-          "t": 2134.8,
+          "t": 2160.6,
           "gate": "execution",
           "call": "begin",
           "gen": 3,
@@ -884,7 +884,7 @@
           }
         },
         {
-          "t": 2135.1,
+          "t": 2161.1,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -901,7 +901,7 @@
           }
         },
         {
-          "t": 2144,
+          "t": 2170.2,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -918,7 +918,7 @@
           }
         },
         {
-          "t": 2153.7,
+          "t": 2180.5,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -935,14 +935,14 @@
           }
         },
         {
-          "t": 2154.2,
+          "t": 2181,
           "gate": "recommendation",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 2219.7,
+          "t": 2244.2,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -959,7 +959,7 @@
           }
         },
         {
-          "t": 2228.3,
+          "t": 2252.3,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -976,14 +976,14 @@
           }
         },
         {
-          "t": 2228.6,
+          "t": 2252.5,
           "gate": "execution",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 3239,
+          "t": 3257.1,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1000,7 +1000,7 @@
           }
         },
         {
-          "t": 3258.9,
+          "t": 3284.1,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1017,109 +1017,109 @@
           }
         },
         {
-          "t": 4051.7,
+          "t": 4098.3,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 4
         },
         {
-          "t": 4051.7,
+          "t": 4098.3,
           "gate": "execution",
           "call": "abandon",
           "gen": 4
         },
         {
-          "t": 4615.7,
+          "t": 4664.6,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 5
         },
         {
-          "t": 4615.7,
+          "t": 4664.6,
           "gate": "execution",
           "call": "abandon",
           "gen": 5
         },
         {
-          "t": 5209.5,
+          "t": 5230.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 6
         },
         {
-          "t": 5209.5,
+          "t": 5230.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 6
         },
         {
-          "t": 8007.8,
+          "t": 8004.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 7
         },
         {
-          "t": 8007.8,
+          "t": 8004.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 7
         },
         {
-          "t": 10058.6,
+          "t": 10055.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 8
         },
         {
-          "t": 10058.6,
+          "t": 10055.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 8
         },
         {
-          "t": 11512.5,
+          "t": 11484,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 9
         },
         {
-          "t": 11512.5,
+          "t": 11484,
           "gate": "execution",
           "call": "abandon",
           "gen": 9
         },
         {
-          "t": 12944,
+          "t": 12919,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 10
         },
         {
-          "t": 12944,
+          "t": 12919,
           "gate": "execution",
           "call": "abandon",
           "gen": 10
         },
         {
-          "t": 13489.8,
+          "t": 13457.3,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 11
         },
         {
-          "t": 13489.9,
+          "t": 13457.3,
           "gate": "execution",
           "call": "abandon",
           "gen": 11
         },
         {
-          "t": 19556.7,
+          "t": 19536.3,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 12
         },
         {
-          "t": 19556.7,
+          "t": 19536.3,
           "gate": "execution",
           "call": "abandon",
           "gen": 12
@@ -1127,7 +1127,7 @@
       ],
       "ensureLoaded": [
         {
-          "t": 2135,
+          "t": 2160.9,
           "scope": {
             "company": "",
             "country": "US",
@@ -1140,8 +1140,8 @@
       "errors": [],
       "raf": {
         "fired": 1177,
-        "firstAt": 1342.3,
-        "lastAt": 21078.4
+        "firstAt": 1335.6,
+        "lastAt": 21055.2
       }
     },
     "firstCellInfo": {
@@ -1172,11 +1172,11 @@
                 "reason": null
               },
               "timing": {
-                "searchToDispatchMs": 15.300000011920929,
-                "responseMs": 16,
-                "domWorkMs": 10.800000011920929,
-                "paintOpportunityMs": null,
-                "forSeq": null
+                "searchToDispatchMs": 16,
+                "responseMs": 15.099999994039536,
+                "domWorkMs": 10.199999988079071,
+                "paintOpportunityMs": 19.900000005960464,
+                "forSeq": 5
               },
               "server": {
                 "serverDurationMs": 1234,
@@ -1238,11 +1238,11 @@
                 "reason": null
               },
               "timing": {
-                "searchToDispatchMs": 26.5,
-                "responseMs": 30.400000005960464,
-                "domWorkMs": 19.099999994039536,
-                "paintOpportunityMs": 29.900000005960464,
-                "forSeq": 6
+                "searchToDispatchMs": 13.200000017881393,
+                "responseMs": 17,
+                "domWorkMs": 10.199999988079071,
+                "paintOpportunityMs": null,
+                "forSeq": null
               },
               "server": {
                 "serverDurationMs": 1234,
@@ -1385,27 +1385,27 @@
               "note": "readerCalls counts loadInventoryGap_ entries; networkReads counts calls that actually reached KM.DB.getInventoryReplenishmentGap. A reuse increments the first and not the second."
             },
             "answer": {
-              "source": "NONE",
-              "status": "DISABLED",
-              "requestId": null,
-              "calculationMonth": null,
-              "calculationDate": null,
-              "planningCycle": null,
-              "sourceDataAsOf": null,
+              "source": "SESSION_CACHE",
+              "status": "READY",
+              "requestId": "REQ-C000005",
+              "calculationMonth": "2026-11",
+              "calculationDate": "2026-10-18",
+              "planningCycle": "RECO-2026-11",
+              "sourceDataAsOf": "2026-10-13",
               "shape": "horizonBasis.v2",
-              "handlerVersion": null,
-              "handlerAccepted": false,
+              "handlerVersion": "fm5-r4ui-r5e",
+              "handlerAccepted": true,
               "handlersAccepted": [
                 "fm5-r4ui-r5e"
               ],
               "revision": {
-                "calculationDate": null,
-                "calculationMonth": null,
-                "planningCycle": null,
-                "formulaVersion": null,
-                "sourceDataAsOf": null
+                "calculationDate": "2026-10-18",
+                "calculationMonth": "2026-11",
+                "planningCycle": "RECO-2026-11",
+                "formulaVersion": "FV-7",
+                "sourceDataAsOf": "2026-10-13"
               },
-              "revisionComplete": false
+              "revisionComplete": true
             }
           },
           "avg": {
@@ -1424,10 +1424,10 @@
                 "reason": null
               },
               "timing": {
-                "searchToDispatchMs": 1081.300000011921,
-                "responseMs": 5.0999999940395355,
-                "domWorkMs": 19.799999982118607,
-                "paintOpportunityMs": 30.299999982118607,
+                "searchToDispatchMs": 1053.300000011921,
+                "responseMs": 3.2999999821186066,
+                "domWorkMs": 10.599999994039536,
+                "paintOpportunityMs": 25.900000005960464,
                 "forSeq": 10
               },
               "server": {
@@ -1490,10 +1490,10 @@
                 "reason": null
               },
               "timing": {
-                "searchToDispatchMs": 19.100000023841858,
-                "responseMs": 3.5999999940395355,
-                "domWorkMs": 12,
-                "paintOpportunityMs": 27.299999982118607,
+                "searchToDispatchMs": 21.299999982118607,
+                "responseMs": 4.200000017881393,
+                "domWorkMs": 19.099999994039536,
+                "paintOpportunityMs": 23.799999982118607,
                 "forSeq": 13
               },
               "server": {
@@ -1794,167 +1794,229 @@
           "result": {
             "country": {
               "ok": true,
-              "waitedMs": 261.4
+              "waitedMs": 260.6
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 252.3
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 252.4
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 261.3
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 262.9
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 254.3
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 250.6
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 256.5
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 261.2
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 250.4
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 253.6
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 253.3
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 253.1
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 250.4
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 250.7
             },
             "mkt": {
               "ok": true,
               "waitedMs": 250.7
             },
-            "settled": true,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Amazon",
-              "marketplaceId": "MP-FIXTURE-US-AMZ"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-WMT",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 251.8
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 251.2
-            },
-            "settled": true,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Walmart",
-              "marketplaceId": "MP-FIXTURE-US-WMT"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-AMZ",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 255.1
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 254
-            },
-            "settled": true,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Amazon",
-              "marketplaceId": "MP-FIXTURE-US-AMZ"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-WMT",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 256.5
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 256.7
-            },
-            "settled": null,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Walmart",
-              "marketplaceId": "MP-FIXTURE-US-WMT"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-WMT",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 259.4
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 255
-            },
-            "settled": null,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Walmart",
-              "marketplaceId": "MP-FIXTURE-US-WMT"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-AMZ",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 259
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 255.3
-            },
             "settled": null,
             "countryOptions": [
               "",
@@ -1980,73 +2042,11 @@
           "result": {
             "country": {
               "ok": true,
-              "waitedMs": 251.4
+              "waitedMs": 257.2
             },
             "mkt": {
               "ok": true,
-              "waitedMs": 251.5
-            },
-            "settled": null,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Walmart",
-              "marketplaceId": "MP-FIXTURE-US-WMT"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-AMZ",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 261.8
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 254.6
-            },
-            "settled": null,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Amazon",
-              "marketplaceId": "MP-FIXTURE-US-AMZ"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-WMT",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 260.3
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 253.4
+              "waitedMs": 258.2
             },
             "settled": null,
             "countryOptions": [

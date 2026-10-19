@@ -6033,3 +6033,103 @@ is that the cost has stopped being hypothetical.
 
 ---
 
+
+### D-S8-B3-152 — Leaving Site Inventory threw away the answer it was about to restore — **FIXED (CP2X-R4)**
+
+Leaving the page and coming straight back repainted the table with its rows, its applied scope, its
+Suggested Qty and its summary intact — and **Avg Sales and Days of Supply showing `--`**. Nothing re-read
+them either: measured across a leave and return, the recommendation request count did not move. The
+dashes stayed until the operator pressed Search again, for an answer the page had already been given.
+
+**The cause was one call doing two jobs.** The unmount hook called `_irRecoInvalidate('DISABLED')`, which
+bumps the sequence and aborts the in-flight response — correct, and the reason it was added — *and* blanks
+`_irRecoState`. The second half is what cost the screen. `_irCanonicalSalesBasis_` is the sole authority
+for both cells, it reads that state, and a blank state is deliberately unstamped so it can never satisfy
+`_irResultMatchesAppliedScope_`.
+
+**A SETTLED RESULT IS NOT IN FLIGHT.** `_irRecoCancelInFlight_` keeps the cancellation unconditional and
+blanks the state only when `loadedOk` is false. Nothing about what may paint was widened: the result still
+carries its own `appliedScopeKey` and every consumer still goes through the scope guard. A load that never
+completed is still discarded, because a half-arrived read has nothing worth keeping.
+
+**Measured in real Chrome, before and after, with request totals byte-identical** — `reco 3, gap 1, ws 11`
+on both sides. The fix restores a value; it buys nothing with traffic.
+
+---
+
+### D-S8-B3-153 — The restore set the marketplace_id against the WRONG country's options — **FIXED (CP2X-R4 §B)**
+
+`_irSetSelectors_` assigned the country and then the marketplace_id. The Marketplace select is
+**country-scoped**: `refreshReplenMarketplaceOptions` rebuilds it from the sites belonging to the country
+currently selected, and assigning an id that is not among a select's current options is a silent no-op in
+the DOM. Those options still described whatever country the operator was looking at when they left.
+
+So the Owner's case — search EU, choose JP as a country, leave, come back — returned **country EU with the
+marketplace empty**. Measured by reverting the fix and re-running the capture: `country=EU, mkt=""`. The
+operator could not even press Search to re-reach their own result, because Search refuses an empty
+marketplace.
+
+The order is now country → **rebuild the options** → id. The options are rebuilt **programmatically and
+never by dispatching `change`**: the country `onchange` handler calls `_clearAllocationDraft()` and
+`_irMarkSearchStale_()`, so firing it to "repair" the select would destroy the operator's Execution Plan
+and invalidate the very result being restored. There is still **no fallback to the first option** — an id
+the registry no longer offers leaves the select empty and the page asks again.
+
+---
+
+### D-S8-B3-154 — Search checked that two strings were non-empty, not that they agreed — **FIXED (CP2X-R4 §B)**
+
+`searchReplenishment` validated `country` and `marketplaceId` for emptiness only. That cannot tell a live
+id from one that has outlived the options which justified it, and it cannot tell whether the id **belongs
+to the country beside it**. `_replenSelectedScope` resolves an inconsistent pair by trusting the
+marketplace record — so the request went out naming the **marketplace's** country while the screen showed
+the operator a different one, and what came back was a mixed-site table nobody asked for.
+
+`_irValidateScopeSelection_` now refuses the pair before anything is spent, validating against
+`_replenActiveMarketplaces()` — the **same list the select is built from**, so anything genuinely on offer
+passes. **Company is taken from the canonical record and never from the screen.** A refusal issues no
+request, does not move `applied`, publishes nothing, and rebuilds the legal options so the operator
+chooses from what is real. Proven in real Chrome: country EU + a JP id → `MARKETPLACE_COUNTRY_MISMATCH`,
+zero workspace / gap / recommendation requests, applied scope unmoved, table still showing the site it was
+honestly given.
+
+---
+
+### D-S8-B3-155 — A superseded revalidation never ended its own state — **FIXED (CP2X-R4 §D)**
+
+The RESTORED bootstrap branch revalidates quietly behind the painted table. Its `.then` correctly refuses
+to touch a newer round's state when a Search or a scope change has overtaken it — but it `return`ed
+**before** clearing `revalidating`. The flag then stayed `true` for the rest of the session, and every
+later reader of `_irBootstrapDiagnostic_` saw a revalidation that was not running.
+
+A stale flag is not evidence of a live request. `revalidating` is now cleared on every path, and
+`revalidate_superseded` names *why* it stood down (`NEWER_SEARCH` / `SCOPE_MOVED`). Ending its own state is
+not modifying the new round's: status, applied and the painted model are still untouched on both
+superseded paths. `last_refusal` is reported on the same principle and is cleared by the next Search that
+validates, so a past refusal can never be read as a current condition.
+
+---
+
+### D-S8-B3-156 — The leave/return evidence had been measuring an unmounted page (CP2X-R4)
+
+`KM.lifecycle.register` is keyed on the **section id** — `ops-section`, `home-section`. There is no page
+called `inventory-replenishment` and none called `home`. `switchTo` with an unregistered name still
+unmounts whatever was mounted and then **mounts nothing**.
+
+The CP2X-R2 harness used those names. Its `leave-return` phase therefore unmounted Site Inventory and
+never brought it back, and every assertion after it read module-global diagnostics that outlive the page —
+so the phase reported healthy reuse numbers for a page that was not on screen. The capture was not wrong
+about what it measured; it was measuring something else.
+
+The CP2X-R4 capture uses the registered ids and records the lifecycle's own view at each step
+(`afterLeave.current = 'home-section'`, `opsActive: false`, `sectionActive: true` on return), so the same
+mistake cannot pass silently again.
+
+**The country axis was also a fixture limitation, not a page one.** The registry offered a single country,
+which is why every earlier cross-site capture used the marketplace axis and said so. The fixture now runs
+**US / EU / JP with a distinct Avg rate, Days of Supply and Suggested Qty per site**, because if the sites
+answered alike then "the right site was restored" and "a site was restored" would be the same
+observation — and the restore can be wrong in precisely the way that matters, by showing yesterday's
+country, while every count-based assertion still passes.
+
+---

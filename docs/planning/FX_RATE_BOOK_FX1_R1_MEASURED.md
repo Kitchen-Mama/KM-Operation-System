@@ -218,3 +218,145 @@ Rate precision is 6 decimal places. That is the **rate's** precision and is unre
 `base_currency` is a **per-row** column, so the authoritative list comes from the database — run
 `pricing.fxReconcile` with `dry_run: true` and no rates. It writes nothing and returns `required_pairs`.
 Reconcile that against the five above first.
+
+---
+
+# FX1-R2 (2026-10-19) — the four things the first draft left open
+
+FX1-R1 wrote the backend and measured it. FX1-R2 closes the gaps the Owner named, **re-measures**, and
+still lands nothing: the proposal remains staged under `docs/planning/fx1-r1-staging/` with a `.proposed`
+suffix, outside `assets/specs/active/apps-script/`. The load surface is **78 files / 4,629,942 bytes**,
+unchanged. No Script Property was written, no book was initialised, nothing was repriced, and no
+Production read permission was needed or requested.
+
+Each gap below is a **counter-example in the verifier**, not a claim in prose.
+
+## 1. The stored document was TRUSTED once it parsed
+
+`JSON.parse` succeeding says only that the value is JSON. The first draft then read `doc_version` and
+`rates` straight off it. Ten ways a value can be well-formed JSON and still not be a rate book are now
+refused: an array, a string, no shape marker, `shape: 0`, a **string** `doc_version`, a fractional one, a
+negative one, `rates` as an object, `rates` absent, `rates` as a string.
+
+**Strict on TYPE, not merely on value.** `Number("2")` is `2`, so a coercing check accepts a book whose
+version is a string — and then the next save compares `2 !== "2"` and refuses every legitimate write. The
+stored type is part of the contract. *(This was a real laxness in the R1 draft, found by its own new
+counter-example.)*
+
+**A book written by a NEWER build is refused, not downgraded** (`FX_BOOK_SHAPE_FUTURE`). This code cannot
+know which fields it would silently drop on the next save, and dropping them is how a rollback destroys
+data. A save against such a book fails and **does not overwrite it**.
+
+An **absent** property is still a legitimate empty book at version 0, and says `absent: true` so "never
+written" can be told from "emptied on purpose".
+
+## 2. A book could outgrow what a Script Property can hold
+
+A property value is capped at 9 KB. The first draft discovered that at write time — *after* the change
+record had been built — as a platform exception.
+
+`fxBookCommit_` now measures the document **before** attempting the write, and refuses with
+`FX_BOOK_TOO_LARGE` carrying the measurement and the limit.
+
+**UTF-8 BYTES, NOT CHARACTERS.** A JavaScript string's `.length` counts UTF-16 units; the platform counts
+bytes. A source named `Banco de España — referencia` or a note in Chinese costs two to three bytes per
+character, so a book measuring 8,000 "characters" can be well over the cap. The verifier pins the unit
+directly: ASCII 1, Latin-1 accent 2, em dash 3, CJK 3 per character, and an emoji **4** — one four-byte
+code point, not two three-byte ones. A book of 12,000 bytes of valid CJK notes is refused; **the same
+shape in ASCII fits**.
+
+*(This is the same bug class that made FX1-R1's own first cost measurement wrong — `String.length` against
+a file containing `—` and `§`. It is worth fixing in the code for the same reason it was worth fixing in
+the measurement.)*
+
+**The log sheds its oldest records before the rates are refused.** History is valuable; the rates are what
+the system runs on. Trimming is counted and reported (`log_trimmed`), never silent. If the **rates alone**
+do not fit, nothing is written — not a truncated book, and not a book with its history discarded for a
+save that was going to fail anyway.
+
+## 3. The book and its change log were TWO properties
+
+A save was two writes. If the book landed and the log did not, the history silently lost a change that
+*had* been applied; if the log landed and the book did not, the history claimed a change that never
+happened. **There is no transaction across two Script Properties, and a lock does not provide one** — a
+lock serialises writers, it does not make two writes one.
+
+The log now travels **inside the same document**: `{ shape, doc_version, rates, log }`. The commit is a
+single `setProperty` — it either happened or it did not. Proven three ways:
+
+- a save adds exactly **one** property, and the log is inside it at the same `doc_version`;
+- a property write that **throws** leaves the stored book byte-identical, with no orphan record;
+- a write that silently **does not take** is caught by the readback and reported as
+  `FX_COMMIT_NOT_CONFIRMED` rather than as success. Reporting success for a lost save is how an operator
+  ends up with a wrong price.
+
+## 4. The write authority returned "allowed" unconditionally
+
+The first draft returned `{ ok: true }` always and called it the deployment model. That is a true
+description of every *other* write in this project — and it is not good enough for the one action that can
+reprice an entire catalogue on the next reconciliation.
+
+**It now fails closed.** The allowlist lives in `KM_FX_RATE_BOOK_EDITORS`:
+
+| situation | result |
+|---|---|
+| no allowlist configured | `FX_AUTHORITY_NOT_CONFIGURED` — refused |
+| allowlist set, caller **unidentifiable** | `FX_AUTHORITY_UNVERIFIABLE` — refused |
+| allowlist set, caller not on it | `FX_NOT_AUTHORIZED` — refused |
+| allowlist set, caller on it (case-insensitive) | allowed, `model: ALLOWLIST` |
+| allowlist is exactly `*` | allowed, `model: OPEN_BY_CONFIGURATION` |
+
+The unidentifiable case matters and is stated honestly: **a Web App that executes *as the owner* cannot
+see who called it**, and `Session.getActiveUser()` returns `''` there. Treating that as authorised would
+make the allowlist decorative. The single documented escape is an explicit `*` — the Owner recording, in
+the configuration itself, that this deployment is open. **A decision written down is a different thing
+from a default nobody chose.**
+
+The change record attributes the **identified** caller. **READ is never gated on write authority**: seeing
+the rates that price the catalogue is not the same permission as changing them, and the page is told
+`may_edit: false` with the reason *before* anyone starts editing.
+
+## Re-measured GS cost
+
+| file | before | after | delta |
+|---|---:|---:|---:|
+| `75_api_v1_fx_rate_book.gs` (new) | 0 | **24,979** | **+24,979** |
+| `04_marketplace_forecast_import.gs` | 54,355 | 55,618 | +1,263 |
+| `01_router.gs` | 75,128 | 75,953 | +825 |
+| `63_api_v1_system_health.gs` | 150,331 | 150,570 | +239 |
+| `90_generated_supply_planning_bundle.gs` | 1,250,656 | 1,250,656 | 0 |
+| | | | **+27,306** |
+
+Bytes, LF-normalised, measured by applying the real edits to copies of the real files.
+
+```
+ceiling                4,630,000
+current surface        4,629,942      headroom 58
+FX1-R2                   +27,306
+would be               4,657,248    OVER by 27,248
+```
+
+**It still cannot land, and no budget was taken.** `SIZE_BUDGET` is untouched at 4,630,000 and no IR bytes
+were borrowed.
+
+### Recommended new ceiling: **4,662,000**
+
+```
+4,629,942   current surface
+  +27,306   FX1-R2, measured
+  = 4,657,248
+   +4,752   working margin
+  = 4,662,000
+```
+
+The margin is not padding. CP2X-R2 §D at +338 and the R54 release cut at +174 were each measured, each
+did not fit, and each was moved out of the `.gs` file to stay under the gate. **At 58 bytes the ceiling has
+stopped constraining code and started constraining the ability to explain code.**
+
+**What the number would license, and nothing else:** the `75_` owner module, the two router actions and
+their dispatch, the `63_` manifest row, module stamp and action-contract bump, and the `04_` creation
+wiring. Not a sheet, not a schema change, not a price write. Per the CP2V-R2 precedent recorded in
+`apps-script-load-surface-slim-r1.test.js` — *"THE RAISE WAS SPENT, NOT BANKED"* — a grant is consumed by
+the change it names, and any overrun comes out of this round's own prose.
+
+**Awaiting an FX-specific budget decision. Nothing lands until it is granted.**
