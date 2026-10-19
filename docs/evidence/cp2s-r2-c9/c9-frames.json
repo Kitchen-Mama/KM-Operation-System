@@ -1,69 +1,74 @@
 {
   "round": "S8-B3-R3-CP2S-R2 item 6 (C9)",
   "what": "expand latency separated into outline / fill callbacks / chart+layout / full ready",
-  "takenAt": "2026-10-19T06:31:06.840Z",
+  "takenAt": "2026-10-19T08:43:01.182Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "skus": 100,
   "rounds": 3,
   "sources": {
     "index.html": "b00fc9cce9306369",
-    "assets/js/pages/inventory-replenishment.js": "6f6e69f67ef9b642"
+    "assets/js/pages/inventory-replenishment.js": "4c36970cca9eda49"
   },
   "result": {
-    "capId": "c9-1792391166634",
+    "capId": "c9-1792399081136",
     "steps": [
       {
         "step": "done",
-        "t": 5837.8,
+        "t": 5846.5,
         "v": null
       }
     ],
-    "notes": [],
+    "notes": [
+      "_irRowsPassDeps_ is not a window function - dependency diff unavailable",
+      "_getCloudReplenishmentData is not a window function - assemblies not counted",
+      "_irRecoRevealPaint_ is not a window function - fill callback not instrumented",
+      "_irExecRevealPaint_ is not a window function - fill callback not instrumented"
+    ],
     "fatal": null,
     "expands": [
       {
         "tag": "cold",
         "sku": "FIXTURE-SKU-001",
-        "p1_outline_ms": 73.9,
+        "p1_outline_ms": 66.5,
         "p2_fill_callbacks": [
           {
             "name": "_irRecoRevealPaint_",
-            "atMsAfterClick": 74.1,
-            "ms": 19.7
+            "atMsAfterClick": 66.6,
+            "ms": 17.8
           },
           {
             "name": "_irExecRevealPaint_",
-            "atMsAfterClick": 180.8,
-            "ms": 26
+            "atMsAfterClick": 170.3,
+            "ms": 26.3
           }
         ],
         "p3_chart_calls": [
           {
-            "atMsAfterClick": 112.7,
+            "atMsAfterClick": 101.9,
             "ms": 0
           }
         ],
-        "p3_chart_box_ms": 73.9,
-        "p4_full_ready_ms": 217.3,
-        "handler_ms": 41.2,
+        "p3_chart_box_ms": 66.5,
+        "p4_full_ready_ms": 207.9,
+        "handler_ms": 36.8,
         "before_outline": {
           "count": 9,
           "data_calls": 3,
-          "data_ms": 56.8,
+          "data_ms": 51.2,
           "assemblies": 3,
-          "assembly_ms": 56.6,
+          "assembly_ms": 50.9,
           "fill_calls": 0,
           "fill_ms": 0,
           "chart_calls": 0,
           "chart_ms": 0,
-          "handler_ms": 41.2
+          "handler_ms": 36.8
         },
         "totals": {
           "data_calls": 13,
-          "data_ms": 153.1,
+          "data_ms": 145.3,
           "assemblies": 9,
-          "assembly_ms": 152.6,
-          "fill_ms": 45.7,
+          "assembly_ms": 145,
+          "fill_ms": 44.1,
           "chart_ms": 0
         },
         "outline_ok": true,
@@ -73,46 +78,46 @@
       {
         "tag": "warm1",
         "sku": "FIXTURE-SKU-002",
-        "p1_outline_ms": 52.8,
+        "p1_outline_ms": 65.8,
         "p2_fill_callbacks": [
           {
             "name": "_irRecoRevealPaint_",
-            "atMsAfterClick": 52.8,
-            "ms": 18.2
+            "atMsAfterClick": 65.9,
+            "ms": 26.4
           },
           {
             "name": "_irExecRevealPaint_",
-            "atMsAfterClick": 71,
-            "ms": 30.8
+            "atMsAfterClick": 92.4,
+            "ms": 35.4
           }
         ],
         "p3_chart_calls": [
           {
-            "atMsAfterClick": 118.5,
+            "atMsAfterClick": 152.7,
             "ms": 0
           }
         ],
-        "p3_chart_box_ms": 52.8,
-        "p4_full_ready_ms": 118.9,
-        "handler_ms": 33.6,
+        "p3_chart_box_ms": 65.8,
+        "p4_full_ready_ms": 153.4,
+        "handler_ms": 30.9,
         "before_outline": {
           "count": 8,
           "data_calls": 3,
-          "data_ms": 46.8,
+          "data_ms": 58.8,
           "assemblies": 2,
-          "assembly_ms": 46.5,
+          "assembly_ms": 58.6,
           "fill_calls": 0,
           "fill_ms": 0,
           "chart_calls": 0,
           "chart_ms": 0,
-          "handler_ms": 33.6
+          "handler_ms": 30.9
         },
         "totals": {
           "data_calls": 9,
-          "data_ms": 92.1,
+          "data_ms": 116.2,
           "assemblies": 4,
-          "assembly_ms": 91.6,
-          "fill_ms": 49,
+          "assembly_ms": 115.8,
+          "fill_ms": 61.8,
           "chart_ms": 0
         },
         "outline_ok": true,
@@ -122,46 +127,46 @@
       {
         "tag": "warm2",
         "sku": "FIXTURE-SKU-003",
-        "p1_outline_ms": 58.1,
+        "p1_outline_ms": 46.6,
         "p2_fill_callbacks": [
           {
             "name": "_irRecoRevealPaint_",
-            "atMsAfterClick": 58.2,
-            "ms": 16.2
+            "atMsAfterClick": 46.7,
+            "ms": 24.1
           },
           {
             "name": "_irExecRevealPaint_",
-            "atMsAfterClick": 74.5,
-            "ms": 26
+            "atMsAfterClick": 70.8,
+            "ms": 23.4
           }
         ],
         "p3_chart_calls": [
           {
-            "atMsAfterClick": 110.3,
+            "atMsAfterClick": 107.2,
             "ms": 0
           }
         ],
-        "p3_chart_box_ms": 58.1,
-        "p4_full_ready_ms": 110.5,
-        "handler_ms": 30.5,
+        "p3_chart_box_ms": 46.6,
+        "p4_full_ready_ms": 108.2,
+        "handler_ms": 16.7,
         "before_outline": {
           "count": 8,
           "data_calls": 3,
-          "data_ms": 52.4,
+          "data_ms": 41.3,
           "assemblies": 2,
-          "assembly_ms": 52.4,
+          "assembly_ms": 41.3,
           "fill_calls": 0,
           "fill_ms": 0,
           "chart_calls": 0,
           "chart_ms": 0,
-          "handler_ms": 30.5
+          "handler_ms": 16.7
         },
         "totals": {
           "data_calls": 9,
-          "data_ms": 91.6,
+          "data_ms": 84.9,
           "assemblies": 4,
-          "assembly_ms": 91.6,
-          "fill_ms": 42.2,
+          "assembly_ms": 84.9,
+          "fill_ms": 47.5,
           "chart_ms": 0
         },
         "outline_ok": true,
@@ -169,53 +174,29 @@
         "ready_ok": true
       }
     ],
-    "frames": 258,
+    "frames": 288,
     "events": [
       {
         "tag": "",
-        "kind": "deps",
-        "name": "deps",
-        "at": 1306.8,
-        "ms": 0,
-        "diff": "SAME"
-      },
-      {
-        "tag": "",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 1306.9,
-        "ms": 44.7,
+        "at": 1389,
+        "ms": 29.5,
         "rows": 100
       },
       {
         "tag": "",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 1305.6,
-        "ms": 46,
-        "rows": 100
-      },
-      {
-        "tag": "",
-        "kind": "assembly",
-        "name": "_getCloudReplenishmentData",
-        "at": 1411.4,
-        "ms": 27.6,
-        "rows": 100
-      },
-      {
-        "tag": "",
-        "kind": "data",
-        "name": "getReplenishmentData",
-        "at": 1411.3,
-        "ms": 27.7,
+        "at": 1389,
+        "ms": 29.5,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "deps",
         "name": "deps",
-        "at": 2309.4,
+        "at": 2286.5,
         "ms": 0,
         "diff": "SAME"
       },
@@ -223,23 +204,23 @@
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2309.4,
-        "ms": 16.8,
+        "at": 2286.6,
+        "ms": 17.9,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2309.3,
-        "ms": 16.9,
+        "at": 2286.4,
+        "ms": 18.1,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "deps",
         "name": "deps",
-        "at": 2327.8,
+        "at": 2306.1,
         "ms": 0,
         "diff": "exposureEntry,exposureState"
       },
@@ -247,47 +228,47 @@
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2327.9,
-        "ms": 20.5,
+        "at": 2306.1,
+        "ms": 15.8,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2327.8,
-        "ms": 20.6,
+        "at": 2306.1,
+        "ms": 15.8,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "handler",
         "name": "toggleReplenRow",
-        "at": 2307.7,
-        "ms": 41.2,
+        "at": 2285.6,
+        "ms": 36.8,
         "sku": "FIXTURE-SKU-001"
       },
       {
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2349.6,
-        "ms": 19.3,
+        "at": 2322.7,
+        "ms": 17.2,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2349.6,
-        "ms": 19.3,
+        "at": 2322.7,
+        "ms": 17.3,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "deps",
         "name": "deps",
-        "at": 2381.6,
+        "at": 2352.2,
         "ms": 0,
         "diff": "SAME"
       },
@@ -295,101 +276,101 @@
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2381.6,
-        "ms": 17.3,
+        "at": 2352.2,
+        "ms": 15.5,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2381.5,
-        "ms": 17.4,
+        "at": 2352.2,
+        "ms": 15.5,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "fill",
         "name": "_irRecoRevealPaint_",
-        "at": 2381.4,
-        "ms": 19.7
+        "at": 2352,
+        "ms": 17.8
       },
       {
         "tag": "cold",
         "kind": "chart",
         "name": "Chart",
-        "at": 2420,
+        "at": 2387.3,
         "ms": 0
       },
       {
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2422.8,
-        "ms": 16.8,
+        "at": 2390.4,
+        "ms": 17.1,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2422.8,
-        "ms": 16.8,
+        "at": 2390.4,
+        "ms": 17.1,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2439.9,
-        "ms": 15.8,
+        "at": 2407.9,
+        "ms": 15.4,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2439.9,
-        "ms": 15.8,
+        "at": 2407.9,
+        "ms": 15.4,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2456,
-        "ms": 14.9,
+        "at": 2423.6,
+        "ms": 14.5,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2456,
-        "ms": 14.9,
+        "at": 2423.6,
+        "ms": 14.5,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2471.3,
-        "ms": 15.2,
+        "at": 2438.4,
+        "ms": 15.6,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2471.3,
-        "ms": 15.2,
+        "at": 2438.4,
+        "ms": 15.6,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "deps",
         "name": "deps",
-        "at": 2488.5,
+        "at": 2456,
         "ms": 0,
         "diff": "exposureState"
       },
@@ -397,7 +378,7 @@
         "tag": "cold",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 2488.5,
+        "at": 2456,
         "ms": 16,
         "rows": 100
       },
@@ -405,15 +386,15 @@
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2488.4,
-        "ms": 16.1,
+        "at": 2456,
+        "ms": 16,
         "rows": 100
       },
       {
         "tag": "cold",
         "kind": "deps",
         "name": "deps",
-        "at": 2504.9,
+        "at": 2472.5,
         "ms": 0,
         "diff": "SAME"
       },
@@ -421,23 +402,7 @@
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2504.9,
-        "ms": 0.1,
-        "rows": 100
-      },
-      {
-        "tag": "cold",
-        "kind": "deps",
-        "name": "deps",
-        "at": 2507.1,
-        "ms": 0,
-        "diff": "SAME"
-      },
-      {
-        "tag": "cold",
-        "kind": "data",
-        "name": "getReplenishmentData",
-        "at": 2507.1,
+        "at": 2472.5,
         "ms": 0,
         "rows": 100
       },
@@ -445,7 +410,7 @@
         "tag": "cold",
         "kind": "deps",
         "name": "deps",
-        "at": 2507.2,
+        "at": 2474.7,
         "ms": 0,
         "diff": "SAME"
       },
@@ -453,7 +418,7 @@
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2507.2,
+        "at": 2474.7,
         "ms": 0,
         "rows": 100
       },
@@ -461,7 +426,7 @@
         "tag": "cold",
         "kind": "deps",
         "name": "deps",
-        "at": 2507.2,
+        "at": 2474.8,
         "ms": 0,
         "diff": "SAME"
       },
@@ -469,7 +434,23 @@
         "tag": "cold",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 2507.2,
+        "at": 2474.8,
+        "ms": 0,
+        "rows": 100
+      },
+      {
+        "tag": "cold",
+        "kind": "deps",
+        "name": "deps",
+        "at": 2474.8,
+        "ms": 0,
+        "diff": "SAME"
+      },
+      {
+        "tag": "cold",
+        "kind": "data",
+        "name": "getReplenishmentData",
+        "at": 2474.8,
         "ms": 0,
         "rows": 100
       },
@@ -477,22 +458,22 @@
         "tag": "cold",
         "kind": "fill",
         "name": "_irExecRevealPaint_",
-        "at": 2488.1,
-        "ms": 26
+        "at": 2455.7,
+        "ms": 26.3
       },
       {
         "tag": "",
         "kind": "handler",
         "name": "toggleReplenRow",
-        "at": 3042.1,
-        "ms": 1.4,
+        "at": 3015.2,
+        "ms": 1.2,
         "sku": "FIXTURE-SKU-001"
       },
       {
         "tag": "warm1",
         "kind": "deps",
         "name": "deps",
-        "at": 3555.9,
+        "at": 3529.8,
         "ms": 0,
         "diff": "SAME"
       },
@@ -500,23 +481,23 @@
         "tag": "warm1",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 3556,
-        "ms": 31.3,
+        "at": 3529.8,
+        "ms": 28.9,
         "rows": 100
       },
       {
         "tag": "warm1",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 3555.8,
-        "ms": 31.5,
+        "at": 3529.7,
+        "ms": 29,
         "rows": 100
       },
       {
         "tag": "warm1",
         "kind": "deps",
         "name": "deps",
-        "at": 3588,
+        "at": 3559.6,
         "ms": 0,
         "diff": "SAME"
       },
@@ -524,7 +505,7 @@
         "tag": "warm1",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 3587.9,
+        "at": 3559.6,
         "ms": 0.1,
         "rows": 100
       },
@@ -532,31 +513,31 @@
         "tag": "warm1",
         "kind": "handler",
         "name": "toggleReplenRow",
-        "at": 3554.5,
-        "ms": 33.6,
+        "at": 3529.1,
+        "ms": 30.9,
         "sku": "FIXTURE-SKU-002"
       },
       {
         "tag": "warm1",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 3588.4,
-        "ms": 15.2,
+        "at": 3560.4,
+        "ms": 29.7,
         "rows": 100
       },
       {
         "tag": "warm1",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 3588.4,
-        "ms": 15.2,
+        "at": 3560.4,
+        "ms": 29.7,
         "rows": 100
       },
       {
         "tag": "warm1",
         "kind": "deps",
         "name": "deps",
-        "at": 3607.1,
+        "at": 3594.8,
         "ms": 0,
         "diff": "SAME"
       },
@@ -564,30 +545,30 @@
         "tag": "warm1",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 3607.1,
-        "ms": 17.1,
+        "at": 3594.8,
+        "ms": 25,
         "rows": 100
       },
       {
         "tag": "warm1",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 3607.1,
-        "ms": 17.1,
+        "at": 3594.8,
+        "ms": 25,
         "rows": 100
       },
       {
         "tag": "warm1",
         "kind": "fill",
         "name": "_irRecoRevealPaint_",
-        "at": 3607.1,
-        "ms": 18.2
+        "at": 3594.8,
+        "ms": 26.4
       },
       {
         "tag": "warm1",
         "kind": "deps",
         "name": "deps",
-        "at": 3625.5,
+        "at": 3621.7,
         "ms": 0,
         "diff": "SAME"
       },
@@ -595,23 +576,23 @@
         "tag": "warm1",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 3625.5,
-        "ms": 28,
+        "at": 3621.7,
+        "ms": 32.2,
         "rows": 100
       },
       {
         "tag": "warm1",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 3625.5,
-        "ms": 28,
+        "at": 3621.6,
+        "ms": 32.3,
         "rows": 100
       },
       {
         "tag": "warm1",
         "kind": "deps",
         "name": "deps",
-        "at": 3653.6,
+        "at": 3654,
         "ms": 0,
         "diff": "SAME"
       },
@@ -619,7 +600,23 @@
         "tag": "warm1",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 3653.5,
+        "at": 3654,
+        "ms": 0,
+        "rows": 100
+      },
+      {
+        "tag": "warm1",
+        "kind": "deps",
+        "name": "deps",
+        "at": 3654.7,
+        "ms": 0,
+        "diff": "SAME"
+      },
+      {
+        "tag": "warm1",
+        "kind": "data",
+        "name": "getReplenishmentData",
+        "at": 3654.6,
         "ms": 0.1,
         "rows": 100
       },
@@ -627,7 +624,7 @@
         "tag": "warm1",
         "kind": "deps",
         "name": "deps",
-        "at": 3654.2,
+        "at": 3654.7,
         "ms": 0,
         "diff": "SAME"
       },
@@ -635,23 +632,7 @@
         "tag": "warm1",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 3654.1,
-        "ms": 0.1,
-        "rows": 100
-      },
-      {
-        "tag": "warm1",
-        "kind": "deps",
-        "name": "deps",
-        "at": 3654.2,
-        "ms": 0,
-        "diff": "SAME"
-      },
-      {
-        "tag": "warm1",
-        "kind": "data",
-        "name": "getReplenishmentData",
-        "at": 3654.2,
+        "at": 3654.7,
         "ms": 0,
         "rows": 100
       },
@@ -659,7 +640,7 @@
         "tag": "warm1",
         "kind": "deps",
         "name": "deps",
-        "at": 3654.2,
+        "at": 3654.8,
         "ms": 0,
         "diff": "SAME"
       },
@@ -667,7 +648,7 @@
         "tag": "warm1",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 3654.2,
+        "at": 3654.8,
         "ms": 0,
         "rows": 100
       },
@@ -675,29 +656,29 @@
         "tag": "warm1",
         "kind": "fill",
         "name": "_irExecRevealPaint_",
-        "at": 3625.3,
-        "ms": 30.8
+        "at": 3621.3,
+        "ms": 35.4
       },
       {
         "tag": "warm1",
         "kind": "chart",
         "name": "Chart",
-        "at": 3672.8,
+        "at": 3681.6,
         "ms": 0
       },
       {
         "tag": "",
         "kind": "handler",
         "name": "toggleReplenRow",
-        "at": 4190.9,
-        "ms": 0.9,
+        "at": 4210.3,
+        "ms": 2,
         "sku": "FIXTURE-SKU-002"
       },
       {
         "tag": "warm2",
         "kind": "deps",
         "name": "deps",
-        "at": 4698.9,
+        "at": 4715.9,
         "ms": 0,
         "diff": "SAME"
       },
@@ -705,23 +686,23 @@
         "tag": "warm2",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 4698.9,
-        "ms": 28.8,
+        "at": 4715.9,
+        "ms": 15.4,
         "rows": 100
       },
       {
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4698.9,
-        "ms": 28.8,
+        "at": 4715.9,
+        "ms": 15.4,
         "rows": 100
       },
       {
         "tag": "warm2",
         "kind": "deps",
         "name": "deps",
-        "at": 4728.6,
+        "at": 4731.9,
         "ms": 0,
         "diff": "SAME"
       },
@@ -729,7 +710,7 @@
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4728.6,
+        "at": 4731.9,
         "ms": 0,
         "rows": 100
       },
@@ -737,31 +718,31 @@
         "tag": "warm2",
         "kind": "handler",
         "name": "toggleReplenRow",
-        "at": 4698.3,
-        "ms": 30.5,
+        "at": 4715.4,
+        "ms": 16.7,
         "sku": "FIXTURE-SKU-003"
       },
       {
         "tag": "warm2",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 4729.2,
-        "ms": 23.6,
+        "at": 4732.3,
+        "ms": 25.9,
         "rows": 100
       },
       {
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4729.2,
-        "ms": 23.6,
+        "at": 4732.3,
+        "ms": 25.9,
         "rows": 100
       },
       {
         "tag": "warm2",
         "kind": "deps",
         "name": "deps",
-        "at": 4756.3,
+        "at": 4761.9,
         "ms": 0,
         "diff": "SAME"
       },
@@ -769,30 +750,30 @@
         "tag": "warm2",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 4756.3,
-        "ms": 15.2,
+        "at": 4761.9,
+        "ms": 22.7,
         "rows": 100
       },
       {
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4756.3,
-        "ms": 15.2,
+        "at": 4761.9,
+        "ms": 22.7,
         "rows": 100
       },
       {
         "tag": "warm2",
         "kind": "fill",
         "name": "_irRecoRevealPaint_",
-        "at": 4756.3,
-        "ms": 16.2
+        "at": 4761.9,
+        "ms": 24.1
       },
       {
         "tag": "warm2",
         "kind": "deps",
         "name": "deps",
-        "at": 4772.7,
+        "at": 4786.3,
         "ms": 0,
         "diff": "SAME"
       },
@@ -800,23 +781,23 @@
         "tag": "warm2",
         "kind": "assembly",
         "name": "_getCloudReplenishmentData",
-        "at": 4772.7,
-        "ms": 24,
+        "at": 4786.3,
+        "ms": 20.9,
         "rows": 100
       },
       {
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4772.7,
-        "ms": 24,
+        "at": 4786.3,
+        "ms": 20.9,
         "rows": 100
       },
       {
         "tag": "warm2",
         "kind": "deps",
         "name": "deps",
-        "at": 4796.8,
+        "at": 4807.2,
         "ms": 0,
         "diff": "SAME"
       },
@@ -824,7 +805,7 @@
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4796.8,
+        "at": 4807.2,
         "ms": 0,
         "rows": 100
       },
@@ -832,7 +813,7 @@
         "tag": "warm2",
         "kind": "deps",
         "name": "deps",
-        "at": 4797.3,
+        "at": 4807.8,
         "ms": 0,
         "diff": "SAME"
       },
@@ -840,7 +821,7 @@
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4797.3,
+        "at": 4807.8,
         "ms": 0,
         "rows": 100
       },
@@ -848,7 +829,7 @@
         "tag": "warm2",
         "kind": "deps",
         "name": "deps",
-        "at": 4797.3,
+        "at": 4807.8,
         "ms": 0,
         "diff": "SAME"
       },
@@ -856,7 +837,7 @@
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4797.3,
+        "at": 4807.8,
         "ms": 0,
         "rows": 100
       },
@@ -864,7 +845,7 @@
         "tag": "warm2",
         "kind": "deps",
         "name": "deps",
-        "at": 4797.3,
+        "at": 4807.9,
         "ms": 0,
         "diff": "SAME"
       },
@@ -872,7 +853,7 @@
         "tag": "warm2",
         "kind": "data",
         "name": "getReplenishmentData",
-        "at": 4797.3,
+        "at": 4807.9,
         "ms": 0,
         "rows": 100
       },
@@ -880,22 +861,22 @@
         "tag": "warm2",
         "kind": "fill",
         "name": "_irExecRevealPaint_",
-        "at": 4772.6,
-        "ms": 26
+        "at": 4786,
+        "ms": 23.4
       },
       {
         "tag": "warm2",
         "kind": "chart",
         "name": "Chart",
-        "at": 4808.4,
+        "at": 4822.4,
         "ms": 0
       },
       {
         "tag": "",
         "kind": "handler",
         "name": "toggleReplenRow",
-        "at": 5335.3,
-        "ms": 1.1,
+        "at": 5343.3,
+        "ms": 2.4,
         "sku": "FIXTURE-SKU-003"
       }
     ],

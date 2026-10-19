@@ -137,54 +137,55 @@ derived from `_cp2p-ir-expand-runner.js` and still pinned **that** file as its i
 named a runner that had not produced them. The hash was correct and the attribution was false. The runner
 now pins itself and the batch was re-taken.
 
-### CP2X-R4 RE-TOOK IT AGAIN, BOTH ARMS — THE TENTH BATCH — AND TWO BATCHES WERE TAKEN, NOT ONE
+
+---
+
+### CP2X-R4 RE-TOOK IT AGAIN, BOTH ARMS — THE TENTH BATCH — AND THREE BATCHES WERE TAKEN BEFORE ONE WAS PUBLISHED
 
 CP2X-R4 changed `inventory-replenishment.js` (a completed recommendation result now survives unmount, the
 Marketplace options are rebuilt before the id is restored, Search refuses an inconsistent country/
 marketplace pair, and a superseded revalidation ends its own state), so §E1 refused the previous batch for
 exactly the reason it has refused every batch before it. Twelve runs, both arms on one build, alternating
-inside each pair, shipped source restored and **verified by hash** (`6f6e69f67ef9b642`) when the driver
-finished. No fatals.
+inside each pair, shipped source restored and **verified by hash** (`4c36970cca9eda49`). No fatals.
 
 | | unscoped | scoped | paired delta | improved in |
 |---|---|---|---|---|
-| click → first paint | 61.8 ms | 57.6 ms | −6.7 ms | 4 of 6 |
-| **click → full ready** | **208.3 ms** | **118.5 ms** | **−83.6 ms** | **6 of 6** |
-| assembly in handler | 26.9 ms | 26.9 ms | −2.6 ms | 4 of 6 |
-| **assembly after handler** | **162.5 ms** | **77.7 ms** | **−90.0 ms** | **6 of 6** |
-| handler sync | 27.4 ms | 26.4 ms | −2.0 ms | 3 of 6 |
+| click → first paint | 60.2 ms | 57.8 ms | −4.1 ms | 4 of 6 |
+| **click → full ready** | **220.6 ms** | **128.5 ms** | **−98.0 ms** | **6 of 6** |
+| assembly in handler | 26.1 ms | 25.9 ms | −0.2 ms | 4 of 6 |
+| **assembly after handler** | **173.8 ms** | **80.3 ms** | **−99.0 ms** | **6 of 6** |
+| handler sync | 27.2 ms | 27.0 ms | +1.1 ms | 2 of 6 |
 
-**A SECOND BATCH WAS TAKEN, AND WHY IT IS RECORDED RATHER THAN SUBSTITUTED.** While the batch above was
-running, I ran several short `node` processes against this repo — the FX staging verifier — which is
-precisely the condition recorded above as having invalidated the first CP2U-R1 batch. Having done it, I
-could not honestly publish the result without checking it, so a second twelve-run batch was taken with
-nothing else running:
+**Three batches were taken this round and only the third describes the shipped file.** The sequence is
+recorded because the discards were caused by my own process, not by the measurement:
 
-| | unscoped | scoped | paired delta | improved in |
-|---|---|---|---|---|
-| click → full ready | 358.0 ms | 166.4 ms | −149.7 ms | **6 of 6** |
-| assembly after handler | 284.8 ms | 104.8 ms | −153.3 ms | **6 of 6** |
+| batch | why it is not the published one |
+|---|---|
+| 1 | taken while I was running `node` against this repo — the condition recorded above as having invalidated the first CP2U-R1 batch |
+| 2 | taken quiet, as the check on batch 1 — but both predate the source fix below |
+| **3** | **published.** The regression sweep found a defect in the round's own Search gate; fixing it changed `inventory-replenishment.js`, which correctly invalidated batches 1 and 2 |
 
-**The check refuted the concern rather than confirming it.** Contamination makes a batch SLOWER. The
-batch taken under load is the FASTER of the two — 208.3 / 162.5 ms against 358.0 / 284.8 ms — and it is
-the one that sits inside the range every previous batch has occupied (full ready 222.7, 208.3; after
-handler 172.5, 162.5). The quiet batch ran on a machine that was demonstrably slower in BOTH arms, which
-is a property of the machine that hour and not of either build.
+**The check on batch 1 refuted the concern rather than confirming it, and that is worth keeping.**
+Contamination makes a batch slower. Batch 1 (under load) read −83.6 / −90.0 ms with absolute values of
+208.3 / 162.5 ms; batch 2 (quiet) read −149.7 / −153.3 ms with absolutes of 358.0 / 284.8 ms. The batch
+taken under load was the FASTER of the two. The quiet machine was simply slower in BOTH arms that hour,
+which is a property of the machine and not of either build.
 
-**So the published batch is the first one, and the reason is stated rather than implied.** The two
-batches agree on everything this evidence is for: both load-bearing rows fall, both at **6 of 6**, in both
-batches. They disagree only on magnitude — −83.6 / −90.0 against −149.7 / −153.3 — and the README has
-said since the seventh batch that **the magnitude is not a finding, only the direction and the 6 of 6**.
-The second batch is the widest excursion yet recorded and is further evidence for that statement, not
-against it.
+**All three agree on everything this evidence is for: both load-bearing rows fall, both at 6 of 6, in
+every batch.** They disagree only on magnitude, across a range of −83.6 to −153.3 ms. That is the widest
+spread yet recorded and it is further evidence for the statement this README has carried since the
+seventh batch — **the magnitude is not a finding, only the direction and the 6 of 6.**
 
-Neither batch carries an outlier above `max(400 ms, 4 × median)` on `ms_click_to_exec_resolved`, the
-metric that waits on an async read and the one the CP2U-R1 contamination showed up in: batch one, 60
-samples, median 177.3 ms, max 653.1 ms; batch two, 60 samples, median 229.3 ms, max 691.1 ms.
+The published batch lands almost exactly on the historical centre (full ready 222.7 → 220.6; after
+handler 172.5 → 173.8 unscoped, 126.3 → 128.5 and 82.4 → 80.3 scoped), which is reassuring but is not
+itself an argument: it was published because it is the only one of the three taken against the shipped
+source, not because of where it landed.
 
-**Both raw batches are kept** — the published one as `unscoped-1..6.json` / `scoped-1..6.json`, and the
-check is summarised here rather than stored, because twelve more capture files would imply the repository
-holds two competing answers when it holds one answer and one confirmation of its direction.
+**One outlier is left in, and it argues against the effect rather than for it.** `scoped` pair 2 read
+862.6 ms on `ms_click_to_exec_resolved` (60 samples, median 192.5 ms) — a large value in the arm that is
+supposed to be FASTER. The per-run medians and the paired design absorbed it and the row still fell in 6
+of 6. Removing a sample for being large is how a batch stops being a measurement, and removing one that
+works against the conclusion would be worse than that.
 
 `pairs.json` predates this batch and is **not** read by the acceptance suite (§E loads the twelve run
 files directly); it is left as the historical driver summary it has always been.

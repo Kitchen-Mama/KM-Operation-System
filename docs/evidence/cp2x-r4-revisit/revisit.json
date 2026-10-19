@@ -1,7 +1,7 @@
 {
   "round": "S8-B3-R3-CP2S-R2",
   "what": "in-place velocity update: what survives a real workspace arrival in a real browser",
-  "takenAt": "2026-10-19T06:24:40.928Z",
+  "takenAt": "2026-10-19T08:37:25.114Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "skus": 60,
   "recoReadsServed": 5,
@@ -11,13 +11,13 @@
   },
   "sources": {
     "index.html": "b00fc9cce9306369",
-    "assets/js/pages/inventory-replenishment.js": "6f6e69f67ef9b642",
+    "assets/js/pages/inventory-replenishment.js": "4c36970cca9eda49",
     "assets/css/pages/inventory-replenishment.css": "74872c1b61ce9d47"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 3332,
+      "t": 950,
       "success": true,
       "dataKeys": [
         "product_strategy_enabled",
@@ -28,7 +28,7 @@
     },
     {
       "action": "inventoryScope.registry.get",
-      "t": 3534,
+      "t": 1133,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -44,7 +44,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 4184,
+      "t": 1805,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -95,7 +95,7 @@
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 4221,
+      "t": 1845,
       "success": true,
       "dataKeys": [
         "rows"
@@ -106,7 +106,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 4222,
+      "t": 1847,
       "success": true,
       "dataKeys": [
         "lines",
@@ -118,7 +118,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 5194,
+      "t": 2802,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -169,7 +169,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 6265,
+      "t": 3878,
       "success": true,
       "dataKeys": [
         "lines",
@@ -181,7 +181,7 @@
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 32066,
+      "t": 29683,
       "success": true,
       "dataKeys": [
         "rows"
@@ -192,7 +192,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 32068,
+      "t": 29685,
       "success": true,
       "dataKeys": [
         "lines",
@@ -204,81 +204,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 35487,
-      "success": true,
-      "dataKeys": [
-        "marketplaces",
-        "marketplace_skus",
-        "sku_details",
-        "warehouses",
-        "amazon_inventory_snapshot",
-        "amazon_inventory_health_snapshot",
-        "amazon_daily_sales_snapshot",
-        "amazon_weekly_sales_snapshot",
-        "fc_regular_forecast",
-        "fc_target_rules",
-        "fc_special_events",
-        "overseas_inventory_snapshot",
-        "factory_stock",
-        "shipments",
-        "shipment_lines",
-        "shipping_plans",
-        "shipping_plan_lines",
-        "shipping_allocation_drafts",
-        "shipping_allocation_draft_lines",
-        "carrier_lead_times",
-        "carrier_rate_cards"
-      ],
-      "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
-        "sku_details": 60,
-        "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
-        "amazon_inventory_health_snapshot": 60,
-        "amazon_daily_sales_snapshot": 480,
-        "amazon_weekly_sales_snapshot": 120,
-        "fc_regular_forecast": 60,
-        "fc_target_rules": 1,
-        "fc_special_events": 0,
-        "overseas_inventory_snapshot": 120,
-        "factory_stock": 60,
-        "shipments": 0,
-        "shipment_lines": 0,
-        "shipping_plans": 0,
-        "shipping_plan_lines": 0,
-        "shipping_allocation_drafts": 0,
-        "shipping_allocation_draft_lines": 0,
-        "carrier_lead_times": 3,
-        "carrier_rate_cards": 3
-      }
-    },
-    {
-      "action": "inventoryReplenishmentGap.get",
-      "t": 39228,
-      "success": true,
-      "dataKeys": [
-        "rows"
-      ],
-      "counts": {
-        "rows": 240
-      }
-    },
-    {
-      "action": "recommendation.workspace.get",
-      "t": 39229,
-      "success": true,
-      "dataKeys": [
-        "lines",
-        "dataVersion"
-      ],
-      "counts": {
-        "lines": 120
-      }
-    },
-    {
-      "action": "inventoryReplenishment.workspace.get",
-      "t": 45575,
+      "t": 33097,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -329,7 +255,7 @@
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 47499,
+      "t": 36810,
       "success": true,
       "dataKeys": [
         "rows"
@@ -340,7 +266,7 @@
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 47502,
+      "t": 36812,
       "success": true,
       "dataKeys": [
         "lines",
@@ -352,7 +278,81 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 55802,
+      "t": 43106,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 6,
+        "marketplace_skus": 360,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      }
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "t": 45038,
+      "success": true,
+      "dataKeys": [
+        "rows"
+      ],
+      "counts": {
+        "rows": 240
+      }
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 45041,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      }
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 53396,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -403,7 +403,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 59809,
+      "t": 57521,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -454,7 +454,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 63494,
+      "t": 61223,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -505,7 +505,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 63624,
+      "t": 61346,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -556,7 +556,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 63731,
+      "t": 61475,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -607,7 +607,7 @@
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 63855,
+      "t": 61613,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -999,36 +999,36 @@
     }
   ],
   "result": {
-    "capId": "inplace-1792391006110",
+    "capId": "inplace-1792398972541",
     "steps": [
       {
         "step": "app-ready",
-        "t": 669.1,
-        "v": 0.1
+        "t": 516.1,
+        "v": 0
       },
       {
         "step": "filter-bar",
-        "t": 721.8,
-        "v": 51.6
+        "t": 561.6,
+        "v": 44.4
       },
       {
         "step": "table",
-        "t": 1428.7,
+        "t": 1264,
         "v": 60
       },
       {
         "step": "first-reco-cell",
-        "t": 2329.3,
+        "t": 2174.4,
         "v": "7.0"
       },
       {
         "step": "exec-card",
-        "t": 2372.6,
-        "v": 0
+        "t": 2224.5,
+        "v": 0.1
       },
       {
         "step": "edit-state-captured",
-        "t": 3432.7,
+        "t": 3282.8,
         "v": {
           "activeMark": "INPUT",
           "activeTag": "INPUT",
@@ -1049,7 +1049,7 @@
       },
       {
         "step": "second-arrival",
-        "t": 28450.4,
+        "t": 28301.9,
         "v": {
           "got": {
             "text": "7.0",
@@ -1061,7 +1061,7 @@
       },
       {
         "step": "done",
-        "t": 28708.6,
+        "t": 28553.1,
         "v": {
           "firstReadResolved": true,
           "firstCell": "7.0",
@@ -1082,7 +1082,7 @@
       },
       {
         "step": "rv-eu-searched",
-        "t": 31651.8,
+        "t": 31512.6,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1095,7 +1095,7 @@
       },
       {
         "step": "rv-A1-jp-country-only-then-leave",
-        "t": 34068.7,
+        "t": 33920.9,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1108,7 +1108,7 @@
       },
       {
         "step": "rv-A2-search-without-touching-country",
-        "t": 35916.9,
+        "t": 35744.2,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1121,7 +1121,7 @@
       },
       {
         "step": "rv-A3-marketplace-only-then-search",
-        "t": 38217.5,
+        "t": 38037,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-WMT",
@@ -1134,7 +1134,7 @@
       },
       {
         "step": "rv-A3b-back-to-eu-amazon",
-        "t": 41167.7,
+        "t": 40993.6,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1147,7 +1147,7 @@
       },
       {
         "step": "rv-A4-full-jp-never-searched",
-        "t": 44159.4,
+        "t": 43930,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1160,7 +1160,7 @@
       },
       {
         "step": "rv-A5-jp-explicit-search",
-        "t": 47983.3,
+        "t": 47777.5,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1173,7 +1173,7 @@
       },
       {
         "step": "rv-B-illegal-pair-refused",
-        "t": 49190.9,
+        "t": 48983.7,
         "v": {
           "country": "EU",
           "mkt": "",
@@ -1186,7 +1186,7 @@
       },
       {
         "step": "rv-B2-recover-to-jp",
-        "t": 52421.8,
+        "t": 52226.2,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1199,7 +1199,7 @@
       },
       {
         "step": "rv-C1-leave-return",
-        "t": 54384.1,
+        "t": 54236.2,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1212,7 +1212,7 @@
       },
       {
         "step": "rv-C2-repeated-search",
-        "t": 56449.8,
+        "t": 56351.6,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1225,7 +1225,7 @@
       },
       {
         "step": "rv-C3-leave-while-in-flight",
-        "t": 60610.2,
+        "t": 60559.6,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1238,7 +1238,7 @@
       },
       {
         "step": "rv-C4-rapid-switching",
-        "t": 62919.7,
+        "t": 62885.1,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1251,7 +1251,7 @@
       },
       {
         "step": "rv-C5-late-answer-after-switch",
-        "t": 71827.2,
+        "t": 71824.9,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1264,7 +1264,7 @@
       },
       {
         "step": "revisit-done",
-        "t": 71827.2,
+        "t": 71824.9,
         "v": {
           "phases": 14
         }
@@ -1329,31 +1329,31 @@
     "obs": {
       "gates": [
         {
-          "t": 1396.9,
+          "t": 1257.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 1396.9,
+          "t": 1257.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 2330.1,
+          "t": 2175.6,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2330.1,
+          "t": 2175.6,
           "gate": "execution",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2348.4,
+          "t": 2194.7,
           "gate": "recommendation",
           "call": "begin",
           "gen": 3,
@@ -1365,7 +1365,7 @@
           }
         },
         {
-          "t": 2348.5,
+          "t": 2194.8,
           "gate": "execution",
           "call": "begin",
           "gen": 3,
@@ -1377,7 +1377,7 @@
           }
         },
         {
-          "t": 2348.8,
+          "t": 2195.3,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1394,7 +1394,7 @@
           }
         },
         {
-          "t": 2360.7,
+          "t": 2210.4,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -1411,7 +1411,7 @@
           }
         },
         {
-          "t": 2372.6,
+          "t": 2224.3,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -1428,14 +1428,14 @@
           }
         },
         {
-          "t": 2373.1,
+          "t": 2224.9,
           "gate": "recommendation",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 2447.4,
+          "t": 2309.3,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -1452,7 +1452,7 @@
           }
         },
         {
-          "t": 2460.2,
+          "t": 2320.8,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -1469,14 +1469,14 @@
           }
         },
         {
-          "t": 2460.3,
+          "t": 2320.9,
           "gate": "execution",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 3445.4,
+          "t": 3299.7,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1493,7 +1493,7 @@
           }
         },
         {
-          "t": 3479.3,
+          "t": 3333.1,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1510,433 +1510,433 @@
           }
         },
         {
-          "t": 29236.6,
+          "t": 29095,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 4
         },
         {
-          "t": 29236.6,
+          "t": 29095,
           "gate": "execution",
           "call": "abandon",
           "gen": 4
         },
         {
-          "t": 32605.2,
+          "t": 32453.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 5
         },
         {
-          "t": 32605.2,
+          "t": 32453.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 5
         },
         {
-          "t": 32647.7,
+          "t": 32499,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 6
         },
         {
-          "t": 32647.7,
+          "t": 32499.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 6
         },
         {
-          "t": 32699.1,
+          "t": 32561.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 7
         },
         {
-          "t": 32699.1,
+          "t": 32561.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 7
         },
         {
-          "t": 34095.9,
+          "t": 33936.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 8
         },
         {
-          "t": 34096,
+          "t": 33936.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 8
         },
         {
-          "t": 36401.7,
+          "t": 36228.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 9
         },
         {
-          "t": 36401.7,
+          "t": 36228.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 9
         },
         {
-          "t": 38738.7,
+          "t": 38567.6,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 10
         },
         {
-          "t": 38738.7,
+          "t": 38567.6,
           "gate": "execution",
           "call": "abandon",
           "gen": 10
         },
         {
-          "t": 42687.5,
+          "t": 42495.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 11
         },
         {
-          "t": 42687.5,
+          "t": 42495.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 11
         },
         {
-          "t": 42734.6,
+          "t": 42518.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 12
         },
         {
-          "t": 42734.7,
+          "t": 42518.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 12
         },
         {
-          "t": 42800.9,
+          "t": 42549.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 13
         },
         {
-          "t": 42800.9,
+          "t": 42549.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 13
         },
         {
-          "t": 44676.8,
+          "t": 44452.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 14
         },
         {
-          "t": 44676.8,
+          "t": 44452.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 14
         },
         {
-          "t": 49710.1,
+          "t": 49513.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 15
         },
         {
-          "t": 49710.1,
+          "t": 49513.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 15
         },
         {
-          "t": 52950.8,
+          "t": 52761.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 16
         },
         {
-          "t": 52950.8,
+          "t": 52761.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 16
         },
         {
-          "t": 52972.3,
+          "t": 52801.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 17
         },
         {
-          "t": 52972.3,
+          "t": 52801.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 17
         },
         {
-          "t": 53003.8,
+          "t": 52845.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 18
         },
         {
-          "t": 53003.8,
+          "t": 52845.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 18
         },
         {
-          "t": 54398.6,
+          "t": 54260.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 19
         },
         {
-          "t": 54398.6,
+          "t": 54260.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 19
         },
         {
-          "t": 54419.8,
+          "t": 54302.2,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 20
         },
         {
-          "t": 54419.8,
+          "t": 54302.2,
           "gate": "execution",
           "call": "abandon",
           "gen": 20
         },
         {
-          "t": 54440.5,
+          "t": 54341.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 21
         },
         {
-          "t": 54440.5,
+          "t": 54341.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 21
         },
         {
-          "t": 56470,
+          "t": 56382.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 22
         },
         {
-          "t": 56470,
+          "t": 56382.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 22
         },
         {
-          "t": 56959.5,
+          "t": 56885.6,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 23
         },
         {
-          "t": 56959.5,
+          "t": 56885.6,
           "gate": "execution",
           "call": "abandon",
           "gen": 23
         },
         {
-          "t": 56979.9,
+          "t": 56922,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 24
         },
         {
-          "t": 56979.9,
+          "t": 56922,
           "gate": "execution",
           "call": "abandon",
           "gen": 24
         },
         {
-          "t": 57017.8,
+          "t": 56981.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 25
         },
         {
-          "t": 57017.8,
+          "t": 56981.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 25
         },
         {
-          "t": 60640.8,
+          "t": 60596.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 26
         },
         {
-          "t": 60640.8,
+          "t": 60596.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 26
         },
         {
-          "t": 60663.7,
+          "t": 60626.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 27
         },
         {
-          "t": 60663.7,
+          "t": 60626.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 27
         },
         {
-          "t": 60694.3,
+          "t": 60678.5,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 28
         },
         {
-          "t": 60694.3,
+          "t": 60678.5,
           "gate": "execution",
           "call": "abandon",
           "gen": 28
         },
         {
-          "t": 60758.2,
+          "t": 60715.2,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 29
         },
         {
-          "t": 60758.2,
+          "t": 60715.2,
           "gate": "execution",
           "call": "abandon",
           "gen": 29
         },
         {
-          "t": 60787.4,
+          "t": 60748.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 30
         },
         {
-          "t": 60787.4,
+          "t": 60748.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 30
         },
         {
-          "t": 60829.4,
+          "t": 60802.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 31
         },
         {
-          "t": 60829.4,
+          "t": 60802.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 31
         },
         {
-          "t": 60883.1,
+          "t": 60857.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 32
         },
         {
-          "t": 60883.1,
+          "t": 60857.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 32
         },
         {
-          "t": 60902.2,
+          "t": 60886.6,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 33
         },
         {
-          "t": 60902.2,
+          "t": 60886.6,
           "gate": "execution",
           "call": "abandon",
           "gen": 33
         },
         {
-          "t": 60929.3,
+          "t": 60920.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 34
         },
         {
-          "t": 60929.3,
+          "t": 60920.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 34
         },
         {
-          "t": 61005.9,
+          "t": 60980.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 35
         },
         {
-          "t": 61005.9,
+          "t": 60980.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 35
         },
         {
-          "t": 61025.5,
+          "t": 61017,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 36
         },
         {
-          "t": 61025.6,
+          "t": 61017,
           "gate": "execution",
           "call": "abandon",
           "gen": 36
         },
         {
-          "t": 61054,
+          "t": 61055.5,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 37
         },
         {
-          "t": 61054,
+          "t": 61055.5,
           "gate": "execution",
           "call": "abandon",
           "gen": 37
         },
         {
-          "t": 63444.8,
+          "t": 63418,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 38
         },
         {
-          "t": 63444.8,
+          "t": 63418,
           "gate": "execution",
           "call": "abandon",
           "gen": 38
         },
         {
-          "t": 65478.2,
+          "t": 65472.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 39
         },
         {
-          "t": 65478.2,
+          "t": 65472.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 39
@@ -1944,7 +1944,7 @@
       ],
       "ensureLoaded": [
         {
-          "t": 2348.7,
+          "t": 2195.1,
           "scope": {
             "company": "",
             "country": "US",
@@ -1956,9 +1956,9 @@
       ],
       "errors": [],
       "raf": {
-        "fired": 4198,
-        "firstAt": 1090.6,
-        "lastAt": 71813.5
+        "fired": 4166,
+        "firstAt": 1405,
+        "lastAt": 71822.2
       }
     },
     "firstCellInfo": {
@@ -2008,7 +2008,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 30277,
+            "result_age_ms": 30275,
             "result_ttl_ms": 600000,
             "registry_requests": 1,
             "workspace_requests": 0,
@@ -2079,7 +2079,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 1386,
+            "result_age_ms": 1385,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2166,7 +2166,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 3234,
+            "result_age_ms": 3208,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2237,7 +2237,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 5535,
+            "result_age_ms": 5501,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2278,7 +2278,7 @@
           "extra": {
             "held": {
               "ok": true,
-              "waitedMs": 261.6
+              "waitedMs": 251.3
             },
             "expect": {
               "avg": "17.0",
@@ -2315,7 +2315,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 8485,
+            "result_age_ms": 8458,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2386,7 +2386,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 1389,
+            "result_age_ms": 1393,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2427,7 +2427,7 @@
           "extra": {
             "held": {
               "ok": true,
-              "waitedMs": 252.8
+              "waitedMs": 251.7
             },
             "mid": {
               "country": "JP",
@@ -2472,7 +2472,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 5213,
+            "result_age_ms": 5240,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2547,12 +2547,12 @@
             "revalidate_superseded": null,
             "last_refusal": {
               "code": "MARKETPLACE_COUNTRY_MISMATCH",
-              "at": 1792391056914,
+              "at": 1792399020899,
               "selectedCountry": "EU",
               "marketplaceId": "MP-FIXTURE-JP-AMZ",
               "marketplaceCountry": "JP"
             },
-            "result_age_ms": 6421,
+            "result_age_ms": 6447,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2598,7 +2598,7 @@
             },
             "refusal": {
               "code": "MARKETPLACE_COUNTRY_MISMATCH",
-              "at": 1792391056914,
+              "at": 1792399020899,
               "selectedCountry": "EU",
               "marketplaceId": "MP-FIXTURE-JP-AMZ",
               "marketplaceCountry": "JP"
@@ -2634,7 +2634,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 9652,
+            "result_age_ms": 9689,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2705,7 +2705,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 1393,
+            "result_age_ms": 1403,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2783,7 +2783,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 3459,
+            "result_age_ms": 3519,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2854,7 +2854,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 3609,
+            "result_age_ms": 3600,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2931,7 +2931,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 1876,
+            "result_age_ms": 1841,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -3008,7 +3008,7 @@
             "revalidate_failed": false,
             "revalidate_superseded": null,
             "last_refusal": null,
-            "result_age_ms": 10783,
+            "result_age_ms": 10781,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
