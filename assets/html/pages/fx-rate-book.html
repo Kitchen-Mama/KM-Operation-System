@@ -1,0 +1,47 @@
+<!-- FX1 — FX Rate Book (Administration / Master Data).
+     PREPARED, NOT ROUTED. This partial is deliberately absent from index.html: there is no menu entry,
+     no script tag and no section id registered, so nothing loads it and the Inventory Replenishment
+     release is not blocked by it. It becomes live only when the backend change list in
+     docs/planning/FX_RATE_BOOK_CONTRACT_FX1.md has been approved and the two read/write actions exist.
+
+     Style follows the Automation Schedule page (ADMIN-AUTOMATION-R1): a partial injected into its mount
+     on the lifecycle mount, READ-ONLY on load. Opening this page must never write a rate.
+
+     THE RULES THIS PAGE ENFORCES ARE NOT WRITTEN HERE. They live once, in
+     assets/tests/_fx-rate-book-contract.js, so the page, the suite and the eventual server read the
+     same definition instead of three drifting copies. -->
+<section id="fx-rate-book-section" class="module-section fx-book-section">
+  <div class="fx-book-head">
+    <h2 class="fx-book-title">FX Rate Book</h2>
+    <p class="fx-book-sub">
+      The stored rates <strong>pricing.fxReconcile</strong> runs against. Direction is frozen:
+      <code>LOCAL = BASE &times; RATE</code>. A rate is never inverted, and the same currency is always 1.
+    </p>
+  </div>
+
+  <div class="fx-book-note" role="note">
+    Editing a rate here changes <strong>no price</strong>. Prices move only when a reconciliation is run,
+    and a reconciliation previews by default — <code>dry_run</code> must be explicitly set to false to
+    write anything.
+  </div>
+
+  <!-- WHICH PAIRS ARE ACTUALLY NEEDED is answered by the database, not by this page: a dry-run
+       reconciliation reports `required_pairs` from the live pricing_list. This panel shows that answer
+       beside the book so a missing pair is visible before a run rather than after it. -->
+  <div id="fx-book-coverage" class="fx-book-coverage" aria-live="polite">
+    <div class="fx-book-loading">Loading required currency pairs&hellip;</div>
+  </div>
+
+  <div id="fx-book-warnings" class="fx-book-warnings" hidden></div>
+
+  <div id="fx-book-table" class="fx-book-table" aria-live="polite">
+    <div class="fx-book-loading">Loading rate book&hellip;</div>
+  </div>
+
+  <!-- A save carries the version it read. Two operators maintaining one pair from two tabs is the
+       ordinary case, and last-write-wins would discard a rate somebody checked against a bank page. -->
+  <div class="fx-book-foot">
+    <button type="button" id="fx-book-save" class="fx-book-btn" disabled>Save changes</button>
+    <span id="fx-book-savestate" class="fx-book-savestate"></span>
+  </div>
+</section>

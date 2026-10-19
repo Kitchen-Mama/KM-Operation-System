@@ -5897,6 +5897,36 @@ STATUS AT CUT                PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script 
                              Web App version exists for it, and Production is NOT R54.
 ```
 
+### THREE BUILD PINS FOLLOW THE RELEASE, AND THEY ARE NOT IN `63_`
+
+A release cut is not finished when `63_` and the module stamps move. Three diagnostics pins also declare
+the release and are asserted equal to `SYS_DEPLOYMENT_RELEASE_`, and the first cut attempt missed all
+three:
+
+| pin | file | asserted by |
+|---|---|---|
+| `TEMP_E3_CENSUS_BUILD_` | `assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs` | BP3a |
+| `R6R7_ACTIVATION_BUILD_` | same file | BP3, P7c |
+| `S1_BUILD_` | `assets/tools/apps-script-diagnostics/TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs` | M4a |
+
+All three are OUTSIDE the 78-file load surface, so moving them costs **0 bytes**. The failure is loud and
+specific — *"a pin that lags a release refuses a healthy deployment"* — and it is the right failure: a
+census that expects R53 while the deployment reports R54 would refuse a healthy deployment and call it a
+mismatch.
+
+**`S1_BUILD_` was nearly left behind for a plausible wrong reason.** Its own suite carries a comment
+warning against copying the release literal, which reads like an instruction not to move it. That comment
+is about the SUITE — which derives the value from the census file instead of hard-coding it — not about
+the census. `M4a` ties the census's reported `deployment_build` to `S1_BUILD_`, so the pin does follow the
+release. Reading the comment and stopping there would have shipped a cut that fails.
+
+**Found the hard way.** The first sweep of this cut aborted at 188/685 with a dirty worktree, because
+files for a parallel workstream were created while it was running — the sweep rewrites and restores real
+source files, so it refuses to continue against a tree that moved under it, and it was right to. The
+three pin failures were in that partial run, and they were on **stderr**: stdout showed only the
+40 "caught" mutant lines. Without `--evidence` persisting stderr the result would have been a bare
+`NOT_CLEAN` with `MUTANTS_SURVIVED: 1` and no statement of which pin or which file.
+
 ### The sync set, and why it is eight files rather than three
 
 The CP2V precheck asked whether syncing `42_`, `63_` and `90_` would be enough. **It is not**, and the
