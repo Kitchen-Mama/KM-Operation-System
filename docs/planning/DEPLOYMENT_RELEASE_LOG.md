@@ -6027,8 +6027,14 @@ disagree, and ends a superseded revalidation's own state. A browser left on r61 
 a restored table with **Avg Sales and Days of Supply blanked** — the defect this round exists to remove.
 Publishing without rotating would ship nothing.
 
-`bootScriptBytes` is unchanged (3,813,599): the token string is the same length, and
-`assets/js/pages/inventory-replenishment.js` is router-loaded and is not a boot script.
+**`bootScriptBytes` MOVED: 3,813,599 → 3,813,651, +52 bytes.** I first wrote here that it was unchanged
+"because the token string is the same length". That was wrong, and the boot-byte census caught it:
+`r62-revisitrestore-20261019` is **four characters longer** than `r61-scopereuse-20261018`, and app.js
+carries the token **13 times** — 4 × 13 = 52. The figure is corrected rather than quietly restated,
+because a byte census whose expected value is copied from the previous round is not a census.
+
+`assets/js/pages/inventory-replenishment.js` is router-loaded and is not a boot script, so this round's
+page change contributes nothing to that total; the whole +52 is the token.
 
 ### GS: ZERO
 

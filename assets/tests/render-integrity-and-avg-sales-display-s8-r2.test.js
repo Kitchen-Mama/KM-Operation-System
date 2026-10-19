@@ -59,8 +59,18 @@ ok(/if \(mySeq !== _irSearch\.seq\) return/.test(code(IR)), 'A9  GUARD: the mono
 ok(/function _irResultMatchesAppliedScope_/.test(IR) &&
    /return st\.appliedScopeKey === _irAppliedScopeKey_\(\);/.test(code(IR)),
   'A10 GUARD: the F1A scope stamp still refuses a result from another scope');
-ok(/if \(qSeq !== _irSearch\.seq\) return;/.test(code(IR)),
+// CP2X-R4 WIDENED THIS, AND THE GUARD IT ASSERTS IS UNCHANGED. The superseded branch still refuses to
+// touch a newer round; it now RECORDS WHY before returning, so the form is `{ ...; return; }` rather than
+// a bare `return;`. The reason it had to change is itself a defect this assertion could not see: the
+// branch returned BEFORE clearing `revalidating`, so the flag stayed true for the rest of the session and
+// the bootstrap diagnostic reported a revalidation that was not running.
+//
+// The assertion still requires the branch to RETURN. A version that merely tested the sequence and fell
+// through would be the regression this line exists to catch, and it still fails here.
+ok(/if \(qSeq !== _irSearch\.seq\) (return;|\{[^{}]*return;[^{}]*\})/.test(code(IR)),
   'A11 GUARD: a quiet revalidation still cannot overwrite a newer Search');
+ok(/if \(qSeq !== _irSearch\.seq\) \{[^{}]*revalidateSuperseded[^{}]*return;[^{}]*\}/.test(code(IR)),
+  'A11a and it names why it stood down, so a stale flag cannot be read as a live request');
 // A2 (blank the table) was DECLINED — the frozen FB-2A contract must still hold.
 ok(/The last CONFIRMED result stays on screen/.test(IR),
   'A12 the frozen contract sentence is intact — the table is NOT blanked on a selector change');

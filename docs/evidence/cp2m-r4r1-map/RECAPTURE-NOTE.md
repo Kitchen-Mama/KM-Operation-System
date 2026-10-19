@@ -61,3 +61,37 @@ runner — the same back-to-back-Chrome hazard this note already describes. It a
 temp directory first**, inspected, and installed only once it read `ok: true` with real counts. Captures in
 this round are written to a temp directory and promoted, never written straight over the record.
 
+
+---
+
+## Re-taken again at CP2X-R4, for the application cache token
+
+CP2X-R4 rotated the application token (`r61-scopereuse-20261018` -> `r62-revisitrestore-20261019`), which
+changed `index.html` and correctly invalidated the `A4` SHA pin. Nothing this round touched the map, the
+globe or the lifecycle; the capture was re-taken against the current source with the **same runner and the
+same 1500 ms read delay**.
+
+**One run, and it was healthy on the first attempt** — no WebGL context loss, so there is no failing run to
+keep this time. The summary is identical to the previous capture in every load-bearing field:
+
+| | previous | this run |
+|---|---|---|
+| globe creates / destroys | 1 / 0 | 1 / 0 |
+| WebGL context lost | 0 | 0 |
+| samples without canvas | 14 | **14** |
+| detaches / attaches | 2 / 3 | 2 / 3 |
+| teardowns avoided | 2 | 2 |
+| stale renders blocked | 0 | 0 |
+| samples | 125 | 123 |
+
+`samplesWithoutCanvas` is the figure the suite compares against a "before" run that can never be re-taken,
+and it is unchanged at 14. The two-sample difference in total length is scheduling noise in a 123-sample
+poll and moves nothing the suite asserts.
+
+**A caution recorded for the next person, because it cost a good capture this round.** The sibling capture
+in `cp2m-r2-map/` must be taken with `assets/tests/_cp2o-r2-map-capture.js`, NOT with
+`_cp2m-r2-map-runner.js`: the latter forces `--use-gl=swiftshader`, which this machine loses after ~1.3 s,
+and it produces a truthful but useless `NO_CANVAS_BOX` capture. I promoted such a capture over a good one
+before checking it, and restored it from git. **Check a re-taken capture's health BEFORE copying it into
+`docs/evidence/`** — the suite that pins it is not the thing that tells you the capture is sound, because
+a degraded capture can still be internally consistent.

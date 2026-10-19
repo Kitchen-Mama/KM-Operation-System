@@ -1,7 +1,7 @@
 {
  "ok": true,
  "browser": "chrome.exe",
- "capturedAt": "2026-10-18",
+ "capturedAt": "2026-10-19",
  "design": "A and B are identical runs (the noise floor); C performs a real pointer drag (the effect).",
  "glEnvironment": {
   "flags": [
@@ -15,21 +15,21 @@
    "glVersion": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
    "contextLost": false,
    "lostAtMs": null,
-   "frames": 329,
-   "heldForMs": 7473
+   "frames": 356,
+   "heldForMs": 8692
   },
   "note": "The forced --use-gl=swiftshader of the original entry point is NOT passed here; see the file header and docs/evidence/cp2o-r2-gl/gl-probe.json."
  },
  "sources": {
-  "index.html": "57ec2ec2b5900ecf",
+  "index.html": "b00fc9cce9306369",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
   "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
-  "assets/js/app.js": "f02810711c7c2c00",
+  "assets/js/app.js": "81709bef0cfaac7a",
   "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c",
   "assets/tests/_cp2o-r2-map-capture.js": "d41703314dccd624",
   "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
  },
- "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/cp2xr1/map",
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/cp2xr4/map3",
  "scenes": [
   {
    "scene": "desktop",
@@ -58,7 +58,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 1716,
+    "canvasWaitMs": 1556,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -82,7 +82,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 996,
+    "canvasWaitMs": 917,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -106,7 +106,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 1027,
+    "canvasWaitMs": 942,
     "canvasAppeared": true,
     "dragPath": {
      "from": [
@@ -200,7 +200,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 896,
+    "canvasWaitMs": 894,
     "canvasAppeared": true
    },
    "canvasB": {
@@ -224,7 +224,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": false,
-    "canvasWaitMs": 921,
+    "canvasWaitMs": 888,
     "canvasAppeared": true
    },
    "dragReport": {
@@ -248,7 +248,7 @@
     "webglSupported": true,
     "diagnostics": null,
     "dragged": true,
-    "canvasWaitMs": 1205,
+    "canvasWaitMs": 889,
     "canvasAppeared": true,
     "dragPath": {
      "from": [

@@ -13688,11 +13688,34 @@ function _irValidateScopeSelection_(pending) {
         return { ok: true, demo: true, scope: { company: '', country: country, marketplace: mpId, marketplaceId: '' } };
     }
     var list = (typeof _replenActiveMarketplaces === 'function') ? (_replenActiveMarketplaces() || []) : [];
+    // AN EMPTY LIST MEANS "CANNOT VERIFY", NOT "INVALID", and the difference is the whole safety of this
+    // gate. The authority is the read model, and there is a real window - before it has hydrated - where
+    // it is empty while the operator holds a selection that is perfectly legitimate. Refusing there would
+    // block a Search for a scope that is fine, which is a worse failure than the one this check exists to
+    // prevent, and it would do it at exactly the moment the page is least able to explain itself.
+    //
+    // NOTHING IS REOPENED BY FAILING OPEN HERE. The defect this gate was added for is a pair whose
+    // marketplace_id resolves to a record in ANOTHER country - and that requires a non-empty list to
+    // resolve against. With no list there is no record, no country to disagree with, and no mixed-site
+    // answer to publish. Every downstream guard (the scope stamp, the sequence check, the single place
+    // `applied` is assigned) is untouched and still applies.
+    if (!list.length) return { ok: true, unverified: true,
+        scope: { company: '', country: country, marketplace: '', marketplaceId: mpId } };
+    // BOTH SPELLINGS OF THE SAME IDENTITY. _irWsGet returns the read model's records RAW - it normalises
+    // nothing - so `getMarketplaces` carries whichever key its source used. The registry read supplies
+    // `marketplace_id`; other paths supply `marketplaceId`. Matching only one of them would make this gate
+    // refuse a perfectly good selection purely because of where the model came from, which is a property
+    // of the transport and not of the operator's choice.
     var rec = null;
     for (var i = 0; i < list.length; i++) {
-        if (String(list[i].marketplaceId) === mpId) { rec = list[i]; break; }
+        var id = list[i] ? (list[i].marketplaceId || list[i].marketplace_id) : null;
+        if (id != null && String(id) === mpId) { rec = list[i]; break; }
     }
-    if (!rec) return { ok: false, code: 'MARKETPLACE_UNKNOWN', marketplaceId: mpId, selectedCountry: country };
+    // NOT FOUND IS "CANNOT VERIFY", for the same reason an empty list is. A record that is absent cannot
+    // disagree with the selected country, so the mixed-site answer this gate exists to prevent is not
+    // reachable here. Refusing instead would block a Search whenever the model is shaped unexpectedly.
+    if (!rec) return { ok: true, unverified: true, reason: 'MARKETPLACE_NOT_IN_MODEL',
+        scope: { company: '', country: country, marketplaceId: mpId, marketplace: '' } };
     if (String(rec.country || '') !== country) {
         return { ok: false, code: 'MARKETPLACE_COUNTRY_MISMATCH', marketplaceId: mpId,
             selectedCountry: country, marketplaceCountry: String(rec.country || '') };
