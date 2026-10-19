@@ -1,0 +1,316 @@
+// 75_api_v1_fx_rate_book.gs — FX1-R1 — the FX RATE BOOK: stored coefficients with provenance and history.
+//
+// STAGED, NOT DEPLOYED. This file is deliberately OUTSIDE assets/specs/active/apps-script/ and carries a
+// .proposed suffix so no build, audit or sync step can pick it up. It exists to make the GS cost of FX1
+// a MEASURED number instead of an estimate. It becomes real only on an approved FX budget.
+//
+// WHAT IT ADDS: somewhere to KEEP a rate. 73_ already converts correctly and already refuses almost
+// everything that should be refused — it simply has nowhere to read a coefficient from, so every run is
+// re-typed by a person (PRICING_DATABASE_MAPPING §10, "No separate FX DB table for MVP").
+//
+// WHAT IT DOES NOT ADD: any price formula. LOCAL = BASE x RATE lives in 73_ and is not restated here.
+// This file produces the `rates: [...]` array 73_ already accepts, and nothing else. Saving a rate writes
+// NO price: prices move only when a reconciliation runs, and dry_run is its default.
+//
+// REUSE, NOT RE-CREATION (FX1-R1 §1):
+//   • pricingBuildRateTable_  (73_) — positive, source, as_of, identity-is-1, duplicate pair. Same error
+//     vocabulary the page already renders. Not re-implemented here.
+//   • pricingDecimalsFor_     (73_) — the frozen precision contract IS the supported-currency list.
+//   • pricingStr_ / pricingReadNumber_ (73_) — same coercion as the writer that consumes the rates.
+//   • Script Properties + injectable io + envelope (45_) — the established config-storage pattern.
+//   • automationScheduleAuthority_-style hook (45_) — the authority model is DEPLOYMENT_ACCESS and this
+//     file does not invent a per-user role gate. See fxBookAuthority_.
+
+var FX_BOOK_PROP_KEY_ = 'KM_FX_RATE_BOOK';
+var FX_BOOK_LOG_PROP_KEY_ = 'KM_FX_RATE_BOOK_LOG';
+var FX_BOOK_LOCK_MS_ = 30000;
+var FX_BOOK_LOG_MAX_ = 200;   // bounded: Script Properties is a 9 KB-per-value store, not a journal.
+var FX_BOOK_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';
+
+// ---- io ------------------------------------------------------------------------------------------------
+function fxBookDefaultIo_() {
+  var props = PropertiesService.getScriptProperties();
+  return {
+    get: function (k) { return props.getProperty(k); },
+    set: function (k, v) { props.setProperty(k, v); }
+  };
+}
+
+function fxBookIsYmd_(v) { return /^\d{4}-\d{2}-\d{2}$/.test(pricingStr_(v)); }
+
+// ---- the stored document -------------------------------------------------------------------------------
+// { doc_version: <int>, rates: [ entry... ] }. doc_version is the optimistic-concurrency token for the
+// WHOLE book; an entry's own `version` is its edit count and is carried for the change record.
+function fxBookReadDoc_(io) {
+  var raw = io.get(FX_BOOK_PROP_KEY_);
+  if (!raw) return { doc_version: 0, rates: [] };
+  var parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) {
+    // A corrupt property is NOT an empty book. Returning [] here would let the next save overwrite a book
+    // nobody could read, destroying the history silently.
+    throw new Error('FX_BOOK_CORRUPT: the stored rate book is not valid JSON and was not overwritten.');
+  }
+  return {
+    doc_version: Number(parsed.doc_version) || 0,
+    rates: (parsed.rates && parsed.rates.length !== undefined) ? parsed.rates : []
+  };
+}
+
+function fxBookWriteDoc_(io, doc) { io.set(FX_BOOK_PROP_KEY_, JSON.stringify(doc)); }
+
+// ---- validation: ONLY what 73_ does not already check ---------------------------------------------------
+function fxBookValidateEntry_(e, n) {
+  var errors = [];
+  e = e || {};
+  var base = pricingStr_(e.base_currency).toUpperCase();
+  var quote = pricingStr_(e.quote_currency).toUpperCase();
+
+  // The frozen precision contract IS the supported set: a pair we cannot write a price in at a known
+  // precision is one nobody should be able to maintain a rate for.
+  [['base_currency', base], ['quote_currency', quote]].forEach(function (p) {
+    if (p[1] && pricingDecimalsFor_(p[1]) === null) {
+      errors.push({ entry: n, code: 'FX_CURRENCY_UNSUPPORTED', field: p[0], value: p[1],
+        detail: p[1] + ' is not in the frozen precision contract, so a price in it could never be written.' });
+    }
+  });
+
+  if (!fxBookIsYmd_(e.effective_from)) {
+    errors.push({ entry: n, code: 'FX_EFFECTIVE_FROM_REQUIRED',
+      detail: 'effective_from is required as YYYY-MM-DD; a rate with no start cannot be scheduled or superseded.' });
+  }
+  if (pricingStr_(e.effective_to) && !fxBookIsYmd_(e.effective_to)) {
+    errors.push({ entry: n, code: 'FX_EFFECTIVE_TO_INVALID',
+      detail: 'effective_to must be YYYY-MM-DD when present. EMPTY means open-ended, which is a state, not a gap.' });
+  }
+  if (fxBookIsYmd_(e.effective_from) && fxBookIsYmd_(e.effective_to) &&
+      pricingStr_(e.effective_to) < pricingStr_(e.effective_from)) {
+    errors.push({ entry: n, code: 'FX_EFFECTIVE_RANGE_INVERTED',
+      detail: 'effective_to is before effective_from.' });
+  }
+
+  var st = pricingStr_(e.status).toLowerCase();
+  if (st !== 'active' && st !== 'inactive') {
+    // A BLANK IS NOT "ACTIVE" — the same rule PRICING-R2 §10 applies to ownership flags.
+    errors.push({ entry: n, code: 'FX_STATUS_INVALID',
+      detail: 'status must be exactly "active" or "inactive"; a blank is not "active".' });
+  }
+
+  var v = Number(e.version);
+  if (!isFinite(v) || v < 1 || Math.floor(v) !== v) {
+    errors.push({ entry: n, code: 'FX_VERSION_INVALID', detail: 'version must be a whole number of at least 1.' });
+  }
+  return errors;
+}
+
+// Two ACTIVE rates for one pair covering one day is a book nobody can resolve. Refusing at SAVE is what
+// keeps resolution total: position in an array is not precedence.
+function fxBookOverlaps_(rates) {
+  var errors = [];
+  var active = [];
+  rates.forEach(function (e, i) {
+    if (pricingStr_(e.status).toLowerCase() === 'active') active.push({ e: e, n: i + 1 });
+  });
+  for (var i = 0; i < active.length; i++) {
+    for (var j = i + 1; j < active.length; j++) {
+      var a = active[i].e, b = active[j].e;
+      if (pricingFxPairKey_(a.base_currency, a.quote_currency) !==
+          pricingFxPairKey_(b.base_currency, b.quote_currency)) continue;
+      var aFrom = pricingStr_(a.effective_from), aTo = pricingStr_(a.effective_to) || '9999-12-31';
+      var bFrom = pricingStr_(b.effective_from), bTo = pricingStr_(b.effective_to) || '9999-12-31';
+      if (aFrom <= bTo && bFrom <= aTo) {
+        errors.push({ entry: active[j].n, code: 'FX_PERIOD_OVERLAP',
+          pair: pricingFxPairKey_(a.base_currency, a.quote_currency),
+          detail: 'Two active rates for this pair cover the same day. One of them must be retired or bounded.' });
+      }
+    }
+  }
+  return errors;
+}
+
+function fxBookValidate_(rates) {
+  var errors = [];
+  var list = (rates && rates.length !== undefined) ? rates : [];
+  list.forEach(function (e, i) { errors = errors.concat(fxBookValidateEntry_(e, i + 1)); });
+
+  // The shared rules come from 73_, so the book cannot drift from the writer that consumes it.
+  var active = list.filter(function (e) { return pricingStr_(e.status).toLowerCase() === 'active'; });
+  if (active.length) {
+    var table = pricingBuildRateTable_(active);
+    if (!table.ok) {
+      // FX_PAIR_DUPLICATED from 73_ means "same pair twice"; here that is legitimate across DIFFERENT
+      // effective periods, so period overlap — not duplication — is the book's rule.
+      errors = errors.concat(table.errors.filter(function (x) { return x.code !== 'FX_PAIR_DUPLICATED'; }));
+    }
+  }
+  errors = errors.concat(fxBookOverlaps_(list));
+  return { ok: errors.length === 0, errors: errors };
+}
+
+// ---- resolution ----------------------------------------------------------------------------------------
+// NEVER INVERTS. A book holding USD>CAD does not answer CAD>USD: a reciprocal is the one arithmetic error
+// that yields a plausible wrong price instead of an obvious one.
+function fxBookResolve_(rates, base, quote, onDate) {
+  var b = pricingStr_(base).toUpperCase(), q = pricingStr_(quote).toUpperCase();
+  if (!b || !q) return { ok: false, code: 'FX_PAIR_INCOMPLETE' };
+  if (b === q) return { ok: true, rate: 1, identity: true, source: null, as_of: null };
+
+  var day = pricingStr_(onDate);
+  var want = pricingFxPairKey_(b, q);
+  var hits = (rates || []).filter(function (e) {
+    if (pricingStr_(e.status).toLowerCase() !== 'active') return false;
+    if (pricingFxPairKey_(e.base_currency, e.quote_currency) !== want) return false;
+    var from = pricingStr_(e.effective_from), to = pricingStr_(e.effective_to) || '9999-12-31';
+    return from <= day && day <= to;
+  });
+  if (hits.length > 1) return { ok: false, code: 'FX_AMBIGUOUS', pair: want };
+  if (hits.length === 1) {
+    var h = hits[0];
+    return { ok: true, rate: Number(h.rate), identity: false, source: pricingStr_(h.source), as_of: pricingStr_(h.as_of) };
+  }
+  var inverse = (rates || []).some(function (e) {
+    return pricingStr_(e.status).toLowerCase() === 'active' &&
+      pricingFxPairKey_(e.base_currency, e.quote_currency) === pricingFxPairKey_(q, b);
+  });
+  return { ok: false, code: inverse ? 'FX_ONLY_INVERSE_EXISTS' : 'FX_RATE_NOT_FOUND', pair: want };
+}
+
+// The array 73_ accepts, plus the pairs the book could not cover. `missing` is named, never silently empty:
+// 73_ would skip those rows as MISSING_FX_RATE and the operator has to know which ones in advance.
+function fxBookRatesForReconcile_(rates, requiredPairs, onDate) {
+  var out = { rates: [], missing: [] };
+  (requiredPairs || []).forEach(function (p) {
+    var parts = pricingStr_(p).split('>');
+    var r = fxBookResolve_(rates, parts[0], parts[1], onDate);
+    if (!r.ok) { out.missing.push({ pair: pricingStr_(p), code: r.code }); return; }
+    if (r.identity) return;   // 73_ resolves same-currency itself and needs no entry.
+    out.rates.push({ base_currency: parts[0], quote_currency: parts[1],
+      rate: r.rate, source: r.source, as_of: r.as_of });
+  });
+  return out;
+}
+
+// ---- change record: OLD value as well as new -----------------------------------------------------------
+// A log that keeps only the new value cannot answer the question it is kept for.
+function fxBookChangeRecords_(oldRates, newRates, who, whenIso) {
+  var FIELDS = ['rate', 'source', 'as_of', 'effective_from', 'effective_to', 'status'];
+  var byKey = {};
+  (oldRates || []).forEach(function (e) {
+    byKey[pricingFxPairKey_(e.base_currency, e.quote_currency) + '@' + pricingStr_(e.effective_from)] = e;
+  });
+  var records = [];
+  (newRates || []).forEach(function (e) {
+    var k = pricingFxPairKey_(e.base_currency, e.quote_currency) + '@' + pricingStr_(e.effective_from);
+    var prev = byKey[k];
+    if (!prev) {
+      records.push({ at: whenIso, by: who, pair: k, change: 'ADDED',
+        to: { rate: e.rate, source: pricingStr_(e.source), as_of: pricingStr_(e.as_of), status: pricingStr_(e.status) } });
+      return;
+    }
+    delete byKey[k];
+    var moved = [];
+    FIELDS.forEach(function (f) {
+      if (pricingStr_(prev[f]) !== pricingStr_(e[f])) {
+        moved.push({ field: f, from: pricingStr_(prev[f]), to: pricingStr_(e[f]) });
+      }
+    });
+    if (moved.length) records.push({ at: whenIso, by: who, pair: k, change: 'EDITED', fields: moved });
+  });
+  Object.keys(byKey).forEach(function (k) {
+    var g = byKey[k];
+    records.push({ at: whenIso, by: who, pair: k, change: 'REMOVED',
+      from: { rate: g.rate, source: pricingStr_(g.source), as_of: pricingStr_(g.as_of), status: pricingStr_(g.status) } });
+  });
+  return records;
+}
+
+function fxBookAppendLog_(io, records) {
+  if (!records || !records.length) return;
+  var prev = [];
+  try { prev = JSON.parse(io.get(FX_BOOK_LOG_PROP_KEY_) || '[]'); } catch (e) { prev = []; }
+  var next = prev.concat(records);
+  if (next.length > FX_BOOK_LOG_MAX_) next = next.slice(next.length - FX_BOOK_LOG_MAX_);
+  io.set(FX_BOOK_LOG_PROP_KEY_, JSON.stringify(next));
+}
+
+// ---- authority -----------------------------------------------------------------------------------------
+function fxBookAuthority_(body) {
+  // No source-provable per-user role gate exists anywhere in this API layer: `getActiveUser` appears in
+  // none of the deployed modules and every existing write is gated by WHO CAN REACH THE DEPLOYMENT. This
+  // is the single integration point for a future real role owner; it does not fabricate an identity check.
+  return { ok: true, model: 'DEPLOYMENT_ACCESS' };
+}
+
+function fxBookEnvelope_(ok, data, errors) {
+  return { success: !!ok, data: data || null, errors: errors || [], handler: FX_BOOK_BUILD_VERSION_ };
+}
+
+// ---- API: GET (read-only; opening the page mutates nothing) ---------------------------------------------
+function handleFxRateBookGet_(body, io) {
+  io = io || fxBookDefaultIo_();
+  try {
+    var doc = fxBookReadDoc_(io);
+    var log = [];
+    try { log = JSON.parse(io.get(FX_BOOK_LOG_PROP_KEY_) || '[]'); } catch (e) { log = []; }
+    return fxBookEnvelope_(true, {
+      doc_version: doc.doc_version,
+      rates: doc.rates,
+      change_log: log.slice(-50),
+      supported_currencies: Object.keys(PRICING_FX_DECIMALS_).sort()
+    });
+  } catch (e) {
+    return fxBookEnvelope_(false, null, [{ code: 'FX_BOOK_GET_ERROR', message: String(e && e.message || e) }]);
+  }
+}
+
+// ---- API: SAVE (authority -> LOCK -> re-read -> version CAS -> validate -> write -> log -> readback) -----
+function handleFxRateBookSave_(body, io) {
+  io = io || fxBookDefaultIo_();
+  var auth = fxBookAuthority_(body);
+  if (!auth.ok) return fxBookEnvelope_(false, null, [{ code: 'NOT_AUTHORIZED', message: 'not authorized to change FX rates' }]);
+
+  var payload = (body && body.payload && typeof body.payload === 'object') ? body.payload : (body || {});
+  var expected = Number(payload.doc_version);
+  if (!isFinite(expected) || expected < 0) {
+    return fxBookEnvelope_(false, null, [{ code: 'FX_DOC_VERSION_REQUIRED',
+      message: 'A save must carry the doc_version it read, so a stale tab cannot overwrite a newer book.' }]);
+  }
+  var incoming = (payload.rates && payload.rates.length !== undefined) ? payload.rates : null;
+  if (!incoming) {
+    return fxBookEnvelope_(false, null, [{ code: 'FX_RATES_REQUIRED', message: 'rates[] is required (send [] to empty the book deliberately).' }]);
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(FX_BOOK_LOCK_MS_)) {
+    return fxBookEnvelope_(false, null, [{ code: 'LOCK_UNAVAILABLE',
+      message: 'Another save is in progress. NOTHING was written; please retry.' }]);
+  }
+  try {
+    // THE VERSION CHECK IS INSIDE THE LOCK, and re-reads. Checking before the lock would compare against a
+    // book that another writer can still replace between the read and the write.
+    var current = fxBookReadDoc_(io);
+    if (current.doc_version !== expected) {
+      return fxBookEnvelope_(false, null, [{ code: 'FX_VERSION_CONFLICT', stored_doc_version: current.doc_version,
+        message: 'This book was changed by someone else since it was opened. NOTHING was written; reload and re-apply.' }]);
+    }
+
+    var v = fxBookValidate_(incoming);
+    if (!v.ok) {
+      return fxBookEnvelope_(false, null, v.errors.concat([{ code: 'FX_BOOK_INVALID',
+        message: v.errors.length + ' problem(s). ZERO rates were written.' }]));
+    }
+
+    var next = { doc_version: current.doc_version + 1, rates: incoming };
+    fxBookWriteDoc_(io, next);
+    fxBookAppendLog_(io, fxBookChangeRecords_(current.rates, incoming,
+      pricingStr_(payload.changed_by) || 'unknown', pricingStr_(payload.changed_at)));
+
+    // Readback, so the page never renders a version it merely hopes was stored.
+    var saved = fxBookReadDoc_(io);
+    return fxBookEnvelope_(true, { doc_version: saved.doc_version, rates: saved.rates, authority: auth.model });
+  } catch (e) {
+    return fxBookEnvelope_(false, null, [{ code: 'FX_BOOK_SAVE_ERROR', message: String(e && e.message || e) }]);
+  } finally {
+    lock.releaseLock();
+  }
+}

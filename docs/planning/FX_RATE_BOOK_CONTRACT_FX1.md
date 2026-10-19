@@ -79,6 +79,11 @@ Proposed key: `KM_FX_RATE_BOOK`. Value: `{ "version": 1, "rates": [ …entries�
 
 ---
 
+> **SUPERSEDED BY FX1-R1 (2026-10-19).** §3 and §4 below are the FX1 *estimate*. The backend was since
+> written in full and **measured**: see `FX_RATE_BOOK_FX1_R1_MEASURED.md` and `docs/planning/fx1-r1-staging/`.
+> The measured figure is **18,305 bytes**, not ~14,600 — the estimate was ~25% low. §§1–2 and 5–7 below are
+> unchanged and still current; §4's "three ways forward" is superseded by FX1-R1's budget request.
+
 ## 4. GS cost — **this change CANNOT LAND at the current ceiling**
 
 | | bytes |

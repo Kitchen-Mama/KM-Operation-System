@@ -1,0 +1,87 @@
+{
+  "_what": "FX1-R1 DRAFT initialisation data for KM_FX_RATE_BOOK. NOT WRITTEN ANYWHERE.",
+  "_status": "DRAFT — awaiting Owner review of the source choice and the derivation, then an approved FX budget.",
+  "_not_production": "This file is a proposal under docs/planning/. No Script Property was created or written. The page that would load it is unrouted and the two actions it names do not exist in any deployment.",
+
+  "_source": {
+    "name": "European Central Bank — euro foreign exchange reference rates (eurofxref-daily)",
+    "url": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+    "published_for": "2026-10-16",
+    "retrieved_at": "2026-10-19",
+    "why_this_one": "A single official publisher covering all five quote currencies on one date, re-openable later to see the same numbers. It is a daily REFERENCE rate (ECB concertation, ~14:15 CET), not a dealable rate: it is the right basis for a maintained price book and the wrong basis for settling a payment.",
+    "legs_as_published": {
+      "EUR>USD": 1.1253,
+      "EUR>AUD": 1.6171,
+      "EUR>CAD": 1.5935,
+      "EUR>GBP": 0.84385,
+      "EUR>JPY": 177.82
+    }
+  },
+
+  "_derivation": {
+    "formula": "USD>X  =  (EUR>X) / (EUR>USD)",
+    "note": "EVERY row below is DERIVED, not quoted. The ECB publishes rates with EUR as base, so no USD>X figure appears in the source at all; each one is a cross rate through EUR. USD>EUR is the limiting case, 1 / (EUR>USD), and is a pure reciprocal of a published leg.",
+    "read_this_before_approving": "The book itself never inverts a STORED rate — that rule is unchanged and enforced in code. This is a different act: deriving an INPUT from a published quote, done once, by hand, with both legs and the arithmetic recorded here so a reviewer can reproduce it. If the Owner would rather every stored rate be directly quoted in base USD, no single official publisher provides all five: the US Federal Reserve H.10 quotes JPY and CAD per USD but quotes EUR, GBP and AUD as USD per unit, so three of the five would need the same treatment in the other direction.",
+    "rounding": "6 decimal places, half-up, from the full published precision. This is the RATE's precision and is unrelated to PRICING_FX_DECIMALS_, which governs the rounding of a resulting PRICE (JPY 0, the rest 2)."
+  },
+
+  "_coverage": {
+    "required_pairs_expected": ["USD>AUD", "USD>CAD", "USD>EUR", "USD>GBP", "USD>JPY"],
+    "identity_sites_needing_no_rate": ["KM/US/Shopify", "KM/US/Target", "KM/US/Walmart", "ResUS/US/Amazon", "ResUS/US/Walmart"],
+    "verify_before_entering": "This is the EXPECTED set derived from the site universe. base_currency is a PER-ROW column, so the authoritative list comes from the database: run pricing.fxReconcile with dry_run:true and no rates — it writes nothing and returns required_pairs. Reconcile that against this list first."
+  },
+
+  "doc_version": 0,
+  "rates": [
+    {
+      "base_currency": "USD", "quote_currency": "AUD",
+      "rate": 1.437039,
+      "source": "ECB eurofxref-daily 2026-10-16 (derived: 1.6171 / 1.1253)",
+      "as_of": "2026-10-16",
+      "effective_from": "2026-10-19", "effective_to": "",
+      "status": "active", "version": 1,
+      "changed_by": "", "changed_at": "",
+      "note": "DRAFT. USD>AUD = EUR>AUD / EUR>USD."
+    },
+    {
+      "base_currency": "USD", "quote_currency": "CAD",
+      "rate": 1.416067,
+      "source": "ECB eurofxref-daily 2026-10-16 (derived: 1.5935 / 1.1253)",
+      "as_of": "2026-10-16",
+      "effective_from": "2026-10-19", "effective_to": "",
+      "status": "active", "version": 1,
+      "changed_by": "", "changed_at": "",
+      "note": "DRAFT. USD>CAD = EUR>CAD / EUR>USD."
+    },
+    {
+      "base_currency": "USD", "quote_currency": "EUR",
+      "rate": 0.888652,
+      "source": "ECB eurofxref-daily 2026-10-16 (derived: 1 / 1.1253)",
+      "as_of": "2026-10-16",
+      "effective_from": "2026-10-19", "effective_to": "",
+      "status": "active", "version": 1,
+      "changed_by": "", "changed_at": "",
+      "note": "DRAFT. Pure reciprocal of the published EUR>USD leg — the one row with no cross-rate step."
+    },
+    {
+      "base_currency": "USD", "quote_currency": "GBP",
+      "rate": 0.749889,
+      "source": "ECB eurofxref-daily 2026-10-16 (derived: 0.84385 / 1.1253)",
+      "as_of": "2026-10-16",
+      "effective_from": "2026-10-19", "effective_to": "",
+      "status": "active", "version": 1,
+      "changed_by": "", "changed_at": "",
+      "note": "DRAFT. USD>GBP = EUR>GBP / EUR>USD."
+    },
+    {
+      "base_currency": "USD", "quote_currency": "JPY",
+      "rate": 158.020084,
+      "source": "ECB eurofxref-daily 2026-10-16 (derived: 177.82 / 1.1253)",
+      "as_of": "2026-10-16",
+      "effective_from": "2026-10-19", "effective_to": "",
+      "status": "active", "version": 1,
+      "changed_by": "", "changed_at": "",
+      "note": "DRAFT. USD>JPY = EUR>JPY / EUR>USD. Prices in JPY round to 0 decimals; the RATE keeps 6."
+    }
+  ]
+}
