@@ -1,34 +1,35 @@
 {
   "round": "S8-B3-R3-CP2S-R2",
   "what": "in-place velocity update: what survives a real workspace arrival in a real browser",
-  "takenAt": "2026-10-19T08:37:25.114Z",
+  "takenAt": "2026-10-19T11:38:54.328Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "skus": 60,
-  "recoReadsServed": 5,
+  "recoReadsServed": 13,
   "expected": {
     "firstAvgCell": "7.0",
     "secondAvgCell": "11.0"
   },
   "sources": {
     "index.html": "b00fc9cce9306369",
-    "assets/js/pages/inventory-replenishment.js": "4c36970cca9eda49",
+    "assets/js/pages/inventory-replenishment.js": "324eb2ca5d26be60",
     "assets/css/pages/inventory-replenishment.css": "74872c1b61ce9d47"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 950,
+      "t": 901,
       "success": true,
       "dataKeys": [
         "product_strategy_enabled",
         "inventoryAiPlanDbGenerationEnabled",
         "capabilitiesVersion"
       ],
-      "counts": {}
+      "counts": {},
+      "respondedAt": 901
     },
     {
       "action": "inventoryScope.registry.get",
-      "t": 1133,
+      "t": 1069,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -38,13 +39,14 @@
         "empty_reason"
       ],
       "counts": {
-        "marketplaces": 6,
+        "marketplaces": 7,
         "countries": 3
-      }
+      },
+      "respondedAt": 1069
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 1805,
+      "t": 1734,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -70,11 +72,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -91,22 +93,24 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 1734
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 1845,
+      "t": 1767,
       "success": true,
       "dataKeys": [
         "rows"
       ],
       "counts": {
         "rows": 240
-      }
+      },
+      "respondedAt": 1767
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 1847,
+      "t": 1769,
       "success": true,
       "dataKeys": [
         "lines",
@@ -114,11 +118,12 @@
       ],
       "counts": {
         "lines": 120
-      }
+      },
+      "respondedAt": 1769
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 2802,
+      "t": 2725,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -144,11 +149,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -165,11 +170,12 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 2725
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 3878,
+      "t": 3795,
       "success": true,
       "dataKeys": [
         "lines",
@@ -177,22 +183,24 @@
       ],
       "counts": {
         "lines": 120
-      }
+      },
+      "respondedAt": 3795
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 29683,
+      "t": 29614,
       "success": true,
       "dataKeys": [
         "rows"
       ],
       "counts": {
         "rows": 240
-      }
+      },
+      "respondedAt": 29614
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 29685,
+      "t": 29616,
       "success": true,
       "dataKeys": [
         "lines",
@@ -200,11 +208,12 @@
       ],
       "counts": {
         "lines": 120
-      }
+      },
+      "respondedAt": 29616
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 33097,
+      "t": 32990,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -230,11 +239,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -251,22 +260,24 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 32990
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 36810,
+      "t": 36702,
       "success": true,
       "dataKeys": [
         "rows"
       ],
       "counts": {
         "rows": 240
-      }
+      },
+      "respondedAt": 36702
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 36812,
+      "t": 36703,
       "success": true,
       "dataKeys": [
         "lines",
@@ -274,11 +285,12 @@
       ],
       "counts": {
         "lines": 120
-      }
+      },
+      "respondedAt": 36703
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 43106,
+      "t": 43018,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -304,11 +316,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -325,22 +337,24 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 43018
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 45038,
+      "t": 44954,
       "success": true,
       "dataKeys": [
         "rows"
       ],
       "counts": {
         "rows": 240
-      }
+      },
+      "respondedAt": 44954
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 45041,
+      "t": 44956,
       "success": true,
       "dataKeys": [
         "lines",
@@ -348,11 +362,401 @@
       ],
       "counts": {
         "lines": 120
-      }
+      },
+      "respondedAt": 44956
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 53396,
+      "t": 53296,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 53296
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 57293,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 57293
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 60960,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 60960
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 61099,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 61099
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 61215,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 61215
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 61343,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 61343
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "t": 75950,
+      "success": true,
+      "dataKeys": [
+        "rows"
+      ],
+      "counts": {
+        "rows": 240
+      },
+      "respondedAt": 75950
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 75951,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      },
+      "respondedAt": 75951
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 81519,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 81519
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 83136,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -379,10 +783,10 @@
       ],
       "counts": {
         "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -399,11 +803,12 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 83136
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 57521,
+      "t": 84747,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -429,11 +834,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -450,11 +855,29 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 84747
+    },
+    {
+      "action": "inventoryScope.registry.get",
+      "t": 91192,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "countries",
+        "marketplace_ids_by_country",
+        "empty",
+        "empty_reason"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "countries": 3
+      },
+      "respondedAt": 91192
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 61223,
+      "t": 91194,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -480,11 +903,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -501,11 +924,12 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 91194
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 61346,
+      "t": 94989,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -531,11 +955,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -552,11 +976,29 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 94989
+    },
+    {
+      "action": "inventoryScope.registry.get",
+      "t": 98488,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "countries",
+        "marketplace_ids_by_country",
+        "empty",
+        "empty_reason"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "countries": 3
+      },
+      "respondedAt": 98488
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 61475,
+      "t": 98490,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -582,11 +1024,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -603,11 +1045,50 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 98490
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "t": 99053,
+      "success": true,
+      "dataKeys": [
+        "rows"
+      ],
+      "counts": {
+        "rows": 240
+      },
+      "respondedAt": 103068
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 99054,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      },
+      "respondedAt": 103069
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 100876,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      },
+      "respondedAt": 100876
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 61613,
+      "t": 100878,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -633,11 +1114,11 @@
         "carrier_rate_cards"
       ],
       "counts": {
-        "marketplaces": 6,
-        "marketplace_skus": 360,
+        "marketplaces": 7,
+        "marketplace_skus": 420,
         "sku_details": 60,
         "warehouses": 4,
-        "amazon_inventory_snapshot": 360,
+        "amazon_inventory_snapshot": 420,
         "amazon_inventory_health_snapshot": 60,
         "amazon_daily_sales_snapshot": 480,
         "amazon_weekly_sales_snapshot": 120,
@@ -654,7 +1135,380 @@
         "shipping_allocation_draft_lines": 0,
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
-      }
+      },
+      "respondedAt": 100878
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 106778,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 106778
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 108714,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      },
+      "respondedAt": 111719
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 110527,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      },
+      "respondedAt": 113535
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 110528,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 110528
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 111407,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      },
+      "respondedAt": 111407
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 117456,
+      "success": false,
+      "dataKeys": [],
+      "counts": {},
+      "respondedAt": 121465
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "t": 119267,
+      "success": true,
+      "dataKeys": [
+        "lines",
+        "dataVersion"
+      ],
+      "counts": {
+        "lines": 120
+      },
+      "respondedAt": 119267
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 119268,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 119268
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 126743,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 129258
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 134218,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 136720
+    },
+    {
+      "action": "inventoryReplenishment.workspace.get",
+      "t": 137586,
+      "success": true,
+      "dataKeys": [
+        "marketplaces",
+        "marketplace_skus",
+        "sku_details",
+        "warehouses",
+        "amazon_inventory_snapshot",
+        "amazon_inventory_health_snapshot",
+        "amazon_daily_sales_snapshot",
+        "amazon_weekly_sales_snapshot",
+        "fc_regular_forecast",
+        "fc_target_rules",
+        "fc_special_events",
+        "overseas_inventory_snapshot",
+        "factory_stock",
+        "shipments",
+        "shipment_lines",
+        "shipping_plans",
+        "shipping_plan_lines",
+        "shipping_allocation_drafts",
+        "shipping_allocation_draft_lines",
+        "carrier_lead_times",
+        "carrier_rate_cards"
+      ],
+      "counts": {
+        "marketplaces": 7,
+        "marketplace_skus": 420,
+        "sku_details": 60,
+        "warehouses": 4,
+        "amazon_inventory_snapshot": 420,
+        "amazon_inventory_health_snapshot": 60,
+        "amazon_daily_sales_snapshot": 480,
+        "amazon_weekly_sales_snapshot": 120,
+        "fc_regular_forecast": 60,
+        "fc_target_rules": 1,
+        "fc_special_events": 0,
+        "overseas_inventory_snapshot": 120,
+        "factory_stock": 60,
+        "shipments": 0,
+        "shipment_lines": 0,
+        "shipping_plans": 0,
+        "shipping_plan_lines": 0,
+        "shipping_allocation_drafts": 0,
+        "shipping_allocation_draft_lines": 0,
+        "carrier_lead_times": 3,
+        "carrier_rate_cards": 3
+      },
+      "respondedAt": 137586
     }
   ],
   "requestMarks": [
@@ -937,14 +1791,394 @@
         "inventoryReplenishmentGap.get": 4,
         "recommendation.workspace.get": 5
       }
+    },
+    {
+      "label": "begin:R1-base-jp-amz",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 10,
+        "inventoryReplenishmentGap.get": 4,
+        "recommendation.workspace.get": 5
+      }
+    },
+    {
+      "label": "end:R1-base-jp-amz",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 10,
+        "inventoryReplenishmentGap.get": 4,
+        "recommendation.workspace.get": 5
+      }
+    },
+    {
+      "label": "begin:R1A0-yahoo-live-then-amazon",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 10,
+        "inventoryReplenishmentGap.get": 4,
+        "recommendation.workspace.get": 5
+      }
+    },
+    {
+      "label": "end:R1A0-yahoo-live-then-amazon",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 10,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "begin:R1A1-retired-id-refused",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 10,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "preclick:R1A1-retired-id-refused",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 11,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "end:R1A1-retired-id-refused",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 11,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "begin:R1A2-removed-id-refused",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 11,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "preclick:R1A2-removed-id-refused",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 12,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "end:R1A2-removed-id-refused",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 12,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "begin:R1A2b-sites-restored",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 12,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "end:R1A2b-sites-restored",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 13,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "begin:R1A3-unverified-illegal-pair",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 13,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "end:R1A3-unverified-illegal-pair",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 13,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "begin:R1A3b-authority-restored",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 1,
+        "inventoryReplenishment.workspace.get": 13,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "end:R1A3b-authority-restored",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 2,
+        "inventoryReplenishment.workspace.get": 14,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "begin:R1A4-unverified-legal-pair",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 2,
+        "inventoryReplenishment.workspace.get": 14,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "end:R1A4-unverified-legal-pair",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 2,
+        "inventoryReplenishment.workspace.get": 15,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "begin:R1A4b-authority-restored",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 2,
+        "inventoryReplenishment.workspace.get": 15,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "end:R1A4b-authority-restored",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 16,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "begin:R1B1-cold-inflight-leave-return",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 16,
+        "inventoryReplenishmentGap.get": 5,
+        "recommendation.workspace.get": 6
+      }
+    },
+    {
+      "label": "end:R1B1-cold-inflight-leave-return",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 17,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 8
+      }
+    },
+    {
+      "label": "begin:R1B1b-search-after-dashes",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 17,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 8
+      }
+    },
+    {
+      "label": "end:R1B1b-search-after-dashes",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 17,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 8
+      }
+    },
+    {
+      "label": "begin:R1B2-warm-cache-zero-reads",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 17,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 8
+      }
+    },
+    {
+      "label": "end:R1B2-warm-cache-zero-reads",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 18,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 8
+      }
+    },
+    {
+      "label": "begin:R1B3-late-success-after-switch",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 18,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 8
+      }
+    },
+    {
+      "label": "end:R1B3-late-success-after-switch",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 19,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 11
+      }
+    },
+    {
+      "label": "begin:R1B4-late-failure-after-recovery",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 19,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 11
+      }
+    },
+    {
+      "label": "end:R1B4-late-failure-after-recovery",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 20,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
+    },
+    {
+      "label": "begin:R1B4b-recovered-before-c",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 20,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
+    },
+    {
+      "label": "end:R1B4b-recovered-before-c",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 20,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
+    },
+    {
+      "label": "begin:R1C1-remount-generation-isolation",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 20,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
+    },
+    {
+      "label": "end:R1C1-remount-generation-isolation",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 21,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
+    },
+    {
+      "label": "begin:R1C1b-remember-again",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 21,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
+    },
+    {
+      "label": "end:R1C1b-remember-again",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 21,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
+    },
+    {
+      "label": "begin:R1C2-late-answer-while-unmounted",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 21,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
+    },
+    {
+      "label": "end:R1C2-late-answer-while-unmounted",
+      "hits": {
+        "getClientCapabilities": 1,
+        "inventoryScope.registry.get": 3,
+        "inventoryReplenishment.workspace.get": 23,
+        "inventoryReplenishmentGap.get": 6,
+        "recommendation.workspace.get": 13
+      }
     }
   ],
   "requestTotals": {
     "getClientCapabilities": 1,
-    "inventoryScope.registry.get": 1,
-    "inventoryReplenishment.workspace.get": 10,
-    "inventoryReplenishmentGap.get": 4,
-    "recommendation.workspace.get": 5
+    "inventoryScope.registry.get": 3,
+    "inventoryReplenishment.workspace.get": 23,
+    "inventoryReplenishmentGap.get": 6,
+    "recommendation.workspace.get": 13
   },
   "requestScopes": [
     {
@@ -996,39 +2230,89 @@
       "action": "recommendation.workspace.get",
       "country": "JP",
       "marketplace": "Amazon"
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "country": "JP",
+      "marketplace": "Yahoo"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "JP",
+      "marketplace": "Yahoo"
+    },
+    {
+      "action": "inventoryReplenishmentGap.get",
+      "country": "US",
+      "marketplace": "Walmart"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Walmart"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "US",
+      "marketplace": "Walmart"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "EU",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "EU",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "JP",
+      "marketplace": "Amazon"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "EU",
+      "marketplace": "Walmart"
+    },
+    {
+      "action": "recommendation.workspace.get",
+      "country": "EU",
+      "marketplace": "Walmart"
     }
   ],
   "result": {
-    "capId": "inplace-1792398972541",
+    "capId": "inplace-1792409794977",
     "steps": [
       {
         "step": "app-ready",
-        "t": 516.1,
+        "t": 493,
         "v": 0
       },
       {
         "step": "filter-bar",
-        "t": 561.6,
-        "v": 44.4
+        "t": 540,
+        "v": 45.9
       },
       {
         "step": "table",
-        "t": 1264,
+        "t": 1234.7,
         "v": 60
       },
       {
         "step": "first-reco-cell",
-        "t": 2174.4,
+        "t": 2145.3,
         "v": "7.0"
       },
       {
         "step": "exec-card",
-        "t": 2224.5,
-        "v": 0.1
+        "t": 2191.1,
+        "v": 0
       },
       {
         "step": "edit-state-captured",
-        "t": 3282.8,
+        "t": 3248.6,
         "v": {
           "activeMark": "INPUT",
           "activeTag": "INPUT",
@@ -1049,7 +2333,7 @@
       },
       {
         "step": "second-arrival",
-        "t": 28301.9,
+        "t": 28289.9,
         "v": {
           "got": {
             "text": "7.0",
@@ -1061,7 +2345,7 @@
       },
       {
         "step": "done",
-        "t": 28553.1,
+        "t": 28540.2,
         "v": {
           "firstReadResolved": true,
           "firstCell": "7.0",
@@ -1082,7 +2366,7 @@
       },
       {
         "step": "rv-eu-searched",
-        "t": 31512.6,
+        "t": 31486.3,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1095,7 +2379,7 @@
       },
       {
         "step": "rv-A1-jp-country-only-then-leave",
-        "t": 33920.9,
+        "t": 33859.8,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1108,7 +2392,7 @@
       },
       {
         "step": "rv-A2-search-without-touching-country",
-        "t": 35744.2,
+        "t": 35684.4,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1121,7 +2405,7 @@
       },
       {
         "step": "rv-A3-marketplace-only-then-search",
-        "t": 38037,
+        "t": 37985.8,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-WMT",
@@ -1134,7 +2418,7 @@
       },
       {
         "step": "rv-A3b-back-to-eu-amazon",
-        "t": 40993.6,
+        "t": 40952.1,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1147,7 +2431,7 @@
       },
       {
         "step": "rv-A4-full-jp-never-searched",
-        "t": 43930,
+        "t": 43886.5,
         "v": {
           "country": "EU",
           "mkt": "MP-FIXTURE-EU-AMZ",
@@ -1160,7 +2444,7 @@
       },
       {
         "step": "rv-A5-jp-explicit-search",
-        "t": 47777.5,
+        "t": 47734.8,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1173,7 +2457,7 @@
       },
       {
         "step": "rv-B-illegal-pair-refused",
-        "t": 48983.7,
+        "t": 48940.5,
         "v": {
           "country": "EU",
           "mkt": "",
@@ -1186,7 +2470,7 @@
       },
       {
         "step": "rv-B2-recover-to-jp",
-        "t": 52226.2,
+        "t": 52180.6,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1199,7 +2483,7 @@
       },
       {
         "step": "rv-C1-leave-return",
-        "t": 54236.2,
+        "t": 54164.7,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1212,7 +2496,7 @@
       },
       {
         "step": "rv-C2-repeated-search",
-        "t": 56351.6,
+        "t": 56224.3,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1225,7 +2509,7 @@
       },
       {
         "step": "rv-C3-leave-while-in-flight",
-        "t": 60559.6,
+        "t": 60377.1,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1238,7 +2522,7 @@
       },
       {
         "step": "rv-C4-rapid-switching",
-        "t": 62885.1,
+        "t": 62698.8,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1251,7 +2535,7 @@
       },
       {
         "step": "rv-C5-late-answer-after-switch",
-        "t": 71824.9,
+        "t": 71627.2,
         "v": {
           "country": "JP",
           "mkt": "MP-FIXTURE-JP-AMZ",
@@ -1263,10 +2547,244 @@
         }
       },
       {
-        "step": "revisit-done",
-        "t": 71824.9,
+        "step": "rv-R1-base-jp-amz",
+        "t": 74872.2,
         "v": {
-          "phases": 14
+          "country": "JP",
+          "mkt": "MP-FIXTURE-JP-AMZ",
+          "applied": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "avg": "23.0",
+          "gapNet": 4,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1A0-yahoo-live-then-amazon",
+        "t": 80982.8,
+        "v": {
+          "country": "JP",
+          "mkt": "MP-FIXTURE-JP-AMZ",
+          "applied": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "avg": "23.0",
+          "gapNet": 5,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1A1-retired-id-refused",
+        "t": 82599.8,
+        "v": {
+          "country": "JP",
+          "mkt": "",
+          "applied": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "avg": "23.0",
+          "gapNet": 5,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1A2-removed-id-refused",
+        "t": 84210.4,
+        "v": {
+          "country": "JP",
+          "mkt": "",
+          "applied": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "avg": "23.0",
+          "gapNet": 5,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1A2b-sites-restored",
+        "t": 87448.6,
+        "v": {
+          "country": "JP",
+          "mkt": "MP-FIXTURE-JP-AMZ",
+          "applied": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "avg": "23.0",
+          "gapNet": 5,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1A3-unverified-illegal-pair",
+        "t": 90656.6,
+        "v": {
+          "country": "US",
+          "mkt": "",
+          "applied": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "avg": "23.0",
+          "gapNet": 5,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1A3b-authority-restored",
+        "t": 93932.3,
+        "v": {
+          "country": "JP",
+          "mkt": "MP-FIXTURE-JP-AMZ",
+          "applied": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "avg": "23.0",
+          "gapNet": 5,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1A4-unverified-legal-pair",
+        "t": 97953.5,
+        "v": {
+          "country": "EU",
+          "mkt": "MP-FIXTURE-EU-WMT",
+          "applied": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "avg": "17.0",
+          "gapNet": 5,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1A4b-authority-restored",
+        "t": 97964.2,
+        "v": {
+          "country": "EU",
+          "mkt": "MP-FIXTURE-EU-WMT",
+          "applied": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "avg": "17.0",
+          "gapNet": 5,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1B1-cold-inflight-leave-return",
+        "t": 103549,
+        "v": {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "applied": "us|MP-FIXTURE-US-WMT",
+          "status": "READY",
+          "avg": "31.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1B1b-search-after-dashes",
+        "t": 105769,
+        "v": {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "applied": "us|MP-FIXTURE-US-WMT",
+          "status": "READY",
+          "avg": "31.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1B2-warm-cache-zero-reads",
+        "t": 107646.7,
+        "v": {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "applied": "us|MP-FIXTURE-US-WMT",
+          "status": "READY",
+          "avg": "31.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1B3-late-success-after-switch",
+        "t": 116386.2,
+        "v": {
+          "country": "JP",
+          "mkt": "MP-FIXTURE-JP-AMZ",
+          "applied": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "avg": "23.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1B4-late-failure-after-recovery",
+        "t": 123747.3,
+        "v": {
+          "country": "EU",
+          "mkt": "MP-FIXTURE-EU-WMT",
+          "applied": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "avg": "17.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1B4b-recovered-before-c",
+        "t": 125981,
+        "v": {
+          "country": "EU",
+          "mkt": "MP-FIXTURE-EU-WMT",
+          "applied": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "avg": "17.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1C1-remount-generation-isolation",
+        "t": 130218.2,
+        "v": {
+          "country": "EU",
+          "mkt": "MP-FIXTURE-EU-WMT",
+          "applied": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "avg": "17.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1C1b-remember-again",
+        "t": 133465.4,
+        "v": {
+          "country": "EU",
+          "mkt": "MP-FIXTURE-EU-WMT",
+          "applied": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "avg": "17.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "rv-R1C2-late-answer-while-unmounted",
+        "t": 138662.7,
+        "v": {
+          "country": "EU",
+          "mkt": "MP-FIXTURE-EU-WMT",
+          "applied": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "avg": "17.0",
+          "gapNet": 6,
+          "rows": 60
+        }
+      },
+      {
+        "step": "revisit-done",
+        "t": 138662.7,
+        "v": {
+          "phases": 32
         }
       }
     ],
@@ -1329,31 +2847,31 @@
     "obs": {
       "gates": [
         {
-          "t": 1257.9,
+          "t": 1229,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 1257.9,
+          "t": 1229,
           "gate": "execution",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 2175.6,
+          "t": 2146.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2175.6,
+          "t": 2146.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2194.7,
+          "t": 2165.1,
           "gate": "recommendation",
           "call": "begin",
           "gen": 3,
@@ -1365,7 +2883,7 @@
           }
         },
         {
-          "t": 2194.8,
+          "t": 2165.1,
           "gate": "execution",
           "call": "begin",
           "gen": 3,
@@ -1377,7 +2895,7 @@
           }
         },
         {
-          "t": 2195.3,
+          "t": 2165.5,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1394,7 +2912,7 @@
           }
         },
         {
-          "t": 2210.4,
+          "t": 2179,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -1411,7 +2929,7 @@
           }
         },
         {
-          "t": 2224.3,
+          "t": 2191.1,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -1428,14 +2946,14 @@
           }
         },
         {
-          "t": 2224.9,
+          "t": 2191.5,
           "gate": "recommendation",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 2309.3,
+          "t": 2274.4,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -1452,7 +2970,7 @@
           }
         },
         {
-          "t": 2320.8,
+          "t": 2287.6,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -1469,14 +2987,14 @@
           }
         },
         {
-          "t": 2320.9,
+          "t": 2287.7,
           "gate": "execution",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 3299.7,
+          "t": 3261.2,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1493,7 +3011,7 @@
           }
         },
         {
-          "t": 3333.1,
+          "t": 3282.2,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1510,441 +3028,837 @@
           }
         },
         {
-          "t": 29095,
+          "t": 29075.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 4
         },
         {
-          "t": 29095,
+          "t": 29075.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 4
         },
         {
-          "t": 32453.1,
+          "t": 32423.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 5
         },
         {
-          "t": 32453.1,
+          "t": 32423.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 5
         },
         {
-          "t": 32499,
+          "t": 32446.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 6
         },
         {
-          "t": 32499.1,
+          "t": 32446.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 6
         },
         {
-          "t": 32561.4,
+          "t": 32479.2,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 7
         },
         {
-          "t": 32561.4,
+          "t": 32479.2,
           "gate": "execution",
           "call": "abandon",
           "gen": 7
         },
         {
-          "t": 33936.9,
+          "t": 33876.2,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 8
         },
         {
-          "t": 33936.9,
+          "t": 33876.2,
           "gate": "execution",
           "call": "abandon",
           "gen": 8
         },
         {
-          "t": 36228.7,
+          "t": 36165.3,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 9
         },
         {
-          "t": 36228.7,
+          "t": 36165.3,
           "gate": "execution",
           "call": "abandon",
           "gen": 9
         },
         {
-          "t": 38567.6,
+          "t": 38520.6,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 10
         },
         {
-          "t": 38567.6,
+          "t": 38520.6,
           "gate": "execution",
           "call": "abandon",
           "gen": 10
         },
         {
-          "t": 42495.8,
+          "t": 42454.3,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 11
         },
         {
-          "t": 42495.8,
+          "t": 42454.3,
           "gate": "execution",
           "call": "abandon",
           "gen": 11
         },
         {
-          "t": 42518.4,
+          "t": 42476,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 12
         },
         {
-          "t": 42518.4,
+          "t": 42476,
           "gate": "execution",
           "call": "abandon",
           "gen": 12
         },
         {
-          "t": 42549.8,
+          "t": 42505,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 13
         },
         {
-          "t": 42549.8,
+          "t": 42505,
           "gate": "execution",
           "call": "abandon",
           "gen": 13
         },
         {
-          "t": 44452.9,
+          "t": 44417.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 14
         },
         {
-          "t": 44452.9,
+          "t": 44417.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 14
         },
         {
-          "t": 49513.4,
+          "t": 49465.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 15
         },
         {
-          "t": 49513.4,
+          "t": 49465.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 15
         },
         {
-          "t": 52761.8,
+          "t": 52732.6,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 16
         },
         {
-          "t": 52761.8,
+          "t": 52732.6,
           "gate": "execution",
           "call": "abandon",
           "gen": 16
         },
         {
-          "t": 52801.1,
+          "t": 52753.5,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 17
         },
         {
-          "t": 52801.1,
+          "t": 52753.5,
           "gate": "execution",
           "call": "abandon",
           "gen": 17
         },
         {
-          "t": 52845.8,
+          "t": 52782.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 18
         },
         {
-          "t": 52845.8,
+          "t": 52782.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 18
         },
         {
-          "t": 54260.4,
+          "t": 54178.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 19
         },
         {
-          "t": 54260.4,
+          "t": 54178.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 19
         },
         {
-          "t": 54302.2,
+          "t": 54199,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 20
         },
         {
-          "t": 54302.2,
+          "t": 54199,
           "gate": "execution",
           "call": "abandon",
           "gen": 20
         },
         {
-          "t": 54341.7,
+          "t": 54218.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 21
         },
         {
-          "t": 54341.7,
+          "t": 54218.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 21
         },
         {
-          "t": 56382.7,
+          "t": 56239.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 22
         },
         {
-          "t": 56382.7,
+          "t": 56239.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 22
         },
         {
-          "t": 56885.6,
+          "t": 56729.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 23
         },
         {
-          "t": 56885.6,
+          "t": 56729.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 23
         },
         {
-          "t": 56922,
+          "t": 56748.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 24
         },
         {
-          "t": 56922,
+          "t": 56748.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 24
         },
         {
-          "t": 56981.4,
+          "t": 56778.6,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 25
         },
         {
-          "t": 56981.4,
+          "t": 56778.6,
           "gate": "execution",
           "call": "abandon",
           "gen": 25
         },
         {
-          "t": 60596.4,
+          "t": 60396.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 26
         },
         {
-          "t": 60596.4,
+          "t": 60396.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 26
         },
         {
-          "t": 60626.7,
+          "t": 60416.5,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 27
         },
         {
-          "t": 60626.7,
+          "t": 60416.5,
           "gate": "execution",
           "call": "abandon",
           "gen": 27
         },
         {
-          "t": 60678.5,
+          "t": 60445,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 28
         },
         {
-          "t": 60678.5,
+          "t": 60445,
           "gate": "execution",
           "call": "abandon",
           "gen": 28
         },
         {
-          "t": 60715.2,
+          "t": 60534.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 29
         },
         {
-          "t": 60715.2,
+          "t": 60534.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 29
         },
         {
-          "t": 60748.7,
+          "t": 60555.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 30
         },
         {
-          "t": 60748.7,
+          "t": 60555.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 30
         },
         {
-          "t": 60802.8,
+          "t": 60583.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 31
         },
         {
-          "t": 60802.8,
+          "t": 60583.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 31
         },
         {
-          "t": 60857.9,
+          "t": 60652.3,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 32
         },
         {
-          "t": 60857.9,
+          "t": 60652.3,
           "gate": "execution",
           "call": "abandon",
           "gen": 32
         },
         {
-          "t": 60886.6,
+          "t": 60672.5,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 33
         },
         {
-          "t": 60886.6,
+          "t": 60672.5,
           "gate": "execution",
           "call": "abandon",
           "gen": 33
         },
         {
-          "t": 60920.1,
+          "t": 60700.3,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 34
         },
         {
-          "t": 60920.1,
+          "t": 60700.3,
           "gate": "execution",
           "call": "abandon",
           "gen": 34
         },
         {
-          "t": 60980.7,
+          "t": 60780.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 35
         },
         {
-          "t": 60980.7,
+          "t": 60780.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 35
         },
         {
-          "t": 61017,
+          "t": 60800.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 36
         },
         {
-          "t": 61017,
+          "t": 60800.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 36
         },
         {
-          "t": 61055.5,
+          "t": 60827.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 37
         },
         {
-          "t": 61055.5,
+          "t": 60827.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 37
         },
         {
-          "t": 63418,
+          "t": 63241.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 38
         },
         {
-          "t": 63418,
+          "t": 63241.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 38
         },
         {
-          "t": 65472.1,
+          "t": 65297.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 39
         },
         {
-          "t": 65472.1,
+          "t": 65297.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 39
+        },
+        {
+          "t": 72161.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 40
+        },
+        {
+          "t": 72161.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 40
+        },
+        {
+          "t": 75413.4,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 41
+        },
+        {
+          "t": 75413.4,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 41
+        },
+        {
+          "t": 78458.6,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 42
+        },
+        {
+          "t": 78458.6,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 42
+        },
+        {
+          "t": 84737.4,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 43
+        },
+        {
+          "t": 84737.4,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 43
+        },
+        {
+          "t": 91218.1,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 44
+        },
+        {
+          "t": 91218.1,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 44
+        },
+        {
+          "t": 94478.7,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 45
+        },
+        {
+          "t": 94478.7,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 45
+        },
+        {
+          "t": 98515.8,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 46
+        },
+        {
+          "t": 98515.9,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 46
+        },
+        {
+          "t": 100305.1,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 47
+        },
+        {
+          "t": 100305.1,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 47
+        },
+        {
+          "t": 100329.1,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 48
+        },
+        {
+          "t": 100329.1,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 48
+        },
+        {
+          "t": 100378.6,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 49
+        },
+        {
+          "t": 100378.6,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 49
+        },
+        {
+          "t": 103563.6,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 50
+        },
+        {
+          "t": 103563.6,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 50
+        },
+        {
+          "t": 106209,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 51
+        },
+        {
+          "t": 106209,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 51
+        },
+        {
+          "t": 106231.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 52
+        },
+        {
+          "t": 106231.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 52
+        },
+        {
+          "t": 106265.7,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 53
+        },
+        {
+          "t": 106265.7,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 53
+        },
+        {
+          "t": 108176.4,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 54
+        },
+        {
+          "t": 108176.4,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 54
+        },
+        {
+          "t": 109957.1,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 55
+        },
+        {
+          "t": 109957.1,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 55
+        },
+        {
+          "t": 109979,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 56
+        },
+        {
+          "t": 109979,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 56
+        },
+        {
+          "t": 110014.7,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 57
+        },
+        {
+          "t": 110014.8,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 57
+        },
+        {
+          "t": 110869.7,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 58
+        },
+        {
+          "t": 110869.7,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 58
+        },
+        {
+          "t": 116918.9,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 59
+        },
+        {
+          "t": 116918.9,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 59
+        },
+        {
+          "t": 118704.1,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 60
+        },
+        {
+          "t": 118704.1,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 60
+        },
+        {
+          "t": 118724.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 61
+        },
+        {
+          "t": 118724.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 61
+        },
+        {
+          "t": 118769.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 62
+        },
+        {
+          "t": 118769.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 62
+        },
+        {
+          "t": 123769.8,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 63
+        },
+        {
+          "t": 123769.8,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 63
+        },
+        {
+          "t": 126166,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 64
+        },
+        {
+          "t": 126166,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 64
+        },
+        {
+          "t": 126192.3,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 65
+        },
+        {
+          "t": 126192.3,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 65
+        },
+        {
+          "t": 126902.7,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 66
+        },
+        {
+          "t": 126902.7,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 66
+        },
+        {
+          "t": 130744.8,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 67
+        },
+        {
+          "t": 130744.8,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 67
+        },
+        {
+          "t": 133650.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 68
+        },
+        {
+          "t": 133650.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 68
+        },
+        {
+          "t": 133670.4,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 69
+        },
+        {
+          "t": 133670.4,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 69
+        },
+        {
+          "t": 137022.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 70
+        },
+        {
+          "t": 137022.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 70
+        },
+        {
+          "t": 137042.5,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 71
+        },
+        {
+          "t": 137042.5,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 71
+        },
+        {
+          "t": 137078,
+          "gate": "recommendation",
+          "call": "abandon",
+          "gen": 72
+        },
+        {
+          "t": 137078,
+          "gate": "execution",
+          "call": "abandon",
+          "gen": 72
         }
       ],
       "ensureLoaded": [
         {
-          "t": 2195.1,
+          "t": 2165.2,
           "scope": {
             "company": "",
             "country": "US",
@@ -1956,9 +3870,9 @@
       ],
       "errors": [],
       "raf": {
-        "fired": 4166,
-        "firstAt": 1405,
-        "lastAt": 71822.2
+        "fired": 8196,
+        "firstAt": 1330.5,
+        "lastAt": 138662.4
       }
     },
     "firstCellInfo": {
@@ -2007,8 +3921,13 @@
             "revalidated": false,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": null,
+            "mount_generation": 1,
+            "record_mount_generation": 1,
+            "bootstrap_attempt": 1,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 30275,
+            "result_age_ms": 30277,
             "result_ttl_ms": 600000,
             "registry_requests": 1,
             "workspace_requests": 0,
@@ -2045,6 +3964,9 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000005",
           "error": null,
           "extra": {
             "note": "baseline: EU/Amazon"
@@ -2078,8 +4000,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 3,
+            "record_mount_generation": 3,
+            "bootstrap_attempt": 2,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 1385,
+            "result_age_ms": 1394,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2116,6 +4043,9 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000005",
           "error": null,
           "extra": {
             "mid": {
@@ -2124,7 +4054,8 @@
               "mktOptions": [
                 "",
                 "MP-FIXTURE-JP-AMZ",
-                "MP-FIXTURE-JP-RAK"
+                "MP-FIXTURE-JP-RAK",
+                "MP-FIXTURE-JP-YAH"
               ],
               "applied": "eu|MP-FIXTURE-EU-AMZ"
             },
@@ -2165,8 +4096,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 3,
+            "record_mount_generation": 3,
+            "bootstrap_attempt": 2,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 3208,
+            "result_age_ms": 3218,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2203,6 +4139,9 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000005",
           "error": null,
           "extra": {
             "note": "search pressed with the restored selectors untouched"
@@ -2236,8 +4175,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 3,
+            "record_mount_generation": 3,
+            "bootstrap_attempt": 2,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 5501,
+            "result_age_ms": 5520,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2274,11 +4218,14 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000007",
           "error": null,
           "extra": {
             "held": {
               "ok": true,
-              "waitedMs": 251.3
+              "waitedMs": 250.7
             },
             "expect": {
               "avg": "17.0",
@@ -2314,8 +4261,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 3,
+            "record_mount_generation": 3,
+            "bootstrap_attempt": 2,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 8458,
+            "result_age_ms": 8486,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2352,6 +4304,9 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000005",
           "error": null,
           "extra": {
             "note": "restored baseline"
@@ -2385,8 +4340,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 5,
+            "record_mount_generation": 5,
+            "bootstrap_attempt": 3,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 1393,
+            "result_age_ms": 1394,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2423,11 +4383,14 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000005",
           "error": null,
           "extra": {
             "held": {
               "ok": true,
-              "waitedMs": 251.7
+              "waitedMs": 257.5
             },
             "mid": {
               "country": "JP",
@@ -2456,7 +4419,8 @@
           "mktOptions": [
             "",
             "MP-FIXTURE-JP-AMZ",
-            "MP-FIXTURE-JP-RAK"
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
           ],
           "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
           "status": "READY",
@@ -2471,8 +4435,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 5,
+            "record_mount_generation": 5,
+            "bootstrap_attempt": 3,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 5240,
+            "result_age_ms": 5243,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2509,6 +4478,9 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
           "error": null,
           "extra": {
             "expect": {
@@ -2545,14 +4517,22 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 5,
+            "record_mount_generation": 5,
+            "bootstrap_attempt": 3,
+            "stray_callbacks": 0,
             "last_refusal": {
               "code": "MARKETPLACE_COUNTRY_MISMATCH",
-              "at": 1792399020899,
+              "at": 1792409843246,
+              "pending": false,
               "selectedCountry": "EU",
               "marketplaceId": "MP-FIXTURE-JP-AMZ",
-              "marketplaceCountry": "JP"
+              "marketplaceCountry": "JP",
+              "marketplaceStatus": null,
+              "authoritySource": "WORKSPACE"
             },
-            "result_age_ms": 6447,
+            "result_age_ms": 6448,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2589,6 +4569,9 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
           "error": null,
           "extra": {
             "beforeApplied": "jp|MP-FIXTURE-JP-AMZ",
@@ -2598,10 +4581,13 @@
             },
             "refusal": {
               "code": "MARKETPLACE_COUNTRY_MISMATCH",
-              "at": 1792399020899,
+              "at": 1792409843246,
+              "pending": false,
               "selectedCountry": "EU",
               "marketplaceId": "MP-FIXTURE-JP-AMZ",
-              "marketplaceCountry": "JP"
+              "marketplaceCountry": "JP",
+              "marketplaceStatus": null,
+              "authoritySource": "WORKSPACE"
             }
           }
         },
@@ -2618,7 +4604,8 @@
           "mktOptions": [
             "",
             "MP-FIXTURE-JP-AMZ",
-            "MP-FIXTURE-JP-RAK"
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
           ],
           "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
           "status": "READY",
@@ -2633,8 +4620,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 5,
+            "record_mount_generation": 5,
+            "bootstrap_attempt": 3,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 9689,
+            "result_age_ms": 9688,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2671,6 +4663,9 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
           "error": null,
           "extra": {
             "note": "recovered"
@@ -2689,7 +4684,8 @@
           "mktOptions": [
             "",
             "MP-FIXTURE-JP-AMZ",
-            "MP-FIXTURE-JP-RAK"
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
           ],
           "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
           "status": "READY",
@@ -2704,8 +4700,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 7,
+            "record_mount_generation": 7,
+            "bootstrap_attempt": 4,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 1403,
+            "result_age_ms": 1394,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2742,6 +4743,9 @@
             "reason": null
           },
           "execPlanRaw": 63,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
           "error": null,
           "extra": {
             "plantedBefore": true,
@@ -2767,7 +4771,8 @@
           "mktOptions": [
             "",
             "MP-FIXTURE-JP-AMZ",
-            "MP-FIXTURE-JP-RAK"
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
           ],
           "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
           "status": "READY",
@@ -2782,8 +4787,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 7,
+            "record_mount_generation": 7,
+            "bootstrap_attempt": 4,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 3519,
+            "result_age_ms": 3453,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2820,6 +4830,9 @@
             "reason": null
           },
           "execPlanRaw": 63,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
           "error": null,
           "extra": {
             "note": "three clicks, single-flight"
@@ -2838,7 +4851,8 @@
           "mktOptions": [
             "",
             "MP-FIXTURE-JP-AMZ",
-            "MP-FIXTURE-JP-RAK"
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
           ],
           "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
           "status": "READY",
@@ -2853,8 +4867,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 9,
+            "record_mount_generation": 9,
+            "bootstrap_attempt": 5,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 3600,
+            "result_age_ms": 3610,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2891,6 +4910,9 @@
             "reason": null
           },
           "execPlanRaw": 63,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
           "error": null,
           "extra": {
             "nav": {
@@ -2915,7 +4937,8 @@
           "mktOptions": [
             "",
             "MP-FIXTURE-JP-AMZ",
-            "MP-FIXTURE-JP-RAK"
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
           ],
           "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
           "status": "READY",
@@ -2930,8 +4953,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 1841,
+            "result_age_ms": 1882,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -2968,6 +4996,9 @@
             "reason": null
           },
           "execPlanRaw": 63,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
           "error": null,
           "extra": {
             "seq": [
@@ -2992,7 +5023,8 @@
           "mktOptions": [
             "",
             "MP-FIXTURE-JP-AMZ",
-            "MP-FIXTURE-JP-RAK"
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
           ],
           "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
           "status": "READY",
@@ -3007,8 +5039,13 @@
             "revalidated": true,
             "revalidate_failed": false,
             "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
             "last_refusal": null,
-            "result_age_ms": 10781,
+            "result_age_ms": 10810,
             "result_ttl_ms": 600000,
             "registry_requests": 0,
             "workspace_requests": 0,
@@ -3045,10 +5082,1752 @@
             "reason": null
           },
           "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
           "error": null,
           "extra": {
             "during": {
               "applied": "jp|MP-FIXTURE-JP-AMZ"
+            }
+          }
+        },
+        {
+          "label": "R1-base-jp-amz",
+          "country": "JP",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-JP-AMZ",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-JP-AMZ",
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
+          ],
+          "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 14055,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 1,
+            "remembered_scope": {
+              "country": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-AMZ"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "23.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "300",
+            "cls": "scroll-cell replen-dos-cell ir-dos--khaki",
+            "title": ""
+          },
+          "suggested": {
+            "text": "2381",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 4,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
+          "error": null,
+          "extra": {
+            "note": "baseline for the R1 scenarios: JP/Amazon, avg 23.0"
+          }
+        },
+        {
+          "label": "R1A0-yahoo-live-then-amazon",
+          "country": "JP",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-JP-AMZ",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-JP-AMZ",
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
+          ],
+          "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 20166,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 1,
+            "remembered_scope": {
+              "country": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-AMZ"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "23.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "300",
+            "cls": "scroll-cell replen-dos-cell ir-dos--khaki",
+            "title": ""
+          },
+          "suggested": {
+            "text": "2381",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 5,
+          "gapOutcome": "REUSE",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
+          "error": null,
+          "extra": {
+            "yahoo": {
+              "avg": {
+                "text": "37.0",
+                "cls": "scroll-cell replen-avg-cell",
+                "title": ""
+              },
+              "applied": "jp|MP-FIXTURE-JP-YAH"
+            },
+            "note": "JP/Yahoo is a complete site: avg 37.0; applied is now JP/Amazon"
+          }
+        },
+        {
+          "label": "R1A1-retired-id-refused",
+          "country": "JP",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-JP-AMZ",
+            "MP-FIXTURE-JP-RAK"
+          ],
+          "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": {
+              "code": "MARKETPLACE_INACTIVE",
+              "at": 1792409876502,
+              "pending": false,
+              "selectedCountry": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-YAH",
+              "marketplaceCountry": "JP",
+              "marketplaceStatus": "inactive",
+              "authoritySource": "WORKSPACE"
+            },
+            "result_age_ms": 1610,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 1,
+            "remembered_scope": {
+              "country": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-AMZ"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "23.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "300",
+            "cls": "scroll-cell replen-dos-cell ir-dos--khaki",
+            "title": ""
+          },
+          "suggested": {
+            "text": "2381",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 5,
+          "gapOutcome": "REUSE",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
+          "error": null,
+          "extra": {
+            "reRead": {
+              "activeIds": [
+                "MP-FIXTURE-US-AMZ",
+                "MP-FIXTURE-US-WMT",
+                "MP-FIXTURE-EU-AMZ",
+                "MP-FIXTURE-EU-WMT",
+                "MP-FIXTURE-JP-AMZ",
+                "MP-FIXTURE-JP-RAK"
+              ]
+            },
+            "held": {
+              "country": "JP",
+              "mkt": "MP-FIXTURE-JP-YAH",
+              "mktOptions": [
+                "",
+                "MP-FIXTURE-JP-AMZ",
+                "MP-FIXTURE-JP-RAK",
+                "MP-FIXTURE-JP-YAH"
+              ]
+            },
+            "beforeApplied": "jp|MP-FIXTURE-JP-AMZ",
+            "refusal": {
+              "code": "MARKETPLACE_INACTIVE",
+              "at": 1792409876502,
+              "pending": false,
+              "selectedCountry": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-YAH",
+              "marketplaceCountry": "JP",
+              "marketplaceStatus": "inactive",
+              "authoritySource": "WORKSPACE"
+            },
+            "afterApplied": "jp|MP-FIXTURE-JP-AMZ",
+            "afterAvg": {
+              "text": "23.0",
+              "cls": "scroll-cell replen-avg-cell",
+              "title": ""
+            }
+          }
+        },
+        {
+          "label": "R1A2-removed-id-refused",
+          "country": "JP",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-JP-AMZ"
+          ],
+          "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": {
+              "code": "MARKETPLACE_NOT_IN_REGISTRY",
+              "at": 1792409878118,
+              "pending": false,
+              "selectedCountry": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-RAK",
+              "marketplaceCountry": null,
+              "marketplaceStatus": null,
+              "authoritySource": "WORKSPACE"
+            },
+            "result_age_ms": 1603,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 1,
+            "remembered_scope": {
+              "country": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-AMZ"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "23.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "300",
+            "cls": "scroll-cell replen-dos-cell ir-dos--khaki",
+            "title": ""
+          },
+          "suggested": {
+            "text": "2381",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 5,
+          "gapOutcome": "REUSE",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
+          "error": null,
+          "extra": {
+            "reRead": {
+              "activeIds": [
+                "MP-FIXTURE-US-AMZ",
+                "MP-FIXTURE-US-WMT",
+                "MP-FIXTURE-EU-AMZ",
+                "MP-FIXTURE-EU-WMT",
+                "MP-FIXTURE-JP-AMZ"
+              ]
+            },
+            "held": {
+              "country": "JP",
+              "mkt": "MP-FIXTURE-JP-RAK",
+              "mktOptions": [
+                "",
+                "MP-FIXTURE-JP-AMZ",
+                "MP-FIXTURE-JP-RAK"
+              ]
+            },
+            "beforeApplied": "jp|MP-FIXTURE-JP-AMZ",
+            "refusal": {
+              "code": "MARKETPLACE_NOT_IN_REGISTRY",
+              "at": 1792409878118,
+              "pending": false,
+              "selectedCountry": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-RAK",
+              "marketplaceCountry": null,
+              "marketplaceStatus": null,
+              "authoritySource": "WORKSPACE"
+            },
+            "afterApplied": "jp|MP-FIXTURE-JP-AMZ",
+            "afterAvg": {
+              "text": "23.0",
+              "cls": "scroll-cell replen-avg-cell",
+              "title": ""
+            }
+          }
+        },
+        {
+          "label": "R1A2b-sites-restored",
+          "country": "JP",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-JP-AMZ",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-JP-AMZ",
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
+          ],
+          "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 3232,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 1,
+            "remembered_scope": {
+              "country": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-AMZ"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "23.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "300",
+            "cls": "scroll-cell replen-dos-cell ir-dos--khaki",
+            "title": ""
+          },
+          "suggested": {
+            "text": "2381",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 5,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
+          "error": null,
+          "extra": {
+            "note": "baseline restored: JP/Amazon, avg 23.0"
+          }
+        },
+        {
+          "label": "R1A3-unverified-illegal-pair",
+          "country": "US",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-US-AMZ",
+            "MP-FIXTURE-US-WMT"
+          ],
+          "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": {
+              "code": "MARKETPLACE_COUNTRY_MISMATCH",
+              "at": 1792409882960,
+              "pending": false,
+              "selectedCountry": "US",
+              "marketplaceId": "MP-FIXTURE-JP-RAK",
+              "marketplaceCountry": "JP",
+              "marketplaceStatus": null,
+              "authoritySource": "REGISTRY_OR_LEGACY"
+            },
+            "result_age_ms": 6440,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 1,
+            "remembered_scope": {
+              "country": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-AMZ"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "23.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "300",
+            "cls": "scroll-cell replen-dos-cell ir-dos--khaki",
+            "title": ""
+          },
+          "suggested": {
+            "text": "2381",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 5,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
+          "error": null,
+          "extra": {
+            "beforeApplied": "jp|MP-FIXTURE-JP-AMZ",
+            "dropped": {
+              "before": {
+                "hadModel": true,
+                "registryStatus": "READY"
+              },
+              "activeListLength": 0
+            },
+            "pair": {
+              "country": "US",
+              "mkt": "MP-FIXTURE-JP-RAK",
+              "mktOptions": [
+                "",
+                "MP-FIXTURE-JP-AMZ",
+                "MP-FIXTURE-JP-RAK",
+                "MP-FIXTURE-JP-YAH"
+              ]
+            },
+            "refusal": {
+              "code": "MARKETPLACE_COUNTRY_MISMATCH",
+              "at": 1792409882960,
+              "pending": false,
+              "selectedCountry": "US",
+              "marketplaceId": "MP-FIXTURE-JP-RAK",
+              "marketplaceCountry": "JP",
+              "marketplaceStatus": null,
+              "authoritySource": "REGISTRY_OR_LEGACY"
+            },
+            "afterApplied": "jp|MP-FIXTURE-JP-AMZ"
+          }
+        },
+        {
+          "label": "R1A3b-authority-restored",
+          "country": "JP",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-JP-AMZ",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-JP-AMZ",
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
+          ],
+          "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 3245,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 2,
+            "remembered_scope": {
+              "country": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-AMZ"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "23.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "300",
+            "cls": "scroll-cell replen-dos-cell ir-dos--khaki",
+            "title": ""
+          },
+          "suggested": {
+            "text": "2381",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 5,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000009",
+          "error": null,
+          "extra": {
+            "activeListLength": 7
+          }
+        },
+        {
+          "label": "R1A4-unverified-legal-pair",
+          "country": "EU",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-EU-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-EU-AMZ",
+            "MP-FIXTURE-EU-WMT"
+          ],
+          "appliedScopeKey": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 3489,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 2,
+            "remembered_scope": {
+              "country": "EU",
+              "marketplaceId": "MP-FIXTURE-EU-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "17.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "50",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "1781",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 5,
+          "gapOutcome": "REUSE",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000007",
+          "error": null,
+          "extra": {
+            "beforeApplied": "jp|MP-FIXTURE-JP-AMZ",
+            "dropped": {
+              "before": {
+                "hadModel": true,
+                "registryStatus": "READY"
+              },
+              "activeListLength": 0
+            },
+            "pair": {
+              "country": "EU",
+              "mkt": "MP-FIXTURE-EU-WMT"
+            },
+            "refusal": null,
+            "afterApplied": "eu|MP-FIXTURE-EU-WMT"
+          }
+        },
+        {
+          "label": "R1A4b-authority-restored",
+          "country": "EU",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-EU-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-EU-AMZ",
+            "MP-FIXTURE-EU-WMT"
+          ],
+          "appliedScopeKey": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (0s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 17,
+            "record_mount_generation": 17,
+            "bootstrap_attempt": 9,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 2,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "EU",
+              "marketplaceId": "MP-FIXTURE-EU-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "17.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "50",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "1781",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 5,
+          "gapOutcome": "REUSE",
+          "recoCache": {
+            "outcome": "HIT",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000007",
+          "error": null,
+          "extra": {
+            "activeListLength": 7
+          }
+        },
+        {
+          "label": "R1B1-cold-inflight-leave-return",
+          "country": "US",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-US-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-US-AMZ",
+            "MP-FIXTURE-US-WMT"
+          ],
+          "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (2s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "REREAD_ISSUED",
+            "mount_generation": 19,
+            "record_mount_generation": 19,
+            "bootstrap_attempt": 10,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 3184,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "US",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "31.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "100",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "581",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "READ",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000024",
+          "error": null,
+          "extra": {
+            "mid": {
+              "recoStatus": {
+                "status": "LOADING",
+                "loadedOk": false,
+                "requestId": null,
+                "contextKey": "{\"company\":\"FixtureCo\",\"country\":\"US\",\"marketplace\":\"Walmart\"}",
+                "errors": []
+              },
+              "avg": {
+                "text": "…",
+                "cls": "scroll-cell replen-avg-cell",
+                "title": "The sales basis for this site is still being read."
+              },
+              "dos": {
+                "text": "…",
+                "cls": "scroll-cell replen-dos-cell",
+                "title": ""
+              },
+              "applied": "us|MP-FIXTURE-US-WMT"
+            },
+            "afterLeave": {
+              "current": "home-section",
+              "opsActive": false,
+              "reco": {
+                "status": "DISABLED",
+                "loadedOk": false,
+                "requestId": null,
+                "contextKey": null,
+                "errors": []
+              }
+            },
+            "searchPressedAfterReturn": false
+          }
+        },
+        {
+          "label": "R1B1b-search-after-dashes",
+          "country": "US",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-US-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-US-AMZ",
+            "MP-FIXTURE-US-WMT"
+          ],
+          "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (2s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "REREAD_ISSUED",
+            "mount_generation": 19,
+            "record_mount_generation": 19,
+            "bootstrap_attempt": 10,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 5404,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "US",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "31.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "100",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "581",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000024",
+          "error": null,
+          "extra": {
+            "before": {
+              "reco": {
+                "status": "READY",
+                "loadedOk": true,
+                "requestId": "REQ-C000024",
+                "contextKey": "{\"company\":\"FixtureCo\",\"country\":\"US\",\"marketplace\":\"Walmart\"}",
+                "errors": []
+              },
+              "avg": {
+                "text": "31.0",
+                "cls": "scroll-cell replen-avg-cell",
+                "title": ""
+              },
+              "dos": {
+                "text": "100",
+                "cls": "scroll-cell replen-dos-cell ",
+                "title": ""
+              }
+            }
+          }
+        },
+        {
+          "label": "R1B2-warm-cache-zero-reads",
+          "country": "US",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-US-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-US-AMZ",
+            "MP-FIXTURE-US-WMT"
+          ],
+          "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (6s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 21,
+            "record_mount_generation": 21,
+            "bootstrap_attempt": 11,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 1393,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "US",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "31.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "100",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "581",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000024",
+          "error": null,
+          "extra": {
+            "before": {
+              "recoStatus": {
+                "status": "READY",
+                "loadedOk": true,
+                "requestId": "REQ-C000024",
+                "contextKey": "{\"company\":\"FixtureCo\",\"country\":\"US\",\"marketplace\":\"Walmart\"}",
+                "errors": []
+              },
+              "avg": {
+                "text": "31.0",
+                "cls": "scroll-cell replen-avg-cell",
+                "title": ""
+              }
+            },
+            "nav": {
+              "ok": true,
+              "afterLeave": {
+                "current": "home-section",
+                "opsActive": false
+              }
+            }
+          }
+        },
+        {
+          "label": "R1B3-late-success-after-switch",
+          "country": "JP",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-JP-AMZ",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-JP-AMZ",
+            "MP-FIXTURE-JP-RAK",
+            "MP-FIXTURE-JP-YAH"
+          ],
+          "appliedScopeKey": "jp|MP-FIXTURE-JP-AMZ",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (4s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "REREAD_ISSUED",
+            "mount_generation": 23,
+            "record_mount_generation": 23,
+            "bootstrap_attempt": 12,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 6385,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "JP",
+              "marketplaceId": "MP-FIXTURE-JP-AMZ"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "23.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "300",
+            "cls": "scroll-cell replen-dos-cell ir-dos--khaki",
+            "title": ""
+          },
+          "suggested": {
+            "text": "2381",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "REUSE",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000030",
+          "error": null,
+          "extra": {
+            "nav": {
+              "ok": true,
+              "afterLeave": {
+                "current": "home-section",
+                "opsActive": false
+              }
+            },
+            "afterJp": {
+              "avg": {
+                "text": "23.0",
+                "cls": "scroll-cell replen-avg-cell",
+                "title": ""
+              },
+              "applied": "jp|MP-FIXTURE-JP-AMZ"
+            }
+          }
+        },
+        {
+          "label": "R1B4-late-failure-after-recovery",
+          "country": "EU",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-EU-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-EU-AMZ",
+            "MP-FIXTURE-EU-WMT"
+          ],
+          "appliedScopeKey": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (9s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "REREAD_ISSUED",
+            "mount_generation": 25,
+            "record_mount_generation": 25,
+            "bootstrap_attempt": 13,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 4991,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "EU",
+              "marketplaceId": "MP-FIXTURE-EU-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "17.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "50",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "1781",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "REUSE",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000032",
+          "error": null,
+          "extra": {
+            "nav": {
+              "afterLeave": {
+                "current": "home-section",
+                "opsActive": false
+              }
+            },
+            "afterRecovery": {
+              "recoStatus": {
+                "status": "READY",
+                "loadedOk": true,
+                "requestId": "REQ-C000032",
+                "contextKey": "{\"company\":\"FixtureCo\",\"country\":\"EU\",\"marketplace\":\"Walmart\"}",
+                "errors": []
+              },
+              "avg": {
+                "text": "17.0",
+                "cls": "scroll-cell replen-avg-cell",
+                "title": ""
+              },
+              "dos": {
+                "text": "50",
+                "cls": "scroll-cell replen-dos-cell ",
+                "title": ""
+              },
+              "applied": "eu|MP-FIXTURE-EU-WMT"
+            }
+          }
+        },
+        {
+          "label": "R1B4b-recovered-before-c",
+          "country": "EU",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-EU-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-EU-AMZ",
+            "MP-FIXTURE-EU-WMT"
+          ],
+          "appliedScopeKey": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (9s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "REREAD_ISSUED",
+            "mount_generation": 25,
+            "record_mount_generation": 25,
+            "bootstrap_attempt": 13,
+            "stray_callbacks": 0,
+            "last_refusal": null,
+            "result_age_ms": 7225,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "EU",
+              "marketplaceId": "MP-FIXTURE-EU-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "17.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "50",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "1781",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000032",
+          "error": null,
+          "extra": {
+            "before": {
+              "reco": {
+                "status": "READY",
+                "loadedOk": true,
+                "requestId": "REQ-C000032",
+                "contextKey": "{\"company\":\"FixtureCo\",\"country\":\"EU\",\"marketplace\":\"Walmart\"}",
+                "errors": []
+              },
+              "avg": {
+                "text": "17.0",
+                "cls": "scroll-cell replen-avg-cell",
+                "title": ""
+              }
+            }
+          }
+        },
+        {
+          "label": "R1C1-remount-generation-isolation",
+          "country": "EU",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-EU-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-EU-AMZ",
+            "MP-FIXTURE-EU-WMT"
+          ],
+          "appliedScopeKey": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "REGISTRY_ONLY",
+            "reason": "no remembered scope — the registry alone, then wait for a choice",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": false,
+            "committed": false,
+            "revalidating": false,
+            "revalidated": false,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": null,
+            "mount_generation": 29,
+            "record_mount_generation": 29,
+            "bootstrap_attempt": 15,
+            "stray_callbacks": 1,
+            "last_refusal": null,
+            "result_age_ms": 1488,
+            "result_ttl_ms": 600000,
+            "registry_requests": 1,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": null,
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "17.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "50",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "1781",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000032",
+          "error": null,
+          "extra": {
+            "afterA": {
+              "mode": "RESTORED",
+              "revalidating": true,
+              "revalidated": false,
+              "revalidate_failed": false,
+              "revalidate_superseded": null,
+              "mount_generation": 27,
+              "record_mount_generation": 27,
+              "stray_callbacks": 0
+            },
+            "afterB": {
+              "mode": "REGISTRY_ONLY",
+              "revalidating": false,
+              "revalidated": false,
+              "revalidate_failed": false,
+              "revalidate_superseded": null,
+              "mount_generation": 29,
+              "record_mount_generation": 29,
+              "stray_callbacks": 0
+            },
+            "afterLate": {
+              "mode": "REGISTRY_ONLY",
+              "revalidating": false,
+              "revalidated": false,
+              "revalidate_failed": false,
+              "revalidate_superseded": null,
+              "mount_generation": 29,
+              "record_mount_generation": 29,
+              "stray_callbacks": 1
+            },
+            "rendersAtStart": 0,
+            "rendersAfterB": 3,
+            "rendersAtEnd": 3,
+            "rendersByLateCallback": 0
+          }
+        },
+        {
+          "label": "R1C1b-remember-again",
+          "country": "EU",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-EU-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-EU-AMZ",
+            "MP-FIXTURE-EU-WMT"
+          ],
+          "appliedScopeKey": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "REGISTRY_ONLY",
+            "reason": "no remembered scope — the registry alone, then wait for a choice",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": false,
+            "committed": false,
+            "revalidating": false,
+            "revalidated": false,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": null,
+            "mount_generation": 29,
+            "record_mount_generation": 29,
+            "bootstrap_attempt": 15,
+            "stray_callbacks": 1,
+            "last_refusal": null,
+            "result_age_ms": 4735,
+            "result_ttl_ms": 600000,
+            "registry_requests": 1,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "EU",
+              "marketplaceId": "MP-FIXTURE-EU-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "17.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "50",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "1781",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000032",
+          "error": null,
+          "extra": {
+            "remembered": {
+              "country": "EU",
+              "marketplaceId": "MP-FIXTURE-EU-WMT"
+            }
+          }
+        },
+        {
+          "label": "R1C2-late-answer-while-unmounted",
+          "country": "EU",
+          "countryOptions": [
+            "",
+            "EU",
+            "JP",
+            "US"
+          ],
+          "marketplace": "MP-FIXTURE-EU-WMT",
+          "mktOptions": [
+            "",
+            "MP-FIXTURE-EU-AMZ",
+            "MP-FIXTURE-EU-WMT"
+          ],
+          "appliedScopeKey": "eu|MP-FIXTURE-EU-WMT",
+          "status": "READY",
+          "bootstrap": {
+            "mode": "RESTORED",
+            "reason": "a completed result for this scope was still valid (1s old) -- painted immediately, revalidating quietly",
+            "scope_valid": null,
+            "restore_reason": null,
+            "preloaded": true,
+            "committed": true,
+            "revalidating": false,
+            "revalidated": true,
+            "revalidate_failed": false,
+            "revalidate_superseded": null,
+            "reco_recovery": "ALREADY_SETTLED",
+            "mount_generation": 33,
+            "record_mount_generation": 33,
+            "bootstrap_attempt": 17,
+            "stray_callbacks": 2,
+            "last_refusal": null,
+            "result_age_ms": 1603,
+            "result_ttl_ms": 600000,
+            "registry_requests": 0,
+            "workspace_requests": 0,
+            "registry_from_cache": false,
+            "registry_total_requests": 3,
+            "remembered_scope": {
+              "country": "EU",
+              "marketplaceId": "MP-FIXTURE-EU-WMT"
+            },
+            "note": "COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. Neither mode loads every site inventory, and neither reads the whole database."
+          },
+          "sectionActive": true,
+          "rows": 60,
+          "avg": {
+            "text": "17.0",
+            "cls": "scroll-cell replen-avg-cell",
+            "title": ""
+          },
+          "dos": {
+            "text": "50",
+            "cls": "scroll-cell replen-dos-cell ",
+            "title": ""
+          },
+          "suggested": {
+            "text": "1781",
+            "cls": "scroll-cell replen-suggested-cell",
+            "title": ""
+          },
+          "summaryCard": null,
+          "gapNet": 6,
+          "gapOutcome": "REPAINT",
+          "recoCache": {
+            "outcome": "STORED",
+            "reason": null
+          },
+          "execPlanRaw": null,
+          "recoStatus": "READY",
+          "recoLoadedOk": true,
+          "recoRequestId": "REQ-C000032",
+          "error": null,
+          "extra": {
+            "beforeLeave": 6,
+            "atLeave": 6,
+            "rendersWhileUnmounted": 0,
+            "whileAway": {
+              "current": "home-section",
+              "opsActive": false,
+              "revalidating": false,
+              "revalidated": false,
+              "revalidate_failed": false,
+              "revalidate_superseded": "MOUNT_SUPERSEDED",
+              "mount_generation": 32,
+              "record_mount_generation": 31,
+              "stray_callbacks": 2
             }
           }
         }

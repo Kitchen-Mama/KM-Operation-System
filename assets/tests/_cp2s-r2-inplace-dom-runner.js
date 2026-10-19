@@ -178,9 +178,40 @@ const RV_SITES = [
   // made. With one marketplace per country that scenario cannot be driven at all.
   { id: 'MP-FIXTURE-EU-WMT', country: 'EU', marketplace: 'Walmart', company: 'FixtureCo', avg: 17, gapBase: 1700, stock: 850 },
   { id: 'MP-FIXTURE-JP-AMZ', country: 'JP', marketplace: 'Amazon',  company: 'FixtureCo', avg: 23, gapBase: 2300, stock: 6900 },
-  { id: 'MP-FIXTURE-JP-RAK', country: 'JP', marketplace: 'Rakuten', company: 'FixtureCo', avg: 29, gapBase: 2900, stock: 580 }
+  { id: 'MP-FIXTURE-JP-RAK', country: 'JP', marketplace: 'Rakuten', company: 'FixtureCo', avg: 29, gapBase: 2900, stock: 580 },
+  // CP2X-R4-R1 - A SEVENTH SITE THAT CAN BE RETIRED MID-CAPTURE. It is a complete site with its own
+  // numbers precisely so that refusing it is a refusal of something real: a fixture entry with no
+  // rows would make "nothing was published" the same observation as "the site has nothing".
+  { id: 'MP-FIXTURE-JP-YAH', country: 'JP', marketplace: 'Yahoo', company: 'FixtureCo', avg: 37, gapBase: 3700, stock: 1110 }
 ];
 const RV_COUNTRIES = ['US', 'EU', 'JP'];
+// CP2X-R4-R1 §A — THE FIXTURE COULD NOT PRODUCE TWO OF THE THREE INPUTS IT WAS EVIDENCE ABOUT.
+//
+// Every record it offered was permanently active: the registry payload carried no `status` field at
+// all, so `_replenActiveMarketplaces` (`!s || s === 'active'`) accepted all six, and neither "an id
+// that EXISTS but has been retired" nor "an id the registry no longer lists" could be represented,
+// let alone driven. A fixture that cannot produce the input cannot be evidence about the output.
+//
+// AND A SELECT CANNOT HOLD A VALUE IT WAS NEVER OFFERED. Assigning an unknown id to a <select>
+// leaves it at '', so the stale-id case cannot be staged by assignment - it has to be staged the way
+// it actually happens: the site is legitimately chosen while it is live, the registry retires or
+// drops it, and the page re-reads the authority without rebuilding the select. `siteStatus` is that
+// change, applied between reads, and `rvSiteStatus` is what every payload consults.
+const RV_UNKNOWN_ID = 'MP-FIXTURE-NOWHERE-XXX';   // deliberately offered by NO payload, in any mode
+function rvSiteStatus(state, id) {
+  const o = (state && state.siteStatus) || {};
+  return o[id] || 'active';                       // 'active' | 'inactive' | 'absent'
+}
+function rvMarketplaceRecords(state) {
+  const out = [];
+  RV_SITES.forEach(s => {
+    const st = rvSiteStatus(state, s.id);
+    if (st === 'absent') return;                  // the registry no longer lists it at all
+    out.push({ marketplace_id: s.id, company: s.company, country: s.country, marketplace: s.marketplace,
+      marketplace_display_name: s.marketplace, status: st, currency: 'USD', allocation_priority: 100 });
+  });
+  return out;
+}
 // The site a request named. Country ALONE is not enough (EU/Amazon and US/Amazon share a marketplace
 // name), and marketplace alone is not either - the pair is the identity, exactly as the scope key is.
 function rvSiteOf(reqScope) {
@@ -192,7 +223,7 @@ function rvSiteOf(reqScope) {
   if (m) return RV_SITES.find(s => s.marketplace === m) || null;
   return null;
 }
-function rvWorkspace(n) {
+function rvWorkspace(n, state) {
   const mk = (c, f) => Array.from({ length: c }, (_, i) => f(i));
   const skus = [];
   RV_SITES.forEach((s, si) => {
@@ -214,9 +245,20 @@ function rvWorkspace(n) {
       marketplace: s.marketplace, sku: skuOf(i), available_qty: s.stock, fc_transfer_qty: 0,
       fc_processing_qty: 0, customer_order_qty: 0, unfulfillable_qty: 0 });
   });
+  // CP2X-R4-R1 C - the generation marker. Zero by default, so every phase before this round sees the
+  // payload it always saw; set between two mounts it makes the held answer and the fresh one
+  // countably different, which is what turns "the older read won" into an observation.
+  const extra = (state && state.wsExtra) || 0;
+  if (extra) RV_SITES.forEach((s, si) => {
+    for (let j = 0; j < extra; j++) skus.push({
+      marketplace_sku_id: 'MSKU-GEN-' + si + '-' + j, marketplace_id: s.id, company: s.company,
+      country: s.country, marketplace: s.marketplace, sku: 'GENMARK-' + j, site_sku: 'SSG' + si + '-' + j,
+      marketplace_product_id: 'BGEN' + si + String(j).padStart(3, '0'), currency: 'USD',
+      regular_price: 1.01, minimum_price: 1, msrp: 2,
+      marketplace_sku_status: 'active', replenishment_model: 'sales_driven' });
+  });
   return Object.assign({}, base, {
-    marketplaces: RV_SITES.map(s => ({ marketplace_id: s.id, company: s.company, country: s.country,
-      marketplace: s.marketplace, currency: 'USD', status: 'active', allocation_priority: 100 })),
+    marketplaces: rvMarketplaceRecords(state),
     marketplace_skus: skus,
     amazon_inventory_snapshot: stock
   });
@@ -289,10 +331,12 @@ function apiAnswer(action, n, state, reqScope) {
     // CP2X-R4 — the revisit scenario gets the real country axis (US / EU / JP).
     if (state && state.revisitMode) {
       const byCountry = {};
-      RV_SITES.forEach(s => { (byCountry[s.country] = byCountry[s.country] || []).push(s.id); });
+      // CP2X-R4-R1 — the RETIRED site is listed by the registry, exactly as a real projection lists it.
+      // Excluding it here would have the fixture do the filtering that the PAGE is supposed to do, and
+      // the capture would then prove only that the fixture withheld it.
+      rvMarketplaceRecords(state).forEach(m => { (byCountry[m.country] = byCountry[m.country] || []).push(m.marketplace_id); });
       return { success: true, data: {
-        marketplaces: RV_SITES.map(s => ({ marketplace_id: s.id, company: s.company, country: s.country,
-          marketplace: s.marketplace, marketplace_display_name: s.marketplace })),
+        marketplaces: rvMarketplaceRecords(state),
         countries: RV_COUNTRIES.slice(), marketplace_ids_by_country: byCountry,
         empty: false, empty_reason: '' } };
     }
@@ -313,7 +357,7 @@ function apiAnswer(action, n, state, reqScope) {
   // site disappeared before anything could select it. The capture recorded `mkt-...-WMT never held` and
   // every later phase silently ran against the first site. The three sources now agree.
   if (action === 'inventoryReplenishment.workspace.get') {
-    if (state.revisitMode) return { success: true, data: rvWorkspace(n) };
+    if (state.revisitMode) return { success: true, data: rvWorkspace(n, state) };
     return { success: true, data: fixtureWorkspace(n, state.statesMode || state.scopesMode) };
   }
   // CP2X-R2 B - the gap envelope carries 43_'s handler marker, as the real one does. Without it the
@@ -329,6 +373,13 @@ function apiAnswer(action, n, state, reqScope) {
     // answer for a site the request did not name is what the cross-scope guards exist to refuse, so
     // the fixture must be able to produce one and must never produce it by accident.
     if (state.revisitMode) {
+      // CP2X-R4-R1 B - a deliberate failure for the NEXT answer(s), so a stale FAILURE can be held and
+      // delivered after a newer result is already on screen.
+      if (state.failNextReco > 0) {
+        state.failNextReco--;
+        return { success: false, data: null, meta: { requestId: 'fixture-rv-fail-' + state.recoReads },
+          errors: [{ code: 'WORKSPACE_ERROR', message: 'fixture late failure', details: null }] };
+      }
       return { success: true,
         data: { lines: rvRecoLines(n, reqScope), dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-13' } },
         meta: { requestId: 'fixture-rv-' + state.recoReads, serverDurationMs: 1234,
@@ -1125,7 +1176,12 @@ function measureScript(capId, opts) {
                goes from a string to null and the operator's typed quantities are gone. */
             execPlanRaw: (function(){ try { var v = sessionStorage.getItem('km_replen_alloc_draft_v1');
               return v === null ? null : String(v).length; } catch (e) { return 'THREW'; } })(),
-            recoStatus: (function(){ try { return (window._irRecoReadDiag_ ? window._irRecoReadDiag_().status : null); } catch (e) { return null; } })() };
+            /* CP2X-R4-R1 - the RECOMMENDATION READ STATE. _irRecoReadDiag_ carries cache + latency and
+               has no status field at all, so every earlier capture recorded undefined here and the one
+               fact B is about - whether a read is still outstanding - was not in the evidence. */
+            recoStatus: (function(){ try { return (window._irRecoState || {}).status || null; } catch (e) { return null; } })(),
+            recoLoadedOk: (function(){ try { return (window._irRecoState || {}).loadedOk === true; } catch (e) { return null; } })(),
+            recoRequestId: (function(){ try { return (window._irRecoState || {}).requestId || null; } catch (e) { return null; } })() };
         }
         /* The REAL navigation, with the ids the registry actually holds. */
         async function leaveReturn(awayMs, backMs){
@@ -1342,6 +1398,415 @@ function measureScript(capId, opts) {
           return { during: during };
         });
 
+        /* ==========================================================================================
+           CP2X-R4-R1 — THE THREE BOUNDARIES THE PREVIOUS ROUND LEFT OPEN.
+           Each scenario below was written to FAIL against the CP2X-R4 candidate and is kept in that
+           form: the number it asserts is a site-distinguishing one, and the state it asserts is read
+           from the page's own diagnostics rather than inferred from an absence.
+           ========================================================================================== */
+        async function ctl(path){ try { return await (await fetch(path, { cache: 'no-store' })).json(); }
+                                  catch (e) { return { ok: false, error: String(e && e.message || e) }; } }
+        function diag(){ try { return window._irBootstrapDiagnostic_ ? window._irBootstrapDiagnostic_() : null; }
+                         catch (e) { return { error: String(e && e.message || e) }; } }
+        function recoState(){ try { var r = window._irRecoState || {};
+          return { status: r.status || null, loadedOk: r.loadedOk === true,
+                   requestId: r.requestId || null, contextKey: r.contextKey || null,
+                   errors: (r.errors || []).map(function(e){ return e && e.code; }) }; }
+          catch (e) { return { error: String(e && e.message || e) }; } }
+        function recoDiag(){ try { return window._irRecoReadDiag_ ? window._irRecoReadDiag_() : null; }
+                             catch (e) { return null; } }
+        /* Tear the scope AUTHORITY down without touching the selectors. This is the real shape of the
+           window the page has on every cold open: a remembered pair in the DOM and nothing loaded yet
+           to check it against. The selects keep their options, so the operator can press Search. */
+        function dropAuthority(){
+          var before = { hadModel: !!window._irReadModel,
+                         registryStatus: (window._irRegistry || {}).status || null };
+          try { if (!window.__rvOrigGetMarketplaces && window.KM && window.KM.DB)
+            window.__rvOrigGetMarketplaces = window.KM.DB.getMarketplaces; } catch (e) {}
+          window._irReadModel = null;
+          window._irRegistry = { status: 'IDLE', model: null, error: null,
+                                 seq: ((window._irRegistry || {}).seq || 0) };
+          try { if (window.KM && window.KM.DB) window.KM.DB.getMarketplaces = function(){ return []; }; } catch (e) {}
+          var listNow = null;
+          try { listNow = (window._replenActiveMarketplaces ? window._replenActiveMarketplaces() : []).length; }
+          catch (e) { listNow = 'THREW'; }
+          return { before: before, activeListLength: listNow };
+        }
+        function setPair(countryVal, mktVal){
+          var cs = sel('replenCountry'), ms = sel('replenMarketplace');
+          /* set BOTH directly and fire NO change event: a dispatched change would clear the Execution
+             Plan and rebuild the options, which is the state this is trying to reproduce, not repair. */
+          if (cs) cs.value = countryVal;
+          if (ms) ms.value = mktVal;
+          return { country: cs && cs.value, mkt: ms && ms.value, mktOptions: optsOf(ms) };
+        }
+        function clickSearch(){
+          var b = document.querySelector('#ops-section .replen-btn--search');
+          if (b) b.click(); else if (window.searchReplenishment) window.searchReplenishment();
+        }
+
+        /* ---- R1-base. A clean, applied JP/Amazon result. Every §A refusal below is measured against
+               THIS, so "the applied scope did not move" is a comparison with a known site. */
+        await rphase('R1-base-jp-amz', async function(){
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          await sleep(1200);
+          return { note: 'baseline for the R1 scenarios: JP/Amazon, avg 23.0' };
+        });
+
+        /* Re-read the AUTHORITY without rebuilding the selects. This is the shape of the real window:
+           the registry changed between visits and the page has re-read it, while the operator's
+           selection - made when the site was still live - is still sitting in the DOM. */
+        async function reReadAuthority(){
+          try {
+            await window._irWorkspaceRefresh_({ quiet: true, carrier: true,
+              owner: 'RESTORED_MOUNT_REVALIDATION',
+              reason: 'the harness re-reads the authority so a retired site is known to the page' });
+          } catch (e) { return { error: String(e && e.message || e) }; }
+          var list = [];
+          try { list = (window._replenActiveMarketplaces ? window._replenActiveMarketplaces() : []).map(function(m){
+            return m.marketplaceId || m.marketplace_id; }); } catch (e) {}
+          return { activeIds: list };
+        }
+        async function restoreAuthority(){
+          try { if (window.__rvOrigGetMarketplaces && window.KM && window.KM.DB)
+            window.KM.DB.getMarketplaces = window.__rvOrigGetMarketplaces; } catch (e) {}
+          try { await window._irEnsureRegistryLoaded_({ force: true }); } catch (e) {}
+          try { await window._irWorkspaceRefresh_({ quiet: true, carrier: true,
+            owner: 'RESTORED_MOUNT_REVALIDATION', reason: 'the harness puts the authority back' }); } catch (e) {}
+          return { activeListLength: (function(){ try { return (window._replenActiveMarketplaces
+            ? window._replenActiveMarketplaces() : []).length; } catch (e) { return 'THREW'; } })() };
+        }
+
+        /* ---- R1A0. JP/Yahoo, chosen and searched while it is LIVE (avg 37.0 is its own number), then
+               JP/Amazon, so the APPLIED scope is Amazon while the select can still be moved back to
+               Yahoo. "The applied scope did not move" is then a comparison with a different site
+               rather than with itself. */
+        await rphase('R1A0-yahoo-live-then-amazon', async function(){
+          await doSearch('JP', 'MP-FIXTURE-JP-YAH');
+          await sleep(1000);
+          var yah = { avg: cellInfo(SKU, 'replen-avg-cell'),
+                      applied: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null };
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          await sleep(1000);
+          return { yahoo: yah, note: 'JP/Yahoo is a complete site: avg 37.0; applied is now JP/Amazon' };
+        });
+
+        /* ---- R1A1. THE SITE IS RETIRED WHILE IT IS SELECTED.
+               A select cannot be made to hold a value it was never offered - the assignment leaves it
+               at empty - so the only honest way to stage a stale id is the way it actually occurs: the
+               operator selects a live site, the registry retires it, and the page re-reads the
+               authority without rebuilding the select. The authority is LOADED and says this record is
+               not active. That is INVALID, not unverifiable: a named refusal, no request, and the
+               applied JP/Amazon result left exactly where it is.
+               CP2X-R4 cannot tell the two apart, because _replenActiveMarketplaces filters inactive
+               records OUT - so a retired site looks identical to an id that was never in the model,
+               and both fall through the same fail-open. MEASURED: no refusal recorded, and a request
+               issued for the retired site. */
+        await rphase('R1A1-retired-id-refused', async function(){
+          var ms = sel('replenMarketplace'), cs = sel('replenCountry');
+          if (ms) ms.value = 'MP-FIXTURE-JP-YAH';          /* still an offered option, so this sticks */
+          await ctl('/__site-status?id=MP-FIXTURE-JP-YAH&status=inactive');
+          var re = await reReadAuthority();
+          var held = { country: cs && cs.value, mkt: ms && ms.value, mktOptions: optsOf(ms) };
+          var beforeApplied = window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null;
+          await rmark('preclick:R1A1-retired-id-refused');
+          clickSearch();
+          await sleep(1600);
+          return { reRead: re, held: held, beforeApplied: beforeApplied,
+                   refusal: (diag() || {}).last_refusal || null,
+                   afterApplied: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null,
+                   afterAvg: cellInfo(SKU, 'replen-avg-cell') };
+        });
+
+        /* ---- R1A2. THE RECORD IS DROPPED ALTOGETHER. Loaded authority, record absent: also INVALID,
+               and it must be named DIFFERENTLY from the retired case - "retired" and "never existed"
+               are different facts about the operator's selection, and a page that conflates them tells
+               the operator to do the wrong thing about it. A different site is used, because R1A1's
+               refusal legitimately re-offers the country's options and drops the id it refused. */
+        await rphase('R1A2-removed-id-refused', async function(){
+          var ms = sel('replenMarketplace'), cs = sel('replenCountry');
+          if (ms) ms.value = 'MP-FIXTURE-JP-RAK';
+          await ctl('/__site-status?id=MP-FIXTURE-JP-RAK&status=absent');
+          var re = await reReadAuthority();
+          var held = { country: cs && cs.value, mkt: ms && ms.value, mktOptions: optsOf(ms) };
+          var beforeApplied = window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null;
+          await rmark('preclick:R1A2-removed-id-refused');
+          clickSearch();
+          await sleep(1600);
+          return { reRead: re, held: held, beforeApplied: beforeApplied,
+                   refusal: (diag() || {}).last_refusal || null,
+                   afterApplied: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null,
+                   afterAvg: cellInfo(SKU, 'replen-avg-cell') };
+        });
+
+        /* ---- R1A2b. Put both sites back and return to a clean JP/Amazon baseline. */
+        await rphase('R1A2b-sites-restored', async function(){
+          await ctl('/__site-status?id=MP-FIXTURE-JP-YAH&status=active');
+          await ctl('/__site-status?id=MP-FIXTURE-JP-RAK&status=active');
+          await reReadAuthority();
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          await sleep(1200);
+          return { note: 'baseline restored: JP/Amazon, avg 23.0' };
+        });
+
+        /* ---- R1A3. NOT-YET-LOADED AND ILLEGAL. The authority is torn down - the state every cold open
+               passes through - and the pair held in the DOM is US + a JAPANESE id. CP2X-R4 treats an
+               unloadable list as "cannot verify" and FAILS OPEN, so this pair reaches the server: the
+               request names JP while the screen says US, and applied becomes us|MP-FIXTURE-JP-RAK, a
+               scope nobody selected. MEASURED on the CP2X-R4 candidate, exactly that.
+               An UNVERIFIED pair must never be committed. Load the source with the loader that already
+               exists, re-validate, and only then decide - which makes this pair INVALID. */
+        await rphase('R1A3-unverified-illegal-pair', async function(){
+          var beforeApplied = window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null;
+          var dropped = dropAuthority();
+          var pair = setPair('US', 'MP-FIXTURE-JP-RAK');
+          clickSearch();
+          await sleep(3200);
+          return { beforeApplied: beforeApplied, dropped: dropped, pair: pair,
+                   refusal: (diag() || {}).last_refusal || null,
+                   afterApplied: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null };
+        });
+
+        await rphase('R1A3b-authority-restored', async function(){
+          var r = await restoreAuthority();
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          await sleep(1200);
+          return r;
+        });
+
+        /* ---- R1A4. NOT-YET-LOADED AND LEGAL — the half that stops the fix becoming "refuse whenever
+               unsure". The pair is chosen through the real selects while the authority is intact (which
+               changes nothing yet: a selector change is invisible to the table until Search), the
+               authority is then torn down, and Search is pressed. It must LOAD, re-validate, and APPLY:
+               EU/Walmart, avg 17.0. A fix that refused here would have traded one defect for a worse one. */
+        await rphase('R1A4-unverified-legal-pair', async function(){
+          var cs = sel('replenCountry'), ms = sel('replenMarketplace');
+          if (cs) await setSelect(cs, 'EU', 'rv-r1a4-country', 20000);
+          if (ms) await setSelect(ms, 'MP-FIXTURE-EU-WMT', 'rv-r1a4-mkt', 20000);
+          var beforeApplied = window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null;
+          var dropped = dropAuthority();
+          var pair = { country: cs && cs.value, mkt: ms && ms.value };
+          clickSearch();
+          await sleep(3500);
+          return { beforeApplied: beforeApplied, dropped: dropped, pair: pair,
+                   refusal: (diag() || {}).last_refusal || null,
+                   afterApplied: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null };
+        });
+
+        await rphase('R1A4b-authority-restored', async function(){
+          return await restoreAuthority();
+        });
+
+        /* ---- R1B1. LEAVING WHILE THE RECOMMENDATION READ IS GENUINELY IN FLIGHT.
+               CP2X-R4's leave/return case had a SETTLED result to keep, which is the easy half. This
+               one has nothing to keep: the session cache is emptied, the answer is held for four
+               seconds, and the operator leaves inside that window. The unmount aborts - correctly -
+               and the page comes back with the recommendation state blanked to DISABLED and NOTHING
+               that re-reads it, so Avg Sales and Days of Supply stay '--' until a second Search is
+               pressed for a scope that never changed.
+               One re-read on return is allowed and is what the recovery costs. */
+        await rphase('R1B1-cold-inflight-leave-return', async function(){
+          try { if (window.invalidateRecommendationSessionCache) window.invalidateRecommendationSessionCache(); } catch (e) {}
+          await ctl('/__delay?ms=4000');
+          await doSearch('US', 'MP-FIXTURE-US-WMT');
+          var mid = { recoStatus: recoState(),
+                      avg: cellInfo(SKU, 'replen-avg-cell'),
+                      dos: cellInfo(SKU, 'replen-dos-cell'),
+                      applied: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null };
+          /* Leave, THEN clear the hold, THEN return. The recovery read must not inherit the hold the
+             abandoned one was given - holding it too would measure the fixture, not the page, and the
+             phase would end with the recovery still outstanding whether or not it was ever issued. */
+          await window.KM.lifecycle.switchTo('home-section');
+          var afterLeave = { current: window.KM.lifecycle.getCurrentPage ? window.KM.lifecycle.getCurrentPage() : null,
+                             opsActive: (function(){ var s = document.getElementById('ops-section');
+                               return s ? s.classList.contains('active') : null; })(),
+                             reco: recoState() };
+          await sleep(250);
+          await ctl('/__delay?ms=0');
+          await window.KM.lifecycle.switchTo('ops-section');
+          await sleep(3200);   /* the recovery settles here, and so does the abandoned answer */
+          return { mid: mid, afterLeave: afterLeave, searchPressedAfterReturn: false };
+        });
+
+        /* ---- R1B1b. THE WORKAROUND, RECORDED RATHER THAN ASSUMED. On the CP2X-R4 candidate the only
+               way back from the dashes is a second Search for a scope that never changed, and that is
+               worth having in the capture as the cost the defect imposes. After the fix the state is
+               already READY when this runs, so pressing Search here must change nothing at all - which
+               is also what makes the phase safe to keep. */
+        await rphase('R1B1b-search-after-dashes', async function(){
+          var before = { reco: recoState(), avg: cellInfo(SKU, 'replen-avg-cell'),
+                         dos: cellInfo(SKU, 'replen-dos-cell') };
+          clickSearch();
+          await sleep(2200);
+          return { before: before };
+        });
+
+        /* ---- R1B2. THE WARM HALF, unchanged in cost. The site now HAS a settled result, so a leave
+               and return must spend nothing at all - no recommendation read of any kind, cached or
+               otherwise - and must not ask for a Search either. */
+        await rphase('R1B2-warm-cache-zero-reads', async function(){
+          var before = { recoStatus: recoState(),
+                         avg: cellInfo(SKU, 'replen-avg-cell') };
+          var L = await leaveReturn(400, 1400);
+          return { before: before, nav: L };
+        });
+
+        /* ---- R1B3. AN OLD REQUEST'S SUCCESS ARRIVING AFTER THE OPERATOR HAS MOVED ON.
+               EU/Amazon is dispatched and held; the operator leaves mid-flight, returns (which issues
+               the recovery read, also held), and then explicitly searches JP/Amazon, which answers at
+               once. Both held EU answers then land with nobody waiting for them. The screen must stay
+               JP: avg 23.0, applied jp|MP-FIXTURE-JP-AMZ. */
+        await rphase('R1B3-late-success-after-switch', async function(){
+          try { if (window.invalidateRecommendationSessionCache) window.invalidateRecommendationSessionCache(); } catch (e) {}
+          await ctl('/__delay?ms=3000');
+          await doSearch('EU', 'MP-FIXTURE-EU-AMZ');
+          var L = await leaveReturn(250, 350);
+          await ctl('/__delay?ms=0');
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          var afterJp = { avg: cellInfo(SKU, 'replen-avg-cell'),
+                          applied: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null };
+          await sleep(4000);   /* the two held EU answers arrive here */
+          return { nav: L, afterJp: afterJp };
+        });
+
+        /* ---- R1B4. AN OLD REQUEST'S FAILURE arriving after a newer result is already published. An
+               aborted fetch rejects promptly, so the fixture is told to fail the next recommendation
+               answer AND to hold it: the failure lands four seconds later, long after the recovery
+               read has succeeded. It must not turn a good screen into an error one. */
+        await rphase('R1B4-late-failure-after-recovery', async function(){
+          try { if (window.invalidateRecommendationSessionCache) window.invalidateRecommendationSessionCache(); } catch (e) {}
+          await ctl('/__fail-next?n=1');
+          await ctl('/__delay?ms=4000');
+          await doSearch('EU', 'MP-FIXTURE-EU-WMT');
+          /* Leave, clear the hold, THEN return - for the same reason as R1B1: the recovery read must
+             not inherit the hold that was put on the answer it is replacing, or the phase measures
+             the fixture rather than the page. */
+          await window.KM.lifecycle.switchTo('home-section');
+          var L = { afterLeave: { current: window.KM.lifecycle.getCurrentPage ? window.KM.lifecycle.getCurrentPage() : null,
+                                  opsActive: (function(){ var s = document.getElementById('ops-section');
+                                    return s ? s.classList.contains('active') : null; })() } };
+          await sleep(250);
+          await ctl('/__delay?ms=0');
+          await window.KM.lifecycle.switchTo('ops-section');
+          await sleep(1800);
+          var afterRecovery = { recoStatus: recoState(),
+                                avg: cellInfo(SKU, 'replen-avg-cell'),
+                                dos: cellInfo(SKU, 'replen-dos-cell'),
+                                applied: window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null };
+          await sleep(3200);   /* the held FAILURE for the abandoned request lands here */
+          return { nav: L, afterRecovery: afterRecovery };
+        });
+
+        /* Back to a known-good screen before the C scenarios, by the same workaround. On the fixed
+           source this press changes nothing; on the candidate it is what the operator has to do. */
+        await rphase('R1B4b-recovered-before-c', async function(){
+          var before = { reco: recoState(), avg: cellInfo(SKU, 'replen-avg-cell') };
+          clickSearch();
+          await sleep(2200);
+          return { before: before };
+        });
+
+        /* A render counter. renderReplenishment is a global binding, so replacing it on window
+           replaces what the page itself calls - which is how the in-place experiment above already
+           counts repaints. "Nothing was repainted" is otherwise not observable at all: the restore on
+           return repaints anyway, so the rows look the same whether or not a dead round drew them. */
+        function renderCounter(){
+          if (window.__rvRenderCount == null) {
+            var orig = window.renderReplenishment;
+            window.__rvRenderOrig = orig;
+            window.__rvRenderCount = 0;
+            window.renderReplenishment = function(){ window.__rvRenderCount++; return orig.apply(this, arguments); };
+          }
+          return window.__rvRenderCount;
+        }
+
+        /* ---- R1C1. A DEAD MOUNT'S CALLBACK WRITING INTO THE LIVE ONE'S RECORD.
+               Mount A takes the RESTORED branch and its quiet revalidation is held. The remembered
+               scope is then forgotten, so the SECOND mount takes REGISTRY_ONLY - a mode that performs
+               no revalidation at all and whose record has nothing to say about one. A's held answer
+               then lands: its two guards both pass, because neither the Search sequence nor the applied
+               scope moved, and it writes revalidated = true into the record that now belongs to B.
+               The page then reports a REGISTRY_ONLY mount that revalidated, which is not a thing that
+               can happen. The record a callback may finish is its OWN.
+               Mount B issues no workspace read of its own, so nothing here depends on how two identical
+               in-flight reads are shared - which is what made the first version of this scenario
+               unobservable: both mounts waited on ONE answer and agreed about it. */
+        await rphase('R1C1-remount-generation-isolation', async function(){
+          var r0 = renderCounter();
+          await ctl('/__delay-ws?ms=2500');
+          await window.KM.lifecycle.switchTo('home-section');
+          await sleep(150);
+          await window.KM.lifecycle.switchTo('ops-section');   /* MOUNT A - revalidation held */
+          await sleep(500);
+          var afterA = diag();
+          try { if (window._irForgetScope_) window._irForgetScope_(); } catch (e) {}
+          await ctl('/__delay-ws?ms=0');
+          await window.KM.lifecycle.switchTo('home-section');
+          await sleep(150);
+          await window.KM.lifecycle.switchTo('ops-section');   /* MOUNT B - REGISTRY_ONLY, no revalidation */
+          await sleep(700);
+          var afterB = diag();
+          var rB = window.__rvRenderCount;
+          await sleep(2600);                                    /* A's held answer lands here */
+          var afterLate = diag();
+          function pick(d){ return d ? { mode: d.mode, revalidating: d.revalidating, revalidated: d.revalidated,
+            revalidate_failed: d.revalidate_failed, revalidate_superseded: d.revalidate_superseded,
+            mount_generation: d.mount_generation === undefined ? 'ABSENT' : d.mount_generation,
+            record_mount_generation: d.record_mount_generation === undefined ? 'ABSENT' : d.record_mount_generation,
+            stray_callbacks: d.stray_callbacks === undefined ? 'ABSENT' : d.stray_callbacks } : null; }
+          return { afterA: pick(afterA), afterB: pick(afterB), afterLate: pick(afterLate),
+                   rendersAtStart: r0, rendersAfterB: rB, rendersAtEnd: window.__rvRenderCount,
+                   rendersByLateCallback: window.__rvRenderCount - rB };
+        });
+
+        /* Put the remembered scope back with a real Search, so the C2 scenario starts from a RESTORED
+           mount rather than from the state R1C1 deliberately left behind. */
+        await rphase('R1C1b-remember-again', async function(){
+          await doSearch('EU', 'MP-FIXTURE-EU-WMT');
+          await sleep(1200);
+          return { remembered: (function(){ try { return window._irRestoreScope_ ? window._irRestoreScope_() : null; }
+                                            catch (e) { return null; } })() };
+        });
+
+        /* ---- R1C2. THE SAME CALLBACK, BUT THE PAGE IS NOT THERE.
+               Mount A's revalidation is held and the operator leaves and STAYS away. The answer lands
+               with Site Inventory unmounted, and the callback repaints it anyway. The repaint is the
+               whole observation: on return the restore repaints regardless, so the rows are identical
+               either way and only the COUNT distinguishes a page that was drawn while absent from one
+               that was not. */
+        await rphase('R1C2-late-answer-while-unmounted', async function(){
+          renderCounter();
+          await ctl('/__delay-ws?ms=2500');
+          await window.KM.lifecycle.switchTo('home-section');
+          await sleep(150);
+          await window.KM.lifecycle.switchTo('ops-section');   /* MOUNT A - revalidation held */
+          await sleep(400);
+          var beforeLeave = window.__rvRenderCount;
+          await window.KM.lifecycle.switchTo('home-section');   /* and away, staying away */
+          var atLeave = window.__rvRenderCount;
+          await sleep(2900);                                    /* A's answer lands with no page mounted */
+          var whileAway = { current: window.KM.lifecycle.getCurrentPage ? window.KM.lifecycle.getCurrentPage() : null,
+                            opsActive: (function(){ var s = document.getElementById('ops-section');
+                              return s ? s.classList.contains('active') : null; })(),
+                            renders: window.__rvRenderCount, d: diag() };
+          /* Clear the hold BEFORE coming back: the return is a fresh mount with a revalidation of its
+             own, and leaving the hold on would end the phase with THAT one still in flight - which is
+             indistinguishable, in the capture, from the stale-flag defect CP2X-R4 closed. */
+          await ctl('/__delay-ws?ms=0');
+          await window.KM.lifecycle.switchTo('ops-section');
+          await sleep(1600);
+          return { beforeLeave: beforeLeave, atLeave: atLeave,
+                   rendersWhileUnmounted: whileAway.renders - atLeave,
+                   whileAway: { current: whileAway.current, opsActive: whileAway.opsActive,
+                     revalidating: whileAway.d && whileAway.d.revalidating,
+                     revalidated: whileAway.d && whileAway.d.revalidated,
+                     revalidate_failed: whileAway.d && whileAway.d.revalidate_failed,
+                     revalidate_superseded: whileAway.d && whileAway.d.revalidate_superseded,
+                     mount_generation: whileAway.d && whileAway.d.mount_generation,
+                     record_mount_generation: whileAway.d && whileAway.d.record_mount_generation,
+                     stray_callbacks: whileAway.d && whileAway.d.stray_callbacks } };
+        });
+
         out.revisit = RV;
         step('revisit-done', { phases: RV.phases.length });
       }
@@ -1432,6 +1897,56 @@ function startServer(pages, held, results, cfg, onMeasured) {
       res.end(JSON.stringify({ ok: true, delayMs: cfg.state.delayMs }));
       return;
     }
+    // CP2X-R4-R1 C - THE PRIMARY WORKSPACE READ NEEDS ITS OWN HOLD, AND IT HAS TO BE A SEPARATE ONE.
+    //
+    // The mount's quiet revalidation IS an inventoryReplenishment.workspace.get, and generation
+    // isolation is only observable while one is still outstanding across a SECOND mount. /__delay
+    // holds the recommendation and gap reads, which is the wrong leg: holding those would leave the
+    // revalidation answering instantly and the interleave would never form. Holding BOTH with one
+    // switch would also make the scenario untestable in the other direction - the second mount could
+    // not then complete quickly, which is the half that proves the late callback lost its claim.
+    if (p === '/__delay-ws') {
+      cfg.state.wsDelayMs = parseInt(u.searchParams.get('ms') || '0', 10) || 0;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, wsDelayMs: cfg.state.wsDelayMs }));
+      return;
+    }
+    // CP2X-R4-R1 C - A MARKER THAT TELLS TWO WORKSPACE ANSWERS APART.
+    //
+    // Generation isolation is a claim about WHICH read's answer is in hand, and two identical payloads
+    // cannot carry that claim: a late answer overwriting a newer one is then indistinguishable from
+    // nothing happening. The payload is built when the request ARRIVES, so setting this between the two
+    // mounts gives the held answer and the fresh one different row counts, and "the older one won" is a
+    // number on the screen rather than an inference from the absence of one.
+    if (p === '/__ws-extra') {
+      cfg.state.wsExtra = parseInt(u.searchParams.get('n') || '0', 10) || 0;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, wsExtra: cfg.state.wsExtra }));
+      return;
+    }
+    // CP2X-R4-R1 B - A LATE FAILURE, which is the half an abort cannot stage. An aborted fetch rejects
+    // promptly; the requirement is that an old request's FAILURE arriving after a new result has been
+    // published must not replace it, and that needs a failure the fixture holds back deliberately.
+    // CP2X-R4-R1 C - the SECOND mount has to be able to fail on its own. A record that a dead round
+    // contaminated and a record that simply succeeded look identical when both rounds succeed; the
+    // contradiction only becomes visible when THIS round failed and something still reported it
+    // revalidated.
+    // CP2X-R4-R1 A - THE REGISTRY CHANGES BETWEEN READS, which is the only way a live select comes to
+    // hold an id the authority no longer accepts. status=inactive retires it; status=absent drops the
+    // record entirely; status=active puts it back.
+    if (p === '/__site-status') {
+      cfg.state.siteStatus = cfg.state.siteStatus || {};
+      cfg.state.siteStatus[u.searchParams.get('id') || ''] = u.searchParams.get('status') || 'active';
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, siteStatus: cfg.state.siteStatus }));
+      return;
+    }
+    if (p === '/__fail-next') {
+      cfg.state.failNextReco = parseInt(u.searchParams.get('n') || '0', 10) || 0;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, failNextReco: cfg.state.failNextReco }));
+      return;
+    }
     if (p === '/__stub.js') {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end('window.Chart=window.Chart||function(){return{destroy:function(){},update:function(){},resize:function(){},data:{},options:{}};};'
@@ -1470,12 +1985,21 @@ function startServer(pages, held, results, cfg, onMeasured) {
           dataKeys: Object.keys(d0).slice(0, 24),
           counts: Object.keys(d0).reduce(function (acc, k) {
             if (Array.isArray(d0[k])) acc[k] = d0[k].length; return acc; }, {}) });
+        // CP2X-R4-R1 B - WHEN THE ANSWER WENT OUT, not only when it was asked for. A held request and an
+        // answered one are the same line without this, so "the read had not finished when the operator
+        // left" could only be read off the page, which is the thing under test.
+        const logEntry = cfg.log[cfg.log.length - 1];
         const send = function () {
+          if (logEntry) logEntry.respondedAt = Date.now() - cfg.t0;
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
           res.end(JSON.stringify(withCorrelation(payload, action, rid)));
         };
-        const slow = cfg.state.delayMs && (action === 'recommendation.workspace.get' || action === 'inventoryReplenishmentGap.get');
-        if (slow) setTimeout(send, cfg.state.delayMs); else send();
+        // CP2X-R4-R1 C - two independent holds. The recommendation/gap hold is unchanged; the primary
+        // workspace read answers instantly unless its OWN hold is set, so no existing phase is retimed.
+        const holdMs = (action === 'recommendation.workspace.get' || action === 'inventoryReplenishmentGap.get')
+          ? (cfg.state.delayMs || 0)
+          : (action === 'inventoryReplenishment.workspace.get' ? (cfg.state.wsDelayMs || 0) : 0);
+        if (holdMs) setTimeout(send, holdMs); else send();
       });
       return;
     }
@@ -1627,7 +2151,7 @@ async function main() {
   // so scopesMode is forced on: a revisit scenario with only one marketplace proves nothing.
   const REVISIT = process.argv.indexOf('--revisit') !== -1;
   const cfg = { skus: skus, log: [], t0: Date.now(), marks: [],
-    state: { recoReads: 0, statesMode: STATES, scopesMode: SCOPES, revisitMode: REVISIT, hits: {}, scopeHint: 'US' } };
+    state: { recoReads: 0, statesMode: STATES, scopesMode: SCOPES, revisitMode: REVISIT, hits: {}, scopeHint: 'US', delayMs: 0, wsDelayMs: 0, wsExtra: 0, failNextReco: 0, siteStatus: {} } };
   const pages = {}, held = {}, results = {};
   const capId = 'inplace-' + Date.now();
   let closeBrowser = null;

@@ -6133,3 +6133,111 @@ observation — and the restore can be wrong in precisely the way that matters, 
 country, while every count-based assertion still passes.
 
 ---
+
+### D-S8-B3-157 — "Cannot verify" was being read as "verified" — **FIXED (CP2X-R4-R1 §A)**
+
+CP2X-R4's Search gate had **one boolean**, so the case that is neither good nor bad — the scope authority
+has not loaded yet — had to be forced into one of them, and it was forced into *proceed*. It also
+validated against `_replenActiveMarketplaces()`, which **filters inactive records out**, so a site the
+registry had retired was indistinguishable from an id that had never existed, and both fell through the
+same fail-open.
+
+Measured against that candidate, through real Chrome and a real registry change
+(`docs/evidence/cp2x-r4-r1-scope-and-recovery/counter-example-before.json`):
+
+| what was selected | what the page did |
+|---|---|
+| an id the registry had just **retired** | published it: `applied = jp|MP-FIXTURE-JP-YAH`, no refusal recorded |
+| an id the registry had **dropped** | published it: `applied = jp|MP-FIXTURE-JP-RAK`, table `EMPTY`, 0 rows |
+| `US` + a **Japanese** marketplace id, authority not yet loaded | published it: `applied = us|MP-FIXTURE-JP-RAK` |
+
+`_irValidateScopeSelection_` now returns one of three states and the gate answers each differently:
+
+- **VALID** — the authority is loaded, the record is there, it is active, and the country agrees.
+- **INVALID** — the authority is **loaded** and contradicts the selection. Named, and refused: no request,
+  no movement of `applied`, nothing published. `MARKETPLACE_INACTIVE` and `MARKETPLACE_NOT_IN_REGISTRY`
+  are deliberately **different** names, because "retired" and "never existed" call for different actions.
+- **UNVERIFIED** — there is no loaded authority yet. Not a verdict in either direction: the gate finishes
+  the load **through `_irEnsureRegistryLoaded_`, the loader this page already owns** (the reference count
+  in `two-vertical-flow-closure` moved 6 → 7 and the seventh is named), re-checks **the pair that was
+  clicked** rather than the selects as they stand afterwards, and only then decides. Nothing is applied
+  in between.
+
+The authority is read from the **raw** list (`_irWsGet('getMarketplaces')`), because the filtered one
+cannot show "exists but is not active" at all — and from the **registry as well**: a read model that is
+loaded and carries no marketplaces is far more likely to be a handler that did not return that table than
+a database with no sites, and refusing every selection on that basis would turn a transport shape into an
+accusation about the operator's choice. That widening is not cosmetic: the first attempt refused everything
+in two offline suites, and that is what found it.
+
+**Stated limit, not fixed here.** `_irAdaptScopeRegistry_` hard-codes `status: 'active'` ("the registry
+emits ELIGIBLE scopes only"), so while the registry is the *only* authority in hand a retired record cannot
+be seen as retired. The workspace model carries the real status and is what is in hand after any Search,
+which is where a stale selection actually comes from.
+
+### D-S8-B3-158 — A recommendation read abandoned in flight was never re-read — **FIXED (CP2X-R4-R1 §B)**
+
+CP2X-R4 fixed the easy half of leave-and-return: a **settled** result is no longer thrown away. The other
+half stayed open and it is the one that costs the operator an answer they never received. Leaving while
+the read is genuinely in flight aborts it — correctly — and `_irRecoCancelInFlight_` then blanks the state
+— also correctly, because a half-arrived read has nothing to keep. What was missing is what happens next:
+**nothing re-read it.** The restore repainted the rows, the Suggested Qty and the summary, and Avg Sales
+and Days of Supply sat at `--` until a second Search was pressed for a scope that had never changed.
+
+Measured on the candidate: status `DISABLED`, `avg '--'`, `dos '--'`, **one** recommendation request in the
+phase (the abandoned one) and **no** recovery; only a manual Search brought `31.0` back.
+
+`_irRecoEnsureForRestoredScope_` is called from the RESTORED branch and delegates to
+`loadRecommendationWorkspace_`, the one path that already answers both cases:
+
+| state on return | outcome | cost |
+|---|---|---|
+| a settled result for the scope on screen | `ALREADY_SETTLED` | **nothing is called at all** |
+| a session-cached envelope | `FROM_CACHE` | **zero network requests** |
+| neither | `REREAD_ISSUED` | **exactly one** request, deduped by `contextKey` |
+
+It asks `_irResultMatchesAppliedScope_`, not whether *a* result exists, so the recovery cannot become the
+thing that publishes another site's basis. The warm case still spends **zero** recommendation reads, which
+is the invariant CP2X-R4 established and this must not quietly undo — asserted, not assumed.
+
+### D-S8-B3-159 — A dead mount's callback wrote into the live mount's record — **FIXED (CP2X-R4-R1 §C)**
+
+`_irBootstrap` was **one module-global** that each mount replaced, and the quiet revalidation's callback
+wrote to that global rather than to the record of the attempt that issued it.
+
+The first attempt to stage this was unobservable, and the reason is worth keeping: the transport
+**coalesces identical in-flight reads**, so two mounts waiting on one answer agree about it and the
+contamination is invisible. The scenario that does show it makes the second mount take a branch that
+performs **no revalidation at all** (the remembered scope is forgotten, so it is `REGISTRY_ONLY`).
+Measured on the candidate: the diagnostic then reported `mode: REGISTRY_ONLY` with `revalidated: true` — a
+mount that cannot revalidate, saying it did — and the dead attempt drove **one repaint** of the live page.
+In the leave-and-stay-away case it repainted a page that was **not mounted** (`opsActive: false`).
+
+Each attempt now binds its own record (`rec`) and the mount generation it was issued under. `_irMountGen`
+advances on **every mount and every unmount**, so "is the page I was drawing for still the page on screen"
+is a comparison rather than a guess. A callback whose record has been replaced, or whose generation is
+over, records `MOUNT_SUPERSEDED` **in its own record**, increments `_irBootstrapStray`, and returns without
+touching the live round and without repainting. After the fix: `revalidated: false`, `stray_callbacks: 1`,
+`rendersByLateCallback: 0`, `rendersWhileUnmounted: 0`.
+
+`stray_callbacks` is reported because a silent discard and a discard that never happened look the same
+from outside.
+
+### D-S8-B3-160 — Two assertions that could not have fired, found by using them (CP2X-R4-R1)
+
+Both are corrections to this repository's own tests, recorded because each had been passing for rounds
+while asserting nothing.
+
+- `ir-revisit-restore-browser-s8-b3-r3-cp2x-r4` **H3** read `p.bootstrap.revalidateSuperseded`. The
+  diagnostic emits `revalidate_superseded`. The camelCase key has always been `undefined`, so the
+  assertion's second arm — "or says why it stood down" — could never be satisfied and the test rested
+  entirely on `revalidated === true`. It only surfaced when a phase legitimately stood down. Corrected to
+  the key that is actually reported.
+- The fixture could not produce two of the three inputs §A is about. Its registry payload carried **no
+  `status` field at all**, so every record was implicitly active and a retired site could not be
+  represented, let alone driven. And a `<select>` cannot be made to hold a value it was never offered — the
+  assignment leaves it empty — so a stale id cannot be staged by assignment. It is now staged the way it
+  happens: a seventh, complete site (JP/Yahoo, avg `37.0`) is selected while live, the fixture retires or
+  drops it through `/__site-status`, and the page re-reads the authority without rebuilding the select.
+
+---

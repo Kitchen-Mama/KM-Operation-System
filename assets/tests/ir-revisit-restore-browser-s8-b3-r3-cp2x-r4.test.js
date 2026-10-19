@@ -243,9 +243,9 @@ eq(everRevalidating.length, 0,
 const restored = PHASES.filter(p => p.bootstrap && p.bootstrap.mode === 'RESTORED');
 ok(restored.length >= 3, 'H2  the restore branch is the one that ran on return', restored.length);
 restored.forEach(function (p) {
-  ok(p.bootstrap.revalidated === true || p.bootstrap.revalidateSuperseded,
+  ok(p.bootstrap.revalidated === true || p.bootstrap.revalidate_superseded,
     'H3  ' + p.label + ' either revalidated or says why it stood down',
-    { revalidated: p.bootstrap.revalidated, superseded: p.bootstrap.revalidateSuperseded });
+    { revalidated: p.bootstrap.revalidated, superseded: p.bootstrap.revalidate_superseded });
 });
 // The restore must be free: it reports zero blocking requests of its own.
 restored.forEach(function (p) {

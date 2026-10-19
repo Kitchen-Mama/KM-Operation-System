@@ -6065,3 +6065,82 @@ and nothing was written to production.
 7. `_irBootstrapDiagnostic_()` after a return: `mode: RESTORED`, `revalidating: false`, and either
    `revalidated: true` or `revalidate_superseded` naming why it stood down. A `revalidating: true` that
    never clears is the stale-flag defect returning.
+
+---
+
+## S8-B3-R3-CP2X-R4-R1 — the token is **NOT** rotated this round, because r62 has never been served
+
+`r62-revisitrestore-20261019` was minted by CP2X-R4 and **has not been published**. Verified the way
+D-S8-B3-63 requires — by asking the remote, not by reading this ledger:
+
+```
+git ls-remote origin main      -> 315b69da06a112e2046947821bb9506df1af425a
+git merge-base --is-ancestor 5454da83 origin/main   -> exit 1   (NOT an ancestor)
+```
+
+So r62's bytes have never left this machine. A token is spent when its bytes have been **served**;
+minting a second one for a change that will be published under the first would spend a token to buy
+nothing and would make the ledger describe a release nobody received. **r62 stands**, and it now covers
+CP2X-R4 **and** CP2X-R4-R1: `index.html` 54 references, `assets/js/app.js` 13, zero r61 remaining.
+
+Because the token string is unchanged, `bootScriptBytes` is unchanged by the token — the page source
+itself grew, and the boot census records the measured figure rather than an assumption. (CP2X-R4 asserted
+"unchanged" here without measuring and was wrong by +52; it is measured every round now.)
+
+### What changed
+
+Pure front end. **GS increment 0** — the load surface is **78 files / 4,629,942 bytes**, byte-identical to
+CP2X-R4. No `.gs` file, no formula, no calculation date, no schedule, no timeout and no production data
+was touched.
+
+- `assets/js/pages/inventory-replenishment.js` — the three boundaries CP2X-R4 left open:
+  **§A** three-state scope validation (`VALID` / `UNVERIFIED` / `INVALID`), with `MARKETPLACE_INACTIVE`
+  and `MARKETPLACE_NOT_IN_REGISTRY` named separately and an UNVERIFIED selection resolved by finishing
+  the load through the existing registry loader before anything is applied;
+  **§B** `_irRecoEnsureForRestoredScope_`, so a recommendation read abandoned in flight recovers on return
+  (one re-read at most, **zero** when a settled result or a cached envelope is in hand) instead of leaving
+  Avg Sales and Days of Supply dashed until a second Search;
+  **§C** per-attempt bootstrap records bound to a mount generation, so a dead mount's callback can neither
+  write into the live round nor repaint a page that has been left.
+- `assets/tests/_cp2s-r2-inplace-dom-runner.js` — a seventh, retirable fixture site, a `status` field the
+  registry payload never carried, `/__site-status`, `/__delay-ws`, `/__ws-extra`, `/__fail-next`, a
+  server-side `respondedAt`, and thirteen new `--revisit` phases.
+- `assets/tests/ir-scope-validation-and-restore-recovery-browser-s8-b3-r3-cp2x-r4-r1.test.js` — new, 109
+  assertions, reading the current capture **and** a counter-example capture of the previous candidate.
+- Two assertions corrected because they could not have fired: `ir-revisit-restore…cp2x-r4` **H3** read a
+  camelCase diagnostic key that is never emitted; `presentation-state…f1b` **X1**'s mutation anchor moved
+  with the record it mutates. `two-vertical-flow-closure` **C7**'s registry-loader count moved 6 → 7 and
+  the seventh is named, because the number moved by a named caller being added rather than by another
+  route to the registry appearing.
+
+### Sync set
+
+**`APPS_SCRIPT_SYNC_REQUIRED`: none** — no `.gs` changed.
+
+**GitHub Pages:** `assets/js/pages/inventory-replenishment.js`. `index.html` and `assets/js/app.js` are
+unchanged by this round and are already in CP2X-R4's set.
+
+### Post-publish acceptance (read-only; no Recalculate, no AI Support)
+
+These are **in addition to** CP2X-R4's seven steps above, which still apply.
+
+8. Search a site, then change the Country only — leaving a Marketplace that belongs to the previous one —
+   and press Search. It must **refuse by name**: no request, no movement of the applied scope, no
+   mixed-site table. `_irBootstrapDiagnostic_().last_refusal.code` is
+   `MARKETPLACE_COUNTRY_MISMATCH`.
+9. Press Search on a freshly opened page **before the selectors finish populating**. It must not apply
+   anything on the spot: it loads the scope list, re-checks the pair that was clicked, and then either
+   searches it or refuses it. A result that appears for a pair nobody could have checked is the fail-open
+   returning.
+10. Search a site you have not opened this session and navigate away **while Avg Sales still shows `…`**.
+    On return the two cells must fill in by themselves — `_irBootstrapDiagnostic_().reco_recovery` reads
+    `REREAD_ISSUED` — with **no Search pressed**. `--` here is the defect returning.
+11. Do the same for a site you have already loaded. `reco_recovery` must read `ALREADY_SETTLED` and there
+    must be **no** `recommendation.workspace.get` at all. A re-read here would be a new cost, not a fix.
+12. Navigate away and back twice in quick succession. `_irBootstrapDiagnostic_()` must describe the
+    **current** mount: `record_mount_generation === mount_generation`. `stray_callbacks` may be non-zero —
+    that is a dead attempt correctly standing down — but a record whose generation is behind the current
+    one, still reporting `revalidated: true`, is the contamination returning.
+
+None of these steps measures a real spreadsheet cold start: the evidence behind them runs against a local
+stub, so request counts and cell values are demonstrable and durations are not.

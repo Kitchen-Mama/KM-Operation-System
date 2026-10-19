@@ -650,8 +650,11 @@ checks.push(Promise.all(checks.slice()).then(function () {
 
   // X1 — put the auto-commit back. §B must see a committed scope before Search.
   muts.push(mutIr(
-    '_irBootstrap.committed = false;',
-    '_irBootstrap.committed = false; _irApplySearch_(remembered, mySeq);',
+    // CP2X-R4-R1 §C — the bootstrap record is now the ATTEMPT's own object rather than the module
+    // global, so the anchor moved with it. The mutation is unchanged: put the auto-commit back and
+    // this suite must still catch it.
+    'rec.committed = false;',
+    'rec.committed = false; _irApplySearch_(remembered, mySeq);',
     'X1 restoring the bootstrap auto-commit is caught',
     function (src) {
       var h = makeIrHarness({}, src);

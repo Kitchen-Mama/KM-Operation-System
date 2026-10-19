@@ -271,10 +271,15 @@ ok(!/_irApplySearch_\(/.test(bootFn) && (bootFn.match(/_irSearch\.applied\s*=/g)
   'C7. the bootstrap applies NOTHING — neither its own assignment nor the shared one; only Search commits');
 eq((code(INV).match(/_irSearch\.applied = \{/g) || []).length, 1,
   'C7. and `applied` is still assigned in exactly ONE place in the whole page');
-// Every reference to the registry loader, enumerated: declaration, explicit Retry, and the bootstrap's three
-// branches (no remembered scope, Demo, and the coalesced start). No other loader path exists.
-eq((code(INV).match(/_irEnsureRegistryLoaded_\(/g) || []).length, 6,
-  'C7. the registry loader has exactly six references and no other loader path');
+// Every reference to the registry loader, enumerated: declaration, explicit Retry, the bootstrap's three
+// branches (no remembered scope, Demo, and the coalesced start), the mount fallback, and - CP2X-R4-R1 §A -
+// the Search gate, which answers an UNVERIFIED selection by finishing the load THROUGH THIS SAME LOADER
+// rather than by inventing a second route to the registry. The number moved because a named caller was
+// added, not because another way in appeared.
+eq((code(INV).match(/_irEnsureRegistryLoaded_\(/g) || []).length, 7,
+  'C7. the registry loader has exactly seven references and no other loader path');
+ok(/if \(_scopeCheck\.state === 'UNVERIFIED'\)[\s\S]{0,2000}_irEnsureRegistryLoaded_\(\)/.test(code(INV)),
+  'C7. and the seventh is the Search gate, using the loader rather than a second route');
 ok(/function _irReloadScopeRegistry_\(\) \{ return _irEnsureRegistryLoaded_\(\{ force: true \}\); \}/.test(INV),
   'C7. and the Retry is the only forcing caller');
 
