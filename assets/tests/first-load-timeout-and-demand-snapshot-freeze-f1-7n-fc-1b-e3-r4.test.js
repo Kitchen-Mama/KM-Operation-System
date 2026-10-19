@@ -316,8 +316,18 @@ ok(!/_irWorkspaceRefresh_|getWorkspace/.test(firstUse),
   'D3a with NO remembered scope the mount issues zero inventory workspace reads');
 ok(/_irWorkspaceRefresh_\(\{ quiet: true/.test(bootSrc),
   'D3b a RESTORED scope does revalidate — quietly, so a failure leaves the painted result exactly where it is');
-ok(/if \(qSeq !== _irSearch\.seq\) return;/.test(bootSrc),
+// CP2X-R4 WIDENED THIS, AND THE GUARD IT ASSERTS IS UNCHANGED. The superseded branch still refuses to
+// touch a newer round; it now RECORDS WHY before returning, so the form is `{ ...; return; }` rather
+// than a bare `return;`. The reason it had to change is a defect this assertion could not see: the
+// branch returned BEFORE clearing `revalidating`, so the flag stayed true for the rest of the session
+// and the bootstrap diagnostic reported a revalidation that was not running.
+//
+// It still requires the branch to RETURN. A version that tested the sequence and fell through is the
+// regression this line exists to catch, and it still fails here.
+ok(/if \(qSeq !== _irSearch\.seq\) (return;|\{[^{}]*return;[^{}]*\})/.test(bootSrc),
   'D3c and that quiet read cannot overwrite a real Search that superseded it');
+ok(/if \(qSeq !== _irSearch\.seq\) \{[^{}]*revalidateSuperseded[^{}]*return;[^{}]*\}/.test(bootSrc),
+  'D3c1 and it names why it stood down, so a stale flag cannot be read as a live request');
 ok(!/ALL_SITES/.test(ops(PAGE)), 'D4  there is no ALL_SITES fallback anywhere in the page');
 
 // ================================================================================================================
