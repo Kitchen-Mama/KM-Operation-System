@@ -32,11 +32,44 @@
         authorityModel: null,
         authorityReason: null,
         loaded: false,
-        busy: false
+        busy: false,
+        // FX1-R4-R1 — how many rows arrived without a legal per-row version. Supplying one is
+        // necessary (the server requires it and refuses the whole book without it) but it is a
+        // change to stored data, so it is counted and said out loud rather than done quietly.
+        repairedVersions: 0
     };
 
+    // THE FIELDS THIS EDITOR DRAWS — which is NOT the whole stored row, and the difference is the
+    // defect FX1-R4-R1 closes. Every load and every save rebuilt each row from this list alone, so
+    // `version` — required by 75_ on every entry, whole number, at least 1 — was dropped on the way
+    // in and never sent on the way out. A non-empty book could therefore NEVER be saved: the server
+    // refused it with one FX_VERSION_INVALID per row. An EMPTY book saved perfectly, because rates:[]
+    // has no entries to validate, which is exactly why 283 passing assertions never noticed.
     var FIELDS = ['base_currency', 'quote_currency', 'rate', 'source', 'as_of',
                   'effective_from', 'effective_to', 'status'];
+
+    // A LEGAL VERSION, per the stored contract: a whole number of at least 1. The page does not
+    // INVENT a version for a row that has one, and it does not bump one either — 75_ neither asks
+    // for that nor records it, and a counter the client maintains alone would be a second history
+    // competing with the change log, which is the server's and is built from the two states it
+    // actually committed.
+    function legalVersion(v) {
+        var n = Number(v);
+        return (isFinite(n) && n >= 1 && Math.floor(n) === n) ? n : null;
+    }
+
+    // THE WORKING COPY OF ONE STORED ROW. Everything the server sent is carried, not only the eight
+    // columns drawn below: a field this page does not render is still a field the operator's save
+    // would otherwise delete, and `version` was the first casualty of exactly that. A later field
+    // added server-side survives a round trip here without this file being touched.
+    function workingRow(e) {
+        var o = {};
+        Object.keys(e || {}).forEach(function (k) { o[k] = e[k]; });
+        FIELDS.forEach(function (f) { if (o[f] === undefined || o[f] === null) o[f] = ''; });
+        var v = legalVersion(o.version);
+        if (v === null) { o.version = 1; _state.repairedVersions++; } else { o.version = v; }
+        return o;
+    }
 
     function esc(s) {
         return String(s == null ? '' : s)
@@ -150,17 +183,57 @@
         if (draft) draft.disabled = !(_state.loaded && _state.mayEdit) || _state.busy;
     }
 
+    // THE SERVER'S RECORD, IN THE SERVER'S FIELDS. This read changed_at / changed_by / old_rate /
+    // new_rate; 75_ has never emitted any of them. It writes { at, by, pair, change, ... } where the
+    // tail depends on what happened — `to` for an ADDED pair, `from` for a REMOVED one, and `fields`
+    // (field / from / to, one per column that moved) for an EDIT. So every cell on this panel was
+    // blank for every entry, and a log that renders empty looks exactly like a log with nothing in
+    // it: the one panel kept to answer 'who changed this rate, and from what' answered neither.
+    //
+    // WHO and WHEN are 75_'s. The operator is the identity the server established — not a name the
+    // browser sent, which is a claim — and the instant is the server clock in UTC, which is the only
+    // representation that can be ordered across the people reading it.
+    function stampOf(iso) {
+        var s = String(iso || '');
+        var m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(s);
+        return m ? (m[1] + ' ' + m[2] + ' UTC') : (s || '—');
+    }
+    function dash(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
+    function summarise(o) {
+        if (!o) return '';
+        return ['rate', 'source', 'as_of', 'status'].filter(function (k) { return o[k] !== undefined; })
+            .map(function (k) { return esc(k) + ' <strong>' + esc(dash(o[k])) + '</strong>'; }).join(', ');
+    }
     function renderLog() {
         var host = el('fx-book-logbody');
         if (!host) return;
         if (!_state.log.length) { host.innerHTML = '<div class="fx-book-note">No changes recorded yet.</div>'; return; }
         host.innerHTML = '<table class="fx-book-logtable"><thead><tr>'
-            + '<th>When</th><th>Who</th><th>Pair</th><th>Was</th><th>Became</th></tr></thead><tbody>'
+            + '<th>When</th><th>Who</th><th>Pair</th><th>Change</th><th>What moved</th></tr></thead><tbody>'
             + _state.log.slice().reverse().map(function (r) {
-                return '<tr><td>' + esc(r.changed_at) + '</td><td>' + esc(r.changed_by) + '</td>'
-                    + '<td>' + esc(r.pair || '') + '</td>'
-                    + '<td class="fx-num">' + esc(r.old_rate === null || r.old_rate === undefined ? '—' : r.old_rate) + '</td>'
-                    + '<td class="fx-num">' + esc(r.new_rate === null || r.new_rate === undefined ? '—' : r.new_rate) + '</td></tr>';
+                r = r || {};
+                var kind = String(r.change || '').toUpperCase();
+                var what;
+                if (kind === 'EDITED') {
+                    what = (r.fields || []).map(function (f) {
+                        return esc(f.field) + ' <strong>' + esc(dash(f.from)) + '</strong> &rarr; <strong>'
+                            + esc(dash(f.to)) + '</strong>';
+                    }).join('<br>') || '&mdash;';
+                } else if (kind === 'ADDED') {
+                    what = summarise(r.to) || '&mdash;';
+                } else if (kind === 'REMOVED') {
+                    what = summarise(r.from) || '&mdash;';
+                } else {
+                    // An entry in a shape this build does not know is SHOWN, not dropped. A log that
+                    // silently hides what it cannot parse is how a history stops being one.
+                    what = '<code>' + esc(JSON.stringify(r).slice(0, 160)) + '</code>';
+                }
+                return '<tr class="fx-log-' + esc(kind.toLowerCase() || 'other') + '">'
+                    + '<td title="' + esc(r.at || '') + '">' + esc(stampOf(r.at)) + '</td>'
+                    + '<td>' + esc(dash(r.by)) + '</td>'
+                    + '<td>' + esc(dash(r.pair)) + '</td>'
+                    + '<td>' + esc(kind || 'CHANGED') + '</td>'
+                    + '<td>' + what + '</td></tr>';
             }).join('') + '</tbody></table>';
     }
 
@@ -206,8 +279,10 @@
 
     function addRow() {
         if (!_state.mayEdit) return;
+        // version 1 — a new pair's first revision. Without it the server refuses the WHOLE book,
+        // so one added row used to make every other row unsavable too.
         _state.rates.push({ base_currency: '', quote_currency: '', rate: '', source: 'manual',
-            as_of: '', effective_from: '', effective_to: '', status: 'active' });
+            as_of: '', effective_from: '', effective_to: '', status: 'active', version: 1 });
         renderBook(); say('Row added to the working copy — not saved.');
     }
 
@@ -221,9 +296,10 @@
             .then(function (j) {
                 var rows = (j && j.rates) || [];
                 if (!rows.length) { say('The prepared draft holds no rates.'); return; }
-                _state.rates = rows.map(function (e) {
-                    var o = {}; FIELDS.forEach(function (f) { o[f] = e[f] === undefined ? '' : e[f]; }); return o;
-                });
+                // THE SAME ROW BUILDER THE SERVER'S ROWS GO THROUGH. The draft file already carries a
+                // version per row; rebuilding from FIELDS dropped it, so the prepared starting set was
+                // unsavable for the same reason a stored book was.
+                _state.rates = rows.map(workingRow);
                 renderBook();
                 say(rows.length + ' draft row(s) loaded into the editor. NOTHING has been written — '
                     + 'review them and press Save changes if they are right.');
@@ -239,18 +315,53 @@
     // ------------------------------------------------------------------------------------------------
     // LOAD / SAVE
     // ------------------------------------------------------------------------------------------------
-    function adopt(data) {
-        _state.serverRates = (data && data.rates) || [];
-        _state.rates = _state.serverRates.map(function (e) {
-            var o = {}; FIELDS.forEach(function (f) { o[f] = e[f] === undefined ? '' : e[f]; }); return o;
-        });
-        _state.docVersion = (data && typeof data.doc_version === 'number') ? data.doc_version : null;
-        _state.currencies = (data && data.supported_currencies) || [];
-        _state.log = (data && data.change_log) || [];
-        _state.capacity = (data && data.capacity) || null;
-        _state.mayEdit = !!(data && data.may_edit);
-        _state.authorityModel = (data && data.authority_model) || null;
-        _state.authorityReason = (data && data.authority_reason) || null;
+    // ADOPT WHAT ARRIVED — AND NOTHING ELSE.
+    //
+    // A GET and a SAVE do not answer in the same shape, and they should not: a save has nothing new
+    // to say about which currencies this deployment can round, and re-sending that list on every
+    // write would be a bigger answer for no reason. What was wrong was reading a SAVE's answer as
+    // though every field a GET carries had come back EMPTY. So a save that SUCCEEDED cleared the
+    // currency list (and with it every <select>'s options, so the next save would have sent blank
+    // currencies), blanked the capacity meter, and set may_edit false — which disabled the editor,
+    // removed the row controls and raised the read-only band naming an authority failure that had
+    // not happened. The operator's reward for a successful save was a page that said they were not
+    // allowed to save.
+    //
+    // `fresh` marks the answer that establishes the whole page (the GET). For that one an absent
+    // field really does mean absent. For a SAVE, an absent field means UNCHANGED.
+    function adopt(data, opts) {
+        data = data || {};
+        var fresh = !!(opts && opts.fresh);
+        if (data.rates !== undefined) {
+            _state.repairedVersions = 0;
+            _state.serverRates = data.rates || [];
+            _state.rates = _state.serverRates.map(workingRow);
+        }
+        if (typeof data.doc_version === 'number') _state.docVersion = data.doc_version;
+        else if (fresh) _state.docVersion = null;
+        if (data.supported_currencies !== undefined) _state.currencies = data.supported_currencies || [];
+        else if (fresh) _state.currencies = [];
+        if (data.change_log !== undefined) _state.log = data.change_log || [];
+        else if (fresh) _state.log = [];
+        // The SAVE answer reports the stored size under different names (bytes / limit) because it is
+        // reporting what the commit MEASURED rather than what the property happened to hold when the
+        // page opened. Read either, so the meter is refreshed by a save rather than merely surviving
+        // one — the number really did change, and showing the old one would be its own small lie.
+        if (data.capacity !== undefined) _state.capacity = data.capacity || null;
+        else if (typeof data.bytes === 'number') {
+            _state.capacity = { used_bytes: data.bytes,
+                limit_bytes: (typeof data.limit === 'number') ? data.limit
+                    : (_state.capacity ? _state.capacity.limit_bytes : null) };
+        } else if (fresh) _state.capacity = null;
+        // A SAVE THAT SUCCEEDED IS PROOF OF PERMISSION. 75_ runs its authority gate before it reads a
+        // single field, so a success cannot have come from a caller who may not edit.
+        if (data.may_edit !== undefined) _state.mayEdit = !!data.may_edit;
+        else if (fresh) _state.mayEdit = false;
+        if (data.authority_model !== undefined) _state.authorityModel = data.authority_model || null;
+        else if (data.authority !== undefined) _state.authorityModel = data.authority || null;
+        else if (fresh) _state.authorityModel = null;
+        if (data.authority_reason !== undefined) _state.authorityReason = data.authority_reason || null;
+        else if (fresh) _state.authorityReason = null;
         _state.loaded = true;
     }
 
@@ -274,9 +385,12 @@
                 return;
             }
             showWarnings([]);
-            adopt(res.data || {});
+            adopt(res.data || {}, { fresh: true });
             renderAll();
-            say('');
+            say(_state.repairedVersions
+                ? (_state.repairedVersions + ' stored row(s) arrived without a usable version number and '
+                   + 'have been given one. Nothing is saved until you press Save changes.')
+                : '');
         }).catch(function (err) {
             showWarnings([{ code: 'FX_READ_THREW', message: String(err && err.message || err) }]);
             _state.loaded = true; _state.mayEdit = false; renderAll();
@@ -296,21 +410,38 @@
         var payload = {
             doc_version: _state.docVersion,
             rates: _state.rates.map(function (e) {
+                // THE WHOLE ROW, not a rebuild from the drawn columns. Sending only what is on screen
+                // deletes every stored field the screen does not show, and the version 75_ requires
+                // was the proof of that: the book could not be saved at all.
                 var o = {};
-                FIELDS.forEach(function (f) { o[f] = e[f]; });
+                Object.keys(e).forEach(function (k) { o[k] = e[k]; });
                 o.rate = (String(e.rate).trim() === '') ? e.rate : Number(e.rate);
+                o.version = legalVersion(e.version) === null ? 1 : legalVersion(e.version);
                 return o;
             })
         };
         Promise.resolve(window.KM.DB.saveFxRateBook(payload)).then(function (res) {
             _state.busy = false;
             if (!res || res.success !== true) {
-                var errs = (res && res.errors) || (res && res.error ? [res.error] : []);
+                // EVERY PROBLEM, NOT THE FIRST ONE. The transport collapses the server's errors[] to
+                // a single `error` for the pages that only ever read one; `errors` is the full list
+                // when it carried more, so a book with four bad rows no longer reports one of them
+                // and leaves the operator to find the rest by saving again.
+                var errs = (res && res.errors && res.errors.length) ? res.errors
+                    : (res && res.error ? [res.error] : []);
                 showWarnings(errs.length ? errs : [{ code: 'FX_SAVE_FAILED',
                     message: 'The save was refused and NOTHING was written.' }]);
                 // A VERSION CONFLICT IS NOT A FAILED EDIT. Somebody else saved while this tab was open;
                 // the typing is still on screen, and re-reading is what makes it safe to try again.
-                var conflict = errs.some(function (e) { return /VERSION/i.test(String(e && e.code)); });
+                //
+                // FX1-R4-R1 — BY ITS OWN CODE, NOT BY THE WORD 'VERSION'. The substring test also
+                // matched FX_VERSION_INVALID (a row of THIS operator's own, missing a version) and
+                // FX_DOC_VERSION_REQUIRED (this page's request, malformed). Both were then announced
+                // as a competing editor, which is a statement about somebody else that was not true,
+                // and which sent the operator away to reload instead of toward the field at fault.
+                // MEASURED: before the row-version fix below, every save of a non-empty book produced
+                // FX_VERSION_INVALID and this page blamed a colleague for it, every time.
+                var conflict = errs.some(function (e) { return String(e && e.code) === 'FX_VERSION_CONFLICT'; });
                 say(conflict
                     ? 'Somebody else saved this book while you were editing. Your changes are still on '
                       + 'screen and nothing was overwritten — reload to see theirs, then re-apply yours.'
@@ -319,9 +450,12 @@
                 return;
             }
             showWarnings([]);
-            adopt(res.data || {});
+            adopt(res.data || {});          // an UPDATE, not a fresh page — see adopt()
             renderAll();
-            say('Saved. The book is now version ' + _state.docVersion + '. No price moved.');
+            say('Saved. The book is now version ' + _state.docVersion + '. No price moved.'
+                + (Number(res.data && res.data.log_trimmed) > 0
+                    ? ' The oldest ' + Number(res.data.log_trimmed) + ' change record(s) were dropped to '
+                      + 'keep the book inside one Script Property.' : ''));
         }).catch(function (err) {
             _state.busy = false;
             showWarnings([{ code: 'FX_SAVE_THREW', message: String(err && err.message || err) }]);

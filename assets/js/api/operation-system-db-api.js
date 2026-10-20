@@ -5752,7 +5752,15 @@ async function _kmGapRead_(action, payload) {
         // F1-7N-FB-3A §C — the router's terminal unknown-action envelope carries no errors[], which is exactly
         // how it used to become the meaningless "GAP_READ_ERROR — gap read failed". Name it for what it is.
         if (_kmIsUnknownActionResponse_(json.error)) return { success: false, error: _kmDeploymentMismatchError_(action) };
-        return { success: false, error: (json.errors && json.errors[0]) || { code: 'GAP_READ_ERROR', message: 'gap read failed' } };
+        // FX1-R4-R1 - THE WHOLE LIST SURVIVES, ALONGSIDE THE FIRST ONE.
+        //
+        // `error` is unchanged and still the first refusal, because every existing caller reads exactly
+        // that. What was lost is everything after it: a handler that validates a DOCUMENT answers with
+        // one error per bad row, and collapsing that to errors[0] tells an operator about one of four
+        // problems and leaves them to discover the rest by saving again, three more times. `errors` is
+        // additive - absent when the server sent none - so no page that does not ask for it is affected.
+        return { success: false, errors: (json.errors && json.errors.length > 1) ? json.errors : undefined,
+            error: (json.errors && json.errors[0]) || { code: 'GAP_READ_ERROR', message: 'gap read failed' } };
     }
     return { success: true, data: json.data || { rows: [] }, envelope: json };
 }
