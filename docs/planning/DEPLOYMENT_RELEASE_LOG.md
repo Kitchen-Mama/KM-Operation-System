@@ -6376,3 +6376,26 @@ read-only and re-runnable; `gs-load-surface-audit.js` agrees to the byte. The co
 bytes; the number above is the one to use, and it is the one the budget gate measures.
 
 **STILL NOT DEPLOYED. NOT PUSHED. NOT SYNCED.**
+
+### R55 — the clean full regression, and the one suite it does not include
+
+```
+total 689   clean 688   not_clean 1
+not_clean_suites: [ map-canvas-acceptance-s8-b3-r3-cp2m-r2 ]
+registered 689   executed 689   integrity INTACT   complete true
+dirty_before []   dirty_after []   aborted null
+```
+
+Everything else is clean, including every mutation suite. The one exception is recorded as
+**D-S8-B3-175** and is an evidence gap, not a defect: the map canvas capture pins `index.html`, this
+round changed it, and the globe does not render on this machine — reproduced with the pre-FX
+`index.html` and `app.js` restored, so the cause predates these commits. The assertion was not
+widened.
+
+Four passes were needed to get here, and each one found something the pass before it could not see.
+The first found the read route the Administration page could not have used and a `04_` that did not
+parse. The second found eighteen registers that a new runtime file and a new routed page move. The
+third found three more and a mutant whose REPLACEMENT, not merely its anchor, was wrong for the new
+code — it would have reported itself surviving while testing a defect it is not named for.
+
+**STILL NOT DEPLOYED. NOT PUSHED. NOT SYNCED.**

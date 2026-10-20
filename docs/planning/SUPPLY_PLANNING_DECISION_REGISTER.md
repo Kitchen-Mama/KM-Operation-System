@@ -6472,3 +6472,28 @@ the one-shot tool is gone and every verifier reads the **shipped** files directl
 re-runnable forever, which the tool it replaces stopped being the moment its own integration landed.
 
 ---
+
+### D-S8-B3-175 — The map page’s acceptance is UNVERIFIED against the current `index.html` — OPEN
+
+Routing the FX Rate Book Administration page changed `index.html` and `assets/js/app.js`, which six
+browser captures pin. Five were re-taken and pass. The sixth,
+`docs/evidence/cp2m-r2-map/map.json`, **cannot be re-taken on this machine**: the globe renders no
+canvas. Measured, twice, in both scenes — `canvasCount: 0`, `canvasAppeared: true`,
+`webglSupported: true`, 41 report attempts, `NO_CANVAS_BOX`.
+
+**It is not this round.** The same result reproduces with the pre-FX `index.html` restored, and again
+with the pre-FX `app.js` restored as well. Whatever stops the globe rendering predates these commits.
+
+**The assertion was left exactly as it is.** `A2` refuses a capture taken against a different
+`index.html`, and widening it to excuse a stale one would trade a real guard for a green line — while
+the thing it guards, whether the map page still renders, is precisely what this environment cannot
+answer. The final sweep is therefore **688 of 689 clean with this one suite named**, rather than 689
+with a weakened gate.
+
+What this means in practice: the Global Logistics Map page is **not known to be broken** — nothing in
+FX1-R4 touches it, its lifecycle and mount-continuation captures were both re-taken and pass, and its
+stylesheet and scripts are unchanged. What is missing is the canvas acceptance evidence against the
+current shell. Re-take `node assets/tests/_cp2m-r2-map-runner.js <outDir>` on a machine where the
+globe renders, and the suite goes green with no code change.
+
+---
