@@ -10,8 +10,15 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../../..');
 const SRC73 = fs.readFileSync(path.join(ROOT, 'assets/specs/active/apps-script/73_api_v1_pricing_write.gs'), 'utf8');
-const PROPOSED = fs.readFileSync(path.join(__dirname, '75_api_v1_fx_rate_book.gs.proposed'), 'utf8');
+// FX75_SRC lets the mutation harness point this at a mutated COPY. Without it the staged file would
+// have to be edited in place to be mutated, and a crash mid-run would leave the proposal broken on disk.
+const PROPOSED = fs.readFileSync(process.env.FX75_SRC || path.join(__dirname, '75_api_v1_fx_rate_book.gs.proposed'), 'utf8');
 const DRAFT = JSON.parse(fs.readFileSync(path.join(__dirname, 'fx-rate-book-initial-draft.json'), 'utf8'));
+// CODE ONLY. A source probe must read what the file DOES, not what its comments say it stopped doing:
+// the R3 note names payload.changed_by precisely in order to record that it is gone, and a raw-text
+// scan would read that sentence as the thing it forbids. Line comments only - this file has no block
+// comments, and nothing here asserts on a string literal, so stripping them is lossless for the probes.
+const PROPOSED_CODE = PROPOSED.split(/\r?\n/).filter(l => !/^\s*\/\//.test(l)).join('\n');
 
 // ---- pull the named declarations out of 73_ with a balanced-brace scan -------------------------------
 function extract(src, header) {
@@ -57,7 +64,7 @@ return {
   fxBookResolve_: fxBookResolve_, fxBookValidate_: fxBookValidate_,
   fxBookRatesForReconcile_: fxBookRatesForReconcile_, fxBookChangeRecords_: fxBookChangeRecords_,
   fxBookReadDoc_: fxBookReadDoc_, fxBookByteLen_: fxBookByteLen_, fxBookCommit_: fxBookCommit_,
-  fxBookAuthority_: fxBookAuthority_,
+  fxBookAuthority_: fxBookAuthority_, fxBookRateForCreate_: fxBookRateForCreate_,
   setLock: function (v) { __lockGranted = v; }, releases: function () { return __lockReleased; },
   props: function () { return __props; }, reset: function () { __props = {}; }
 };`)();
@@ -79,7 +86,8 @@ function bare() {
 // in the authority model cannot silently turn those sections green by refusing before they run.
 function mem() {
   const io = bare();
-  io.set('KM_FX_RATE_BOOK_EDITORS', '*');
+  io.set('KM_FX_RATE_BOOK_EDITORS', 'ops@example.com');
+  io.user = () => 'ops@example.com';
   return io;
 }
 
@@ -152,7 +160,7 @@ const ACTIVE = DRAFT.rates;
   const before = io.get('KM_FX_RATE_BOOK');
   r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: [] } }, io);
   ok(!r.success && codes(r).indexOf('FX_VERSION_CONFLICT') >= 0, 'a stale doc_version is refused');
-  eq(r.errors[0].stored_doc_version, 1, 'the refusal hands back the stored version');
+  eq((r.errors[0] || {}).stored_doc_version, 1, 'the refusal hands back the stored version');
   eq(io.get('KM_FX_RATE_BOOK'), before, 'NOTHING was written on a version conflict');
 
   r = api.handleFxRateBookSave_({ payload: { rates: ACTIVE } }, io);
@@ -194,7 +202,12 @@ const ACTIVE = DRAFT.rates;
   eq(f.field, 'rate', 'the moved field is named');
   eq(f.from, '1.416067', 'the OLD value is kept');
   eq(f.to, '1.5', 'the new value is kept');
-  eq(edit[0].by, 'vic', 'who made the change is kept');
+  // FX1-R3 — the record carries the VERIFIED CALLER, not the name the request offered. The two saves
+  // above send changed_by 'ops' and 'vic' and neither reaches the log: the caller this io identifies
+  // is ops@example.com, and that is the only identity with standing.
+  eq(edit[0].by, 'ops@example.com', 'who made the change is the identified caller, not the body');
+  ok(edit[0].at !== 't2' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(String(edit[0].at)),
+    'and WHEN is the server clock, not the t2 the request sent', edit[0].at);
 }
 
 // ---- 10. retiring a rate keeps it; removing it is recorded ----------------------------------------------------
@@ -323,8 +336,8 @@ const ACTIVE = DRAFT.rates;
     const r = api.handleFxRateBookSave_({ payload: { doc_version: 1, rates: huge, changed_by: 'o', changed_at: 't' } }, io);
     ok(!r.success, 'capacity: an oversized book is refused');
     eq(codes(r)[0], 'FX_BOOK_TOO_LARGE', 'capacity: by a NAMED refusal, not a platform exception');
-    ok(r.errors[0].bytes > r.errors[0].limit, 'capacity: and it reports the measurement',
-       { bytes: r.errors[0].bytes, limit: r.errors[0].limit });
+    ok((r.errors[0] || {}).bytes > (r.errors[0] || {}).limit, 'capacity: and it reports the measurement',
+       { bytes: (r.errors[0] || {}).bytes, limit: (r.errors[0] || {}).limit });
     eq(io.get('KM_FX_RATE_BOOK'), before, 'capacity: NOTHING was written — not a truncated book');
     // and the refusal is about BYTES, not characters: the same note in ASCII fits.
     const ascii = ACTIVE.map((r2, i) => Object.assign({}, r2, {
@@ -425,13 +438,18 @@ const ACTIVE = DRAFT.rates;
     const doc = JSON.parse(io.get('KM_FX_RATE_BOOK'));
     eq(doc.log[0].by, 'ops@example.com', 'authority: the change record attributes the IDENTIFIED caller');
   }
-  // The documented escape: an explicit '*' recorded in configuration.
+  // FX1-R3 REMOVED THE ESCAPE. R2 allowed an explicit '*' on the argument that a decision written
+  // down differs from a default nobody chose. The deployment mode that cannot identify a caller is
+  // precisely the mode in which somebody reaches for '*', so the escape and the hole it was meant to
+  // make visible were the same hole. Section 21 owns the full contract; this is the inverted twin of
+  // the assertion that used to live here, kept so the change of requirement is visible in place.
   {
     const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', '*');
     io.user = () => '';
-    const r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE, changed_by: 'ops', changed_at: 't' } }, io);
-    ok(r.success, 'authority: an explicitly OPEN deployment is allowed', codes(r));
-    eq(r.data.authority, 'OPEN_BY_CONFIGURATION', 'authority: and is recorded as a decision, not a default');
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE } }, io);
+    ok(!r.success, 'authority: an explicitly OPEN deployment is NO LONGER allowed', codes(r));
+    eq(codes(r)[0], 'FX_AUTHORITY_WILDCARD_REFUSED', 'authority: and the wildcard is refused by its own name');
+    eq(io.get('KM_FX_RATE_BOOK'), null, 'authority: nothing was written');
   }
   // READ is never gated on write authority.
   {
@@ -445,6 +463,221 @@ const ACTIVE = DRAFT.rates;
   }
 }
 
-console.log('');
-console.log('FX1-R2 staged-proposal verification: ' + pass + ' passed, ' + fail + ' failed.');
+// ===================================================================================================
+// FX1-R3 — the three the Owner named before integration
+// ===================================================================================================
+
+// ---- 19. THE REQUEST'S doc_version IS STRICTLY TYPED, NOT COERCED ----------------------------------
+//
+// FX1-R2 made the STORED document strictly typed and left the REQUEST on Number(). That is the same
+// looseness one layer out, and it is worse here, because Number() maps four different "I did not send
+// a version" values onto the number 0 — and 0 is the doc_version of an ABSENT book. So a save that
+// claims nothing at all passes the compare-and-swap against an empty book and writes the first rate
+// book, which is precisely what the version check exists to prevent.
+{
+  const listed = () => { const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', 'ops@example.com');
+    io.user = () => 'ops@example.com'; return io; };
+  // The four that Number() turns into 0 — each one a request that carries no version.
+  [[null, 'null'], ['', 'an empty string'], [[], 'an empty array'], ['0', 'the STRING "0"']].forEach(([v, label]) => {
+    const io = listed();
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: v, rates: ACTIVE } }, io);
+    ok(!r.success, 'R3 doc_version: ' + label + ' is refused, not read as version 0');
+    eq(codes(r)[0], 'FX_DOC_VERSION_REQUIRED', 'R3 doc_version: ' + label + ' is refused BY NAME');
+    eq(io.get('KM_FX_RATE_BOOK'), null, 'R3 doc_version: ' + label + ' wrote nothing');
+  });
+  // true -> 1, which would claim to have read a version that may not even exist.
+  {
+    const io = listed();
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: true, rates: ACTIVE } }, io);
+    ok(!r.success, 'R3 doc_version: a boolean is refused, not coerced to 1');
+    eq(codes(r)[0], 'FX_DOC_VERSION_REQUIRED', 'R3 doc_version: by name');
+  }
+  // A numeric STRING that happens to match is still refused: the type is the contract, not the value.
+  {
+    const io = listed();
+    io.set('KM_FX_RATE_BOOK', JSON.stringify({ shape: 1, doc_version: 3, rates: [], log: [] }));
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: '3', rates: ACTIVE } }, io);
+    ok(!r.success, 'R3 doc_version: "3" against a stored 3 is still refused — the type is the contract');
+    eq(codes(r)[0], 'FX_DOC_VERSION_REQUIRED', 'R3 doc_version: by name');
+    eq(JSON.parse(io.get('KM_FX_RATE_BOOK')).doc_version, 3, 'R3 doc_version: and the stored book did not move');
+  }
+  // Absent is refused, as it always was.
+  {
+    const io = listed();
+    const r = api.handleFxRateBookSave_({ payload: { rates: ACTIVE } }, io);
+    ok(!r.success, 'R3 doc_version: absent is still refused');
+    eq(codes(r)[0], 'FX_DOC_VERSION_REQUIRED', 'R3 doc_version: by name');
+  }
+  // A real number still works, including 0 against an absent book.
+  {
+    const io = listed();
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE } }, io);
+    ok(r.success, 'R3 doc_version: a genuine 0 against an absent book is accepted', codes(r));
+    eq(r.data.doc_version, 1, 'R3 doc_version: and the book advances to 1');
+  }
+  // Fractions and negatives are refused for the same reason they always were.
+  [[1.5, 'a fraction'], [-1, 'a negative']].forEach(([v, label]) => {
+    const io = listed();
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: v, rates: ACTIVE } }, io);
+    ok(!r.success, 'R3 doc_version: ' + label + ' is refused');
+    eq(codes(r)[0], 'FX_DOC_VERSION_REQUIRED', 'R3 doc_version: ' + label + ' by name');
+  });
+}
+
+// ---- 20. THE AUDIT OPERATOR IS THE VERIFIED CALLER, AND THE TIME IS THE SERVER'S -------------------
+//
+// FX1-R2 took both from the request body: `payload.changed_by || auth.user` and `payload.changed_at`.
+// So the one record that says who changed a rate said whatever the browser said, and the one record
+// that says when said whatever the browser said. An audit trail a caller can write is not an audit
+// trail; it is a field. The caller has already been identified by the time this runs — that identity
+// is the only one with any standing, and the clock belongs to the server.
+{
+  const listed = () => { const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', 'ops@example.com');
+    io.user = () => 'ops@example.com'; return io; };
+  {
+    const io = listed();
+    const before = Date.now();
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE,
+      changed_by: 'someone.else@example.com', changed_at: '1999-01-01T00:00:00.000Z' } }, io);
+    ok(r.success, 'R3 audit: the listed caller saved', codes(r));
+    const after = Date.now();
+    const doc = JSON.parse(io.get('KM_FX_RATE_BOOK'));
+    ok(doc.log.length > 0, 'R3 audit: a change record was written');
+    eq(doc.log[0].by, 'ops@example.com',
+      'R3 audit: the operator is the VERIFIED caller, not the name the request supplied');
+    ok(doc.log.every(e => e.by === 'ops@example.com'),
+      'R3 audit: every record, not just the first', doc.log.map(e => e.by));
+    ok(doc.log.every(e => e.at !== '1999-01-01T00:00:00.000Z'),
+      'R3 audit: the timestamp is NOT the one the request supplied', doc.log.map(e => e.at));
+    ok(doc.log.every(e => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(String(e.at))),
+      'R3 audit: it is a real UTC instant', doc.log.map(e => e.at));
+    ok(doc.log.every(e => { const t = Date.parse(e.at); return t >= before - 1000 && t <= after + 1000; }),
+      'R3 audit: generated on the server, now — within this call', doc.log.map(e => e.at));
+  }
+  // There is no spelling of the body that reaches the operator field.
+  {
+    const io = listed();
+    api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE,
+      by: 'x@x', user: 'y@y', operator: 'z@z', changed_by: 'w@w', email: 'v@v' } }, io);
+    const doc = JSON.parse(io.get('KM_FX_RATE_BOOK'));
+    ok(doc.log.every(e => e.by === 'ops@example.com'),
+      'R3 audit: no alternative spelling in the body reaches the operator field', doc.log.map(e => e.by));
+  }
+  // And nothing in the shipped source still reads the client's attribution.
+  {
+    ok(!/payload\.changed_by/.test(PROPOSED_CODE),
+      'R3 audit: the source no longer reads changed_by from the request at all');
+    ok(!/payload\.changed_at/.test(PROPOSED_CODE),
+      'R3 audit: nor changed_at — the clock is the server’s');
+  }
+}
+
+// ---- 21. THERE IS NO BYPASS: NOT A WILDCARD, NOT A ROLE IN THE BODY --------------------------------
+//
+// FX1-R2 kept one documented escape — an explicit '*' recorded in the configuration — on the argument
+// that a decision written down differs from a default nobody chose. The Owner has now removed it, and
+// the reasoning is sound: the deployment mode that cannot identify a caller is EXACTLY the mode in
+// which '*' would be set, so the escape and the hole it was meant to make visible are the same hole.
+// A '*' is refused BY NAME rather than silently ignored, so an Owner who set one finds out why instead
+// of reading a confusing "not authorised".
+{
+  const ACTIVE_ = ACTIVE;
+  // '*' no longer grants anything, with or without an identifiable caller.
+  {
+    const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', '*'); io.user = () => '';
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE_ } }, io);
+    ok(!r.success, 'R3 bypass: a wildcard allowlist does NOT authorise an unidentifiable caller');
+    eq(codes(r)[0], 'FX_AUTHORITY_WILDCARD_REFUSED', 'R3 bypass: and says so by name, not as NOT_AUTHORIZED');
+    eq(io.get('KM_FX_RATE_BOOK'), null, 'R3 bypass: nothing was written');
+  }
+  {
+    const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', '*'); io.user = () => 'ops@example.com';
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE_ } }, io);
+    ok(!r.success, 'R3 bypass: nor an identified one — the wildcard grants nothing to anybody');
+    eq(codes(r)[0], 'FX_AUTHORITY_WILDCARD_REFUSED', 'R3 bypass: by name');
+  }
+  // A wildcard sitting beside real addresses is inert: the real entries still work.
+  {
+    const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', '*, ops@example.com'); io.user = () => 'ops@example.com';
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE_ } }, io);
+    ok(r.success, 'R3 bypass: a real address still authorises even with a wildcard in the list', codes(r));
+    eq(r.data.authority, 'ALLOWLIST', 'R3 bypass: and the model is the allowlist, never an open one');
+  }
+  {
+    const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', '*, ops@example.com'); io.user = () => 'other@example.com';
+    const r = api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE_ } }, io);
+    ok(!r.success, 'R3 bypass: and an unlisted caller is still refused beside a wildcard');
+    eq(codes(r)[0], 'FX_NOT_AUTHORIZED', 'R3 bypass: by name');
+  }
+  // Nothing the body can say changes the answer.
+  {
+    const bodies = [
+      { role: 'admin' }, { is_admin: true }, { user: 'ops@example.com' }, { caller: 'ops@example.com' },
+      { authority: 'OPEN_BY_CONFIGURATION' }, { may_edit: true }, { editors: '*' }
+    ];
+    bodies.forEach((extra, i) => {
+      const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', 'ops@example.com'); io.user = () => '';
+      const body = Object.assign({ payload: Object.assign({ doc_version: 0, rates: ACTIVE_ }, extra) }, extra);
+      const r = api.handleFxRateBookSave_(body, io);
+      ok(!r.success, 'R3 bypass: body variant ' + i + ' does not authorise an unidentifiable caller');
+      eq(codes(r)[0], 'FX_AUTHORITY_UNVERIFIABLE', 'R3 bypass: body variant ' + i + ' still UNVERIFIABLE');
+      eq(io.get('KM_FX_RATE_BOOK'), null, 'R3 bypass: body variant ' + i + ' wrote nothing');
+    });
+  }
+  // Structural: the authority function cannot consult the request, because it is not given it.
+  {
+    const sig = /function fxBookAuthority_\(([^)]*)\)/.exec(PROPOSED);
+    ok(!!sig, 'R3 bypass: the authority function is present');
+    eq((sig ? sig[1] : '').replace(/\s/g, ''), 'io',
+      'R3 bypass: it takes ONLY the io — the request is not in scope, so no field of it can be consulted');
+    ok(!/OPEN_BY_CONFIGURATION/.test(PROPOSED_CODE),
+      'R3 bypass: and the open model is gone from the source entirely, not merely unreachable');
+  }
+  // READ is still never gated on write authority.
+  {
+    const io = bare(); io.set('KM_FX_RATE_BOOK_EDITORS', '*');
+    io.set('KM_FX_RATE_BOOK', JSON.stringify({ shape: 1, doc_version: 1, rates: ACTIVE_, log: [] }));
+    const g = api.handleFxRateBookGet_({}, io);
+    ok(g.success, 'R3 bypass: a caller who may not save can still read');
+    eq(g.data.may_edit, false, 'R3 bypass: and is told plainly they may not edit');
+    eq(g.data.authority_reason, 'FX_AUTHORITY_WILDCARD_REFUSED', 'R3 bypass: with the real reason');
+    eq(g.data.rates.length, ACTIVE_.length, 'R3 bypass: and the rates are all there');
+  }
+}
+
+// ---- 22. THE CREATION READER: a number, or nothing -------------------------------------------
+//
+// 04_'s pricingNewRowPlan_ asks this one question at SKU creation. Everything it can be told that is
+// not a usable coefficient has to arrive as the SAME answer, because the row has exactly one
+// alternative: wait, blank, pending_fx. A zero or a fallback here would be the guess the creation
+// contract exists to refuse.
+{
+  const io = mem();
+  api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE } }, io);
+  eq(api.fxBookRateForCreate_('USD', 'JPY', '2026-10-19', io), 158.020084,
+    'create: a stored coefficient comes back as the NUMBER 73_ will multiply by');
+  eq(api.fxBookRateForCreate_('USD', 'USD', '2026-10-19', io), 1,
+    'create: identity is 1 - what the same currency MEANS, not an assumption about a market');
+  eq(api.fxBookRateForCreate_('USD', 'SEK', '2026-10-19', io), null,
+    'create: a pair the book does not hold is null, so the row stays pending');
+  eq(api.fxBookRateForCreate_('JPY', 'USD', '2026-10-19', io), null,
+    'create: only-the-inverse-exists is ALSO null - inverting a stored rate here would be a second conversion authority');
+  eq(api.fxBookRateForCreate_('USD', 'JPY', '2020-01-01', io), null,
+    'create: a date before the rate was effective is null, not the nearest rate');
+  eq(api.fxBookRateForCreate_('', 'JPY', '2026-10-19', io), null, 'create: an incomplete pair is null');
+  {
+    const bad = bare();
+    bad.set('KM_FX_RATE_BOOK', '{not json');
+    eq(api.fxBookRateForCreate_('USD', 'JPY', '2026-10-19', bad), null,
+      'create: a corrupt book is null rather than a throw - the row waits, it is not blocked');
+  }
+  {
+    const empty = bare();
+    eq(api.fxBookRateForCreate_('USD', 'JPY', '2026-10-19', empty), null,
+      'create: an absent book is null - which is exactly the state 04_ has had all along');
+  }
+}
+
+console.log("");
+console.log("FX1-R3 staged-proposal verification: " + pass + " passed, " + fail + " failed.");
 process.exitCode = fail ? 1 : 0;

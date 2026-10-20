@@ -360,3 +360,97 @@ wiring. Not a sheet, not a schema change, not a price write. Per the CP2V-R2 pre
 the change it names, and any overrun comes out of this round's own prose.
 
 **Awaiting an FX-specific budget decision. Nothing lands until it is granted.**
+
+---
+
+## FX1-R3 — the integration is BUILT, VERIFIED, and 1,070 bytes OVER the approved ceiling
+
+**Measured, not estimated.** `node docs/planning/fx1-r1-staging/measure-fx1-r3-integration.js` applies the
+whole integration to the working tree, counts every `.gs` under `assets/specs/active/apps-script/` the way
+`gs-load-surface-audit.js` does (UTF-8 bytes, LF, which is how git stores them), writes the applied diff to
+`fx1-r3-integration.patch`, and **restores the tree**. It leaves nothing behind and can be re-run by anyone.
+
+| file | bytes |
+|---|---:|
+| `75_api_v1_fx_rate_book.gs` (new) | **+29,661** |
+| `63_api_v1_system_health.gs` (2 required actions, manifest row, 2 version bumps) | +1,588 |
+| `04_marketplace_forecast_import.gs` (consult the book at SKU creation) | +981 |
+| `01_router.gs` (1 GET, 1 POST, the POST vocabulary) | +898 |
+| **TOTAL** | **+33,128** |
+
+```
+before   78 files   4,629,942 bytes
+after    79 files   4,663,070 bytes
+ceiling              4,662,000 bytes   (Owner-approved, FX1-R3)
+VERDICT  OVER by 1,070 bytes
+```
+
+**So the integration was NOT committed.** The working tree is back at 78 files / 4,629,942 bytes, the
+`SIZE_BUDGET` gate is untouched at 4,630,000, and the wiring is preserved as a reviewable patch rather
+than as a half-landed feature. Nothing was deleted to make room and the ceiling was not moved: the
+instruction for this case was to stop and report, and 1,070 bytes is a decision, not a rounding error.
+
+### Where the 1,070 bytes could come from, stated so the choice is the Owner's
+
+`75_` is 29,661 bytes, of which **13,333 (45%) are comment lines** and 16,297 are code. The deficit is
+**8% of its own commentary**. That is the cheapest available source and it touches nothing else — but it
+is also the part of this repository that explains why each guard exists, and five of this round's ten
+mutants are guards whose reason lives only in those comments. Trimming them to fit a byte budget is a
+real cost, not a free one, which is why it is being put as a question rather than done quietly.
+
+Three other shapes, for comparison:
+
+1. **Raise the ceiling to 4,664,000.** ~930 bytes of working headroom, same as the margin FX1-R2 was
+   budgeted with. The surface has grown ~33 KB in this round alone and the next FX round will want room.
+2. **Defer the `04_` creation wiring (−981 bytes, plus ~350 of the `75_` reader it calls).** It lands at
+   4,661,739 — under, with 261 bytes spare. The cost: a SKU created cross-currency still goes
+   `pending_fx` even when a rate IS stored, which is the behaviour that exists today, so nothing
+   regresses; the rate book would simply not yet reach creation. This is the smallest honest subset.
+3. **Trim `75_`'s commentary by ~1,100 bytes.** Fits, and the reasoning that would go is recoverable from
+   the decision register and this file — but only if someone thinks to look there.
+
+Recommendation: **option 2 for this round** (it is under the approved ceiling with the approved scope
+reduced by one named item), with option 1 as the next budget conversation. Option 3 is available and is
+not recommended.
+
+### What IS delivered, and it costs ZERO GS bytes
+
+Everything below lives under `docs/planning/fx1-r1-staging/` and `assets/specs/active/apps-script/` is
+byte-identical to `HEAD`:
+
+- `75_api_v1_fx_rate_book.gs.proposed` — the R3-hardened module.
+- `verify-75-proposed.js` — **221 passed, 0 failed**, offline, against the real `73_` helpers.
+- `mutants-75-proposed.js` — **10 applied, 10 caught, 0 missed**, and it proves the staged file is
+  unmodified when it finishes. FX1-R2 ran its mutants by hand and left nothing behind, so "5 of 5" was
+  not re-runnable by anybody, including this round.
+- `measure-fx1-r3-integration.js` — the measurement above.
+- `fx1-r3-integration.patch` — the wiring, reviewable without running anything.
+
+### The three gaps FX1-R3 closed, each a counter-example that failed first
+
+1. **The request's `doc_version` was coerced with `Number()`.** `null`, `''` and `[]` all map to `0`, and
+   `0` is the version of an absent book — so a save that claimed no version at all passed the
+   compare-and-swap and wrote the first rate book. Measured on the R2 proposal: each of `null`, `''`,
+   `[]` and `"0"` stored a complete five-pair book at `doc_version: 1`. Now strictly typed, and a numeric
+   string is refused even when its value matches, because the type is the contract.
+2. **The audit operator and timestamp came from the request body.** `payload.changed_by || auth.user` and
+   `payload.changed_at`, so the one record of who changed a rate said whatever the browser said — while
+   the caller had already been identified two lines earlier. Both now come from the server: the verified
+   caller, and `new Date().toISOString()`.
+3. **An explicit `*` in the allowlist authorised anybody.** R2 defended it as a decision written down.
+   The flaw is that the deployment mode which cannot identify a caller is exactly the mode in which
+   someone reaches for `*`, so the escape and the hole it was meant to make visible were the same hole.
+   It is now refused **by its own name** (`FX_AUTHORITY_WILDCARD_REFUSED`) so an Owner who set one learns
+   why, and `fxBookAuthority_` takes **only the io** — the request is not a parameter, so no field of it
+   can reach the decision.
+
+### What is NOT built, and why
+
+The **Administration page** is front-end only and would cost **0 GS bytes**, so it does not affect the
+verdict above. It is not built, because it is a page for two actions that cannot be deployed, and because
+each of the three options above changes what it would be built against. It is the first thing to do once
+the size question is settled.
+
+**No production write of any kind was made.** No Script Property was written, no rate was initialised, no
+price batch was run. Every assertion above comes from offline fixtures with an injected `io`; a sandbox is
+not database isolation, and nothing here relied on it being one.

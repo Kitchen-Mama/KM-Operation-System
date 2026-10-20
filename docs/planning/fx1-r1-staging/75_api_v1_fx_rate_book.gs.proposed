@@ -1,17 +1,13 @@
-// 75_api_v1_fx_rate_book.gs — FX1-R2 — the FX RATE BOOK: stored coefficients with provenance, history,
+/// 75_api_v1_fx_rate_book.gs — FX1-R3 — the FX RATE BOOK: stored coefficients with provenance, history,
 // an atomic commit, a capacity guard and an authorization that fails closed.
-//
-// STAGED, NOT DEPLOYED. This file is deliberately OUTSIDE assets/specs/active/apps-script/ and carries a
-// .proposed suffix so no build, audit or sync step can pick it up. It exists to make the GS cost of FX
-// a MEASURED number instead of an estimate. It becomes real only on an approved FX budget.
 //
 // WHAT IT ADDS: somewhere to KEEP a rate. 73_ already converts correctly and already refuses almost
 // everything that should be refused — it simply has nowhere to read a coefficient from, so every run is
 // re-typed by a person (PRICING_DATABASE_MAPPING §10, "No separate FX DB table for MVP").
 //
 // WHAT IT DOES NOT ADD: any price formula. LOCAL = BASE x RATE lives in 73_ and is not restated here.
-// This file produces the `rates: [...]` array 73_ already accepts, and nothing else. Saving a rate writes
-// NO price: prices move only when a reconciliation runs, and dry_run is its default.
+// This file produces the `rates: [...]` array 73_ already accepts, and nothing else. SAVING A RATE
+// WRITES NO PRICE: prices move only when a reconciliation runs, and dry_run is its default.
 //
 // REUSE, NOT RE-CREATION (FX1-R1 §1):
 //   • pricingBuildRateTable_  (73_) — positive, source, as_of, identity-is-1, duplicate pair. Same error
@@ -20,12 +16,18 @@
 //   • pricingStr_ / pricingReadNumber_ (73_) — same coercion as the writer that consumes the rates.
 //   • Script Properties + injectable io + envelope (45_) — the established config-storage pattern.
 //
-// FX1-R2 CLOSES FOUR THINGS THE FIRST DRAFT LEFT OPEN. Each is a counter-example in the verifier:
-//   1. the stored document was TRUSTED once it parsed as JSON;
-//   2. a book could grow past what a Script Property can hold, and the overflow was discovered by the
-//      platform at write time, after the change record had already been appended;
-//   3. the book and its change log were TWO properties, so a half-written save left them disagreeing;
-//   4. the write authority returned "allowed" unconditionally.
+// FX1-R2 closed four things the first draft left open, each a counter-example in the staged verifier:
+// the stored document was trusted once it parsed; a book could outgrow a Script Property and find out
+// at write time, after the change record was appended; the book and its log were two properties, so a
+// half-written save left them disagreeing; and the write authority returned "allowed" unconditionally.
+//
+// FX1-R3 closed three more, and they are the three that decide whether the audit trail means anything:
+//   1. the REQUEST's doc_version was coerced with Number(), so null, '' and [] all passed as version 0 —
+//      and 0 is the version of an absent book, so a save claiming nothing wrote the first one;
+//   2. the operator and the timestamp were taken from the request body, so the record of who changed a
+//      rate said whatever the browser said;
+//   3. an explicit '*' in the allowlist authorised anybody, in exactly the deployment mode that cannot
+//      identify a caller.
 
 var FX_BOOK_PROP_KEY_ = 'KM_FX_RATE_BOOK';
 var FX_BOOK_EDITORS_PROP_KEY_ = 'KM_FX_RATE_BOOK_EDITORS';
@@ -317,7 +319,7 @@ function fxBookCommit_(io, doc) {
 }
 
 // ---- authority -------------------------------------------------------------------------------------------
-// FX1-R2 — IT FAILS CLOSED, AND IT SAYS WHY.
+/// FX1-R2 — IT FAILS CLOSED, AND IT SAYS WHY.
 //
 // The first draft returned { ok: true } unconditionally and called that "the deployment model". That is a
 // true description of every OTHER write in this project, and it is not good enough for the one action that
@@ -328,32 +330,76 @@ function fxBookCommit_(io, doc) {
 // it, and Session.getActiveUser() returns '' there. THAT CASE REFUSES. An unidentifiable caller is not an
 // authorised one, and treating it as one would make the allowlist decorative.
 //
-// The single documented escape is an explicit '*' in the property — the Owner recording, in the
-// configuration itself, that this deployment is open. A decision written down is a different thing from a
-// default nobody chose.
-function fxBookAuthority_(io, body) {
+// FX1-R3 — AND THE ESCAPE IS GONE.
+//
+// R2 kept one documented escape: an explicit '*' in the property, the Owner recording in the configuration
+// itself that this deployment is open. The argument was that a decision written down differs from a
+// default nobody chose, and that part was right. What it missed is that the deployment mode which cannot
+// identify a caller IS the mode in which somebody would reach for '*' — so the escape and the hole it was
+// supposed to make visible are the same hole, and the one action that can reprice a catalogue would have
+// been open in exactly the deployments where nobody can be held to it.
+//
+// A '*' is refused BY ITS OWN NAME rather than quietly ignored. An Owner who set one, and who is now
+// refused, needs to read why; FX_NOT_AUTHORIZED would send them looking for a missing address.
+//
+// IT TAKES ONLY THE io. The request is not a parameter, so no field of it — a role, a claimed user, a
+// spelling nobody has thought of yet — can reach this decision. That is a stronger statement than
+// checking the body and ignoring it, because it cannot be undone by a later edit that "just reads one
+// field": there is nothing to read.
+function fxBookAuthority_(io) {
   var raw = pricingStr_(io.get(FX_BOOK_EDITORS_PROP_KEY_));
   if (!raw) {
     return { ok: false, code: 'FX_AUTHORITY_NOT_CONFIGURED', model: 'ALLOWLIST',
       detail: 'No editor allowlist is configured. Set ' + FX_BOOK_EDITORS_PROP_KEY_
-        + ' to the addresses permitted to change FX rates, or to * to record that this deployment is open.' };
+        + ' to the addresses permitted to change FX rates.' };
   }
   var list = raw.split(',').map(function (s) { return pricingStr_(s).toLowerCase(); })
     .filter(function (s) { return s !== ''; });
-  if (list.indexOf('*') !== -1) return { ok: true, model: 'OPEN_BY_CONFIGURATION', user: null };
+  var real = list.filter(function (s) { return s !== '*'; });
+  if (real.length === 0 && list.indexOf('*') !== -1) {
+    return { ok: false, code: 'FX_AUTHORITY_WILDCARD_REFUSED', model: 'ALLOWLIST',
+      detail: FX_BOOK_EDITORS_PROP_KEY_ + ' is set to *, which no longer authorises anybody. FX rates '
+        + 'reprice the catalogue on the next reconciliation, so the editor must be an identifiable '
+        + 'person. List the addresses permitted to change them.' };
+  }
 
   var who = pricingStr_(io.user ? io.user() : '').toLowerCase();
   if (!who) {
     return { ok: false, code: 'FX_AUTHORITY_UNVERIFIABLE', model: 'ALLOWLIST',
       detail: 'This deployment cannot identify the caller, so membership of the allowlist cannot be '
-        + 'checked. Nothing was written. Deploy so the caller is identifiable, or set '
-        + FX_BOOK_EDITORS_PROP_KEY_ + ' to * to record that this deployment is open.' };
+        + 'checked. Nothing was written. Deploy so the caller is identifiable.' };
   }
-  if (list.indexOf(who) === -1) {
+  if (real.indexOf(who) === -1) {
     return { ok: false, code: 'FX_NOT_AUTHORIZED', model: 'ALLOWLIST', user: who,
       detail: who + ' is not on the FX rate book editor allowlist.' };
   }
   return { ok: true, model: 'ALLOWLIST', user: who };
+}
+
+// The server clock, in UTC, to the second. Apps Script has no Intl guarantee worth relying on and the
+// spreadsheet's timezone is a display preference, not an instant — a change log mixing the two cannot
+// be ordered. toISOString() is the one representation that is unambiguous everywhere this is read.
+function fxBookNowIso_() {
+  try { return new Date().toISOString(); } catch (e) { return ''; }
+}
+
+// FX1-R3 — THE ONE READER 04_ NEEDS, and it answers a NUMBER OR NOTHING.
+//
+// Every refusal fxBookResolve_ can make — pair incomplete, ambiguous, only the inverse stored, not
+// found at all — means the same thing to a row being created: there is no coefficient, so the row
+// waits. Returning null for all of them keeps that decision in ONE place instead of asking the
+// creation path to re-rank reasons it cannot act on differently.
+//
+// A THROW IS ALSO NULL. A corrupt or future-shaped book must not stop a SKU being created: the row
+// goes pending, which is the state it has had since this contract was written, and the book surfaces
+// its own problem on the Administration page where it can be fixed.
+function fxBookRateForCreate_(base, quote, onDate, io) {
+  try {
+    var r = fxBookResolve_(fxBookReadDoc_(io || fxBookDefaultIo_()).rates, base, quote, onDate);
+    if (!r || r.ok !== true) return null;
+    var n = Number(r.rate);
+    return (isFinite(n) && n > 0) ? n : null;
+  } catch (e) { return null; }
 }
 
 function fxBookEnvelope_(ok, data, errors) {
@@ -365,7 +411,7 @@ function handleFxRateBookGet_(body, io) {
   io = io || fxBookDefaultIo_();
   try {
     var doc = fxBookReadDoc_(io);
-    var auth = fxBookAuthority_(io, body);
+    var auth = fxBookAuthority_(io);
     return fxBookEnvelope_(true, {
       doc_version: doc.doc_version,
       rates: doc.rates,
@@ -384,17 +430,31 @@ function handleFxRateBookGet_(body, io) {
 // ---- API: SAVE (authority -> LOCK -> re-read -> version CAS -> validate -> ONE commit -> readback) --------
 function handleFxRateBookSave_(body, io) {
   io = io || fxBookDefaultIo_();
-  var auth = fxBookAuthority_(io, body);
+  var auth = fxBookAuthority_(io);
   if (!auth.ok) {
     return fxBookEnvelope_(false, null, [{ code: auth.code, message: auth.detail, model: auth.model }]);
   }
 
   var payload = (body && body.payload && typeof body.payload === 'object') ? body.payload : (body || {});
-  var expected = Number(payload.doc_version);
-  if (!isFinite(expected) || expected < 0 || Math.floor(expected) !== expected) {
+  // FX1-R3 — THE REQUEST IS TYPED AS STRICTLY AS THE STORED DOCUMENT.
+  //
+  // R2 made fxBookReadDoc_ refuse a doc_version that is not a number, and left THIS on Number(). That
+  // is the same looseness one layer further out, and it is worse here: Number() maps null, the empty
+  // string and the empty array all onto 0 — and 0 is the doc_version of an ABSENT book. So a save that
+  // carried no version claim at all passed the compare-and-swap against an empty book and wrote the
+  // first rate book, which is exactly what this check exists to prevent. MEASURED on the R2 proposal:
+  // doc_version null, "", [] and "0" each stored a complete five-pair book at doc_version 1.
+  //
+  // A numeric STRING is refused even when its value matches, because the type IS the contract: a client
+  // that sends "3" has not read the version, it has echoed something, and the next thing it echoes may
+  // not be a number at all.
+  if (typeof payload.doc_version !== 'number' || !isFinite(payload.doc_version)
+      || payload.doc_version < 0 || Math.floor(payload.doc_version) !== payload.doc_version) {
     return fxBookEnvelope_(false, null, [{ code: 'FX_DOC_VERSION_REQUIRED',
-      message: 'A save must carry the whole-number doc_version it read, so a stale tab cannot overwrite a newer book.' }]);
+      message: 'A save must carry, as a NUMBER, the whole-number doc_version it read, so a stale tab '
+        + 'cannot overwrite a newer book and a request with no version cannot pass as version 0.' }]);
   }
+  var expected = payload.doc_version;
   var incoming = (payload.rates && payload.rates.length !== undefined && typeof payload.rates !== 'string')
     ? payload.rates : null;
   if (!incoming) {
@@ -423,8 +483,19 @@ function handleFxRateBookSave_(body, io) {
 
     // The log is built from the SAME pair of states that is about to be committed, and travels in the same
     // document, so the history and the rates cannot disagree about what happened.
-    var who = pricingStr_(payload.changed_by) || auth.user || 'unknown';
-    var records = fxBookChangeRecords_(current.rates, incoming, who, pricingStr_(payload.changed_at));
+    // FX1-R3 — WHO AND WHEN ARE NOT THE REQUEST'S TO SAY.
+    //
+    // R2 read both from the body: `pricingStr_(payload.changed_by) || auth.user` and
+    // `payload.changed_at`. So the one record that says who changed a rate said whatever the browser
+    // said, and the one record that says when said whatever the browser said. An audit trail the
+    // caller writes is not an audit trail, it is a field — and the caller has ALREADY been identified
+    // by the time this line runs, so the body was overriding a fact with a claim.
+    //
+    // auth.user is the only identity with standing here: every path that could not establish one has
+    // already returned. The timestamp is taken from the server clock, in UTC, for the same reason —
+    // a client clock can be wrong by years, and a change log ordered by it is not ordered.
+    var who = auth.user;
+    var records = fxBookChangeRecords_(current.rates, incoming, who, fxBookNowIso_());
     var nextLog = current.log.concat(records);
     if (nextLog.length > FX_BOOK_LOG_MAX_) nextLog = nextLog.slice(nextLog.length - FX_BOOK_LOG_MAX_);
 

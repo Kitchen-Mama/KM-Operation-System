@@ -6241,3 +6241,87 @@ while asserting nothing.
   drops it through `/__site-status`, and the page re-reads the authority without rebuilding the select.
 
 ---
+
+### D-S8-B3-161 — A save that claimed no version wrote the first rate book — **FIXED (FX1-R3 §2, staged)**
+
+FX1-R2 made the STORED document strictly typed and left the REQUEST on `Number()`. That is the same
+looseness one layer out, and it is worse there: `Number()` maps `null`, `''` and `[]` all onto `0` — and
+`0` is the `doc_version` of an **absent** book. So a save carrying no version claim at all passed the
+compare-and-swap against an empty book and wrote the first rate book, which is exactly what the version
+check exists to prevent.
+
+Measured on the R2 proposal, each of `null`, `''`, `[]` and the string `"0"` stored a complete five-pair
+book at `doc_version: 1`. The request is now typed as strictly as the stored document, and a numeric
+string is refused **even when its value matches the stored version**: a client that sends `"3"` has not
+read the version, it has echoed something, and the next thing it echoes may not be a number at all.
+
+### D-S8-B3-162 — The audit trail was a field the caller filled in — **FIXED (FX1-R3 §2, staged)**
+
+The change record took both its facts from the request body: `pricingStr_(payload.changed_by) || auth.user`
+and `payload.changed_at`. So the one record that says who changed a rate said whatever the browser said,
+and the one record that says when said whatever the browser said — while the caller had **already been
+identified two lines earlier** by the authority check. The body was overriding a fact with a claim.
+
+Both now come from the server: the operator is `auth.user`, the only identity with standing (every path
+that could not establish one has already returned), and the timestamp is `new Date().toISOString()`. The
+verifier asserts no spelling in the body — `by`, `user`, `operator`, `changed_by`, `email` — reaches the
+field, and that the recorded instant falls inside the call that wrote it.
+
+### D-S8-B3-163 — The documented escape and the hole it made visible were the same hole — **FIXED (FX1-R3 §2, staged)**
+
+FX1-R2 kept one escape from the fail-closed write authority: an explicit `*` in
+`KM_FX_RATE_BOOK_EDITORS`, defended as the Owner recording in configuration that the deployment is open,
+and "a decision written down is a different thing from a default nobody chose". That argument is sound in
+general and wrong here. The deployment mode that **cannot identify a caller** — a Web App executing as the
+owner, where `Session.getActiveUser()` returns `''` — is precisely the mode in which someone reaches for
+`*`. So the escape would have been used exactly where it does the most damage, on the one action that can
+reprice an entire catalogue on the next reconciliation.
+
+`*` is now refused **by its own name** (`FX_AUTHORITY_WILDCARD_REFUSED`) rather than silently ignored, so
+an Owner who set one reads why instead of hunting for a missing address; a `*` sitting beside real
+addresses is inert and those addresses still work. And `fxBookAuthority_` takes **only the io**: the
+request is not a parameter, so no field of it — a role, a claimed user, a spelling nobody has thought of
+yet — can reach the decision. That is stronger than reading the body and ignoring it, because it cannot be
+undone by a later edit that "just reads one field": there is nothing to read.
+
+### D-S8-B3-164 — FX1-R3 is 1,070 bytes over the approved ceiling, so it was NOT committed — OPEN
+
+The Owner approved local integration and a GS ceiling of **4,662,000 bytes**, and asked for the full load
+surface measured including version and wiring costs, with the instruction to stop and report if it
+exceeds — not to raise the number and not to delete unrelated modules.
+
+| file | bytes |
+|---|---:|
+| `75_api_v1_fx_rate_book.gs` (new) | +29,661 |
+| `63_api_v1_system_health.gs` | +1,588 |
+| `04_marketplace_forecast_import.gs` | +981 |
+| `01_router.gs` | +898 |
+| **TOTAL** | **+33,128** → 79 files, **4,663,070** bytes, **OVER by 1,070** |
+
+The integration was therefore **reverted** rather than committed: `assets/specs/active/apps-script/` is
+byte-identical to `HEAD` at 78 files / 4,629,942 bytes, `SIZE_BUDGET` is untouched at 4,630,000, and the
+wiring is preserved as `docs/planning/fx1-r1-staging/fx1-r3-integration.patch`. A half-landed feature that
+fails its own budget gate is worse than one that has not landed.
+
+`measure-fx1-r3-integration.js` applies the integration, measures, writes the patch and restores the tree,
+so the number above is re-producible by anyone rather than asserted here. Options and a recommendation are
+in `FX_RATE_BOOK_FX1_R1_MEASURED.md`; the smallest honest subset that fits is to defer the `04_` creation
+wiring, which leaves today's `pending_fx` behaviour exactly as it is and lands at 4,661,739.
+
+The **Administration page** is front-end only and costs zero GS bytes, so it does not affect this verdict.
+It is not built because it is a page for two actions that cannot be deployed, and because each option on
+the table changes what it would be built against.
+
+### D-S8-B3-165 — "5 of 5 mutants" was not re-runnable by anybody (FX1-R2)
+
+FX1-R2 reported five mutants caught. They were applied by hand and left nothing behind, so the claim could
+not be re-checked by the next round — including by this one, which had to take it on trust while changing
+three of the guards it covered.
+
+`mutants-75-proposed.js` is the durable version: ten mutations, each one the **exact previous state** of
+the line rather than an invented breakage, applied to COPIES in a temp directory so the staged file is
+never written to, and the run proves that file is unchanged when it finishes. A mutation whose anchor no
+longer matches is reported as **STALE** rather than passing silently — which is how a mutation suite
+quietly stops testing anything. Ten applied, ten caught, nothing missed.
+
+---

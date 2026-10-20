@@ -1,0 +1,659 @@
+diff --git a/assets/specs/active/apps-script/01_router.gs b/assets/specs/active/apps-script/01_router.gs
+index 5fb95e87..71766dd7 100644
+--- a/assets/specs/active/apps-script/01_router.gs
++++ b/assets/specs/active/apps-script/01_router.gs
+@@ -117,6 +117,10 @@ function rtrGetReadHandlers_() {
+     // what makes it usable after a lost response: the client asks whether its write committed instead of
+     // resending it. The pricing.update twin stays POST-only and is deliberately absent from this table.
+     'pricing.write.status':                        handlePricingWriteStatus_,
++    // FX1-R3 — the stored FX coefficients (owner = 75_). READ-ONLY and on the GET table because seeing
++    // the rates that price the catalogue is not the same permission as changing them: the answer carries
++    // may_edit so the page can tell the operator before they start, and the SAVE twin stays POST-only.
++    'fxRateBook.get':                              handleFxRateBookGet_,
+     // Read-only diagnostics the pages consume
+     'system.requestOrderSendDiagnosticStatus':     handleRequestOrderSendDiagnosticStatus_,
+     'system.requestOrderSendReconcile':            handleRequestOrderSendReconcile_,
+@@ -1134,6 +1138,14 @@ function doPost(e) {
+       return jsonResponse_(handlePricingFxReconcile_(body));
+     }
+ 
++    // FX1-R3 — THE RATE BOOK WRITE (owner = 75_). It stores coefficients and NOTHING ELSE: no price
++    // moves here, and the only action that can move one is pricing.fxReconcile above, which is dry-run
++    // by default. POST only, authority fails closed, and the operator on the change record is the
++    // caller this deployment identified rather than a name the request supplied.
++    if (action === 'fxRateBook.save') {
++      return jsonResponse_(handleFxRateBookSave_(body));
++    }
++
+     if (action === 'syncMarketplaceSkusToSkuRegionalDetails') {
+       return handleSyncMarketplaceSkusToSkuRegionalDetails_(body);
+     }
+@@ -1203,7 +1215,7 @@ function doPost(e) {
+       return handleFactoryStockGuardGet_(body);
+     }
+ 
+-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, marketplace.allocationPriority.set, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
++    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, marketplace.allocationPriority.set, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, fxRateBook.save, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
+       // F1-7N-FB-4E §L — stamped with the handler and method, so a doPost answer can NEVER be classified
+       // as a method downgrade. This is the negative half of the proof and it was previously absent.
+       handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_,
+diff --git a/assets/specs/active/apps-script/04_marketplace_forecast_import.gs b/assets/specs/active/apps-script/04_marketplace_forecast_import.gs
+index 87598331..20b15e3d 100644
+--- a/assets/specs/active/apps-script/04_marketplace_forecast_import.gs
++++ b/assets/specs/active/apps-script/04_marketplace_forecast_import.gs
+@@ -88,7 +88,21 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
+   if (!l) { out.reason = 'LOCAL_CURRENCY_UNKNOWN'; return out; }
+   if (!b) { out.reason = 'BASE_CURRENCY_UNKNOWN'; return out; }
+   // THE WHOLE POINT. A rate for this pair is not something this file is allowed to decide.
+-  if (b !== l) { out.reason = 'NO_CANONICAL_FX_RATE'; return out; }
++  //
++  // FX1-R3 — IT IS STILL NOT, AND NOW THERE IS SOMEWHERE TO ASK. 75_ stores the coefficients, so a
++  // cross-currency row no longer has to be born blank merely because nothing had anywhere to keep a
++  // rate. What does NOT change is the answer when there is no coefficient: fx_rate, auto_* and the
++  // effective price stay BLANK and the row stays pending_fx. A blank auto is a visible gap; a zero is
++  // a commercial claim nobody made, and a fallback rate would be exactly the guess this contract was
++  // written to refuse. Saving a coefficient reprices nothing either — it only changes what the NEXT
++  // creation reads, and what a pricing.fxReconcile could later be asked to apply.
++  var fxRate = 1;
++  if (b !== l) {
++    fxRate = (typeof fxBookRateForCreate_ === 'function') ? fxBookRateForCreate_(b, l, asOf) : null;
++    if (!(typeof fxRate === 'number' && isFinite(fxRate) && fxRate > 0)) {
++      out.reason = 'NO_CANONICAL_FX_RATE'; return out;
++    }
++  }
+ 
+   if (typeof pricingRoundFx_ !== 'function' || typeof pricingDecimalsFor_ !== 'function') {
+     out.reason = 'PRECISION_AUTHORITY_UNAVAILABLE'; return out;
+@@ -96,7 +110,7 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
+   if (pricingDecimalsFor_(l) === null) { out.reason = 'UNSUPPORTED_CURRENCY'; return out; }
+ 
+   out.pending = false;
+-  out.fx_rate = 1;
++  out.fx_rate = fxRate;
+   out.fx_rate_date = asOf;
+   PRICING_CREATE_BANDS_.forEach(function (k) {
+     var raw = base ? base[k] : '';
+@@ -106,7 +120,7 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
+     // Present but not a number is a DATA FAULT, not a price. It is reported rather than coerced, because
+     // Number('') is 0 and that is precisely the coercion this round exists to remove.
+     if (!isFinite(n) || n < 0) { out.unreadable.push(k); return; }
+-    var r = pricingRoundFx_(n, l);
++    var r = pricingRoundFx_(n * fxRate, l);   // LOCAL = BASE x RATE, 73_’s direction, never inverted
+     if (r === null) { out.unreadable.push(k); return; }
+     out.auto[k] = r;
+     // AND THAT IS ALL. Until PRICING-R4G this line had a partner — `out.effective[k] = r` — which copied
+diff --git a/assets/specs/active/apps-script/63_api_v1_system_health.gs b/assets/specs/active/apps-script/63_api_v1_system_health.gs
+index 36777a27..cb72ed34 100644
+--- a/assets/specs/active/apps-script/63_api_v1_system_health.gs
++++ b/assets/specs/active/apps-script/63_api_v1_system_health.gs
+@@ -478,7 +478,10 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
+ // usual because that action is the ONLY way a priority can be written from R52 - upsertMarketplace now
+ // REFUSES the field outright - so a v19 deployment cannot store one by any route, and the frontend must be
+ // able to learn that WITHOUT attempting a write to find out.
+-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 20;
++// FX1-R3: 20 -> 21. 01_router gained fxRateBook.get and fxRateBook.save, and this number's rule is
++// "bump whenever a router ACTION is added or removed". A deployment at 20 serves pricing.fxReconcile
++// but has nowhere to keep a rate, so the page can read and never save.
++var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 21;
+ // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
+ // OLD list apart from a "nothing missing" answer from the CURRENT list.
+ // F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
+@@ -518,12 +521,18 @@ var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 20;
+ // answered `known_to_this_build: false` for an action the deployment serves correctly. That is the
+ // F1-7N-FB-4E-R2 fault exactly. The new action is listed in the SAME change that routes it, for R2's reason:
+ // a write owner's absence must never be discoverable only by a save that silently fails.
+-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 16;
++// FX1-R3: 16 -> 17. SYS_REQUIRED_ACTIONS_ gained the two fxRateBook actions.
++var SYS_REQUIRED_ACTION_LIST_VERSION_ = 17;
+ 
+ // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
+ // looks like a transport fault from the browser, so availability is reported per action by probing the handler
+ // symbol in the shared global scope — never by calling it.
+ var SYS_REQUIRED_ACTIONS_ = [
++  // FX1-R3 — the FX rate book (owner = 75_). A deployment that has 73_ but not 75_ can reconcile only
++  // from rates typed into the request, and the Administration page would show an empty book that it
++  // cannot save. Named here so that is visible as a partial sync rather than as a page with no rates.
++  { action: 'fxRateBook.get', handler: 'handleFxRateBookGet_', used_by: 'FX Rate Book (Administration)' },
++  { action: 'fxRateBook.save', handler: 'handleFxRateBookSave_', used_by: 'FX Rate Book save' },
+   { action: 'weeklyShipping.workspace.get', handler: 'handleWeeklyShippingWorkspaceGet_', used_by: 'Weekly Shipping Plan' },
+   { action: 'shipment.workspace.get', handler: 'handleShipmentWorkspaceGet_', used_by: 'Shipment Draft / Overview / Map' },
+   { action: 'purchaseOrder.workspace.get', handler: 'handlePurchaseOrderWorkspaceGet_', used_by: 'Purchase Order Workspace' },
+@@ -832,6 +841,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
+   // S8-B3-R1A (R51) — the Overseas Allocation Preview job. A NEW file is the partial-sync case this manifest
+   // exists for: without a row here, a project that copied 01_router.gs but not 47_ would route four actions to
+   // handlers that do not exist, and the only symptom would be a runtime error per click.
++  { file: '75_api_v1_fx_rate_book.gs', symbol: 'FX_BOOK_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55', owns: 'the stored FX rate book: one Script Property holding rates and change history together so a half-written save cannot leave them disagreeing, a UTF-8 byte capacity guard measured BEFORE the write, strict typing of both the stored document and the request doc_version, a compare-and-swap on that version inside the script lock, a readback that refuses to report a save it cannot confirm, and a write authority that fails closed on an unidentifiable caller. It owns NO price formula and NO price: conversion and precision stay in 73_, and saving a rate moves nothing until a reconciliation runs' },
+   { file: '74_api_v1_overseas_allocation_preview_job.gs', symbol: 'OAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'the READ-ONLY async Overseas Allocation Preview job: lifecycle (start/status/result/cancel + continuation/self-heal), the short-lock discipline that keeps it from starving Gap Materialization on the shared script lock, and the generation-keyed chunked Script-Property result store. It owns NO allocation formula - eligibility comes from 43_, demand from allocatedForecastQty, distribution from KMMSA' },
+   // S8-B3-R3-CP2V (R53) - 42_ JOINS THIS MANIFEST, having owned the recommendation read path with no stamp.
+   // From R53 it calls the Sheets v4 advanced service, so a stale copy answers with the SAME numbers while
+diff --git a/assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs b/assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs
+new file mode 100644
+index 00000000..44df4af4
+--- /dev/null
++++ b/assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs
+@@ -0,0 +1,525 @@
++/// 75_api_v1_fx_rate_book.gs — FX1-R3 — the FX RATE BOOK: stored coefficients with provenance, history,
++// an atomic commit, a capacity guard and an authorization that fails closed.
++//
++// WHAT IT ADDS: somewhere to KEEP a rate. 73_ already converts correctly and already refuses almost
++// everything that should be refused — it simply has nowhere to read a coefficient from, so every run is
++// re-typed by a person (PRICING_DATABASE_MAPPING §10, "No separate FX DB table for MVP").
++//
++// WHAT IT DOES NOT ADD: any price formula. LOCAL = BASE x RATE lives in 73_ and is not restated here.
++// This file produces the `rates: [...]` array 73_ already accepts, and nothing else. SAVING A RATE
++// WRITES NO PRICE: prices move only when a reconciliation runs, and dry_run is its default.
++//
++// REUSE, NOT RE-CREATION (FX1-R1 §1):
++//   • pricingBuildRateTable_  (73_) — positive, source, as_of, identity-is-1, duplicate pair. Same error
++//     vocabulary the page already renders. Not re-implemented here.
++//   • pricingDecimalsFor_     (73_) — the frozen precision contract IS the supported-currency list.
++//   • pricingStr_ / pricingReadNumber_ (73_) — same coercion as the writer that consumes the rates.
++//   • Script Properties + injectable io + envelope (45_) — the established config-storage pattern.
++//
++// FX1-R2 closed four things the first draft left open, each a counter-example in the staged verifier:
++// the stored document was trusted once it parsed; a book could outgrow a Script Property and find out
++// at write time, after the change record was appended; the book and its log were two properties, so a
++// half-written save left them disagreeing; and the write authority returned "allowed" unconditionally.
++//
++// FX1-R3 closed three more, and they are the three that decide whether the audit trail means anything:
++//   1. the REQUEST's doc_version was coerced with Number(), so null, '' and [] all passed as version 0 —
++//      and 0 is the version of an absent book, so a save claiming nothing wrote the first one;
++//   2. the operator and the timestamp were taken from the request body, so the record of who changed a
++//      rate said whatever the browser said;
++//   3. an explicit '*' in the allowlist authorised anybody, in exactly the deployment mode that cannot
++//      identify a caller.
++
++var FX_BOOK_PROP_KEY_ = 'KM_FX_RATE_BOOK';
++var FX_BOOK_EDITORS_PROP_KEY_ = 'KM_FX_RATE_BOOK_EDITORS';
++var FX_BOOK_LOCK_MS_ = 30000;
++var FX_BOOK_LOG_MAX_ = 50;
++// A Script Property VALUE is capped at 9 KB by the platform. The guard sits below it so the refusal is
++// ours, named and survivable, rather than a platform exception thrown halfway through a commit.
++var FX_BOOK_MAX_BYTES_ = 8192;
++var FX_BOOK_DOC_SHAPE_ = 1;
++var FX_BOOK_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';
++
++// ---- io ------------------------------------------------------------------------------------------------
++function fxBookDefaultIo_() {
++  var props = PropertiesService.getScriptProperties();
++  return {
++    get: function (k) { return props.getProperty(k); },
++    set: function (k, v) { props.setProperty(k, v); },
++    user: function () {
++      // The CALLER, not the deployment owner. Empty string when the deployment cannot identify them.
++      try { return pricingStr_(Session.getActiveUser().getEmail()); } catch (e) { return ''; }
++    }
++  };
++}
++
++function fxBookIsYmd_(v) { return /^\d{4}-\d{2}-\d{2}$/.test(pricingStr_(v)); }
++
++// FX1-R2 — UTF-8 BYTES, NOT CHARACTERS. A JavaScript string's .length counts UTF-16 units; the platform
++// counts bytes. A source name like "Banco de Espana — referencia" or a note in Chinese costs two or three
++// bytes per character, so a book that measures 8,000 "characters" can be well over the cap. Measuring the
++// wrong unit here would move the failure to the platform, at write time, after the log was already built.
++function fxBookByteLen_(s) {
++  var str = String(s == null ? '' : s), n = 0;
++  for (var i = 0; i < str.length; i++) {
++    var c = str.charCodeAt(i);
++    if (c < 0x80) n += 1;
++    else if (c < 0x800) n += 2;
++    else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; }   // surrogate pair = one 4-byte code point
++    else n += 3;
++  }
++  return n;
++}
++
++// ---- the stored document -------------------------------------------------------------------------------
++// ONE property holds EVERYTHING: { shape, doc_version, rates: [...], log: [...] }.
++//
++// FX1-R2 — THIS IS WHY THE COMMIT IS ATOMIC. The first draft kept the change log in a second property, so
++// a save was two writes: if the book landed and the log did not, the history silently lost a change that
++// HAD been applied, and if the log landed and the book did not, the history claimed a change that never
++// happened. There is no transaction across two Script Properties, and a lock does not provide one — a lock
++// serialises writers, it does not make two writes one. Folding the log into the same document makes the
++// commit a single setProperty: it either happened or it did not.
++function fxBookReadDoc_(io) {
++  var raw = io.get(FX_BOOK_PROP_KEY_);
++  if (raw === null || raw === undefined || pricingStr_(raw) === '') {
++    return { shape: FX_BOOK_DOC_SHAPE_, doc_version: 0, rates: [], log: [], absent: true };
++  }
++  var parsed;
++  try { parsed = JSON.parse(raw); }
++  catch (e) {
++    // A corrupt property is NOT an empty book. Returning [] here would let the next save overwrite a book
++    // nobody could read, destroying the history silently.
++    throw new Error('FX_BOOK_CORRUPT: the stored rate book is not valid JSON and was not overwritten.');
++  }
++  // FX1-R2 — STRUCTURE AND VERSION ARE VALIDATED, NOT ASSUMED. "It parsed" says only that it is JSON.
++  // Everything below is a way the document can be well-formed JSON and still not be a rate book: a shape
++  // written by a newer build, a doc_version that is a string or a float, rates that is an object. Coercing
++  // any of them would publish a book this code does not understand; refusing leaves it exactly as found.
++  if (!parsed || typeof parsed !== 'object' || parsed.constructor === Array) {
++    throw new Error('FX_BOOK_SHAPE_INVALID: the stored value is not a rate-book object.');
++  }
++  // STRICT ON TYPE, not merely on value. `Number("2")` is 2, so a coercing check would accept a book
++  // whose version is a STRING — and the next save would compare 2 against "2" with !== and refuse every
++  // legitimate write, or, worse, a later reader would concatenate instead of adding. The stored type is
++  // part of the contract.
++  var shape = parsed.shape;
++  if (typeof shape !== 'number' || !isFinite(shape) || Math.floor(shape) !== shape || shape < 1) {
++    throw new Error('FX_BOOK_SHAPE_INVALID: the stored document carries no usable shape marker.');
++  }
++  if (shape > FX_BOOK_DOC_SHAPE_) {
++    // A NEWER BUILD WROTE THIS. Refusing is the only safe answer: this code cannot know which fields it
++    // would silently drop on the next save, and dropping them is how a rollback destroys data.
++    throw new Error('FX_BOOK_SHAPE_FUTURE: the book was written by a newer build (shape ' + shape
++      + ' > ' + FX_BOOK_DOC_SHAPE_ + '). Nothing was read and nothing was overwritten.');
++  }
++  var dv = parsed.doc_version;
++  if (typeof dv !== 'number' || !isFinite(dv) || Math.floor(dv) !== dv || dv < 0) {
++    throw new Error('FX_BOOK_VERSION_INVALID: doc_version is not a whole number of at least 0.');
++  }
++  if (parsed.rates === undefined || parsed.rates === null || parsed.rates.length === undefined
++      || typeof parsed.rates === 'string') {
++    throw new Error('FX_BOOK_SHAPE_INVALID: rates is not a list.');
++  }
++  var log = (parsed.log && parsed.log.length !== undefined && typeof parsed.log !== 'string') ? parsed.log : [];
++  return { shape: shape, doc_version: dv, rates: parsed.rates, log: log, absent: false };
++}
++
++// ---- validation: ONLY what 73_ does not already check ---------------------------------------------------
++function fxBookValidateEntry_(e, n) {
++  var errors = [];
++  e = e || {};
++  var base = pricingStr_(e.base_currency).toUpperCase();
++  var quote = pricingStr_(e.quote_currency).toUpperCase();
++
++  // The frozen precision contract IS the supported set: a pair we cannot write a price in at a known
++  // precision is one nobody should be able to maintain a rate for.
++  [['base_currency', base], ['quote_currency', quote]].forEach(function (p) {
++    if (p[1] && pricingDecimalsFor_(p[1]) === null) {
++      errors.push({ entry: n, code: 'FX_CURRENCY_UNSUPPORTED', field: p[0], value: p[1],
++        detail: p[1] + ' is not in the frozen precision contract, so a price in it could never be written.' });
++    }
++  });
++
++  if (!fxBookIsYmd_(e.effective_from)) {
++    errors.push({ entry: n, code: 'FX_EFFECTIVE_FROM_REQUIRED',
++      detail: 'effective_from is required as YYYY-MM-DD; a rate with no start cannot be scheduled or superseded.' });
++  }
++  if (pricingStr_(e.effective_to) && !fxBookIsYmd_(e.effective_to)) {
++    errors.push({ entry: n, code: 'FX_EFFECTIVE_TO_INVALID',
++      detail: 'effective_to must be YYYY-MM-DD when present. EMPTY means open-ended, which is a state, not a gap.' });
++  }
++  if (fxBookIsYmd_(e.effective_from) && fxBookIsYmd_(e.effective_to) &&
++      pricingStr_(e.effective_to) < pricingStr_(e.effective_from)) {
++    errors.push({ entry: n, code: 'FX_EFFECTIVE_RANGE_INVERTED',
++      detail: 'effective_to is before effective_from.' });
++  }
++
++  var st = pricingStr_(e.status).toLowerCase();
++  if (st !== 'active' && st !== 'inactive') {
++    // A BLANK IS NOT "ACTIVE" — the same rule PRICING-R2 §10 applies to ownership flags.
++    errors.push({ entry: n, code: 'FX_STATUS_INVALID',
++      detail: 'status must be exactly "active" or "inactive"; a blank is not "active".' });
++  }
++
++  var v = Number(e.version);
++  if (!isFinite(v) || v < 1 || Math.floor(v) !== v) {
++    errors.push({ entry: n, code: 'FX_VERSION_INVALID', detail: 'version must be a whole number of at least 1.' });
++  }
++  return errors;
++}
++
++// Two ACTIVE rates for one pair covering one day is a book nobody can resolve. Refusing at SAVE is what
++// keeps resolution total: position in an array is not precedence.
++function fxBookOverlaps_(rates) {
++  var errors = [];
++  var active = [];
++  rates.forEach(function (e, i) {
++    if (pricingStr_(e.status).toLowerCase() === 'active') active.push({ e: e, n: i + 1 });
++  });
++  for (var i = 0; i < active.length; i++) {
++    for (var j = i + 1; j < active.length; j++) {
++      var a = active[i].e, b = active[j].e;
++      if (pricingFxPairKey_(a.base_currency, a.quote_currency) !==
++          pricingFxPairKey_(b.base_currency, b.quote_currency)) continue;
++      var aFrom = pricingStr_(a.effective_from), aTo = pricingStr_(a.effective_to) || '9999-12-31';
++      var bFrom = pricingStr_(b.effective_from), bTo = pricingStr_(b.effective_to) || '9999-12-31';
++      if (aFrom <= bTo && bFrom <= aTo) {
++        errors.push({ entry: active[j].n, code: 'FX_PERIOD_OVERLAP',
++          pair: pricingFxPairKey_(a.base_currency, a.quote_currency),
++          detail: 'Two active rates for this pair cover the same day. One of them must be retired or bounded.' });
++      }
++    }
++  }
++  return errors;
++}
++
++function fxBookValidate_(rates) {
++  var errors = [];
++  var list = (rates && rates.length !== undefined) ? rates : [];
++  list.forEach(function (e, i) { errors = errors.concat(fxBookValidateEntry_(e, i + 1)); });
++
++  // The shared rules come from 73_, so the book cannot drift from the writer that consumes it.
++  var active = list.filter(function (e) { return pricingStr_(e.status).toLowerCase() === 'active'; });
++  if (active.length) {
++    var table = pricingBuildRateTable_(active);
++    if (!table.ok) {
++      // FX_PAIR_DUPLICATED from 73_ means "same pair twice"; here that is legitimate across DIFFERENT
++      // effective periods, so period overlap — not duplication — is the book's rule.
++      errors = errors.concat(table.errors.filter(function (x) { return x.code !== 'FX_PAIR_DUPLICATED'; }));
++    }
++  }
++  errors = errors.concat(fxBookOverlaps_(list));
++  return { ok: errors.length === 0, errors: errors };
++}
++
++// ---- resolution ----------------------------------------------------------------------------------------
++// NEVER INVERTS. A book holding USD>CAD does not answer CAD>USD: a reciprocal is the one arithmetic error
++// that yields a plausible wrong price instead of an obvious one.
++function fxBookResolve_(rates, base, quote, onDate) {
++  var b = pricingStr_(base).toUpperCase(), q = pricingStr_(quote).toUpperCase();
++  if (!b || !q) return { ok: false, code: 'FX_PAIR_INCOMPLETE' };
++  if (b === q) return { ok: true, rate: 1, identity: true, source: null, as_of: null };
++
++  var day = pricingStr_(onDate);
++  var want = pricingFxPairKey_(b, q);
++  var hits = (rates || []).filter(function (e) {
++    if (pricingStr_(e.status).toLowerCase() !== 'active') return false;
++    if (pricingFxPairKey_(e.base_currency, e.quote_currency) !== want) return false;
++    var from = pricingStr_(e.effective_from), to = pricingStr_(e.effective_to) || '9999-12-31';
++    return from <= day && day <= to;
++  });
++  if (hits.length > 1) return { ok: false, code: 'FX_AMBIGUOUS', pair: want };
++  if (hits.length === 1) {
++    var h = hits[0];
++    return { ok: true, rate: Number(h.rate), identity: false, source: pricingStr_(h.source), as_of: pricingStr_(h.as_of) };
++  }
++  var inverse = (rates || []).some(function (e) {
++    return pricingStr_(e.status).toLowerCase() === 'active' &&
++      pricingFxPairKey_(e.base_currency, e.quote_currency) === pricingFxPairKey_(q, b);
++  });
++  return { ok: false, code: inverse ? 'FX_ONLY_INVERSE_EXISTS' : 'FX_RATE_NOT_FOUND', pair: want };
++}
++
++// The array 73_ accepts, plus the pairs the book could not cover. `missing` is named, never silently empty:
++// 73_ would skip those rows as MISSING_FX_RATE and the operator has to know which ones in advance.
++function fxBookRatesForReconcile_(rates, requiredPairs, onDate) {
++  var out = { rates: [], missing: [] };
++  (requiredPairs || []).forEach(function (p) {
++    var parts = pricingStr_(p).split('>');
++    var r = fxBookResolve_(rates, parts[0], parts[1], onDate);
++    if (!r.ok) { out.missing.push({ pair: pricingStr_(p), code: r.code }); return; }
++    if (r.identity) return;   // 73_ resolves same-currency itself and needs no entry.
++    out.rates.push({ base_currency: parts[0], quote_currency: parts[1],
++      rate: r.rate, source: r.source, as_of: r.as_of });
++  });
++  return out;
++}
++
++// ---- change record: OLD value as well as new -----------------------------------------------------------
++// A log that keeps only the new value cannot answer the question it is kept for.
++function fxBookChangeRecords_(oldRates, newRates, who, whenIso) {
++  var FIELDS = ['rate', 'source', 'as_of', 'effective_from', 'effective_to', 'status'];
++  var byKey = {};
++  (oldRates || []).forEach(function (e) {
++    byKey[pricingFxPairKey_(e.base_currency, e.quote_currency) + '@' + pricingStr_(e.effective_from)] = e;
++  });
++  var records = [];
++  (newRates || []).forEach(function (e) {
++    var k = pricingFxPairKey_(e.base_currency, e.quote_currency) + '@' + pricingStr_(e.effective_from);
++    var prev = byKey[k];
++    if (!prev) {
++      records.push({ at: whenIso, by: who, pair: k, change: 'ADDED',
++        to: { rate: e.rate, source: pricingStr_(e.source), as_of: pricingStr_(e.as_of), status: pricingStr_(e.status) } });
++      return;
++    }
++    delete byKey[k];
++    var moved = [];
++    FIELDS.forEach(function (f) {
++      if (pricingStr_(prev[f]) !== pricingStr_(e[f])) {
++        moved.push({ field: f, from: pricingStr_(prev[f]), to: pricingStr_(e[f]) });
++      }
++    });
++    if (moved.length) records.push({ at: whenIso, by: who, pair: k, change: 'EDITED', fields: moved });
++  });
++  Object.keys(byKey).forEach(function (k) {
++    var g = byKey[k];
++    records.push({ at: whenIso, by: who, pair: k, change: 'REMOVED',
++      from: { rate: g.rate, source: pricingStr_(g.source), as_of: pricingStr_(g.as_of), status: pricingStr_(g.status) } });
++  });
++  return records;
++}
++
++// ---- the commit ------------------------------------------------------------------------------------------
++// FX1-R2 — ONE WRITE, MEASURED BEFORE IT IS ATTEMPTED.
++//
++// Returns { ok, bytes, trimmed } or { ok:false, code }. The caller gets a refusal it can report; the
++// property is either replaced in full or not touched at all.
++//
++// THE LOG IS TRIMMED BEFORE THE RATES ARE REFUSED, and that order is deliberate: history is valuable but
++// the rates are the thing the system runs on, so an oversized document sheds the oldest records first and
++// only refuses when the RATES themselves will not fit. Trimming is reported, never silent.
++function fxBookCommit_(io, doc) {
++  var d = { shape: FX_BOOK_DOC_SHAPE_, doc_version: doc.doc_version, rates: doc.rates, log: (doc.log || []).slice() };
++  var trimmed = 0;
++  var json = JSON.stringify(d);
++  while (fxBookByteLen_(json) > FX_BOOK_MAX_BYTES_ && d.log.length > 0) {
++    d.log.shift(); trimmed++;
++    json = JSON.stringify(d);
++  }
++  var bytes = fxBookByteLen_(json);
++  if (bytes > FX_BOOK_MAX_BYTES_) {
++    // The rates alone do not fit. NOTHING is written — not a truncated book, and not a book with the
++    // history thrown away for a save that was going to fail anyway.
++    return { ok: false, code: 'FX_BOOK_TOO_LARGE', bytes: bytes, limit: FX_BOOK_MAX_BYTES_,
++      detail: 'The rate book does not fit in one Script Property (' + bytes + ' > ' + FX_BOOK_MAX_BYTES_
++        + ' bytes, UTF-8). Retire rates that are no longer needed, or move the book to a table.' };
++  }
++  io.set(FX_BOOK_PROP_KEY_, json);
++  return { ok: true, bytes: bytes, trimmed: trimmed, doc: d };
++}
++
++// ---- authority -------------------------------------------------------------------------------------------
++/// FX1-R2 — IT FAILS CLOSED, AND IT SAYS WHY.
++//
++// The first draft returned { ok: true } unconditionally and called that "the deployment model". That is a
++// true description of every OTHER write in this project, and it is not good enough for the one action that
++// can reprice an entire catalogue on the next reconciliation.
++//
++// The allowlist lives in KM_FX_RATE_BOOK_EDITORS, a comma-separated list of addresses. Reading the CALLER
++// is only possible in some deployment modes: a Web App that executes AS THE OWNER cannot see who called
++// it, and Session.getActiveUser() returns '' there. THAT CASE REFUSES. An unidentifiable caller is not an
++// authorised one, and treating it as one would make the allowlist decorative.
++//
++// FX1-R3 — AND THE ESCAPE IS GONE.
++//
++// R2 kept one documented escape: an explicit '*' in the property, the Owner recording in the configuration
++// itself that this deployment is open. The argument was that a decision written down differs from a
++// default nobody chose, and that part was right. What it missed is that the deployment mode which cannot
++// identify a caller IS the mode in which somebody would reach for '*' — so the escape and the hole it was
++// supposed to make visible are the same hole, and the one action that can reprice a catalogue would have
++// been open in exactly the deployments where nobody can be held to it.
++//
++// A '*' is refused BY ITS OWN NAME rather than quietly ignored. An Owner who set one, and who is now
++// refused, needs to read why; FX_NOT_AUTHORIZED would send them looking for a missing address.
++//
++// IT TAKES ONLY THE io. The request is not a parameter, so no field of it — a role, a claimed user, a
++// spelling nobody has thought of yet — can reach this decision. That is a stronger statement than
++// checking the body and ignoring it, because it cannot be undone by a later edit that "just reads one
++// field": there is nothing to read.
++function fxBookAuthority_(io) {
++  var raw = pricingStr_(io.get(FX_BOOK_EDITORS_PROP_KEY_));
++  if (!raw) {
++    return { ok: false, code: 'FX_AUTHORITY_NOT_CONFIGURED', model: 'ALLOWLIST',
++      detail: 'No editor allowlist is configured. Set ' + FX_BOOK_EDITORS_PROP_KEY_
++        + ' to the addresses permitted to change FX rates.' };
++  }
++  var list = raw.split(',').map(function (s) { return pricingStr_(s).toLowerCase(); })
++    .filter(function (s) { return s !== ''; });
++  var real = list.filter(function (s) { return s !== '*'; });
++  if (real.length === 0 && list.indexOf('*') !== -1) {
++    return { ok: false, code: 'FX_AUTHORITY_WILDCARD_REFUSED', model: 'ALLOWLIST',
++      detail: FX_BOOK_EDITORS_PROP_KEY_ + ' is set to *, which no longer authorises anybody. FX rates '
++        + 'reprice the catalogue on the next reconciliation, so the editor must be an identifiable '
++        + 'person. List the addresses permitted to change them.' };
++  }
++
++  var who = pricingStr_(io.user ? io.user() : '').toLowerCase();
++  if (!who) {
++    return { ok: false, code: 'FX_AUTHORITY_UNVERIFIABLE', model: 'ALLOWLIST',
++      detail: 'This deployment cannot identify the caller, so membership of the allowlist cannot be '
++        + 'checked. Nothing was written. Deploy so the caller is identifiable.' };
++  }
++  if (real.indexOf(who) === -1) {
++    return { ok: false, code: 'FX_NOT_AUTHORIZED', model: 'ALLOWLIST', user: who,
++      detail: who + ' is not on the FX rate book editor allowlist.' };
++  }
++  return { ok: true, model: 'ALLOWLIST', user: who };
++}
++
++// The server clock, in UTC, to the second. Apps Script has no Intl guarantee worth relying on and the
++// spreadsheet's timezone is a display preference, not an instant — a change log mixing the two cannot
++// be ordered. toISOString() is the one representation that is unambiguous everywhere this is read.
++function fxBookNowIso_() {
++  try { return new Date().toISOString(); } catch (e) { return ''; }
++}
++
++// FX1-R3 — THE ONE READER 04_ NEEDS, and it answers a NUMBER OR NOTHING.
++//
++// Every refusal fxBookResolve_ can make — pair incomplete, ambiguous, only the inverse stored, not
++// found at all — means the same thing to a row being created: there is no coefficient, so the row
++// waits. Returning null for all of them keeps that decision in ONE place instead of asking the
++// creation path to re-rank reasons it cannot act on differently.
++//
++// A THROW IS ALSO NULL. A corrupt or future-shaped book must not stop a SKU being created: the row
++// goes pending, which is the state it has had since this contract was written, and the book surfaces
++// its own problem on the Administration page where it can be fixed.
++function fxBookRateForCreate_(base, quote, onDate, io) {
++  try {
++    var r = fxBookResolve_(fxBookReadDoc_(io || fxBookDefaultIo_()).rates, base, quote, onDate);
++    if (!r || r.ok !== true) return null;
++    var n = Number(r.rate);
++    return (isFinite(n) && n > 0) ? n : null;
++  } catch (e) { return null; }
++}
++
++function fxBookEnvelope_(ok, data, errors) {
++  return { success: !!ok, data: data || null, errors: errors || [], handler: FX_BOOK_BUILD_VERSION_ };
++}
++
++// ---- API: GET (read-only; opening the page mutates nothing) ---------------------------------------------
++function handleFxRateBookGet_(body, io) {
++  io = io || fxBookDefaultIo_();
++  try {
++    var doc = fxBookReadDoc_(io);
++    var auth = fxBookAuthority_(io);
++    return fxBookEnvelope_(true, {
++      doc_version: doc.doc_version,
++      rates: doc.rates,
++      change_log: doc.log.slice(-FX_BOOK_LOG_MAX_),
++      supported_currencies: Object.keys(PRICING_FX_DECIMALS_).sort(),
++      capacity: { used_bytes: fxBookByteLen_(io.get(FX_BOOK_PROP_KEY_) || ''), limit_bytes: FX_BOOK_MAX_BYTES_ },
++      // The page shows whether this caller may SAVE before they spend time editing. A read is never gated
++      // on it: seeing the rates that price the catalogue is not the same permission as changing them.
++      may_edit: auth.ok === true, authority_model: auth.model, authority_reason: auth.ok ? null : auth.code
++    });
++  } catch (e) {
++    return fxBookEnvelope_(false, null, [{ code: 'FX_BOOK_GET_ERROR', message: String(e && e.message || e) }]);
++  }
++}
++
++// ---- API: SAVE (authority -> LOCK -> re-read -> version CAS -> validate -> ONE commit -> readback) --------
++function handleFxRateBookSave_(body, io) {
++  io = io || fxBookDefaultIo_();
++  var auth = fxBookAuthority_(io);
++  if (!auth.ok) {
++    return fxBookEnvelope_(false, null, [{ code: auth.code, message: auth.detail, model: auth.model }]);
++  }
++
++  var payload = (body && body.payload && typeof body.payload === 'object') ? body.payload : (body || {});
++  // FX1-R3 — THE REQUEST IS TYPED AS STRICTLY AS THE STORED DOCUMENT.
++  //
++  // R2 made fxBookReadDoc_ refuse a doc_version that is not a number, and left THIS on Number(). That
++  // is the same looseness one layer further out, and it is worse here: Number() maps null, the empty
++  // string and the empty array all onto 0 — and 0 is the doc_version of an ABSENT book. So a save that
++  // carried no version claim at all passed the compare-and-swap against an empty book and wrote the
++  // first rate book, which is exactly what this check exists to prevent. MEASURED on the R2 proposal:
++  // doc_version null, "", [] and "0" each stored a complete five-pair book at doc_version 1.
++  //
++  // A numeric STRING is refused even when its value matches, because the type IS the contract: a client
++  // that sends "3" has not read the version, it has echoed something, and the next thing it echoes may
++  // not be a number at all.
++  if (typeof payload.doc_version !== 'number' || !isFinite(payload.doc_version)
++      || payload.doc_version < 0 || Math.floor(payload.doc_version) !== payload.doc_version) {
++    return fxBookEnvelope_(false, null, [{ code: 'FX_DOC_VERSION_REQUIRED',
++      message: 'A save must carry, as a NUMBER, the whole-number doc_version it read, so a stale tab '
++        + 'cannot overwrite a newer book and a request with no version cannot pass as version 0.' }]);
++  }
++  var expected = payload.doc_version;
++  var incoming = (payload.rates && payload.rates.length !== undefined && typeof payload.rates !== 'string')
++    ? payload.rates : null;
++  if (!incoming) {
++    return fxBookEnvelope_(false, null, [{ code: 'FX_RATES_REQUIRED', message: 'rates[] is required (send [] to empty the book deliberately).' }]);
++  }
++
++  var lock = LockService.getScriptLock();
++  if (!lock.tryLock(FX_BOOK_LOCK_MS_)) {
++    return fxBookEnvelope_(false, null, [{ code: 'LOCK_UNAVAILABLE',
++      message: 'Another save is in progress. NOTHING was written; please retry.' }]);
++  }
++  try {
++    // THE VERSION CHECK IS INSIDE THE LOCK, and re-reads. Checking before the lock would compare against a
++    // book that another writer can still replace between the read and the write.
++    var current = fxBookReadDoc_(io);
++    if (current.doc_version !== expected) {
++      return fxBookEnvelope_(false, null, [{ code: 'FX_VERSION_CONFLICT', stored_doc_version: current.doc_version,
++        message: 'This book was changed by someone else since it was opened. NOTHING was written; reload and re-apply.' }]);
++    }
++
++    var v = fxBookValidate_(incoming);
++    if (!v.ok) {
++      return fxBookEnvelope_(false, null, v.errors.concat([{ code: 'FX_BOOK_INVALID',
++        message: v.errors.length + ' problem(s). ZERO rates were written.' }]));
++    }
++
++    // The log is built from the SAME pair of states that is about to be committed, and travels in the same
++    // document, so the history and the rates cannot disagree about what happened.
++    // FX1-R3 — WHO AND WHEN ARE NOT THE REQUEST'S TO SAY.
++    //
++    // R2 read both from the body: `pricingStr_(payload.changed_by) || auth.user` and
++    // `payload.changed_at`. So the one record that says who changed a rate said whatever the browser
++    // said, and the one record that says when said whatever the browser said. An audit trail the
++    // caller writes is not an audit trail, it is a field — and the caller has ALREADY been identified
++    // by the time this line runs, so the body was overriding a fact with a claim.
++    //
++    // auth.user is the only identity with standing here: every path that could not establish one has
++    // already returned. The timestamp is taken from the server clock, in UTC, for the same reason —
++    // a client clock can be wrong by years, and a change log ordered by it is not ordered.
++    var who = auth.user;
++    var records = fxBookChangeRecords_(current.rates, incoming, who, fxBookNowIso_());
++    var nextLog = current.log.concat(records);
++    if (nextLog.length > FX_BOOK_LOG_MAX_) nextLog = nextLog.slice(nextLog.length - FX_BOOK_LOG_MAX_);
++
++    var commit = fxBookCommit_(io, { doc_version: current.doc_version + 1, rates: incoming, log: nextLog });
++    if (!commit.ok) {
++      return fxBookEnvelope_(false, null, [{ code: commit.code, message: commit.detail,
++        bytes: commit.bytes, limit: commit.limit }]);
++    }
++
++    // READBACK, so the page never renders a version it merely hopes was stored. A property that read back
++    // at the OLD version means the write did not take, and reporting success there is how a lost save
++    // becomes an operator's wrong price.
++    var saved = fxBookReadDoc_(io);
++    if (saved.doc_version !== current.doc_version + 1) {
++      return fxBookEnvelope_(false, null, [{ code: 'FX_COMMIT_NOT_CONFIRMED',
++        stored_doc_version: saved.doc_version, expected_doc_version: current.doc_version + 1,
++        message: 'The book did not read back at the version just written. Treat this save as NOT applied.' }]);
++    }
++    return fxBookEnvelope_(true, { doc_version: saved.doc_version, rates: saved.rates,
++      change_log: saved.log.slice(-FX_BOOK_LOG_MAX_), authority: auth.model,
++      bytes: commit.bytes, limit: FX_BOOK_MAX_BYTES_, log_trimmed: commit.trimmed });
++  } catch (e) {
++    return fxBookEnvelope_(false, null, [{ code: 'FX_BOOK_SAVE_ERROR', message: String(e && e.message || e) }]);
++  } finally {
++    lock.releaseLock();
++  }
++}
