@@ -79,7 +79,10 @@
 // R12 - re-pinned with the release. This census asserts the deployment build EQUALS this value and
 // answers STOP when it does not, so leaving it at R11 would have made a correctly synced R12 project
 // report NOT ready to authorize - a refusal produced by the diagnostic, not by the world it measures.
-var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54';  // the build this census was written against
+// FX1-R4 (R55) - re-pinned with the release, by the rule stated above. This census did not change;
+// the pin follows SYS_DEPLOYMENT_RELEASE_, and left at R54 it would answer STOP on a correctly synced
+// R55 project - a refusal produced by the diagnostic rather than by the world it measures.
+var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';  // the build this census was written against
 var S1_CONTRACT_ = 'BATCH S1 — positive-residual + submit readiness, read only, zero writes';
 
 /** The scope axes are ALWAYS all four. A census that matched on three would report a candidate that the

@@ -89,7 +89,10 @@ eq(topo.routeAtBoot, [], 'A1d NEW_ROUTE_SCRIPT_AT_BOOT_COUNT = 0');
 // S8-B3-R3-CP2M-R3 — 67 → 65. carrier-rate-card.js and overseas-stock.js became ROUTE-owned, so they
 // left index.html AND the declaration in _boot-topology.js together. Both numbers are stated so a change
 // to either alone is a failure rather than a silently agreed drift.
-eq([topo.declaredCount, topo.liveCount], [65, 65], 'A1e the census and the shell agree on 65 boot scripts');
+// FX1-R4 (R55) — 65 → 66. assets/js/pages/fx-rate-book.js joins the shell AND the declaration in
+// _boot-topology.js together. Both numbers are stated so a change to either alone is a failure rather
+// than a silently agreed drift.
+eq([topo.declaredCount, topo.liveCount], [66, 66], 'A1e the census and the shell agree on 66 boot scripts');
 
 // The old brittle floor is GONE from the gate, and that is asserted rather than assumed.
 eq(count(S4R5, /M\.boot\.pre\.bytes - 1500 \* 1024/g), 0,

@@ -309,7 +309,13 @@ var PAGE_CSS_CHANGED_BY_LATER_ROUNDS = {
     + 'unannounced is exactly how an unscoped rule reaches a page nobody was looking at. It styles the three '
     + 'priority STATES (Set / Missing / Invalid) as visibly different things, because an unstyled state class '
     + 'ships as an invisible one - the same defect the entries above record. Nothing here is scoped to '
-    + '.psb-page and no Product Strategy selector was added, moved or removed.'
+    + '.psb-page and no Product Strategy selector was added, moved or removed.',
+  'assets/css/pages/fx-rate-book.css':
+    'FX1-R4 (R55) - the FX Rate Book page stylesheet, NEW in this round, so new selectors only: there '
+    + 'was no file here to edit. Every rule is scoped to .fx-book-section, which is why it cannot reach '
+    + 'this page or any other. It is LISTED rather than filtered out for being new, because a stylesheet '
+    + 'arriving unannounced is exactly how an unscoped rule reaches a page nobody was looking at. Nothing '
+    + 'here is scoped to .psb-page and no Product Strategy selector was added, moved or removed.'
 };
 var otherPageCss = changedSince(R6_PRE, 'assets/css/pages');
 if (otherPageCss !== '__git_unavailable__') {
@@ -723,7 +729,12 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // any of these would still be caught, because an undeclared file is still a failure.
   'assets/specs/active/apps-script/74_api_v1_overseas_allocation_preview_job.gs',
   'assets/specs/active/apps-script/01_router.gs',
-  'assets/specs/active/apps-script/00_config.gs'];
+  'assets/specs/active/apps-script/00_config.gs',
+  // FX1-R4 (R55) - the FX rate book cut. 75_ is a NEW file, 01_ gains its two routes, 04_'s pricing_list
+  // creation contract reads the book, and 63_ carries the release, the stamps and the manifest row.
+  // None of them is scoped to Product Strategy and none of them changed a Product Strategy path.
+  'assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs',
+  'assets/specs/active/apps-script/04_marketplace_forecast_import.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

@@ -605,8 +605,19 @@ section('E · §6 / §7 THE CLEANUP ANSWER AND THE FUTURE CONTRACT');
   ok(/Never invent an FX rate when none exists/i.test(DOC),
     'E4  the future contract forbids inventing a rate');
   // PRICING-R4E implemented it. Both of these asserted the gap and now assert its closure.
-  ok(!/fxRate = 1;/.test(GS04) && /if \(b !== l\) \{ out\.reason = 'NO_CANONICAL_FX_RATE'; return out; \}/.test(GS04),
-    'E4b CURRENT_RUNTIME_SATISFIES_FUTURE_CONTRACT = YES — a cross-currency row gets no invented rate');
+  //
+  // FX1-R4 — THE CONTRACT IS 'NEVER INVENT ONE', NOT 'NEVER HAVE ONE', and the distinction is the whole
+  // of this round. A cross-currency row is now priced from the STORED rate book, read once per import,
+  // which is not an invention: it is a coefficient a person entered and the server validated. What is
+  // unchanged, and is what E4b exists to pin, is the answer when the book holds nothing - blank, pending,
+  // never a fallback and never a zero.
+  ok(!/out\.fx_rate = 1;/.test(GS04)
+     && /fxBookRateFromSnapshot_\(fxBook, b, l, asOf\)/.test(GS04)
+     && /NO_CANONICAL_FX_RATE/.test(GS04),
+    'E4b CURRENT_RUNTIME_SATISFIES_FUTURE_CONTRACT = YES — a cross-currency row gets no invented rate: '
+    + 'it gets a stored one or it gets none');
+  ok(!/fxRate = 0|out\.auto\[k\] = 0/.test(GS04),
+    'E4b1 and never a zero, which would be a price nobody stated');
   ok(!/baseCurrency = String\(row\.base_currency \|\| 'USD'\)\.trim\(\);/.test(GS04) &&
      /baseCurrency = baseCurFromMaster \|\| baseCurFromFile \|\| 'USD';/.test(GS04),
     'E4c ... and base_currency is read from sku_details first, with USD only as a last resort');

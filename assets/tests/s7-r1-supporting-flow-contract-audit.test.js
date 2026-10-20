@@ -157,7 +157,10 @@ var DISP = dispatchedHandlers(ROUTER);
 // S8-B3-R3-CP2I (R52): 147 -> 148. ONE action joins the router, marketplace.allocationPriority.set. This
 // census is EXACT on purpose - an action arriving unnoticed is how a write surface grows without anyone
 // declaring it - so the number moves by exactly one and is not loosened to a floor.
-eq(RACT.length, 148, 'A1  the router dispatches 148 distinct actions');
+// FX1-R4 (R55): 148 -> 150. TWO actions join, fxRateBook.get and fxRateBook.save. The census is EXACT
+// for the same reason it has always been: an action arriving unnoticed is how a write surface grows
+// without anyone declaring it.
+eq(RACT.length, 150, 'A1  the router dispatches 150 distinct actions');
 
 var missingRouter = CACT.filter(function (a) { return RACT.indexOf(a) === -1; });
 eq(missingRouter, [], 'A2  MISSING_ROUTER_ACTION_COUNT is 0 — every action the browser sends has a dispatch branch');

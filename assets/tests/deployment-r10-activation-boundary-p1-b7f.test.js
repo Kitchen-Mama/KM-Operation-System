@@ -343,7 +343,8 @@ var J = clientChain(R10_CAPTURE.siteUniverse).then(function (r) {
   //
   // PINNED, not bounded: a SECOND file arriving here is the thing this gate exists to notice.
   eq(asksWhoIsCalling, ['75_api_v1_fx_rate_book.gs'],
-    'G3 exactly ONE runtime file asks Apps Script who is calling, and it asks in order to refuse');
+    'G3 exactly ONE runtime file asks Apps Script who is calling, and it asks in order to refuse — '
+    + 'RE-RUN THE GO/NO-GO IF THIS CHANGES');
   ok(runtime.length > 20, 'G3a (and that was checked across every runtime file, ' + runtime.length + ' of them)');
 
   /* NO GATE IN FRONT OF THE ROUTER EITHER. Not a shared secret, not a bearer token, not a caller

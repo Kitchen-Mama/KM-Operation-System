@@ -242,7 +242,11 @@
     'documentTemplate.list', 'factoryInventory.import.commit', 'factoryInventory.import.validate',
     'factoryOperationConfig.get', 'factoryOperationConfig.save', 'factoryStockGuard.get',
     'fcSummary.raw.get', 'fcSummary.workspace.get', 'finalizeShipmentFinalOutput',
-    'flowASchemaLineagePreflight', 'gapJob.status.get', 'generateRecommendationDraftLocked',
+    // FX1-R4 (R55) — the stored FX coefficients. Both are routed; the GET is on the read table AND on
+    // doPost, as every GET-routed read is, because the shared client transport posts. Placed in SORTED
+    // position, because this list is compared to a sorted derivation of the router's own vocabulary.
+    'flowASchemaLineagePreflight', 'fxRateBook.get', 'fxRateBook.save',
+    'gapJob.status.get', 'generateRecommendationDraftLocked',
     'generateShipmentLineAllocations', 'getClientCapabilities', 'getOperationDb',
     'getRecommendationDraftToken', 'getShipmentFinalOutput', 'getShippingAllocationDraftWorkspace',
     'getShippingMethodCandidates', 'getTable', 'importCarrierRateCards', 'importFcRegularForecastBatch',

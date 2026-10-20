@@ -97,6 +97,9 @@ var BOOT_SCRIPTS = [
   "assets/js/pages/sku-regional-details.js",
   "assets/js/data/world-land-110m.js",
   "assets/js/pages/automation-schedule.js",
+  // FX1-R4 (R55) — the FX Rate Book Administration page. A script index.html loads has to be declared
+  // here deliberately; an undeclared one is how the boot set grows without anybody costing it.
+  "assets/js/pages/fx-rate-book.js",
   "assets/js/app.js"
 ];
 

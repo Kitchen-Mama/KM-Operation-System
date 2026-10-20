@@ -529,7 +529,41 @@ function isAccountedNonSource(f) {
   }
   return false;
 }
-eq(s7Changed.filter(isForecastSource), [],
+// FX1-R4 (R55) — 04_marketplace_forecast_import.gs IS a forecast source file by this matcher, and it
+// DID change. The matcher is not wrong and the file is not misnamed: 04_ owns two unrelated contracts,
+// the Regular Forecast batch writer and the pricing_list CREATION contract, and R55 changed only the
+// second one. A path matcher cannot see that, so the carve-out is not a path - it is a CONTENT claim
+// that is checked rather than asserted: the forecast half of the file is byte-identical across the
+// whole interval, and if a later round touches it, G1 fails again with this file named.
+//
+// THE CARVE-OUT IS BOUNDED TO ONE FILE AND ONE FUNCTION. Anything else forecast-named that changes
+// still trips G1, and G1d is still fail-closed over the whole repository.
+var FORECAST_DUAL_PURPOSE = 'assets/specs/active/apps-script/04_marketplace_forecast_import.gs';
+function fcWriterOf(src) {
+  // NORMALISED: git show hands back LF and the worktree is CRLF, so a raw comparison would report every
+  // line as different and the carve-out would refuse a file nobody had touched.
+  src = String(src).replace(/\r\n/g, '\n');
+  var i = src.indexOf('function handleImportFcRegularForecastBatch_(');
+  if (i < 0) return null;
+  var d = 0, started = false;
+  for (var j = i; j < src.length; j++) {
+    var c = src[j];
+    if (c === '{') { d++; started = true; }
+    else if (c === '}') { d--; if (started && d === 0) return src.slice(i, j + 1); }
+  }
+  return null;
+}
+var fcBase = null, fcHead = null;
+try { fcBase = fcWriterOf(cp.execFileSync('git', ['show', S7_BASE + ':' + FORECAST_DUAL_PURPOSE],
+  { cwd: REPO, encoding: 'utf8', maxBuffer: 1 << 28 })); } catch (e) { fcBase = 'READ_FAILED'; }
+try { fcHead = fcWriterOf(read(FORECAST_DUAL_PURPOSE)); } catch (e) { fcHead = 'READ_FAILED_HEAD'; }
+ok(!!fcBase && !!fcHead && fcBase !== 'READ_FAILED' && fcHead !== 'READ_FAILED_HEAD',
+  'G1-dual the Regular Forecast batch writer is locatable in 04_ at BOTH ends of the interval - a '
+  + 'carve-out that cannot find what it is excusing is not a carve-out');
+eq(fcBase === fcHead, true,
+  'G1-dual1 and it is byte-identical, so the change to 04_ is the pricing creation contract and not '
+  + 'the forecast product this deferral is about');
+eq(s7Changed.filter(isForecastSource).filter(function (f) { return f !== FORECAST_DUAL_PURPOSE; }), [],
   'G1  FORECAST_REVIEW_CHANGED_IN_S7 = NO — no forecast SOURCE file changed in any S7 round, still '
   + 'measured through HEAD because the deferral is a standing promise, not a historical one');
 ok(fs.existsSync(path.join(REPO, 'assets/specs/active/pages/forecast/Forecast_Review_Aggregation_Master_Spec.md')),
@@ -695,7 +729,11 @@ mut('I17 a forecast-NAMED evidence artifact must NOT trip G1 — the inverted ca
     var ev = 'docs/evidence/s8-r48-sweep/r48p-full/raw/forecast-missing-means-zero-x.out.txt';
     // CAUGHT here means the classifier correctly refused it AND still accounts for it as non-source.
     return !isForecastSource(ev) && isAccountedNonSource(ev)
-      && [].concat(s7Changed, [ev]).filter(isForecastSource).length === 0;
+      // FX1-R4: the same carve-out G1 itself applies, for the same reason - 04_ is forecast-NAMED,
+      // genuinely changed, and its forecast half is byte-identical. Without it this mutant would read
+      // the carve-out as a classifier failure.
+      && [].concat(s7Changed, [ev]).filter(isForecastSource)
+           .filter(function (f) { return f !== FORECAST_DUAL_PURPOSE; }).length === 0;
   });
 mut('I18 restoring the broad /forecast/i substring matcher — G1 must fail against THIS repository',
   function () {

@@ -813,12 +813,13 @@ section('H. Wiring and source contracts — the registry, the versions and the a
     var contract = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(GS_63)[1]);
     var listv = Number(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/.exec(GS_63)[1]);
     var pin = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(DBAPI)[1]);
-    eq(contract, 20, 'H5 the action contract moved to 20 — one new route, one bump');
+    eq(contract, 21, 'H5 the action contract is at 21 — R52 moved it to 20 for this route, FX1-R4 to 21 for two more');
     // SIXTEEN, BY TWO. The release-stamp gate asserts this number moves EXACTLY as far as the registry
     // grows, so two new rows move it twice. Nothing pins its absolute value; it exists to distinguish an
     // answer computed from an OLD list from one computed from the current list, which a step of two does
     // exactly as well as a step of one.
-    eq(listv, 16, 'H5a and the required-action list to 16 — two new entries, two increments');
+    // FX1-R4 (R55): 16 -> 18. Two more entries, two more increments - the same rule, applied again.
+    eq(listv, 18, 'H5a and the required-action list to 18 — two new entries, two increments');
     eq(pin, contract, 'H5b the client pin is EQUAL to the deployment contract, derived not restated');
 
     // The module build stamp and its manifest row.

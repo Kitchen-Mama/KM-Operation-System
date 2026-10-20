@@ -2,8 +2,9 @@
 
 > **Round:** P1-B8D-R8 §9. **READ-ONLY CENSUS. No page runtime outside Product Strategy was modified.**
 > **Repo:** `Operation System` · **Branch:** `feature/product-strategy-board-p0` · **PRE HEAD:** `d7a6061`.
-> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 67**
-> (69 before S8-B3-R3-CP2M-R3, which moved `pages/carrier-rate-card.js` (98 KB) and
+> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 68**
+> (67 before FX1-R4, which routed the FX Rate Book Administration page and added
+> `pages/fx-rate-book.js` to the shell; 69 before S8-B3-R3-CP2M-R3, which moved `pages/carrier-rate-card.js` (98 KB) and
 > `pages/overseas-stock.js` (106 KB) out of `index.html` into `KM_ROUTE_ASSETS_`. Both are still
 > production data paths and are still listed below; only how they are fetched changed.)
 > (77 before S4-R5, which moved the two largest route payloads out of `index.html` and into
@@ -239,6 +240,7 @@ Every one posts to the same endpoint with an action. The migration is a **transp
 | `sku-handbook.js` | 11 | no | none yet — **needs a contract** | LOW | S4 | no |
 | `campaign-risk.js` | 6 (`campaigns`, `campaign_sku_lines`, `marketplace_skus`, `sku_details`, `marketplaces`) | promotion records go to `localStorage` — see §6 | scoped reads are fine; the promotion WRITE has no action | **HIGH** (see §6) | S2 | **see §6** |
 | `automation-schedule.js` | 6 | yes | `automationSchedule.get/.update` (exist) | LOW | S4 | no |
+| `fx-rate-book.js` | 2 | yes | `fxRateBook.get/.save` (exist, R55) | LOW | S4 | no |
 | `app.js` (shell) | 3 | no | boot readiness only | LOW | S4 | no |
 
 ### 4a. The generic table readers — the one that is not an action

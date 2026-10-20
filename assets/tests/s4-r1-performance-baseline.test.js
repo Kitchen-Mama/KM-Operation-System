@@ -71,8 +71,14 @@ section('A — THE CENSUS COVERS THE APPLICATION, derived rather than trusted');
      in the table that nobody measured, which is the one thing this census exists to prevent.
 
      Its correctness is covered by `site-priority-page-s8-b2-r1.test.js`. What is deferred is its PERFORMANCE
-     measurement, and the owner of that is the next measurement round, not this one. */
-  const UNMEASURED = ['site-priority'];
+     measurement, and the owner of that is the next measurement round, not this one.
+
+     FX1-R4 adds the FX Rate Book on the same footing and for the same reason. It is a REAL, enabled,
+     menu-reachable route; what is missing is a headless run that observed its first-useful-UI selector,
+     and a row without that run is a number nobody measured sitting in a measured table. Its correctness
+     is covered by fx-rate-book-contract-and-fixtures-fx1.test.js §G5; its PERFORMANCE belongs to the next
+     measurement round. */
+  const UNMEASURED = ['site-priority', 'fx-rate-book'];
   eq(missing.filter((k) => DISABLED.indexOf(k) === -1 && UNMEASURED.indexOf(k) === -1), [],
     'A1  every menu-reachable route is in the census table', { missing });
   ok(DISABLED.every((k) => new RegExp("section === '" + k + "'").test(APP)),
