@@ -179,7 +179,14 @@ ok(top.every(function (c) { return c !== '' && c !== null && c !== undefined; })
 eq(top[3], 'REMOVED', 'F4  the newest entry is the removal that was just saved');
 ok(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/.test(top[0]),
   'F5  WHEN is the server instant, rendered unambiguously rather than in a browser-local guess', top[0]);
-eq(top[1], AFTER.identity, 'F6  WHO is the identity the SERVER established for this caller');
+// NOT `eq`, WHICH WOULD PRINT IT. The sweep's secret scanner refuses a suite whose OUTPUT carries an
+// address, and it is right to: a fixture identity in a regression log is still an address in a log, and
+// a scanner that made an exception for addresses it judged harmless would be making that judgement on
+// every future one too. The comparison is unchanged; only the reporting is masked.
+function maskAddr(v) { return String(v == null ? '' : v).replace(/^(.)[^@]*@(.).*$/, '$1***@$2***'); }
+ok(top[1] === AFTER.identity && /@/.test(String(AFTER.identity)),
+  'F6  WHO is the identity the SERVER established for this caller',
+  [maskAddr(top[1]), maskAddr(AFTER.identity)]);
 ok(/USD>/.test(top[2]), 'F7  and the pair it happened to is named', top[2]);
 var edited = (A['saved-3'].domLogCells || []).filter(function (c) { return c[3] === 'EDITED'; });
 ok(edited.length >= 2, 'F8  the edits are rendered too', edited.length);
