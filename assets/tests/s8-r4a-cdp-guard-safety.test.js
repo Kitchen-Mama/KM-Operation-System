@@ -95,7 +95,10 @@ ok(derived.length > 100, 'A2  …and it is the whole vocabulary, not a fragment'
 // addition to the GET read table impossible, and a self-deriving count would notice nothing. The one
 // addition is factoryStockGuard.get, which moved off the write transport in this round; A4 below
 // independently proves every approved action is a real router action.
-eq(derivedGet.length, 25, 'A3  the GET read table is 25 actions');
+// FX1-R4 (R55): 25 -> 26. fxRateBook.get joins the GET read table, because seeing the rates that price
+// the catalogue is not the same permission as changing them. Its SAVE twin stays POST-only, and the
+// read keeps its POST route as every GET-routed read does.
+eq(derivedGet.length, 26, 'A3  the GET read table is 26 actions');
 ok(derivedGet.indexOf('factoryStockGuard.get') !== -1,
    'A3b …and the 25th is factoryStockGuard.get, the read that used to travel on POST');
 // Every approved and every forbidden action is a real router action. A name that is not routed cannot be

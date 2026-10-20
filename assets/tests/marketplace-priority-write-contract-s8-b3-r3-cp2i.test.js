@@ -830,7 +830,20 @@ section('H. Wiring and source contracts — the registry, the versions and the a
     var rtr = /var RTR_BUILD_VERSION_ = '([^']+)';/.exec(GS_01)[1];
     ok(new RegExp("\\{ file: '01_router\\.gs', symbol: 'RTR_BUILD_VERSION_', expected: '" + rtr + "'").test(GS_63),
         'H6b and the router manifest row agrees with the router');
-    eq(stamp[1], rtr, 'H6c both files changed this round, so both declare the same round');
+    // FX1-R4 (R55) — THEY NO LONGER CHANGE IN THE SAME ROUND, and that is the point of a per-module
+    // stamp rather than a copy of the release id. 03_ last changed in R52 and correctly still says so;
+    // 01_ changed again in R55 to route the two FX actions. Asserting they are EQUAL would now require
+    // marching 03_ forward to keep a gate green, which erases the one fact its stamp carries.
+    //
+    // What this round's claim really was, and still is: each file's stamp names the round THAT FILE last
+    // changed in, and 63_'s manifest row agrees with the file. H6a and H6b above assert exactly that for
+    // both, independently. What is added here is the ORDER - 01_ cannot be behind 03_, because a router
+    // that predates the write it dispatches cannot dispatch it.
+    var RO_ = require('./_release-order.js');
+    var iMd = RO_.OWNER_STAMPS.indexOf(stamp[1]), iRtr = RO_.OWNER_STAMPS.indexOf(rtr);
+    ok(iMd >= 0 && iRtr >= 0, 'H6c both stamps are registered releases', [stamp[1], rtr]);
+    ok(iRtr >= iMd, 'H6c1 and the router is at or after the handler file it dispatches into — a router '
+      + 'older than the write it routes could not route it', [rtr, stamp[1]]);
 
     // NO FALLBACK. This is a behavioural contract expressed in source, because the whole point of the
     // dedicated action is defeated by one `catch` that reaches for the old writer.

@@ -582,8 +582,13 @@ section('H · MUTANTS');
 
   // M1 — the defect itself, restored. C1/E1 stand in its way.
   mutant('M1', 'a cross-currency row is given rate 1 again',
-    "  if (b !== l) { out.reason = 'NO_CANONICAL_FX_RATE'; return out; }",
-    '  if (false) { return out; }',
+    // FX1-R4: the fail-closed line is now inside the snapshot branch. The mutation is unchanged in
+    // meaning - remove the refusal and a cross-currency row is priced at 1 - and the anchor follows it.
+    "      out.reason = 'NO_CANONICAL_FX_RATE'; return out;",
+    // The REPLACEMENT reproduces the original defect in the new shape: fall through with a seeded 1
+    // instead of refusing. Returning early here would leave fxRate null, which is a different bug and not
+    // the one this mutant is named for.
+    '      fxRate = 1;',
     function () { return createRow({ currency: 'CAD', masterBaseCurrency: 'USD' }).row.fx_rate === 1; });
 
   // M2 — PRICING-R4G — THE SEEDING COMES BACK. R4E's mutant asked whether the seeded override came from
@@ -610,7 +615,8 @@ section('H · MUTANTS');
 
   // M4 — ownership is left blank at creation, which is what made the old rows unrepairable.
   mutant('M4', 'the ownership flags are left blank at creation',
-    "    flag: 'FALSE', unreadable: [] };",
+    // FX1-R4: the literal gained fx_doc_version, so the anchor follows it.
+    "    flag: 'FALSE', unreadable: [], fx_doc_version: null };",
     "    flag: '', unreadable: [] };",
     function () { return createRow({ currency: 'USD', masterBaseCurrency: 'USD' }).row.regular_price_is_manual !== 'FALSE'; });
 
