@@ -6318,14 +6318,50 @@ ten mutants guard lines whose reason lives only in those comments.
 
 ### APPS_SCRIPT_SYNC_REQUIRED
 
-The paste set is everything between the **R49 cut** (which is what the project is believed to hold) and
-R55, because R50–R54 were cut and never synced. Twenty-five files, listed by
-`fc-target-rule-release-stamp-r2b-a2-r5-f3.test.js` §I1 rather than restated here, where a restated copy
-could drift. The four files **this release** changed are `75_` (new), `01_`, `04_` and `63_`.
+**Four files.** `01_router.gs`, `04_marketplace_forecast_import.gs`, `63_api_v1_system_health.gs`, and
+`75_api_v1_fx_rate_book.gs` (new).
 
-`90_generated_supply_planning_bundle.gs` is in the paste set although it is **not rebuilt**: not rebuilt
-and not copied are independent, and skipping it leaves an R49 bundle under an R55 manifest, which the
-content-hash row refuses.
+Measured rather than reasoned about:
+
+```
+git diff --name-status ab361ffb HEAD -- assets/specs/active/apps-script/
+M  01_router.gs      M  04_marketplace_forecast_import.gs
+M  63_api_v1_system_health.gs      A  75_api_v1_fx_rate_book.gs
+```
+
+#### What this paragraph said before, and why it was wrong twice (FX1-R4-R1 §1)
+
+> The paste set is everything between the **R49 cut** … and R55, because R50–R54 were cut and never
+> synced. Twenty-five files, listed by `fc-target-rule-release-stamp-r2b-a2-r5-f3.test.js` §I1 …
+
+**The baseline was stale.** The Owner's `system.health` (**HEALTH-50215EC7**) reports Production at
+**R54**. R50–R54 are deployed. The ledger's "Production is R49" was an intent recorded at R52's cut and
+never a live observation — a thing this ledger itself warns about further up, and then used as a fact.
+
+**And the span belonged to a different question.** §I1's copy list is derived from `BASE = e583057`,
+the **R25** tree. It is the DECLARATION gate: every Apps Script file whose stamp and manifest row have
+been governed since R25, asked so that nothing rides along unannounced. It is not, and has never been,
+a statement about what Production is missing. Twenty-five is a correct answer to a question nobody was
+asking here.
+
+**`90_generated_supply_planning_bundle.gs` leaves the set.** It last changed before R54, so a complete
+R54 already holds it. Not rebuilt and not copied are still independent — that part of the old paragraph
+was right — but there is nothing to copy this round.
+
+#### The one thing still unverified, and the read-only check for it
+
+"Production is R54" is a reading of `SYS_DEPLOYMENT_RELEASE_`, which lives in `63_`. A project where
+somebody pasted `63_` and stopped would report R54 while holding older copies of everything else, and
+that is exactly the partial sync the four-file set would then be too small for.
+
+**The same health call answers it.** `SYS_MODULE_BUILD_STAMPS_` returns a per-file expected build and
+the probe compares each against what that file actually declares; `mixed_deployment` is the summary.
+
+- `mixed_deployment: false` → R54 is complete and the four files above are the whole paste set.
+- `mixed_deployment: true` → the set is whatever the stamps report as behind, **plus** these four, and
+  this section is re-derived rather than trusted.
+
+Reading it costs one `system.health` call and writes nothing.
 
 ### GITHUB_PAGES_FILES
 
@@ -6333,7 +6369,16 @@ content-hash row refuses.
 `assets/js/pages/fx-rate-book.js`, `assets/html/pages/fx-rate-book.html`,
 `assets/css/pages/fx-rate-book.css` (new).
 
-### Post-publish acceptance (read-only until step 5)
+### Post-publish acceptance — steps 1-3 read, **steps 4 onward write**
+
+This heading read *"read-only until step 5"* and that was wrong: **step 4 is a write.** It asks for a
+save in one tab and then a save in another, and the FIRST of those two saves succeeds — it has to, or
+the second one has nothing to conflict with. So the operator following this list in order had already
+changed the stored book one step before the list told them they were about to.
+
+The correction matters more than a renumbering because of what step 4 is for: it is the step where
+somebody deliberately provokes a refusal, which is the moment they are least likely to be counting
+writes.
 
 1. Open **Administration → FX Rate Book**. It must render the stored book and issue exactly one
    `fxRateBook.get`. Opening the page must write nothing.
@@ -6342,10 +6387,21 @@ content-hash row refuses.
    prevent; a Save that works for an unidentified caller is the §8 failure.
 3. Check the version line reads `read at version <n>` and the capacity line reports bytes used of the
    limit. A book near the limit must say so **before** a save is refused.
-4. Open the page in two tabs, save in one, then save in the other. The second must be refused by name
-   with a version error, must keep your typing on screen, and must not overwrite the first.
+4. **(Writes — the first one succeeds.)** Open the page in two tabs, save in one, then save in the
+   other. The first save IS a write and advances `doc_version`. The second must be refused as
+   `FX_VERSION_CONFLICT` **by that code**, must keep your typing on screen, and must not overwrite the
+   first. A refusal naming any other version code is the page misreading its own request, which is the
+   defect FX1-R4-R1 §2 closed.
 5. **(Write.)** Save one coefficient. No price may move: `pricing_list` is unchanged, and rows already
    `pending_fx` stay `pending_fx` until a reconciliation is run.
+5a. **(Write — the round trip.)** Without reloading, keep editing after that save: change a second
+   field, add a pair, save again. The editor must stay live, the currency lists must still be
+   populated, the capacity meter must MOVE, and the version line must advance once per save. A page
+   that goes read-only after a successful save is FX1-R4-R1 §3 and means the shipped build is older
+   than this ledger.
+5b. Check the change log. Every row must carry a time, an operator, a pair, a kind (`ADDED` / `EDITED` /
+   `REMOVED`) and what moved; an EDIT must show the old value and the new one. Blank cells are
+   FX1-R4-R1 §4.
 6. Import a cross-currency SKU. It must be created priced from the book, with `auto_*` populated and
    the override columns **blank**. A row created with `auto_* = 0` is the zero-price failure §7 forbids.
 7. Import a cross-currency SKU for a pair the book does **not** hold. It must be created `pending_fx`
@@ -6392,6 +6448,12 @@ round changed it, and the globe does not render on this machine — reproduced w
 `index.html` and `app.js` restored, so the cause predates these commits. The assertion was not
 widened.
 
+> **FX1-R4-R1 CORRECTION.** The globe renders. That paragraph measured `_cp2m-r2-map-runner.js`, which
+> hard-codes `--use-gl=swiftshader` and loses the context ~1.3 s in — which the map suite's own header
+> has said since CP2O-R2, naming `_cp2o-r2-map-capture.js` as the re-capture tool instead. The capture
+> was taken here, first try, both scenes, and the suite is **75 passed, 0 failed**. See D-S8-B3-175,
+> now CLOSED.
+
 Four passes were needed to get here, and each one found something the pass before it could not see.
 The first found the read route the Administration page could not have used and a `04_` that did not
 parse. The second found eighteen registers that a new runtime file and a new routed page move. The
@@ -6399,3 +6461,115 @@ third found three more and a mutant whose REPLACEMENT, not merely its anchor, wa
 code — it would have reported itself surviving while testing a defect it is not named for.
 
 **STILL NOT DEPLOYED. NOT PUSHED. NOT SYNCED.**
+
+---
+
+## FX1-R4-R1 — the Administration page's round trip, and the identity condition for using it
+
+**No release cut. No `.gs` byte changed.** The GS load surface is unmoved at **4,666,841 / 4,668,000**,
+and `SYS_DEPLOYMENT_RELEASE_` is still R55. Everything below is browser code, tests and this ledger.
+That is not a small-change convenience — it is the measurement: four defects that made the FX Rate Book
+page unusable were all on the page's side of a backend that was already right.
+
+### What was wrong
+
+FX1-R4 shipped the page with 234 assertions on `75_`, 49 on the `04_` wiring and 17 mutants. Every one
+of them passed. The page could not save a non-empty rate book.
+
+| # | defect | register |
+|---|---|---|
+| 1 | the page never sent the per-row `version` `75_` requires, so every save of a non-empty book was refused once per row | D-S8-B3-176 |
+| 2 | and that refusal, `FX_VERSION_INVALID`, matched a `/VERSION/i` test and was announced as *"somebody else saved this book"* | D-S8-B3-177 |
+| 3 | a successful SAVE was adopted as though it were a GET, so success cleared the currencies, blanked the capacity meter and revoked `may_edit` | D-S8-B3-178 |
+| 4 | the change log rendered `changed_at` / `changed_by` / `old_rate` / `new_rate`, none of which `75_` emits | D-S8-B3-179 |
+| 5 | the transport collapsed the server's `errors[]` to the first one, so a book with four bad rows reported one | D-S8-B3-180 |
+
+**Why none of it was caught.** An EMPTY book saves perfectly — `rates: []` has no entries to validate.
+Both ends were verified against themselves; the SEAM between them was not tested at all. Defects 3 and
+4 are not merely untested but UNREACHABLE while defect 1 stands: a save that is always refused never
+produces a success envelope to misread and never writes a change record to render.
+
+### The evidence
+
+`assets/tests/_fx1-r4r1-roundtrip-runner.js` drives the SHIPPED page in headless Chrome, through the
+SHIPPED adapter, into the SHIPPED `75_` running over an in-memory Property store. Four captures under
+`docs/evidence/fx1-r4r1-roundtrip/`, all from one harness (its own SHA is in each capture, so "the same
+experiment" is checkable rather than assumed):
+
+| capture | page state | what it shows |
+|---|---|---|
+| `before.json` | as FX1-R4 shipped | 3 saves, **0 accepted**; every row on the wire carrying `<<missing>>` for `version`; the page blaming a colleague |
+| `masked.json` | row-version repair ONLY | saves succeed — and success empties the currency list, blanks the meter, disables the editor, and renders the log as `["","","USD>JPY@…","—","—"]` |
+| `after.json` | as it now stands | save → keep editing → save → reload → remove → save, `doc_version` 3→4→5→6, meter 412→577→1102→1105 B, log covering `EDITED`/`ADDED`/`REMOVED` |
+| `unidentified.json` | as it now stands | an unidentifiable caller: read-only, named, **zero save requests reached the server**, stored book unmoved |
+
+The counter-examples are real code, not synthetic mutants: `before` is the page as it shipped and
+`masked` is that page with one repair applied. A mutation harness would have had to invent those two
+states; they are the states the file was actually in.
+
+### The cross-layer half: a coefficient saved on the page prices a SKU
+
+`verify-04-wiring.js` executes the row PLANNER. The new suite executes the WHOLE handler —
+`handleImportMarketplaceSkusBatch_`, out of the shipped `04_`, against an in-memory spreadsheet whose
+headers are lifted from the handler's own `requiredHeaders` so the fixture cannot drift from the schema.
+
+The book it runs against is `after.json`'s `finalStoredRaw` — the exact bytes the Administration page
+committed, parsed and handed to `04_`'s Property reader unmodified. The operator added `USD>EUR 0.92`
+by pressing *Add a pair*; the import writes a `pricing_list` row with `fx_rate 0.92`,
+`auto_regular_price 92` (100 x 0.92 at EUR precision), `price_status draft`, and `rate book v7` in the
+note. That is the whole chain, executed, in one process.
+
+Beside it, the rules that must hold while it happens — all executed, none asserted from source:
+
+- a pair the book does not hold → `price_status pending_fx`, `fx_rate` and every `auto_*` **blank**,
+  never zero, with `base_*` still recorded so a reconciliation has something to work from;
+- a corrupt book → the import still succeeds, `fx.readable: false`, `fx.doc_version: null`, rows
+  pending — a configuration fault, reported as one, which does not stop a SKU existing;
+- the Property replaced **mid-batch** → both rows still priced at `0.92` and the batch still reports
+  v7, not the 99 that was written underneath it;
+- an existing `pricing_list` row → **no price column written at all**, and a manual `49.99` still
+  exactly `49.99`. Saving a coefficient changes what the NEXT creation reads. It reprices nothing.
+
+`assets/tests/fx-rate-book-roundtrip-and-wiring-fx1-r4-r1.test.js` — **111 assertions, 0 failed.**
+
+### §6 — the identity condition, confirmed without changing anything
+
+**No deployment setting was touched, and none should be on the strength of this section.**
+
+`system.health` cannot answer this question and is not expected to: it reports "no user identity" by
+design (`63_`, line 15), so HEALTH-50215EC7 carrying no trusted-operator evidence is the contract
+working, not a gap in the report.
+
+**The minimal read-only confirmation is one `fxRateBook.get`** — the call the page already makes when
+it opens, which writes nothing. Its `may_edit` and `authority_reason` are a complete decision table:
+
+| `authority_reason` | what is true | what it would take |
+|---|---|---|
+| *(absent, `may_edit: true`)* | the caller is identified and on the allowlist | nothing |
+| `FX_AUTHORITY_NOT_CONFIGURED` | `KM_FX_RATE_BOOK_EDITORS` is unset | the Owner sets the addresses |
+| `FX_AUTHORITY_WILDCARD_REFUSED` | it is set to `*` | the Owner replaces `*` with real addresses |
+| `FX_AUTHORITY_UNVERIFIABLE` | **the deployment cannot see who is calling** | an Owner decision about the deployment's access mode |
+| `FX_NOT_AUTHORIZED` | identified, and not on the list | the Owner adds that address |
+
+The fourth row is the one that matters, and it is the one this round can confirm but must not act on.
+A Web App executing as its owner returns `''` from `Session.getActiveUser()`, so membership cannot be
+checked and `75_` refuses — which is correct and is what `unidentified.json` measures end to end: the
+band names the code, every control is disabled, and **no save request is issued at all**.
+
+Three things were available and were not done, because each defeats the control rather than satisfying
+it: setting `*` (refused by name since FX1-R3, and the entry explains why), having the browser send an
+email (a claim is not an identity), and reading the deployment owner instead of the caller (that
+authorises the deployment, not the person).
+
+Until the Owner decides, the correct state is the current one: **the FX Rate Book is readable by
+everyone who can open the app and writable by nobody.** A rate book nobody can edit prices nothing
+wrongly; it only stays empty, and an empty book is `pending_fx`, which is a visible, recoverable state.
+
+### What is NOT covered
+
+Every capture above ran against an in-memory store with an injected `io`. A sandbox is not a database,
+and request counts, byte counts and refusal codes are evidence while **durations are not**. Nothing
+here has been run against a deployment.
+
+**NOT PUSHED. NOT SYNCED. NOT DEPLOYED. No Script Property was created, no rate was initialised and no
+price was written.**

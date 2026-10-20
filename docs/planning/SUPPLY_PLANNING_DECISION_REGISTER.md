@@ -6473,16 +6473,59 @@ re-runnable forever, which the tool it replaces stopped being the moment its own
 
 ---
 
-### D-S8-B3-175 — The map page’s acceptance is UNVERIFIED against the current `index.html` — OPEN
+### D-S8-B3-175 — The map page’s acceptance was UNVERIFIED against the current `index.html` — **CLOSED (FX1-R4-R1 §7)**
 
 Routing the FX Rate Book Administration page changed `index.html` and `assets/js/app.js`, which six
 browser captures pin. Five were re-taken and pass. The sixth,
-`docs/evidence/cp2m-r2-map/map.json`, **cannot be re-taken on this machine**: the globe renders no
-canvas. Measured, twice, in both scenes — `canvasCount: 0`, `canvasAppeared: true`,
-`webglSupported: true`, 41 report attempts, `NO_CANVAS_BOX`.
+`docs/evidence/cp2m-r2-map/map.json`, could not be re-taken: `canvasCount: 0`, `canvasAppeared: true`,
+`webglSupported: true`, 41 report attempts, `NO_CANVAS_BOX`, in both scenes, twice.
 
 **It is not this round.** The same result reproduces with the pre-FX `index.html` restored, and again
 with the pre-FX `app.js` restored as well. Whatever stops the globe rendering predates these commits.
+
+**FX1-R4-R1 — CLOSED. THE CAPTURE WAS TAKEN HERE, FIRST TRY, AND EVERYTHING ABOVE THIS LINE WAS A
+DESCRIPTION OF THE WRONG TOOL.**
+
+`assets/tests/map-canvas-acceptance-s8-b3-r3-cp2m-r2.test.js` says, in its header, since CP2O-R2:
+
+> Re-capture with: `node assets/tests/_cp2o-r2-map-capture.js docs/evidence/cp2m-r2-map`
+>
+> WHY THAT IS NOT `_cp2m-r2-map-runner.js` ANY MORE. The runner hard-codes `--use-gl=swiftshader`, and
+> on the capture machine the software rasteriser LOSES the WebGL context about 1.3 s after creating it,
+> which empties the canvas mid-capture.
+
+Every measurement in this entry was taken with `_cp2m-r2-map-runner.js`. The symptom it reports —
+`canvasAppeared: true` with `canvasCount: 0` — is that sentence, exactly: the canvas appears and is
+then emptied before the report runs. One run makes it unmistakable. In a SINGLE desktop scene:
+
+```
+canvas      (t=1585ms)  canvasCount 0   canvasPresent false   canvasAppeared true
+canvasB     (t= 473ms)  canvasCount 2   canvasPresent true    615x638, aria "3D Earth globe…"
+dragReport  (t=1172ms)  canvasCount 0   canvasPresent false   dragSkipped NO_CANVAS
+```
+
+The probe that ran at 473 ms caught the globe. The two that ran a second later did not. "The globe
+renders no canvas" was never a reading of this page; it was a reading of a rasteriser losing a context,
+through a tool the suite had already retired for doing precisely that.
+
+**What closes it.** `node assets/tests/_cp2o-r2-gl-probe.js` reports `HELD_12833MS` on
+`angle-d3d11-gpu-forced` — ANGLE / Direct3D11 on the real adapter, `contextLost: false`, 509 frames —
+which is the precondition the suite header states for taking a capture at all. Then
+`node assets/tests/_cp2o-r2-map-capture.js`, once:
+
+```
+desktop  canvasPresent true  canvasCount 2  box 615x638  error null
+mobile   canvasPresent true  canvasCount 2  box 313x606  error null
+MAP CANVAS ACCEPTANCE (S8-B3-R3-CP2M-R2): 75 passed, 0 failed
+```
+
+**No hash was changed and no threshold was lowered** — which was the right instinct in FX1-R4 and is
+the reason the gate was still there to pass. What was wrong was the conclusion drawn when it failed:
+two runs of a deprecated tool became "this machine cannot", and that is a claim about an environment
+made from evidence about a command line. The check that would have caught it is written at the top of
+the suite being run.
+
+**Status: CLOSED (FX1-R4-R1 §7).** The sweep is 690 of 690 with no suite named.
 
 **The assertion was left exactly as it is.** `A2` refuses a capture taken against a different
 `index.html`, and widening it to excuse a stale one would trade a real guard for a green line — while
@@ -6495,5 +6538,184 @@ FX1-R4 touches it, its lifecycle and mount-continuation captures were both re-ta
 stylesheet and scripts are unchanged. What is missing is the canvas acceptance evidence against the
 current shell. Re-take `node assets/tests/_cp2m-r2-map-runner.js <outDir>` on a machine where the
 globe renders, and the suite goes green with no code change.
+
+*(The instruction in the paragraph above names the wrong tool. It is left as written because it is what
+FX1-R4 concluded, and the correction belongs below rather than on top of it.)*
+
+---
+
+### D-S8-B3-176 — The Administration page could not save a non-empty rate book, at all — **FIXED (FX1-R4-R1 §2)**
+
+`FIELDS` listed the eight columns the editor draws. Every load rebuilt each row from that list, and
+every save rebuilt it again — so `version`, which 75_ requires on every entry as a whole number of at
+least 1, was dropped on the way in and never sent on the way out. The server refused the book with one
+`FX_VERSION_INVALID` per row and wrote nothing.
+
+**Why 283 passing assertions did not see it.** An EMPTY book saves perfectly: `rates: []` has no
+entries to validate. FX1-R4 verified 75_ against 75_ and the page against its own source, and the one
+state that fails is a book with rows in it being saved by the page — which is to say, the only state
+an operator is ever in.
+
+**The structural repair is wider than the field.** A row is now carried whole: `workingRow()` copies
+every key the server sent and fills in only the drawn columns it is missing. A field added server-side
+later survives a round trip without this file being edited, because the editor no longer decides what
+a row consists of.
+
+Proof: `docs/evidence/fx1-r4r1-roundtrip/before.json` — three saves, zero accepted, every row on the
+wire carrying `<<missing>>` where a version belongs, recorded by the SERVER rather than inferred from
+a refusal.
+
+---
+
+### D-S8-B3-177 — …and the page blamed a colleague for it — **FIXED (FX1-R4-R1 §2)**
+
+The refusal was classified with `/VERSION/i.test(code)`. That matches `FX_VERSION_CONFLICT`, which it
+was written for — and also `FX_VERSION_INVALID` (a row of this operator's own) and
+`FX_DOC_VERSION_REQUIRED` (this page's own request, malformed). So the page answered a defect of its
+own with *"Somebody else saved this book while you were editing"*, which is a statement about another
+person that was not true, and which sends the operator to reload rather than to the field at fault.
+
+Measured: `before.json` phase `saved-1` carries exactly that sentence beside the code
+`FX_VERSION_INVALID` that contradicts it.
+
+The test is now `=== 'FX_VERSION_CONFLICT'`. A substring is not a code, and this is the second time in
+two rounds that a guard written as a pattern matched something it was never about —
+see [[D-S8-B3-168]].
+
+---
+
+### D-S8-B3-178 — A successful save made the page read-only — **FIXED (FX1-R4-R1 §3)**
+
+`handleFxRateBookGet_` answers with `supported_currencies`, `capacity`, `may_edit`, `authority_model`
+and `authority_reason`. `handleFxRateBookSave_` answers with `bytes`, `limit`, `log_trimmed` and
+`authority`, and none of the first five — correctly, because a save has nothing new to say about which
+currencies the deployment can round.
+
+The page adopted both with one function, so a SAVE was read as a GET in which those fields had come
+back EMPTY: the currency list was cleared (and with it every `<select>`'s options, so the NEXT save
+would have sent blank currencies), the capacity meter was blanked, and `may_edit` went false — which
+disabled every input, removed the row controls, and raised the read-only band naming an authority
+failure that had not happened. **The reward for a successful save was a page saying you were not
+allowed to save.**
+
+`adopt()` now takes `{ fresh: true }` for the answer that establishes the page and merges everything
+else: an absent field means UNCHANGED, not empty. The capacity meter is additionally *updated* from a
+save's `bytes`/`limit`, because the stored size really did change and showing the old one would be its
+own small lie.
+
+**This defect was unreachable until [[D-S8-B3-176]] was fixed** — a save that is always refused never
+produces a success envelope to misread. `masked.json` is the capture of the page with the row-version
+repair and nothing else, which is the only state in which it can be seen at all.
+
+---
+
+### D-S8-B3-179 — The change log rendered four fields 75_ has never emitted — **FIXED (FX1-R4-R1 §4)**
+
+The panel read `changed_at`, `changed_by`, `old_rate` and `new_rate`. `fxBookChangeRecords_` writes
+`{ at, by, pair, change }` plus `to` for an addition, `from` for a removal and `fields`
+(`field`/`from`/`to`, one per column that moved) for an edit. Every cell of every entry was therefore
+blank, and a log that renders empty is indistinguishable from a log with nothing in it — so the one
+panel kept to answer *who changed this rate, and from what* answered neither.
+
+Measured: `masked.json` renders `["", "", "USD>JPY@2026-10-01", "—", "—"]`.
+
+It now renders all three kinds. WHO is the identity 75_ established — not a name the browser sent,
+which would be a claim — and WHEN is the server clock in UTC, shown as `YYYY-MM-DD HH:MM UTC` with the
+exact instant on the cell's `title`. An entry in a shape this build does not recognise is SHOWN as raw
+JSON rather than dropped: a history that silently hides what it cannot parse has stopped being one.
+
+---
+
+### D-S8-B3-180 — The transport reported one refusal and discarded the rest — **FIXED (FX1-R4-R1)**
+
+`_kmGapRead_` collapsed the server's `errors[]` to `errors[0]`. For the reads it was written for that
+is right: they refuse for one reason. A handler that validates a DOCUMENT refuses once per bad row, so
+an operator with four bad rows was told about one of them and left to find the other three by saving
+again, three more times.
+
+`errors` is now carried alongside `error` — additive, present only when the server sent more than one,
+and every existing caller still reads `error` exactly as before.
+
+---
+
+### D-S8-B3-181 — The R55 paste set was computed from the wrong span, against a stale baseline (FX1-R4-R1 §1)
+
+The release log said the R55 paste set is *"everything between the R49 cut and R55, because R50–R54
+were cut and never synced — twenty-five files, listed by `fc-target-rule-release-stamp…` §I1"*. Two
+things were wrong with that sentence and they compound.
+
+**The baseline.** The Owner's `system.health` (HEALTH-50215EC7) reports Production at **R54**. R50–R54
+are deployed. The ledger's R49 was an intent recorded at R52's cut, never a live observation — which
+the ledger itself warned about at line 5719 and then went on to use as a fact.
+
+**The span.** §I1's copy list is derived from `BASE = e583057`, the **R25** tree. It is the declaration
+gate — every Apps Script file whose stamp and manifest row are governed since R25 — and it answers
+"did anything ride along?", not "what is Production missing?". Twenty-five is the right answer to a
+question nobody asked here.
+
+**The paste set for R55 is four files**, measured rather than restated:
+`git diff --name-status ab361ffb HEAD -- assets/specs/active/apps-script/` →
+`01_router.gs`, `04_marketplace_forecast_import.gs`, `63_api_v1_system_health.gs`, and
+`75_api_v1_fx_rate_book.gs` (new).
+
+**`90_generated_supply_planning_bundle.gs` leaves the set.** It last changed before R54, so a complete
+R54 already holds it. That conditional is the whole of what is still unverified here, and it has a
+read-only check rather than an assumption: the same `system.health` call returns `SYS_MODULE_BUILD_STAMPS_`
+per file and `mixed_deployment`. If that flag is false, R54 is complete and four files is the set. If it
+is true, the set is whatever the stamps say is behind, and this entry is re-derived rather than trusted.
+
+---
+
+### D-S8-B3-182 — FC history needs no API, and a missing history is offered as a forecast of ZERO — **OPEN (confirmed FX1-R4-R1, parallel)**
+
+Asked alongside FX1-R4-R1 so the FC Summary round starts from a checked premise rather than a design
+meeting. Two findings; the first closes a question, the second opens one.
+
+**1. There is no FC history source to build, because there already is one.** "History" for the Regular
+builder is `fc_regular_forecast` itself — the same sheet, rows carrying a different `year`. `58_` applies
+**no year filter**: `FCS_WORKSPACE_TABLES_` reads the whole sheet and the page resolves a base period
+with `_regularFindFc(rows, …, baseYear)` out of the payload it already has. A formal history API would
+be a second route to data that arrives on the first one, and the project would then own two definitions
+of what last year's forecast was. **Nothing to add.**
+
+The boundary is `FCS_WS_ROW_MAX_ = 50000`, reported as `capped` so truncation is never silent at the
+transport. The builder does not consult that flag — see below for why that matters more than it looks.
+
+**2. A missing base row becomes a forecast of zero, and that is the rule this project already refuses
+everywhere else.** `fc-summary.js`:
+
+```js
+var baseVal = baseRow ? (Number(baseRow[REG_MONTH_KEYS[baseMonth]]) || 0) : 0;
+newQty = Math.max(0, Math.round(baseVal * (1 + rate / 100)));
+```
+
+Executed, with a growth rate of 10%:
+
+| base | `baseVal` | offered `newQty` |
+|---|---:|---:|
+| no row for that SKU/year at all | 0 | **0** |
+| a row whose month is BLANK | 0 | **0** |
+| a row whose month is a genuine 0 | 0 | 0 |
+| a row whose month is 120 | 120 | 132 |
+
+Three different histories — *never sold there*, *nobody has filled this in*, and *we really forecast
+zero* — arrive at the operator as the same number, in a preview offering to WRITE it. The third is a
+statement; the first two are the absence of one.
+
+This is [[benchmark-oracle-proves-less]]'s cousin and it is exactly the rule FX1 §7 enforces on the
+other side of the same system: a missing coefficient leaves `pending_fx` with BLANK prices, because
+"a zero price is a price, and nobody stated one". The same sentence applies word for word to a forecast.
+
+The page already knows the difference where it costs it nothing: `_regularExistingMonths` reads
+`row.raw[m]` precisely so that a blank in the TARGET row stays blank on write. The distinction is
+preserved on the write side and discarded on the read side, in the same function.
+
+**Add the cap and it compounds.** A truncated payload makes base rows absent that exist in the sheet,
+and an absent base row is a zero — so a sheet over 50,000 rows would quietly turn "we did not send you
+this row" into "forecast nothing". `capped` is on the response and the builder never looks at it.
+
+**NOT FIXED HERE.** FX1-R4-R1 is an FX candidate and FC Summary is the next round; changing a forecast
+write path inside a release about rate books would make one candidate out of two. Recorded so that
+round starts with the measurement rather than the question.
 
 ---
