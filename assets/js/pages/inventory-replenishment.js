@@ -10491,6 +10491,16 @@ window._irBootstrapDiagnostic_ = function () {
         // CP2X-R4 §B — the last Search that was REFUSED for an inconsistent scope pair, and why. It is
         // cleared by the next Search that validates, so it is never mistaken for a live condition.
         last_refusal: (_irSearch && _irSearch.lastRefusal) ? _irSearch.lastRefusal : null,
+        // CP2X-R4-R2 §1/§2 — THE LAST SCOPE VERIFICATION AND HOW IT ENDED. CONTINUED is the only
+        // outcome that applied anything. SELECTION_CHANGED, CANCELLED_UNMOUNTED, MOUNT_SUPERSEDED,
+        // NEWER_SEARCH and SUPERSEDED each name a round that correctly published nothing, which is a
+        // different fact from a round that never ran. verify_scope is the pair the round was bound to,
+        // so "it finished the pair that was clicked" is readable rather than inferred from the table.
+        verify_pending: !!(_irSearch && _irSearch.verify),
+        verify_outcome: (_irSearch && _irSearch.lastVerify) ? (_irSearch.lastVerify.outcome || null) : null,
+        verify_scope: (_irSearch && _irSearch.lastVerify && _irSearch.lastVerify.pending)
+            ? (_irSearch.lastVerify.pending.country + '|' + _irSearch.lastVerify.pending.marketplaceId) : null,
+        verify_stray: _irVerifyStray,
         result_age_ms: _irReadModelAt ? (_irNowMs_() - _irReadModelAt) : null,
         result_ttl_ms: _IR_RESULT_TTL_MS,
         registry_requests: _irBootstrap.registryRequests, workspace_requests: _irBootstrap.workspaceRequests,
@@ -10532,6 +10542,9 @@ window._irRegistryState_ = function () { return _irRegistry; };
 //      selector change, and _irRecoRefreshVelocityCells_() then re-rendered the whole main table when the
 //      response arrived. That is the "changing Country/Marketplace loads data" defect: two requests per
 //      change plus an unrequested table repaint.
+// CP2X-R4-R2 1 - the verifications that came back to a round that was already over and stood down.
+// A discard that HAPPENED and one that never did are the same screen without a count.
+var _irVerifyStray = 0;
 var _irSearch = {
     applied: null,     // { country, marketplaceId } of the last SUCCESSFUL Search — null = never searched
     status: 'PRE_SEARCH',   // PRE_SEARCH | LOADING | READY | EMPTY | ERROR
@@ -10541,6 +10554,11 @@ var _irSearch = {
     // CP2X-R4-R1 §A - a scope check is finishing the registry load before it can decide. Separate from
     // inFlight, which is about the INVENTORY read: nothing has been applied and no read has started yet.
     verifying: false,
+    // CP2X-R4-R2 1 - the verification IN PROGRESS, bound to the pair that was clicked, the Search
+    // sequence it belongs to and the mount it was pressed on. null = none running. `verifying` is
+    // kept as the plain boolean beside it so every existing reader keeps the same answer.
+    verify: null,
+    lastVerify: null,
     // CP2X-R4 §B / R1 §A - the last Search that was refused, and why. Cleared by the next Search that
     // validates, so it can never be read as a live condition.
     lastRefusal: null,
@@ -10606,6 +10624,22 @@ function _irFiltersDiffer_(a, b) {
 }
 // A selector changed. NO request, NO render — only a stale mark, so the user knows the displayed result no
 // longer matches the selectors and Search is required again. The last CONFIRMED result stays on screen.
+// CP2X-R4-R2 2 - LEAVING THE PAGE ENDS A PENDING VERIFICATION, and it has to end HERE rather than
+// in the callback. If the record were left standing, `verify` would still be set when the page came
+// back and the next Search would be dropped by the single-flight guard with no message of any kind:
+// the button would simply do nothing. Ending it here also means the late callback finds it is no
+// longer the current round and returns before it can apply, repaint, or start a read.
+function _irCancelPendingVerify_(why) {
+    var vrec = _irSearch ? _irSearch.verify : null;
+    if (!vrec) return null;
+    vrec.outcome = why;
+    _irSearch.verify = null;
+    _irSearch.verifying = false;
+    // The PENDING refusal belonged to that round too. Left behind, it would read as a live
+    // condition on a page that is no longer waiting for anything.
+    if (_irSearch.lastRefusal && _irSearch.lastRefusal.pending) _irSearch.lastRefusal = null;
+    return vrec;
+}
 function _irMarkSearchStale_() {
     if (!_irSearch.applied) { _irRenderSearchGate_(); return; }
     _irSearch.stale = _irFiltersDiffer_(_irPendingFilters_(), _irSearch.applied);
@@ -11392,17 +11426,83 @@ function searchReplenishment() {
     var _scopeCheck = (typeof _irValidateScopeSelection_ === 'function')
         ? _irValidateScopeSelection_(pending) : { state: 'VALID', ok: true };
     if (_scopeCheck.state === 'UNVERIFIED') {
-        if (_irSearch.verifying) return;   // a load is already running for this click; do not queue a second
-        _irSearch.verifying = true;
+        // CP2X-R4-R2 1 - THE WAIT IS A RECORD, NOT A FLAG.
+        //
+        // R1 closed the gate correctly and then continued by calling searchReplenishment() again,
+        // whose first act is to read the selectors. So the authority's agreement about the pair that
+        // was CLICKED was spent on whatever the selects happened to hold when it arrived. Measured on
+        // the R1 candidate: Search pressed for JP/Rakuten, the marketplace moved to Yahoo during the
+        // wait and never searched, and Yahoo was applied - avg 37.0 on screen for a site nobody asked
+        // for. A boolean also cannot say WHOSE wait it is, so a callback belonging to a round that was
+        // over could clear a newer round's flag, repaint, and apply a scope to a page that had been
+        // left - measured, with ops-section not mounted and jp|MP-FIXTURE-JP-YAH applied anyway.
+        //
+        // The record binds the three facts that identify the round: the pair that was clicked, the
+        // Search sequence it belongs to, and the mount it was pressed on. Every effect below is
+        // conditional on still being that round.
+        if (_irSearch.verify) return;   // a verification is already running for this click; never queue a second
+        var vrec = { pending: { country: pending.country, marketplaceId: pending.marketplaceId },
+            seq: _irSearch.seq, mountGen: _irMountGen, at: _irNowMs_(), outcome: null };
+        _irSearch.verify = vrec; _irSearch.lastVerify = vrec; _irSearch.verifying = true;
         // RECORDED AS PENDING, not as a refusal. A reader must be able to tell "being checked" from
         // "checked and refused", and the next outcome overwrites this either way.
         _irSearch.lastRefusal = { code: _scopeCheck.code, at: _irNowMs_(), pending: true,
             selectedCountry: _scopeCheck.selectedCountry || null,
             marketplaceId: _scopeCheck.marketplaceId || null, marketplaceCountry: null,
             authoritySource: _scopeCheck.authoritySource || null };
-        var _settleScopeCheck = function (again) {
-            _irSearch.verifying = false;
-            if (again && again.state === 'VALID') { _irSearch.lastRefusal = null; searchReplenishment(); return; }
+        var _finishVerify = function (again) {
+            // STANDING FIRST, BEFORE ANY EFFECT. A record that is no longer the current verification
+            // has no business clearing the flag, repainting, alerting or starting a read: the round it
+            // belonged to is over, and the state on screen belongs to somebody else.
+            if (_irSearch.verify !== vrec) { vrec.outcome = vrec.outcome || 'SUPERSEDED'; _irVerifyStray++; return; }
+            if (vrec.mountGen !== _irMountGen) {
+                vrec.outcome = 'MOUNT_SUPERSEDED'; _irVerifyStray++;
+                _irCancelPendingVerify_('MOUNT_SUPERSEDED');
+                return;
+            }
+            if (vrec.seq !== _irSearch.seq) {
+                vrec.outcome = 'NEWER_SEARCH'; _irVerifyStray++;
+                _irSearch.verify = null; _irSearch.verifying = false;
+                return;
+            }
+            // CP2X-R4-R2 2 - THE INPUTS MOVED WHILE WE WERE ASKING, so there is nothing left to
+            // continue. The clicked pair is no longer what the screen says, and the pair the screen
+            // says now has never been searched - applying either one would publish a scope that was
+            // not asked for. The last applied result therefore stands, untouched, and the page says
+            // the filters are out of date, which is the wording it already owns for exactly this.
+            // AND A BLANK MARKETPLACE IS NOT A CHOICE. Loading the registry repopulates the selects,
+            // and that legitimately DROPS an id which does not belong to the country on screen - it is
+            // the page tidying up after itself, not the operator moving anything. Measured: reading a
+            // bare inequality here turned the US-plus-Japanese-id counter-example into
+            // SCOPE_SELECTION_CHANGED, which hid the real verdict (MARKETPLACE_COUNTRY_MISMATCH) behind
+            // a cancellation and would have let the next round quietly stop testing the refusal.
+            //
+            // So a cancellation needs POSITIVE evidence of a different choice: another country, or
+            // another marketplace that is actually selected. An emptied marketplace falls through to
+            // the authority, which refuses the clicked pair BY NAME - which is the better answer, and
+            // the one the operator needs.
+            var nowSel = _irPendingFilters_();
+            if (nowSel.country !== vrec.pending.country
+                || (nowSel.marketplaceId && nowSel.marketplaceId !== vrec.pending.marketplaceId)) {
+                vrec.outcome = 'SELECTION_CHANGED';
+                _irSearch.verify = null; _irSearch.verifying = false;
+                _irSearch.lastRefusal = { code: 'SCOPE_SELECTION_CHANGED', at: _irNowMs_(), pending: false,
+                    selectedCountry: vrec.pending.country, marketplaceId: vrec.pending.marketplaceId,
+                    marketplaceCountry: null, marketplaceStatus: null,
+                    authoritySource: (again && again.authoritySource) || null };
+                if (typeof _irMarkSearchStale_ === 'function') _irMarkSearchStale_();
+                return;
+            }
+            _irSearch.verify = null; _irSearch.verifying = false;
+            if (again && again.state === 'VALID') {
+                // CONTINUE ON THE SNAPSHOT THAT WAS VERIFIED, not on the selectors. They are the one
+                // thing the verification could not see, and re-reading them here is the defect.
+                vrec.outcome = 'CONTINUED';
+                _irSearch.lastRefusal = null;
+                _irRunVerifiedSearch_({ country: vrec.pending.country, marketplaceId: vrec.pending.marketplaceId });
+                return;
+            }
+            vrec.outcome = 'REFUSED';
             _irSearch.lastRefusal = { code: (again && again.state === 'UNVERIFIED') ? 'SCOPE_SOURCE_UNAVAILABLE'
                     : ((again && again.code) || 'SCOPE_SOURCE_UNAVAILABLE'),
                 at: _irNowMs_(), pending: false,
@@ -11415,11 +11515,11 @@ function searchReplenishment() {
             alert(_irScopeRefusalMessage_(_irSearch.lastRefusal.code));
         };
         Promise.resolve(_irEnsureRegistryLoaded_()).then(function () {
-            _settleScopeCheck(_irValidateScopeSelection_(pending));
+            _finishVerify(_irValidateScopeSelection_(vrec.pending));
         }, function () {
             // The source could not be loaded. Still UNVERIFIED, and still not a licence to proceed.
-            _settleScopeCheck({ state: 'UNVERIFIED', selectedCountry: _scopeCheck.selectedCountry,
-                marketplaceId: _scopeCheck.marketplaceId });
+            _finishVerify({ state: 'UNVERIFIED', selectedCountry: vrec.pending.country,
+                marketplaceId: vrec.pending.marketplaceId });
         });
         return;
     }
@@ -11436,6 +11536,16 @@ function searchReplenishment() {
         alert(_irScopeRefusalMessage_(_scopeCheck.code));
         return;
     }
+    // CP2X-R4-R2 1 - THE SNAPSHOT IS WHAT CONTINUES. Everything below this point runs on the pair
+    // that was handed to it, so the one caller that has waited for an authority can hand over the
+    // pair it had VERIFIED instead of re-reading selectors that have had seconds to move.
+    return _irRunVerifiedSearch_(pending);
+}
+
+// The Search itself, from the point where the scope is settled. It is given the pair rather than
+// reading it, which is the entire difference between this and the recursion it replaces: a function
+// whose first act is to read the DOM cannot be told which pair it is finishing.
+function _irRunVerifiedSearch_(pending) {
     _irSearch.lastRefusal = null;
 
     if (_irSearch.inFlight) return;   // single-flight — repeated rapid clicks share the in-flight read
@@ -16469,6 +16579,9 @@ if (window.KM && window.KM.lifecycle) {
             // CP2X-R4-R1 §C — leaving ends the generation too, so a callback that lands while the page
             // is not mounted cannot repaint it.
             _irMountGen++;
+            // CP2X-R4-R2 §2 — and it ends any scope verification that was still waiting for an
+            // authority. Nothing it could still decide is worth doing to a page that has been left.
+            if (typeof _irCancelPendingVerify_ === 'function') _irCancelPendingVerify_('CANCELLED_UNMOUNTED');
             // Allocation Draft persistence panel is page-owned — drop its DOM node so it never lingers in layout on
             // other pages (the controller state in _allocWorkspace is retained; re-entering Inventory re-renders it
             // in-page). Also sweep any legacy body-level node.

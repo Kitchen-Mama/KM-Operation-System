@@ -189,7 +189,12 @@ ok(/workspaceApiActive\('inventoryReplenishment'\)/.test(IR_JS), 'page: gates on
 ok(/getWorkspace\('inventoryReplenishment'/.test(IR_JS) && /adaptInventoryReplenishmentWorkspace/.test(IR_JS), 'page: primary read via scoped workspace + adapter');
 var refresh = extractFn(IR_JS, '_irWorkspaceRefresh_');
 ok(!/getOperationDb|loadOperationDb|_opDbCache/.test(refresh), 'page: the scoped read path has NO getOperationDb/loadOperationDb/_opDbCache');
-var search = extractFn(IR_JS, 'searchReplenishment');
+// CP2X-R4-R2 §1 — the branch this is about moved into _irRunVerifiedSearch_, the half of Search that
+// performs the read. searchReplenishment validates the scope and hands over a pair; it contains no read
+// at all, so asserting the ordering there would be asserting it about an empty haystack.
+ok(/return _irRunVerifiedSearch_\(pending\);/.test(extractFn(IR_JS, 'searchReplenishment')),
+  'page: Search hands the validated pair to the read half');
+var search = extractFn(IR_JS, '_irRunVerifiedSearch_');
 ok(search.indexOf('_irEffectiveWorkspace') >= 0 && search.indexOf('loadOperationDb') > search.indexOf('Legacy'), 'page: the search broad load lives ONLY in the Legacy branch (no silent fallback in Workspace mode)');
 ok(/INVENTORY_REPLENISHMENT_READ_FAILED|WORKSPACE_UNAVAILABLE/.test(IR_JS), 'page: fail-closed bounded read error');
 ok(/KM\.loadState\.createRegion/.test(IR_JS), 'page: reuses KM.loadState');

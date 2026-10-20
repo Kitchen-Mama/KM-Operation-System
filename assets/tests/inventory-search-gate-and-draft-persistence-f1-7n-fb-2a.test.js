@@ -456,9 +456,16 @@ eq((applyFn.match(/renderReplenishment\(\)/g) || []).length, 1, 'H2. and exactly
 eq((INV.match(/_irSearch\.applied = \{/g) || []).length, 1,
   'H3. _irSearch.applied is assigned in exactly ONE place — nothing else in the page can make data appear');
 var searchFn = extractFn(INV, 'searchReplenishment');
-ok(/if \(_irSearch\.inFlight\) return;/.test(searchFn), 'H4. single-flight guard against duplicate concurrent reads');
-eq((searchFn.match(/mySeq !== _irSearch\.seq/g) || []).length, 2, 'H5. both the success and failure paths are sequence-guarded');
-eq((searchFn.match(/lSeq !== _irSearch\.seq/g) || []).length, 2, 'H5. including the legacy branch');
+// CP2X-R4-R2 §1 — THE READ HALF OF SEARCH IS NOW ITS OWN FUNCTION, and these three guards belong to
+// it. searchReplenishment validates and hands over a PAIR; the half below is what single-flights, what
+// sequences, and what reads. Left pointed at searchReplenishment, all three would now pass vacuously
+// against a function that no longer contains a read — which is how a guard stops guarding.
+ok(/return _irRunVerifiedSearch_\(pending\);/.test(searchFn),
+  'H3a. searchReplenishment ends by handing the VALIDATED pair to the read half, so the two cannot drift apart');
+var runFn = extractFn(INV, '_irRunVerifiedSearch_');
+ok(/if \(_irSearch\.inFlight\) return;/.test(runFn), 'H4. single-flight guard against duplicate concurrent reads');
+eq((runFn.match(/mySeq !== _irSearch\.seq/g) || []).length, 2, 'H5. both the success and failure paths are sequence-guarded');
+eq((runFn.match(/lSeq !== _irSearch\.seq/g) || []).length, 2, 'H5. including the legacy branch');
 ok(!/setTimeout|setInterval/.test(code(searchFn)) && !/searchReplenishment\(\)/.test(code(applyFn)),
   'H6. no self-retry and no timer — a failed Search cannot become a retry storm');
 
@@ -540,6 +547,9 @@ eval(extractFn(INV, '_irMarkSearchStale_'));
 // F1-7N-FB-3 §C — searchReplenishment now calls _irWorkspaceRefresh_ DIRECTLY (it no longer borrows the
 // selector-registry loader), so the stub below is the exact seam the shipped Search uses.
 eval(extractFn(INV, '_irApplySearch_'));
+// CP2X-R4-R2 §1 — BOTH halves of the shipped Search. The gate hands a verified pair to this one;
+// without it in the sandbox every execution below ends in a ReferenceError rather than an assertion.
+eval(extractFn(INV, '_irRunVerifiedSearch_'));
 eval(extractFn(INV, 'searchReplenishment'));
 
 (async function () {

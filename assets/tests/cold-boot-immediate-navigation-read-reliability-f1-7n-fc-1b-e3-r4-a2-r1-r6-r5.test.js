@@ -463,7 +463,10 @@ var states = {};
 ok(states.LOADING && states.ERROR && states.READY && states.PRE_SEARCH,
   'F3a LOADING / ERROR / READY / PRE_SEARCH all exist as distinct states');
 // A stale response may neither apply a stale filter nor clear a newer error.
-var searchFn = extractFn(PAGEC, 'searchReplenishment');
+// CP2X-R4-R2 §1 — the sequence-guarded response handlers live in _irRunVerifiedSearch_, the half of
+// Search that performs the read. searchReplenishment validates a scope and hands over a pair; it has
+// no response handler to guard, so counting guards there would count zero and call it two.
+var searchFn = extractFn(PAGEC, '_irRunVerifiedSearch_');
 var guards = (searchFn.match(/mySeq !== _irSearch\.seq\) return/g) || []).length;
 ok(guards >= 2, 'F4  both the success AND the failure path of Search compare their own sequence first');
 ok(/if \(mySeq !== _irSearch\.seq\) return;\s*\/\/ a newer Search superseded this response/.test(searchFn) ||

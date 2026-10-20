@@ -221,3 +221,39 @@ evidence: it is one more batch whose direction and 6-of-6 agree with the other t
 still not the finding.
 
 Nothing else ran on the machine while these twelve runs were taken.
+
+---
+
+## CP2X-R4-R2 RE-TOOK IT AGAIN, BOTH ARMS — the twelfth batch of this design
+
+CP2X-R4-R2 changed `inventory-replenishment.js` again (the Search read moved into
+`_irRunVerifiedSearch_` so a verified pair can be handed to it, and the UNVERIFIED wait became a bound
+record), so §E1 refused the eleventh batch for the same reason it has refused every one before it: the
+shipped arm no longer described the file on disk. **Both arms were re-taken on ONE build**, alternating
+inside each pair, twelve runs, 100 rows each, five expands each, **no fatals**. The shipped source was
+restored and **verified by hash** when the driver finished — `c0ffbce98e0e9327`, matching.
+
+| row | unscoped | scoped | paired delta | improved in |
+|---|---:|---:|---:|---|
+| click → first paint | 61.6 ms | 64.9 ms | +0.9 ms | 3 of 6 |
+| click → full ready | 233.6 ms | 136.7 ms | **−102.8 ms** | **6 of 6** |
+| assembly in handler | 26.5 ms | 29.5 ms | +3.2 ms | 1 of 6 |
+| assembly after handler | 186.9 ms | 84.7 ms | **−103.4 ms** | **6 of 6** |
+| handler sync | 28.7 ms | 32.8 ms | +3.6 ms | 1 of 6 |
+
+The two load-bearing rows reproduce for the twelfth time: **−103.4 / −102.8 ms, 6 of 6 and 6 of 6**.
+
+**There is one outlier, it is in the UNSCOPED arm, and that is the direction that flatters the
+conclusion — so it is stated rather than mentioned.** The scan over `ms_click_to_exec_resolved` found
+60 samples, median 204.2 ms, **max 1484.3 ms**, above the `max(400 ms, 4 × median)` threshold. It is
+`unscoped-1`, first expand. It is left in, for the same reason the eleventh batch’s absence of one was
+left in: removing a sample for being large is how a batch stops being a measurement, and removing one
+that flatters the conclusion is not a different rule from removing one that does not.
+
+**It does not carry pair 1.** The per-run figure is the median of five, which is the third value:
+`unscoped-1` read `1484, 346, 352, 397, 415`, median **397**, and replacing the outlier with any value
+at or above 397 leaves that median exactly where it is. Pair 1’s −260.2 ms is produced by a slow
+unscoped RUN, not by one slow sample — which is ordinary machine drift, and is the reason the pairs are
+interleaved and never pooled.
+
+Nothing else ran on the machine while these twelve runs were taken.

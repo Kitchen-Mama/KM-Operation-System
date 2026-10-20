@@ -250,7 +250,14 @@ ok(gB && gA && gB.mount_generation > gA.mount_generation,
 eq(gL && gL.mode, 'REGISTRY_ONLY', 'G4  after A’s held answer lands, the record is still B’s');
 eq(gL && gL.revalidated, false, 'G5  and it still says it did not revalidate — A wrote nothing into it');
 eq(gL && gL.revalidating, false, 'G5a nor is anything reported as still running');
-eq(gL && gL.stray_callbacks, 1, 'G6  the dead attempt is COUNTED as having stood down, not silently dropped');
+// CP2X-R4-R2 — A DELTA, NOT A RUNNING TOTAL. `stray_callbacks` counts every late callback in the whole
+// session, and the C4 rapid-switching phase earlier in the run produces them or does not depending on
+// how the machine happened to schedule two navigations - measured at 0 in one capture and 2 in the
+// next, with the same page source. Pinning the total made this assertion a statement about the whole
+// run; what the scenario is about is the ONE dead attempt in THIS interleave.
+eq((gL && gL.stray_callbacks) - (gB && gB.stray_callbacks), 1,
+  'G6  the dead attempt is COUNTED as having stood down, not silently dropped',
+  [gB && gB.stray_callbacks, gL && gL.stray_callbacks]);
 eq(g1 && g1.extra && g1.extra.rendersByLateCallback, 0, 'G7  and it drove no repaint of the live page');
 
 const bg1 = was('R1C1-remount-generation-isolation');
@@ -284,8 +291,11 @@ const src = read('assets/js/pages/inventory-replenishment.js');
 ok(/IR_SCOPE_CHECK_\s*=\s*\{\s*VALID[\s\S]{0,120}UNVERIFIED[\s\S]{0,120}INVALID/.test(src),
   'H1  the three states exist as one named vocabulary, not as scattered booleans');
 ok(/state:\s*IR_SCOPE_CHECK_\.UNVERIFIED/.test(src), 'H2  UNVERIFIED is returned, never folded into ok:true');
-ok(/if \(_scopeCheck\.state === 'UNVERIFIED'\)[\s\S]{0,2000}_irEnsureRegistryLoaded_\(\)/.test(src),
-  'H3  and the caller answers it by LOADING the source it already owns');
+// CP2X-R4-R2 — BOUND TO THE SHAPE, NOT TO A CHARACTER COUNT. The previous form was a fixed 2,000-
+// character window after the UNVERIFIED branch; growing that branch would have moved the loader out of
+// range and reported a missing caller that is in fact right there.
+ok(/Promise\.resolve\(_irEnsureRegistryLoaded_\(\)\)\.then\(function \(\) \{\s*_finishVerify\(_irValidateScopeSelection_\(vrec\.pending\)\);/.test(src),
+  'H3  and the caller answers it by LOADING the source it already owns, then re-checking the CLICKED pair');
 ok(!/state:\s*IR_SCOPE_CHECK_\.UNVERIFIED[\s\S]{0,200}ok:\s*true/.test(src),
   'H4  an UNVERIFIED result is never also ok:true — there is no path that treats it as a pass');
 ok(/_irResultMatchesAppliedScope_\(st\)/.test(src),

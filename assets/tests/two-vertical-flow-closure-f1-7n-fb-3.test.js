@@ -195,7 +195,10 @@ var loadRegion = extractFn(INV, '_irRegion_');
 ok(/Loading Inventory Replenishment…/.test(loadRegion), 'C2. and it belongs to the TABLE region, not the selectors');
 var wsRefresh = extractFn(INV, '_irWorkspaceRefresh_');
 ok(/rg\.beginLoad/.test(wsRefresh), 'C2. which only _irWorkspaceRefresh_ drives — the inventory read');
-var searchFn = extractFn(INV, 'searchReplenishment');
+// CP2X-R4-R2 §1 — the inventory read moved into _irRunVerifiedSearch_, so that the one caller which
+// has waited for an authority can hand it the pair it VERIFIED rather than re-reading the selectors.
+// FB-3's rule is unchanged and still asserted: that read is driven by Search and by nothing else.
+var searchFn = extractFn(INV, '_irRunVerifiedSearch_');
 // F1-7N-FB-4G-A1-R1 — RESTATED for the spelling, not the claim: the primary read now passes an opt-in
 // `carrier` flag. FB-3's rule — Search is the only caller that drives the inventory table's load region — is
 // unchanged and is what is asserted.
@@ -278,8 +281,13 @@ eq((code(INV).match(/_irSearch\.applied = \{/g) || []).length, 1,
 // added, not because another way in appeared.
 eq((code(INV).match(/_irEnsureRegistryLoaded_\(/g) || []).length, 7,
   'C7. the registry loader has exactly seven references and no other loader path');
-ok(/if \(_scopeCheck\.state === 'UNVERIFIED'\)[\s\S]{0,2000}_irEnsureRegistryLoaded_\(\)/.test(code(INV)),
-  'C7. and the seventh is the Search gate, using the loader rather than a second route');
+// CP2X-R4-R2 — BOUND TO WHAT IT MEANS, NOT TO A CHARACTER COUNT. The previous form was a fixed
+// 2,000-character window after the UNVERIFIED branch, so growing that branch would have silently
+// moved the loader out of range and reported a missing seventh caller. What is asserted is the
+// shape: the gate finishes the load through THIS loader and then re-validates the pair that was
+// CLICKED — which is also the §1 rule, so the two cannot be satisfied separately.
+ok(/Promise\.resolve\(_irEnsureRegistryLoaded_\(\)\)\.then\(function \(\) \{\s*_finishVerify\(_irValidateScopeSelection_\(vrec\.pending\)\);/.test(code(INV)),
+  'C7. and the seventh is the Search gate, using the loader rather than a second route, and re-validating the CLICKED pair');
 ok(/function _irReloadScopeRegistry_\(\) \{ return _irEnsureRegistryLoaded_\(\{ force: true \}\); \}/.test(INV),
   'C7. and the Retry is the only forcing caller');
 

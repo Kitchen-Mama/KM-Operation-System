@@ -1807,6 +1807,168 @@ function measureScript(capId, opts) {
                      stray_callbacks: whileAway.d && whileAway.d.stray_callbacks } };
         });
 
+
+        /* ==========================================================================================
+           CP2X-R4-R2 - WHAT HAPPENS AFTER THE UNVERIFIED WAIT, which R1 left as a recursion.
+
+           R1 closed the gate: a pair that cannot be verified loads the authority and is re-checked
+           before anything is applied, and the re-check reads the CAPTURED pair, which is right. But
+           the CONTINUATION after it passes calls searchReplenishment() again, and that function's
+           first act is to read the selectors. So the verified snapshot is discarded at the one instant
+           it matters, and whatever the DOM happens to hold when the authority arrives is applied.
+
+           THE WAIT HAS TO BE REAL, AND IT CANNOT BE STAGED FROM THE SERVER. KM.scopeRegistry answers a
+           non-forced ensureLoaded out of memory once it is READY - it issues no request at all - so a
+           /__delay-reg would hold a request that is never made and the callback would land in the same
+           microtask as the click. That is precisely why R1A4 could not observe any of this. The hold
+           goes where the delay actually is: between the page asking the shared registry and it
+           answering.
+
+           THE PAIR IS CHOSEN THROUGH THE REAL SELECTS, BEFORE the authority is dropped. A select
+           cannot hold a value it was never offered, so assigning one across a country boundary leaves
+           it '' and the click is stopped by the PRESENCE guard - which is a staging failure that looks
+           exactly like a refusal. Measured: the first draft of these three phases did that, reported
+           verifying:false throughout, and proved nothing. Every pair below therefore stays inside one
+           country, which has three sites: Amazon 23.0, Rakuten 29.0, Yahoo 37.0.
+           ========================================================================================== */
+        function holdRegistry(ms){
+          try {
+            var reg = window.KM && window.KM.scopeRegistry; if (!reg) return false;
+            if (!window.__rvOrigEnsureLoaded) window.__rvOrigEnsureLoaded = reg.ensureLoaded;
+            var orig = window.__rvOrigEnsureLoaded;
+            reg.ensureLoaded = function(){
+              var a = arguments, t = this;
+              return new Promise(function(r){ setTimeout(r, ms); }).then(function(){ return orig.apply(t, a); });
+            };
+            return true;
+          } catch (e) { return false; }
+        }
+        function releaseRegistry(){
+          try { if (window.__rvOrigEnsureLoaded && window.KM && window.KM.scopeRegistry)
+            window.KM.scopeRegistry.ensureLoaded = window.__rvOrigEnsureLoaded; } catch (e) {}
+        }
+        function searchState(){
+          try { var s = window._irSearchState_ ? window._irSearchState_() : {};
+            return { verifying: s.verifying === true, status: s.status || null,
+                     refusalCode: (s.lastRefusal && s.lastRefusal.code) || null,
+                     refusalPending: !!(s.lastRefusal && s.lastRefusal.pending) }; }
+          catch (e) { return { error: String(e && e.message || e) }; }
+        }
+        function appliedKey(){ try { return window._irAppliedScopeKey_ ? window._irAppliedScopeKey_() : null; }
+                               catch (e) { return 'THREW'; } }
+        function regRequests(){ var d = diag() || {}; return d.registry_total_requests == null ? null : d.registry_total_requests; }
+        /* Put the page on JP/Amazon (23.0) and then MOVE THE MARKETPLACE ONLY, through the real select,
+           to the site this phase is about. No country changes, so the options are never rebuilt and the
+           value is one the select genuinely offers. */
+        async function stageJpPair(mktId, tag){
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          await sleep(900);
+          var base = appliedKey();
+          var ms = sel('replenMarketplace');
+          var held = ms ? await setSelect(ms, mktId, tag, 20000) : null;
+          return { base: base, held: held, country: sel('replenCountry') && sel('replenCountry').value,
+                   mkt: ms && ms.value, mktOptions: optsOf(ms) };
+        }
+
+        /* ---- R2A1. THE CONTROL, and it is the half that stops this becoming "refuse after every wait".
+               Nothing changes during the wait. The clicked pair is legal, the authority arrives and
+               agrees with it, and the Search must simply COMPLETE on it: JP/Rakuten, avg 29.0. A fix
+               that cancelled whenever it had waited would pass R2A2 and R2A3 and fail here. */
+        await rphase('R2A1-unverified-unchanged-completes', async function(){
+          var staged = await stageJpPair('MP-FIXTURE-JP-RAK', 'rv-r2a1-mkt');
+          var heldReg = holdRegistry(1800);
+          var dropped = dropAuthority();
+          clickSearch();
+          await sleep(500);
+          var during = searchState();
+          var appliedDuring = appliedKey();
+          await sleep(3400);
+          releaseRegistry();
+          return { staged: staged, heldReg: heldReg, dropped: dropped,
+                   during: during, appliedDuring: appliedDuring,
+                   after: searchState(), afterApplied: appliedKey(),
+                   refusal: (diag() || {}).last_refusal || null };
+        });
+
+        await rphase('R2A1b-authority-restored', async function(){ return await restoreAuthority(); });
+
+        /* ---- R2A2. THE OPERATOR CHANGES THEIR MIND DURING THE WAIT AND DOES NOT PRESS SEARCH AGAIN.
+               Search is pressed for JP/Rakuten (29.0) while the authority is down. Inside the wait the
+               marketplace is moved to JP/Yahoo (37.0) - a perfectly legal pair that nobody searched for.
+               On the R1 candidate the continuation re-reads the DOM, so the authority's agreement about
+               Rakuten is spent applying Yahoo and the table publishes a site nobody asked for.
+               A changed input CANCELS the pending verification: the last applied scope stands at
+               JP/Amazon 23.0, and NEITHER the clicked pair nor the new one is applied - the new one has
+               not been searched, and the clicked one is no longer what the screen says. */
+        await rphase('R2A2-changed-during-wait-not-applied', async function(){
+          var staged = await stageJpPair('MP-FIXTURE-JP-RAK', 'rv-r2a2-mkt');
+          renderCounter();
+          var heldReg = holdRegistry(2600);
+          var dropped = dropAuthority();
+          clickSearch();
+          await sleep(500);
+          var during = searchState();
+          var appliedDuring = appliedKey();
+          var reg0 = regRequests();
+          var ms = sel('replenMarketplace');
+          if (ms) { ms.value = 'MP-FIXTURE-JP-YAH'; }
+          var changedTo = { country: sel('replenCountry') && sel('replenCountry').value,
+                            mkt: ms && ms.value, mktOptions: optsOf(ms) };
+          var r0 = window.__rvRenderCount;
+          await sleep(3600);
+          releaseRegistry();
+          return { staged: staged, heldReg: heldReg, dropped: dropped, changedTo: changedTo,
+                   during: during, appliedDuring: appliedDuring,
+                   rendersAfterChange: window.__rvRenderCount - r0,
+                   regRequestsBefore: reg0, regRequestsAfter: regRequests(),
+                   after: searchState(), afterApplied: appliedKey(),
+                   refusal: (diag() || {}).last_refusal || null };
+        });
+
+        await rphase('R2A2b-authority-restored', async function(){ return await restoreAuthority(); });
+
+        /* ---- R2A3. THE OPERATOR LEAVES DURING THE WAIT.
+               Search is pressed for JP/Yahoo (37.0) while the authority is down, and the page is left
+               before the authority arrives. The verification then resolves with NO page mounted. It must
+               not apply, must not repaint, and must not start a scope read - and on return the page must
+               still search normally, which is the part a latch left standing would break silently: the
+               button would simply do nothing, with no message of any kind.
+               The repaints are COUNTED rather than inferred: a restore on return legitimately repaints,
+               so "nothing was drawn" is a fact only if the window counted is the unmounted one. */
+        await rphase('R2A3-left-during-wait', async function(){
+          var staged = await stageJpPair('MP-FIXTURE-JP-YAH', 'rv-r2a3-mkt');
+          renderCounter();
+          var heldReg = holdRegistry(2600);
+          var dropped = dropAuthority();
+          clickSearch();
+          await sleep(450);
+          var during = searchState();
+          var reg0 = regRequests();
+          await window.KM.lifecycle.switchTo('home-section');
+          var atLeave = window.__rvRenderCount;
+          await sleep(3300);
+          var whileAway = { current: window.KM.lifecycle.getCurrentPage ? window.KM.lifecycle.getCurrentPage() : null,
+                            opsActive: (function(){ var s = document.getElementById('ops-section');
+                              return s ? s.classList.contains('active') : null; })(),
+                            renders: window.__rvRenderCount, applied: appliedKey(),
+                            state: searchState(), regRequests: regRequests() };
+          releaseRegistry();
+          await window.KM.lifecycle.switchTo('ops-section');
+          await sleep(1500);
+          var onReturn = { applied: appliedKey(), state: searchState() };
+          var rBeforeSearch = window.__rvRenderCount;
+          await doSearch('JP', 'MP-FIXTURE-JP-AMZ');
+          await sleep(1300);
+          return { staged: staged, heldReg: heldReg, dropped: dropped, during: during,
+                   atLeave: atLeave, rendersWhileUnmounted: whileAway.renders - atLeave,
+                   appliedWhileAway: whileAway.applied, stateWhileAway: whileAway.state,
+                   opsActiveWhileAway: whileAway.opsActive,
+                   regRequestsBefore: reg0, regRequestsWhileAway: whileAway.regRequests,
+                   onReturn: onReturn, rendersBySearch: window.__rvRenderCount - rBeforeSearch,
+                   after: searchState(), afterApplied: appliedKey(),
+                   refusal: (diag() || {}).last_refusal || null };
+        });
+
         out.revisit = RV;
         step('revisit-done', { phases: RV.phases.length });
       }
@@ -2186,7 +2348,12 @@ async function main() {
     sources: {
       'index.html': sha('index.html'),
       'assets/js/pages/inventory-replenishment.js': sha('assets/js/pages/inventory-replenishment.js'),
-      'assets/css/pages/inventory-replenishment.css': sha('assets/css/pages/inventory-replenishment.css')
+      'assets/css/pages/inventory-replenishment.css': sha('assets/css/pages/inventory-replenishment.css'),
+      // CP2X-R4-R2 - THE HARNESS PINS ITSELF. Two captures are only comparable if they were driven by the
+      // same scenarios, and the suites assert exactly that - but the runner was never in this list, so the
+      // comparison was undefined === undefined and could not fail. Pinning it also means a capture taken
+      // before a scenario was edited is reported stale instead of being read as current.
+      'assets/tests/_cp2s-r2-inplace-dom-runner.js': sha('assets/tests/_cp2s-r2-inplace-dom-runner.js')
     },
     actionLog: cfg.log,
     // CP2X-R1 B - the SERVER side of the measurement: every request it served, by action, snapshotted at

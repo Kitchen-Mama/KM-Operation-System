@@ -185,7 +185,10 @@ function buildClient(opt) {
   ok(!!OWNERS_SRC, 'B0  the page declares its dispatch-owner vocabulary');
   var src = [OWNERS_SRC, IR_FIRST_SRC, 'var _irReadDispatches = [];',
     extractFn(PAGE, '_irReadPayloadFingerprint_'), extractFn(PAGE, '_irRecordReadDispatch_'),
-    extractFn(PAGE, '_irWorkspaceRefresh_'), extractFn(PAGE, 'searchReplenishment'),
+    // CP2X-R4-R2 §1 — BOTH halves of the shipped Search: the gate that validates the scope, and the
+    // half it hands the verified pair to. Without the second one every call below is a ReferenceError.
+    extractFn(PAGE, '_irWorkspaceRefresh_'), extractFn(PAGE, '_irRunVerifiedSearch_'),
+    extractFn(PAGE, 'searchReplenishment'),
     extractFn(PAGE, '_irPendingFilters_')].join(NL);
   var f = new Function('window', 'document', 'alert', '_irSearch', '_irRegion_', '_irRenderSearchGate_', '_irApplySearch_',
     '_irEffectiveWorkspace', '_replenDemoOn', '_irNowMs_', 'renderReplenishment', '_irRenderError_',
@@ -259,7 +262,8 @@ IMATRIX.push(later(function () {
 var refreshSrc = extractFn(PAGE, '_irWorkspaceRefresh_');
 ok(/var mySeq = \+\+_irReadSeq;/.test(refreshSrc) && /if \(mySeq !== _irReadSeq\) return _irReadModel;/.test(refreshSrc),
   'I10 a late FIRST response cannot overwrite a newer read (monotonic read sequence, checked on resolve)');
-var searchSrc = extractFn(PAGE, 'searchReplenishment');
+// CP2X-R4-R2 §1 — the stale-response guards are in the read half.
+var searchSrc = extractFn(PAGE, '_irRunVerifiedSearch_');
 ok(/if \(mySeq !== _irSearch\.seq\) return;\s*\/\/ a newer Search superseded this response/.test(searchSrc),
   'I11 a scope changed while a request is pending discards the old result');
 ok(/if \(mySeq !== _irSearch\.seq\) return;\s*\/\/ stale failure/.test(searchSrc),

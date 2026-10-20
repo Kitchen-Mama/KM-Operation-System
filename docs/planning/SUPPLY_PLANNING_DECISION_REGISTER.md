@@ -6325,3 +6325,72 @@ longer matches is reported as **STALE** rather than passing silently — which i
 quietly stops testing anything. Ten applied, ten caught, nothing missed.
 
 ---
+
+### D-S8-B3-166 — The verification waited for an authority and then asked the DOM again — **FIXED (CP2X-R4-R2 §1)**
+
+CP2X-R4-R1 closed the gate correctly: a pair that cannot be verified loads the authority and is
+re-checked before anything is applied, and the re-check reads the pair that was **clicked**, because
+loading the registry legitimately rebuilds the Marketplace options. What it then did was call
+`searchReplenishment()` again — and that function’s first act is to read the selectors. So the verified
+snapshot was discarded at the one instant it mattered.
+
+Measured on the R1 candidate: Search pressed for **JP/Rakuten** while the authority was down, the
+marketplace moved to **JP/Yahoo** during the wait and never searched, and Yahoo was applied — `37.0` on
+screen for a site nobody asked for. The authority’s agreement about Rakuten was spent publishing Yahoo.
+
+The read half of Search is now `_irRunVerifiedSearch_(pending)`, which is **handed** a pair and never
+reads the selectors. `searchReplenishment` validates and delegates; the path that waited delegates with
+the snapshot it verified. There is no longer any call that re-enters Search from inside it.
+
+### D-S8-B3-167 — A wait is a round, and a flag cannot say whose round it is — **FIXED (CP2X-R4-R2 §2)**
+
+The wait was a boolean. A boolean cannot carry a claim, so a callback belonging to a round that was
+already over could clear a newer round’s flag, repaint, and apply. Measured: the operator left the page
+during the wait, the verification resolved with `ops-section` **not mounted**, and the page applied
+`jp|MP-FIXTURE-JP-YAH` and repainted anyway.
+
+The wait is now a record that binds the three facts identifying the round — the pair that was clicked,
+the Search sequence, and the mount generation — and every effect is conditional on still being that
+round. The guards run in order: standing, mount, sequence, selection; only then is anything applied.
+
+**Leaving the page ends the verification, and it has to end in `unmount`, not in the callback.** A
+record left standing means `_irSearch.verify` is still set when the page comes back, and the next Search
+is dropped by the single-flight guard **with no message of any kind** — the button simply does nothing.
+`_irCancelPendingVerify_` ends it in one place, clears the PENDING refusal that belonged to it, and the
+late callback then finds it is no longer the current round and returns before it can touch anything.
+`verify_stray` counts those, because a discard that happened and one that never did look identical.
+
+### D-S8-B3-168 — The page tidying up after itself is not the operator changing their mind — **FIXED (CP2X-R4-R2 §2)**
+
+The first form of the §2 cancellation compared the selectors at settle time with the clicked pair and
+cancelled on any inequality. Loading the registry **repopulates the selects**, and that legitimately
+drops a marketplace id which does not belong to the country on screen — so the R1 counter-example (US
+plus a Japanese id) came back as `SCOPE_SELECTION_CHANGED` instead of `MARKETPLACE_COUNTRY_MISMATCH`.
+A named refusal had been replaced by a shrug, and the §A assertion that proves the refusal would have
+gone on passing against a cancellation.
+
+A cancellation now requires **positive evidence of a different choice**: another country, or another
+marketplace that is actually selected. An emptied marketplace falls through to the authority, which
+refuses the clicked pair by name — which is the better answer and the one the operator needs.
+
+### D-S8-B3-169 — Six suites were asserting about a read by extracting the function that no longer contains one
+
+Moving the read out of `searchReplenishment` broke six suites at once, and two of the breaks were worse
+than failures. `s3-r2-loading-render-ownership` locates the Search rejection handler by extracting
+`searchReplenishment` and regexing its `catch` body; extracted from the wrong function that body is the
+**empty string**, and `J5` asks whether a guard is ABSENT from it. It is absent from nothing, so `J5`
+reported its mutant **caught** while examining nothing at all. All six now read the half that holds what
+they assert, and `H3a` ties the two halves together so they cannot drift apart.
+
+Two further assertions were corrected in passing:
+
+- The capture’s `sources` list never contained the **runner**, so "both captures were taken through the
+  same harness" was `undefined === undefined` in two suites and could not fail. The runner is now pinned,
+  which also means a capture taken before a scenario was edited is reported stale rather than read as
+  current.
+- `G6` in the R1 suite pinned `stray_callbacks` — a **session-wide running total** — at 1. The earlier
+  `C4-rapid-switching` phase produces strays or does not depending on how the machine schedules two
+  navigations: measured at 0 in one capture and 2 in the next **against the same page source**. It now
+  measures the delta across the interleave the scenario is actually about.
+
+---

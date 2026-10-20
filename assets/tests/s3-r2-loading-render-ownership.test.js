@@ -181,7 +181,11 @@ section('D — NO SELF-RETRY: a rejection never dispatches the next read');
 // =================================================================================================================
 // The S3-R1 class-A defect, re-checked here because this page was never audited for it.
 {
-  const search = extractFn(IR, 'searchReplenishment');
+  // CP2X-R4-R2 §1 — the rejection handler this section is about belongs to the read, which now lives
+  // in _irRunVerifiedSearch_ so that a verified pair can be handed to it instead of re-read from the
+  // selectors. A catch body located in the wrong function would be an empty string, and D2 - the
+  // assertion that it dispatches NOTHING - passes trivially against an empty string.
+  const search = extractFn(IR, '_irRunVerifiedSearch_');
   const bareSearch = decomment(search);
   const catchBody = (bareSearch.match(/\['catch'\]\(function \(err\) \{([\s\S]*?)\n        \}\)/) || [])[1] || '';
   ok(catchBody.length > 0, 'D1  the Search rejection handler was located', catchBody.length);
@@ -279,7 +283,11 @@ section('J — MUTANTS');
     "            _irSearch.status = 'ERROR';\n            _irSearch.error = { code: (err && err.code) || 'INVENTORY_REPLENISHMENT_READ_FAILED',",
     "            searchReplenishment();\n            _irSearch.status = 'ERROR';\n            _irSearch.error = { code: (err && err.code) || 'INVENTORY_REPLENISHMENT_READ_FAILED',",
     function (m) {
-      const s = decomment(extractFn(m, 'searchReplenishment'));
+      // CP2X-R4-R2 §1 — THE CATCH BODY IS IN THE READ HALF. Extracted from searchReplenishment it
+      // comes back as the empty string, and an empty string satisfies both detectors below by accident:
+      // J5 asks whether the guard is ABSENT, and it is absent from nothing. Both mutants would have been
+      // reported caught while nothing was being examined at all.
+      const s = decomment(extractFn(m, '_irRunVerifiedSearch_'));
       const cb = (s.match(/\['catch'\]\(function \(err\) \{([\s\S]*?)\n        \}\)/) || [])[1] || '';
       return /searchReplenishment\(/.test(cb);
     });
@@ -289,7 +297,7 @@ section('J — MUTANTS');
     "            if (mySeq !== _irSearch.seq) return;   // stale failure — never overwrite a newer Search",
     "            /* guard removed */",
     function (m) {
-      const s = decomment(extractFn(m, 'searchReplenishment'));
+      const s = decomment(extractFn(m, '_irRunVerifiedSearch_'));
       const cb = (s.match(/\['catch'\]\(function \(err\) \{([\s\S]*?)\n        \}\)/) || [])[1] || '';
       return !/mySeq !== _irSearch\.seq/.test(cb);
     });
