@@ -236,10 +236,32 @@ ok(!/fetch|UrlFetchApp|XMLHttpRequest/.test(CODE),
 ok(/\/\/ .*PRICING_DATABASE_MAPPING .10/.test(CONTRACT) || /No separate FX DB table/.test(CONTRACT),
   'G3a while the PROSE names the mapping decision this round is answering, so G1-G3 are a boundary and not an absence');
 var pagesDir = path.join(ROOT, 'assets/js/pages');
-ok(fs.existsSync(path.join(pagesDir, 'fx-rate-book.js')), 'G4  the Administration page exists as a prepared artifact');
+ok(fs.existsSync(path.join(pagesDir, 'fx-rate-book.js')), 'G4  the Administration page exists');
 var IDX = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-ok(!/fx-rate-book/.test(IDX),
-  'G5  and is NOT registered in index.html — nothing is routed, nothing loads, and the IR release is not blocked');
+// FX1-R4 (R55) — THE PAGE IS ROUTED NOW, and this assertion flips rather than being deleted. FX1 made it
+// because the page named two actions that did not exist, so routing it would have shipped a surface that
+// could only fail; R55 is the release that adds them. A routed page needs all four of these - a stylesheet
+// the operator can see, a mount point to be injected into, a script tag to load the controller, and a menu
+// entry to reach it - and three of four is a page that exists and cannot be opened.
+ok(/assets\/css\/pages\/fx-rate-book\.css/.test(IDX), 'G5  the stylesheet is linked');
+ok(/id="fx-rate-book-mount"/.test(IDX), 'G5a a mount point exists for the partial');
+ok(/assets\/js\/pages\/fx-rate-book\.js/.test(IDX), 'G5b the controller is loaded');
+ok(/showSection\('fx-rate-book'\)/.test(IDX), 'G5c and there is a menu entry that reaches it');
+var APPJS = fs.readFileSync(path.join(ROOT, 'assets/js/app.js'), 'utf8');
+// BOTH maps. One decides what MOUNTS and the other what is VISIBLE; a section in only one of them either
+// mounts into a hidden shell or is revealed with nothing in it.
+eq((APPJS.match(/'fx-rate-book': 'fx-rate-book-section',/g) || []).length, 2,
+  'G5d and app.js carries it in BOTH section maps');
+var PAGEJS = fs.readFileSync(path.join(pagesDir, 'fx-rate-book.js'), 'utf8');
+ok(/KM\.lifecycle\.register\('fx-rate-book-section'/.test(PAGEJS), 'G5e the controller registers a lifecycle');
+// AND IT NAMES THE ACTIONS THE ROUTER ACTUALLY SERVES. The prototype named fx.rateBook.get / .save; the
+// router serves fxRateBook.get / .save, so it could never have worked - which is the failure a page
+// prepared ahead of its backend is most likely to carry and least likely to be caught carrying.
+ok(/getFxRateBook|saveFxRateBook/.test(PAGEJS) && !/fx\.rateBook\./.test(PAGEJS),
+  'G5f through the transport adapters, not through action names nothing serves');
+var RTR = fs.readFileSync(path.join(ROOT, 'assets/specs/active/apps-script/01_router.gs'), 'utf8');
+ok(/'fxRateBook\.get'/.test(RTR) && /'fxRateBook\.save'/.test(RTR),
+  'G5g and the router really serves both of them');
 var DOC = path.join(ROOT, 'docs/planning/FX_RATE_BOOK_CONTRACT_FX1.md');
 ok(fs.existsSync(DOC), 'G6  the backend/DB change list and the GS arithmetic are written down');
 var D = fs.readFileSync(DOC, 'utf8');

@@ -218,8 +218,14 @@ section('A · §8 THE CREATION CENSUS — ONE OWNER');
     'A2b and the master-data endpoint still states that it creates none');
 
   // The rule is a PURE function, so everything below can be measured without a spreadsheet.
-  ok(/function pricingNewRowPlan_\(baseCurrency, localCurrency, base, asOf\)/.test(GS04),
+  // FX1-R4 — it gained a FIFTH parameter and stayed pure, which is the point of the parameter. The
+  // rate book is read ONCE per import by the caller and the snapshot is handed in; a planner that
+  // fetched its own would be a Property read per row and would let one batch be priced at two versions.
+  ok(/function pricingNewRowPlan_\(baseCurrency, localCurrency, base, asOf, fxBook\)/.test(GS04),
     'A3  the creation rule is one pure function — pricingNewRowPlan_');
+  var _planBody = (/function pricingNewRowPlan_\(([\s\S]*?)\n\}/.exec(GS04) || ['', ''])[1];
+  ok(!/PropertiesService|fxBookSnapshotForImport_|fxBookReadDoc_|SpreadsheetApp/.test(_planBody),
+    'A3a and it is still pure — no Property, no snapshot read, no spreadsheet inside it');
   var planSrc = GS04.slice(GS04.indexOf('function pricingNewRowPlan_'), GS04.indexOf('function handleImportMarketplaceSkusBatch_'));
   ok(!/SpreadsheetApp|getRange|appendRow|new Date\(\)/.test(planSrc),
     'A3b which takes no sheet and no clock — the as-of date is passed in');

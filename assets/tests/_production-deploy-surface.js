@@ -125,6 +125,9 @@ var DECLARED_RUNTIME = [
   // deliberately. Four router actions dispatch into this file, so a deploy set without it answers each of them
   // with a reference error.
   '74_api_v1_overseas_allocation_preview_job.gs',
+  // FX1-R4 (R55) — the stored FX coefficients. A new runtime .gs has to be put on this list
+  // deliberately; the count that follows from it is what makes forgetting visible.
+  '75_api_v1_fx_rate_book.gs',
   '90_generated_supply_planning_bundle.gs'
 ];
 

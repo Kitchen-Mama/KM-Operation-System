@@ -331,8 +331,19 @@ var J = clientChain(R10_CAPTURE.siteUniverse).then(function (r) {
   var asksWhoIsCalling = runtime.filter(function (f) {
     return /Session\.get(Active|Effective)User/.test(read(path.join(GSDIR, f)));
   });
-  eq(asksWhoIsCalling, [],
-    'G3 not one runtime file asks Apps Script who is calling — RE-RUN THE GO/NO-GO IF THIS CHANGES');
+  // FX1-R4 (R55) — THE GO/NO-GO IS RE-RUN, which is what the sentence below asked for. Exactly one
+  // runtime file asks, and it asks in order to REFUSE: an unidentifiable caller gets the rate book
+  // read-only and never a save, and an explicit `*` in the editors property is refused by its own name
+  // rather than honoured. The boundary tightens for one action; nothing else on the surface moved.
+  //
+  // THE CONSEQUENCE, STATED: under ANYONE_ANONYMOUS + USER_DEPLOYING, Session.getActiveUser() returns
+  // the empty string for essentially every caller, so fxRateBook.save is refused for essentially
+  // everybody until the Owner changes the deployment ACCESS setting. That is the designed state - the
+  // FX1-R4 instruction forbids changing the execution identity or the OAuth scopes to work around it.
+  //
+  // PINNED, not bounded: a SECOND file arriving here is the thing this gate exists to notice.
+  eq(asksWhoIsCalling, ['75_api_v1_fx_rate_book.gs'],
+    'G3 exactly ONE runtime file asks Apps Script who is calling, and it asks in order to refuse');
   ok(runtime.length > 20, 'G3a (and that was checked across every runtime file, ' + runtime.length + ' of them)');
 
   /* NO GATE IN FRONT OF THE ROUTER EITHER. Not a shared secret, not a bearer token, not a caller

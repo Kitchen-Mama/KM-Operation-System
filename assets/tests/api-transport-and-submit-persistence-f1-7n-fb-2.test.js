@@ -287,7 +287,12 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   // which has been ROUTED since before the registry existed and was never listed. The list's own note above
   // warns that a new owner file must be added here or the probe reads a registered handler as undefined, and
   // this time it is two at once, because one of the registry rows is a repair rather than an addition.
-  read('specs/active/apps-script/03_master_data_handlers.gs')].join(String.fromCharCode(10));
+  read('specs/active/apps-script/03_master_data_handlers.gs'),
+  // FX1-R4 (R55): the FX rate book owner. 63_ registers handleFxRateBookGet_ and handleFxRateBookSave_,
+  // both defined here. The note above warns that a new owner file must be added to this list or the probe
+  // reads a registered handler as UNDEFINED - which is the same symptom as a partial sync, from a test
+  // that simply was not looking in the right file.
+  read('specs/active/apps-script/75_api_v1_fx_rate_book.gs')].join(String.fromCharCode(10));
 (G63.match(/handler: '([A-Za-z0-9_]+)'/g) || []).forEach(function (m) {
   var h = m.replace(/handler: '|'/g, '');
   var n = (HANDLER_SOURCES.match(new RegExp('function ' + h + '\\(', 'g')) || []).length;

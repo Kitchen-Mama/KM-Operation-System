@@ -57,6 +57,7 @@
     <link rel="stylesheet" href="assets/css/pages/sku-regional-details.css?v=r62-revisitrestore-20261019">
     <link rel="stylesheet" href="assets/css/pages/global-logistics-map.css?v=map-labelmode-r9-20260831">
     <link rel="stylesheet" href="assets/css/pages/automation-schedule.css?v=r62-revisitrestore-20261019">
+    <link rel="stylesheet" href="assets/css/pages/fx-rate-book.css?v=r62-revisitrestore-20261019">
     <link rel="stylesheet" href="assets/css/pages/site-priority.css?v=r62-revisitrestore-20261019">
     <!-- PRODUCT STRATEGY BOARD (PRODUCT-STRATEGY-P1-B7) — INSTALLED, NOT ACTIVATED.
          Loaded last so its component rules sit above the shell owners, and scoped to `.psb-page`
@@ -284,6 +285,13 @@
                 <div class="menu-item"
                      onclick="showSection('site-priority')" title="Site Priority">
                     <span class="menu-label">Site Priority</span>
+                </div>
+                <!-- FX1-R4 (R55) — FX Rate Book. The stored coefficients that price a cross-currency
+                     SKU at creation. Master-data maintenance, so it sits with Administration rather
+                     than with the pricing pages that CONSUME what it stores. -->
+                <div class="menu-item"
+                     onclick="showSection('fx-rate-book')" title="FX Rate Book">
+                    <span class="menu-label">FX Rate Book</span>
                 </div>
             </div>
         </nav>

@@ -95,7 +95,10 @@ eq(S.declaredCount, S.liveCount, 'A3  the declared universe and the folder are t
 // S8-B3-R1A — 77 -> 78: 74_api_v1_overseas_allocation_preview_job.gs is DECLARED in
 // _production-deploy-surface.js and therefore counted. A new runtime .gs has to be put on that list
 // deliberately; this number is what makes forgetting visible.
-eq(S.liveCount, 78, 'A4  FINAL_PRODUCTION_APPS_SCRIPT_RUNTIME_FILE_COUNT = 78', S.liveCount);
+// FX1-R4 — 78 -> 79: 75_api_v1_fx_rate_book.gs, and it is the strictest version of the case this
+// number exists for. Two routed actions dispatch into it, so a project that copied 01_router.gs and
+// missed this file answers both FX calls with a reference error while reporting a healthy deployment.
+eq(S.liveCount, 79, 'A4  FINAL_PRODUCTION_APPS_SCRIPT_RUNTIME_FILE_COUNT = 79', S.liveCount);
 ok(S.projectManifestPresent, 'A5  appsscript.json is present and is counted separately — it is the project '
   + 'manifest, not a .gs source file');
 
@@ -410,8 +413,17 @@ var R51_DELTA = [
 // in AUTHORIZED_FLOOR, so neither is repeated. 03_master_data_handlers.gs is the one addition: it gains the
 // bounded allocation_priority writer, the legacy priority refusal and the shared script lock.
 var R52_DELTA = ['assets/specs/active/apps-script/03_master_data_handlers.gs'];
+// S8-B3-R3-FX1-R4 - R55, and it arrives the same way R51 and R52 did, which is this paragraph proving
+// itself a third time: the pre-commit run could not see this gate, because it reads COMMITTED history
+// via R42_POST_SHA..HEAD, and the post-commit sweep is what reported it. 01_ is already in R51_DELTA and
+// 63_ is in AUTHORIZED_FLOOR, so neither is repeated. 75_ is a NEW runtime file - the stored FX
+// coefficients - and 04_ is an existing one whose pricing_list CREATION CONTRACT changed: a
+// cross-currency row is priced from the book, read once per import, instead of being born blank.
+var R55_DELTA = [
+  'assets/specs/active/apps-script/04_marketplace_forecast_import.gs',
+  'assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs'];
 var AUTHORIZED_SINCE_R42 = AUTHORIZED_FLOOR.concat(R46_DELTA).concat(R49_DELTA).concat(R50_DELTA)
-  .concat(R51_DELTA).concat(R52_DELTA).sort();
+  .concat(R51_DELTA).concat(R52_DELTA).concat(R55_DELTA).sort();
 var CHANGED_SINCE_R42 = runtimeGsBetween(R42_POST_SHA, 'HEAD');
 eq(CHANGED_SINCE_R42, AUTHORIZED_SINCE_R42,
   'H2e SINCE R42 ended, EXACTLY the authorized runtime files have changed — the R43/R44/R45 floor plus the '

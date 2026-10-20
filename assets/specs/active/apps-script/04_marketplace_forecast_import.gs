@@ -540,6 +540,7 @@ function handleImportMarketplaceSkusBatch_(body) {
         } else {
           priceStatus = priceStatusDefault;
           priceNote = 'Auto-created from sku_details at ' + baseCurrency + ' = ' + currency +
+            ' (rate ' + fxRate + ', rate book v' + plan.fx_doc_version + ').';
         }
         if (plan.unreadable.length) {
           priceNote += ' Base value not readable as a price, left blank: ' + plan.unreadable.join(', ') + '.';

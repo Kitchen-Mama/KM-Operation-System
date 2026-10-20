@@ -1145,6 +1145,12 @@ function doPost(e) {
     if (action === 'fxRateBook.save') {
       return jsonResponse_(handleFxRateBookSave_(body));
     }
+    // FX1-R4 — AND THE READ KEEPS ITS POST ROUTE, as every GET-routed read does. The GET table is an
+    // addition for callers that can use it, not a move: the shared client transport posts, so a read
+    // that lived only on the GET table could not be reached by the page that needs it.
+    if (action === 'fxRateBook.get') {
+      return jsonResponse_(handleFxRateBookGet_(body));
+    }
 
     if (action === 'syncMarketplaceSkusToSkuRegionalDetails') {
       return handleSyncMarketplaceSkusToSkuRegionalDetails_(body);
@@ -1215,7 +1221,7 @@ function doPost(e) {
       return handleFactoryStockGuardGet_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, marketplace.allocationPriority.set, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, fxRateBook.save, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, marketplace.allocationPriority.set, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, fxRateBook.save, fxRateBook.get, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
       // F1-7N-FB-4E §L — stamped with the handler and method, so a doPost answer can NEVER be classified
       // as a method downgrade. This is the negative half of the proof and it was previously absent.
       handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_,

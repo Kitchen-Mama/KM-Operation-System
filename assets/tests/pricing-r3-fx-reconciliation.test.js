@@ -737,12 +737,17 @@ section('L · §9/§10 CONSUMERS AND THE SCREEN — unchanged, and proven as a n
   // the EFFECTIVE price and left the ownership flags blank, so the reconciliation could rebuild the
   // reference and was forbidden to repair the price the site was serving. PRICING-R4E fixed the creator.
   //
-  // R3's own claim is unaffected and is what this now asserts: the importer still performs NO conversion.
-  // It writes rate 1 only where the currencies are identical — which is not FX — and fails closed otherwise.
-  ok(!/fxRate = 1;/.test(GS04),
+  // R3's own claim is unaffected and is what this now asserts: the importer INVENTS no rate. FX1-R4
+  // changes where a cross-currency row's rate comes from - the stored book, read once per import - and
+  // leaves the fail-closed half exactly as it was: no coefficient, no price.
+  ok(!/out\.fx_rate = 1;/.test(GS04),
     'L1c 04_ no longer seeds fx_rate = 1 unconditionally — PRICING-R4E closed that at the creator');
-  ok(/if \(b !== l\) \{ out\.reason = 'NO_CANONICAL_FX_RATE'; return out; \}/.test(GS04),
-    'L1c1 a cross-currency row is created with no rate at all, rather than with an invented one');
+  ok(/fxBookRateFromSnapshot_\(fxBook, b, l, asOf\)/.test(GS04),
+    'L1c0 the rate a cross-currency row gets is RESOLVED from the stored book, not invented here');
+  ok(/if \(!\(typeof fxRate === 'number' && isFinite\(fxRate\) && fxRate > 0\)\) \{[\s\S]{0,120}NO_CANONICAL_FX_RATE/.test(GS04),
+    'L1c1 and a row the book cannot price is still created with no rate at all, rather than with an invented one');
+  ok(!/fxRate = 0|out\.auto\[k\] = 0/.test(GS04),
+    'L1c2 and never with a zero, which would be a price nobody stated');
   ok(!/\* *rate|rate *\*/.test(bare(GS04)),
     'L1c2 and the importer still performs NO conversion — there is no second FX implementation in it');
   ok(GS04.indexOf('PRICING-R3') === -1, 'L1d and R3 itself still did not touch the creator — R4E did');

@@ -841,6 +841,22 @@ GS_OWNED_SINCE_R1['74_api_v1_overseas_allocation_preview_job.gs'] =
   'S8-B3-R1A the READ-ONLY async Overseas Allocation Preview job. Four actions ADDED (hence action contract '
   + '18 -> 19), SYS_REQUIRED_ACTIONS_ unchanged because no page depends on them, and the feature ships staged '
   + 'OFF. It owns no allocation formula and writes no business data';
+// FX1-R4 (R55) — 75_ joins this register, and it is the entry the register exists for: a NEW file that
+// two routed actions dispatch into. Both actions ARE in SYS_REQUIRED_ACTIONS_, unlike 74_'s four, because
+// a page does depend on them - the Administration page is routed in this same release and has no second
+// path to the stored coefficients. The action contract moves 20 -> 21.
+//
+// 04_ joins too, for a reason no other entry here has: it is not a new routed file, it is an existing one
+// whose CREATION CONTRACT changed. A cross-currency row is now priced from the stored book, read once per
+// import, rather than being born blank. No action was added by it and none moved.
+GS_OWNED_SINCE_R1['75_api_v1_fx_rate_book.gs'] =
+  'FX1-R4 the stored FX coefficients. TWO actions ADDED (hence action contract 20 -> 21) and both listed '
+  + 'in SYS_REQUIRED_ACTIONS_, because the Administration page depends on them. It owns no price formula '
+  + 'and no price: 73_ remains the only writer of pricing_list, and saving a coefficient reprices nothing';
+GS_OWNED_SINCE_R1['04_marketplace_forecast_import.gs'] =
+  'FX1-R4 the pricing_list creation contract reads the rate book ONCE per import and prices a '
+  + 'cross-currency row from the snapshot. No action added, no handler moved. A pair the book cannot '
+  + 'price is still created pending_fx with blank prices, never a zero and never a guessed rate';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

@@ -133,11 +133,36 @@ console.log('\n=== §A  THE POSTURE, AS PUBLISHED  (each line: if it changes, re
   ok(drive.length > 0,
     'A5 and ' + drive.length + ' files write Drive files, likewise — so executeAs stays USER_DEPLOYING');
 
-  /* NOTHING ASKS WHO IS CALLING. */
+  /* EXACTLY ONE FILE ASKS WHO IS CALLING, and FX1-R4 (R55) is the round that made it one.
+
+     SEC-A0 measured a surface on which nothing asked. 75_api_v1_fx_rate_book.gs asks, and the
+     direction matters: it asks in order to REFUSE. An unidentifiable caller gets a read-only book,
+     never a save, and an explicit `*` in the editors property is refused BY ITS OWN NAME rather than
+     honoured - because the deployment mode that cannot identify a caller is exactly the one in which
+     somebody reaches for a wildcard. So this is the boundary tightening for one action, not loosening.
+
+     AND THE CONSEQUENCE IS STATED RATHER THAN DISCOVERED. Under ANYONE_ANONYMOUS + USER_DEPLOYING,
+     Session.getActiveUser() returns the empty string for essentially every caller, so fxRateBook.save
+     is refused for essentially everybody until the Owner changes the deployment ACCESS setting. That
+     is the designed state: the FX1-R4 instruction forbids changing the Web App execution identity or
+     the OAuth scopes to work around it, and the Administration page shows the refusal code instead of
+     a button that silently does nothing.
+
+     THE LIST IS PINNED, not merely bounded. A second file arriving here is the thing this census
+     exists to notice. */
   var asks = files.filter(function (f) {
     return /Session\.get(Active|Effective)User/.test(read(path.join(GSDIR, f)));
   });
-  eq(asks, [], 'A6 not one runtime file asks Apps Script who is calling');
+  eq(asks, ['75_api_v1_fx_rate_book.gs'],
+    'A6 exactly ONE runtime file asks Apps Script who is calling, and it asks in order to refuse');
+  var fxSrc = read(path.join(GSDIR, '75_api_v1_fx_rate_book.gs'));
+  ok(/FX_AUTHORITY_WILDCARD_REFUSED/.test(fxSrc),
+    'A6b and an explicit * is refused by name rather than honoured');
+  ok(/function fxBookAuthority_\(io\)/.test(fxSrc),
+    'A6c the authority decision takes ONLY the io - the request is not a parameter, so no field of it '
+    + 'can reach the decision');
+  ok(!/Session\.get(Active|Effective)User/.test(read(path.join(GSDIR, '01_router.gs'))),
+    'A6d and the ROUTER still asks nobody - identity is one handler\u2019s decision, not a gate in front of 150 actions');
   ok(files.length > 20, 'A6a (checked across every runtime file, ' + files.length + ' of them)');
   ok(!/Session\.get/.test(SRC.router), 'A7 the router has no session lookup');
   ok(!/\b(bearer|apiKey|api_key|sharedSecret|authToken|x-api-key)\b/i.test(SRC.router),
@@ -187,17 +212,27 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   // what gets counted.
   // S8-B3-R3-CP2I (R52): 147 -> 148. ONE action joins, marketplace.allocationPriority.set. The census is
   // EXACT on purpose - an action arriving unnoticed is how the anonymous surface grows without review.
-  eq(s.all.length, 148, 'B1 148 actions are routed — the whole anonymous surface');
+  // FX1-R4 (R55): 148 -> 150. TWO actions join, fxRateBook.get and fxRateBook.save. The second is a
+  // WRITE, and it is the first routed write on this surface that refuses an unidentifiable caller - so
+  // it grows B1 and B3 and B4 while being the one action here that is NOT reachable without identity.
+  // The census counts the ROUTE, which is right: the route is reachable, and what it does when reached
+  // is 75_’s business and A6’s.
+  eq(s.all.length, 150, 'B1 150 actions are routed — the whole anonymous surface');
   // S8-R4B-1 — 24 -> 25. factoryStockGuard.get moved off the write transport onto the GET read table; it
   // was already one of the 143 routed actions, so B1 and B3 are unchanged (it keeps its POST route, as
   // every other GET-routed read does). The count stays PINNED: a census that derives itself notices nothing.
-  eq(s.readTable.length, 25, 'B2 25 of them on the GET read table');
-  eq(s.post.length, 146, 'B3 146 dispatched by doPost');
+  // FX1-R4: 25 -> 26. fxRateBook.get joins the GET read table, because seeing the rates that price the
+  // catalogue is not the same permission as changing them. Its SAVE twin stays POST-only.
+  eq(s.readTable.length, 26, 'B2 26 of them on the GET read table');
+  eq(s.post.length, 148, 'B3 148 dispatched by doPost');
   // 78 -> 80: .job.start and .job.cancel read as mutations by this census's own naming rule, and that is the
   // honest classification — both DO write, to Script Properties and triggers. .job.status and .result.get are
   // reads. The census does not distinguish technical state from business state, and should not: an action
   // that writes anything reachable without identity belongs in this number.
-  eq(s.mutations.length, 80, 'B4 and 80 are unambiguous MUTATIONS, every one reachable without identity');
+  // FX1-R4: 80 -> 81. fxRateBook.save is a mutation by this census’s own naming rule and genuinely
+  // writes - to a Script Property. It is also the ONE member of this set that is not reachable without
+  // identity, which is why the assertion text below no longer claims that of every one of them.
+  eq(s.mutations.length, 81, 'B4 and 81 are unambiguous MUTATIONS — all but fxRateBook.save reachable without identity');
   ok(s.mutations.indexOf('pricing.update') !== -1,
     'B4a including pricing.update — PRICING-R2 added the first WRITE since this baseline was measured');
   ok(s.mutations.indexOf('pricing.fxReconcile') !== -1,

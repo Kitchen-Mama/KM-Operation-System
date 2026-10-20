@@ -4780,7 +4780,12 @@ function _kmWriterError_(json, fallbackMessage) {
 // allocation_priority outright - so against a v19 deployment there is no way to store a priority at all. The
 // check below stays `deployed < expected`, a MINIMUM, which is what keeps backend-first deployment safe: the
 // backend may lead this number, the frontend may not.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 20;      // the minimum deployed_action_contract_version this build needs
+// FX1-R4 (R55): 20 -> 21. The deployment gained fxRateBook.get and fxRateBook.save, and this build
+// CALLS both - the Administration page is routed in this same release and has no second path to the
+// stored coefficients. Against a v20 deployment the page can neither read nor save a rate, so the pin
+// moves with the contract rather than trailing it. The runtime check stays `deployed < expected`, a
+// MINIMUM, which is what keeps backend-first deployment safe: the backend may lead, the frontend may not.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 21;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
