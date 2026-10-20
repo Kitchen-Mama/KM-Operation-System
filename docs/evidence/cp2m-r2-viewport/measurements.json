@@ -1,12 +1,12 @@
 {
  "ok": true,
  "browser": "chrome.exe",
- "capturedAt": "2026-10-19",
+ "capturedAt": "2026-10-20",
  "fixtureRows": 7,
  "shellIsReal": true,
  "testCssOverrides": 0,
  "sources": {
-  "index.html": "b00fc9cce9306369",
+  "index.html": "ac2dad3e4678dea0",
   "assets/css/layout.css": "69f17688580a60f2",
   "assets/css/base.css": "225902e388ea3260",
   "assets/css/components.css": "8ae2cb34a3dcdb21",
@@ -14,10 +14,10 @@
   "assets/css/pages/site-priority.css": "d3e193b0d29a6643",
   "assets/js/pages/site-priority.js": "6aa99fcbaf8672c5",
   "assets/html/pages/site-priority.html": "343c543b5e734d4c",
-  "assets/js/app.js": "81709bef0cfaac7a",
+  "assets/js/app.js": "8165008bb74a5bd9",
   "assets/tests/_cp2m-r2-viewport-runner.js": "5fac8da9ae1faa93"
  },
- "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/cp2xr4/viewport",
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/cbafee62-8a7a-4e63-a2ec-f5666b6fcff8/scratchpad/r2/cap/viewport",
  "results": [
   {
    "id": "360",
