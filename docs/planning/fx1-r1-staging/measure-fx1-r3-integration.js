@@ -20,6 +20,10 @@ const ROOT = path.resolve(__dirname, '../../..');
 const GSDIR = path.join(ROOT, 'assets/specs/active/apps-script');
 const HERE = __dirname;
 const KEEP = process.argv.indexOf('--keep') !== -1;
+// MEASURING IS READ-ONLY. Writing the patch every run rewrote a COMMITTED file as a side effect of
+// asking a question, and the regression sweep refuses to run on a dirty worktree - so checking the
+// number was enough to block the next sweep. It did exactly that once. --patch is now opt-in.
+const WRITE_PATCH = process.argv.indexOf('--patch') !== -1;
 const CEILING = 4662000;
 
 function read(p) { return fs.readFileSync(p, 'utf8'); }
@@ -133,8 +137,8 @@ try {
   }
 
   const after = surface();
-  // The patch, so the wiring is reviewable without re-running this script.
-  try {
+  // The patch, so the wiring is reviewable without re-running this script. Opt-in: see --patch above.
+  if (WRITE_PATCH) try {
     cp.execSync('git add -N assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs', { cwd: ROOT });
     const diff = cp.execSync('git diff -- assets/specs/active/apps-script/',
       { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 });
@@ -167,5 +171,6 @@ console.log('  ' + (result.after.bytes <= CEILING
   ? 'VERDICT  UNDER by ' + (CEILING - result.after.bytes) + ' bytes'
   : 'VERDICT  OVER by ' + (result.after.bytes - CEILING) + ' bytes — STOP AND REPORT'));
 console.log('');
+console.log('  patch       ' + (WRITE_PATCH ? 'rewritten (--patch)' : 'not written - this run changed nothing on disk'));
 console.log('  working tree ' + (KEEP ? 'LEFT APPLIED (--keep)' : 'restored: ' + surface().bytes + ' bytes'));
 process.exitCode = (result.after.bytes <= CEILING) ? 0 : 1;
