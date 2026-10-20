@@ -98,3 +98,47 @@ Both succeeded and agreed. Neither was repeated to obtain a better result.
   **UNVERIFIED** and is outside this repository. It is no longer load-bearing: the capture does not use it.
 - It says nothing about **production** rendering on operator hardware. This is a headless capture on one
   machine with one GPU.
+
+---
+
+## FX1-R4-R1 (2026-10-20) — re-taken because the shell changed, with the tool this file already named
+
+FX1-R4 routed the FX Rate Book Administration page, which changed `index.html` and `assets/js/app.js`.
+Both are pinned by `A2`, so the capture was stale by construction and the suite was correctly red.
+
+FX1-R4 then tried to re-take it with **`_cp2m-r2-map-runner.js`** — the tool the suite header retires in
+the paragraph above this one — got `canvasCount: 0` twice, and recorded D-S8-B3-175 saying the globe
+"renders no canvas on this machine". It renders. What the runner measures is its own
+`--use-gl=swiftshader` flag losing the context about 1.3 s in, which is the sentence that tool was
+retired over.
+
+The evidence is unusually clean, because one desktop scene in one run contains both outcomes:
+
+| probe | taken at | canvasCount | canvasPresent |
+|---|---:|---:|---|
+| `canvas` (A) | 1585 ms | 0 | false |
+| `canvasB` (B) | **473 ms** | **2** | **true** — 615x638, aria "3D Earth globe…" |
+| `dragReport` (C) | 1172 ms | 0 | false (`dragSkipped: NO_CANVAS`) |
+
+### This capture
+
+```
+_cp2o-r2-gl-probe.js      angle-d3d11-gpu-forced   HELD_12833MS   contextLost false   509 frames
+                          ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A6) Direct3D11, D3D11)
+_cp2o-r2-map-capture.js   desktop  present true  count 2  615x638   error null
+                          mobile   present true  count 2  313x606   error null
+suite                     75 passed, 0 failed
+```
+
+One pass. Not repeated to obtain a better result, and nothing in the suite was changed: no pinned hash
+was edited and no threshold was moved. The six PNGs and `map.json` in this directory are from this run,
+and `A2` now compares the current `index.html` and `app.js` against themselves because they are the
+ones that were photographed.
+
+### What this capture still does not claim
+
+Everything the CP2O-R2 section above disclaims still stands, unchanged — the shipment overlay is still
+not proven to draw, and this is still one headless machine with one GPU rather than a statement about
+operator hardware. One disclaimer is RESOLVED: "why the software rasteriser degraded" is no longer
+UNVERIFIED-and-outside-this-repository. It degrades the way the header says it does, and the only thing
+that was unverified was whether anybody read the header before running the other tool.

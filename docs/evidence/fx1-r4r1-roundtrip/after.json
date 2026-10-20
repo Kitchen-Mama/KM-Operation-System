@@ -1,0 +1,932 @@
+{
+  "round": "FX1-R4-R1",
+  "what": "FX Rate Book Administration page: the full save -> continue -> save -> reload round trip, shipped page + real adapter + real 75_ + isolated in-memory IO",
+  "takenAt": "2026-10-20T10:33:01.108Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "identity": "fx.editor@example.test",
+  "readOnlyExpected": false,
+  "seed": {
+    "doc_version": 3,
+    "rates": 2
+  },
+  "sources": {
+    "index.html": "7ea819c6a8abd29d",
+    "assets/js/pages/fx-rate-book.js": "38e94b2ea83fbfb5",
+    "assets/html/pages/fx-rate-book.html": "82b3cbcccaabd528",
+    "assets/js/api/operation-system-db-api.js": "76a4c1f0bbff2f0f",
+    "assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs": "bc24d92ef2c295d5",
+    "assets/tests/_fx1-r4r1-roundtrip-runner.js": "382fcac9d72153d3"
+  },
+  "serverCalls": [
+    {
+      "n": 1,
+      "action": "fxRateBook.get",
+      "sentDocVersion": "<<absent>>",
+      "sentDocVersionType": "undefined",
+      "sentRowCount": null,
+      "sentRowKeys": null,
+      "sentRowVersions": null,
+      "sentRowCurrencies": null,
+      "ok": true,
+      "errorCodes": [],
+      "dataKeys": [
+        "doc_version",
+        "rates",
+        "change_log",
+        "supported_currencies",
+        "capacity",
+        "may_edit",
+        "authority_model",
+        "authority_reason"
+      ],
+      "storedDocVersion": 3
+    },
+    {
+      "n": 2,
+      "action": "fxRateBook.save",
+      "sentDocVersion": 3,
+      "sentDocVersionType": "number",
+      "sentRowCount": 2,
+      "sentRowKeys": [
+        "base_currency",
+        "quote_currency",
+        "rate",
+        "source",
+        "as_of",
+        "effective_from",
+        "effective_to",
+        "status",
+        "version"
+      ],
+      "sentRowVersions": [
+        2,
+        1
+      ],
+      "sentRowCurrencies": [
+        "USD>JPY",
+        "USD>CAD"
+      ],
+      "ok": true,
+      "errorCodes": [],
+      "dataKeys": [
+        "doc_version",
+        "rates",
+        "change_log",
+        "authority",
+        "bytes",
+        "limit",
+        "log_trimmed"
+      ],
+      "storedDocVersion": 4
+    },
+    {
+      "n": 3,
+      "action": "fxRateBook.save",
+      "sentDocVersion": 4,
+      "sentDocVersionType": "number",
+      "sentRowCount": 3,
+      "sentRowKeys": [
+        "base_currency",
+        "quote_currency",
+        "rate",
+        "source",
+        "as_of",
+        "effective_from",
+        "effective_to",
+        "status",
+        "version"
+      ],
+      "sentRowVersions": [
+        2,
+        1,
+        1
+      ],
+      "sentRowCurrencies": [
+        "USD>JPY",
+        "USD>CAD",
+        "USD>EUR"
+      ],
+      "ok": true,
+      "errorCodes": [],
+      "dataKeys": [
+        "doc_version",
+        "rates",
+        "change_log",
+        "authority",
+        "bytes",
+        "limit",
+        "log_trimmed"
+      ],
+      "storedDocVersion": 5
+    },
+    {
+      "n": 4,
+      "action": "fxRateBook.get",
+      "sentDocVersion": "<<absent>>",
+      "sentDocVersionType": "undefined",
+      "sentRowCount": null,
+      "sentRowKeys": null,
+      "sentRowVersions": null,
+      "sentRowCurrencies": null,
+      "ok": true,
+      "errorCodes": [],
+      "dataKeys": [
+        "doc_version",
+        "rates",
+        "change_log",
+        "supported_currencies",
+        "capacity",
+        "may_edit",
+        "authority_model",
+        "authority_reason"
+      ],
+      "storedDocVersion": 5
+    },
+    {
+      "n": 5,
+      "action": "fxRateBook.save",
+      "sentDocVersion": 5,
+      "sentDocVersionType": "number",
+      "sentRowCount": 2,
+      "sentRowKeys": [
+        "base_currency",
+        "quote_currency",
+        "rate",
+        "source",
+        "as_of",
+        "effective_from",
+        "effective_to",
+        "status",
+        "version"
+      ],
+      "sentRowVersions": [
+        2,
+        1
+      ],
+      "sentRowCurrencies": [
+        "USD>JPY",
+        "USD>EUR"
+      ],
+      "ok": true,
+      "errorCodes": [],
+      "dataKeys": [
+        "doc_version",
+        "rates",
+        "change_log",
+        "authority",
+        "bytes",
+        "limit",
+        "log_trimmed"
+      ],
+      "storedDocVersion": 6
+    },
+    {
+      "n": 6,
+      "action": "fxRateBook.save",
+      "sentDocVersion": 6,
+      "sentDocVersionType": "number",
+      "sentRowCount": 2,
+      "sentRowKeys": [
+        "base_currency",
+        "quote_currency",
+        "rate",
+        "source",
+        "as_of",
+        "effective_from",
+        "effective_to",
+        "status",
+        "version"
+      ],
+      "sentRowVersions": [
+        2,
+        1
+      ],
+      "sentRowCurrencies": [
+        "USD>JPY",
+        "USD>EUR"
+      ],
+      "ok": false,
+      "errorCodes": [
+        "FX_VERSION_CONFLICT"
+      ],
+      "dataKeys": null,
+      "storedDocVersion": 7
+    },
+    {
+      "n": 7,
+      "action": "fxRateBook.get",
+      "sentDocVersion": "<<absent>>",
+      "sentDocVersionType": "undefined",
+      "sentRowCount": null,
+      "sentRowKeys": null,
+      "sentRowVersions": null,
+      "sentRowCurrencies": null,
+      "ok": true,
+      "errorCodes": [],
+      "dataKeys": [
+        "doc_version",
+        "rates",
+        "change_log",
+        "supported_currencies",
+        "capacity",
+        "may_edit",
+        "authority_model",
+        "authority_reason"
+      ],
+      "storedDocVersion": 7
+    },
+    {
+      "n": 8,
+      "action": "fxRateBook.save",
+      "sentDocVersion": 7,
+      "sentDocVersionType": "number",
+      "sentRowCount": 2,
+      "sentRowKeys": [
+        "base_currency",
+        "quote_currency",
+        "rate",
+        "source",
+        "as_of",
+        "effective_from",
+        "effective_to",
+        "status",
+        "version"
+      ],
+      "sentRowVersions": [
+        2,
+        1
+      ],
+      "sentRowCurrencies": [
+        "USD>JPY",
+        "USD>EUR"
+      ],
+      "ok": false,
+      "errorCodes": [
+        "FX_EFFECTIVE_RANGE_INVERTED",
+        "FX_BOOK_INVALID"
+      ],
+      "dataKeys": null,
+      "storedDocVersion": 7
+    }
+  ],
+  "marks": [
+    {
+      "label": "opened",
+      "atCall": 1
+    },
+    {
+      "label": "save-1",
+      "atCall": 1
+    },
+    {
+      "label": "save-2",
+      "atCall": 2
+    },
+    {
+      "label": "reload",
+      "atCall": 3
+    },
+    {
+      "label": "save-3",
+      "atCall": 4
+    }
+  ],
+  "competingSaves": 1,
+  "finalStoredRaw": "{\"shape\":1,\"doc_version\":7,\"rates\":[{\"base_currency\":\"USD\",\"quote_currency\":\"JPY\",\"rate\":157.01,\"source\":\"ecb\",\"as_of\":\"2026-10-01\",\"effective_from\":\"2026-10-01\",\"effective_to\":\"\",\"status\":\"active\",\"version\":2},{\"base_currency\":\"USD\",\"quote_currency\":\"EUR\",\"rate\":0.92,\"source\":\"manual\",\"as_of\":\"2026-10-20\",\"effective_from\":\"2026-10-20\",\"effective_to\":\"\",\"status\":\"active\",\"version\":1}],\"log\":[{\"at\":\"2026-10-20T10:32:58.032Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>JPY@2026-10-01\",\"change\":\"EDITED\",\"fields\":[{\"field\":\"rate\",\"from\":\"158.02\",\"to\":\"159.5\"}]},{\"at\":\"2026-10-20T10:32:58.721Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>JPY@2026-10-01\",\"change\":\"EDITED\",\"fields\":[{\"field\":\"source\",\"from\":\"manual\",\"to\":\"ecb\"}]},{\"at\":\"2026-10-20T10:32:58.721Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>EUR@2026-10-20\",\"change\":\"ADDED\",\"to\":{\"rate\":0.92,\"source\":\"manual\",\"as_of\":\"2026-10-20\",\"status\":\"active\"}},{\"at\":\"2026-10-20T10:32:59.538Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>CAD@2026-09-01\",\"change\":\"REMOVED\",\"from\":{\"rate\":1.37,\"source\":\"manual\",\"as_of\":\"2026-09-01\",\"status\":\"inactive\"}}]}",
+  "finalStored": {
+    "doc_version": 7,
+    "rates": [
+      {
+        "base_currency": "USD",
+        "quote_currency": "JPY",
+        "rate": 157.01,
+        "source": "ecb",
+        "as_of": "2026-10-01",
+        "effective_from": "2026-10-01",
+        "effective_to": "",
+        "status": "active",
+        "version": 2
+      },
+      {
+        "base_currency": "USD",
+        "quote_currency": "EUR",
+        "rate": 0.92,
+        "source": "manual",
+        "as_of": "2026-10-20",
+        "effective_from": "2026-10-20",
+        "effective_to": "",
+        "status": "active",
+        "version": 1
+      }
+    ],
+    "log": [
+      {
+        "at": "2026-10-20T10:32:58.032Z",
+        "by": "fx.editor@example.test",
+        "pair": "USD>JPY@2026-10-01",
+        "change": "EDITED",
+        "fields": [
+          {
+            "field": "rate",
+            "from": "158.02",
+            "to": "159.5"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-20T10:32:58.721Z",
+        "by": "fx.editor@example.test",
+        "pair": "USD>JPY@2026-10-01",
+        "change": "EDITED",
+        "fields": [
+          {
+            "field": "source",
+            "from": "manual",
+            "to": "ecb"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-20T10:32:58.721Z",
+        "by": "fx.editor@example.test",
+        "pair": "USD>EUR@2026-10-20",
+        "change": "ADDED",
+        "to": {
+          "rate": 0.92,
+          "source": "manual",
+          "as_of": "2026-10-20",
+          "status": "active"
+        }
+      },
+      {
+        "at": "2026-10-20T10:32:59.538Z",
+        "by": "fx.editor@example.test",
+        "pair": "USD>CAD@2026-09-01",
+        "change": "REMOVED",
+        "from": {
+          "rate": 1.37,
+          "source": "manual",
+          "as_of": "2026-09-01",
+          "status": "inactive"
+        }
+      }
+    ]
+  },
+  "result": {
+    "cap": "fxrt-1792492376123",
+    "phases": [
+      {
+        "label": "opened",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 3,
+        "stateRows": 2,
+        "stateVersions": [
+          2,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 0,
+        "capacityState": "412/8192",
+        "authorityReason": null,
+        "domRows": 2,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "158.02",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 2,
+        "domCapacityText": "Stored size 412 of 8192 bytes (5%).",
+        "domVersionText": "read at version 3",
+        "domSaveState": "",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 0,
+        "domLogFirstRow": null,
+        "domLogCells": [],
+        "domLogNote": "No changes recorded yet.",
+        "warnCodes": []
+      },
+      {
+        "label": "edited",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 3,
+        "stateRows": 2,
+        "stateVersions": [
+          2,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 0,
+        "capacityState": "412/8192",
+        "authorityReason": null,
+        "domRows": 2,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "159.5",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 2,
+        "domCapacityText": "Stored size 412 of 8192 bytes (5%).",
+        "domVersionText": "read at version 3",
+        "domSaveState": "Edited — not saved.",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 0,
+        "domLogFirstRow": null,
+        "domLogCells": [],
+        "domLogNote": "No changes recorded yet.",
+        "warnCodes": []
+      },
+      {
+        "label": "saved-1",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 4,
+        "stateRows": 2,
+        "stateVersions": [
+          2,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 1,
+        "capacityState": "577/8192",
+        "authorityReason": null,
+        "domRows": 2,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "159.5",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 2,
+        "domCapacityText": "Stored size 577 of 8192 bytes (7%).",
+        "domVersionText": "read at version 4",
+        "domSaveState": "Saved. The book is now version 4. No price moved.",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 1,
+        "domLogFirstRow": [
+          "2026-10-20 10:32 UTC",
+          "fx.editor@example.test",
+          "USD>JPY@2026-10-01",
+          "EDITED",
+          "rate 158.02 → 159.5"
+        ],
+        "domLogCells": [
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "rate 158.02 → 159.5"
+          ]
+        ],
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>JPY@202",
+        "warnCodes": []
+      },
+      {
+        "label": "continued",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 4,
+        "stateRows": 3,
+        "stateVersions": [
+          2,
+          1,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 1,
+        "capacityState": "577/8192",
+        "authorityReason": null,
+        "domRows": 3,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "159.5",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 3,
+        "domCapacityText": "Stored size 577 of 8192 bytes (7%).",
+        "domVersionText": "read at version 4",
+        "domSaveState": "Edited — not saved.",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 1,
+        "domLogFirstRow": [
+          "2026-10-20 10:32 UTC",
+          "fx.editor@example.test",
+          "USD>JPY@2026-10-01",
+          "EDITED",
+          "rate 158.02 → 159.5"
+        ],
+        "domLogCells": [
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "rate 158.02 → 159.5"
+          ]
+        ],
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>JPY@202",
+        "warnCodes": []
+      },
+      {
+        "label": "saved-2",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 5,
+        "stateRows": 3,
+        "stateVersions": [
+          2,
+          1,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 3,
+        "capacityState": "1102/8192",
+        "authorityReason": null,
+        "domRows": 3,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "159.5",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 3,
+        "domCapacityText": "Stored size 1102 of 8192 bytes (13%).",
+        "domVersionText": "read at version 5",
+        "domSaveState": "Saved. The book is now version 5. No price moved.",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 3,
+        "domLogFirstRow": [
+          "2026-10-20 10:32 UTC",
+          "fx.editor@example.test",
+          "USD>EUR@2026-10-20",
+          "ADDED",
+          "rate 0.92, source manual, as_of 2026-10-20, status active"
+        ],
+        "domLogCells": [
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>EUR@2026-10-20",
+            "ADDED",
+            "rate 0.92, source manual, as_of 2026-10-20, status active"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "source manual → ecb"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "rate 158.02 → 159.5"
+          ]
+        ],
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>EUR@202",
+        "warnCodes": []
+      },
+      {
+        "label": "reloaded",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 5,
+        "stateRows": 3,
+        "stateVersions": [
+          2,
+          1,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 3,
+        "capacityState": "1102/8192",
+        "authorityReason": null,
+        "domRows": 3,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "159.5",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 3,
+        "domCapacityText": "Stored size 1102 of 8192 bytes (13%).",
+        "domVersionText": "read at version 5",
+        "domSaveState": "",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 3,
+        "domLogFirstRow": [
+          "2026-10-20 10:32 UTC",
+          "fx.editor@example.test",
+          "USD>EUR@2026-10-20",
+          "ADDED",
+          "rate 0.92, source manual, as_of 2026-10-20, status active"
+        ],
+        "domLogCells": [
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>EUR@2026-10-20",
+            "ADDED",
+            "rate 0.92, source manual, as_of 2026-10-20, status active"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "source manual → ecb"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "rate 158.02 → 159.5"
+          ]
+        ],
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>EUR@202",
+        "warnCodes": []
+      },
+      {
+        "label": "row-removed",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 5,
+        "stateRows": 2,
+        "stateVersions": [
+          2,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 3,
+        "capacityState": "1102/8192",
+        "authorityReason": null,
+        "domRows": 2,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "159.5",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 2,
+        "domCapacityText": "Stored size 1102 of 8192 bytes (13%).",
+        "domVersionText": "read at version 5",
+        "domSaveState": "Row removed from the working copy — not saved.",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 3,
+        "domLogFirstRow": [
+          "2026-10-20 10:32 UTC",
+          "fx.editor@example.test",
+          "USD>EUR@2026-10-20",
+          "ADDED",
+          "rate 0.92, source manual, as_of 2026-10-20, status active"
+        ],
+        "domLogCells": [
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>EUR@2026-10-20",
+            "ADDED",
+            "rate 0.92, source manual, as_of 2026-10-20, status active"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "source manual → ecb"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "rate 158.02 → 159.5"
+          ]
+        ],
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>EUR@202",
+        "warnCodes": []
+      },
+      {
+        "label": "saved-3",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 6,
+        "stateRows": 2,
+        "stateVersions": [
+          2,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 4,
+        "capacityState": "1105/8192",
+        "authorityReason": null,
+        "domRows": 2,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "159.5",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 2,
+        "domCapacityText": "Stored size 1105 of 8192 bytes (13%).",
+        "domVersionText": "read at version 6",
+        "domSaveState": "Saved. The book is now version 6. No price moved.",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 4,
+        "domLogFirstRow": [
+          "2026-10-20 10:32 UTC",
+          "fx.editor@example.test",
+          "USD>CAD@2026-09-01",
+          "REMOVED",
+          "rate 1.37, source manual, as_of 2026-09-01, status inactive"
+        ],
+        "domLogCells": [
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>CAD@2026-09-01",
+            "REMOVED",
+            "rate 1.37, source manual, as_of 2026-09-01, status inactive"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>EUR@2026-10-20",
+            "ADDED",
+            "rate 0.92, source manual, as_of 2026-10-20, status active"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "source manual → ecb"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "rate 158.02 → 159.5"
+          ]
+        ],
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>CAD@202",
+        "warnCodes": []
+      },
+      {
+        "label": "conflict",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 6,
+        "stateRows": 2,
+        "stateVersions": [
+          2,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 4,
+        "capacityState": "1105/8192",
+        "authorityReason": null,
+        "domRows": 2,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "160.25",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 2,
+        "domCapacityText": "Stored size 1105 of 8192 bytes (13%).",
+        "domVersionText": "read at version 6",
+        "domSaveState": "Somebody else saved this book while you were editing. Your changes are still on screen and nothing was overwritten — reload to see theirs, then re-apply yours.",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 4,
+        "domLogFirstRow": [
+          "2026-10-20 10:32 UTC",
+          "fx.editor@example.test",
+          "USD>CAD@2026-09-01",
+          "REMOVED",
+          "rate 1.37, source manual, as_of 2026-09-01, status inactive"
+        ],
+        "domLogCells": [
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>CAD@2026-09-01",
+            "REMOVED",
+            "rate 1.37, source manual, as_of 2026-09-01, status inactive"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>EUR@2026-10-20",
+            "ADDED",
+            "rate 0.92, source manual, as_of 2026-10-20, status active"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "source manual → ecb"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "rate 158.02 → 159.5"
+          ]
+        ],
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>CAD@202",
+        "warnCodes": [
+          "FX_VERSION_CONFLICT"
+        ]
+      },
+      {
+        "label": "invalid-not-conflict",
+        "loaded": true,
+        "mayEdit": true,
+        "docVersion": 7,
+        "stateRows": 2,
+        "stateVersions": [
+          2,
+          1
+        ],
+        "currencies": 8,
+        "logEntries": 4,
+        "capacityState": "1106/8192",
+        "authorityReason": null,
+        "domRows": 2,
+        "domCurrencyOptions": 9,
+        "domCurrencyValue": "USD",
+        "domRateValue": "157.01",
+        "domSaveDisabled": false,
+        "domAddDisabled": false,
+        "domRemoveButtons": 2,
+        "domCapacityText": "Stored size 1106 of 8192 bytes (14%).",
+        "domVersionText": "read at version 7",
+        "domSaveState": "Refused — nothing was written.",
+        "domAuthorityVisible": false,
+        "domAuthorityText": null,
+        "domLogRows": 4,
+        "domLogFirstRow": [
+          "2026-10-20 10:32 UTC",
+          "fx.editor@example.test",
+          "USD>CAD@2026-09-01",
+          "REMOVED",
+          "rate 1.37, source manual, as_of 2026-09-01, status inactive"
+        ],
+        "domLogCells": [
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>CAD@2026-09-01",
+            "REMOVED",
+            "rate 1.37, source manual, as_of 2026-09-01, status inactive"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>EUR@2026-10-20",
+            "ADDED",
+            "rate 0.92, source manual, as_of 2026-10-20, status active"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "source manual → ecb"
+          ],
+          [
+            "2026-10-20 10:32 UTC",
+            "fx.editor@example.test",
+            "USD>JPY@2026-10-01",
+            "EDITED",
+            "rate 158.02 → 159.5"
+          ]
+        ],
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>CAD@202",
+        "warnCodes": [
+          "FX_EFFECTIVE_RANGE_INVERTED",
+          "FX_BOOK_INVALID"
+        ]
+      }
+    ],
+    "notes": [],
+    "fatal": null,
+    "steps": [
+      "shell-ready",
+      "switched",
+      "done"
+    ]
+  }
+}
