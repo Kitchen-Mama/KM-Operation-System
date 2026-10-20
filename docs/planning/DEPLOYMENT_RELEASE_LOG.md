@@ -6161,3 +6161,87 @@ in the JSON rather than from the console tail. Both were mine and both were real
   protects. A larger number would only move the day it happens again; the window is now bounded by the
   hook's own closing brace, so it grows with the hook and still cannot reach code outside it.
   Mutation-proved after the change: removing the call from the unmount still fails C2.
+
+---
+
+## S8-B3-R3-CP2X-R4-R2 — the token is **NOT** rotated this round either, and for the same reason
+
+`git ls-remote origin main` → `315b69da06a112e2046947821bb9506df1af425a`.
+`git merge-base --is-ancestor 5454da83 origin/main` → **exit 1 (NOT an ancestor)**.
+
+r62’s bytes have still never left this machine. A token is spent when its bytes have been **served**
+(D-S8-B3-63), and minting a second token for a change that will be published under r62 would spend one
+without buying anything. **r62 stands**, and now covers CP2X-R4-R1 and CP2X-R4-R2 together.
+
+**GS delta: 0.** No `.gs` file changed. The Apps Script load surface is unchanged at **78 files /
+4,629,942 bytes**, measured with `gs-load-surface-audit.js` over the committed blobs.
+
+`APPS_SCRIPT_SYNC_REQUIRED`: **none**.
+`GITHUB_PAGES_FILES`: `assets/js/pages/inventory-replenishment.js` (only). `index.html` and
+`assets/js/app.js` did not change this round and are already in the CP2X-R4 list.
+
+### What shipped
+
+One behaviour change, in the continuation after an UNVERIFIED scope wait. R1 loaded the authority,
+re-checked the pair that had been **clicked**, and then continued by calling `searchReplenishment()` —
+whose first act is to read the selectors. The verified snapshot was therefore discarded at the one
+instant it mattered. Measured on the R1 candidate: Search pressed for JP/Rakuten, the marketplace moved
+to JP/Yahoo during the wait and never searched, **Yahoo applied, 37.0 on screen**. And with the page
+left during the wait, a scope was applied to an **unmounted** `ops-section`, with a repaint.
+
+The read half of Search is now `_irRunVerifiedSearch_(pending)` — handed a pair, never reading the
+selectors — and the wait is a record bound to the clicked pair, the Search sequence and the mount
+generation. `unmount` ends a pending verification, because a record left standing would make the next
+Search do nothing at all, silently.
+
+### Post-publish acceptance (read-only; no Recalculate, no AI Support)
+
+These are **in addition to** CP2X-R4’s seven steps and CP2X-R4-R1’s steps 8–12, which all still apply.
+
+13. Press Search while the selectors are still populating, then — before anything appears — change the
+    Marketplace to a different site and **do not press Search again**. The table must keep showing the
+    site it last searched. A table that moves to the site you merely selected is the §1 defect
+    returning. `_irBootstrapDiagnostic_().verify_outcome` reads `SELECTION_CHANGED` and
+    `last_refusal.code` reads `SCOPE_SELECTION_CHANGED`.
+14. Do the same but change **nothing**. The Search must complete on the pair you clicked, and
+    `verify_outcome` must read `CONTINUED` with `verify_scope` naming that pair. A refusal here would
+    mean the fix had been bought by refusing after every wait.
+15. Press Search the same way and **navigate away** before anything appears. Nothing may be applied or
+    drawn while you are off the page; `verify_outcome` reads `CANCELLED_UNMOUNTED`. Come back and press
+    Search normally — it must work. A button that does nothing, with no message, is a verification latch
+    that was never released.
+16. Press Search with a Marketplace that belongs to a different Country while the page is still
+    starting. The list loads, the Marketplace select is rebuilt and legitimately empties, and the
+    refusal must still be `MARKETPLACE_COUNTRY_MISMATCH` — **not** `SCOPE_SELECTION_CHANGED`. The page
+    emptying its own select is not you changing your mind, and a cancellation here would replace a named
+    refusal with a shrug.
+
+As before, none of these steps measures a real spreadsheet cold start: the evidence behind them runs
+against a local stub, so request counts, repaint counts and cell values are demonstrable and durations
+are not.
+
+### What the clean sweep found, and what it was
+
+First pass: **689 / 685 clean / 4 not clean**, read from `not_clean_suites` in the JSON rather than from
+the console tail. All four were the same thing and all four were mine: `ir-expand-four-point-latency`,
+`ir-inplace-update-acceptance`, `ir-read-state-transitions-browser` and `ir-scope-reuse-browser` each pin
+`inventory-replenishment.js` in the capture they read, and the page changed — `A2` said so by name and by
+hash (`324eb2ca5d26be60` → `c0ffbce98e0e9327`). All four captures were re-taken against the shipped
+source and all four suites pass. This is the ledger’s own rule working: a capture is evidence about a
+build, and it stops being evidence the moment that build moves.
+
+Four assertions were also found that could not have failed, and are recorded as D-S8-B3-169:
+`s3-r2` **J4/J5** extracted the wrong function and matched against the **empty string** — J5 asks whether
+a guard is absent, and it is absent from nothing, so it reported its mutant caught while examining
+nothing; the capture’s `sources` list never pinned the **runner**, so "both captures came through the
+same harness" was `undefined === undefined` in two suites; and the R1 suite’s `G6` pinned a
+**session-wide** stray-callback total that is timing-dependent — measured at 0 in one capture and 2 in
+the next against the same page source.
+
+### Timing
+
+The cp2r twelve-run batch was re-taken because the page changed: **−103.4 / −102.8 ms, 6 of 6 and 6 of
+6**, both arms on one build, alternating inside each pair, shipped source restored and hash-verified
+(`c0ffbce98e0e9327`). One outlier, **in the unscoped arm** — the direction that flatters the conclusion —
+kept and stated, and it does not carry its pair: the per-run figure is the median of five, which the
+outlier cannot move. Twelfth batch of that design; the magnitude is still not the finding.
