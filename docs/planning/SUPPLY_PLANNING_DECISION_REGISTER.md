@@ -6394,3 +6394,81 @@ Two further assertions were corrected in passing:
   measures the delta across the interleave the scenario is actually about.
 
 ---
+
+### D-S8-B3-170 — The creation reader read the Property once per ROW — **FIXED (FX1-R4 §6)**
+
+FX1-R3 gave `04_` a reader that took the io and read `KM_FX_RATE_BOOK` itself. Called from inside
+`pricingNewRowPlan_` — the per-row planner — that is a Property read per row, and a save landing
+mid-import would have priced part of a batch at one `doc_version` and the rest at another with nothing
+in the result saying where the line fell. It also made a function whose own documentation says **pure**
+reach out to storage.
+
+The import now takes **one** snapshot before the row loop and passes it in. `fxBookSnapshotForImport_`
+is the single read; `fxBookRateFromSnapshot_` is pure and takes the snapshot as data. Measured, in
+`verify-04-wiring.js` §C: the book is rewritten underneath an open snapshot — a different rate, a new
+version — and the next row of the same batch still prices at `158.020084` and still reports version 4,
+while a fresh snapshot of the same store reads version 5 and the new rate. The sandbox defines
+`fxBookDefaultIo_` as a **throw**, so a reach for a real Property is a crash rather than a silent pass.
+
+The batch response carries `fx: { doc_version, readable }`, because two imports run either side of a
+save are otherwise indistinguishable in the result.
+
+### D-S8-B3-171 — FX1-R3 proved the helper and stopped where the defect was — **CLOSED (FX1-R4)**
+
+`verify-75-proposed.js` was 221 assertions about 75_’s own functions, and every one of them was true
+while the call site was wrong. "The helper is correct" and "the caller uses it correctly" are different
+claims, and this round’s defect lived entirely in the second.
+
+`verify-04-wiring.js` executes the **shipped** `pricingNewRowPlan_` against the real 73_ rounding and
+the real 75_ resolver, and asserts the shape of `handleImportMarketplaceSkusBatch_` (one snapshot,
+taken before the row loop, passed to every row) because that handler needs a spreadsheet. Five wiring
+mutants were added to `mutants-fx1-r4.js` — the per-row read restored, the planner reaching for the
+book itself, a zero price where there is no coefficient, the batch forgetting its version, and the
+inverted conversion — and all five are caught. **17 applied, 17 caught, 0 missed**, across both targets,
+and both runs prove the shipped files are unmodified when they finish.
+
+### D-S8-B3-172 — The Administration page shipped a second copy of the rules, to nobody — **FIXED (FX1-R4 §5)**
+
+The FX1 prototype resolved rates in the browser against `assets/tests/_fx-rate-book-contract.js`. That
+file is **not shipped**, so in a real browser `window.KM.fxRateBookContract` was never there and every
+operator who opened the page would have seen "The FX contract module is not loaded". It also named the
+wrong actions — `fx.rateBook.get` / `fx.rateBook.save` against the router’s `fxRateBook.get` /
+`fxRateBook.save` — had no save handler bound to its enabled Save button, and was unrouted.
+
+The page now decides nothing: it renders what 75_ returned, submits what the operator typed, and quotes
+every refusal by the server’s own code. It is routed — mount point, menu entry, script tag, stylesheet,
+both of `app.js`’s maps and a lifecycle registration — and it costs **zero** GS bytes, because
+`assets/js/pages/`, `assets/js/api/`, `assets/html/` and `assets/css/` are not in the Apps Script load
+surface.
+
+`may_edit` from the read drives a **named** read-only band carrying the refusal code, above the table,
+rather than a disabled button. A disabled control with no explanation is the worst available way to tell
+somebody they are not allowed to do something, and under §8 the reason is the Owner’s to act on.
+
+The prepared starting set stays a **draft**: the page loads it into the editor and writes nothing. Save
+is the only thing on the page that writes.
+
+### D-S8-B3-173 — A list version that counts releases is not a list version (FX1-R4)
+
+The staged patch moved `SYS_REQUIRED_ACTION_LIST_VERSION_` by **one** for **two** new registry rows,
+copying the rule that governs `SYS_DEPLOYED_ACTION_CONTRACT_VERSION_` ("one bump per release that
+changes the action set"). They are different numbers: the first counts the **list**, and 63_’s own
+comment says so. The release-stamp gate’s `H3` ties the version move to the registry growth one-for-one
+and refused it. 16 → **18**.
+
+### D-S8-B3-174 — A tool that restores the tree, run while the tree was deliberately left applied (FX1-R4)
+
+`verify-04-wiring.js` shelled out to `measure-fx1-r4-integration.js --emit`, and that tool applies the
+integration, measures, and **restores**. Run while the tree was deliberately left applied, its anchors
+no longer matched, it threw — and its restore ran anyway and deleted `75_api_v1_fx_rate_book.gs` from
+the worktree along with the staged `.proposed` copy that had already been removed. The file was
+recovered from `fx1-r4-integration.patch` and the surface re-measured to the byte (4,666,351, matching
+the last clean measurement exactly), so nothing was lost — but a verifier that can silently revert the
+work it is verifying is a hazard, not an inconvenience.
+
+It is closed by removing the shape rather than by being careful. Now that the integration has landed,
+the one-shot tool is gone and every verifier reads the **shipped** files directly:
+`measure-fx1-r4-surface.js` reports the deployed set against the ceiling and is read-only and
+re-runnable forever, which the tool it replaces stopped being the moment its own integration landed.
+
+---

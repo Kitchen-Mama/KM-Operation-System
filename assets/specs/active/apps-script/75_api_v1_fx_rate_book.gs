@@ -383,23 +383,48 @@ function fxBookNowIso_() {
   try { return new Date().toISOString(); } catch (e) { return ''; }
 }
 
-// FX1-R3 — THE ONE READER 04_ NEEDS, and it answers a NUMBER OR NOTHING.
+// FX1-R4 — ONE READ PER IMPORT, AND A PURE RESOLVER FOR EVERY ROW AFTER IT.
 //
-// Every refusal fxBookResolve_ can make — pair incomplete, ambiguous, only the inverse stored, not
-// found at all — means the same thing to a row being created: there is no coefficient, so the row
-// waits. Returning null for all of them keeps that decision in ONE place instead of asking the
-// creation path to re-rank reasons it cannot act on differently.
+// FX1-R3 gave 04_ a reader that took the io and read the Property itself. Called from inside the
+// per-row planner that is a Property read PER ROW — and worse, a save landing mid-import would then
+// price part of a batch at one doc_version and the rest at another, with nothing in the result saying
+// which row got which. It also made a function whose own documentation says PURE reach out to storage.
 //
-// A THROW IS ALSO NULL. A corrupt or future-shaped book must not stop a SKU being created: the row
-// goes pending, which is the state it has had since this contract was written, and the book surfaces
-// its own problem on the Administration page where it can be fixed.
-function fxBookRateForCreate_(base, quote, onDate, io) {
+// So the import reads the book ONCE, at the top, and carries the snapshot. Rows resolve from that
+// snapshot and from nothing else: the whole batch is priced at one version, and the version is
+// REPORTED rather than inferred from the prices afterwards.
+//
+// A THROW IS AN UNREADABLE SNAPSHOT, not a failed import. A corrupt or future-shaped book must not
+// stop a SKU being created: every cross-currency row goes pending_fx, which is the state this contract
+// has had all along, and the book surfaces its own problem on the Administration page where it can be
+// fixed. `ok: false` is carried rather than thrown away, so "the book could not be read" and "the book
+// holds no rate for this pair" stay different facts.
+function fxBookSnapshotForImport_(io) {
   try {
-    var r = fxBookResolve_(fxBookReadDoc_(io || fxBookDefaultIo_()).rates, base, quote, onDate);
-    if (!r || r.ok !== true) return null;
-    var n = Number(r.rate);
-    return (isFinite(n) && n > 0) ? n : null;
-  } catch (e) { return null; }
+    var doc = fxBookReadDoc_(io || fxBookDefaultIo_());
+    return { ok: true, rates: doc.rates || [], doc_version: Number(doc.doc_version) || 0,
+             absent: doc.absent === true };
+  } catch (e) {
+    return { ok: false, rates: [], doc_version: null, absent: false,
+             error: pricingStr_(e && e.message ? e.message : e) };
+  }
+}
+
+// PURE. Takes the snapshot as DATA — no Property, no clock, no io — so the creation planner that calls
+// it stays as pure as its own documentation claims. A number, or nothing: every refusal fxBookResolve_
+// can make (pair incomplete, ambiguous, only the inverse stored, not found at all) means the same thing
+// to a row being created, so they arrive as ONE answer instead of asking the creation path to re-rank
+// reasons it cannot act on differently.
+//
+// An UNREADABLE snapshot answers null for everything, identity included. That is deliberate: a book
+// nobody could parse is not a book that says USD = USD, it is a book that says nothing, and 04_ decides
+// the same-currency case for itself before it ever asks.
+function fxBookRateFromSnapshot_(snap, base, quote, onDate) {
+  if (!snap || snap.ok !== true) return null;
+  var r = fxBookResolve_(snap.rates, base, quote, onDate);
+  if (!r || r.ok !== true) return null;
+  var n = Number(r.rate);
+  return (isFinite(n) && n > 0) ? n : null;
 }
 
 function fxBookEnvelope_(ok, data, errors) {

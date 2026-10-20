@@ -2117,7 +2117,27 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // 90_ is NOT rebuilt - no core module changed - so its content hash row is untouched.
   //
   // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54',
+  // S8-B3-R3-FX1-R4-R55. THE FX RATE BOOK ARRIVES, and it arrives as a NEW FILE that two routed
+  // actions dispatch into - which is the strictest version of the partial-sync case this order exists
+  // for. A project that copied 01_router.gs and missed 75_ routes fxRateBook.get and fxRateBook.save
+  // into handlers that are not there, and the only symptom is a runtime error per click.
+  //
+  // IT COULD NOT RIDE R54. R54 is cut; a runtime change landing after a cut needs its own cut, the
+  // same rule R54 records about R53 and R53 about R52.
+  //
+  // FOUR OWNERS, and 04_ is the one worth naming. It has carried R24 since PRICING-R4E and has been
+  // held out of ownership deliberately ever since - R55 moves it because its creation contract really
+  // changed: a cross-currency SKU is now priced from the stored book instead of being born blank. The
+  // book is read ONCE per import and the resolved snapshot is passed into the planner, so the planner
+  // stays pure and one batch cannot be priced at two doc_versions.
+  //
+  // WHAT DOES NOT MOVE: no price formula and no precision rule. 73_ remains the only writer of
+  // pricing_list and the only rounding authority; saving a coefficient reprices nothing. 90_ is NOT
+  // rebuilt - nothing under assets/js/core/ changed - so its content hash row is untouched.
+  //
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

@@ -215,6 +215,30 @@ var I1_COPY_LIST = null;        // captured by I1 below, so the mutants run agai
 var I1_EXPECTED_PASTE = null;
 
 var RELEASE_OWNERS = {
+  // FX1-R4 (R55) — FOUR OWNERS, and the set is REPLACED rather than appended to. 42_ leaves for
+  // RELEASE_CARRIED at R54: it changed in R54 and has not changed since, and marching its stamp to
+  // R55 would erase the one fact a per-module stamp carries.
+  '75_api_v1_fx_rate_book.gs':
+    'THE STORED FX COEFFICIENTS, a NEW FILE that two routed actions dispatch into. It owns one Script '
+    + 'Property holding rates and change history together so a half-written save cannot leave them '
+    + 'disagreeing, a UTF-8 byte capacity guard measured BEFORE the write, strict typing of both the '
+    + 'stored document and the request doc_version, a compare-and-swap on that version inside the '
+    + 'script lock, a readback that refuses to report a save it cannot confirm, and a write authority '
+    + 'that fails closed on a caller the backend cannot identify - with an explicit * refused BY NAME '
+    + 'rather than honoured, because the deployment mode that cannot identify a caller is exactly the '
+    + 'one in which somebody reaches for a wildcard. It owns NO price formula and NO price.',
+  '01_router.gs':
+    'THE TWO FX ROUTES. fxRateBook.get joins the GET read table because seeing the rates that price '
+    + 'the catalogue is not the same permission as changing them; fxRateBook.save stays POST-only. '
+    + 'The action contract moves 20 -> 21: a project holding a pre-R55 router can read the book and '
+    + 'never save it, which is a capability a probe must be able to report.',
+  '04_marketplace_forecast_import.gs':
+    'THE CREATION CONTRACT. A cross-currency row is priced from the stored book instead of being born '
+    + 'blank, and the book is read ONCE per import - the resolved snapshot is passed into '
+    + 'pricingNewRowPlan_, which stays pure - so one batch cannot be priced at two doc_versions and '
+    + 'the version it was priced at is reported rather than inferred. What does NOT change is the '
+    + 'answer when the book holds no rate: fx_rate, auto_* and the effective price stay BLANK and the '
+    + 'row stays pending_fx. A zero would be a commercial claim nobody made.',
   // S3-R10 — THE RELEASE SET IS REPLACED, NOT APPENDED TO, AND THAT IS WHAT C3 IS FOR.
   //
   // RELEASE_OWNERS names the files THIS release changed. A file that did not change keeps the older stamp it
@@ -300,21 +324,17 @@ var RELEASE_OWNERS = {
   // R53 makes it the SECOND Product runtime file to call the Sheets v4 advanced service, the first since
   // 60_ at R44, and the R4D-D2 suite refuses a consumer that arrives without a round of its own. It could
   // not ride R52: that release is CUT, and a runtime change landing after a cut needs its own cut.
-  '42_api_v1_recommendation_workspace.gs':
-    'THE RECOMMENDATION READ TRANSPORT. R53 replaces twenty-one getDataRange().getValues() calls with two '
-    + 'Sheets v4 calls for the twelve tables whose date columns 60_ has PROVEN in SIR_B1_DATE_MAP_, leaving '
-    + 'the other nine on the existing per-sheet reader - so those nine are unchanged by construction and '
-    + 'this file declares no date column of its own. It also stops reading the retired '
-    + 'replenishment_demand_allocation_rules sheet, whose value 50_ overwrites before anything reads it. '
-    + 'NO formula, NO line shape, NO request or business response field moved: RECO_WS_HANDLER_VERSION_ '
-    + 'names that contract and deliberately stays at fm5-r4ui-r5e, because the browser session cache keys '
-    + 'on it and bumping it would discard every cached answer to announce a change no answer can show.',
+  // 42_ IS NOT HERE, and that is the entry. It changed in R54 and has not changed since; it moves to
+  // RELEASE_CARRIED under R54, where its bytes are still pasted and its stamp still reads the round it
+  // last changed in. Marching it to R55 would erase the one fact a per-module stamp carries.
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R53 moves the release, its OWN build, the bundle content hash, and admits 42_ to the '
-    + 'module manifest. R46 recorded 42_ as a STAMPLESS owner - changed by a release and stamped by nobody '
-    + '- and said so in this very entry; R53 is the round that stops being true. 42_ now declares '
-    + 'RECO_WS_BUILD_VERSION_, so a stale copy of the recommendation read is finally visible to '
-    + 'mixed_deployment instead of being invisible by construction.',
+    'THE MANIFEST. R55 moves the release, its OWN build, the stamps of the three other owners, and admits '
+    + '75_ to the module manifest as a NEW FILE that two routed actions dispatch into. The deployed-action '
+    + 'contract moves 20 -> 21 because the router gained two routes, and SYS_REQUIRED_ACTION_LIST_VERSION_ '
+    + 'moves 16 -> 18 because the required-action registry gained two ROWS - the first number counts '
+    + 'releases that changed the action set, the second counts the list, and conflating them is how a '
+    + 'version becomes a number somebody typed. 90_ is NOT rebuilt: nothing under assets/js/core/ changed, '
+    + 'so its content hash row is untouched.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -336,7 +356,10 @@ var RELEASE_CARRIED = {
   // S8-B3-R3-CP2V-R53 - the two R52 owners arrive together, under a release that is STILL unshipped. Their
   // bytes must be pasted and their stamps must read R52, which is the state a carried entry exists to make
   // checkable: from outside, a correct R52 file and a stale one look identical without this row.
-  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52',
+  // FX1-R4 (R55) — 42_ ARRIVES HERE FROM OWNERSHIP, under a release that is still unshipped. Its
+  // bytes must be pasted and its stamp must read R54, which is the state a carried entry exists to
+  // make checkable: from outside, a correct R54 file and a stale one look identical without this row.
+  '42_api_v1_recommendation_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54',
   '03_master_data_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51',
   '74_api_v1_overseas_allocation_preview_job.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51',
@@ -441,7 +464,7 @@ var RELEASE_UNMOVED = {
   // site-scoped workspace read in 72_; R25 changes the pricing WRITE path and the route and manifest that
   // carry it, and touches neither of those files. Marching 04_ or 72_ to R25 would erase the one fact
   // their stamps carry, which is the fault C3 exists to catch.
-  '04_marketplace_forecast_import.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24',
+
   '72_api_v1_product_pricing_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24',
   // 14_ LEFT AGAIN AT R19, and this time nothing took its place — 04_ JOINED. B1-PERF hardens the
   // REGULAR forecast writer, which lives in 04_; no fc_special_events or fc_target_rules handler was
@@ -636,14 +659,20 @@ function expectedStampFor_(file) {
   return RELEASE_UNMOVED[file] || null;
 }
 
-// S3-R10 — 04_ is no longer an owner, so it must keep R24 rather than follow the release. The claim below
-// is unchanged in meaning: the file's stamp names the round the file last changed in.
-eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE_UNMOVED['04_marketplace_forecast_import.gs'],
-  'B2  04_ keeps R24 — PRICING-R4E changed the pricing_list creation contract it owns, and R25 did not');
+// FX1-R4 (R55) — 04_ RETURNS TO OWNERSHIP after thirty-one releases of correctly staying put, and the
+// reason is the only reason a stamp may ever move: the FILE changed. Its creation contract now prices a
+// cross-currency row from the stored rate book instead of leaving it blank. S3-R10's claim is not
+// weakened by this - it said the stamp names the round the file last changed in, and it still does.
+eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE,
+  'B2  04_ moves to this release — its pricing_list creation contract really changed');
 ok(/function pricingNewRowPlan_\(/.test(REGWRITE) && /NO_CANONICAL_FX_RATE/.test(REGWRITE),
   'B2a and the change its stamp claims is really in the file — the creation planner and its fail-closed reason');
-ok(!/fxRate = 1;/.test(REGWRITE),
-  'B2b with the unconditional rate-1 seed it replaced gone, so the stamp is not decoration');
+ok(/fxBookRateFromSnapshot_\(fxBook, b, l, asOf\)/.test(REGWRITE) && !/out\.fx_rate = 1;/.test(REGWRITE),
+  'B2b the unconditional rate-1 SEED is gone and a coefficient read from the batch snapshot stands in its '
+  + 'place, so the stamp is not decoration');
+ok(!/fxBookSnapshotForImport_/.test((/function pricingNewRowPlan_\(([\s\S]*?)\n\}/.exec(REGWRITE) || ['',''])[1]),
+  'B2c and the planner is handed that snapshot rather than reading one per row — which is the whole of '
+  + 'why one import cannot be priced at two doc_versions');
 // FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 — 14_ IS AN OWNER AGAIN. It was carried at R31 because a
 // read-workspace round has no business moving a write handler's stamp; R32 changes the write handler
 // itself. The assertion reads whichever list the file is in, which is exactly why it was written against
@@ -866,11 +895,12 @@ ok(oldRouter.stale_modules.join('|').indexOf('01_router.gs') !== -1,
 var noCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: null });
 ok((noCamp.stale_modules.join('|') + noCamp.absent_modules.join('|')).indexOf('20_campaign_write_handlers.gs') !== -1,
   'F2a and a project carrying NO 20_ stamp is reported too', noCamp);
-// And the mirror: 04_ carrying R19 is CORRECT now, not stale, which is the half that stops a release
-// from reporting a properly-synced project as broken.
-var okReg = runManifest({ FCREG_BUILD_VERSION_: RELEASE_UNMOVED['04_marketplace_forecast_import.gs'] });
-ok(okReg.stale_modules.join('|').indexOf('04_marketplace_forecast_import.gs') === -1,
-  'F2b while 04_ at R19 is correct — the round it last changed, not the latest release', okReg.stale_modules);
+// And the mirror: a file carrying its OWN older stamp is CORRECT, not stale — the half that stops a
+// release from reporting a properly-synced project as broken. FX1-R4 moves the subject from 04_ to 72_,
+// because 04_ is an owner this release and the mirror needs a file that genuinely has not changed.
+var okPpw = runManifest({ PPW_BUILD_VERSION_: RELEASE_UNMOVED['72_api_v1_product_pricing_workspace.gs'] });
+ok(okPpw.stale_modules.join('|').indexOf('72_api_v1_product_pricing_workspace.gs') === -1,
+  'F2b while 72_ at R24 is correct — the round it last changed, not the latest release', okPpw.stale_modules);
 // THE FAILURE MODE THIS ROW WAS ADDED FOR. Until R15, 20_ had no stamp at all: a project holding last
 // round's copy keys campaigns by NAME, so two event windows in one year merge into a single row and
 // the earlier one is overwritten — and health reported a clean bill, because no action was added.
@@ -979,7 +1009,10 @@ eq(num(HEALTH, 'SYS_TRANSPORT_CONTRACT_VERSION_'), num(priorHealth, 'SYS_TRANSPO
 // S8-B3-R3-CP2I - THE SPAN NOW HOLDS FOUR. R52 contributes the fourth: marketplace.allocationPriority.set,
 // one action, one bump - the same unit as the three above, which is why four Preview routes moved it by one
 // and one priority route also moves it by one.
-var ACTION_ADDING_RELEASES_SINCE_BASE = 4;
+// FX1-R4 - THE SPAN NOW HOLDS FIVE. R55 contributes the fifth: fxRateBook.get and fxRateBook.save,
+// together, ONE bump - the same unit as the four above, which is why four Preview routes moved it by
+// one and two FX routes also move it by one.
+var ACTION_ADDING_RELEASES_SINCE_BASE = 5;
 eq(Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
    - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')), ACTION_ADDING_RELEASES_SINCE_BASE,
   'H2  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moved once per action-adding release in this span');
@@ -1012,7 +1045,10 @@ eq(_listMoved, _listGrew,
 // saying "this release" here would now be false. The per-release split is in DEPLOYMENT_RELEASE_LOG.md,
 // which is where a claim about one release belongs. H3 above already ties the version move to this growth,
 // so what this line adds is the DIRECTION and the magnitude.
-eq(_listGrew, 3, 'H3a the registry grew by THREE across this span: pricing.write.status, and R52’s two rows');
+// FX1-R4 - FIVE. R55 adds the two fxRateBook rows, and they are listed in the SAME change that routes
+// them for the reason this registry exists: a write owner's absence must never be discoverable only by
+// a save that silently fails.
+eq(_listGrew, 5, 'H3a the registry grew by FIVE across this span: pricing.write.status, R52’s two rows, and R55’s two');
 ok(/\{ action: 'marketplace\.allocationPriority\.set', handler: 'handleSetMarketplaceAllocationPriority_'/.test(HEALTH),
    'H3a1 the new route is registered under the handler the router dispatches to');
 ok(/\{ action: 'upsertMarketplace', handler: 'handleUpsertMarketplace_'/.test(HEALTH),
@@ -1065,10 +1101,15 @@ var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 // a stale copy was invisible to the partial-sync detector the whole time. Nothing dispatched into it that a
 // reference error would have exposed, which is exactly why the omission survived. R52 ends that: the router
 // now routes a live write into this file.
+// FX1-R4 DECLARES A FOURTH: 75_ enters the manifest as a NEW FILE that two routed actions dispatch
+// into — the same case 74_ made at R51, and the strictest one there is. A project that copied
+// 01_router.gs and missed 75_ answers both FX calls with a reference error, and without a row here no
+// probe could name the missing file.
 eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }),
-   ['05_overseas_inventory_handlers.gs', '74_api_v1_overseas_allocation_preview_job.gs',
+   ['05_overseas_inventory_handlers.gs', '75_api_v1_fx_rate_book.gs',
+    '74_api_v1_overseas_allocation_preview_job.gs',
     '42_api_v1_recommendation_workspace.gs', '03_master_data_handlers.gs'],
-  'H5  the manifest gained EXACTLY the rows this span declares — 05_, 74_, 42_ and 03_, in manifest order');
+  'H5  the manifest gained EXACTLY the rows this span declares — 05_, 75_, 74_, 42_ and 03_, in manifest order');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none either — a probe silently dropped is a partial sync nobody can see');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],

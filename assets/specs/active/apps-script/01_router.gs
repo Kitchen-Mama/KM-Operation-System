@@ -49,7 +49,7 @@
 // its stamp moves with it. R40 was already CUT against a tree in which 01_ did not change - its owner set
 // is 63_ alone, and the ledger deliberately carries 01_ at R39 there - so joining R40 would make one id
 // name two trees. A new release is the only honest way to record a runtime change that arrives after a cut.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52';
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
@@ -117,6 +117,10 @@ function rtrGetReadHandlers_() {
     // what makes it usable after a lost response: the client asks whether its write committed instead of
     // resending it. The pricing.update twin stays POST-only and is deliberately absent from this table.
     'pricing.write.status':                        handlePricingWriteStatus_,
+    // FX1-R3 — the stored FX coefficients (owner = 75_). READ-ONLY and on the GET table because seeing
+    // the rates that price the catalogue is not the same permission as changing them: the answer carries
+    // may_edit so the page can tell the operator before they start, and the SAVE twin stays POST-only.
+    'fxRateBook.get':                              handleFxRateBookGet_,
     // Read-only diagnostics the pages consume
     'system.requestOrderSendDiagnosticStatus':     handleRequestOrderSendDiagnosticStatus_,
     'system.requestOrderSendReconcile':            handleRequestOrderSendReconcile_,
@@ -1134,6 +1138,14 @@ function doPost(e) {
       return jsonResponse_(handlePricingFxReconcile_(body));
     }
 
+    // FX1-R3 — THE RATE BOOK WRITE (owner = 75_). It stores coefficients and NOTHING ELSE: no price
+    // moves here, and the only action that can move one is pricing.fxReconcile above, which is dry-run
+    // by default. POST only, authority fails closed, and the operator on the change record is the
+    // caller this deployment identified rather than a name the request supplied.
+    if (action === 'fxRateBook.save') {
+      return jsonResponse_(handleFxRateBookSave_(body));
+    }
+
     if (action === 'syncMarketplaceSkusToSkuRegionalDetails') {
       return handleSyncMarketplaceSkusToSkuRegionalDetails_(body);
     }
@@ -1203,7 +1215,7 @@ function doPost(e) {
       return handleFactoryStockGuardGet_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, marketplace.allocationPriority.set, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, marketplace.allocationPriority.set, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, fxRateBook.save, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
       // F1-7N-FB-4E §L — stamped with the handler and method, so a doPost answer can NEVER be classified
       // as a method downgrade. This is the negative half of the proof and it was previously absent.
       handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_,

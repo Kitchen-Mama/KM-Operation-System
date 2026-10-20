@@ -70,7 +70,7 @@ var PRICING_CREATE_BANDS_ = ['regular', 'minimum', 'msrp'];
  * copied: two roundings of one price is two answers to one question. When 73_ is not loaded the row is
  * pending rather than rounded by a second rule invented here.
  */
-function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
+function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf, fxBook) {
   var out = { pending: true, reason: null, fx_rate: '', fx_rate_date: '',
     auto: { regular: '', minimum: '', msrp: '' },
     // PRICING-R4G — blank on every path out of this function. Nothing below assigns to it.
@@ -80,7 +80,7 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
     // because no person has touched the row. Resolution does not depend on it — a blank override resolves
     // to auto whatever the flag says — but recording it keeps a new row out of the UNKNOWN population that
     // the operator is reviewing by hand.
-    flag: 'FALSE', unreadable: [] };
+    flag: 'FALSE', unreadable: [], fx_doc_version: null };
 
   var b = String(baseCurrency == null ? '' : baseCurrency).trim().toUpperCase();
   var l = String(localCurrency == null ? '' : localCurrency).trim().toUpperCase();
@@ -88,7 +88,27 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
   if (!l) { out.reason = 'LOCAL_CURRENCY_UNKNOWN'; return out; }
   if (!b) { out.reason = 'BASE_CURRENCY_UNKNOWN'; return out; }
   // THE WHOLE POINT. A rate for this pair is not something this file is allowed to decide.
-  if (b !== l) { out.reason = 'NO_CANONICAL_FX_RATE'; return out; }
+  //
+  // FX1-R4 — IT STILL IS NOT, AND NOW THERE IS SOMEWHERE TO ASK — but the asking happened ONCE,
+  // before the loop. `fxBook` is a snapshot the caller took at the top of the import, so this
+  // function reads no Property and no clock and remains as pure as its own documentation claims.
+  // One import is therefore priced at ONE doc_version, and a save landing mid-batch cannot split
+  // it into rows that were converted at different rates with nothing recording which.
+  //
+  // What does NOT change is the answer when there is no coefficient: fx_rate, auto_* and the
+  // effective price stay BLANK and the row stays pending_fx. A blank auto is a visible gap; a zero
+  // is a commercial claim nobody made, and a fallback rate would be exactly the guess this
+  // contract was written to refuse. Saving a coefficient reprices nothing either — it only
+  // changes what the NEXT import reads, and what a pricing.fxReconcile could later be asked to
+  // apply to rows that are already waiting.
+  out.fx_doc_version = (fxBook && typeof fxBook.doc_version === 'number') ? fxBook.doc_version : null;
+  var fxRate = 1;
+  if (b !== l) {
+    fxRate = (typeof fxBookRateFromSnapshot_ === 'function') ? fxBookRateFromSnapshot_(fxBook, b, l, asOf) : null;
+    if (!(typeof fxRate === 'number' && isFinite(fxRate) && fxRate > 0)) {
+      out.reason = 'NO_CANONICAL_FX_RATE'; return out;
+    }
+  }
 
   if (typeof pricingRoundFx_ !== 'function' || typeof pricingDecimalsFor_ !== 'function') {
     out.reason = 'PRECISION_AUTHORITY_UNAVAILABLE'; return out;
@@ -96,7 +116,7 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
   if (pricingDecimalsFor_(l) === null) { out.reason = 'UNSUPPORTED_CURRENCY'; return out; }
 
   out.pending = false;
-  out.fx_rate = 1;
+  out.fx_rate = fxRate;
   out.fx_rate_date = asOf;
   PRICING_CREATE_BANDS_.forEach(function (k) {
     var raw = base ? base[k] : '';
@@ -106,7 +126,7 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
     // Present but not a number is a DATA FAULT, not a price. It is reported rather than coerced, because
     // Number('') is 0 and that is precisely the coercion this round exists to remove.
     if (!isFinite(n) || n < 0) { out.unreadable.push(k); return; }
-    var r = pricingRoundFx_(n, l);
+    var r = pricingRoundFx_(n * fxRate, l);   // LOCAL = BASE x RATE, 73_’s direction, never inverted
     if (r === null) { out.unreadable.push(k); return; }
     out.auto[k] = r;
     // AND THAT IS ALL. Until PRICING-R4G this line had a partner — `out.effective[k] = r` — which copied
@@ -127,6 +147,17 @@ function handleImportMarketplaceSkusBatch_(body) {
   var priceStatusDefault = String(options.priceStatusDefault || 'draft').trim();
   var forecastStatusDefault = String(options.forecastStatusDefault || 'draft').trim();
   var createdBy = String(options.createdBy || 'import').trim();
+
+  // FX1-R4 — ONE READ FOR THE WHOLE BATCH, and it is here rather than in the row planner for two
+  // reasons. A read inside the loop is a Property read PER ROW; and a save landing mid-import
+  // would price part of the batch at one doc_version and the rest at another, with nothing in the
+  // result saying where the line fell. The snapshot is carried into every row and reported back,
+  // so the version a batch was priced at is a fact the caller can read rather than infer.
+  //
+  // An unreadable book does NOT fail the import: the snapshot says so, every cross-currency row
+  // goes pending_fx exactly as it did before any of this existed, and the book surfaces its own
+  // problem on the Administration page.
+  var fxBook = (typeof fxBookSnapshotForImport_ === 'function') ? fxBookSnapshotForImport_() : null;
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var skuSheet = ss.getSheetByName('sku_details');
@@ -487,7 +518,7 @@ function handleImportMarketplaceSkusBatch_(body) {
         baseCurrency = baseCurFromMaster || baseCurFromFile || 'USD';
 
         var plan = pricingNewRowPlan_(baseCurrency, currency,
-          { regular: baseRegular, minimum: baseMinimum, msrp: baseMsrp }, now);
+          { regular: baseRegular, minimum: baseMinimum, msrp: baseMsrp }, now, fxBook);
 
         fxRate = plan.fx_rate;
         fxRateDate = plan.fx_rate_date;
@@ -508,7 +539,7 @@ function handleImportMarketplaceSkusBatch_(body) {
             'for this pair; base_* is already on the row and the AUTO flags let the effective prices follow.';
         } else {
           priceStatus = priceStatusDefault;
-          priceNote = 'Auto-created from sku_details at ' + baseCurrency + ' = ' + currency + ' (rate 1).';
+          priceNote = 'Auto-created from sku_details at ' + baseCurrency + ' = ' + currency +
         }
         if (plan.unreadable.length) {
           priceNote += ' Base value not readable as a price, left blank: ' + plan.unreadable.join(', ') + '.';
@@ -602,7 +633,10 @@ function handleImportMarketplaceSkusBatch_(body) {
   var summary = { total: rows.length, created: 0, updated: 0, skipped: 0, error: 0 };
   results.forEach(function(r) { if (summary[r.status] !== undefined) summary[r.status]++; });
 
-  return jsonResponse_({ success: true, data: { summary: summary, results: results, year: currentYear } });
+  // FX1-R4 — WHICH BOOK PRICED THIS BATCH. Reported, not inferred: without it, two imports run
+  // either side of a save are indistinguishable in the result.
+  return jsonResponse_({ success: true, data: { summary: summary, results: results, year: currentYear,
+    fx: { doc_version: fxBook ? fxBook.doc_version : null, readable: !!(fxBook && fxBook.ok) } } });
 }
 
 
@@ -639,7 +673,7 @@ function handleImportMarketplaceSkusBatch_(body) {
 // SHEET HEADER at runtime, so a reordered sheet changes the blocks rather than corrupting a column.
 
 var FC_REG_LOCK_MS_ = 30000;   // matches the campaign and target-rule writers
-var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
+var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';
 
 /**
  * Group {c: zeroBasedCol, v: value} pairs into MAXIMAL CONTIGUOUS runs.

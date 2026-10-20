@@ -12,7 +12,11 @@ const ROOT = path.resolve(__dirname, '../../..');
 const SRC73 = fs.readFileSync(path.join(ROOT, 'assets/specs/active/apps-script/73_api_v1_pricing_write.gs'), 'utf8');
 // FX75_SRC lets the mutation harness point this at a mutated COPY. Without it the staged file would
 // have to be edited in place to be mutated, and a crash mid-run would leave the proposal broken on disk.
-const PROPOSED = fs.readFileSync(process.env.FX75_SRC || path.join(__dirname, '75_api_v1_fx_rate_book.gs.proposed'), 'utf8');
+// FX1-R4 — THE PROPOSAL LANDED, so the default source is the SHIPPED module. Keeping a .proposed copy
+// beside it would be two definitions of one contract, and the one this suite verified would not have
+// been the one deployed. FX75_SRC still points this at a mutated copy for the mutation harness.
+const SHIPPED_75 = path.join(__dirname, '../../../assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs');
+const PROPOSED = fs.readFileSync(process.env.FX75_SRC || SHIPPED_75, 'utf8');
 const DRAFT = JSON.parse(fs.readFileSync(path.join(__dirname, 'fx-rate-book-initial-draft.json'), 'utf8'));
 // CODE ONLY. A source probe must read what the file DOES, not what its comments say it stopped doing:
 // the R3 note names payload.changed_by precisely in order to record that it is gone, and a raw-text
@@ -64,7 +68,7 @@ return {
   fxBookResolve_: fxBookResolve_, fxBookValidate_: fxBookValidate_,
   fxBookRatesForReconcile_: fxBookRatesForReconcile_, fxBookChangeRecords_: fxBookChangeRecords_,
   fxBookReadDoc_: fxBookReadDoc_, fxBookByteLen_: fxBookByteLen_, fxBookCommit_: fxBookCommit_,
-  fxBookAuthority_: fxBookAuthority_, fxBookRateForCreate_: fxBookRateForCreate_,
+  fxBookAuthority_: fxBookAuthority_, fxBookSnapshotForImport_: fxBookSnapshotForImport_, fxBookRateFromSnapshot_: fxBookRateFromSnapshot_,
   setLock: function (v) { __lockGranted = v; }, releases: function () { return __lockReleased; },
   props: function () { return __props; }, reset: function () { __props = {}; }
 };`)();
@@ -645,39 +649,74 @@ const ACTIVE = DRAFT.rates;
   }
 }
 
-// ---- 22. THE CREATION READER: a number, or nothing -------------------------------------------
+// ---- 22. THE CREATION PATH: ONE read, a PURE resolver, and ONE version for the whole batch -------
 //
-// 04_'s pricingNewRowPlan_ asks this one question at SKU creation. Everything it can be told that is
-// not a usable coefficient has to arrive as the SAME answer, because the row has exactly one
-// alternative: wait, blank, pending_fx. A zero or a fallback here would be the guess the creation
-// contract exists to refuse.
+// 04_'s pricingNewRowPlan_ asks one question per row. FX1-R3 answered it with a function that read the
+// Property itself, which is a read per row and - the part that matters - lets a save landing mid-import
+// price half a batch at one version and half at another. The import now takes a SNAPSHOT once and every
+// row resolves from that and from nothing else.
 {
   const io = mem();
   api.handleFxRateBookSave_({ payload: { doc_version: 0, rates: ACTIVE } }, io);
-  eq(api.fxBookRateForCreate_('USD', 'JPY', '2026-10-19', io), 158.020084,
-    'create: a stored coefficient comes back as the NUMBER 73_ will multiply by');
-  eq(api.fxBookRateForCreate_('USD', 'USD', '2026-10-19', io), 1,
-    'create: identity is 1 - what the same currency MEANS, not an assumption about a market');
-  eq(api.fxBookRateForCreate_('USD', 'SEK', '2026-10-19', io), null,
-    'create: a pair the book does not hold is null, so the row stays pending');
-  eq(api.fxBookRateForCreate_('JPY', 'USD', '2026-10-19', io), null,
-    'create: only-the-inverse-exists is ALSO null - inverting a stored rate here would be a second conversion authority');
-  eq(api.fxBookRateForCreate_('USD', 'JPY', '2020-01-01', io), null,
-    'create: a date before the rate was effective is null, not the nearest rate');
-  eq(api.fxBookRateForCreate_('', 'JPY', '2026-10-19', io), null, 'create: an incomplete pair is null');
+  const snap = api.fxBookSnapshotForImport_(io);
+  eq(snap.ok, true, "snapshot: a readable book is ok");
+  eq(snap.doc_version, 1, "snapshot: and carries the version every row in the batch will be priced at");
+  eq(api.fxBookRateFromSnapshot_(snap, "USD", "JPY", "2026-10-19"), 158.020084,
+    "create: a stored coefficient comes back as the NUMBER 73_ will multiply by");
+  eq(api.fxBookRateFromSnapshot_(snap, "USD", "USD", "2026-10-19"), 1,
+    "create: identity is 1 - what the same currency MEANS, not an assumption about a market");
+  eq(api.fxBookRateFromSnapshot_(snap, "USD", "SEK", "2026-10-19"), null,
+    "create: a pair the book does not hold is null, so the row stays pending");
+  eq(api.fxBookRateFromSnapshot_(snap, "JPY", "USD", "2026-10-19"), null,
+    "create: only-the-inverse-exists is ALSO null - inverting a stored rate here would be a second conversion authority");
+  eq(api.fxBookRateFromSnapshot_(snap, "USD", "JPY", "2020-01-01"), null,
+    "create: a date before the rate was effective is null, not the nearest rate");
+  eq(api.fxBookRateFromSnapshot_(snap, "", "JPY", "2026-10-19"), null, "create: an incomplete pair is null");
+
+  // THE WHOLE POINT OF R4 §6, as a measurement rather than a claim. The book is REWRITTEN underneath the
+  // snapshot - a different rate, a new doc_version - and the snapshot keeps answering the old number.
+  // That is what "one import, one version" has to mean; a reader that went back to the Property here
+  // would answer 999 and the batch would be split with nothing recording where.
+  {
+    const moved = JSON.parse(JSON.stringify(ACTIVE)).map(function (e) {
+      if (e.base_currency === "USD" && e.quote_currency === "JPY") { e.rate = 999; }
+      return e;
+    });
+    const r2 = api.handleFxRateBookSave_({ payload: { doc_version: 1, rates: moved } }, io);
+    eq(r2.success, true, "mid-import: the second save really did commit");
+    eq(api.fxBookSnapshotForImport_(io).doc_version, 2, "mid-import: and the STORED version moved");
+    eq(api.fxBookRateFromSnapshot_(snap, "USD", "JPY", "2026-10-19"), 158.020084,
+      "mid-import: the snapshot still answers the version the batch started on - the resolver reads DATA, not storage");
+    eq(snap.doc_version, 1, "mid-import: and the version it reports is still the one it was taken at");
+  }
+
+  // A BOOK NOBODY CAN READ IS NOT AN EMPTY BOOK, and it is not a failed import either.
   {
     const bad = bare();
-    bad.set('KM_FX_RATE_BOOK', '{not json');
-    eq(api.fxBookRateForCreate_('USD', 'JPY', '2026-10-19', bad), null,
-      'create: a corrupt book is null rather than a throw - the row waits, it is not blocked');
+    bad.set("KM_FX_RATE_BOOK", "{not json");
+    const s2 = api.fxBookSnapshotForImport_(bad);
+    eq(s2.ok, false, "corrupt: the snapshot says it could not be read, rather than throwing into the import");
+    eq(s2.doc_version, null, "corrupt: and claims NO version - there is none to claim");
+    eq(api.fxBookRateFromSnapshot_(s2, "USD", "JPY", "2026-10-19"), null,
+      "corrupt: every row goes pending_fx, which is the state this contract has had all along");
+    eq(api.fxBookRateFromSnapshot_(s2, "USD", "USD", "2026-10-19"), null,
+      "corrupt: identity too - a book nobody could parse says nothing, and 04_ decides same-currency for itself");
   }
   {
     const empty = bare();
-    eq(api.fxBookRateForCreate_('USD', 'JPY', '2026-10-19', empty), null,
-      'create: an absent book is null - which is exactly the state 04_ has had all along');
+    const s3 = api.fxBookSnapshotForImport_(empty);
+    eq(s3.ok, true, "absent: an EMPTY book is a readable book - that is the ordinary first-run state");
+    eq(s3.doc_version, 0, "absent: at version 0");
+    eq(api.fxBookRateFromSnapshot_(s3, "USD", "JPY", "2026-10-19"), null,
+      "absent: and it holds no rate, which is exactly the state 04_ has had all along");
   }
+  // AND IT IS PURE. Not asserted from the source text - called with NO io in scope at all.
+  eq(api.fxBookRateFromSnapshot_({ ok: true, rates: ACTIVE, doc_version: 7 }, "USD", "JPY", "2026-10-19"),
+    158.020084, "pure: a hand-built snapshot resolves with no Property and no io anywhere near it");
+  eq(api.fxBookRateFromSnapshot_(null, "USD", "JPY", "2026-10-19"), null,
+    "pure: and no snapshot is null rather than a throw");
 }
 
 console.log("");
-console.log("FX1-R3 staged-proposal verification: " + pass + " passed, " + fail + " failed.");
+console.log("FX1-R4 FX rate book verification: " + pass + " passed, " + fail + " failed.");
 process.exitCode = fail ? 1 : 0;

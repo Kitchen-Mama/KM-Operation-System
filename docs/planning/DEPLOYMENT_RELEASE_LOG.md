@@ -6245,3 +6245,113 @@ The cp2r twelve-run batch was re-taken because the page changed: **−103.4 / �
 (`c0ffbce98e0e9327`). One outlier, **in the unscoped arm** — the direction that flatters the conclusion —
 kept and stated, and it does not carry its pair: the per-run figure is the median of five, which the
 outlier cannot move. Twelfth batch of that design; the magnitude is still not the finding.
+
+---
+
+## S8-B3-R3-FX1-R4 — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55` — THE FX RATE BOOK, AND THE CREATION PATH THAT READS IT
+
+**STATUS: CUT, NOT DEPLOYED. NOT PUSHED. NOT SYNCED.** This entry records intent. Nothing in it has
+been applied to any Apps Script project, no Script Property has been written, no rate has been
+initialised and no price batch has been run. **NOT DEPLOYED.**
+
+### Why R55 exists rather than R54 absorbing it
+
+R54 is **cut**. A runtime change landing after a cut needs its own cut — the same rule R54 records
+about R53 and R53 about R52. And this one is the strictest version of the case: `75_` is a **new file**
+that two routed actions dispatch into, so a project that copied `01_router.gs` and missed `75_` answers
+both FX calls with a reference error and reports a healthy deployment while doing it.
+
+### What moves
+
+| file | what changed | stamp |
+|---|---|---|
+| `75_api_v1_fx_rate_book.gs` | **NEW.** The stored coefficients, their change history, the capacity guard, the version compare-and-swap and the fail-closed write authority. | R55 |
+| `01_router.gs` | `fxRateBook.get` joins the GET read table; `fxRateBook.save` is POST-only. | R52 → R55 |
+| `04_marketplace_forecast_import.gs` | The creation contract: a cross-currency row is priced from the book, read **once per import**. | R24 → R55 |
+| `63_api_v1_system_health.gs` | Release id, own build, the three stamps above, the manifest row for `75_`, and the two contract versions. | R54 → R55 |
+
+`SYS_DEPLOYED_ACTION_CONTRACT_VERSION_` **20 → 21** (one bump per release that changes the action set).
+`SYS_REQUIRED_ACTION_LIST_VERSION_` **16 → 18** (two bumps, because the registry gained two ROWS — these
+are different numbers with different rules, and the staged patch moved the second by one until the
+release-stamp gate said so).
+`SYS_TRANSPORT_CONTRACT_VERSION_` unchanged at 1. `90_` is **not rebuilt**: nothing under
+`assets/js/core/` changed, so its content-hash row is untouched.
+
+### `04_` returns to ownership after thirty-one releases, and why that is not churn
+
+`04_` has carried R24 since PRICING-R4E and has been held out of ownership deliberately ever since,
+because a stamp names the round a file last **changed** in. R55 moves it because the file really
+changed: a cross-currency SKU is now priced from the stored book instead of being born blank.
+
+The shape of that change is the part worth recording. FX1-R3 gave `04_` a reader that took the io and
+read the Script Property itself; called from inside the per-row planner that is a Property read **per
+row**, and a save landing mid-import would have priced part of a batch at one `doc_version` and the
+rest at another, with nothing in the result saying where the line fell. The import now takes **one**
+snapshot before the row loop, every row resolves from it, `pricingNewRowPlan_` stays pure, and the
+batch reports the version it was priced at.
+
+### GS load surface
+
+```
+before   78 files   4,629,942 bytes
+after    79 files   4,666,351 bytes
+ceiling              4,668,000 bytes   (Owner-approved, FX1-R4)
+VERDICT  UNDER by 1,649 bytes
+```
+
+| file | bytes |
+|---|---:|
+| `75_api_v1_fx_rate_book.gs` (new) | +31,253 |
+| `04_marketplace_forecast_import.gs` | +2,516 |
+| `63_api_v1_system_health.gs` | +1,742 |
+| `01_router.gs` | +898 |
+| **TOTAL** | **+36,409** |
+
+Measured, not estimated: `node docs/planning/fx1-r1-staging/measure-fx1-r4-integration.js` applies the
+whole integration **including the R55 cut**, counts the same bytes `gs-load-surface-audit.js` counts,
+and restores the tree. `SIZE_BUDGET` in `apps-script-load-surface-slim-r1.test.js` moves 4,630,000 →
+4,668,000 to match the Owner-approved ceiling, and the raise is spent on the four named files above.
+
+FX1-R3 measured this same feature at **4,663,070** against a **4,662,000** ceiling, reported the
+1,070-byte overrun and stopped rather than trimming `75_`’s commentary to fit — five of that round’s
+ten mutants guard lines whose reason lives only in those comments.
+
+### APPS_SCRIPT_SYNC_REQUIRED
+
+The paste set is everything between the **R49 cut** (which is what the project is believed to hold) and
+R55, because R50–R54 were cut and never synced. Twenty-five files, listed by
+`fc-target-rule-release-stamp-r2b-a2-r5-f3.test.js` §I1 rather than restated here, where a restated copy
+could drift. The four files **this release** changed are `75_` (new), `01_`, `04_` and `63_`.
+
+`90_generated_supply_planning_bundle.gs` is in the paste set although it is **not rebuilt**: not rebuilt
+and not copied are independent, and skipping it leaves an R49 bundle under an R55 manifest, which the
+content-hash row refuses.
+
+### GITHUB_PAGES_FILES
+
+`index.html`, `assets/js/app.js`, `assets/js/api/operation-system-db-api.js`,
+`assets/js/pages/fx-rate-book.js`, `assets/html/pages/fx-rate-book.html`,
+`assets/css/pages/fx-rate-book.css` (new).
+
+### Post-publish acceptance (read-only until step 5)
+
+1. Open **Administration → FX Rate Book**. It must render the stored book and issue exactly one
+   `fxRateBook.get`. Opening the page must write nothing.
+2. If the backend cannot identify you, the page shows a named read-only band carrying the refusal code
+   and every input is disabled. A disabled Save with no explanation is the defect this band exists to
+   prevent; a Save that works for an unidentified caller is the §8 failure.
+3. Check the version line reads `read at version <n>` and the capacity line reports bytes used of the
+   limit. A book near the limit must say so **before** a save is refused.
+4. Open the page in two tabs, save in one, then save in the other. The second must be refused by name
+   with a version error, must keep your typing on screen, and must not overwrite the first.
+5. **(Write.)** Save one coefficient. No price may move: `pricing_list` is unchanged, and rows already
+   `pending_fx` stay `pending_fx` until a reconciliation is run.
+6. Import a cross-currency SKU. It must be created priced from the book, with `auto_*` populated and
+   the override columns **blank**. A row created with `auto_* = 0` is the zero-price failure §7 forbids.
+7. Import a cross-currency SKU for a pair the book does **not** hold. It must be created `pending_fx`
+   with `fx_rate` and `auto_*` blank — not zero, and not a guessed rate.
+8. Check the batch response carries `fx.doc_version`. Two imports run either side of a save must report
+   different versions, and every row inside **one** import must have been priced at one of them.
+
+None of these steps is covered by live evidence: everything behind them ran against offline fixtures
+with an injected io. A sandbox is not database isolation and nothing here relied on it being one.

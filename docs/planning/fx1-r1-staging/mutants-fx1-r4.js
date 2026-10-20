@@ -1,4 +1,4 @@
-// FX1-R3 — MUTATION PROOF FOR THE STAGED 75_ PROPOSAL.
+// FX1-R4 — MUTATION PROOF FOR THE STAGED 75_ PROPOSAL **AND** FOR THE 04_ WIRING.
 //
 // verify-75-proposed.js passing says the proposal behaves. It does not say the suite would NOTICE if it
 // stopped. Each mutation below puts one of the guards back the way it was — these are not invented
@@ -7,9 +7,9 @@
 // FX1-R2 ran its mutants by hand and they left nothing behind, so the claim "5 of 5 caught" was not
 // re-runnable by anyone, including the next round. This file is the durable version of that claim.
 //
-// Run:  node docs/planning/fx1-r1-staging/mutants-75-proposed.js
-// It writes mutated COPIES to a temp directory and runs the verifier against each; the staged proposal
-// on disk is never modified.
+// Run:  node docs/planning/fx1-r1-staging/mutants-fx1-r4.js
+// It writes mutated COPIES to a temp directory and runs the verifiers against each; the SHIPPED files
+// are never modified, and both runs prove that rather than asserting it.
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -17,8 +17,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const HERE = __dirname;
-const SRC = path.join(HERE, '75_api_v1_fx_rate_book.gs.proposed');
-const VERIFY = path.join(HERE, 'verify-75-proposed.js');
+const GSDIR = path.resolve(HERE, '../../../assets/specs/active/apps-script');
+const SRC = path.join(GSDIR, '75_api_v1_fx_rate_book.gs');
+const VERIFY = path.join(HERE, 'verify-75-fx-rate-book.js');
 const ORIGINAL = fs.readFileSync(SRC, 'utf8');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fx75-mutants-'));
 
@@ -59,12 +60,55 @@ const MUTANTS = [
     '    var saved = fxBookReadDoc_(io);\r\n    if (false) {'],
 
   ['M10', 'a fallback rate at SKU creation instead of pending_fx',
-    '    if (!r || r.ok !== true) return null;',
-    '    if (!r || r.ok !== true) return 1;'],
+    '  if (!r || r.ok !== true) return null;',
+    '  if (!r || r.ok !== true) return 1;'],
+
+  // FX1-R4 §6 — the snapshot. M11 is the one that matters: without the ok check a book nobody
+  // could parse answers 1 for identity, which is a rate invented out of a parse failure.
+  ['M11', 'an unreadable snapshot answering as if it were an empty one',
+    '  if (!snap || snap.ok !== true) return null;',
+    '  if (!snap) return null;'],
+
+  ['M12', 'the snapshot swallowing a corrupt book as version 0 instead of reporting it unreadable',
+    "    return { ok: false, rates: [], doc_version: null, absent: false,",
+    "    return { ok: true, rates: [], doc_version: 0, absent: true,"],
 
   ['M9', 'the compare-and-swap on the stored version',
     '    if (current.doc_version !== expected) {',
     '    if (false) {']
+];
+
+// ---- THE SECOND TARGET: the 04_ WIRING -------------------------------------------------------
+//
+// FX1-R3 proved 75_ and stopped there, which is exactly where the R4 defect lived: the helper was
+// correct and the CALL was per-row. These mutants put the wiring back the way it was and the wiring
+// verifier must refuse each one. They are applied to the INTEGRATED sources that
+// measure-fx1-r4-integration.js emits, so they mutate what is actually measured rather than a copy.
+const WIRING = path.join(HERE, 'verify-04-wiring.js');
+const EMIT04 = fs.mkdtempSync(path.join(os.tmpdir(), 'fx04-mutants-'));
+const SRC04 = path.join(GSDIR, '04_marketplace_forecast_import.gs');
+const O04 = fs.readFileSync(SRC04, 'utf8');
+
+const WIRING_MUTANTS = [
+  ['W1', 'the per-ROW Property read FX1-R3 shipped',
+    "    fxRate = (typeof fxBookRateFromSnapshot_ === 'function') ? fxBookRateFromSnapshot_(fxBook, b, l, asOf) : null;",
+    "    fxRate = (typeof fxBookSnapshotForImport_ === 'function') ? fxBookRateFromSnapshot_(fxBookSnapshotForImport_(), b, l, asOf) : null;"],
+
+  ['W2', 'the planner reaching for the book itself instead of being handed one',
+    'function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf, fxBook) {',
+    "function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf, fxBook) {\r\n  fxBook = fxBookSnapshotForImport_();"],
+
+  ['W3', 'a zero price where there is no coefficient',
+    "      out.reason = 'NO_CANONICAL_FX_RATE'; return out;\r\n    }\r\n  }",
+    "      fxRate = 0;\r\n    }\r\n  }"],
+
+  ['W4', 'the batch forgetting which book priced it',
+    "  out.fx_doc_version = (fxBook && typeof fxBook.doc_version === 'number') ? fxBook.doc_version : null;",
+    "  out.fx_doc_version = null;"],
+
+  ['W5', 'the inverted conversion - LOCAL = BASE / RATE instead of x RATE',
+    '    var r = pricingRoundFx_(n * fxRate, l);',
+    '    var r = pricingRoundFx_(n / fxRate, l);']
 ];
 
 let applied = 0, caught = 0, missed = [];
@@ -77,7 +121,7 @@ MUTANTS.forEach(function (m) {
     return;
   }
   applied++;
-  const file = path.join(TMP, id + '.gs.proposed');
+  const file = path.join(TMP, id + '.gs');
   fs.writeFileSync(file, ORIGINAL.replace(find, repl), 'utf8');
   let failed = false, out = '';
   try {
@@ -93,10 +137,34 @@ MUTANTS.forEach(function (m) {
   else { missed.push(id + ' SURVIVED: ' + what); console.log(id + '  SURVIVED  ' + what + '   [' + summary + ']'); }
 });
 
+WIRING_MUTANTS.forEach(function (m) {
+  const [id, what, find, repl] = m;
+  const occurrences = O04.split(find).length - 1;
+  if (occurrences !== 1) {
+    missed.push(id + ' STALE (anchor occurs ' + occurrences + ' times): ' + what);
+    console.log(id + '  STALE   ' + what);
+    return;
+  }
+  applied++;
+  const file = path.join(EMIT04, id + '-04.gs');
+  fs.writeFileSync(file, O04.replace(find, repl), 'utf8');
+  let failed = false, out = '';
+  try {
+    out = execFileSync(process.execPath, [WIRING],
+      { cwd: path.resolve(HERE, '../../..'), encoding: 'utf8',
+        env: Object.assign({}, process.env, { FX04_SRC: file }) });
+  } catch (e) { failed = true; out = String((e && e.stdout) || ''); }
+  const summary = (out.split(/\r?\n/).filter(l => /passed,/.test(l)).pop() || '').trim();
+  if (failed) { caught++; console.log(id + '  caught  ' + what + '   [' + summary + ']'); }
+  else { missed.push(id + ' SURVIVED: ' + what); console.log(id + '  SURVIVED  ' + what + '   [' + summary + ']'); }
+});
+
 console.log('');
 console.log('mutants applied: ' + applied + '   caught: ' + caught + '   missed: ' + missed.length);
 missed.forEach(function (m) { console.log('  ' + m); });
 // The staged file was never written to; prove it rather than assert it.
 const after = fs.readFileSync(SRC, 'utf8');
-console.log('staged proposal unchanged: ' + (after === ORIGINAL));
-process.exitCode = (missed.length || after !== ORIGINAL) ? 1 : 0;
+const after04 = fs.readFileSync(SRC04, 'utf8');
+console.log('shipped 04_ unchanged: ' + (after04 === O04));
+console.log('shipped 75_ unchanged: ' + (after === ORIGINAL));
+process.exitCode = (missed.length || after !== ORIGINAL || after04 !== O04) ? 1 : 0;

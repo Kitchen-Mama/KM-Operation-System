@@ -884,6 +884,9 @@ function showSection(section) {
             'global-logistics-map': 'global-logistics-map-section',
             'automation': 'automation-schedule-section',
             'site-priority': 'site-priority-section',
+            // FX1-R4 — the lifecycle half. Without this entry the section below would be given
+            // `.active` and stay empty, because the partial is loaded by the page's own mount.
+            'fx-rate-book': 'fx-rate-book-section',
             // P1-B8D - the lifecycle half. This is the entry that makes the partial load and the board
             // mount; without it the section below would be given `.active` and stay empty.
             'product-strategy': 'product-strategy-board-section'
@@ -924,6 +927,10 @@ function showSection(section) {
         'sku-regional-details': 'sku-regional-details-section',
         'automation': 'automation-schedule-section',
         'site-priority': 'site-priority-section',
+        // FX1-R4 — the display half. BOTH maps, for the reason recorded below: one decides what
+        // MOUNTS and the other what is VISIBLE, and a section in only one of them either mounts into
+        // a hidden shell or is revealed with nothing in it.
+        'fx-rate-book': 'fx-rate-book-section',
         // P1-B8D - the display half. BOTH maps, because they are not one map read twice: the lifecycle
         // map decides what MOUNTS and this one decides what is VISIBLE, and a section in only one of them
         // either mounts into a hidden shell or is revealed with nothing in it. (They already disagree by

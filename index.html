@@ -443,6 +443,10 @@
                  KM.partialLoader injects #site-priority-section into this mount point on lifecycle mount. -->
             <div id="site-priority-mount"></div>
 
+            <!-- FX Rate Book (FX1-R4) — Administration / Master Data.
+                 KM.partialLoader injects #fx-rate-book-section into this mount point on lifecycle mount. -->
+            <div id="fx-rate-book-mount"></div>
+
             <!-- Product Strategy Board (PRODUCT-STRATEGY-P1-B7) — INSTALLED, NOT ACTIVATED.
                  An empty mount point and nothing more. KM.partialLoader fetches the partial on the
                  first lifecycle mount of `product-strategy-board-section`, and no navigation can
@@ -623,6 +627,7 @@
          data at all; the vendored stub that proves it is a build input and is never served. Loaded before the
          resolver, which reads this as two of its division levels. -->
     <script src="assets/js/pages/automation-schedule.js?v=r62-revisitrestore-20261019" defer></script>
+    <script src="assets/js/pages/fx-rate-book.js?v=r62-revisitrestore-20261019" defer></script>
 
     <!-- App (Global) -->
     <script src="assets/js/app.js?v=r62-revisitrestore-20261019" defer></script>

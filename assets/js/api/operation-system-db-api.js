@@ -6229,6 +6229,14 @@ window.KM.DB.getAutomationSchedule = function() { return _kmGapRead_('automation
 // success path returns the server's post-reconcile readback in `data` (jobs + trigger status + warnings).
 window.KM.DB.updateAutomationSchedule = function(payload) { return _kmGapRead_('automationSchedule.update', { payload: payload || {} }); };
 
+// ---- FX1-R4 — the FX Rate Book (owner module 75_) ----
+// READ is a GET action and carries `may_edit`, so the Administration page can tell the operator they
+// cannot save BEFORE they spend time typing. SAVE is POST-only and carries the doc_version the page
+// read, so a stale tab is refused by name rather than silently overwriting a newer book. Neither of
+// these prices anything: 73_ remains the only writer of pricing_list.
+window.KM.DB.getFxRateBook = function() { return _kmGapRead_('fxRateBook.get', {}); };
+window.KM.DB.saveFxRateBook = function(payload) { return _kmGapRead_('fxRateBook.save', { payload: payload || {} }); };
+
 // ---- Weekly Plan Layer-1/2 + Combined Plan + Method Recommendation adapters (2026-07-28) ----
 // All matching is CODE/ID based server-side. Weekly Plan NEVER persists rate_card_id; carrier_name is
 // resolved live (KM.display.carrierName). READ helpers do not force a DB reload; WRITE helpers do.

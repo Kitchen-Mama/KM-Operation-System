@@ -1,47 +1,69 @@
-<!-- FX1 — FX Rate Book (Administration / Master Data).
-     PREPARED, NOT ROUTED. This partial is deliberately absent from index.html: there is no menu entry,
-     no script tag and no section id registered, so nothing loads it and the Inventory Replenishment
-     release is not blocked by it. It becomes live only when the backend change list in
-     docs/planning/FX_RATE_BOOK_CONTRACT_FX1.md has been approved and the two read/write actions exist.
+<!-- FX1-R4 — FX Rate Book (Administration / Master Data).
+     Markup is a partial injected by KM.partialLoader into #fx-rate-book-mount on the page lifecycle mount.
+     Config owner = Script Property KM_FX_RATE_BOOK (owner module 75_). Prices are owned by 73_ and are
+     NOT touched from here.
 
-     Style follows the Automation Schedule page (ADMIN-AUTOMATION-R1): a partial injected into its mount
-     on the lifecycle mount, READ-ONLY on load. Opening this page must never write a rate.
+     READ-ONLY ON LOAD. Opening this page calls fxRateBook.get and nothing else. Only "Save changes"
+     writes, and a save carries the doc_version it read, so a stale tab cannot overwrite a newer book.
 
-     THE RULES THIS PAGE ENFORCES ARE NOT WRITTEN HERE. They live once, in
-     assets/tests/_fx-rate-book-contract.js, so the page, the suite and the eventual server read the
-     same definition instead of three drifting copies. -->
+     THIS PAGE DECIDES NOTHING. Validation, the frozen direction (LOCAL = BASE x RATE), the identity,
+     the effective period, the active status and the version compare-and-swap all live in 75_. The page
+     renders what the server returned and submits what the operator typed; every refusal below is the
+     server's, quoted by code. FX1 shipped a prototype that carried a second copy of those rules in the
+     browser - two definitions of one contract, and the browser's would have been the one nobody tested
+     against the stored document. -->
 <section id="fx-rate-book-section" class="module-section fx-book-section">
   <div class="fx-book-head">
     <h2 class="fx-book-title">FX Rate Book</h2>
     <p class="fx-book-sub">
-      The stored rates <strong>pricing.fxReconcile</strong> runs against. Direction is frozen:
-      <code>LOCAL = BASE &times; RATE</code>. A rate is never inverted, and the same currency is always 1.
+      The stored coefficients. Direction is frozen: <code>LOCAL = BASE &times; RATE</code>. A rate is
+      never inverted, and the same currency is always 1.
     </p>
   </div>
 
   <div class="fx-book-note" role="note">
-    Editing a rate here changes <strong>no price</strong>. Prices move only when a reconciliation is run,
-    and a reconciliation previews by default — <code>dry_run</code> must be explicitly set to false to
-    write anything.
+    <strong>Saving a rate changes no price.</strong> New SKUs created after a save are priced from the
+    book at creation; rows that already exist move only when a reconciliation is run, and a
+    reconciliation previews by default.
   </div>
 
-  <!-- WHICH PAIRS ARE ACTUALLY NEEDED is answered by the database, not by this page: a dry-run
-       reconciliation reports `required_pairs` from the live pricing_list. This panel shows that answer
-       beside the book so a missing pair is visible before a run rather than after it. -->
-  <div id="fx-book-coverage" class="fx-book-coverage" aria-live="polite">
-    <div class="fx-book-loading">Loading required currency pairs&hellip;</div>
-  </div>
+  <!-- WHO IS ASKING. A caller the backend cannot identify gets the page READ-ONLY rather than a save
+       that fails after the typing is done. Seeing the rates that price the catalogue is not the same
+       permission as changing them, so the read is never gated on this. -->
+  <div id="fx-book-authority" class="fx-book-authority" aria-live="polite" hidden></div>
 
-  <div id="fx-book-warnings" class="fx-book-warnings" hidden></div>
+  <div id="fx-book-warnings" class="fx-book-warnings" role="alert" hidden></div>
 
   <div id="fx-book-table" class="fx-book-table" aria-live="polite">
     <div class="fx-book-loading">Loading rate book&hellip;</div>
   </div>
 
-  <!-- A save carries the version it read. Two operators maintaining one pair from two tabs is the
-       ordinary case, and last-write-wins would discard a rate somebody checked against a bank page. -->
+  <div class="fx-book-addrow">
+    <button type="button" id="fx-book-add" class="fx-book-btn fx-book-btn--ghost" disabled>Add a pair</button>
+    <!-- THE PREPARED STARTING SET IS A DRAFT AND STAYS ONE. This loads it into the editor so it can be
+         read and changed before anybody commits to it; it writes nothing on its own, and the Save button
+         is the only thing on this page that does. -->
+    <button type="button" id="fx-book-draft" class="fx-book-btn fx-book-btn--ghost" disabled
+            title="Load the prepared starting set into the editor. Nothing is written until you save.">
+      Load prepared draft
+    </button>
+    <span class="fx-book-hint">A new pair is not stored until you save.</span>
+  </div>
+
   <div class="fx-book-foot">
     <button type="button" id="fx-book-save" class="fx-book-btn" disabled>Save changes</button>
-    <span id="fx-book-savestate" class="fx-book-savestate"></span>
+    <span id="fx-book-savestate" class="fx-book-savestate" aria-live="polite"></span>
+    <span id="fx-book-version" class="fx-book-version"></span>
   </div>
+
+  <!-- CAPACITY IS SHOWN BEFORE IT IS REACHED. The whole book lives in one Script Property with a hard
+       byte limit, so "the save was refused" is a thing an operator can see coming. -->
+  <div id="fx-book-capacity" class="fx-book-capacity"></div>
+
+  <details class="fx-book-log">
+    <summary>Change history</summary>
+    <div id="fx-book-logbody" class="fx-book-logbody">
+      <div class="fx-book-loading">Loading&hellip;</div>
+    </div>
+  </details>
 </section>
