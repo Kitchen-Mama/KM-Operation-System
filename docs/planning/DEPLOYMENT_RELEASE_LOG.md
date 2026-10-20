@@ -6355,3 +6355,24 @@ content-hash row refuses.
 
 None of these steps is covered by live evidence: everything behind them ran against offline fixtures
 with an injected io. A sandbox is not database isolation and nothing here relied on it being one.
+
+### R55 — the measured surface, corrected after the post-commit sweep
+
+The R55 section above records **4,666,351 bytes**, which was the honest number at the moment the cut
+was measured. The post-commit sweep then found two defects in it — `fxRateBook.get` had no POST route,
+and `04_`’s `priceNote` had lost a continuation line so the file did not parse — and fixing both added
+bytes. The surface as committed is:
+
+```
+files    79
+bytes    4,666,841
+ceiling  4,668,000   (Owner-approved, FX1-R4)
+VERDICT  UNDER by 1,159 bytes
+```
+
+`node docs/planning/fx1-r1-staging/measure-fx1-r4-surface.js` reports this against the ceiling and is
+read-only and re-runnable; `gs-load-surface-audit.js` agrees to the byte. The commit message of
+`fix(fx1-r4)` quotes **4,666,584**, which was written before that run printed and is wrong by 257
+bytes; the number above is the one to use, and it is the one the budget gate measures.
+
+**STILL NOT DEPLOYED. NOT PUSHED. NOT SYNCED.**

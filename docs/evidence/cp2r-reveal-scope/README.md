@@ -257,3 +257,41 @@ unscoped RUN, not by one slow sample — which is ordinary machine drift, and is
 interleaved and never pooled.
 
 Nothing else ran on the machine while these twelve runs were taken.
+
+---
+
+## FX1-R4 RE-TOOK IT AGAIN, BOTH ARMS — the thirteenth batch of this design
+
+FX1-R4 did not change `inventory-replenishment.js` at all. It changed
+`assets/js/api/operation-system-db-api.js` — the client action-contract pin moves 20 → 21 and two FX
+transport adapters are added — and that file is one of the four this capture pins, so §E1 refused the
+twelfth batch exactly as designed. The shipped arm must describe the build, not only the page.
+
+**Both arms were re-taken on ONE build**, alternating inside each pair, twelve runs, 100 rows each,
+five expands each, **no fatals**. The shipped source was restored and **verified by hash** when the
+driver finished — `c0ffbce98e0e9327`, matching.
+
+| row | unscoped | scoped | paired delta | improved in |
+|---|---:|---:|---:|---|
+| click → first paint | 60.5 ms | 60.8 ms | +1.3 ms | 2 of 6 |
+| click → full ready | 219.4 ms | 131.0 ms | **−88.5 ms** | **6 of 6** |
+| assembly in handler | 29.4 ms | 27.0 ms | −0.9 ms | 4 of 6 |
+| assembly after handler | 173.0 ms | 82.4 ms | **−90.9 ms** | **6 of 6** |
+| handler sync | 31.8 ms | 29.1 ms | −0.8 ms | 4 of 6 |
+
+The two load-bearing rows reproduce for the thirteenth time: **−90.9 / −88.5 ms, 6 of 6 and 6 of 6**.
+
+**TWO outliers, both in the UNSCOPED arm — the direction that flatters the conclusion — and both kept.**
+The scan over `ms_click_to_exec_resolved` found 60 samples, median 170.9 ms, threshold 683.6 ms, and
+`unscoped-2` read **781.3 ms** while `unscoped-5` read **2,454.1 ms**. Both are the FIRST expand of
+their run. They are left in for the reason this README has carried since the seventh batch: removing a
+sample for being large is how a batch stops being a measurement, and removing one that flatters the
+conclusion is not a different rule from removing one that does not.
+
+**Neither carries its pair, and that is arithmetic rather than reassurance.** The per-run figure is the
+median of five, which is the third value. `unscoped-2` read `781, 216, 213, 167, 164` → median **213.3**;
+`unscoped-5` read `2454, 183, 196, 175, 181` → median **183.2**. Replacing either outlier with any value
+at or above its run’s median leaves that median exactly where it is. Pair 2 (−91.6 ms) and pair 5
+(−48.5 ms) are also not the largest deltas in the batch — pair 1 is, at −126.0 ms, with no outlier at all.
+
+Nothing else ran on the machine while these twelve runs were taken.
