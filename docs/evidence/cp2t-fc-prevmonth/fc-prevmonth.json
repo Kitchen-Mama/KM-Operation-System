@@ -1,65 +1,65 @@
 {
   "round": "S8-B3-R3-CP2T P1",
   "what": "FC Regular builder, prevMonth: derived Based period, non-editability, preview revocation, growth base still editable",
-  "takenAt": "2026-10-20T07:57:30.505Z",
+  "takenAt": "2026-10-21T03:56:28.868Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "index.html": "ac2dad3e4678dea0",
-    "assets/js/pages/fc-summary.js": "81af8665cbea6075",
-    "assets/html/pages/fc-summary.html": "274936c74f1c44ca"
+    "index.html": "b295efa32fd7ad8b",
+    "assets/js/pages/fc-summary.js": "a509f6f695741bbc",
+    "assets/html/pages/fc-summary.html": "63c2b5769a164b6e"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 995
+      "t": 2264
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 1261
+      "t": 2476
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 1262
+      "t": 2478
     },
     {
       "action": "getTable",
-      "t": 2254
+      "t": 3489
     },
     {
       "action": "getTable",
-      "t": 2255
+      "t": 3489
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 2256
+      "t": 3491
     }
   ],
   "result": {
-    "capId": "fcprev-1792482870450",
+    "capId": "fcprev-1792554808821",
     "steps": [
       {
         "step": "fc-section",
-        "t": 578.5,
+        "t": 605.1,
         "v": 30.6
       },
       {
         "step": "mode-select",
-        "t": 1485.2,
-        "v": 4.1
+        "t": 1516.6,
+        "v": 4.3
       },
       {
         "step": "builder",
-        "t": 1681.7,
-        "v": 38.4
+        "t": 1701.9,
+        "v": 32.1
       },
       {
         "step": "method",
-        "t": 2395.9,
+        "t": 2414,
         "v": "prevMonth"
       },
       {
         "step": "derived",
-        "t": 2922.7,
+        "t": 2940,
         "v": {
           "basedYear": "2026",
           "basedMonth": "11",
@@ -68,7 +68,7 @@
       },
       {
         "step": "done",
-        "t": 6609,
+        "t": 6613.9,
         "v": {
           "addButtonFound": true,
           "modeSelectVisible": true,

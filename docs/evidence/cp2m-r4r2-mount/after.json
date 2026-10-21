@@ -1,6 +1,6 @@
 {
  "ok": true,
- "capturedAt": "2026-10-20",
+ "capturedAt": "2026-10-21",
  "markupDelayMs": 3000,
  "scenarios": {
   "away-home": {
@@ -19,7 +19,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "boot",
-     "t": 830,
+     "t": 815,
      "navHow": "click"
     },
     {
@@ -33,7 +33,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-0",
-     "t": 832
+     "t": 817
     },
     {
      "navGen": 0,
@@ -69,7 +69,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-1",
-     "t": 938
+     "t": 925
     },
     {
      "navGen": 0,
@@ -105,7 +105,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-2",
-     "t": 1046
+     "t": 1036
     },
     {
      "navGen": 0,
@@ -141,7 +141,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-3",
-     "t": 1154
+     "t": 1142
     },
     {
      "navGen": 0,
@@ -177,7 +177,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-4",
-     "t": 1262
+     "t": 1252
     },
     {
      "navGen": 0,
@@ -213,7 +213,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-5",
-     "t": 1369
+     "t": 1361
     },
     {
      "navGen": 0,
@@ -249,7 +249,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-6",
-     "t": 1476
+     "t": 1469
     },
     {
      "navGen": 0,
@@ -285,7 +285,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-7",
-     "t": 1582
+     "t": 1578
     },
     {
      "navGen": 0,
@@ -321,7 +321,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-8",
-     "t": 1691
+     "t": 1687
     },
     {
      "navGen": 0,
@@ -357,7 +357,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-9",
-     "t": 1799
+     "t": 1795
     },
     {
      "navGen": 0,
@@ -393,7 +393,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "pre-leave",
-     "t": 1799,
+     "t": 1796,
      "leaveHow": "click"
     },
     {
@@ -430,7 +430,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-0",
-     "t": 1801
+     "t": 1797
     },
     {
      "navGen": 1,
@@ -466,7 +466,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-1",
-     "t": 1907
+     "t": 1898
     },
     {
      "navGen": 1,
@@ -538,7 +538,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-3",
-     "t": 2121
+     "t": 2123
     },
     {
      "navGen": 1,
@@ -574,7 +574,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-4",
-     "t": 2228
+     "t": 2233
     },
     {
      "navGen": 1,
@@ -610,7 +610,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-5",
-     "t": 2336
+     "t": 2342
     },
     {
      "navGen": 1,
@@ -646,43 +646,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-6",
-     "t": 2444
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-7",
-     "t": 2553
+     "t": 2452
     },
     {
      "navGen": 1,
@@ -718,7 +682,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-0",
-     "t": 2554
+     "t": 2452
     },
     {
      "navGen": 1,
@@ -754,7 +718,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-1",
-     "t": 2662
+     "t": 2561
     },
     {
      "navGen": 1,
@@ -790,7 +754,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-2",
-     "t": 2770
+     "t": 2669
     },
     {
      "navGen": 1,
@@ -826,7 +790,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-3",
-     "t": 2878
+     "t": 2780
     },
     {
      "navGen": 1,
@@ -862,7 +826,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-4",
-     "t": 2986
+     "t": 2887
     },
     {
      "navGen": 1,
@@ -898,7 +862,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-5",
-     "t": 3095
+     "t": 2997
     },
     {
      "navGen": 1,
@@ -934,7 +898,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-6",
-     "t": 3202
+     "t": 3104
     },
     {
      "navGen": 1,
@@ -970,7 +934,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-7",
-     "t": 3310
+     "t": 3211
     },
     {
      "navGen": 1,
@@ -1006,7 +970,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-8",
-     "t": 3418
+     "t": 3319
     },
     {
      "navGen": 1,
@@ -1042,7 +1006,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-9",
-     "t": 3526
+     "t": 3428
     },
     {
      "navGen": 1,
@@ -1078,7 +1042,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-10",
-     "t": 3633
+     "t": 3537
     },
     {
      "navGen": 1,
@@ -1114,7 +1078,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-11",
-     "t": 3742
+     "t": 3646
     },
     {
      "navGen": 1,
@@ -1126,7 +1090,7 @@
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -1146,11 +1110,11 @@
      "lcEpoch": 3,
      "txRequests": 1,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
+     "mapSectionPresent": false,
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-12",
-     "t": 3844
+     "t": 3756
     },
     {
      "navGen": 1,
@@ -1186,7 +1150,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-13",
-     "t": 3957
+     "t": 3865
     },
     {
      "navGen": 1,
@@ -1222,7 +1186,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-14",
-     "t": 4064
+     "t": 3974
     },
     {
      "navGen": 1,
@@ -1258,7 +1222,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-15",
-     "t": 4172
+     "t": 4085
     },
     {
      "navGen": 1,
@@ -1294,7 +1258,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-16",
-     "t": 4280
+     "t": 4193
     },
     {
      "navGen": 1,
@@ -1330,7 +1294,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-17",
-     "t": 4388
+     "t": 4302
     },
     {
      "navGen": 1,
@@ -1366,7 +1330,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-18",
-     "t": 4495
+     "t": 4411
     },
     {
      "navGen": 1,
@@ -1402,7 +1366,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-19",
-     "t": 4602
+     "t": 4518
     },
     {
      "navGen": 1,
@@ -1438,7 +1402,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-20",
-     "t": 4710
+     "t": 4627
     },
     {
      "navGen": 1,
@@ -1474,7 +1438,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-21",
-     "t": 4817
+     "t": 4734
     },
     {
      "navGen": 1,
@@ -1510,7 +1474,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-22",
-     "t": 4925
+     "t": 4845
     },
     {
      "navGen": 1,
@@ -1546,7 +1510,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-23",
-     "t": 5033
+     "t": 4952
     },
     {
      "navGen": 1,
@@ -1582,7 +1546,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-24",
-     "t": 5141
+     "t": 5060
     },
     {
      "navGen": 1,
@@ -1618,7 +1582,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-25",
-     "t": 5248
+     "t": 5169
     },
     {
      "navGen": 1,
@@ -1654,7 +1618,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-26",
-     "t": 5357
+     "t": 5276
     },
     {
      "navGen": 1,
@@ -1690,7 +1654,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-27",
-     "t": 5465
+     "t": 5385
     },
     {
      "navGen": 1,
@@ -1726,7 +1690,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-28",
-     "t": 5573
+     "t": 5495
     },
     {
      "navGen": 1,
@@ -1762,7 +1726,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-29",
-     "t": 5682
+     "t": 5605
     },
     {
      "navGen": 1,
@@ -1798,7 +1762,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-30",
-     "t": 5789
+     "t": 5714
     },
     {
      "navGen": 1,
@@ -1834,7 +1798,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-31",
-     "t": 5897
+     "t": 5823
     },
     {
      "navGen": 1,
@@ -1870,7 +1834,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-32",
-     "t": 6004
+     "t": 5933
     },
     {
      "navGen": 1,
@@ -1906,551 +1870,551 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "final",
-     "t": 6004
+     "t": 5933
     }
    ],
    "marks": [
     {
      "name": "nav-map",
-     "t": 830
+     "t": 815
     },
     {
      "name": "leave",
-     "t": 1799
+     "t": 1796
     }
    ],
    "requestLog": [
     {
      "kind": "static",
      "path": "/assets/css/base.css",
-     "t": 1792483456042
+     "t": 1792555480819
     },
     {
      "kind": "static",
      "path": "/assets/css/components.css",
-     "t": 1792483456043
+     "t": 1792555480820
     },
     {
      "kind": "static",
      "path": "/assets/css/layout.css",
-     "t": 1792483456044
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/home.css",
-     "t": 1792483456045
+     "t": 1792555480821
     },
     {
      "kind": "static",
      "path": "/assets/css/responsive-foundation.css",
-     "t": 1792483456046
+     "t": 1792555480821
     },
     {
      "kind": "static",
      "path": "/assets/css/core/km-sticky-header.css",
-     "t": 1792483456046
+     "t": 1792555480822
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/home.css",
+     "t": 1792555480822
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/inventory-replenishment.css",
-     "t": 1792483456047
+     "t": 1792555480823
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/factory-stock.css",
-     "t": 1792483456048
+     "t": 1792555480824
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-ops.css",
-     "t": 1792483456049
+     "t": 1792555480825
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-stock.css",
-     "t": 1792483456049
+     "t": 1792555480825
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fc-overview.css",
-     "t": 1792483456049
+     "t": 1792555480825
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/request-order.css",
-     "t": 1792483456049
+     "t": 1792555480825
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-details.css",
-     "t": 1792483456050
+     "t": 1792555480826
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-plan.css",
-     "t": 1792483456050
+     "t": 1792555480827
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-history.css",
-     "t": 1792483456050
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/sku-handbook.css",
-     "t": 1792483456051
+     "t": 1792555480827
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/supply-chain-canvas.css",
-     "t": 1792483456051
+     "t": 1792555480827
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/sku-handbook.css",
+     "t": 1792555480828
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/campaign-risk.css",
-     "t": 1792483456052
+     "t": 1792555480829
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/procurement.css",
-     "t": 1792483456053
+     "t": 1792555480830
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/carrier-rate-card.css",
-     "t": 1792483456053
+     "t": 1792555480830
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-regional-details.css",
-     "t": 1792483456054
+     "t": 1792555480830
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/global-logistics-map.css",
-     "t": 1792483456054
+     "t": 1792555480830
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/automation-schedule.css",
-     "t": 1792483456054
+     "t": 1792555480830
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fx-rate-book.css",
-     "t": 1792483456055
+     "t": 1792555480831
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/site-priority.css",
-     "t": 1792483456055
+     "t": 1792555480831
     },
     {
      "kind": "static",
      "path": "/assets/css/product-strategy-board.css",
-     "t": 1792483456055
+     "t": 1792555480832
     },
     {
      "kind": "static",
      "path": "/assets/img/logo_1024_1024-removebg_2.png",
-     "t": 1792483456057
+     "t": 1792555480832
     },
     {
      "kind": "static",
      "path": "/assets/js/core/namespace.js",
-     "t": 1792483456057
+     "t": 1792555480832
     },
     {
      "kind": "static",
      "path": "/assets/js/core/lifecycle.js",
-     "t": 1792483456074
+     "t": 1792555480843
     },
     {
      "kind": "static",
      "path": "/assets/js/core/state.js",
-     "t": 1792483456075
+     "t": 1792555480843
     },
     {
      "kind": "static",
      "path": "/assets/js/core/partial-loader.js",
-     "t": 1792483456075
+     "t": 1792555480848
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/home.js",
-     "t": 1792483456075
+     "t": 1792555480849
     },
     {
      "kind": "static",
      "path": "/assets/js/core/script-loader.js",
-     "t": 1792483456080
+     "t": 1792555480849
     },
     {
      "kind": "static",
      "path": "/assets/js/core/deferred-read.js",
-     "t": 1792483456080
+     "t": 1792555480849
     },
     {
      "kind": "static",
      "path": "/assets/js/core/sticky-header.js",
-     "t": 1792483456080
+     "t": 1792555480849
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/forecast-engine.js",
-     "t": 1792483456081
+     "t": 1792555480850
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/i18n.js",
-     "t": 1792483456081
+     "t": 1792555480851
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-repo-asset-manifest.js",
-     "t": 1792483456081
+     "t": 1792555480851
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-image-reference-policy.js",
-     "t": 1792483456082
+     "t": 1792555480852
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/sku-overrides.js",
-     "t": 1792483456083
+     "t": 1792555480852
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/data.js",
-     "t": 1792483456084
+     "t": 1792555480852
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scroll-sync.js",
-     "t": 1792483456084
+     "t": 1792555480852
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/template-export.js",
-     "t": 1792483456085
+     "t": 1792555480853
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/resizable-columns.js",
-     "t": 1792483456085
+     "t": 1792555480854
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/dual-layer-resize.js",
-     "t": 1792483456086
+     "t": 1792555480855
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/tab-rail.js",
-     "t": 1792483456086
+     "t": 1792555480855
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/multi-select-filter.js",
-     "t": 1792483456086
+     "t": 1792555480855
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/inventory-compat.js",
-     "t": 1792483456087
+     "t": 1792555480855
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/gap-recalc-transport.js",
-     "t": 1792483456088
+     "t": 1792555480855
     },
     {
      "kind": "static",
      "path": "/assets/js/core/scope-registry.js",
-     "t": 1792483456089
+     "t": 1792555480855
     },
     {
      "kind": "static",
      "path": "/assets/js/core/boot-read-arbiter.js",
-     "t": 1792483456090
+     "t": 1792555480858
     },
     {
      "kind": "static",
      "path": "/assets/js/core/method-registry.js",
-     "t": 1792483456090
+     "t": 1792555480858
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-active-route-classification.js",
-     "t": 1792483456091
+     "t": 1792555480858
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scope-select-modal.js",
-     "t": 1792483456091
+     "t": 1792555480858
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-factory-site-allocation.js",
-     "t": 1792483456094
+     "t": 1792555480858
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-forecast-share.js",
-     "t": 1792483456095
+     "t": 1792555480859
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-calculations.js",
-     "t": 1792483456097
+     "t": 1792555480860
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-planning-demand.js",
-     "t": 1792483456098
+     "t": 1792555480860
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-recommendation-audit.js",
-     "t": 1792483456098
+     "t": 1792555480861
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-recommendation.js",
-     "t": 1792483456099
+     "t": 1792555480861
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-execution-handoff.js",
-     "t": 1792483456099
+     "t": 1792555480862
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-transport.js",
-     "t": 1792483456099
+     "t": 1792555480862
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-data-access.js",
-     "t": 1792483456099
+     "t": 1792555480863
     },
     {
      "kind": "static",
      "path": "/assets/js/api/operation-system-db-api.js",
-     "t": 1792483456100
+     "t": 1792555480863
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-loading-state.js",
-     "t": 1792483456101
+     "t": 1792555480863
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-api-foundation.js",
-     "t": 1792483456102
+     "t": 1792555480864
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-workspace.js",
-     "t": 1792483456103
+     "t": 1792555480864
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-adapter.js",
-     "t": 1792483456103
+     "t": 1792555480864
     },
     {
      "kind": "static",
      "path": "/assets/js/data/replenishment-mock-data.js",
-     "t": 1792483456104
+     "t": 1792555480865
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/factory-stock.js",
-     "t": 1792483456104
+     "t": 1792555480867
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-ops-preview.js",
-     "t": 1792483456104
+     "t": 1792555480867
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-inbound.js",
-     "t": 1792483456105
+     "t": 1792555480867
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-outbound.js",
-     "t": 1792483456106
+     "t": 1792555480867
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fc-summary.js",
-     "t": 1792483456107
+     "t": 1792555480868
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/forecast.js",
-     "t": 1792483456108
+     "t": 1792555480868
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order.js",
-     "t": 1792483456108
+     "t": 1792555480869
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-details.js",
-     "t": 1792483456108
+     "t": 1792555480870
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-plan.js",
-     "t": 1792483456108
+     "t": 1792555480870
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-history.js",
-     "t": 1792483456108
+     "t": 1792555480870
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/supplychain.js",
-     "t": 1792483456110
+     "t": 1792555480871
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-handbook.js",
-     "t": 1792483456111
+     "t": 1792555480871
     },
     {
      "kind": "static",
      "path": "/assets/js/i18n/sku-handbook.js",
-     "t": 1792483456112
+     "t": 1792555480873
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/campaign-risk.js",
-     "t": 1792483456112
+     "t": 1792555480873
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order-draft.js",
-     "t": 1792483456112
+     "t": 1792555480873
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-overview.js",
-     "t": 1792483456113
+     "t": 1792555480873
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-list.js",
-     "t": 1792483456113
+     "t": 1792555480873
     },
     {
      "kind": "static",
      "path": "/assets/js/product-strategy/psb-views.js",
-     "t": 1792483456114
+     "t": 1792555480874
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-pricing.js",
-     "t": 1792483456114
+     "t": 1792555480876
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-details.js",
-     "t": 1792483456116
+     "t": 1792555480876
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-land-110m.js",
-     "t": 1792483456116
+     "t": 1792555480877
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/automation-schedule.js",
-     "t": 1792483456116
+     "t": 1792555480877
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fx-rate-book.js",
-     "t": 1792483456116
+     "t": 1792555480877
     },
     {
      "kind": "static",
      "path": "/assets/js/app.js",
-     "t": 1792483456116
+     "t": 1792555480877
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/home.html",
-     "t": 1792483456150
+     "t": 1792555480907
     },
     {
      "kind": "api",
      "action": "getClientCapabilities",
      "table": "",
-     "t": 1792483456174
+     "t": 1792555480927
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/global-logistics-map.html",
-     "t": 1792483456862
+     "t": 1792555481616
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-countries-110m.js",
-     "t": 1792483456863
+     "t": 1792555481617
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-names-zh-hant.js",
-     "t": 1792483456863
+     "t": 1792555481617
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-display-aliases-zh-tw.js",
-     "t": 1792483456863
+     "t": 1792555481617
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-admin1-display-names-zh-tw.js",
-     "t": 1792483456863
+     "t": 1792555481617
     },
     {
      "kind": "static",
      "path": "/assets/js/core/geo-name-resolver.js",
-     "t": 1792483456865
+     "t": 1792555481619
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-geo-topology.js",
-     "t": 1792483456865
+     "t": 1792555481619
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-globe.js",
-     "t": 1792483456865
+     "t": 1792555481619
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/global-logistics-map.js",
-     "t": 1792483456865
+     "t": 1792555481619
     },
     {
      "kind": "static",
      "path": "/favicon.ico",
-     "t": 1792483462043
+     "t": 1792555486739
     }
    ],
    "summary": {
-    "samples": 54,
-    "markupArrivedAt": 3844,
-    "leftAt": 1799,
+    "samples": 53,
+    "markupArrivedAt": 3865,
+    "leftAt": 1796,
     "markupArrivedAfterLeaving": true,
     "boots": 0,
     "renders": 0,
@@ -2483,7 +2447,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "boot",
-     "t": 792,
+     "t": 819,
      "navHow": "click"
     },
     {
@@ -2497,7 +2461,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-0",
-     "t": 793
+     "t": 821
     },
     {
      "navGen": 0,
@@ -2533,7 +2497,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-1",
-     "t": 900
+     "t": 927
     },
     {
      "navGen": 0,
@@ -2569,7 +2533,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-2",
-     "t": 1009
+     "t": 1034
     },
     {
      "navGen": 0,
@@ -2605,7 +2569,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-3",
-     "t": 1116
+     "t": 1142
     },
     {
      "navGen": 0,
@@ -2641,7 +2605,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-4",
-     "t": 1224
+     "t": 1251
     },
     {
      "navGen": 0,
@@ -2677,7 +2641,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-5",
-     "t": 1333
+     "t": 1359
     },
     {
      "navGen": 0,
@@ -2713,7 +2677,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-6",
-     "t": 1442
+     "t": 1467
     },
     {
      "navGen": 0,
@@ -2749,7 +2713,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-7",
-     "t": 1551
+     "t": 1577
     },
     {
      "navGen": 0,
@@ -2785,7 +2749,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-8",
-     "t": 1657
+     "t": 1685
     },
     {
      "navGen": 0,
@@ -2821,7 +2785,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-9",
-     "t": 1764
+     "t": 1795
     },
     {
      "navGen": 0,
@@ -2857,7 +2821,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "pre-leave",
-     "t": 1764,
+     "t": 1795,
      "leaveHow": "click"
     },
     {
@@ -2894,7 +2858,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-0",
-     "t": 1765
+     "t": 1796
     },
     {
      "navGen": 1,
@@ -2932,7 +2896,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-1",
-     "t": 1871
+     "t": 1904
     },
     {
      "navGen": 1,
@@ -2970,7 +2934,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-2",
-     "t": 1977
+     "t": 2013
     },
     {
      "navGen": 1,
@@ -3008,7 +2972,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-3",
-     "t": 2088
+     "t": 2122
     },
     {
      "navGen": 1,
@@ -3046,7 +3010,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-4",
-     "t": 2196
+     "t": 2231
     },
     {
      "navGen": 1,
@@ -3084,7 +3048,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-5",
-     "t": 2303
+     "t": 2338
     },
     {
      "navGen": 1,
@@ -3122,45 +3086,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-6",
-     "t": 2409
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "site-priority-section",
-     "lcActive": [
-      "site-priority-section"
-     ],
-     "lcEpoch": 3,
-     "txRequests": 2,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-7",
-     "t": 2519
+     "t": 2448
     },
     {
      "navGen": 1,
@@ -3198,7 +3124,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-0",
-     "t": 2519
+     "t": 2448
     },
     {
      "navGen": 1,
@@ -3236,7 +3162,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-1",
-     "t": 2627
+     "t": 2551
     },
     {
      "navGen": 1,
@@ -3274,7 +3200,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-2",
-     "t": 2734
+     "t": 2664
     },
     {
      "navGen": 1,
@@ -3312,7 +3238,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-3",
-     "t": 2843
+     "t": 2773
     },
     {
      "navGen": 1,
@@ -3350,7 +3276,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-4",
-     "t": 2950
+     "t": 2880
     },
     {
      "navGen": 1,
@@ -3388,7 +3314,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-5",
-     "t": 3057
+     "t": 2989
     },
     {
      "navGen": 1,
@@ -3426,7 +3352,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-6",
-     "t": 3163
+     "t": 3096
     },
     {
      "navGen": 1,
@@ -3464,7 +3390,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-7",
-     "t": 3270
+     "t": 3205
     },
     {
      "navGen": 1,
@@ -3502,7 +3428,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-8",
-     "t": 3378
+     "t": 3316
     },
     {
      "navGen": 1,
@@ -3540,7 +3466,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-9",
-     "t": 3485
+     "t": 3421
     },
     {
      "navGen": 1,
@@ -3578,7 +3504,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-10",
-     "t": 3593
+     "t": 3530
     },
     {
      "navGen": 1,
@@ -3616,7 +3542,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-11",
-     "t": 3700
+     "t": 3638
     },
     {
      "navGen": 1,
@@ -3654,7 +3580,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-12",
-     "t": 3809
+     "t": 3747
     },
     {
      "navGen": 1,
@@ -3692,7 +3618,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-13",
-     "t": 3917
+     "t": 3856
     },
     {
      "navGen": 1,
@@ -3730,7 +3656,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-14",
-     "t": 4024
+     "t": 3965
     },
     {
      "navGen": 1,
@@ -3768,7 +3694,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-15",
-     "t": 4132
+     "t": 4075
     },
     {
      "navGen": 1,
@@ -3806,7 +3732,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-16",
-     "t": 4239
+     "t": 4184
     },
     {
      "navGen": 1,
@@ -3844,7 +3770,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-17",
-     "t": 4346
+     "t": 4293
     },
     {
      "navGen": 1,
@@ -3882,7 +3808,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-18",
-     "t": 4455
+     "t": 4401
     },
     {
      "navGen": 1,
@@ -3920,7 +3846,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-19",
-     "t": 4563
+     "t": 4511
     },
     {
      "navGen": 1,
@@ -3958,7 +3884,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-20",
-     "t": 4669
+     "t": 4619
     },
     {
      "navGen": 1,
@@ -3996,7 +3922,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-21",
-     "t": 4777
+     "t": 4727
     },
     {
      "navGen": 1,
@@ -4034,7 +3960,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-22",
-     "t": 4886
+     "t": 4834
     },
     {
      "navGen": 1,
@@ -4072,7 +3998,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-23",
-     "t": 4994
+     "t": 4942
     },
     {
      "navGen": 1,
@@ -4110,7 +4036,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-24",
-     "t": 5102
+     "t": 5051
     },
     {
      "navGen": 1,
@@ -4148,7 +4074,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-25",
-     "t": 5210
+     "t": 5161
     },
     {
      "navGen": 1,
@@ -4186,7 +4112,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-26",
-     "t": 5318
+     "t": 5268
     },
     {
      "navGen": 1,
@@ -4224,7 +4150,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-27",
-     "t": 5425
+     "t": 5378
     },
     {
      "navGen": 1,
@@ -4262,7 +4188,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-28",
-     "t": 5533
+     "t": 5486
     },
     {
      "navGen": 1,
@@ -4300,7 +4226,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-29",
-     "t": 5641
+     "t": 5597
     },
     {
      "navGen": 1,
@@ -4338,7 +4264,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-30",
-     "t": 5749
+     "t": 5707
     },
     {
      "navGen": 1,
@@ -4376,7 +4302,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-31",
-     "t": 5858
+     "t": 5815
     },
     {
      "navGen": 1,
@@ -4414,7 +4340,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-32",
-     "t": 5966
+     "t": 5924
     },
     {
      "navGen": 1,
@@ -4452,572 +4378,572 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "final",
-     "t": 5966
+     "t": 5924
     }
    ],
    "marks": [
     {
      "name": "nav-map",
-     "t": 792
+     "t": 819
     },
     {
      "name": "leave",
-     "t": 1764
+     "t": 1795
     }
    ],
    "requestLog": [
     {
      "kind": "static",
      "path": "/assets/css/base.css",
-     "t": 1792483546084
+     "t": 1792555572858
     },
     {
      "kind": "static",
      "path": "/assets/css/components.css",
-     "t": 1792483546084
+     "t": 1792555572859
     },
     {
      "kind": "static",
      "path": "/assets/css/layout.css",
-     "t": 1792483546085
+     "t": 1792555572860
     },
     {
      "kind": "static",
      "path": "/assets/css/responsive-foundation.css",
-     "t": 1792483546085
+     "t": 1792555572861
     },
     {
      "kind": "static",
      "path": "/assets/css/core/km-sticky-header.css",
-     "t": 1792483546088
+     "t": 1792555572862
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/home.css",
-     "t": 1792483546088
+     "t": 1792555572862
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/inventory-replenishment.css",
-     "t": 1792483546088
+     "t": 1792555572863
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/factory-stock.css",
-     "t": 1792483546088
+     "t": 1792555572864
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-ops.css",
-     "t": 1792483546088
+     "t": 1792555572865
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-stock.css",
-     "t": 1792483546089
+     "t": 1792555572865
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fc-overview.css",
-     "t": 1792483546090
+     "t": 1792555572866
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/request-order.css",
-     "t": 1792483546091
+     "t": 1792555572867
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-details.css",
-     "t": 1792483546091
+     "t": 1792555572869
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-plan.css",
-     "t": 1792483546091
+     "t": 1792555572869
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-history.css",
-     "t": 1792483546091
+     "t": 1792555572870
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/supply-chain-canvas.css",
-     "t": 1792483546091
+     "t": 1792555572870
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-handbook.css",
-     "t": 1792483546093
+     "t": 1792555572870
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/campaign-risk.css",
-     "t": 1792483546093
+     "t": 1792555572870
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/procurement.css",
-     "t": 1792483546094
+     "t": 1792555572872
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/carrier-rate-card.css",
-     "t": 1792483546094
+     "t": 1792555572872
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-regional-details.css",
-     "t": 1792483546094
+     "t": 1792555572872
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/global-logistics-map.css",
-     "t": 1792483546095
+     "t": 1792555572873
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/automation-schedule.css",
-     "t": 1792483546095
+     "t": 1792555572873
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fx-rate-book.css",
-     "t": 1792483546095
+     "t": 1792555572873
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/site-priority.css",
-     "t": 1792483546096
+     "t": 1792555572874
     },
     {
      "kind": "static",
      "path": "/assets/css/product-strategy-board.css",
-     "t": 1792483546096
+     "t": 1792555572875
     },
     {
      "kind": "static",
      "path": "/assets/img/logo_1024_1024-removebg_2.png",
-     "t": 1792483546097
+     "t": 1792555572876
     },
     {
      "kind": "static",
      "path": "/assets/js/core/namespace.js",
-     "t": 1792483546098
+     "t": 1792555572876
     },
     {
      "kind": "static",
      "path": "/assets/js/core/lifecycle.js",
-     "t": 1792483546106
+     "t": 1792555572885
     },
     {
      "kind": "static",
      "path": "/assets/js/core/state.js",
-     "t": 1792483546106
+     "t": 1792555572885
     },
     {
      "kind": "static",
      "path": "/assets/js/core/partial-loader.js",
-     "t": 1792483546111
+     "t": 1792555572890
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/home.js",
-     "t": 1792483546111
+     "t": 1792555572890
     },
     {
      "kind": "static",
      "path": "/assets/js/core/script-loader.js",
-     "t": 1792483546112
+     "t": 1792555572890
     },
     {
      "kind": "static",
      "path": "/assets/js/core/deferred-read.js",
-     "t": 1792483546113
+     "t": 1792555572890
     },
     {
      "kind": "static",
      "path": "/assets/js/core/sticky-header.js",
-     "t": 1792483546113
+     "t": 1792555572890
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/forecast-engine.js",
-     "t": 1792483546113
+     "t": 1792555572891
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/i18n.js",
-     "t": 1792483546114
+     "t": 1792555572892
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-repo-asset-manifest.js",
-     "t": 1792483546114
+     "t": 1792555572893
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-image-reference-policy.js",
-     "t": 1792483546114
+     "t": 1792555572893
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/sku-overrides.js",
-     "t": 1792483546115
+     "t": 1792555572893
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/data.js",
-     "t": 1792483546116
+     "t": 1792555572893
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scroll-sync.js",
-     "t": 1792483546117
+     "t": 1792555572893
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/template-export.js",
-     "t": 1792483546117
+     "t": 1792555572896
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/resizable-columns.js",
-     "t": 1792483546117
+     "t": 1792555572896
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/dual-layer-resize.js",
-     "t": 1792483546117
+     "t": 1792555572896
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/tab-rail.js",
-     "t": 1792483546117
+     "t": 1792555572896
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/multi-select-filter.js",
-     "t": 1792483546118
+     "t": 1792555572896
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/inventory-compat.js",
-     "t": 1792483546119
+     "t": 1792555572897
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/gap-recalc-transport.js",
-     "t": 1792483546119
+     "t": 1792555572899
     },
     {
      "kind": "static",
      "path": "/assets/js/core/scope-registry.js",
-     "t": 1792483546120
+     "t": 1792555572899
     },
     {
      "kind": "static",
      "path": "/assets/js/core/boot-read-arbiter.js",
-     "t": 1792483546120
+     "t": 1792555572899
     },
     {
      "kind": "static",
      "path": "/assets/js/core/method-registry.js",
-     "t": 1792483546120
+     "t": 1792555572899
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-active-route-classification.js",
-     "t": 1792483546120
+     "t": 1792555572899
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scope-select-modal.js",
-     "t": 1792483546121
+     "t": 1792555572900
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-factory-site-allocation.js",
-     "t": 1792483546121
+     "t": 1792555572901
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-forecast-share.js",
-     "t": 1792483546122
+     "t": 1792555572901
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-calculations.js",
-     "t": 1792483546122
+     "t": 1792555572902
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-planning-demand.js",
-     "t": 1792483546122
+     "t": 1792555572902
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-recommendation-audit.js",
-     "t": 1792483546122
+     "t": 1792555572902
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-recommendation.js",
-     "t": 1792483546123
+     "t": 1792555572902
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-execution-handoff.js",
-     "t": 1792483546124
+     "t": 1792555572902
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-transport.js",
-     "t": 1792483546124
+     "t": 1792555572903
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-data-access.js",
-     "t": 1792483546125
+     "t": 1792555572904
     },
     {
      "kind": "static",
      "path": "/assets/js/api/operation-system-db-api.js",
-     "t": 1792483546126
+     "t": 1792555572904
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-loading-state.js",
-     "t": 1792483546126
+     "t": 1792555572904
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-api-foundation.js",
-     "t": 1792483546126
+     "t": 1792555572904
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-workspace.js",
-     "t": 1792483546126
+     "t": 1792555572905
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-adapter.js",
-     "t": 1792483546126
+     "t": 1792555572905
     },
     {
      "kind": "static",
      "path": "/assets/js/data/replenishment-mock-data.js",
-     "t": 1792483546128
+     "t": 1792555572906
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/factory-stock.js",
-     "t": 1792483546128
+     "t": 1792555572906
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-ops-preview.js",
-     "t": 1792483546129
+     "t": 1792555572906
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-inbound.js",
-     "t": 1792483546129
+     "t": 1792555572907
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-outbound.js",
-     "t": 1792483546129
+     "t": 1792555572908
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fc-summary.js",
-     "t": 1792483546130
+     "t": 1792555572908
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/forecast.js",
-     "t": 1792483546130
+     "t": 1792555572909
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order.js",
-     "t": 1792483546131
+     "t": 1792555572909
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-details.js",
-     "t": 1792483546131
+     "t": 1792555572909
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-plan.js",
-     "t": 1792483546132
+     "t": 1792555572912
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-history.js",
-     "t": 1792483546132
+     "t": 1792555572912
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/supplychain.js",
-     "t": 1792483546133
+     "t": 1792555572913
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-handbook.js",
-     "t": 1792483546134
+     "t": 1792555572913
     },
     {
      "kind": "static",
      "path": "/assets/js/i18n/sku-handbook.js",
-     "t": 1792483546134
+     "t": 1792555572914
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/campaign-risk.js",
-     "t": 1792483546135
+     "t": 1792555572915
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order-draft.js",
-     "t": 1792483546135
+     "t": 1792555572916
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-overview.js",
-     "t": 1792483546135
+     "t": 1792555572916
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-list.js",
-     "t": 1792483546136
+     "t": 1792555572916
     },
     {
      "kind": "static",
      "path": "/assets/js/product-strategy/psb-views.js",
-     "t": 1792483546136
+     "t": 1792555572917
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-pricing.js",
-     "t": 1792483546136
+     "t": 1792555572919
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-details.js",
-     "t": 1792483546138
+     "t": 1792555572919
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-land-110m.js",
-     "t": 1792483546138
+     "t": 1792555572920
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/automation-schedule.js",
-     "t": 1792483546139
+     "t": 1792555572920
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fx-rate-book.js",
-     "t": 1792483546139
+     "t": 1792555572920
     },
     {
      "kind": "static",
      "path": "/assets/js/app.js",
-     "t": 1792483546139
+     "t": 1792555572923
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/home.html",
-     "t": 1792483546162
+     "t": 1792555572950
     },
     {
      "kind": "api",
      "action": "getClientCapabilities",
      "table": "",
-     "t": 1792483546182
+     "t": 1792555572970
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/global-logistics-map.html",
-     "t": 1792483546867
+     "t": 1792555573666
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-countries-110m.js",
-     "t": 1792483546868
+     "t": 1792555573666
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-names-zh-hant.js",
-     "t": 1792483546868
+     "t": 1792555573666
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-display-aliases-zh-tw.js",
-     "t": 1792483546868
+     "t": 1792555573666
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-admin1-display-names-zh-tw.js",
-     "t": 1792483546868
+     "t": 1792555573667
     },
     {
      "kind": "static",
      "path": "/assets/js/core/geo-name-resolver.js",
-     "t": 1792483546870
+     "t": 1792555573668
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-geo-topology.js",
-     "t": 1792483546870
+     "t": 1792555573669
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-globe.js",
-     "t": 1792483546870
+     "t": 1792555573669
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/global-logistics-map.js",
-     "t": 1792483546870
+     "t": 1792555573669
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/site-priority.html",
-     "t": 1792483547839
+     "t": 1792555574642
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-country-identity.js",
-     "t": 1792483547840
+     "t": 1792555574642
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/site-priority.js",
-     "t": 1792483547840
+     "t": 1792555574642
     },
     {
      "kind": "api",
      "action": "getTable",
      "table": "marketplaces",
-     "t": 1792483547845
+     "t": 1792555574647
     },
     {
      "kind": "static",
      "path": "/favicon.ico",
-     "t": 1792483552047
+     "t": 1792555578777
     }
    ],
    "summary": {
-    "samples": 54,
-    "markupArrivedAt": 3917,
-    "leftAt": 1764,
+    "samples": 53,
+    "markupArrivedAt": 3856,
+    "leftAt": 1795,
     "markupArrivedAfterLeaving": true,
     "boots": 0,
     "renders": 0,
@@ -5052,7 +4978,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "boot",
-     "t": 810,
+     "t": 787,
      "navHow": "click"
     },
     {
@@ -5066,7 +4992,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-0",
-     "t": 814
+     "t": 789
     },
     {
      "navGen": 0,
@@ -5102,7 +5028,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-1",
-     "t": 917
+     "t": 896
     },
     {
      "navGen": 0,
@@ -5138,7 +5064,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-2",
-     "t": 1026
+     "t": 1004
     },
     {
      "navGen": 0,
@@ -5174,7 +5100,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-3",
-     "t": 1133
+     "t": 1110
     },
     {
      "navGen": 0,
@@ -5210,7 +5136,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-4",
-     "t": 1241
+     "t": 1219
     },
     {
      "navGen": 0,
@@ -5246,7 +5172,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-5",
-     "t": 1349
+     "t": 1327
     },
     {
      "navGen": 0,
@@ -5282,7 +5208,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-6",
-     "t": 1458
+     "t": 1436
     },
     {
      "navGen": 0,
@@ -5318,7 +5244,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-7",
-     "t": 1565
+     "t": 1544
     },
     {
      "navGen": 0,
@@ -5354,7 +5280,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-8",
-     "t": 1674
+     "t": 1653
     },
     {
      "navGen": 0,
@@ -5390,7 +5316,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-9",
-     "t": 1783
+     "t": 1761
     },
     {
      "navGen": 0,
@@ -5426,7 +5352,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "pre-leave",
-     "t": 1783,
+     "t": 1761,
      "leaveHow": "click"
     },
     {
@@ -5463,7 +5389,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-0",
-     "t": 1784
+     "t": 1761
     },
     {
      "navGen": 1,
@@ -5501,7 +5427,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-1",
-     "t": 1890
+     "t": 1869
     },
     {
      "navGen": 1,
@@ -5539,7 +5465,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-2",
-     "t": 1999
+     "t": 1976
     },
     {
      "navGen": 1,
@@ -5577,7 +5503,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-3",
-     "t": 2108
+     "t": 2083
     },
     {
      "navGen": 1,
@@ -5615,7 +5541,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-4",
-     "t": 2215
+     "t": 2191
     },
     {
      "navGen": 1,
@@ -5653,7 +5579,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-5",
-     "t": 2323
+     "t": 2299
     },
     {
      "navGen": 1,
@@ -5691,7 +5617,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-6",
-     "t": 2430
+     "t": 2406
     },
     {
      "navGen": 1,
@@ -5729,7 +5655,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-7",
-     "t": 2538
+     "t": 2515
     },
     {
      "navGen": 1,
@@ -5767,7 +5693,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "pre-return",
-     "t": 2538,
+     "t": 2515,
      "returnHow": "click"
     },
     {
@@ -5804,7 +5730,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-0",
-     "t": 2539
+     "t": 2516
     },
     {
      "navGen": 1,
@@ -5840,7 +5766,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-1",
-     "t": 2646
+     "t": 2616
     },
     {
      "navGen": 1,
@@ -5876,7 +5802,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-2",
-     "t": 2755
+     "t": 2731
     },
     {
      "navGen": 1,
@@ -5912,7 +5838,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-3",
-     "t": 2863
+     "t": 2832
     },
     {
      "navGen": 1,
@@ -5948,7 +5874,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-4",
-     "t": 2970
+     "t": 2934
     },
     {
      "navGen": 1,
@@ -5984,7 +5910,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-5",
-     "t": 3081
+     "t": 3042
     },
     {
      "navGen": 1,
@@ -6020,7 +5946,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-6",
-     "t": 3187
+     "t": 3150
     },
     {
      "navGen": 1,
@@ -6056,7 +5982,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-7",
-     "t": 3296
+     "t": 3257
     },
     {
      "navGen": 1,
@@ -6092,7 +6018,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-8",
-     "t": 3404
+     "t": 3364
     },
     {
      "navGen": 1,
@@ -6128,7 +6054,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-9",
-     "t": 3512
+     "t": 3473
     },
     {
      "navGen": 1,
@@ -6164,7 +6090,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-10",
-     "t": 3620
+     "t": 3583
     },
     {
      "navGen": 1,
@@ -6200,19 +6126,19 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-11",
-     "t": 3728
+     "t": 3691
     },
     {
      "navGen": 1,
-     "renders": 1,
-     "boots": 1,
+     "renders": 0,
+     "boots": 0,
      "attaches": 0,
      "detaches": 0,
      "globeCreates": 0,
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -6228,17 +6154,15 @@
      "dataReady": false,
      "shipments": 0,
      "lcCurrent": "global-logistics-map-section",
-     "lcActive": [
-      "global-logistics-map-section"
-     ],
+     "lcActive": [],
      "lcEpoch": 4,
      "txRequests": 2,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": true,
-     "mapBodyHtmlLen": 92,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
      "tag": "settle-12",
-     "t": 3839
+     "t": 3799
     },
     {
      "navGen": 1,
@@ -6276,7 +6200,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 92,
      "tag": "settle-13",
-     "t": 3944
+     "t": 3906
     },
     {
      "navGen": 1,
@@ -6314,7 +6238,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-14",
-     "t": 4551
+     "t": 4403
     },
     {
      "navGen": 1,
@@ -6332,8 +6256,8 @@
      "hostInDocument": true,
      "hostParentClass": "glm-globe-slot",
      "canvasPresent": true,
-     "canvasW": 615,
-     "canvasH": 718,
+     "canvasW": 611,
+     "canvasH": 713,
      "globeAlive": true,
      "globeInstanceId": 1,
      "globeError": "",
@@ -6352,7 +6276,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-15",
-     "t": 5429
+     "t": 5218
     },
     {
      "navGen": 1,
@@ -6390,7 +6314,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-16",
-     "t": 5536
+     "t": 5321
     },
     {
      "navGen": 1,
@@ -6428,7 +6352,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-17",
-     "t": 5644
+     "t": 5429
     },
     {
      "navGen": 1,
@@ -6466,7 +6390,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-18",
-     "t": 5752
+     "t": 5537
     },
     {
      "navGen": 1,
@@ -6504,7 +6428,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-19",
-     "t": 5859
+     "t": 5645
     },
     {
      "navGen": 1,
@@ -6542,7 +6466,83 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-20",
-     "t": 5967
+     "t": 5756
+    },
+    {
+     "navGen": 1,
+     "renders": 2,
+     "boots": 1,
+     "attaches": 1,
+     "detaches": 0,
+     "globeCreates": 1,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": true,
+     "hostInDocument": true,
+     "hostParentClass": "glm-globe-slot",
+     "canvasPresent": true,
+     "canvasW": 615,
+     "canvasH": 718,
+     "globeAlive": true,
+     "globeInstanceId": 1,
+     "globeError": "",
+     "loading": false,
+     "error": "",
+     "dataReady": true,
+     "shipments": 8,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [
+      "global-logistics-map-section"
+     ],
+     "lcEpoch": 4,
+     "txRequests": 3,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": true,
+     "mapBodyHtmlLen": 13141,
+     "tag": "settle-21",
+     "t": 5864
+    },
+    {
+     "navGen": 1,
+     "renders": 2,
+     "boots": 1,
+     "attaches": 1,
+     "detaches": 0,
+     "globeCreates": 1,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": true,
+     "hostInDocument": true,
+     "hostParentClass": "glm-globe-slot",
+     "canvasPresent": true,
+     "canvasW": 615,
+     "canvasH": 718,
+     "globeAlive": true,
+     "globeInstanceId": 1,
+     "globeError": "",
+     "loading": false,
+     "error": "",
+     "dataReady": true,
+     "shipments": 8,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [
+      "global-logistics-map-section"
+     ],
+     "lcEpoch": 4,
+     "txRequests": 3,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": true,
+     "mapBodyHtmlLen": 13141,
+     "tag": "settle-22",
+     "t": 5972
     },
     {
      "navGen": 1,
@@ -6580,587 +6580,587 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "final",
-     "t": 5968
+     "t": 5972
     }
    ],
    "marks": [
     {
      "name": "nav-map",
-     "t": 810
+     "t": 787
     },
     {
      "name": "leave",
-     "t": 1783
+     "t": 1761
     },
     {
      "name": "return",
-     "t": 2538
+     "t": 2515
     }
    ],
    "requestLog": [
     {
      "kind": "static",
      "path": "/assets/css/base.css",
-     "t": 1792483636194
+     "t": 1792555662657
     },
     {
      "kind": "static",
      "path": "/assets/css/components.css",
-     "t": 1792483636195
+     "t": 1792555662657
     },
     {
      "kind": "static",
      "path": "/assets/css/layout.css",
-     "t": 1792483636197
+     "t": 1792555662659
     },
     {
      "kind": "static",
      "path": "/assets/css/responsive-foundation.css",
-     "t": 1792483636198
+     "t": 1792555662659
     },
     {
      "kind": "static",
      "path": "/assets/css/core/km-sticky-header.css",
-     "t": 1792483636198
+     "t": 1792555662660
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/home.css",
-     "t": 1792483636198
+     "t": 1792555662660
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/inventory-replenishment.css",
-     "t": 1792483636198
+     "t": 1792555662662
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/factory-stock.css",
-     "t": 1792483636200
+     "t": 1792555662662
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-ops.css",
-     "t": 1792483636200
+     "t": 1792555662663
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-stock.css",
-     "t": 1792483636201
+     "t": 1792555662663
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fc-overview.css",
-     "t": 1792483636201
+     "t": 1792555662663
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/request-order.css",
-     "t": 1792483636201
+     "t": 1792555662664
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-details.css",
-     "t": 1792483636202
+     "t": 1792555662664
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-plan.css",
-     "t": 1792483636202
+     "t": 1792555662664
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-history.css",
-     "t": 1792483636202
+     "t": 1792555662665
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/supply-chain-canvas.css",
-     "t": 1792483636203
+     "t": 1792555662665
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-handbook.css",
-     "t": 1792483636203
+     "t": 1792555662666
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/campaign-risk.css",
-     "t": 1792483636203
+     "t": 1792555662666
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/procurement.css",
-     "t": 1792483636205
+     "t": 1792555662666
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/carrier-rate-card.css",
-     "t": 1792483636206
+     "t": 1792555662666
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-regional-details.css",
-     "t": 1792483636206
+     "t": 1792555662667
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/global-logistics-map.css",
-     "t": 1792483636207
+     "t": 1792555662667
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/automation-schedule.css",
-     "t": 1792483636208
+     "t": 1792555662668
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fx-rate-book.css",
-     "t": 1792483636208
+     "t": 1792555662668
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/site-priority.css",
-     "t": 1792483636209
+     "t": 1792555662668
     },
     {
      "kind": "static",
      "path": "/assets/css/product-strategy-board.css",
-     "t": 1792483636209
+     "t": 1792555662668
     },
     {
      "kind": "static",
      "path": "/assets/img/logo_1024_1024-removebg_2.png",
-     "t": 1792483636210
+     "t": 1792555662668
     },
     {
      "kind": "static",
      "path": "/assets/js/core/namespace.js",
-     "t": 1792483636211
+     "t": 1792555662668
     },
     {
      "kind": "static",
      "path": "/assets/js/core/lifecycle.js",
-     "t": 1792483636222
+     "t": 1792555662679
     },
     {
      "kind": "static",
      "path": "/assets/js/core/state.js",
-     "t": 1792483636222
+     "t": 1792555662679
     },
     {
      "kind": "static",
      "path": "/assets/js/core/partial-loader.js",
-     "t": 1792483636228
+     "t": 1792555662684
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/home.js",
-     "t": 1792483636229
+     "t": 1792555662684
     },
     {
      "kind": "static",
      "path": "/assets/js/core/script-loader.js",
-     "t": 1792483636229
+     "t": 1792555662685
     },
     {
      "kind": "static",
      "path": "/assets/js/core/deferred-read.js",
-     "t": 1792483636229
+     "t": 1792555662685
     },
     {
      "kind": "static",
      "path": "/assets/js/core/sticky-header.js",
-     "t": 1792483636230
+     "t": 1792555662685
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/forecast-engine.js",
-     "t": 1792483636230
+     "t": 1792555662685
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/i18n.js",
-     "t": 1792483636232
+     "t": 1792555662686
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-repo-asset-manifest.js",
-     "t": 1792483636233
+     "t": 1792555662686
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-image-reference-policy.js",
-     "t": 1792483636233
+     "t": 1792555662687
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/sku-overrides.js",
-     "t": 1792483636233
+     "t": 1792555662687
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/data.js",
-     "t": 1792483636234
+     "t": 1792555662687
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scroll-sync.js",
-     "t": 1792483636234
+     "t": 1792555662687
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/template-export.js",
-     "t": 1792483636234
+     "t": 1792555662688
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/resizable-columns.js",
-     "t": 1792483636237
+     "t": 1792555662689
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/dual-layer-resize.js",
-     "t": 1792483636237
+     "t": 1792555662689
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/tab-rail.js",
-     "t": 1792483636237
+     "t": 1792555662689
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/multi-select-filter.js",
-     "t": 1792483636237
+     "t": 1792555662689
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/inventory-compat.js",
-     "t": 1792483636237
+     "t": 1792555662689
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/gap-recalc-transport.js",
-     "t": 1792483636237
+     "t": 1792555662692
     },
     {
      "kind": "static",
      "path": "/assets/js/core/scope-registry.js",
-     "t": 1792483636240
+     "t": 1792555662692
     },
     {
      "kind": "static",
      "path": "/assets/js/core/boot-read-arbiter.js",
-     "t": 1792483636240
+     "t": 1792555662692
     },
     {
      "kind": "static",
      "path": "/assets/js/core/method-registry.js",
-     "t": 1792483636240
+     "t": 1792555662692
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-active-route-classification.js",
-     "t": 1792483636240
+     "t": 1792555662693
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scope-select-modal.js",
-     "t": 1792483636240
+     "t": 1792555662693
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-factory-site-allocation.js",
-     "t": 1792483636240
+     "t": 1792555662695
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-forecast-share.js",
-     "t": 1792483636242
+     "t": 1792555662695
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-calculations.js",
-     "t": 1792483636243
+     "t": 1792555662695
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-planning-demand.js",
-     "t": 1792483636243
+     "t": 1792555662695
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-recommendation-audit.js",
-     "t": 1792483636243
+     "t": 1792555662695
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-recommendation.js",
-     "t": 1792483636243
+     "t": 1792555662695
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-execution-handoff.js",
-     "t": 1792483636243
+     "t": 1792555662697
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-transport.js",
-     "t": 1792483636245
+     "t": 1792555662697
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-data-access.js",
-     "t": 1792483636246
+     "t": 1792555662698
     },
     {
      "kind": "static",
      "path": "/assets/js/api/operation-system-db-api.js",
-     "t": 1792483636246
+     "t": 1792555662698
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-loading-state.js",
-     "t": 1792483636246
+     "t": 1792555662698
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-api-foundation.js",
-     "t": 1792483636246
+     "t": 1792555662698
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-workspace.js",
-     "t": 1792483636246
+     "t": 1792555662701
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-adapter.js",
-     "t": 1792483636249
+     "t": 1792555662701
     },
     {
      "kind": "static",
      "path": "/assets/js/data/replenishment-mock-data.js",
-     "t": 1792483636249
+     "t": 1792555662701
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/factory-stock.js",
-     "t": 1792483636249
+     "t": 1792555662701
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-ops-preview.js",
-     "t": 1792483636249
+     "t": 1792555662702
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-inbound.js",
-     "t": 1792483636249
+     "t": 1792555662702
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-outbound.js",
-     "t": 1792483636250
+     "t": 1792555662703
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fc-summary.js",
-     "t": 1792483636251
+     "t": 1792555662704
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/forecast.js",
-     "t": 1792483636251
+     "t": 1792555662704
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order.js",
-     "t": 1792483636252
+     "t": 1792555662704
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-details.js",
-     "t": 1792483636253
+     "t": 1792555662704
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-plan.js",
-     "t": 1792483636253
+     "t": 1792555662705
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-history.js",
-     "t": 1792483636253
+     "t": 1792555662706
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/supplychain.js",
-     "t": 1792483636253
+     "t": 1792555662708
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-handbook.js",
-     "t": 1792483636255
+     "t": 1792555662709
     },
     {
      "kind": "static",
      "path": "/assets/js/i18n/sku-handbook.js",
-     "t": 1792483636256
+     "t": 1792555662709
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/campaign-risk.js",
-     "t": 1792483636256
+     "t": 1792555662710
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order-draft.js",
-     "t": 1792483636256
+     "t": 1792555662710
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-overview.js",
-     "t": 1792483636257
+     "t": 1792555662710
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-list.js",
-     "t": 1792483636261
+     "t": 1792555662713
     },
     {
      "kind": "static",
      "path": "/assets/js/product-strategy/psb-views.js",
-     "t": 1792483636261
+     "t": 1792555662714
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-pricing.js",
-     "t": 1792483636262
+     "t": 1792555662714
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-details.js",
-     "t": 1792483636262
+     "t": 1792555662715
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-land-110m.js",
-     "t": 1792483636262
+     "t": 1792555662715
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/automation-schedule.js",
-     "t": 1792483636264
+     "t": 1792555662715
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fx-rate-book.js",
-     "t": 1792483636264
+     "t": 1792555662716
     },
     {
      "kind": "static",
      "path": "/assets/js/app.js",
-     "t": 1792483636265
+     "t": 1792555662716
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/home.html",
-     "t": 1792483636286
+     "t": 1792555662729
     },
     {
      "kind": "api",
      "action": "getClientCapabilities",
      "table": "",
-     "t": 1792483636308
+     "t": 1792555662752
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/global-logistics-map.html",
-     "t": 1792483636993
+     "t": 1792555663435
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-countries-110m.js",
-     "t": 1792483636994
+     "t": 1792555663436
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-names-zh-hant.js",
-     "t": 1792483636995
+     "t": 1792555663436
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-display-aliases-zh-tw.js",
-     "t": 1792483636995
+     "t": 1792555663436
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-admin1-display-names-zh-tw.js",
-     "t": 1792483636996
+     "t": 1792555663436
     },
     {
      "kind": "static",
      "path": "/assets/js/core/geo-name-resolver.js",
-     "t": 1792483636999
+     "t": 1792555663438
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-geo-topology.js",
-     "t": 1792483637000
+     "t": 1792555663438
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-globe.js",
-     "t": 1792483637001
+     "t": 1792555663438
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/global-logistics-map.js",
-     "t": 1792483637001
+     "t": 1792555663438
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/site-priority.html",
-     "t": 1792483637964
+     "t": 1792555664408
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-country-identity.js",
-     "t": 1792483637965
+     "t": 1792555664409
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/site-priority.js",
-     "t": 1792483637965
+     "t": 1792555664409
     },
     {
      "kind": "api",
      "action": "getTable",
      "table": "marketplaces",
-     "t": 1792483637970
+     "t": 1792555664413
     },
     {
      "kind": "api",
      "action": "shipment.workspace.get",
      "table": "",
-     "t": 1792483640007
+     "t": 1792555666453
     },
     {
      "kind": "static",
      "path": "/assets/img/earth/earth-albedo-8192.jpg",
-     "t": 1792483640690
+     "t": 1792555667014
     },
     {
      "kind": "static",
      "path": "/favicon.ico",
-     "t": 1792483642154
+     "t": 1792555668629
     }
    ],
    "summary": {
-    "samples": 43,
-    "markupArrivedAt": 3839,
-    "leftAt": 1783,
+    "samples": 45,
+    "markupArrivedAt": 3906,
+    "leftAt": 1761,
     "markupArrivedAfterLeaving": true,
     "boots": 1,
     "renders": 2,
@@ -7184,8 +7184,8 @@
   "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
   "assets/js/core/lifecycle.js": "2dba0e3231523f09",
   "assets/js/core/partial-loader.js": "a08d727035577e37",
-  "assets/js/app.js": "8165008bb74a5bd9",
-  "index.html": "ac2dad3e4678dea0",
+  "assets/js/app.js": "bf7ce29911468672",
+  "index.html": "b295efa32fd7ad8b",
   "assets/tests/_cp2m-r4r2-map-mount-runner.js": "2dcc4058fbe82efd",
   "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c"
  }

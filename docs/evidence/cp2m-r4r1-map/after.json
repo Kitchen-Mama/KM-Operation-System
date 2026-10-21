@@ -5,13 +5,13 @@
   {
    "noDiag": true,
    "tag": "boot",
-   "t": 795,
+   "t": 815,
    "navHow": "click"
   },
   {
    "noDiag": true,
    "tag": "first-load-0",
-   "t": 797
+   "t": 817
   },
   {
    "navGen": 0,
@@ -39,7 +39,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-1",
-   "t": 921
+   "t": 937
   },
   {
    "navGen": 0,
@@ -67,7 +67,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-2",
-   "t": 1045
+   "t": 1062
   },
   {
    "navGen": 0,
@@ -95,7 +95,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-3",
-   "t": 1170
+   "t": 1187
   },
   {
    "navGen": 0,
@@ -123,7 +123,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-4",
-   "t": 1294
+   "t": 1312
   },
   {
    "navGen": 0,
@@ -151,7 +151,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-5",
-   "t": 1417
+   "t": 1437
   },
   {
    "navGen": 0,
@@ -179,7 +179,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-6",
-   "t": 1542
+   "t": 1560
   },
   {
    "navGen": 0,
@@ -207,7 +207,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-7",
-   "t": 1665
+   "t": 1684
   },
   {
    "navGen": 0,
@@ -235,7 +235,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-8",
-   "t": 1787
+   "t": 1822
   },
   {
    "navGen": 0,
@@ -263,7 +263,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-9",
-   "t": 1911
+   "t": 1946
   },
   {
    "navGen": 0,
@@ -291,7 +291,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-10",
-   "t": 2033
+   "t": 2068
   },
   {
    "navGen": 0,
@@ -319,7 +319,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-11",
-   "t": 2156
+   "t": 2192
   },
   {
    "navGen": 0,
@@ -347,7 +347,7 @@
    "dataReady": false,
    "shipments": 0,
    "tag": "first-load-12",
-   "t": 2280
+   "t": 2313
   },
   {
    "navGen": 0,
@@ -375,7 +375,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-13",
-   "t": 3259
+   "t": 2755
   },
   {
    "navGen": 0,
@@ -393,8 +393,8 @@
    "hostInDocument": true,
    "hostParentClass": "glm-globe-slot",
    "canvasPresent": true,
-   "canvasW": 615,
-   "canvasH": 718,
+   "canvasW": 611,
+   "canvasH": 713,
    "globeAlive": true,
    "globeInstanceId": 1,
    "globeError": "",
@@ -403,7 +403,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-14",
-   "t": 3880
+   "t": 3734
   },
   {
    "navGen": 0,
@@ -431,7 +431,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-15",
-   "t": 4011
+   "t": 3869
   },
   {
    "navGen": 0,
@@ -459,7 +459,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-16",
-   "t": 4136
+   "t": 3995
   },
   {
    "navGen": 0,
@@ -487,7 +487,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-17",
-   "t": 4259
+   "t": 4118
   },
   {
    "navGen": 0,
@@ -515,7 +515,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-18",
-   "t": 4383
+   "t": 4242
   },
   {
    "navGen": 0,
@@ -543,7 +543,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-19",
-   "t": 4506
+   "t": 4365
   },
   {
    "navGen": 0,
@@ -571,7 +571,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-20",
-   "t": 4630
+   "t": 4490
   },
   {
    "navGen": 0,
@@ -599,7 +599,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-21",
-   "t": 4754
+   "t": 4614
   },
   {
    "navGen": 0,
@@ -627,7 +627,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-22",
-   "t": 4878
+   "t": 4739
   },
   {
    "navGen": 0,
@@ -655,7 +655,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-23",
-   "t": 5001
+   "t": 4863
   },
   {
    "navGen": 0,
@@ -683,7 +683,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-24",
-   "t": 5125
+   "t": 4987
   },
   {
    "navGen": 0,
@@ -711,7 +711,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-25",
-   "t": 5248
+   "t": 5111
   },
   {
    "navGen": 0,
@@ -739,7 +739,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-26",
-   "t": 5372
+   "t": 5235
   },
   {
    "navGen": 0,
@@ -767,7 +767,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-27",
-   "t": 5495
+   "t": 5357
   },
   {
    "navGen": 0,
@@ -795,7 +795,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-28",
-   "t": 5617
+   "t": 5480
   },
   {
    "navGen": 0,
@@ -823,7 +823,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-29",
-   "t": 5740
+   "t": 5604
   },
   {
    "navGen": 0,
@@ -851,7 +851,35 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-load-30",
-   "t": 5863
+   "t": 5728
+  },
+  {
+   "navGen": 0,
+   "renders": 2,
+   "boots": 1,
+   "attaches": 1,
+   "detaches": 0,
+   "globeCreates": 1,
+   "globeDestroys": 0,
+   "contextLost": 0,
+   "staleRendersBlocked": 0,
+   "staleMountsBlocked": 0,
+   "teardownsAvoided": 0,
+   "hostExists": true,
+   "hostInDocument": true,
+   "hostParentClass": "glm-globe-slot",
+   "canvasPresent": true,
+   "canvasW": 615,
+   "canvasH": 718,
+   "globeAlive": true,
+   "globeInstanceId": 1,
+   "globeError": "",
+   "loading": false,
+   "error": "",
+   "dataReady": true,
+   "shipments": 8,
+   "tag": "first-load-31",
+   "t": 5853
   },
   {
    "navGen": 0,
@@ -879,7 +907,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "first-settled",
-   "t": 5863
+   "t": 5853
   },
   {
    "navGen": 0,
@@ -907,7 +935,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "pre-refresh",
-   "t": 5864,
+   "t": 5853,
    "refreshFound": true
   },
   {
@@ -936,7 +964,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-0",
-   "t": 5865
+   "t": 5854
   },
   {
    "navGen": 0,
@@ -964,7 +992,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-1",
-   "t": 6000
+   "t": 5976
   },
   {
    "navGen": 0,
@@ -992,7 +1020,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-2",
-   "t": 6124
+   "t": 6102
   },
   {
    "navGen": 0,
@@ -1020,7 +1048,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-3",
-   "t": 6247
+   "t": 6225
   },
   {
    "navGen": 0,
@@ -1048,7 +1076,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-4",
-   "t": 6370
+   "t": 6350
   },
   {
    "navGen": 0,
@@ -1076,7 +1104,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-5",
-   "t": 6493
+   "t": 6475
   },
   {
    "navGen": 0,
@@ -1104,7 +1132,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-6",
-   "t": 6617
+   "t": 6598
   },
   {
    "navGen": 0,
@@ -1132,7 +1160,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-7",
-   "t": 6741
+   "t": 6721
   },
   {
    "navGen": 0,
@@ -1160,7 +1188,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-8",
-   "t": 6864
+   "t": 6845
   },
   {
    "navGen": 0,
@@ -1188,7 +1216,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-9",
-   "t": 6987
+   "t": 6969
   },
   {
    "navGen": 0,
@@ -1216,7 +1244,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-10",
-   "t": 7111
+   "t": 7094
   },
   {
    "navGen": 0,
@@ -1244,7 +1272,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-11",
-   "t": 7235
+   "t": 7217
   },
   {
    "navGen": 0,
@@ -1272,7 +1300,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-12",
-   "t": 7358
+   "t": 7342
   },
   {
    "navGen": 0,
@@ -1291,7 +1319,7 @@
    "hostParentClass": "glm-globe-slot",
    "canvasPresent": true,
    "canvasW": 613,
-   "canvasH": 715,
+   "canvasH": 716,
    "globeAlive": true,
    "globeInstanceId": 1,
    "globeError": "",
@@ -1300,7 +1328,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-13",
-   "t": 7482
+   "t": 7464
   },
   {
    "navGen": 0,
@@ -1328,7 +1356,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-14",
-   "t": 7605
+   "t": 7590
   },
   {
    "navGen": 0,
@@ -1356,7 +1384,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-15",
-   "t": 7728
+   "t": 7711
   },
   {
    "navGen": 0,
@@ -1384,7 +1412,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-16",
-   "t": 7851
+   "t": 7835
   },
   {
    "navGen": 0,
@@ -1412,7 +1440,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-17",
-   "t": 7976
+   "t": 7959
   },
   {
    "navGen": 0,
@@ -1440,7 +1468,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-18",
-   "t": 8099
+   "t": 8083
   },
   {
    "navGen": 0,
@@ -1468,7 +1496,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-19",
-   "t": 8221
+   "t": 8207
   },
   {
    "navGen": 0,
@@ -1496,7 +1524,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-20",
-   "t": 8345
+   "t": 8331
   },
   {
    "navGen": 0,
@@ -1524,7 +1552,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-21",
-   "t": 8470
+   "t": 8453
   },
   {
    "navGen": 0,
@@ -1552,7 +1580,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-22",
-   "t": 8594
+   "t": 8577
   },
   {
    "navGen": 0,
@@ -1580,7 +1608,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-23",
-   "t": 8717
+   "t": 8701
   },
   {
    "navGen": 0,
@@ -1608,7 +1636,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-24",
-   "t": 8840
+   "t": 8826
   },
   {
    "navGen": 0,
@@ -1636,7 +1664,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-25",
-   "t": 8964
+   "t": 8949
   },
   {
    "navGen": 0,
@@ -1664,7 +1692,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-26",
-   "t": 9087
+   "t": 9072
   },
   {
    "navGen": 0,
@@ -1692,7 +1720,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-27",
-   "t": 9211
+   "t": 9197
   },
   {
    "navGen": 0,
@@ -1720,7 +1748,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-28",
-   "t": 9334
+   "t": 9320
   },
   {
    "navGen": 0,
@@ -1748,7 +1776,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-29",
-   "t": 9458
+   "t": 9444
   },
   {
    "navGen": 0,
@@ -1776,7 +1804,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-30",
-   "t": 9582
+   "t": 9569
   },
   {
    "navGen": 0,
@@ -1804,7 +1832,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-31",
-   "t": 9707
+   "t": 9692
   },
   {
    "navGen": 0,
@@ -1832,7 +1860,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-32",
-   "t": 9829
+   "t": 9817
   },
   {
    "navGen": 0,
@@ -1860,7 +1888,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-33",
-   "t": 9953
+   "t": 9940
   },
   {
    "navGen": 0,
@@ -1888,7 +1916,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-34",
-   "t": 10077
+   "t": 10065
   },
   {
    "navGen": 0,
@@ -1916,7 +1944,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-35",
-   "t": 10201
+   "t": 10192
   },
   {
    "navGen": 0,
@@ -1944,7 +1972,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-36",
-   "t": 10326
+   "t": 10316
   },
   {
    "navGen": 0,
@@ -1972,7 +2000,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-37",
-   "t": 10450
+   "t": 10439
   },
   {
    "navGen": 0,
@@ -2000,7 +2028,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-38",
-   "t": 10573
+   "t": 10563
   },
   {
    "navGen": 0,
@@ -2028,7 +2056,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-39",
-   "t": 10696
+   "t": 10688
   },
   {
    "navGen": 0,
@@ -2056,7 +2084,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-40",
-   "t": 10819
+   "t": 10814
   },
   {
    "navGen": 0,
@@ -2084,7 +2112,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-41",
-   "t": 10945
+   "t": 10937
   },
   {
    "navGen": 0,
@@ -2112,7 +2140,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "refresh-settled",
-   "t": 10945
+   "t": 10937
   },
   {
    "navGen": 1,
@@ -2140,7 +2168,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "away",
-   "t": 11856
+   "t": 11854
   },
   {
    "navGen": 1,
@@ -2168,7 +2196,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-0",
-   "t": 11857
+   "t": 11854
   },
   {
    "navGen": 1,
@@ -2196,7 +2224,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-1",
-   "t": 11980
+   "t": 11978
   },
   {
    "navGen": 1,
@@ -2224,7 +2252,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-2",
-   "t": 12102
+   "t": 12103
   },
   {
    "navGen": 1,
@@ -2252,7 +2280,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-3",
-   "t": 12228
+   "t": 12227
   },
   {
    "navGen": 1,
@@ -2280,7 +2308,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-4",
-   "t": 12353
+   "t": 12349
   },
   {
    "navGen": 1,
@@ -2308,7 +2336,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-5",
-   "t": 12478
+   "t": 12476
   },
   {
    "navGen": 1,
@@ -2336,7 +2364,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-6",
-   "t": 12600
+   "t": 12598
   },
   {
    "navGen": 1,
@@ -2364,7 +2392,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-7",
-   "t": 12725
+   "t": 12724
   },
   {
    "navGen": 1,
@@ -2392,7 +2420,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-8",
-   "t": 12850
+   "t": 12847
   },
   {
    "navGen": 1,
@@ -2420,7 +2448,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-9",
-   "t": 12973
+   "t": 12971
   },
   {
    "navGen": 1,
@@ -2448,7 +2476,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-10",
-   "t": 13095
+   "t": 13096
   },
   {
    "navGen": 1,
@@ -2476,7 +2504,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-11",
-   "t": 13218
+   "t": 13221
   },
   {
    "navGen": 1,
@@ -2504,7 +2532,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-12",
-   "t": 13342
+   "t": 13344
   },
   {
    "navGen": 1,
@@ -2532,7 +2560,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-13",
-   "t": 13465
+   "t": 13470
   },
   {
    "navGen": 1,
@@ -2560,7 +2588,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-14",
-   "t": 13588
+   "t": 13593
   },
   {
    "navGen": 1,
@@ -2588,7 +2616,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-15",
-   "t": 13712
+   "t": 13716
   },
   {
    "navGen": 1,
@@ -2616,7 +2644,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-16",
-   "t": 13836
+   "t": 13841
   },
   {
    "navGen": 1,
@@ -2644,7 +2672,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-17",
-   "t": 13961
+   "t": 13967
   },
   {
    "navGen": 1,
@@ -2672,7 +2700,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-18",
-   "t": 14084
+   "t": 14093
   },
   {
    "navGen": 1,
@@ -2700,7 +2728,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-19",
-   "t": 14210
+   "t": 14217
   },
   {
    "navGen": 1,
@@ -2728,7 +2756,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-20",
-   "t": 14334
+   "t": 14343
   },
   {
    "navGen": 1,
@@ -2756,7 +2784,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-21",
-   "t": 14457
+   "t": 14468
   },
   {
    "navGen": 1,
@@ -2784,7 +2812,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-22",
-   "t": 14580
+   "t": 14591
   },
   {
    "navGen": 1,
@@ -2812,7 +2840,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-23",
-   "t": 14703
+   "t": 14717
   },
   {
    "navGen": 1,
@@ -2840,7 +2868,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-24",
-   "t": 14826
+   "t": 14843
   },
   {
    "navGen": 1,
@@ -2868,7 +2896,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-25",
-   "t": 14949
+   "t": 14966
   },
   {
    "navGen": 1,
@@ -2896,7 +2924,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-26",
-   "t": 15073
+   "t": 15092
   },
   {
    "navGen": 1,
@@ -2924,7 +2952,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-27",
-   "t": 15196
+   "t": 15215
   },
   {
    "navGen": 1,
@@ -2952,7 +2980,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-28",
-   "t": 15319
+   "t": 15338
   },
   {
    "navGen": 1,
@@ -2980,7 +3008,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-29",
-   "t": 15443
+   "t": 15463
   },
   {
    "navGen": 1,
@@ -3008,7 +3036,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-30",
-   "t": 15566
+   "t": 15588
   },
   {
    "navGen": 1,
@@ -3036,7 +3064,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-31",
-   "t": 15689
+   "t": 15713
   },
   {
    "navGen": 1,
@@ -3064,7 +3092,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-32",
-   "t": 15811
+   "t": 15836
   },
   {
    "navGen": 1,
@@ -3092,7 +3120,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-33",
-   "t": 15936
+   "t": 15961
   },
   {
    "navGen": 1,
@@ -3120,7 +3148,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-34",
-   "t": 16060
+   "t": 16084
   },
   {
    "navGen": 1,
@@ -3148,7 +3176,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-35",
-   "t": 16184
+   "t": 16208
   },
   {
    "navGen": 1,
@@ -3176,7 +3204,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-36",
-   "t": 16306
+   "t": 16333
   },
   {
    "navGen": 1,
@@ -3204,7 +3232,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-37",
-   "t": 16431
+   "t": 16457
   },
   {
    "navGen": 1,
@@ -3232,7 +3260,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-38",
-   "t": 16555
+   "t": 16581
   },
   {
    "navGen": 1,
@@ -3260,7 +3288,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-39",
-   "t": 16679
+   "t": 16707
   },
   {
    "navGen": 1,
@@ -3288,7 +3316,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-40",
-   "t": 16802
+   "t": 16831
   },
   {
    "navGen": 1,
@@ -3316,7 +3344,7 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-41",
-   "t": 16928
+   "t": 16954
   },
   {
    "navGen": 1,
@@ -3344,20 +3372,20 @@
    "dataReady": true,
    "shipments": 8,
    "tag": "return-settled",
-   "t": 16928
+   "t": 16954
   }
  ],
- "capturedAt": "2026-10-20",
+ "capturedAt": "2026-10-21",
  "readDelayMs": 1500,
  "sources": {
   "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
   "assets/js/lib/km-globe.js": "f65e109bc3b91584",
-  "index.html": "ac2dad3e4678dea0",
+  "index.html": "b295efa32fd7ad8b",
   "assets/tests/_cp2m-r4r1-map-lifecycle-runner.js": "778d92fc69f9273a",
   "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c"
  },
  "summary": {
-  "samples": 121,
+  "samples": 122,
   "samplesWithoutCanvas": 14,
   "samplesHostDetached": 0,
   "maxGlobeInstanceId": 1,
