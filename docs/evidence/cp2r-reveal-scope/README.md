@@ -333,3 +333,35 @@ median of five is **129.1** and is unchanged by it, and pair 1 still improves by
 **The machine was NOT quiet, and this batch does not claim it was.** The Owner's own Chrome (~40
 processes) and the Codex, AWS and Adobe Node runtimes were running throughout; none was started by
 this round and none was stopped by it. No other process touched this repository during the twelve runs.
+
+---
+
+## FC1-R2 RE-TOOK IT AGAIN, BOTH ARMS — the fifteenth batch of this design
+
+FC1-R2 did not change `inventory-replenishment.js`. It changed `operation-system-db-api.js` — the FC
+Summary slice adapter now carries the server's `capped` flag — and §E1 pins that file
+(`got 0d0e9eef73b43111, want 20ba76100978f326`), so the fourteenth batch no longer described the build.
+
+Twelve runs on ONE build, 100 rows each, five expands each, **no fatals**, shipped page restored by bytes
+and verified against the HEAD blob (`22418e4a`).
+
+| row | unscoped | scoped | paired delta | improved in |
+|---|---:|---:|---:|---|
+| click → first paint | 78.7 ms | 77.0 ms | +4.3 ms | 2 of 6 |
+| click → full ready | 287.4 ms | 168.7 ms | **−110.3 ms** | **6 of 6** |
+| assembly in handler | 34.0 ms | 35.4 ms | +1.5 ms | 3 of 6 |
+| assembly after handler | 231.8 ms | 102.3 ms | **−129.8 ms** | **6 of 6** |
+| handler sync | 37.2 ms | 38.0 ms | +1.9 ms | 2 of 6 |
+
+The two load-bearing rows reproduce for the fifteenth time: **−129.8 / −110.3 ms, 6 of 6 and 6 of 6**.
+
+**Every absolute figure is about a third higher than batch fourteen, in both arms.** That is the machine,
+not the round: the arms moved together, which is exactly what interleaving inside each pair exists to
+absorb, and why batches are never pooled.
+
+**ONE outlier, in the UNSCOPED arm, kept.** 60 samples, median 225.8 ms, threshold 903.2 ms; `unscoped-6`
+read **968.9 ms** on its FIRST expand (`968.9, 327.3, 329.8, 364.3, 355.4`). Its median of five is 355.4
+and unchanged by it; pair 6 (−109.5 ms) is not the largest delta in the batch.
+
+The machine was not quiet (the Owner's browser and other runtimes were up), as in batch fourteen. No
+other process touched this repository during the twelve runs.

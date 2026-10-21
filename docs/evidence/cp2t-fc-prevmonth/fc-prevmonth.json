@@ -1,65 +1,61 @@
 {
   "round": "S8-B3-R3-CP2T P1",
   "what": "FC Regular builder, prevMonth: derived Based period, non-editability, preview revocation, growth base still editable",
-  "takenAt": "2026-10-21T03:56:28.868Z",
+  "takenAt": "2026-10-21T05:58:08.448Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
     "index.html": "b295efa32fd7ad8b",
-    "assets/js/pages/fc-summary.js": "a509f6f695741bbc",
+    "assets/js/pages/fc-summary.js": "aa830a738dc1ca21",
     "assets/html/pages/fc-summary.html": "63c2b5769a164b6e"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 2264
+      "t": 2355
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 2476
+      "t": 2561
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 2478
+      "t": 2562
     },
     {
       "action": "getTable",
-      "t": 3489
+      "t": 3604
     },
     {
       "action": "getTable",
-      "t": 3489
-    },
-    {
-      "action": "fcSummary.workspace.get",
-      "t": 3491
+      "t": 3605
     }
   ],
   "result": {
-    "capId": "fcprev-1792554808821",
+    "capId": "fcprev-1792562108335",
     "steps": [
       {
         "step": "fc-section",
-        "t": 605.1,
-        "v": 30.6
+        "t": 570.5,
+        "v": 30.5
       },
       {
         "step": "mode-select",
-        "t": 1516.6,
-        "v": 4.3
+        "t": 1489.8,
+        "v": 4.1
       },
       {
         "step": "builder",
-        "t": 1701.9,
-        "v": 32.1
+        "t": 1690,
+        "v": 33.4
       },
       {
         "step": "method",
-        "t": 2414,
+        "t": 2415.5,
         "v": "prevMonth"
       },
       {
         "step": "derived",
-        "t": 2940,
+        "t": 2926.3,
         "v": {
           "basedYear": "2026",
           "basedMonth": "11",
@@ -68,7 +64,7 @@
       },
       {
         "step": "done",
-        "t": 6613.9,
+        "t": 6573.3,
         "v": {
           "addButtonFound": true,
           "modeSelectVisible": true,
@@ -122,7 +118,7 @@
           "skuOptionCount": 0,
           "previewButtonFound": true,
           "previewShown": true,
-          "previewHtmlLen": 299,
+          "previewHtmlLen": 305,
           "saveEnabledAfterPreview": true,
           "previewVisibleAfterTargetChange": false,
           "saveDisabledAfterTargetChange": true,
@@ -131,7 +127,7 @@
             "basedMonth": "11"
           },
           "forcedPreviewShown": true,
-          "forcedPreviewText": "SKUCategory / Serie Current Foreca t (Jan 2027)New Foreca tChangeFX-001— / ——00",
+          "forcedPreviewText": "SKUCategory / Serie Current Foreca t (Jan 2027)New Foreca tChangeFX-001— / —10220+210",
           "basedAfterForcedPreview": {
             "year": "1999",
             "month": "5"
@@ -205,7 +201,7 @@
       "skuOptionCount": 0,
       "previewButtonFound": true,
       "previewShown": true,
-      "previewHtmlLen": 299,
+      "previewHtmlLen": 305,
       "saveEnabledAfterPreview": true,
       "previewVisibleAfterTargetChange": false,
       "saveDisabledAfterTargetChange": true,
@@ -214,7 +210,7 @@
         "basedMonth": "11"
       },
       "forcedPreviewShown": true,
-      "forcedPreviewText": "SKUCategory / Serie Current Foreca t (Jan 2027)New Foreca tChangeFX-001— / ——00",
+      "forcedPreviewText": "SKUCategory / Serie Current Foreca t (Jan 2027)New Foreca tChangeFX-001— / —10220+210",
       "basedAfterForcedPreview": {
         "year": "1999",
         "month": "5"

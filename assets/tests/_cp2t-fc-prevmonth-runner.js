@@ -56,15 +56,21 @@ function fcWorkspace() {
       marketplace_sku_status: 'active' })),
     sku_details: SKUS.map(s => ({ sku: s, product_name: s + ' Product', status: 'active', company: 'FixtureCo' })),
     /* Both the target month (2027-01) and the month BEFORE it (2026-12) carry rows, so a prevMonth preview
-       has something real to read on both sides. */
-    fc_regular_forecast: SKUS.map((s, i) => ({ forecast_id: 'FC-' + i, sku: s, company: 'FixtureCo',
-      country: 'US', marketplace: 'Amazon', forecast_year: 2026,
+       has something real to read on both sides.
+       FC1-R2 - the key is year, the real column (04_ writes it, the adapter reads it). It was
+       forecast_year, which the adapter does not read, so neither row was ever found and the preview
+       this capture recorded was a MISSING base offered as 0 - the defect D-S8-B3-182 describes.
+       And the table keys are the WORKSPACE contract names 58_ emits (fcRegularForecast, fcTargetRules,
+       fcSpecialEvents), not the sheet names: under fc_regular_forecast the adapter received no Regular
+       rows at all, so the builder was previewing against an empty list. */
+    fcRegularForecast: SKUS.map((s, i) => ({ forecast_id: 'FC-' + i, sku: s, company: 'FixtureCo',
+      country: 'US', marketplace: 'Amazon', year: 2026,
       jan: 100 + i, feb: 100 + i, mar: 100 + i, apr: 100 + i, may: 100 + i, jun: 100 + i,
       jul: 100 + i, aug: 100 + i, sep: 100 + i, oct: 100 + i, nov: 100 + i, dec: 200 + i }))
       .concat(SKUS.map((s, i) => ({ forecast_id: 'FC27-' + i, sku: s, company: 'FixtureCo',
-        country: 'US', marketplace: 'Amazon', forecast_year: 2027,
+        country: 'US', marketplace: 'Amazon', year: 2027,
         jan: 10 + i, feb: 0, mar: 0, apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0 }))),
-    fc_target_rules: [], fc_special_events: [], campaigns: [], campaign_sku_lines: []
+    fcTargetRules: [], fcSpecialEvents: [], campaigns: [], campaign_sku_lines: []
   };
 }
 

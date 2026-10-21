@@ -1,7 +1,7 @@
 {
   "round": "FX1-R4-R1",
   "what": "FX Rate Book Administration page: the full save -> continue -> save -> reload round trip, shipped page + real adapter + real 75_ + isolated in-memory IO",
-  "takenAt": "2026-10-20T10:33:01.108Z",
+  "takenAt": "2026-10-21T05:58:45.199Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "identity": "fx.editor@example.test",
   "readOnlyExpected": false,
@@ -10,10 +10,10 @@
     "rates": 2
   },
   "sources": {
-    "index.html": "7ea819c6a8abd29d",
+    "index.html": "91aeef58bd8fad55",
     "assets/js/pages/fx-rate-book.js": "38e94b2ea83fbfb5",
     "assets/html/pages/fx-rate-book.html": "82b3cbcccaabd528",
-    "assets/js/api/operation-system-db-api.js": "76a4c1f0bbff2f0f",
+    "assets/js/api/operation-system-db-api.js": "4420483e37d6d7bd",
     "assets/specs/active/apps-script/75_api_v1_fx_rate_book.gs": "bc24d92ef2c295d5",
     "assets/tests/_fx1-r4r1-roundtrip-runner.js": "382fcac9d72153d3"
   },
@@ -292,7 +292,7 @@
     }
   ],
   "competingSaves": 1,
-  "finalStoredRaw": "{\"shape\":1,\"doc_version\":7,\"rates\":[{\"base_currency\":\"USD\",\"quote_currency\":\"JPY\",\"rate\":157.01,\"source\":\"ecb\",\"as_of\":\"2026-10-01\",\"effective_from\":\"2026-10-01\",\"effective_to\":\"\",\"status\":\"active\",\"version\":2},{\"base_currency\":\"USD\",\"quote_currency\":\"EUR\",\"rate\":0.92,\"source\":\"manual\",\"as_of\":\"2026-10-20\",\"effective_from\":\"2026-10-20\",\"effective_to\":\"\",\"status\":\"active\",\"version\":1}],\"log\":[{\"at\":\"2026-10-20T10:32:58.032Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>JPY@2026-10-01\",\"change\":\"EDITED\",\"fields\":[{\"field\":\"rate\",\"from\":\"158.02\",\"to\":\"159.5\"}]},{\"at\":\"2026-10-20T10:32:58.721Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>JPY@2026-10-01\",\"change\":\"EDITED\",\"fields\":[{\"field\":\"source\",\"from\":\"manual\",\"to\":\"ecb\"}]},{\"at\":\"2026-10-20T10:32:58.721Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>EUR@2026-10-20\",\"change\":\"ADDED\",\"to\":{\"rate\":0.92,\"source\":\"manual\",\"as_of\":\"2026-10-20\",\"status\":\"active\"}},{\"at\":\"2026-10-20T10:32:59.538Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>CAD@2026-09-01\",\"change\":\"REMOVED\",\"from\":{\"rate\":1.37,\"source\":\"manual\",\"as_of\":\"2026-09-01\",\"status\":\"inactive\"}}]}",
+  "finalStoredRaw": "{\"shape\":1,\"doc_version\":7,\"rates\":[{\"base_currency\":\"USD\",\"quote_currency\":\"JPY\",\"rate\":157.01,\"source\":\"ecb\",\"as_of\":\"2026-10-01\",\"effective_from\":\"2026-10-01\",\"effective_to\":\"\",\"status\":\"active\",\"version\":2},{\"base_currency\":\"USD\",\"quote_currency\":\"EUR\",\"rate\":0.92,\"source\":\"manual\",\"as_of\":\"2026-10-20\",\"effective_from\":\"2026-10-20\",\"effective_to\":\"\",\"status\":\"active\",\"version\":1}],\"log\":[{\"at\":\"2026-10-21T05:58:42.116Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>JPY@2026-10-01\",\"change\":\"EDITED\",\"fields\":[{\"field\":\"rate\",\"from\":\"158.02\",\"to\":\"159.5\"}]},{\"at\":\"2026-10-21T05:58:42.809Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>JPY@2026-10-01\",\"change\":\"EDITED\",\"fields\":[{\"field\":\"source\",\"from\":\"manual\",\"to\":\"ecb\"}]},{\"at\":\"2026-10-21T05:58:42.809Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>EUR@2026-10-20\",\"change\":\"ADDED\",\"to\":{\"rate\":0.92,\"source\":\"manual\",\"as_of\":\"2026-10-20\",\"status\":\"active\"}},{\"at\":\"2026-10-21T05:58:43.619Z\",\"by\":\"fx.editor@example.test\",\"pair\":\"USD>CAD@2026-09-01\",\"change\":\"REMOVED\",\"from\":{\"rate\":1.37,\"source\":\"manual\",\"as_of\":\"2026-09-01\",\"status\":\"inactive\"}}]}",
   "finalStored": {
     "doc_version": 7,
     "rates": [
@@ -321,7 +321,7 @@
     ],
     "log": [
       {
-        "at": "2026-10-20T10:32:58.032Z",
+        "at": "2026-10-21T05:58:42.116Z",
         "by": "fx.editor@example.test",
         "pair": "USD>JPY@2026-10-01",
         "change": "EDITED",
@@ -334,7 +334,7 @@
         ]
       },
       {
-        "at": "2026-10-20T10:32:58.721Z",
+        "at": "2026-10-21T05:58:42.809Z",
         "by": "fx.editor@example.test",
         "pair": "USD>JPY@2026-10-01",
         "change": "EDITED",
@@ -347,7 +347,7 @@
         ]
       },
       {
-        "at": "2026-10-20T10:32:58.721Z",
+        "at": "2026-10-21T05:58:42.809Z",
         "by": "fx.editor@example.test",
         "pair": "USD>EUR@2026-10-20",
         "change": "ADDED",
@@ -359,7 +359,7 @@
         }
       },
       {
-        "at": "2026-10-20T10:32:59.538Z",
+        "at": "2026-10-21T05:58:43.619Z",
         "by": "fx.editor@example.test",
         "pair": "USD>CAD@2026-09-01",
         "change": "REMOVED",
@@ -373,7 +373,7 @@
     ]
   },
   "result": {
-    "cap": "fxrt-1792492376123",
+    "cap": "fxrt-1792562320635",
     "phases": [
       {
         "label": "opened",
@@ -467,7 +467,7 @@
         "domAuthorityText": null,
         "domLogRows": 1,
         "domLogFirstRow": [
-          "2026-10-20 10:32 UTC",
+          "2026-10-21 05:58 UTC",
           "fx.editor@example.test",
           "USD>JPY@2026-10-01",
           "EDITED",
@@ -475,14 +475,14 @@
         ],
         "domLogCells": [
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "rate 158.02 → 159.5"
           ]
         ],
-        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>JPY@202",
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-21 05:58 UTCfx.editor@example.testUSD>JPY@202",
         "warnCodes": []
       },
       {
@@ -514,7 +514,7 @@
         "domAuthorityText": null,
         "domLogRows": 1,
         "domLogFirstRow": [
-          "2026-10-20 10:32 UTC",
+          "2026-10-21 05:58 UTC",
           "fx.editor@example.test",
           "USD>JPY@2026-10-01",
           "EDITED",
@@ -522,14 +522,14 @@
         ],
         "domLogCells": [
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "rate 158.02 → 159.5"
           ]
         ],
-        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>JPY@202",
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-21 05:58 UTCfx.editor@example.testUSD>JPY@202",
         "warnCodes": []
       },
       {
@@ -561,7 +561,7 @@
         "domAuthorityText": null,
         "domLogRows": 3,
         "domLogFirstRow": [
-          "2026-10-20 10:32 UTC",
+          "2026-10-21 05:58 UTC",
           "fx.editor@example.test",
           "USD>EUR@2026-10-20",
           "ADDED",
@@ -569,28 +569,28 @@
         ],
         "domLogCells": [
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>EUR@2026-10-20",
             "ADDED",
             "rate 0.92, source manual, as_of 2026-10-20, status active"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "source manual → ecb"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "rate 158.02 → 159.5"
           ]
         ],
-        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>EUR@202",
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-21 05:58 UTCfx.editor@example.testUSD>EUR@202",
         "warnCodes": []
       },
       {
@@ -622,7 +622,7 @@
         "domAuthorityText": null,
         "domLogRows": 3,
         "domLogFirstRow": [
-          "2026-10-20 10:32 UTC",
+          "2026-10-21 05:58 UTC",
           "fx.editor@example.test",
           "USD>EUR@2026-10-20",
           "ADDED",
@@ -630,28 +630,28 @@
         ],
         "domLogCells": [
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>EUR@2026-10-20",
             "ADDED",
             "rate 0.92, source manual, as_of 2026-10-20, status active"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "source manual → ecb"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "rate 158.02 → 159.5"
           ]
         ],
-        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>EUR@202",
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-21 05:58 UTCfx.editor@example.testUSD>EUR@202",
         "warnCodes": []
       },
       {
@@ -682,7 +682,7 @@
         "domAuthorityText": null,
         "domLogRows": 3,
         "domLogFirstRow": [
-          "2026-10-20 10:32 UTC",
+          "2026-10-21 05:58 UTC",
           "fx.editor@example.test",
           "USD>EUR@2026-10-20",
           "ADDED",
@@ -690,28 +690,28 @@
         ],
         "domLogCells": [
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>EUR@2026-10-20",
             "ADDED",
             "rate 0.92, source manual, as_of 2026-10-20, status active"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "source manual → ecb"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "rate 158.02 → 159.5"
           ]
         ],
-        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>EUR@202",
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-21 05:58 UTCfx.editor@example.testUSD>EUR@202",
         "warnCodes": []
       },
       {
@@ -742,7 +742,7 @@
         "domAuthorityText": null,
         "domLogRows": 4,
         "domLogFirstRow": [
-          "2026-10-20 10:32 UTC",
+          "2026-10-21 05:58 UTC",
           "fx.editor@example.test",
           "USD>CAD@2026-09-01",
           "REMOVED",
@@ -750,35 +750,35 @@
         ],
         "domLogCells": [
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>CAD@2026-09-01",
             "REMOVED",
             "rate 1.37, source manual, as_of 2026-09-01, status inactive"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>EUR@2026-10-20",
             "ADDED",
             "rate 0.92, source manual, as_of 2026-10-20, status active"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "source manual → ecb"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "rate 158.02 → 159.5"
           ]
         ],
-        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>CAD@202",
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-21 05:58 UTCfx.editor@example.testUSD>CAD@202",
         "warnCodes": []
       },
       {
@@ -809,7 +809,7 @@
         "domAuthorityText": null,
         "domLogRows": 4,
         "domLogFirstRow": [
-          "2026-10-20 10:32 UTC",
+          "2026-10-21 05:58 UTC",
           "fx.editor@example.test",
           "USD>CAD@2026-09-01",
           "REMOVED",
@@ -817,35 +817,35 @@
         ],
         "domLogCells": [
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>CAD@2026-09-01",
             "REMOVED",
             "rate 1.37, source manual, as_of 2026-09-01, status inactive"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>EUR@2026-10-20",
             "ADDED",
             "rate 0.92, source manual, as_of 2026-10-20, status active"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "source manual → ecb"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "rate 158.02 → 159.5"
           ]
         ],
-        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>CAD@202",
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-21 05:58 UTCfx.editor@example.testUSD>CAD@202",
         "warnCodes": [
           "FX_VERSION_CONFLICT"
         ]
@@ -878,7 +878,7 @@
         "domAuthorityText": null,
         "domLogRows": 4,
         "domLogFirstRow": [
-          "2026-10-20 10:32 UTC",
+          "2026-10-21 05:58 UTC",
           "fx.editor@example.test",
           "USD>CAD@2026-09-01",
           "REMOVED",
@@ -886,35 +886,35 @@
         ],
         "domLogCells": [
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>CAD@2026-09-01",
             "REMOVED",
             "rate 1.37, source manual, as_of 2026-09-01, status inactive"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>EUR@2026-10-20",
             "ADDED",
             "rate 0.92, source manual, as_of 2026-10-20, status active"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "source manual → ecb"
           ],
           [
-            "2026-10-20 10:32 UTC",
+            "2026-10-21 05:58 UTC",
             "fx.editor@example.test",
             "USD>JPY@2026-10-01",
             "EDITED",
             "rate 158.02 → 159.5"
           ]
         ],
-        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-20 10:32 UTCfx.editor@example.testUSD>CAD@202",
+        "domLogNote": "WhenWhoPairChangeWhat moved2026-10-21 05:58 UTCfx.editor@example.testUSD>CAD@202",
         "warnCodes": [
           "FX_EFFECTIVE_RANGE_INVERTED",
           "FX_BOOK_INVALID"
