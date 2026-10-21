@@ -6929,3 +6929,37 @@ Both are outside the two boundaries this round was asked to fix.
 
 No Demo re-take and no full sweep this round (docs and tests only, as instructed). **NOT PUSHED. NOT
 SYNCED. Cloud manifest not applied. No FX save, no rate, no price.**
+
+## FX-AUTH-R2 — the identity channel, and a phase-1 Owner path through 75_'s own save (plan + offline only)
+
+**Production evidence received.** `fxRateBook.get` was answered by the R55 handler: `may_edit: false`,
+`FX_AUTHORITY_UNVERIFIABLE`, `doc_version 0`, 0 rates. **Not yet received:** the Owner's
+`TEMP_CheckFxIdentity` log line, and the active deployment version and its time. Nothing below assumes
+either one.
+
+**The channel, read from source.**
+- Every FX call leaves through `_kmGapRead_`, with no `credentials` option, so a fetch from Pages to
+  `script.google.com` carries no Google cookie.
+- The deployment is `ANYONE_ANONYMOUS` / `USER_DEPLOYING`.
+- Inference, not measured: the Web request is anonymous, so a Web `UNVERIFIABLE` is expected even after
+  a successful Editor diagnostic. Editor-authorised and Web-identifiable are different questions.
+- Not done, as instructed: `credentials: 'include'` (expected to break every credentialed cross-origin
+  read; not tried), any access or executeAs change, `*`, a page-sent email, `getEffectiveUser`, and a
+  browser-held key.
+
+**Phase 1 (proposal).** `docs/planning/fx-auth-r2/TEMP_FxRateBookEditorSave.gs.txt` is an Editor-only,
+Owner-only wrapper that dry-runs by default. It commits only through `handleFxRateBookSave_`, so it gets
+75_'s allowlist, lock, CAS, validation, server-side audit, single commit and readback. The confirm string
+is bound to the stored version and a digest of the exact payload. It makes no direct `setProperty` and
+reprices nothing. Offline (real 73_/75_, in-memory store): `fx-auth-r2-editor-save-path.test.js` passes
+13 assertions with 10 mutants caught. No runtime file changed since `8da211de`.
+
+**Owner approvals, each separate:**
+- A: add the temporary file;
+- B: the exact rates payload, from the dry run;
+- C: one commit.
+
+After the commit, delete the file and do one read-only `get`. Plan:
+`docs/planning/fx-auth-r2/FX_AUTH_R2_CHANNEL_AUDIT_AND_PHASE1.md`.
+
+**NOT PUSHED. NOT DEPLOYED. No save, no initialisation, no repricing, no allowlist change.**

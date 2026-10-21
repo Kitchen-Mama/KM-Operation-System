@@ -1,0 +1,77 @@
+// FX-AUTH-R2 — PHASE 1, OWNER-ONLY, EDITOR-ONLY: SAVE THE FX RATE BOOK THROUGH 75_'S OWN SAVE PATH.
+// TEMPORARY. NOT PART OF ANY RELEASE. Kept as .gs.txt outside assets/specs/active/apps-script/ so no sync,
+// bundle or deployment can carry it. Pasted into a NEW editor file only with an explicit Owner approval
+// for one save, run from the editor, and DELETED afterwards (docs/planning/fx-auth-r2/ §4).
+//
+// WHY IT EXISTS. The Web App cannot identify its caller: the page's fetch carries no credentials and the
+// deployment is ANYONE_ANONYMOUS, so fxRateBook.save refuses everybody (FX_AUTHORITY_UNVERIFIABLE). The
+// EDITOR can identify the person running it. This file lets that person use the SAME save the web would
+// have used — handleFxRateBookSave_ — and nothing else.
+//
+// WHAT IT REUSES, UNCHANGED: 75_'s authority (allowlist + Session.getActiveUser), the script lock, the
+// numeric compare-and-swap on doc_version, the full validation, the change log written from the server's
+// own identity and clock, the single commit, and the readback.
+// WHAT IT NEVER DOES: write a Script Property itself, build the book by hand, read getEffectiveUser, touch
+// pricing_list or any spreadsheet, call pricing.fxReconcile, create a trigger, or make a request.
+//
+// HOW IT IS USED
+//   1. Edit ONLY the three constants below. TEMP_FX_RATES uses the exact entry shape of 75_.
+//   2. Run TEMP_FxRateBookEditorSave with TEMP_FX_CONFIRM = ''. That is a DRY RUN: it reports who you are
+//      to 75_, the stored doc_version, every validation error, every change it WOULD record, and the exact
+//      confirm string for THIS payload. Nothing is written.
+//   3. Only with an Owner approval for this save: paste that confirm string into TEMP_FX_CONFIRM and run
+//      once more. Any change to the rates or the version makes the old confirm string wrong, and the run
+//      falls back to a dry run.
+
+var TEMP_FX_EXPECTED_DOC_VERSION = 0;   // the doc_version the dry run reports (a NUMBER)
+var TEMP_FX_RATES = [
+  // { base_currency: 'USD', quote_currency: 'CAD', rate: 1.37, source: 'manual', as_of: 'YYYY-MM-DD',
+  //   effective_from: 'YYYY-MM-DD', effective_to: '', status: 'active', version: 1 }
+];
+var TEMP_FX_CONFIRM = '';               // '' = dry run. To commit: the exact string the dry run printed.
+
+function TEMP_FxRateBookEditorSave() {
+  var out = { check: 'TEMP_FxRateBookEditorSave', handler: FX_BOOK_BUILD_VERSION_, mode: 'DRY_RUN' };
+  var io = fxBookDefaultIo_();
+  var auth = fxBookAuthority_(io);
+  out.authority = { ok: auth.ok === true, code: auth.ok ? null : auth.code, user: auth.user || null };
+  if (!auth.ok) { out.stopped = 'AUTHORITY'; Logger.log(JSON.stringify(out)); return out; }
+
+  var current = fxBookReadDoc_(io);
+  out.stored_doc_version = current.doc_version;
+  out.expected_doc_version = TEMP_FX_EXPECTED_DOC_VERSION;
+  out.rate_count = TEMP_FX_RATES.length;
+  var v = fxBookValidate_(TEMP_FX_RATES);
+  out.valid = v.ok;
+  out.errors = v.errors;
+  out.would_record = fxBookChangeRecords_(current.rates, TEMP_FX_RATES, auth.user, '(dry run)')
+    .map(function (r) { return r.change + ' ' + r.pair; });
+  out.confirm_for_this_payload = 'SAVE doc_version ' + TEMP_FX_EXPECTED_DOC_VERSION + ' -> '
+    + (TEMP_FX_EXPECTED_DOC_VERSION + 1) + ' digest ' + TEMP_FxDigest_(TEMP_FX_RATES);
+
+  if (typeof TEMP_FX_EXPECTED_DOC_VERSION !== 'number' || current.doc_version !== TEMP_FX_EXPECTED_DOC_VERSION) {
+    out.stopped = 'VERSION_NOT_THE_STORED_ONE';
+  } else if (!v.ok) {
+    out.stopped = 'INVALID';
+  } else if (TEMP_FX_CONFIRM !== out.confirm_for_this_payload) {
+    out.stopped = TEMP_FX_CONFIRM === '' ? 'DRY_RUN_ONLY' : 'CONFIRM_DOES_NOT_MATCH_THIS_PAYLOAD';
+  }
+  if (out.stopped) { Logger.log(JSON.stringify(out)); return out; }
+
+  // THE ONE WRITE, and it is 75_'s: authority again, lock, CAS inside the lock, validation, log, commit, readback.
+  out.mode = 'COMMIT';
+  var res = handleFxRateBookSave_({ payload: { doc_version: TEMP_FX_EXPECTED_DOC_VERSION, rates: TEMP_FX_RATES } });
+  out.result = { success: res.success === true,
+    doc_version: res.data ? res.data.doc_version : null,
+    errors: (res.errors || []).map(function (e) { return e.code; }),
+    log_entries_now: res.data && res.data.change_log ? res.data.change_log.length : null };
+  Logger.log(JSON.stringify(out));
+  return out;
+}
+
+// A short, deterministic digest of the payload, so a confirm string is good for ONE reviewed payload only.
+function TEMP_FxDigest_(rates) {
+  var s = JSON.stringify(rates), h = 2166136261;
+  for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return ('00000000' + h.toString(16)).slice(-8);
+}
