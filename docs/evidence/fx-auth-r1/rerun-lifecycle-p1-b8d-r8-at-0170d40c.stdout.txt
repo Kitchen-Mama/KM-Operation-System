@@ -1,0 +1,207 @@
+
+== A — THE BOARD COMES DOWN BEFORE THE NEXT SITE IS ASKED FOR (§5) ==
+ok   A1  the deferred-teardown sequence ran clean
+ok   A2  site A is loaded and canonical
+ok   A3  and its board is on screen
+ok   A4  site B is canonical the instant the control changes
+ok   A5  and B's read is already outstanding
+ok   A6  no more than two workspace reads have been dispatched
+ok   A6a and when it settles it is exactly two — site A, then site B, and no third
+ok   A7  site A's chart is already gone — same turn, nothing awaited
+ok   A8  and so are its tabs and its own context row
+ok   A9  and its crumbs
+ok   A10 the page says it is loading
+ok   A11 one tick later, still nothing
+ok   A12 a frame later, still nothing
+ok   A13 the viewport really did change
+ok   A14 measurably
+ok   A15 and a resize while B is outstanding does NOT bring site A back
+ok   A16 B answers and B mounts
+ok   A17 as the site that was actually chosen
+ok   A18 at a cost of exactly two reads for two sites
+ok   A19 with the chooser and the screen still agreeing
+
+== B — A REFUSED SITE B DOES NOT RESURRECT SITE A (§5) ==
+ok   B1  the failure sequence ran clean
+ok   B2  site A loaded first — so there is something to wrongly restore
+ok   B3  site B was chosen
+ok   B4  and B did not mount
+ok   B5  B's refusal is what the page says
+ok   B6  and site A is NOT underneath it
+ok   B7  including its own read-only site row
+ok   B8  the chooser is still usable, so a retry is possible
+ok   B9  and re-picking the same marketplace after a failure loads it
+ok   B10 four physical reads: A, the refused B and its ONE bounded recovery, then B retried by hand
+ok   B10a and never more — one recovery per user action, never two
+
+== C — LEAVE AND RETURN IS ONE CONSISTENT PAGE (§7) ==
+ok   C1  the leave-and-return sequence ran clean
+ok   C2  a site is loaded and showing
+ok   C3  while another page is showing, the board is gone and STAYS gone
+ok   C3a a live handler firing while away does not repaint the board
+ok   C3b nor its tabs
+ok   C3c nor its filter row
+ok   C4  even across a viewport change
+ok   C5  the section is inactive throughout
+ok   C6  coming back restores the canonical site
+ok   C7  and the three controls show it
+ok   C8  with the board back up
+ok   C9  and NO awaiting-site notice over it
+ok   C10 at a cost of zero extra workspace reads
+ok   C11 and zero extra universe reads
+ok   C12 showing the same view it was left on
+ok   C13 and it settles rather than repainting itself again
+ok   C14 with one set of site controls, as always
+ok   C15 only a complete, mounted, adapter-holding controller is parked
+
+== D — THE DRAWER CLOSE CONTROL, AS PAINTED (§6) ==
+ok   D1  the drawer sequence ran clean
+ok   D2  exactly one close control
+ok   D3  a real <button type="button">
+ok   D4  with an accessible name
+ok   D5  showing a real multiplication sign, not a letter x
+ok   D6  display is not none
+ok   D7  visibility is visible
+ok   D8  and it is not transparent
+ok   D9  a 30x30 box
+ok   D10 wholly inside the viewport
+ok   D11 and inside the drawer head it belongs to
+ok   D12 and the thing painted at its centre IS the close button
+ok   D13 so a real click at that pixel reaches it
+ok   D14 because the drawer starts below the shell header, not at y=0
+ok   D15 and it is not the same colour as its own text
+ok   D16 opening puts the focus inside the drawer
+ok   D16a and the control is in the tab order — focusable is not the same as reachable
+ok   D17 a pointer click closes it
+ok   D18 and the focus goes back to what opened it
+ok   D19 a closed drawer has no box
+ok   D20 and holds no reachable tab stop
+ok   D21 and intercepts nothing at its old coordinates
+ok   D22 it reopens
+ok   D23 and a focused Enter closes it too
+ok   D24 returning the focus the same way
+ok   D25 closing neither applies nor clears a scenario
+ok   D26 and the chip says exactly what it said before
+ok   D27 the drawer derives its top from --header-height
+ok   D28 which base.css declares once, as the single owner of the header offset
+ok   D29 and the shell header keeps its own stacking order — nothing global moved
+
+== E — THE CHART TOOLBAR, MINUS FULLSCREEN (§4, AS CORRECTED BY R9) ==
+ok   E1  the production-chrome sequence ran clean
+ok   E2  the Price architecture chart is drawn
+ok   E3  with its control row above it again
+ok   E4  and every one of them reachable
+ok   E5  in named groups
+ok   E6  and no empty container holding space open
+ok   E7  #chartControls is in the document
+ok   E8.1 mode-auto is present
+ok   E8.2 mode-comfortable is present
+ok   E8.3 view-clean is present
+ok   E8.4 view-detail is present
+ok   E8.5 layersToggle is present
+ok   E8.6 zoom-reset is present
+ok   E9  and the ONE control R9 keeps out is out — no fullscreen button
+ok   E10 the toolbar controls are in the tab order
+ok   E10a and nothing matching fullscreen is anywhere in it
+ok   E11 while the page header's own Presentation button is untouched
+ok   E12 toggleFullscreen is still in the renderer
+ok   E13 and so is the row builder — it is not called, not deleted
+ok   E14 with the default stated as data: the prototype still gets it
+ok   E15 and this page is the one host that turns it off
+ok   E16 the row has exactly one builder in the renderer
+ok   E17 and the page did not grow a toolbar of its own
+
+== F — NO RESIDENT SENTENCE UNDER A FILTER CONTROL (§3) ==
+ok   F1  a normal ready board writes nothing under Category
+ok   F2  and the zero-category site rendered too
+ok   F3  a site with NO categories also writes nothing under the control
+ok   F4  and it is still a real board — rows, prices, a chart
+ok   F5  the state host says the site has no categories
+ok   F6  and says why, in the words the underlying refusal already used
+ok   F7  while a site that HAS categories says nothing at all — no empty box, no held height
+ok   F8  the underlying sentence is suppressed, not deleted
+ok   F9  and the fact is reported to the host through a seam
+ok   F10 which this page turns off
+ok   F11 leaving the prototype exactly as it was
+
+== G — A SIMULATION BELONGS TO THE SITE IT WAS SIMULATED ON (§8) ==
+ok   G1  the scenario sequence ran clean
+ok   G2  a scenario is applied on site A
+ok   G3  and the chip says so
+ok   G4  and the print banner names the site it belongs to
+ok   G5  a different VIEW of the same site keeps it
+ok   G6  a CATEGORY on the same site keeps it
+ok   G7  then a different site is chosen
+ok   G8  and every override is gone
+ok   G9  the chip agrees
+ok   G10 and reads as no scenario
+ok   G11 the print banner is empty
+ok   G12 and the body carries no scenario class
+ok   G13 with no simulated markers left on the chart
+ok   G14 and the drawer form is empty
+ok   G15 coming BACK to site A
+ok   G16 does not bring the simulation back
+ok   G17 which is what "cleared" has to mean
+ok   G18 the leave-with-a-scenario sequence ran clean
+ok   G19 a scenario is applied
+ok   G20 and it is still there after leaving and coming back
+ok   G21 on the same view it was left on
+ok   G22 with no second read to pay for it
+ok   G23 while away, the body carries no state class from a page that is not showing
+ok   G24 SUPERSEDED (R10D): the whole sequence spoke TWO business reads and nothing else
+
+== H — THE RENDERER CAN BE TOLD TO STOP ==
+ok   H1  the renderer has an unmount
+ok   H2  exposed beside mount, on the same object
+ok   H3  which disconnects the size observer
+ok   H4  and observeContainer replaces its own observer rather than adding a second
+ok   H5  render refuses to draw while unmounted
+ok   H6  and so does renderData
+ok   H7  the resize callback checks before it schedules
+ok   H8  and again on the frame it actually runs — the defect was a callback delivered after teardown
+ok   H9  the page tells the renderer to stop before emptying its hosts
+ok   H10 and does the same on the lifecycle unmount
+
+== I — THE API CENSUS IS ABOUT THE BROWSER (§9) ==
+ok   I1  the production load chain is readable from index.html
+ok   I2  and it contains no server-side .gs file — so none can be counted as a browser path
+ok   I3  Product Strategy loads its own chain
+ok   I3a and a route-owned script is loaded by exactly ONE of the two, never both
+ok   I4  and not one of its modules reads a socket, a DB helper or browser storage
+ok   I5  SUPERSEDED (R10D): a whole page life speaks exactly TWO business reads
+ok   I6  and a site switch adds no third
+ok   I5a with exactly ONE shared capability bootstrap in front of them
+ok   I6a and a site switch does not ask for it again
+ok   I7  the census states that KM.DB is a wrapper and not a bypass
+ok   I8  and that the server-side helpers are out of its scope
+ok   I9  naming the scope it actually read
+
+== J — WHAT THIS ROUND WAS NOT ALLOWED TO TOUCH (§12) ==
+ok   J1  base.css is byte-identical
+ok   J2  layout.css is byte-identical
+ok   J3  the shell still knows this section by exactly the same name
+ok   J4  the six in-page tabs still use the shared rail
+ok   J5  no rule in the page stylesheet escapes .psb-page
+ok   J6  the !important count is exactly what the previous round left
+
+== K — THE MUTANTS (§11) ==
+ok   K1  the Category helper text is rendered on the production page (caught)
+ok   K2  the whole toolbar is removed again (the R8 over-reach) (caught)
+ok   K3  the Fullscreen control is rendered and triggerable again (caught)
+ok   K4  site A stays on screen while site B is loading (caught)
+ok   K4a the renderer keeps repainting a page nobody is on (caught)
+ok   K5  a refused site B restores site A's board (caught)
+ok   K6  a superseded workspace response is rendered anyway (caught)
+ok   K7  a return paints the board with a reset chooser (caught)
+ok   K8  coming back costs a second workspace read (caught)
+ok   K9  the close control has no bounding box (caught)
+ok   K10 the close control is painted underneath another element (caught)
+ok   K11 the close control is unreachable from the keyboard (caught)
+ok   K12 closing the drawer clears the scenario (caught)
+ok   K13 a different site keeps the previous site's scenario (caught)
+ok   K14 changing the view clears the scenario (caught)
+ok   K15 changing the category clears the scenario (caught)
+ok   K16 the production page falls back to a preview fixture (caught)
+ok   K17 the census classifies an Apps Script internal helper as a browser bypass (caught)
+
+passed 183  failed 0  |  mutants caught 18  survived 0
