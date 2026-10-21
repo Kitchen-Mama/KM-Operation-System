@@ -6771,3 +6771,41 @@ Written test-first: `fc-builder-base-refusal-and-method-guard-fc1-r2.test.js` fa
 `0f8294a5` (controls passing) and passes 56/56 with 5 mutants after. The chain under test is the real
 adapter, the real merge, the real builder and the real Save into a spy: the refused path writes nothing
 and the stored target value stays.
+
+### D-S8-B3-185 — A source write never reached the answers Site Inventory holds — **FIXED (DC1-R1, frontend only)**
+
+`invalidateRecommendationSessionCache` had no caller; the session cache stored a five-field revision and
+compared it with nothing; a settled recommendation answer was `ALREADY_SETTLED` forever; a Search over a
+loaded first-layer model read nothing; the exposure map waited for "a canonical write signal". Returning to
+Site Inventory after a write elsewhere re-read Current Inventory and restored Avg Sales / Days of Supply from
+before the write. Repaired by the **source-write epoch** (`KM.DB.sourceWriteEpoch`, two per-tab counters,
+one declared writer list, bumped at dispatch and settle whatever the outcome) and by stamping every held
+answer at issue with the epoch and the Asia/Taipei day. UNKNOWN is never SAME. The held exposure is never
+retired over a manual route that has not reached the database. Evidence:
+`DC1_R1_MAINLINE_DATA_COHERENCE_AND_GAP_AUDIT.md` §3; suite 52 red → 78 green, 5 mutants.
+
+### D-S8-B3-186 — Avg Sales and Gap are computed for different dates — **STATED (DC1-R1); the anchor policy is an Owner decision**
+
+Avg Sales / Days of Supply: the live `recommendation.workspace.get`, anchored on the
+`RECOMMENDATION_CALCULATION_DATE` Script Property (observed `2026-08-19`; no clock fallback, nothing
+advances it). Gap / Suggested Qty: materialised rows whose `calculation_date` is the gap job's own
+Asia/Taipei run date; `43_` ignores the Property. Both are documented authorities. Not unified, no Property
+touched; the Avg tooltip now names its anchor and, only when different, the gap's date. Open question for the
+Owner: keep the Property manual (it needs a maintenance step), or let the live read fall back to the job's
+date when the Property is absent (~250 B backend, no contract bump; audit §4).
+
+### D-S8-B3-187 — Cross-tab, other-user and scheduled-import writes are invisible to a per-tab signal — **OPEN (plan only)**
+
+The epoch sees this tab's writes. The Asia/Taipei day boundary bounds the rest to the same day; it does not
+close it. Minimal backend plan (audit §4): a `KM_SOURCE_REVISION` Script Property bumped by the router after
+a source write and by the import/receipt writers, echoed by `42_`/`60_` and served by a read-only
+`system.sourceRevision`. Estimated ~3,400 B against 1,159 B of GS headroom, and an action-contract bump —
+not applicable without an Owner-approved ceiling raise or trim and a new release.
+
+### D-S8-B3-188 — The PSB bootstrap suite exited mid-mutation and left a mutant — **OPEN**
+
+FC1-R2's first full regression aborted at 376/692: `product-strategy-capability-bootstrap-p1-b8d-r10d`
+exited 1 with no summary while one of its mutants was applied to `operation-system-db-api.js`. The line was
+restored with the sweep's command and verified; the suite passes alone and in later full runs. That is not a
+cause. Raw record kept in `docs/evidence/psb-early-exit-fc1r2/`; FC1-R2's "intermittent" wording is
+superseded by OPEN.

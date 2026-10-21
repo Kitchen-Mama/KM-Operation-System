@@ -1,0 +1,1 @@
+warning: in the working copy of 'assets/js/api/operation-system-db-api.js', LF will be replaced by CRLF the next time Git touches it
