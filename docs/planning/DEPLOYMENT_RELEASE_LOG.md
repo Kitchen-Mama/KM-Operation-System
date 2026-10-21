@@ -6678,3 +6678,41 @@ every asset URL in `index.html` moves to r63 although only `fc-summary.*` change
 **APPS_SCRIPT_SYNC_REQUIRED: none.**
 
 **NOT PUSHED. NOT SYNCED. NOT DEPLOYED.**
+
+---
+
+## FC1-R2 — the builder refuses a base that is not there, and runs only methods it knows
+
+**Owner-approved, frontend only.** No `.gs` byte changed (4,666,841 / 4,668,000), no Apps Script sync,
+no history source, no BigQuery, no production data. Not part of R55 (`7376bee8`).
+
+| commit | what |
+|---|---|
+| `5b69b189` | the fix, test-first (35 of 51 red against `0f8294a5`, controls green), D-S8-B3-182 closed |
+| `4de48727` | four captures the fix invalidated, re-taken — one of which had been recording the defect |
+
+What changed is in D-S8-B3-182 (register) and `FC_HISTORY_ACHIEVEMENT_PHASE1_CONTRACT.md` §5: the base
+is read from the stored cell; blank, missing, invalid and a blank Base Month refuse the whole preview by
+SKU, period and reason; an explicit 0 is a base; a capped or unloaded Regular source refuses all three
+methods; methods are a closed list; Save re-checks for itself.
+
+### Clean full regression at the frozen HEAD
+
+```
+HEAD      4de48727
+total 692   clean 692   not_clean 0
+registered 692   executed 692   integrity INTACT   complete true   stderr 0 bytes
+```
+
+The pass before it aborted at 376/692 because `product-strategy-capability-bootstrap-p1-b8d-r10d`
+exited mid-mutation and left one line in the adapter; that line alone was restored and verified, the
+suite passed alone and passes here, and it is recorded as intermittent.
+
+### GITHUB_PAGES_FILES when this is pushed
+
+Cumulative since `origin/main` (`7376bee8`): `index.html`, `assets/js/app.js` (token r63),
+`assets/js/pages/fc-summary.js`, `assets/html/pages/fc-summary.html`,
+`assets/js/api/operation-system-db-api.js`. r63 is reused — `git ls-remote` still reports
+`7376bee8`, so no browser has fetched it; re-check before publishing.
+
+**APPS_SCRIPT_SYNC_REQUIRED: none. NOT PUSHED. NOT SYNCED. NOT DEPLOYED.**
