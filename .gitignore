@@ -17,3 +17,6 @@ assets/tools/p1b8c-r1a-editor-log.txt.txt
 # throwaway Chrome install that is rewritten on every run and must never enter version control.
 docs/evidence/**/.chrome-profile
 docs/evidence/**/.chrome-profile-*
+
+# PSB-DEMO-R1: the demo runner generates this page on every run and deletes it after.
+assets/tests/_psb-demo-page.html

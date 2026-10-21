@@ -928,6 +928,10 @@
        here from a sku, a directory or an extension. */
     o._image = (r.image_identity_status === 'VERIFIED_DB_MAPPING' && r.product_image)
       ? r.product_image : null;
+    /* PSB-DEMO-R1 — THE CAMPAIGN LINES TRAVEL WITH THE ROW. They are not in the contract's field
+       list, so the loop above dropped them and the activity view had nothing to read. The array is
+       the canonical one, by reference and never modified: every reader below only filters it. */
+    o.campaigns = Object.prototype.toString.call(r.campaigns) === '[object Array]' ? r.campaigns : [];
     return o;
   };
 
@@ -1021,6 +1025,158 @@
       });
     });
     return nodes;
+  };
+
+  /* ------------------------------------------------------------------------------------------------
+     7A  PSB-DEMO-R1 — THE ACTIVITY PRICE VIEW, FROM THE CAMPAIGN LINES THE READ ALREADY CARRIES.
+
+     productPricing.workspace.get returns, per site SKU, every campaign line in scope (72_
+     ppwIndexCampaigns_: campaign_sku_lines by marketplace_sku_id -> campaigns by campaign_id, kept only
+     when the campaign's company / country / marketplace match the site). Nothing here reads anything
+     else, and nothing here has a clock:
+
+       - AN ACTIVITY IS ITS campaign_id. A line without one cannot be told apart from another
+         activity's line, so it is counted and never listed.
+       - A DEAL PRICE IS promo_price OR IT IS MISSING. A forecast quantity, the everyday price and a
+         discount percentage are not a deal price, and none of them is used to make one up.
+       - CURRENCY IS price_units, the line's snapshot of the pricing currency (campaign contract §2).
+         Blank is PROMOTION_CURRENCY_UNRESOLVED; different from the panel's currency is a mismatch.
+       - A CONFLICT IS NAMED, NEVER RESOLVED. Two lines for one SKU in one activity, or two variants of
+         one node at two prices, is a conflict; the lowest is not chosen, because nobody agreed it.
+       - PAST AND FUTURE ACTIVITIES ARE SHOWN AS WHAT THEY ARE: a recorded period and a recorded
+         status. Nothing here calls one "live" — that needs a date this read does not decide.
+     ------------------------------------------------------------------------------------------------ */
+  S.CAMPAIGN_LINE_DEAD_STATUSES = ['cancelled', 'canceled', 'removed', 'deleted', 'inactive', 'ended'];
+
+  /** The activities the rows carry, one entry per campaign_id, ordered by start date then name. */
+  S.campaignCatalogue = function (rows) {
+    var by = {}, order = [], unidentified = 0;
+    (rows || []).forEach(function (r) {
+      (r && Object.prototype.toString.call(r.campaigns) === '[object Array]' ? r.campaigns : [])
+        .forEach(function (c) {
+          var id = str(c && c.campaign_id);
+          if (id === '') { unidentified++; return; }
+          if (!by[id]) {
+            by[id] = { campaign_id: id, campaign_name: str(c.campaign_name) || null,
+              start_date: str(c.start_date) || null, end_date: str(c.end_date) || null,
+              status: str(c.status) || null, line_count: 0, sku_ids: {}, price_units: {},
+              name_variants: {} };
+            order.push(id);
+          }
+          var e = by[id];
+          e.line_count++;
+          e.sku_ids[str(r.marketplace_sku_id || r.identity)] = true;
+          if (str(c.price_units) !== '') e.price_units[str(c.price_units).toUpperCase()] = true;
+          if (str(c.campaign_name) !== '') e.name_variants[str(c.campaign_name)] = true;
+        });
+    });
+    var list = order.map(function (id) {
+      var e = by[id];
+      return { campaign_id: id, campaign_name: e.campaign_name, start_date: e.start_date,
+        end_date: e.end_date, status: e.status, line_count: e.line_count,
+        sku_count: Object.keys(e.sku_ids).length, price_units: Object.keys(e.price_units).sort(),
+        name_conflict: Object.keys(e.name_variants).length > 1 };
+    });
+    list.sort(function (a, b) {
+      var sa = a.start_date || '9999', sb = b.start_date || '9999';
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      return String(a.campaign_name || a.campaign_id) < String(b.campaign_name || b.campaign_id) ? -1 : 1;
+    });
+    return { activities: list, unidentified_lines: unidentified };
+  };
+
+  S.CAMPAIGN_PRICE_TEXT = {
+    PRICED: 'Deal price on record',
+    PRICED_PARTIAL: 'Deal price on record for some variants only',
+    NOT_IN_ACTIVITY: 'Not in this activity',
+    DEAL_PRICE_MISSING: 'In this activity, but the line carries no deal price',
+    PROMOTION_CURRENCY_UNRESOLVED: 'The line names no currency (price_units), so its price cannot be placed on this axis',
+    PROMOTION_CURRENCY_MISMATCH: 'The line is priced in a different currency from this panel',
+    CAMPAIGN_SCOPE_INCOMPLETE: 'The activity does not carry a complete company / country / marketplace scope',
+    LINE_NOT_ACTIVE: 'The line is recorded as not active',
+    DUPLICATE_CAMPAIGN_LINE: 'More than one line for the same SKU in this activity - not resolved',
+    DEAL_PRICE_CONFLICT: 'Variants of this product carry different deal prices - not resolved'
+  };
+  var CAMPAIGN_REFUSAL_ORDER = ['DUPLICATE_CAMPAIGN_LINE', 'CAMPAIGN_SCOPE_INCOMPLETE',
+    'PROMOTION_CURRENCY_UNRESOLVED', 'PROMOTION_CURRENCY_MISMATCH', 'LINE_NOT_ACTIVE',
+    'DEAL_PRICE_MISSING'];
+
+  /**
+   * One node's price in one activity. `state` is one of CAMPAIGN_PRICE_TEXT's keys; `deal_c` is set
+   * only for PRICED and PRICED_PARTIAL. Every member's own verdict is returned beside it.
+   */
+  S.campaignPriceFor = function (node, campaignId) {
+    var id = str(campaignId);
+    var cur = str(node && node.currency).toUpperCase();
+    var members = (node && node.members) || [];
+    var out = { campaign_id: id, state: 'NOT_IN_ACTIVITY', deal_c: null, members_total: members.length,
+      members_in_activity: 0, members_priced: 0, member_states: [], lines: [] };
+    if (id === '') return out;
+    var prices = {};
+    var refusals = {};
+    members.forEach(function (m) {
+      var lines = (m.campaigns || []).filter(function (c) { return str(c && c.campaign_id) === id; });
+      var ms = { identity: m.identity, master_sku: m.master_sku, state: null, deal_c: null,
+        line_count: lines.length };
+      if (!lines.length) { ms.state = 'NOT_IN_ACTIVITY'; out.member_states.push(ms); return; }
+      out.members_in_activity++;
+      lines.forEach(function (c) {
+        out.lines.push({ identity: m.identity, master_sku: m.master_sku,
+          campaign_sku_line_id: c.campaign_sku_line_id || null, promo_price: c.promo_price,
+          price_units: c.price_units || null, line_status: c.line_status || null });
+      });
+      if (lines.length > 1) {
+        ms.state = 'DUPLICATE_CAMPAIGN_LINE';
+      } else {
+        var c = lines[0];
+        var unver = c.unverifiable_scope_columns;
+        var units = str(c.price_units).toUpperCase();
+        var c_c = S.cents(c.promo_price);
+        if (unver && unver.length) ms.state = 'CAMPAIGN_SCOPE_INCOMPLETE';
+        else if (units === '') ms.state = 'PROMOTION_CURRENCY_UNRESOLVED';
+        else if (cur !== '' && units !== cur) ms.state = 'PROMOTION_CURRENCY_MISMATCH';
+        else if (S.CAMPAIGN_LINE_DEAD_STATUSES.indexOf(str(c.line_status).toLowerCase()) !== -1) ms.state = 'LINE_NOT_ACTIVE';
+        else if (c_c === null) ms.state = 'DEAL_PRICE_MISSING';
+        else { ms.state = 'PRICED'; ms.deal_c = c_c; prices[c_c] = true; out.members_priced++; }
+      }
+      if (ms.state !== 'PRICED') refusals[ms.state] = true;
+      out.member_states.push(ms);
+    });
+    if (!out.members_in_activity) return out;
+    var distinct = Object.keys(prices);
+    if (distinct.length > 1) { out.state = 'DEAL_PRICE_CONFLICT'; return out; }
+    if (distinct.length === 1) {
+      out.deal_c = Number(distinct[0]);
+      out.state = (out.members_priced === out.members_total) ? 'PRICED' : 'PRICED_PARTIAL';
+      out.refusals = Object.keys(refusals);
+      return out;
+    }
+    for (var i = 0; i < CAMPAIGN_REFUSAL_ORDER.length; i++) {
+      if (refusals[CAMPAIGN_REFUSAL_ORDER[i]]) { out.state = CAMPAIGN_REFUSAL_ORDER[i]; return out; }
+    }
+    out.state = 'DEAL_PRICE_MISSING';
+    return out;
+  };
+
+  /**
+   * WHEN THE SERVER READ THE TABLES, as 72_ stamps it (`schema.read_at`, "the server clock when this
+   * read ran"). Epoch ms or an ISO string; anything else is NOT a time and is reported as absent.
+   * This is a READ time. It is not when any price was last changed, and nothing may present it so.
+   */
+  S.readTimeOf = function (provenance) {
+    var sch = provenance && provenance.schema;
+    var raw = sch ? sch.read_at : null;
+    var ms = null;
+    if (typeof raw === 'number' && isFinite(raw)) ms = raw;
+    else if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+      var p = Date.parse(raw);
+      if (isFinite(p)) ms = p;
+    }
+    if (ms === null) return { known: false, ms: null, text: null, basis: null };
+    // Asia/Taipei is a fixed UTC+8 with no DST: shift and read the UTC wall clock, no local zone.
+    var t = new Date(ms + 480 * 60000).toISOString();
+    return { known: true, ms: ms, text: t.slice(0, 10) + ' ' + t.slice(11, 16),
+      basis: str(sch.read_at_is) || 'the server clock when this read ran' };
   };
 
   /* ------------------------------------------------------------------------------------------------

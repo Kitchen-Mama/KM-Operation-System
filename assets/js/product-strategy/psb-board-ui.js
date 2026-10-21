@@ -704,16 +704,516 @@
     return [b.w, b.h, STATE.chartMode, STATE.fullscreen ? 'fs' : '-', STATE.zoom].join('|');
   }
 
-  function layoutFor(ns, dom) {
+  function layoutFor(ns, dom, columns) {
     var box = STATE.box || { w: null, h: null };
     return LAYOUT.deriveResponsiveChartLayout({
       containerWidth: box.w,
       availableHeight: box.h,
-      productCount: ns.length,
+      productCount: (typeof columns === 'number') ? columns : ns.length,
       domainLowC: dom.lo,
       domainHighC: dom.hi,
       mode: STATE.fullscreen ? 'fullscreen' : STATE.chartMode
     });
+  }
+
+  /* ================================================================================================
+     6A  PSB-DEMO-R1 — ACTIVITY PRICE VIEW, A TEMPORARY COMPETITOR LAYER, AND THE PRICE-POINT DRAG.
+
+     ALL OF IT LIVES IN `DEMO`, A VARIABLE, AND NOWHERE ELSE. No browser storage, no URL, no request:
+     a reload builds this object again, so a simulated price and an entered competitor are gone the
+     same way the open tab is. Nothing here writes to a row, a node or the canonical result — the
+     simulation is an overlay the chart DRAWS, and the analysis, the findings, the KPIs and the data
+     quality ledger keep reading the recorded prices.
+
+     ISOLATION IS IN THE KEYS. A simulation is keyed by site + price context (EVERYDAY, or ACTIVITY:
+     <campaign_id>) + node; a competitor by site + category + price context. Another site, another
+     activity, or the other price mode reads a different key and finds nothing. With the host's
+     `clearScenarioOnSiteChange` (production sets it) a site change also drops all of it.
+
+     THE DRAG MOVES ONE PRICE POINT. Everyday mode: the selected product's everyday price. Activity
+     mode: that product's deal price in the selected activity. Floor, list, every other product and
+     the Series stay where they are. The original stays on the chart as a hollow ghost. While a drag
+     is under way nothing is redrawn and the axis cannot move: the point is clamped to the axis
+     already drawn, and the one redraw happens when the pointer is released.
+     ================================================================================================ */
+  var DEMO = {
+    priceView: 'everyday',          // everyday | activity
+    activityId: '',                 // a campaign_id, or '' = none chosen
+    sims: {},                       // sims[siteKey|ctx][nodeKey] = { from_c, to_c }
+    undo: [],                       // { ctx, key, prev } — prev is the entry it replaced, or null
+    selected: null,                 // node key of the product the editor is showing
+    competitors: {},                // competitors[siteKey|category|ctx] = [{ id, name, price_c, lo_c, hi_c }]
+    compSeq: 0,
+    compFormOpen: false,
+    compEditing: null,              // competitor id being edited, or null
+    compError: null,
+    simError: null,
+    drag: null                      // { key, ... } while a pointer is down on a price point
+  };
+  var DEMO_STEP_C = 100;            // a drag moves in whole currency units: 39.99 -> 34.99
+  var DEMO_FINE_STEP_C = 10;        // Alt while dragging, Shift with the arrow keys
+
+  function demoSiteKey() {
+    var k = null;
+    try { k = SEL.scenarioSiteKey(MODEL && MODEL.site); } catch (e) { k = null; }
+    return k || '';
+  }
+  function demoPriceCtx() {
+    return DEMO.priceView === 'activity' ? ('ACTIVITY:' + DEMO.activityId) : 'EVERYDAY';
+  }
+  function demoActivityOn() { return DEMO.priceView === 'activity' && DEMO.activityId !== ''; }
+  function demoSimCtx() { return demoSiteKey() + '|' + demoPriceCtx(); }
+  function demoCompCtx(category) { return demoSiteKey() + '|' + (category || '') + '|' + demoPriceCtx(); }
+  function demoSimMap() { return DEMO.sims[demoSimCtx()] || {}; }
+  function demoSimCount() { return Object.keys(demoSimMap()).length; }
+  function demoClearAll() {
+    DEMO.priceView = 'everyday'; DEMO.activityId = ''; DEMO.sims = {}; DEMO.undo = [];
+    DEMO.selected = null; DEMO.competitors = {}; DEMO.compFormOpen = false; DEMO.compEditing = null;
+    DEMO.compError = null; DEMO.simError = null; DEMO.drag = null;
+  }
+
+  /** The activities this site's rows carry. */
+  function demoCatalogue() { return SEL.campaignCatalogue(MODEL ? MODEL.rows : []); }
+  function demoActivity() {
+    if (!demoActivityOn()) return null;
+    var list = demoCatalogue().activities;
+    for (var i = 0; i < list.length; i++) if (list[i].campaign_id === DEMO.activityId) return list[i];
+    return null;
+  }
+  function demoActivityLabel(a) {
+    if (!a) return '';
+    var period = (a.start_date || '?') + ' to ' + (a.end_date || '?');
+    return (a.campaign_name || a.campaign_id) + '  ·  ' + period
+      + '  ·  recorded status: ' + (a.status || 'not recorded');
+  }
+
+  /** What one node shows in the current price context: the base (recorded) price and any simulation. */
+  function demoPointFor(n) {
+    var act = demoActivityOn() ? SEL.campaignPriceFor(n, DEMO.activityId) : null;
+    var base = act ? act.deal_c : n._regular_c;
+    var sim = demoSimMap()[n.key] || null;
+    return { act: act, base_c: base, sim: sim, shown_c: sim ? sim.to_c : base,
+      draggable: base !== null && base !== undefined };
+  }
+
+  function demoSetSim(key, toC) {
+    var ctx = demoSimCtx();
+    var map = DEMO.sims[ctx] || (DEMO.sims[ctx] = {});
+    var prev = map[key] || null;
+    var n = demoNodeByKey(key);
+    if (!n) return false;
+    var base = demoPointFor(n).base_c;
+    if (base === null || base === undefined) return false;
+    if (prev && prev.to_c === toC) return false;
+    if (!prev && toC === base) return false;
+    DEMO.undo.push({ ctx: ctx, key: key, prev: prev ? { from_c: prev.from_c, to_c: prev.to_c } : null });
+    if (toC === base) delete map[key];
+    else map[key] = { from_c: base, to_c: toC };
+    return true;
+  }
+  function demoResetOne(key) {
+    var ctx = demoSimCtx(), map = DEMO.sims[ctx] || {};
+    if (!map[key]) return false;
+    DEMO.undo.push({ ctx: ctx, key: key, prev: { from_c: map[key].from_c, to_c: map[key].to_c } });
+    delete map[key];
+    return true;
+  }
+  function demoResetAll() {
+    var ctx = demoSimCtx();
+    if (!DEMO.sims[ctx] || !Object.keys(DEMO.sims[ctx]).length) return false;
+    delete DEMO.sims[ctx];
+    DEMO.undo = DEMO.undo.filter(function (u) { return u.ctx !== ctx; });
+    return true;
+  }
+  /** Undo the last change made IN THIS CONTEXT. A change in another site or activity is not on screen,
+   *  so undoing it from here would alter something nobody is looking at. */
+  function demoUndo() {
+    var ctx = demoSimCtx();
+    for (var i = DEMO.undo.length - 1; i >= 0; i--) {
+      if (DEMO.undo[i].ctx !== ctx) continue;
+      var u = DEMO.undo.splice(i, 1)[0];
+      var map = DEMO.sims[ctx] || (DEMO.sims[ctx] = {});
+      if (u.prev) map[u.key] = { from_c: u.prev.from_c, to_c: u.prev.to_c };
+      else delete map[u.key];
+      DEMO.selected = u.key;
+      return true;
+    }
+    return false;
+  }
+  function demoUndoAvailable() {
+    var ctx = demoSimCtx();
+    return DEMO.undo.some(function (u) { return u.ctx === ctx; });
+  }
+  var DEMO_NODES = {};               // the nodes the last chart drew, by key — for the editor and the keys
+  function demoNodeByKey(key) { return DEMO_NODES[key] || null; }
+
+  function demoCompetitors(category) { return DEMO.competitors[demoCompCtx(category)] || []; }
+
+  /** "34.99" -> 3499; anything that is not a positive amount with at most two decimals -> null. */
+  function demoParseMoney(v) {
+    var s = String(v === undefined || v === null ? '' : v).trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+    var c = cents(s);
+    return (c === null || c <= 0) ? null : c;
+  }
+
+  /** The axis has to hold what is drawn: activity prices, competitors, and any simulation outside it. */
+  function demoDomain(ns, comps, dom) {
+    var lo = dom.lo, hi = dom.hi;
+    function take(v) {
+      if (v === null || v === undefined) return;
+      if (lo === null || v < lo) lo = v;
+      if (hi === null || v > hi) hi = v;
+    }
+    ns.forEach(function (n) {
+      var p = demoPointFor(n);
+      if (p.act) take(p.act.deal_c);
+    });
+    comps.forEach(function (c) { take(c.price_c); take(c.lo_c); take(c.hi_c); });
+    return { lo: lo, hi: hi, canonical_lo: dom.canonical_lo, canonical_hi: dom.canonical_hi,
+      expanded_by_scenario: dom.expanded_by_scenario };
+  }
+
+  /* ---- THE CONTROLS: price view, activity, simulation editor, competitors ------------------------ */
+  function demoControls(panel, category) {
+    var box = el('div', 'demo-ctl');
+    box.id = 'demoControls';
+    box.setAttribute('data-price-view', DEMO.priceView);
+    box.setAttribute('data-activity', DEMO.activityId);
+
+    /* ---- 1. price view ---- */
+    var g1 = el('div', 'ctl-group');
+    g1.setAttribute('data-group', 'price-view');
+    g1.appendChild(el('span', 'ctl-label', 'Prices'));
+    [['everyday', 'Everyday price'], ['activity', 'Activity price']].forEach(function (m) {
+      var b = el('button', 'segbtn' + (DEMO.priceView === m[0] ? ' is-on' : ''), m[1]);
+      b.id = 'priceView-' + m[0];
+      b.setAttribute('type', 'button');
+      b.setAttribute('aria-pressed', DEMO.priceView === m[0] ? 'true' : 'false');
+      b.addEventListener('click', function () {
+        if (DEMO.priceView === m[0]) return;
+        DEMO.priceView = m[0]; DEMO.selected = null; DEMO.simError = null;
+        renderData();
+      });
+      g1.appendChild(b);
+    });
+    box.appendChild(g1);
+
+    if (DEMO.priceView === 'activity') {
+      var cat = demoCatalogue();
+      var g2 = el('div', 'ctl-group demo-activity');
+      g2.setAttribute('data-group', 'activity');
+      var lab = el('label', 'ctl-label', 'Activity');
+      lab.setAttribute('for', 'activitySelect');
+      g2.appendChild(lab);
+      var sel = document.createElement('select');
+      sel.id = 'activitySelect';
+      sel.className = 'demo-select';
+      var o0 = document.createElement('option');
+      o0.value = '';
+      o0.appendChild(document.createTextNode(cat.activities.length
+        ? 'Choose an activity…' : 'No activity is recorded for this site'));
+      sel.appendChild(o0);
+      cat.activities.forEach(function (a) {
+        var o = document.createElement('option');
+        o.value = a.campaign_id;
+        if (a.campaign_id === DEMO.activityId) o.selected = true;
+        o.appendChild(document.createTextNode(demoActivityLabel(a)));
+        sel.appendChild(o);
+      });
+      sel.value = DEMO.activityId;
+      sel.disabled = !cat.activities.length;
+      sel.addEventListener('change', function () {
+        DEMO.activityId = sel.value; DEMO.selected = null; DEMO.simError = null;
+        renderData();
+      });
+      g2.appendChild(sel);
+      var a = demoActivity();
+      var note = el('p', 'demo-note');
+      note.id = 'activityNote';
+      if (a) {
+        note.appendChild(document.createTextNode('Showing the deal prices recorded for this activity ('
+          + a.sku_count + ' SKU' + (a.sku_count === 1 ? '' : 's') + '). Recorded period and status are '
+          + 'shown as recorded — this view does not say the activity is running today. The everyday '
+          + 'price stays on the chart for comparison.'));
+      } else if (cat.activities.length) {
+        note.appendChild(document.createTextNode('Choose an activity to see its recorded deal prices.'));
+      } else {
+        note.appendChild(document.createTextNode('This site’s rows carry no campaign line with a '
+          + 'campaign id, so there is no activity to show.'));
+      }
+      if (cat.unidentified_lines) {
+        note.appendChild(document.createTextNode(' ' + cat.unidentified_lines + ' campaign line'
+          + (cat.unidentified_lines === 1 ? '' : 's') + ' without a campaign id are not listed.'));
+      }
+      g2.appendChild(note);
+      box.appendChild(g2);
+    }
+
+    /* ---- 2. the simulation editor ---- */
+    var g3 = el('div', 'ctl-group demo-sim');
+    g3.setAttribute('data-group', 'simulation');
+    var count = demoSimCount();
+    g3.appendChild(el('span', 'ctl-label', 'Simulation'));
+    var tag = el('span', 'demo-tag', count
+      ? count + ' simulated · not saved · gone on reload'
+      : 'Drag a product’s ' + (demoActivityOn() ? 'deal price' : 'price') + ' point, or select it and type a price');
+    tag.id = 'simCount';
+    tag.setAttribute('data-count', String(count));
+    g3.appendChild(tag);
+    var n = DEMO.selected ? demoNodeByKey(DEMO.selected) : null;
+    if (n) {
+      var pt = demoPointFor(n);
+      var ed = el('span', 'demo-editor');
+      ed.id = 'simEditor';
+      ed.setAttribute('data-node-key', n.key);
+      ed.appendChild(el('b', null, n.label));
+      ed.appendChild(document.createTextNode('  Original ' + money(pt.base_c, n.currency) + '  →  Simulated '));
+      var inp = document.createElement('input');
+      inp.id = 'simInput';
+      inp.className = 'demo-input';
+      inp.setAttribute('inputmode', 'decimal');
+      inp.setAttribute('aria-label', 'Simulated price for ' + n.label);
+      inp.value = pt.shown_c === null ? '' : String(fromCents(pt.shown_c));
+      function applyInput() {
+        var c = demoParseMoney(inp.value);
+        if (c === null) { DEMO.simError = 'Enter a price above zero with at most two decimals.'; renderData(); return; }
+        DEMO.simError = null;
+        demoSetSim(n.key, c);
+        renderData();
+      }
+      inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); applyInput(); } });
+      ed.appendChild(inp);
+      var ap = el('button', 'btn btn-sm', 'Apply');
+      ap.id = 'simApply'; ap.setAttribute('type', 'button');
+      ap.addEventListener('click', applyInput);
+      ed.appendChild(ap);
+      var r1 = el('button', 'btn btn-sm', 'Reset this product');
+      r1.id = 'simResetOne'; r1.setAttribute('type', 'button');
+      r1.disabled = !pt.sim;
+      r1.addEventListener('click', function () { if (demoResetOne(n.key)) renderData(); });
+      ed.appendChild(r1);
+      g3.appendChild(ed);
+    }
+    var ub = el('button', 'btn btn-sm', 'Undo');
+    ub.id = 'simUndo'; ub.setAttribute('type', 'button');
+    ub.disabled = !demoUndoAvailable();
+    ub.addEventListener('click', function () { if (demoUndo()) renderData(); });
+    g3.appendChild(ub);
+    var rb = el('button', 'btn btn-sm', 'Reset all');
+    rb.id = 'simResetAll'; rb.setAttribute('type', 'button');
+    rb.disabled = !count;
+    rb.addEventListener('click', function () { if (demoResetAll()) { DEMO.selected = null; renderData(); } });
+    g3.appendChild(rb);
+    if (DEMO.simError) { var se = el('p', 'demo-error', DEMO.simError); se.id = 'simError'; g3.appendChild(se); }
+    box.appendChild(g3);
+
+    /* ---- 3. competitors: entered here, kept here, never mixed into this site's products ---- */
+    var g4 = el('div', 'ctl-group demo-comp');
+    g4.setAttribute('data-group', 'competitors');
+    g4.appendChild(el('span', 'ctl-label', 'Competitors'));
+    var comps = demoCompetitors(category);
+    var list = el('span', 'demo-comp-list');
+    list.id = 'competitorList';
+    comps.forEach(function (c) {
+      var chip = el('span', 'demo-chip');
+      chip.setAttribute('data-competitor-id', c.id);
+      chip.appendChild(document.createTextNode(c.name + '  ' + money(c.price_c, panel.currency)
+        + ((c.lo_c !== null || c.hi_c !== null)
+          ? '  (' + (c.lo_c === null ? '…' : plain(c.lo_c)) + '–' + (c.hi_c === null ? '…' : plain(c.hi_c)) + ')' : '')));
+      var eb = el('button', 'chip-btn', 'Edit');
+      eb.setAttribute('type', 'button');
+      eb.setAttribute('data-action', 'edit');
+      eb.addEventListener('click', function () {
+        DEMO.compFormOpen = true; DEMO.compEditing = c.id; DEMO.compError = null; renderData();
+      });
+      chip.appendChild(eb);
+      var xb = el('button', 'chip-btn', 'Delete');
+      xb.setAttribute('type', 'button');
+      xb.setAttribute('data-action', 'delete');
+      xb.setAttribute('aria-label', 'Delete competitor ' + c.name);
+      xb.addEventListener('click', function () {
+        var k = demoCompCtx(category);
+        DEMO.competitors[k] = (DEMO.competitors[k] || []).filter(function (x) { return x.id !== c.id; });
+        if (DEMO.compEditing === c.id) { DEMO.compEditing = null; DEMO.compFormOpen = false; }
+        renderData();
+      });
+      chip.appendChild(xb);
+      list.appendChild(chip);
+    });
+    g4.appendChild(list);
+    if (!DEMO.compFormOpen) {
+      var add = el('button', 'btn btn-sm', 'Add competitor');
+      add.id = 'compAdd'; add.setAttribute('type', 'button');
+      add.addEventListener('click', function () {
+        DEMO.compFormOpen = true; DEMO.compEditing = null; DEMO.compError = null; renderData();
+      });
+      g4.appendChild(add);
+    } else {
+      var editing = null;
+      comps.forEach(function (c) { if (c.id === DEMO.compEditing) editing = c; });
+      var form = el('span', 'demo-comp-form');
+      form.id = 'compForm';
+      function field(id, label, value, required) {
+        var f = el('label', 'demo-field');
+        f.appendChild(el('span', null, label + (required ? ' *' : '')));
+        var i = document.createElement('input');
+        i.id = id; i.className = 'demo-input';
+        if (id !== 'compName') i.setAttribute('inputmode', 'decimal');
+        i.value = value;
+        f.appendChild(i);
+        form.appendChild(f);
+        return i;
+      }
+      var fN = field('compName', 'Name / brand', editing ? editing.name : '', true);
+      var fP = field('compPrice', 'Price', editing ? String(fromCents(editing.price_c)) : '', true);
+      var fL = field('compLo', 'Band low', editing && editing.lo_c !== null ? String(fromCents(editing.lo_c)) : '', false);
+      var fH = field('compHi', 'Band high', editing && editing.hi_c !== null ? String(fromCents(editing.hi_c)) : '', false);
+      var save = el('button', 'btn btn-sm', editing ? 'Save changes' : 'Add');
+      save.id = 'compSave'; save.setAttribute('type', 'button');
+      save.addEventListener('click', function () {
+        var name = String(fN.value || '').trim();
+        var p = demoParseMoney(fP.value);
+        var lo = String(fL.value || '').trim() === '' ? null : demoParseMoney(fL.value);
+        var hi = String(fH.value || '').trim() === '' ? null : demoParseMoney(fH.value);
+        var err = null;
+        if (!name) err = 'Name / brand is required.';
+        else if (p === null) err = 'Price is required: a positive amount with at most two decimals.';
+        else if (String(fL.value || '').trim() !== '' && lo === null) err = 'Band low is not a valid amount.';
+        else if (String(fH.value || '').trim() !== '' && hi === null) err = 'Band high is not a valid amount.';
+        else if (lo !== null && lo > p) err = 'Band low cannot be above the price.';
+        else if (hi !== null && hi < p) err = 'Band high cannot be below the price.';
+        if (err) { DEMO.compError = err; renderData(); return; }
+        var k = demoCompCtx(category);
+        var arr = DEMO.competitors[k] || (DEMO.competitors[k] = []);
+        if (editing) {
+          editing.name = name; editing.price_c = p; editing.lo_c = lo; editing.hi_c = hi;
+        } else {
+          arr.push({ id: 'TEMP-COMP-' + (++DEMO.compSeq), name: name, price_c: p, lo_c: lo, hi_c: hi,
+            currency: panel.currency, temporary: true });
+        }
+        DEMO.compFormOpen = false; DEMO.compEditing = null; DEMO.compError = null;
+        renderData();
+      });
+      form.appendChild(save);
+      var cancel = el('button', 'btn btn-sm', 'Cancel');
+      cancel.id = 'compCancel'; cancel.setAttribute('type', 'button');
+      cancel.addEventListener('click', function () {
+        DEMO.compFormOpen = false; DEMO.compEditing = null; DEMO.compError = null; renderData();
+      });
+      form.appendChild(cancel);
+      if (DEMO.compError) { var ce = el('p', 'demo-error', DEMO.compError); ce.id = 'compError'; form.appendChild(ce); }
+      g4.appendChild(form);
+    }
+    g4.appendChild(el('p', 'demo-note', 'Entered for this discussion only: not saved, not one of this '
+      + 'site’s products, and not part of any finding, count or data-quality figure.'));
+    box.appendChild(g4);
+    return box;
+  }
+
+  /* ---- THE DRAG. One controller per chart draw; it owns nothing after the pointer is released. ---- */
+  function demoAttachDrag(s, handle, n, geo) {
+    handle.setAttribute('data-draggable', 'true');
+    handle.style.cursor = 'ns-resize';
+    handle.style.touchAction = 'none';
+    function svgY(ev) {
+      var m = (typeof s.getScreenCTM === 'function') ? s.getScreenCTM() : null;
+      if (!m || typeof s.createSVGPoint !== 'function') return null;
+      var p = s.createSVGPoint();
+      p.x = ev.clientX; p.y = ev.clientY;
+      return p.matrixTransform(m.inverse()).y;
+    }
+    function priceAt(yy) { return geo.lo + ((geo.bottom - yy) / geo.h) * (geo.hi - geo.lo); }
+    function finish(commit) {
+      var d = DEMO.drag;
+      if (!d) return;
+      DEMO.drag = null;
+      if (d.onKey) document.removeEventListener("keydown", d.onKey, true);
+      try { if (handle.hasPointerCapture && handle.hasPointerCapture(d.pointerId)) handle.releasePointerCapture(d.pointerId); } catch (e) {}
+      handle.removeAttribute('transform');
+      handle.removeAttribute('data-dragging');
+      if (d.readout && d.readout.parentNode) d.readout.parentNode.removeChild(d.readout);
+      DEMO.selected = n.key;
+      if (commit && d.now_c !== d.start_c) demoSetSim(n.key, d.now_c);
+      renderData();
+    }
+    handle.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      var pt = demoPointFor(n);
+      if (!pt.draggable) return;
+      var y0 = svgY(ev);
+      if (y0 === null) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      hideTip();
+      try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
+      var ro = svgText({ x: geo.cx + geo.half + 10, y: geo.y(pt.shown_c) + 4, 'class': 'demo-readout',
+        'text-anchor': 'start' }, '');
+      s.appendChild(ro);
+      DEMO.drag = { key: n.key, pointerId: ev.pointerId, start_c: pt.shown_c, now_c: pt.shown_c,
+        base_c: pt.base_c, y0: y0, moved: false, readout: ro, onKey: null };
+      /* Escape abandons the drag: the point goes back and nothing is recorded. */
+      DEMO.drag.onKey = function (kev) {
+        if (kev && kev.key === 'Escape') { kev.preventDefault(); kev.stopPropagation(); finish(false); }
+      };
+      document.addEventListener('keydown', DEMO.drag.onKey, true);
+      handle.setAttribute('data-dragging', 'true');
+    });
+    handle.addEventListener('pointermove', function (ev) {
+      var d = DEMO.drag;
+      if (!d || d.key !== n.key || ev.pointerId !== d.pointerId) return;
+      var yy = svgY(ev);
+      if (yy === null) return;
+      var step = ev.altKey ? DEMO_FINE_STEP_C : DEMO_STEP_C;
+      var raw = priceAt(yy) - priceAt(d.y0);
+      var deltaC = Math.round(raw / step) * step;
+      var next = d.start_c + deltaC;
+      /* THE AXIS IS FROZEN: the point stays inside the scale already drawn, so nothing has to re-fit. */
+      var minC = Math.max(1, Math.ceil(geo.lo)), maxC = Math.floor(geo.hi);
+      while (next < minC) next += step;
+      while (next > maxC) next -= step;
+      if (next < 1) next = d.start_c;
+      d.now_c = next;
+      d.moved = d.moved || next !== d.start_c;
+      handle.setAttribute('transform', 'translate(0,' + (geo.y(next) - geo.y(d.start_c)) + ')');
+      d.readout.setAttribute('y', String(geo.y(next) + 4));
+      while (d.readout.firstChild) d.readout.removeChild(d.readout.firstChild);
+      d.readout.appendChild(document.createTextNode('Simulated ' + plain(next) + '  (original '
+        + plain(d.base_c) + ')'));
+    });
+    handle.addEventListener('pointerup', function (ev) {
+      var d = DEMO.drag;
+      if (!d || ev.pointerId !== d.pointerId) return;
+      finish(true);
+    });
+    handle.addEventListener('pointercancel', function () { if (DEMO.drag) finish(false); });
+    handle.addEventListener('lostpointercapture', function () {
+      /* Released by the system rather than by a pointerup this handler saw: nothing is committed. */
+      if (DEMO.drag && DEMO.drag.key === n.key) finish(false);
+    });
+  }
+
+  var DEMO_SHORT = { DEAL_PRICE_MISSING: 'no deal price', PROMOTION_CURRENCY_UNRESOLVED: 'no currency',
+    PROMOTION_CURRENCY_MISMATCH: 'other currency', CAMPAIGN_SCOPE_INCOMPLETE: 'scope unverified',
+    LINE_NOT_ACTIVE: 'line not active', DUPLICATE_CAMPAIGN_LINE: 'duplicate lines',
+    DEAL_PRICE_CONFLICT: 'price conflict' };
+  /** The recorded position, left on the chart as a hollow outline with a link to where it was moved. */
+  function demoGhost(g, cx, yFrom, yTo, half, shape) {
+    g.appendChild(svg('line', { x1: cx, y1: yFrom, x2: cx, y2: yTo, 'class': 'demo-sim-link' }));
+    if (shape === 'diamond') {
+      g.appendChild(svg('polygon', { points: diamond(cx, yFrom, half), 'class': 'demo-ghost demo-ghost-diamond' }));
+    } else {
+      g.appendChild(svg('rect', { x: cx - half, y: yFrom - half, width: half * 2, height: half * 2, rx: 9,
+        'class': 'demo-ghost demo-ghost-plate' }));
+    }
+    g.appendChild(svgText({ x: cx - half - 4, y: yFrom + 4, 'class': 'demo-ghost-label', 'text-anchor': 'end' }, 'Original'));
+  }
+  function demoRedrawKeepFocus(key) {
+    renderData();
+    var cs = document.querySelectorAll('.col');
+    for (var i = 0; i < cs.length; i++) {
+      if (cs[i].getAttribute('data-node-key') === key) { try { cs[i].focus(); } catch (e) {} break; }
+    }
   }
 
   function renderChart(panel, thrC, findings) {
@@ -730,7 +1230,24 @@
        scenario can only ever push a bound outward. P1-B2C changes how many PIXELS that domain is
        painted across; it does not touch which prices are in it. */
     var dom = scopeDomain(ns);
-    var lay = layoutFor(ns, dom);
+    /* PSB-DEMO-R1 — the activity prices and the entered competitors are drawn, so the axis holds them.
+       A simulation widens it only when it lies OUTSIDE the axis the recorded prices produce: one inside
+       changes nothing, so dropping a dragged point can never re-scale the chart under it. */
+    var demoComps = demoCompetitors((ns[0] || {}).category);
+    var cols = ns.length + demoComps.length;
+    dom = demoDomain(ns, demoComps, dom);
+    var lay = layoutFor(ns, dom, cols);
+    (function () {
+      var lo2 = dom.lo, hi2 = dom.hi, grew = false;
+      ns.forEach(function (n) {
+        var sm = demoSimMap()[n.key];
+        if (!sm) return;
+        if (sm.to_c < lay.axisLoC && (lo2 === null || sm.to_c < lo2)) { lo2 = sm.to_c; grew = true; }
+        if (sm.to_c > lay.axisHiC && (hi2 === null || sm.to_c > hi2)) { hi2 = sm.to_c; grew = true; }
+      });
+      if (grew) { dom = { lo: lo2, hi: hi2, canonical_lo: dom.canonical_lo, canonical_hi: dom.canonical_hi,
+        expanded_by_scenario: true }; lay = layoutFor(ns, dom, cols); }
+    }());
     var t = { lo: lay.axisLoC, hi: lay.axisHiC, step: lay.tickStepC, ticks: lay.ticks };
     var PLOT_H = lay.plotH;
     var PLOT_TOP = lay.plotTop;
@@ -988,8 +1505,51 @@
         g.appendChild(svg('circle', { cx: cx, cy: yo, r: 5, 'class': 'scen-ghost',
           'data-layer': 'scenario', 'data-price-c': n._canonical.regular_c }));
       }
-      everydayMarker(g, cx, y(n._regular_c), n,
+      /* ---- PSB-DEMO-R1: the price point that is drawn, its recorded original, and the drag ---- */
+      DEMO_NODES[n.key] = n;
+      g.setAttribute('data-node-key', n.key);
+      var dpt = demoPointFor(n);
+      var geo = { lo: t.lo, hi: t.hi, bottom: PLOT_BOT, h: PLOT_H, y: y, cx: cx,
+        half: (lay.imageSize || 50) / 2 };
+      if (dpt.sim) {
+        g.setAttribute('data-sim-c', dpt.sim.to_c);
+        g.setAttribute('data-sim-from-c', dpt.sim.from_c);
+        g.setAttribute('class', g.getAttribute('class') + ' is-simulated');
+      }
+      if (DEMO.selected === n.key) g.setAttribute('data-selected', 'true');
+      var everydayC = (!dpt.act && dpt.sim) ? dpt.sim.to_c : n._regular_c;
+      if (!dpt.act && dpt.sim) demoGhost(g, cx, y(dpt.sim.from_c), y(dpt.sim.to_c), geo.half, 'plate');
+      var mk = everydayMarker(g, cx, y(everydayC), n,
         { imageSize: lay.imageSize, frac: frac(n._regular_c) });
+      if (!dpt.act) {
+        demoAttachDrag(s, mk, n, geo);
+      } else {
+        g.setAttribute('data-activity-state', dpt.act.state);
+        mk.setAttribute('class', mk.getAttribute('class') + ' is-comparison');
+        if (dpt.act.deal_c !== null) {
+          var dealShown = dpt.sim ? dpt.sim.to_c : dpt.act.deal_c;
+          var ax = cx + geo.half + 12;
+          if (dpt.sim) demoGhost(g, ax, y(dpt.sim.from_c), y(dpt.sim.to_c), dia * 1.5, 'diamond');
+          var ag = svg('g', { 'class': 'mk-activity-group', 'data-layer': 'activity',
+            'data-price-c': dealShown, 'data-recorded-c': dpt.act.deal_c,
+            'data-state': dpt.act.state });
+          ag.appendChild(svg('rect', { x: ax - 14, y: y(dealShown) - 14, width: 28, height: 28,
+            'class': 'mk-activity-hit' }));
+          ag.appendChild(svg('polygon', { points: diamond(ax, y(dealShown), dia * 1.5),
+            'class': 'mk-activity' + (dpt.sim ? ' is-simulated' : ''), 'data-price-c': dealShown }));
+          ag.appendChild(svgText({ x: ax + dia * 1.5 + 4, y: y(dealShown) + 4, 'class': 'mk-activity-label',
+            'text-anchor': 'start' }, plain(dealShown) + (dpt.act.state === 'PRICED_PARTIAL' ? ' *' : '')));
+          g.appendChild(ag);
+          demoAttachDrag(s, ag, n, geo);
+        } else if (dpt.act.state !== 'NOT_IN_ACTIVITY') {
+          var miss = svgText({ x: cx, y: y(n._regular_c) - geo.half - 8, 'class': 'mk-activity-missing',
+            'data-state': dpt.act.state, 'text-anchor': 'middle' }, DEMO_SHORT[dpt.act.state] || dpt.act.state);
+          var mt2 = svg('title', {});
+          mt2.appendChild(document.createTextNode(SEL.CAMPAIGN_PRICE_TEXT[dpt.act.state] || dpt.act.state));
+          miss.appendChild(mt2);
+          g.appendChild(miss);
+        }
+      }
 
       /* ---- THE LABEL LANE. ONE BASELINE FOR EVERY PRODUCT. ----
          Two rows, both measured from LANE_TOP and never from a price, so the lane is identical for
@@ -1058,14 +1618,83 @@
         'data-row': 'b', 'data-printed': String(labelled),
         'text-anchor': 'middle' }, subText));
 
-      g.addEventListener('mouseenter', function (ev) { showTip(ev, n); });
-      g.addEventListener('mousemove', moveTip);
+      g.addEventListener('mouseenter', function (ev) { if (!DEMO.drag) showTip(ev, n); });
+      g.addEventListener('mousemove', function (ev) { if (!DEMO.drag) moveTip(ev); });
       g.addEventListener('mouseleave', hideTip);
+      /* PSB-DEMO-R1 — THE KEYBOARD MOVES THE SAME POINT. Up/Down by one currency unit, with Shift by
+         0.10; Enter opens the editor for an exact price. Focus is put back on this column after the
+         redraw, so a run of key presses keeps working. */
+      g.addEventListener('keydown', function (ev) {
+        if (!ev) return;
+        var p2 = demoPointFor(n);
+        if (ev.key === 'Enter') { ev.preventDefault(); DEMO.selected = n.key; demoRedrawKeepFocus(n.key); return; }
+        if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+        if (!p2.draggable) return;
+        ev.preventDefault();
+        var stepK = ev.shiftKey ? DEMO_FINE_STEP_C : DEMO_STEP_C;
+        var nextK = p2.shown_c + (ev.key === 'ArrowUp' ? stepK : -stepK);
+        if (nextK < 1) return;
+        DEMO.selected = n.key;
+        demoSetSim(n.key, nextK);
+        demoRedrawKeepFocus(n.key);
+      });
       /* KEYBOARD REACHES THE SAME FACTS. A chart a person can only interrogate with a mouse is a chart
          half the reviewers cannot interrogate at all. */
       g.addEventListener('focus', function () { focusTip(n); });
       g.addEventListener('blur', hideTip);
       s.appendChild(g);
+    });
+
+    /* ---- PSB-DEMO-R1: THE TEMPORARY COMPETITORS, IN THEIR OWN COLUMNS AFTER THIS SITE'S PRODUCTS ----
+       Separated by a rule and marked on every surface. Only the price point is drawn unless both band
+       ends were entered: no range is invented for a competitor that has none. */
+    if (demoComps.length) {
+      var sepX = x(ns.length) - lay.colW / 2;
+      s.appendChild(svg('line', { x1: sepX, y1: PLOT_TOP - 10, x2: sepX, y2: LANE_TOP + lay.laneRow2,
+        'class': 'demo-comp-sep' }));
+      s.appendChild(svgText({ x: sepX + 6, y: PLOT_TOP - 14, 'class': 'demo-comp-head',
+        'text-anchor': 'start' }, 'Competitors · entered this session · not saved'));
+    }
+    demoComps.forEach(function (c, j) {
+      var cxc = x(ns.length + j);
+      var cg = svg('g', { 'class': 'col col-competitor', 'data-competitor-id': c.id,
+        'data-temporary': 'true', 'data-price-c': c.price_c,
+        'data-lo-c': c.lo_c === null ? '' : c.lo_c, 'data-hi-c': c.hi_c === null ? '' : c.hi_c,
+        tabindex: '0', role: 'group',
+        'aria-label': 'Competitor ' + c.name + ' (entered this session, not saved) '
+          + money(c.price_c, panel.currency) });
+      var cw = Math.max(6, Math.min(13, lay.colW * 0.28));
+      if (c.lo_c !== null && c.hi_c !== null) {
+        cg.appendChild(svg('line', { x1: cxc, y1: y(c.lo_c), x2: cxc, y2: y(c.hi_c), 'class': 'comp-band' }));
+      }
+      if (c.lo_c !== null) cg.appendChild(svg('line', { x1: cxc - cw, y1: y(c.lo_c), x2: cxc + cw, y2: y(c.lo_c), 'class': 'comp-cap' }));
+      if (c.hi_c !== null) cg.appendChild(svg('line', { x1: cxc - cw, y1: y(c.hi_c), x2: cxc + cw, y2: y(c.hi_c), 'class': 'comp-cap' }));
+      var sz = Math.max(14, Math.round((lay.imageSize || 50) * 0.55));
+      cg.appendChild(svg('rect', { x: cxc - sz / 2, y: y(c.price_c) - sz / 2, width: sz, height: sz, rx: 4,
+        'class': 'mk-comp', 'data-price-c': c.price_c }));
+      cg.appendChild(svgText({ x: cxc, y: y(c.price_c) + 4, 'class': 'mk-comp-text', 'text-anchor': 'middle' }, 'C'));
+      var fullC = String(c.name);
+      var shownC = fullC.length > lay.labelChars ? fullC.slice(0, lay.labelChars - 1) + '…' : fullC;
+      cg.appendChild(svgText({ x: cxc, y: LANE_TOP + lay.laneRow1, 'class': 'xlabel xlabel-comp',
+        'font-size': lay.labelPx, 'data-full': fullC, 'text-anchor': 'middle' }, shownC));
+      cg.appendChild(svgText({ x: cxc, y: LANE_TOP + lay.laneRow2, 'class': 'xsub xsub-comp',
+        'font-size': lay.subPx, 'text-anchor': 'middle' }, plain(c.price_c) + ' · temp'));
+      function compTip() {
+        var L = [{ t: c.name + '  (competitor)', head: true },
+          { t: 'Price ' + money(c.price_c, panel.currency) }];
+        if (c.lo_c !== null || c.hi_c !== null) {
+          L.push({ t: 'Band ' + (c.lo_c === null ? 'not entered' : money(c.lo_c, panel.currency)) + ' to '
+            + (c.hi_c === null ? 'not entered' : money(c.hi_c, panel.currency)) });
+        } else { L.push({ t: 'No band entered - only the price point is drawn.' }); }
+        L.push({ t: 'Entered on this screen for this discussion. Not saved, not one of this site’s products, and not counted in any finding.', miss: true });
+        return L;
+      }
+      cg.addEventListener('mouseenter', function (ev) { paintTip(compTip(), 'pointer'); moveTip(ev); });
+      cg.addEventListener('mousemove', moveTip);
+      cg.addEventListener('mouseleave', hideTip);
+      cg.addEventListener('focus', function () { paintTip(compTip(), 'focus'); });
+      cg.addEventListener('blur', hideTip);
+      s.appendChild(cg);
     });
 
     /* ---- THE SCALE FOLLOWS THE READER SIDEWAYS ---------------------------------------------
@@ -1097,6 +1726,10 @@
     if (n._min_c !== null) bits.push('floor ' + money(n._min_c, cur));
     if (n._deal_live && n._deal_c !== null) bits.push('live promotion ' + money(n._deal_c, cur));
     if (n._proposed_c !== null) bits.push('proposed ' + money(n._proposed_c, cur));
+    var dp = demoPointFor(n);
+    if (dp.act) bits.push(dp.act.deal_c !== null ? 'activity deal ' + money(dp.act.deal_c, cur)
+      : (SEL.CAMPAIGN_PRICE_TEXT[dp.act.state] || dp.act.state));
+    if (dp.sim) bits.push('simulated ' + money(dp.sim.to_c, cur) + ', original ' + money(dp.sim.from_c, cur));
     if (n.variant_count > 1) bits.push(n.variant_count + ' colours');
     if (n._scenario && n._scenario.active) {
       bits.push('SIMULATED, original ' + money(n._canonical.regular_c, cur));
@@ -1543,6 +2176,8 @@
       { layer: 'floor', sw: 'sw-floor', text: 'Lowest / floor price' },
       { layer: 'steps', sw: 'sw-gap', text: 'Price gap' }
     ];
+    if (demoActivityOn()) items.push({ layer: null, sw: 'sw-activity', text: 'Activity deal price (recorded)' });
+    if (demoSimCount()) items.push({ layer: null, sw: 'sw-sim', text: 'Simulated price · hollow = original' });
     items.forEach(function (p) {
       if (p.layer === 'band' ? !(layerOn('floor') && layerOn('msrp'))
         : (p.layer !== null && !layerOn(p.layer))) return;
@@ -1569,6 +2204,7 @@
         + '  (a scenario on this board, not a live offer)' });
     }
     L.push({ t: 'Floor ' + money(n._min_c, n.currency) });
+    demoTipLines(n).forEach(function (l) { L.push(l); });
     L.push({ t: n.variant_count + (n.variant_count === 1 ? ' variant' : ' variants')
       + (n.variant_names.length ? ': ' + n.variant_names.join(', ') : '') });
     if (n.image) {
@@ -1577,6 +2213,27 @@
       L.push({ t: 'IMAGE SOURCE MISSING — no verified mapping for this product', miss: true });
     }
     L.push({ t: 'Current selling price is not shown, and neither is margin: no source of record.' });
+    return L;
+  }
+  /** PSB-DEMO-R1 — the activity price and the simulation, in words, from the same derivation the chart draws. */
+  function demoTipLines(n) {
+    var L = [];
+    var pt = demoPointFor(n);
+    if (pt.act) {
+      var a = demoActivity();
+      L.push({ t: 'Activity: ' + (a ? (a.campaign_name || a.campaign_id) + '  ' + (a.start_date || '?') + ' to '
+        + (a.end_date || '?') + '  (recorded status: ' + (a.status || 'not recorded') + ')' : DEMO.activityId) });
+      if (pt.act.deal_c !== null) {
+        L.push({ t: 'Deal price on record ' + money(pt.act.deal_c, n.currency)
+          + (pt.act.state === 'PRICED_PARTIAL' ? '  (' + pt.act.members_priced + ' of ' + pt.act.members_total + ' variants)' : '') });
+      } else {
+        L.push({ t: SEL.CAMPAIGN_PRICE_TEXT[pt.act.state] || pt.act.state, miss: pt.act.state !== 'NOT_IN_ACTIVITY' });
+      }
+    }
+    if (pt.sim) {
+      L.push({ t: 'Simulated ' + money(pt.sim.to_c, n.currency) + '  (original ' + money(pt.sim.from_c, n.currency)
+        + ') - this session only, not saved' });
+    }
     return L;
   }
   /** ONE PAINTER. A product and a price gap are two different things to explain in the same box. */
@@ -1819,8 +2476,11 @@
     tb.id = 'productTable';
     tb.setAttribute('data-category', m.category || '');
     var thead = el('thead'), tr = el('tr');
-    ['', 'Model', 'Representative SKU', 'Variants', 'Series', 'Floor', 'Everyday', 'List',
-      'Official deal', 'Proposed', 'Status', 'Data quality']
+    var demoHeads = ['', 'Model', 'Representative SKU', 'Variants', 'Series', 'Floor', 'Everyday', 'List',
+      'Official deal', 'Proposed'];
+    if (demoActivityOn()) demoHeads.push('Activity price');
+    if (demoSimCount()) demoHeads.push('Simulated');
+    demoHeads.concat(['Status', 'Data quality'])
       .forEach(function (t) { tr.appendChild(el('th', null, t)); });
     thead.appendChild(tr);
     tb.appendChild(thead);
@@ -1884,6 +2544,28 @@
           tdP.appendChild(el('div', 'pill', 'board scenario'));
         }
         r.appendChild(tdP);
+
+        var dpr = demoPointFor(n);
+        if (demoActivityOn()) {
+          var tdA = el('td', 'num');
+          tdA.setAttribute('data-activity-state', dpr.act ? dpr.act.state : '');
+          if (dpr.act && dpr.act.deal_c !== null) {
+            tdA.appendChild(document.createTextNode(money(dpr.act.deal_c, n.currency)));
+            if (dpr.act.state === 'PRICED_PARTIAL') tdA.appendChild(el('div', 'pill is-warn', 'some variants'));
+          } else {
+            tdA.appendChild(document.createTextNode('—'));
+            if (dpr.act && dpr.act.state !== 'NOT_IN_ACTIVITY') tdA.appendChild(el('div', 'pill is-warn', DEMO_SHORT[dpr.act.state] || dpr.act.state));
+          }
+          r.appendChild(tdA);
+        }
+        if (demoSimCount()) {
+          var tdS = el('td', 'num');
+          if (dpr.sim) {
+            tdS.appendChild(document.createTextNode(money(dpr.sim.to_c, n.currency)));
+            tdS.appendChild(el('div', 'pill', 'simulated · was ' + plain(dpr.sim.from_c)));
+          } else { tdS.appendChild(document.createTextNode('—')); }
+          r.appendChild(tdS);
+        }
 
         r.appendChild(el('td', null, n.lifecycle_status));
 
@@ -2031,8 +2713,19 @@
 
     var head = el('section', 'card');
     head.appendChild(el('h1', 'rtitle', cat));
-    head.appendChild(el('div', 'rmeta', 'Price architecture · ' + scopeLabel()
-      + ' · prepared ' + PREVIEW_TODAY));
+    /* PSB-DEMO-R1 — "prepared 2026-09-10" WAS A CONSTANT, NOT A FACT. It was the preview fixture's day,
+       printed on every live board as if somebody had prepared the page then. What can be proved is when
+       the server READ the tables (72_ stamps schema.read_at from its own clock), so that is what is
+       printed, under that name — and never as the time any price was last changed. */
+    var rt = SEL.readTimeOf(LOAD && LOAD.provenance);
+    var rmeta = el('div', 'rmeta', 'Price architecture · ' + scopeLabel() + ' · '
+      + (rt.known ? ('database read ' + rt.text + ' (Taipei)') : 'database read time not reported'));
+    rmeta.id = 'readTimeMeta';
+    rmeta.setAttribute('data-read-at-ms', rt.known ? String(rt.ms) : '');
+    rmeta.setAttribute('title', rt.known
+      ? ('When the server read the price tables: ' + rt.basis + '. Not when any price was last changed.')
+      : 'The source did not report when it was read, so no time is shown.');
+    head.appendChild(rmeta);
     host.appendChild(head);
 
     host.appendChild(kpiStrip(m));
@@ -2054,13 +2747,14 @@
       var lay = LAYOUT.deriveResponsiveChartLayout({
         containerWidth: (STATE.box || {}).w,
         availableHeight: (STATE.box || {}).h,
-        productCount: p.plotted.length,
+        productCount: p.plotted.length + demoCompetitors(cat).length,
         domainLowC: scopeDomain(p.plotted).lo,
         domainHighC: scopeDomain(p.plotted).hi,
         mode: STATE.fullscreen ? 'fullscreen' : STATE.chartMode
       });
       panel.setAttribute('data-density', lay.density);
       addInfo(panel, chartControls(lay));
+      panel.appendChild(demoControls(p, cat));
       panel.appendChild(renderChart(p, STATE.thresholdC, m.findings));
       panel.appendChild(legend());
       host.appendChild(panel);
@@ -2766,6 +3460,7 @@
     STATE.scenarioInput = '';
     STATE.scenarioNotice = null;
     STATE.scenarioRefusal = null;
+    demoClearAll();   // PSB-DEMO-R1 — the drag simulations, the competitors and the activity choice too
     /* THE DRAWER CLOSES WITH IT. A form left open over a site it no longer describes invites
        somebody to press Apply on the last site's numbers. */
     STATE.meetingOpen = false;
@@ -5350,6 +6045,12 @@
        closure would put the translation in every caller. */
     showView: function (idOrRoute) { selectView(VIEWS.resolve(idOrRoute)); return STATE.view; },
     currentRoute: function () { return VIEWS.routeOf(STATE.view); },
+    /* PSB-DEMO-R1 - a read-only COPY of the in-memory demo state, for acceptance. Returns no live object. */
+    demoState: function () {
+      return JSON.parse(JSON.stringify({ priceView: DEMO.priceView, activityId: DEMO.activityId, sims: DEMO.sims,
+        undo: DEMO.undo.length, selected: DEMO.selected, competitors: DEMO.competitors, dragging: !!DEMO.drag,
+        simCtx: demoSimCtx() }));
+    },
     VIEWS: VIEWS,
     /* Stated as data so a suite can assert the seam rather than grep for it. */
     CONTRACT: {

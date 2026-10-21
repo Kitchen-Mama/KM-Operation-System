@@ -1981,3 +1981,70 @@ body.is-fullscreen .psb-page .scn-drawer { display: none; }
 /* PRINT AND FULLSCREEN ARE UNCHANGED BY THE OFFSET. Print already makes the drawer `position:
    static`, where `top` does not apply; presentation and fullscreen already remove it entirely. This
    restates neither — it is here to record that both were checked, not to add a rule. */
+
+
+/* ---------------------------------------------------------------- PSB-DEMO-R1 ------------------
+   The activity price view, the temporary competitor layer and the price-point drag. Every colour
+   here is one the board already uses for the same meaning: the scenario violet for a simulation, the
+   deal red family for an activity price, and a neutral slate for a competitor that is not ours. */
+.psb-page .demo-ctl {
+  display: flex; flex-wrap: wrap; gap: var(--space-md); align-items: flex-start;
+  padding: 8px 10px; margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: #fafbfc;
+}
+.psb-page .demo-ctl .ctl-group { min-width: 0; }
+.psb-page .demo-select { height: 28px; max-width: 460px; min-width: 220px; font: inherit; font-size: 12px;
+  border: 1px solid var(--filter-border-color); border-radius: var(--radius-sm); background: #fff; }
+.psb-page .demo-note { margin: 4px 0 0; flex-basis: 100%; font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
+.psb-page .demo-tag { font-size: 12px; color: var(--scn-mark); font-weight: 600; }
+.psb-page .demo-editor { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.psb-page .demo-input { width: 84px; height: 28px; font: inherit; font-size: 12px; padding: 0 6px;
+  border: 1px solid var(--filter-border-color); border-radius: var(--radius-sm); }
+.psb-page #compName.demo-input { width: 150px; }
+.psb-page .demo-ctl .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; background: #fff;
+  border-color: var(--filter-border-color); }
+.psb-page .demo-ctl .btn-sm:disabled { opacity: .45; cursor: not-allowed; }
+.psb-page .demo-error { margin: 4px 0 0; flex-basis: 100%; font-size: 12px; color: var(--risk); }
+.psb-page .demo-comp-list { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.psb-page .demo-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 8px;
+  border: 1px dashed #64748b; border-radius: 999px; background: #fff; color: #334155; }
+.psb-page .chip-btn { font: inherit; font-size: 11px; border: 0; background: transparent; color: #475569;
+  cursor: pointer; padding: 2px 4px; text-decoration: underline; }
+.psb-page .demo-comp-form { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
+.psb-page .demo-field { display: inline-flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--ink-3); }
+
+/* the chart marks */
+.psb-page .col .mk-reg-group[data-draggable="true"] { cursor: ns-resize; }
+.psb-page .col .mk-reg-group[data-dragging="true"] { opacity: .92; }
+.psb-page .mk-reg-group.is-comparison { opacity: .45; }
+.psb-page .mk-activity { fill: #c2410c; stroke: #fff; stroke-width: 1.5; }
+.psb-page .mk-activity.is-simulated { fill: var(--scn-mark); }
+.psb-page .mk-activity-hit { fill: transparent; }
+.psb-page .mk-activity-group { cursor: ns-resize; }
+.psb-page .mk-activity-label { font-size: 11px; font-weight: 600; fill: #9a3412; paint-order: stroke;
+  stroke: #fff; stroke-width: 3px; }
+.psb-page .mk-activity-missing { font-size: 10.5px; fill: #92400e; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
+.psb-page .demo-ghost { fill: none; stroke: var(--scn-mark); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.psb-page .demo-sim-link { stroke: var(--scn-mark); stroke-width: 1.25; stroke-dasharray: 3 3; }
+.psb-page .demo-ghost-label { font-size: 10px; fill: var(--scn-mark); paint-order: stroke; stroke: #fff; stroke-width: 3px; }
+.psb-page .col.is-simulated .mk-img-plate { stroke: var(--scn-mark); stroke-width: 2; }
+.psb-page .col[data-selected="true"] .xlabel { fill: var(--scn-mark); font-weight: 700; }
+.psb-page .demo-readout { font-size: 12px; font-weight: 700; fill: var(--scn-mark); paint-order: stroke;
+  stroke: #fff; stroke-width: 4px; pointer-events: none; }
+.psb-page .mk-comp { fill: #fff; stroke: #475569; stroke-width: 1.75; stroke-dasharray: 3 2; }
+.psb-page .mk-comp-text { font-size: 10px; font-weight: 700; fill: #475569; pointer-events: none; }
+.psb-page .comp-band { stroke: #64748b; stroke-width: 2; stroke-dasharray: 4 3; }
+.psb-page .comp-cap { stroke: #64748b; stroke-width: 1.5; }
+.psb-page .demo-comp-sep { stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 2 4; }
+.psb-page .demo-comp-head { font-size: 10.5px; fill: #475569; }
+.psb-page .xlabel-comp, .psb-page .xsub-comp { fill: #475569; font-style: italic; }
+.psb-page .sw-activity { background: #c2410c; transform: rotate(45deg); border-radius: 2px; }
+.psb-page .sw-sim { background: #fff; border: 1.5px dashed var(--scn-mark); }
+
+@media (max-width: 820px) {
+  .psb-page .demo-ctl { flex-direction: column; }
+  .psb-page .demo-select { min-width: 0; width: 100%; max-width: 100%; }
+}
+@media print {
+  .psb-page .demo-ctl .btn-sm, .psb-page .demo-comp-form, .psb-page .chip-btn { display: none; }
+}
