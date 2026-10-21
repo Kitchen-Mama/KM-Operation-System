@@ -6573,3 +6573,67 @@ here has been run against a deployment.
 
 **NOT PUSHED. NOT SYNCED. NOT DEPLOYED. No Script Property was created, no rate was initialised and no
 price was written.**
+
+### FX1-R4-R1 — recovery after an unclean reboot (RECOVERY-0)
+
+The machine rebooted uncleanly at **09:15 on 2026-10-21** (System events 41 / 6008) with the
+fourteenth cp2r batch part-way through. Found at restart: HEAD `680b87f6`, one modified file,
+`inventory-replenishment.js`, differing from HEAD by exactly the two `onReveal` identifiers of the cp2r
+**unscoped arm** (`_irRecoRevealPaint_` / `_irExecRevealPaint_`). Attributed by three independent
+sources, not by resemblance: the cp2r README's arm table, the driver that writes exactly those two
+anchors, and the interrupted session's own last status line naming the driver's PID.
+
+The driver and its child were confirmed gone; no process held the repository; no sweep lock existed.
+The diff was saved, then reverse-applied **as a patch of those two lines only** — no checkout, no
+reset — and the file's blob was verified equal to HEAD's (`22418e4a`). Every partial capture from the
+interrupted attempt was discarded. Nothing from it was promoted.
+
+### FX1-R4-R1 — the fourteenth cp2r batch
+
+Required because `operation-system-db-api.js` changed (D-S8-B3-180) and §E1 pins it. Taken from
+scratch on one build: **−90.6 / −84.1 ms, 6 of 6 and 6 of 6**, no fatals, one outlier kept (in the
+SCOPED arm, against the conclusion). Recorded in `docs/evidence/cp2r-reveal-scope/README.md`,
+including that the machine was **not** quiet. cp2r **45 passed, 0 failed**.
+
+### FX1-R4-R1 — the clean full regression, at the frozen HEAD
+
+```
+HEAD      73d64342
+total 690   clean 690   not_clean 0
+not_clean_suites: []
+registered 690   executed 690   integrity INTACT   complete true
+dirty_before []   dirty_after []   aborted null   stderr 0 bytes
+```
+
+`node assets/tools/run-regression-sweep.js`, 10:04 → 10:25, no edit and no other node workload
+against the tree while it ran. This is the first clean sweep of FX1-R4-R1: the two earlier passes
+were stopped by real findings (the secret scanner, `680b87f6`; and a suite killed at its timeout,
+whose mutant the sweep refused to run past), and neither is counted as evidence.
+
+GS load surface re-measured, unchanged: **79 files, 4,666,841 / 4,668,000, UNDER by 1,159.**
+
+### The exact sync set, measured against what is actually published
+
+`origin/main` is `315b69da`. Everything after it is committed and unpushed, so the push carries more
+than this round:
+
+```
+git diff --name-status 315b69da HEAD -- assets/specs/active/apps-script/
+M 01_router.gs   M 04_marketplace_forecast_import.gs   M 63_api_v1_system_health.gs   A 75_api_v1_fx_rate_book.gs
+
+git diff --name-status 315b69da HEAD -- index.html assets/js assets/html assets/css
+A assets/css/pages/fx-rate-book.css        M assets/html/pages/fx-rate-book.html
+M assets/js/api/operation-system-db-api.js M assets/js/app.js
+M assets/js/pages/fx-rate-book.js          M assets/js/pages/inventory-replenishment.js
+M index.html
+```
+
+**APPS_SCRIPT_SYNC_REQUIRED stays the four files**, valid while `mixed_deployment` is `false` (it is,
+per HEALTH-50215EC7). `90_` is not rebuilt and not copied. **GITHUB_PAGES_FILES is the seven above.**
+`inventory-replenishment.js` is not an FX file and IR is frozen this round: it rides because CP2X-R4,
+-R4-R1 and -R4-R2 changed it after the R54 cut and those rounds are not pushed either. The FX section's
+list above is that round's own files and is correct for that question; the seven are the answer to
+"what does the push publish".
+
+**NOT PUSHED. NOT SYNCED. NOT DEPLOYED. No Script Property was created, no rate was initialised and no
+price was written.**
