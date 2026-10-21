@@ -6637,3 +6637,44 @@ list above is that round's own files and is correct for that question; the seven
 
 **NOT PUSHED. NOT SYNCED. NOT DEPLOYED. No Script Property was created, no rate was initialised and no
 price was written.**
+
+---
+
+## FC1-R1 phase 1 — FC history and achievement: the interface, with no source
+
+**Not part of R55.** The R55 candidate stays `7376bee8` (already on `origin/main`); everything below is
+later, separate commits for their own acceptance. **No `.gs` byte changed**: GS load surface
+4,666,841 / 4,668,000, `SYS_DEPLOYMENT_RELEASE_` unchanged, no Apps Script sync is required.
+
+| commit | what |
+|---|---|
+| `b816192c` | `R55_PRODUCTION_RELEASE_RUNBOOK.md` (docs only) |
+| `7ea0a07a` | the phase-1 feature, contract and suite; app token r62 → r63 |
+| `331acdb6` | thirteen browser captures the token and page change invalidated, re-taken |
+
+What ships, per `FC_HISTORY_ACHIEVEMENT_PHASE1_CONTRACT.md`: a Months view switch on the Regular table
+(Forecast unchanged; Actual and Achievement % render a named missing state), and two history-based
+builder methods that refuse Preview and Save with `FC_HISTORY_METHOD_NOT_AVAILABLE`. Contract #1 and #3
+are **deferred to phase 2 by the Owner, not resolved**; the 0-vs-missing display rule is confirmed.
+
+### Clean full regression at the frozen HEAD
+
+```
+HEAD      331acdb6
+total 691   clean 691   not_clean 0
+registered 691   executed 691   integrity INTACT   complete true   stderr 0 bytes
+```
+
+The pass before it (at `7ea0a07a`) was 678/691; all thirteen were capture pins and were re-taken, not
+re-pinned (`331acdb6` records how, including one mount attempt that failed on a relative profile path
+and was discarded).
+
+### GITHUB_PAGES_FILES when this is pushed
+
+`index.html` and `assets/js/app.js` (token r63), `assets/js/pages/fc-summary.js`,
+`assets/html/pages/fc-summary.html`. **The token is the reason the whole co-deployed set re-downloads**:
+every asset URL in `index.html` moves to r63 although only `fc-summary.*` changed content.
+
+**APPS_SCRIPT_SYNC_REQUIRED: none.**
+
+**NOT PUSHED. NOT SYNCED. NOT DEPLOYED.**
