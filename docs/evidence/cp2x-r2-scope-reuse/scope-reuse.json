@@ -1,7 +1,7 @@
 {
   "round": "S8-B3-R3-CP2S-R2",
   "what": "in-place velocity update: what survives a real workspace arrival in a real browser",
-  "takenAt": "2026-10-21T03:45:41.096Z",
+  "takenAt": "2026-10-21T07:49:07.083Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "skus": 60,
   "recoReadsServed": 7,
@@ -11,14 +11,14 @@
   },
   "sources": {
     "index.html": "b295efa32fd7ad8b",
-    "assets/js/pages/inventory-replenishment.js": "c0ffbce98e0e9327",
+    "assets/js/pages/inventory-replenishment.js": "90411cb7e136c6e5",
     "assets/css/pages/inventory-replenishment.css": "74872c1b61ce9d47",
     "assets/tests/_cp2s-r2-inplace-dom-runner.js": "ef0476cf204d8f3a"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 706,
+      "t": 741,
       "success": true,
       "dataKeys": [
         "product_strategy_enabled",
@@ -26,11 +26,11 @@
         "capabilitiesVersion"
       ],
       "counts": {},
-      "respondedAt": 707
+      "respondedAt": 741
     },
     {
       "action": "inventoryScope.registry.get",
-      "t": 892,
+      "t": 937,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -43,11 +43,11 @@
         "marketplaces": 2,
         "countries": 1
       },
-      "respondedAt": 892
+      "respondedAt": 937
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 1536,
+      "t": 1584,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -95,11 +95,11 @@
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
       },
-      "respondedAt": 1536
+      "respondedAt": 1584
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 1567,
+      "t": 1619,
       "success": true,
       "dataKeys": [
         "rows"
@@ -107,11 +107,11 @@
       "counts": {
         "rows": 240
       },
-      "respondedAt": 1567
+      "respondedAt": 1619
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 1568,
+      "t": 1621,
       "success": true,
       "dataKeys": [
         "lines",
@@ -120,11 +120,11 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 1568
+      "respondedAt": 1621
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 2530,
+      "t": 2588,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -172,11 +172,11 @@
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
       },
-      "respondedAt": 2530
+      "respondedAt": 2588
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 3603,
+      "t": 3667,
       "success": true,
       "dataKeys": [
         "lines",
@@ -185,11 +185,11 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 3603
+      "respondedAt": 3667
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 4434,
+      "t": 4510,
       "success": true,
       "dataKeys": [
         "lines",
@@ -198,11 +198,11 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 4434
+      "respondedAt": 4510
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 5005,
+      "t": 5084,
       "success": true,
       "dataKeys": [
         "rows"
@@ -210,11 +210,11 @@
       "counts": {
         "rows": 240
       },
-      "respondedAt": 5005
+      "respondedAt": 5084
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 5007,
+      "t": 5086,
       "success": true,
       "dataKeys": [
         "lines",
@@ -223,11 +223,11 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 5007
+      "respondedAt": 5086
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 6649,
+      "t": 6745,
       "success": true,
       "dataKeys": [
         "lines",
@@ -236,11 +236,11 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 6649
+      "respondedAt": 6745
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 7858,
+      "t": 7950,
       "success": true,
       "dataKeys": [
         "lines",
@@ -249,11 +249,11 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 7858
+      "respondedAt": 7950
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 8383,
+      "t": 8485,
       "success": true,
       "dataKeys": [
         "lines",
@@ -262,11 +262,11 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 8383
+      "respondedAt": 8485
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 17876,
+      "t": 17991,
       "success": true,
       "dataKeys": [
         "rows"
@@ -274,11 +274,11 @@
       "counts": {
         "rows": 240
       },
-      "respondedAt": 17876
+      "respondedAt": 17991
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 19908,
+      "t": 20024,
       "success": true,
       "dataKeys": [
         "rows"
@@ -286,7 +286,7 @@
       "counts": {
         "rows": 240
       },
-      "respondedAt": 19908
+      "respondedAt": 20024
     }
   ],
   "requestMarks": [
@@ -561,36 +561,36 @@
     }
   ],
   "result": {
-    "capId": "inplace-1792554319507",
+    "capId": "inplace-1792568925376",
     "steps": [
       {
         "step": "app-ready",
-        "t": 416.4,
-        "v": 0.1
+        "t": 471.8,
+        "v": 0.2
       },
       {
         "step": "filter-bar",
-        "t": 463.2,
-        "v": 45.6
+        "t": 531.8,
+        "v": 58.5
       },
       {
         "step": "table",
-        "t": 1160.5,
+        "t": 1239.7,
         "v": 60
       },
       {
         "step": "first-reco-cell",
-        "t": 2061.3,
+        "t": 2140.2,
         "v": "7.0"
       },
       {
         "step": "exec-card",
-        "t": 2095.3,
+        "t": 2175.6,
         "v": 0
       },
       {
         "step": "edit-state-captured",
-        "t": 3152.2,
+        "t": 3243.3,
         "v": {
           "activeMark": "INPUT",
           "activeTag": "INPUT",
@@ -611,12 +611,12 @@
       },
       {
         "step": "second-arrival",
-        "t": 3225.1,
+        "t": 3300.6,
         "v": "11.0"
       },
       {
         "step": "done",
-        "t": 3475.8,
+        "t": 3553,
         "v": {
           "firstReadResolved": true,
           "firstCell": "7.0",
@@ -637,7 +637,7 @@
       },
       {
         "step": "scope-siteA-first",
-        "t": 4037.8,
+        "t": 4139.4,
         "v": {
           "err": null,
           "recoCache": {
@@ -652,7 +652,7 @@
       },
       {
         "step": "scope-siteB-first",
-        "t": 4628.2,
+        "t": 4738.7,
         "v": {
           "err": null,
           "recoCache": {
@@ -667,7 +667,7 @@
       },
       {
         "step": "scope-siteA-again",
-        "t": 5193.3,
+        "t": 5309.2,
         "v": {
           "err": null,
           "recoCache": {
@@ -682,7 +682,7 @@
       },
       {
         "step": "scope-leave-return",
-        "t": 6211.9,
+        "t": 6329.8,
         "v": {
           "err": null,
           "recoCache": {
@@ -697,7 +697,7 @@
       },
       {
         "step": "scope-pending-reentry",
-        "t": 7418.5,
+        "t": 7535.9,
         "v": {
           "err": null,
           "recoCache": {
@@ -712,7 +712,7 @@
       },
       {
         "step": "scope-switch-in-flight",
-        "t": 9454.6,
+        "t": 9575.6,
         "v": {
           "err": null,
           "recoCache": {
@@ -727,7 +727,7 @@
       },
       {
         "step": "scope-revisit-B-before-job",
-        "t": 10882.6,
+        "t": 11011.2,
         "v": {
           "err": null,
           "recoCache": {
@@ -742,7 +742,7 @@
       },
       {
         "step": "scope-pending-return-to-cached",
-        "t": 17438.6,
+        "t": 17574.8,
         "v": {
           "err": null,
           "recoCache": {
@@ -757,7 +757,7 @@
       },
       {
         "step": "scope-job-complete",
-        "t": 18947.4,
+        "t": 19083.7,
         "v": {
           "err": null,
           "recoCache": {
@@ -772,7 +772,7 @@
       },
       {
         "step": "scope-after-job-other-site",
-        "t": 20996.8,
+        "t": 21129.1,
         "v": {
           "err": null,
           "recoCache": {
@@ -787,7 +787,7 @@
       },
       {
         "step": "scopes-done",
-        "t": 20996.8,
+        "t": 21129.1,
         "v": {
           "phases": 10
         }
@@ -852,31 +852,31 @@
     "obs": {
       "gates": [
         {
-          "t": 1127.7,
+          "t": 1202,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 1127.7,
+          "t": 1202,
           "gate": "execution",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 2062,
+          "t": 2141.2,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2062.1,
+          "t": 2141.2,
           "gate": "execution",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2073.7,
+          "t": 2153.8,
           "gate": "recommendation",
           "call": "begin",
           "gen": 3,
@@ -888,7 +888,7 @@
           }
         },
         {
-          "t": 2073.7,
+          "t": 2153.9,
           "gate": "execution",
           "call": "begin",
           "gen": 3,
@@ -900,7 +900,7 @@
           }
         },
         {
-          "t": 2074.2,
+          "t": 2154.3,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -917,7 +917,7 @@
           }
         },
         {
-          "t": 2084.3,
+          "t": 2164.9,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -934,7 +934,7 @@
           }
         },
         {
-          "t": 2095.3,
+          "t": 2175.5,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -951,14 +951,14 @@
           }
         },
         {
-          "t": 2095.8,
+          "t": 2176,
           "gate": "recommendation",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 2155.4,
+          "t": 2251.6,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -975,7 +975,7 @@
           }
         },
         {
-          "t": 2163.5,
+          "t": 2260.7,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -992,14 +992,14 @@
           }
         },
         {
-          "t": 2163.6,
+          "t": 2261,
           "gate": "execution",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 3166.3,
+          "t": 3253.7,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1016,7 +1016,7 @@
           }
         },
         {
-          "t": 3197.6,
+          "t": 3280.8,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -1033,109 +1033,109 @@
           }
         },
         {
-          "t": 3991.2,
+          "t": 4089.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 4
         },
         {
-          "t": 3991.2,
+          "t": 4090,
           "gate": "execution",
           "call": "abandon",
           "gen": 4
         },
         {
-          "t": 4562.7,
+          "t": 4664.4,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 5
         },
         {
-          "t": 4562.8,
+          "t": 4664.4,
           "gate": "execution",
           "call": "abandon",
           "gen": 5
         },
         {
-          "t": 5144,
+          "t": 5262.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 6
         },
         {
-          "t": 5144.1,
+          "t": 5262.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 6
         },
         {
-          "t": 7944.6,
+          "t": 8066,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 7
         },
         {
-          "t": 7944.6,
+          "t": 8066,
           "gate": "execution",
           "call": "abandon",
           "gen": 7
         },
         {
-          "t": 9974.6,
+          "t": 10094.9,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 8
         },
         {
-          "t": 9974.6,
+          "t": 10094.9,
           "gate": "execution",
           "call": "abandon",
           "gen": 8
         },
         {
-          "t": 11406.1,
+          "t": 11531.1,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 9
         },
         {
-          "t": 11406.1,
+          "t": 11531.1,
           "gate": "execution",
           "call": "abandon",
           "gen": 9
         },
         {
-          "t": 12861.7,
+          "t": 12981.8,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 10
         },
         {
-          "t": 12861.7,
+          "t": 12981.8,
           "gate": "execution",
           "call": "abandon",
           "gen": 10
         },
         {
-          "t": 13410.8,
+          "t": 13545.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 11
         },
         {
-          "t": 13410.8,
+          "t": 13545.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 11
         },
         {
-          "t": 19468.7,
+          "t": 19608,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 12
         },
         {
-          "t": 19468.7,
+          "t": 19608,
           "gate": "execution",
           "call": "abandon",
           "gen": 12
@@ -1143,7 +1143,7 @@
       ],
       "ensureLoaded": [
         {
-          "t": 2073.9,
+          "t": 2154.1,
           "scope": {
             "company": "",
             "country": "US",
@@ -1155,9 +1155,9 @@
       ],
       "errors": [],
       "raf": {
-        "fired": 1222,
-        "firstAt": 554.7,
-        "lastAt": 20994.5
+        "fired": 1225,
+        "firstAt": 569.2,
+        "lastAt": 21114.4
       }
     },
     "firstCellInfo": {
@@ -1188,9 +1188,9 @@
                 "reason": null
               },
               "timing": {
-                "searchToDispatchMs": 17.800000000745058,
-                "responseMs": 19.09999999962747,
-                "domWorkMs": 11.599999999627471,
+                "searchToDispatchMs": 18.600000001490116,
+                "responseMs": 20.199999999254942,
+                "domWorkMs": 14,
                 "paintOpportunityMs": null,
                 "forSeq": null
               },
@@ -1241,7 +1241,7 @@
           "avg": {
             "text": "7.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1254,10 +1254,10 @@
                 "reason": null
               },
               "timing": {
-                "searchToDispatchMs": 23.59999999962747,
-                "responseMs": 24.90000000037253,
-                "domWorkMs": 18.40000000037253,
-                "paintOpportunityMs": 31,
+                "searchToDispatchMs": 25.099999997764826,
+                "responseMs": 30.5,
+                "domWorkMs": 22.5,
+                "paintOpportunityMs": 33.30000000074506,
                 "forSeq": 6
               },
               "server": {
@@ -1307,7 +1307,7 @@
           "avg": {
             "text": "31.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1367,7 +1367,7 @@
           "avg": {
             "text": "7.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1427,7 +1427,7 @@
           "avg": {
             "text": "7.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1440,10 +1440,10 @@
                 "reason": null
               },
               "timing": {
-                "searchToDispatchMs": 1082.8999999985099,
-                "responseMs": 3.200000001117587,
-                "domWorkMs": 17.59999999962747,
-                "paintOpportunityMs": 27.90000000037253,
+                "searchToDispatchMs": 1084.699999999255,
+                "responseMs": 3.300000000745058,
+                "domWorkMs": 14,
+                "paintOpportunityMs": 28.399999998509884,
                 "forSeq": 10
               },
               "server": {
@@ -1493,7 +1493,7 @@
           "avg": {
             "text": "7.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1506,10 +1506,10 @@
                 "reason": null
               },
               "timing": {
-                "searchToDispatchMs": 20.5,
-                "responseMs": 3.5,
-                "domWorkMs": 10.5,
-                "paintOpportunityMs": 27.699999999254942,
+                "searchToDispatchMs": 23.699999999254942,
+                "responseMs": 5.699999999254942,
+                "domWorkMs": 20.300000000745058,
+                "paintOpportunityMs": 21.900000002235174,
                 "forSeq": 13
               },
               "server": {
@@ -1559,7 +1559,7 @@
           "avg": {
             "text": "31.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1619,7 +1619,7 @@
           "avg": {
             "text": "31.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1679,7 +1679,7 @@
           "avg": {
             "text": "7.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1739,7 +1739,7 @@
           "avg": {
             "text": "7.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
           }
         },
         {
@@ -1799,7 +1799,7 @@
           "avg": {
             "text": "31.0",
             "cls": "scroll-cell replen-avg-cell",
-            "title": ""
+            "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date)."
           }
         }
       ],
@@ -1810,165 +1810,165 @@
           "result": {
             "country": {
               "ok": true,
+              "waitedMs": 258.6
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 264.2
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 251
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 256.3
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 256.6
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 250.5
+            },
+            "settled": true,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Amazon",
+              "marketplaceId": "MP-FIXTURE-US-AMZ"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 250.7
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 259
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-WMT",
+          "result": {
+            "country": {
+              "ok": true,
+              "waitedMs": 252
+            },
+            "mkt": {
+              "ok": true,
+              "waitedMs": 251.5
+            },
+            "settled": null,
+            "countryOptions": [
+              "",
+              "US"
+            ],
+            "mktOptions": [
+              "",
+              "MP-FIXTURE-US-AMZ",
+              "MP-FIXTURE-US-WMT"
+            ],
+            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
+            "selectedScope": {
+              "company": "FixtureCo",
+              "country": "US",
+              "marketplace": "Walmart",
+              "marketplaceId": "MP-FIXTURE-US-WMT"
+            }
+          }
+        },
+        {
+          "country": "US",
+          "mkt": "MP-FIXTURE-US-AMZ",
+          "result": {
+            "country": {
+              "ok": true,
               "waitedMs": 250.5
             },
             "mkt": {
               "ok": true,
-              "waitedMs": 250.3
-            },
-            "settled": true,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Amazon",
-              "marketplaceId": "MP-FIXTURE-US-AMZ"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-WMT",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 256.5
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 250.9
-            },
-            "settled": true,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Walmart",
-              "marketplaceId": "MP-FIXTURE-US-WMT"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-AMZ",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 250.8
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 250.8
-            },
-            "settled": true,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-AMZ",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Amazon",
-              "marketplaceId": "MP-FIXTURE-US-AMZ"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-WMT",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 253.7
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 251.1
-            },
-            "settled": null,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Walmart",
-              "marketplaceId": "MP-FIXTURE-US-WMT"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-WMT",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 256.2
-            },
-            "mkt": {
-              "ok": true,
-              "waitedMs": 251.4
-            },
-            "settled": null,
-            "countryOptions": [
-              "",
-              "US"
-            ],
-            "mktOptions": [
-              "",
-              "MP-FIXTURE-US-AMZ",
-              "MP-FIXTURE-US-WMT"
-            ],
-            "appliedScopeKey": "us|MP-FIXTURE-US-WMT",
-            "selectedScope": {
-              "company": "FixtureCo",
-              "country": "US",
-              "marketplace": "Walmart",
-              "marketplaceId": "MP-FIXTURE-US-WMT"
-            }
-          }
-        },
-        {
-          "country": "US",
-          "mkt": "MP-FIXTURE-US-AMZ",
-          "result": {
-            "country": {
-              "ok": true,
-              "waitedMs": 260.6
-            },
-            "mkt": {
-              "ok": true,
               "waitedMs": 250.4
             },
             "settled": null,
@@ -1996,11 +1996,11 @@
           "result": {
             "country": {
               "ok": true,
-              "waitedMs": 259.1
+              "waitedMs": 258
             },
             "mkt": {
               "ok": true,
-              "waitedMs": 256
+              "waitedMs": 251
             },
             "settled": null,
             "countryOptions": [
@@ -2027,11 +2027,11 @@
           "result": {
             "country": {
               "ok": true,
-              "waitedMs": 261.3
+              "waitedMs": 260
             },
             "mkt": {
               "ok": true,
-              "waitedMs": 250.4
+              "waitedMs": 264.5
             },
             "settled": null,
             "countryOptions": [
@@ -2058,11 +2058,11 @@
           "result": {
             "country": {
               "ok": true,
-              "waitedMs": 251.1
+              "waitedMs": 261.8
             },
             "mkt": {
               "ok": true,
-              "waitedMs": 251.3
+              "waitedMs": 250.4
             },
             "settled": null,
             "countryOptions": [
@@ -2104,7 +2104,7 @@
         "avg": {
           "text": "7.0",
           "cls": "scroll-cell replen-avg-cell",
-          "title": ""
+          "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-10-18 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-11-01 - a different date, set by the gap calculation run."
         }
       },
       "axis": "marketplace (company|country|marketplace differs in the marketplace component)",

@@ -365,3 +365,29 @@ and unchanged by it; pair 6 (−109.5 ms) is not the largest delta in the batch.
 
 The machine was not quiet (the Owner's browser and other runtimes were up), as in batch fourteen. No
 other process touched this repository during the twelve runs.
+
+---
+
+## DC1-R1 RE-TOOK IT AGAIN, BOTH ARMS — the sixteenth batch of this design
+
+DC1-R1 changed BOTH files §E1 pins: `inventory-replenishment.js` (the source-write epoch checks on the
+recommendation answer, the read model, the exposure map, and the Avg Sales date note) and
+`operation-system-db-api.js` (the epoch itself and the wrapped writer list). Neither change touches the
+reveal path this batch measures, but a pinned file that moved is a batch that no longer describes the build.
+
+Twelve runs on ONE build, 100 rows each, five reveal expands each, **no fatals, stderr empty**, shipped page
+restored by bytes and both files verified by sha256 against the pre-run hashes.
+
+| row | unscoped | scoped | paired delta | improved in |
+|---|---:|---:|---:|---|
+| click → first paint | 66.9 ms | 63.6 ms | −4.6 ms | 6 of 6 |
+| click → full ready | 251.7 ms | 137.9 ms | **−123.7 ms** | **6 of 6** |
+| assembly in handler | 29.6 ms | 28.9 ms | −0.8 ms | 5 of 6 |
+| assembly after handler | 195.2 ms | 87.0 ms | **−112.8 ms** | **6 of 6** |
+| handler sync | 32.3 ms | 30.7 ms | −2.9 ms | 6 of 6 |
+
+The two load-bearing rows reproduce for the sixteenth time: **−112.8 / −123.7 ms, 6 of 6 and 6 of 6**.
+
+**No outlier.** 60 reveal samples, median 125.95 ms, threshold 503.8 ms; the largest is 334.9 ms
+(`unscoped-1`, first expand). Absolute figures are lower than batch fifteen in both arms — the machine, not
+the round, and why batches are never pooled.
