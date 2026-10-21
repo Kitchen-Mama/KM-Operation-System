@@ -1,0 +1,70 @@
+# DC1-R1 BEFORE: the final DC1-R1 suite run against the PRE-FIX sources (HEAD blobs, extracted)
+# HEAD 1ad5c322c4740272bce38de6a021f97c30d6a364  db-api blob fdd84b9fc09d2efe7c252ffb26c57d349f1f5919  IR blob 22418e4a424ca525e2ace2f3c1eaf1522c5ef0cf
+# command: DC1_SRC_DIR=<extracted HEAD tree> node assets/tests/dc1-r1-source-write-epoch-and-reader-invalidation.test.js
+
+== A. the signal - real db-api, real writers, stubbed network ==
+FAIL A0  KM.DB.sourceWriteEpoch exists - the canonical write signal
+FAIL A1-A12 cannot run without the signal (counted as 12)
+
+== T. the Taipei day is pure arithmetic, and it is the calendar 43_ uses ==
+FAIL T1-T3 _irTaipeiDay_ is absent (counted as 3)
+
+== B. the recommendation answer - settled state and session cache against the write signal ==
+ok   B0  a cold site reads once  (got 1, want 1)
+ok   B0a and its Avg Sales is on screen  (got 13.5, want 13.5)
+ok   B1  CONTROL: nothing written, back to US - served from the session cache, zero requests  (got 0, want 0)
+ok   B1b and the diagnostic says HIT  (got "HIT", want "HIT")
+FAIL B2  COUNTER-EXAMPLE: a planning source was written - CA is re-read, not restored  (got 0, want 1)
+FAIL B2b and the miss is named  (got {"outcome":"HIT","reason":null}, want {"outcome":"MISS","reason":"SOURCE_WRITTEN_SINCE"})
+ok   B2c the re-read answer is the one on screen  (got 5.2, want 5.2)
+FAIL B3  COUNTER-EXAMPLE: the same write invalidates the OTHER site too - stock pools are shared across sites  (got 0, want 1)
+ok   B4  CONTROL: an exposure-only write keeps the cached Avg Sales (no needless request)  (got 0, want 0)
+FAIL B5  COUNTER-EXAMPLE: the on-screen answer predates a write - the same-site call re-reads instead of deduping  (got 0, want 1)
+ok   B5b CONTROL: and once re-read, a repeat call is deduped again (no request storm)  (got 0, want 0)
+ok   B6  CONTROL: returning with nothing written costs nothing  (got "ALREADY_SETTLED", want "ALREADY_SETTLED")
+FAIL B6b COUNTER-EXAMPLE: returning after a write elsewhere re-reads (it used to report ALREADY_SETTLED)  (got "ALREADY_SETTLED", want "REREAD_ISSUED")
+ok   B7  the in-flight answer still lands (it is not a wrong-site answer)  (got "READY", want "READY")
+FAIL B7b COUNTER-EXAMPLE: but it was read before the write finished - the next call re-reads  (got 0, want 1)
+FAIL B7c and the copy stored from the overlapped read is not served after the write settled  (got 0, want 1)
+ok   B8  CONTROL: later the same Taipei day - still served  (got 0, want 0)
+FAIL B8b COUNTER-EXAMPLE: across Taipei midnight (and into November) the stored answer is not served  (got 0, want 1)
+FAIL B8c and the miss names the day boundary, not a write  (got {"outcome":"HIT","reason":null}, want {"outcome":"MISS","reason":"SOURCE_CYCLE_CHANGED"})
+FAIL B8d the settled in-memory answer from yesterday is not reused either  (got 0, want 1)
+FAIL B9  COUNTER-EXAMPLE: a stored answer with no source stamp is UNKNOWN - not served as current  (got 0, want 1)
+FAIL B9b and it says so  (got {"outcome":"HIT","reason":null}, want {"outcome":"MISS","reason":"SOURCE_EPOCH_UNKNOWN"})
+FAIL B10 COUNTER-EXAMPLE: no write signal at all - the store is not trusted  (got 0, want 1)
+FAIL B10b named as UNAVAILABLE, never as SAME  (got {"outcome":"HIT","reason":null}, want {"outcome":"MISS","reason":"SOURCE_EPOCH_UNAVAILABLE"})
+ok   B11 CONTROL: a late answer for the site the operator left never lands  (got "CA", want "CA")
+
+== C. the read model and the exposure map ==
+FAIL C0  the shipped helpers exist: _irTaipeiDay_, _irSourceStamp_, _irSourceVerdict_, _irLocalPlanPending_, _irExposureRetireIfSourceMoved_, _irRunVerifiedSearch_, _irEnsureExposureLoaded_
+       got ["_irTaipeiDay_","_irSourceStamp_","_irSourceVerdict_","_irLocalPlanPending_","_irExposureRetireIfSourceMoved_"]
+ok   C1  CONTROL: nothing written - Search reuses the model, zero reads  (got {"reads":0,"applied":1}, want {"reads":0,"applied":1})
+FAIL C2  COUNTER-EXAMPLE: a planning source was written - Search performs a fresh read instead of filtering the old model  (got 0, want 1)
+FAIL C3  COUNTER-EXAMPLE: a model read yesterday (Taipei) is re-read, the daily import may have replaced it  (got 0, want 1)
+FAIL C4  COUNTER-EXAMPLE: a model that cannot say what it was read under is re-read, never assumed current  (got 0, want 1)
+FAIL C5  COUNTER-EXAMPLE: a shipment/plan/draft was written - Search retires the held exposure so it is read again
+ok   C5b and a write the first layer never reads does not cost a first-layer read (unrelated source)  (got 0, want 0)
+ok   C6  COUNTER-EXAMPLE: _draftDbTimers pending - the exposure (and the hydrate it would trigger) is KEPT; a system re-read never replaces an unsaved manual plan
+FAIL C6b and the decision is recorded by name (_draftDbTimers)  (got null, want "KEPT_FOR_LOCAL_PLAN")
+ok   C6  COUNTER-EXAMPLE: _draftDbInFlight pending - the exposure (and the hydrate it would trigger) is KEPT; a system re-read never replaces an unsaved manual plan
+FAIL C6b and the decision is recorded by name (_draftDbInFlight)  (got null, want "KEPT_FOR_LOCAL_PLAN")
+ok   C6  COUNTER-EXAMPLE: _draftDbDirty pending - the exposure (and the hydrate it would trigger) is KEPT; a system re-read never replaces an unsaved manual plan
+FAIL C6b and the decision is recorded by name (_draftDbDirty)  (got null, want "KEPT_FOR_LOCAL_PLAN")
+ok   C6  COUNTER-EXAMPLE: _pendingDraftCancels pending - the exposure (and the hydrate it would trigger) is KEPT; a system re-read never replaces an unsaved manual plan
+FAIL C6b and the decision is recorded by name (_pendingDraftCancels)  (got null, want "KEPT_FOR_LOCAL_PLAN")
+ok   C6  COUNTER-EXAMPLE: _irUnsavedRoutes pending - the exposure (and the hydrate it would trigger) is KEPT; a system re-read never replaces an unsaved manual plan
+FAIL C6b and the decision is recorded by name (_irUnsavedRoutes)  (got null, want "KEPT_FOR_LOCAL_PLAN")
+ok   C7  CONTROL: a planning-only write leaves the exposure map alone
+FAIL C8  the exposure entry records the epoch it was issued under  (got undefined, want 6)
+FAIL C9  the restored mount checks the held exposure BEFORE it repaints
+FAIL C9b the read model is stamped with the epoch captured when its read was ISSUED
+
+== D. Avg Sales window vs Gap calculation date - stated, not unified ==
+FAIL D1-D4 _irAvgSalesWindowNote_ is absent (counted as 4)
+
+== M. mutants ==
+FAIL M1-M5 the guards under mutation are absent (counted as 5)
+
+19 passed, 52 failed
+# exit 1

@@ -43,6 +43,7 @@ function updateReplenRecoContext() { return _irctxLastContext; }
 // FM5-R4UI-R5 §5: the top Suggested cell is materialized-first by default; this suite validates the WORKSPACE
 // aggregation fallback, so it must run with the materialized read OFF (kill switch) to exercise that path.
 global.window = { IRContext: { toScopeRequest: function () { return CURRENT_SCOPE; } }, KM_FLAGS: { USE_MATERIALIZED_GAP_READ: false } };
+var DC1_EPOCH_ = require('./_dc1-source-epoch.js').epochStub();   // DC1-R1 - the production write signal; constant = nothing written
 eval(require('./_f1a-scope-guard.js').guardPreamble());   // S8-R47-A — the F1A guard the region calls
 eval(IR);
 eval(IRSUG);
@@ -69,7 +70,7 @@ function navAway() { _irRecoInvalidate('DISABLED'); }   // simulate leaving the 
 (async function main() {
   section('A. first load → CACHE MISS → one request → cached');
   resetSession(); invalidateRecommendationSessionCache();
-  var api = makeApi(envOk([line()])); global.window.KM = { api: api };
+  var api = makeApi(envOk([line()])); global.window.KM = { api: api, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(api._calls.n === 1, 'A1 first load issues exactly ONE workspace request');
   ok(_irRecoState.status === 'READY', 'A2 successful canonical result applied');
@@ -77,13 +78,13 @@ function navAway() { _irRecoInvalidate('DISABLED'); }   // simulate leaving the 
 
   section('B. navigate away and back → CACHE HIT → zero new requests');
   navAway();
-  var api2 = makeApi(envOk([line()])); global.window.KM = { api: api2 };
+  var api2 = makeApi(envOk([line()])); global.window.KM = { api: api2, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(api2._calls.n === 0, 'B1 same-scope revisit served from cache (ZERO new requests)');
   ok(_irRecoState.status === 'READY' && _irRecoState.fromCache === true, 'B2 state restored from cache');
 
   section('C. collapse / re-expand same scope → CACHE HIT (dedupe or cache) → zero new requests');
-  var api3 = makeApi(envOk([line()])); global.window.KM = { api: api3 };
+  var api3 = makeApi(envOk([line()])); global.window.KM = { api: api3, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);   // already loaded → dedupe
   navAway();
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);   // state cleared → cache hit
@@ -91,19 +92,19 @@ function navAway() { _irRecoInvalidate('DISABLED'); }   // simulate leaving the 
 
   section('D/E/F. scope change → new key → CACHE MISS');
   navAway(); CURRENT_SCOPE = { company: 'KM', country: 'CA', marketplace: 'AMAZON_CA' };
-  var apiD = makeApi(envOk([line({ sku: 'CO1100-R' })])); global.window.KM = { api: apiD };
+  var apiD = makeApi(envOk([line({ sku: 'CO1100-R' })])); global.window.KM = { api: apiD, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(apiD._calls.n === 1, 'D1 Country/Marketplace change → new key → one fresh request');
   ok(_irRecoCacheGet({ company: 'KM', country: 'US', marketplace: 'AMAZON_US' }) !== null && _irRecoCacheGet(CURRENT_SCOPE) !== null, 'E1 both scopes cached independently (no cross-scope reuse)');
   navAway(); CURRENT_SCOPE = { company: 'KM', country: 'US', marketplace: 'AMAZON_US' };
-  var apiBack = makeApi(envOk([line()])); global.window.KM = { api: apiBack };
+  var apiBack = makeApi(envOk([line()])); global.window.KM = { api: apiBack, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(apiBack._calls.n === 0, 'F1 returning to the first scope is still a cache hit (key is scope-safe)');
 
   section('G/H. stale / aborted response is NEVER cached');
   resetSession(); invalidateRecommendationSessionCache(); navAway();
   CURRENT_SCOPE = { company: 'KM', country: 'US', marketplace: 'AMAZON_US' };
-  var dapi = makeDeferredApi(); global.window.KM = { api: dapi };
+  var dapi = makeDeferredApi(); global.window.KM = { api: dapi, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   loadRecommendationWorkspace_();                        // scope A in-flight (deferred)
   navAway(); CURRENT_SCOPE = { company: 'KM', country: 'GB', marketplace: 'AMAZON_UK' };
   loadRecommendationWorkspace_();                        // scope B supersedes A (bumps seq)
@@ -116,21 +117,21 @@ function navAway() { _irRecoInvalidate('DISABLED'); }   // simulate leaving the 
   section('I. API failure / rejection is NEVER stored as a successful cache entry');
   resetSession(); invalidateRecommendationSessionCache(); navAway();
   CURRENT_SCOPE = { company: 'KM', country: 'US', marketplace: 'AMAZON_US' };
-  var apiFail = makeApi(envFail('WORKSPACE_ERROR')); global.window.KM = { api: apiFail };
+  var apiFail = makeApi(envFail('WORKSPACE_ERROR')); global.window.KM = { api: apiFail, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(_irRecoState.status === 'API_ERROR' && _irRecoCacheGet(CURRENT_SCOPE) === null, 'I1 failure envelope surfaces + is NOT cached');
   navAway();
-  var apiCfg = makeApi(envFail('RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED')); global.window.KM = { api: apiCfg };
+  var apiCfg = makeApi(envFail('RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED')); global.window.KM = { api: apiCfg, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(_irRecoState.status === 'CONFIG_NOT_READY' && _irRecoCacheGet(CURRENT_SCOPE) === null, 'I2 CONFIG_NOT_READY is NOT cached');
 
   section('J/K. blocked canonical result + valid zero ARE cacheable (valid runtime successes)');
   resetSession(); invalidateRecommendationSessionCache(); navAway();
-  var apiBlk = makeApi(envOk([line({ blocked: true, blockedReason: 'DEMAND_ALLOCATION_RULE_NOT_CONFIGURED', recommendedQty: null })])); global.window.KM = { api: apiBlk };
+  var apiBlk = makeApi(envOk([line({ blocked: true, blockedReason: 'DEMAND_ALLOCATION_RULE_NOT_CONFIGURED', recommendedQty: null })])); global.window.KM = { api: apiBlk, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(_irRecoCacheGet(CURRENT_SCOPE) !== null, 'J1 a successful envelope with a blocked line IS cached');
   resetSession(); invalidateRecommendationSessionCache(); navAway();
-  var apiZero = makeApi(envOk([line({ recommendedQty: 0, blocked: false })])); global.window.KM = { api: apiZero };
+  var apiZero = makeApi(envOk([line({ recommendedQty: 0, blocked: false })])); global.window.KM = { api: apiZero, DB: { sourceWriteEpoch: DC1_EPOCH_ } };
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(_irRecoCacheGet(CURRENT_SCOPE) !== null, 'K1 a valid canonical zero IS cached');
 

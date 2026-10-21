@@ -24,6 +24,7 @@ var IRRECO = slice('// __IRRECO_START__', '// __IRRECO_END__');
 ok(IRCTX.length > 0 && IRRECO.length > 0, 'X0 extraction markers present');
 
 global.window = { IRCountry: { matches: function (a, b) { return String(a).trim().toUpperCase() === String(b).trim().toUpperCase(); } } };
+var DC1_EPOCH_ = require('./_dc1-source-epoch.js').epochStub();   // DC1-R1 - the production write signal; constant = nothing written
 global.document = { getElementById: function () { return null; }, querySelectorAll: function () { return []; } };
 global.AbortController = function () { this.signal = {}; this.abort = function () { this._aborted = true; }; };
 
@@ -54,7 +55,7 @@ function setCtx(m) { _irctxLastContext = m; }
 function tick() { return Promise.resolve().then(function () {}).then(function () {}); }
 // FM3a added a session cache; these assertions test per-response STATE transitions on one scope, so clear
 // the cache before each load to force a fresh fetch of the given envelope.
-function freshLoad(active, env, ctx) { if (typeof invalidateRecommendationSessionCache === 'function') invalidateRecommendationSessionCache(); _irRecoInvalidate('CONTEXT_NOT_READY'); var api = makeApi(active, env); global.window.KM = { api: api }; setCtx(ctx || READY); return Promise.resolve(loadRecommendationWorkspace_()).then(tick).then(function () { return api; }); }
+function freshLoad(active, env, ctx) { if (typeof invalidateRecommendationSessionCache === 'function') invalidateRecommendationSessionCache(); _irRecoInvalidate('CONTEXT_NOT_READY'); var api = makeApi(active, env); global.window.KM = { api: api, DB: { sourceWriteEpoch: DC1_EPOCH_ } }; setCtx(ctx || READY); return Promise.resolve(loadRecommendationWorkspace_()).then(tick).then(function () { return api; }); }
 
 (async function main() {
   section('A. flags OFF → legacy preserved, no request');
@@ -80,7 +81,7 @@ function freshLoad(active, env, ctx) { if (typeof invalidateRecommendationSessio
   loadRecommendationWorkspace_(); await tick();
   ok(apiDup._calls.getWorkspace === 1, 'C2 identical scope recall → deduped (no duplicate request)');
   _irRecoInvalidate('CONTEXT_NOT_READY');
-  var apiSlow = makeApi(true, envOk([whLine()])); global.window.KM = { api: apiSlow }; setCtx(READY);
+  var apiSlow = makeApi(true, envOk([whLine()])); global.window.KM = { api: apiSlow, DB: { sourceWriteEpoch: DC1_EPOCH_ } }; setCtx(READY);
   var p1 = loadRecommendationWorkspace_();
   setCtx({ status: 'READY', company: 'KM', country: 'US', marketplace: 'WALMART_US', missing: [], issues: [] });
   var p2 = loadRecommendationWorkspace_();

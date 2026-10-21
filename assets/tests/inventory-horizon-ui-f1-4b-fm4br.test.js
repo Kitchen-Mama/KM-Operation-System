@@ -22,6 +22,7 @@ var IRCTX = slice('// __IRCTX_START__', '// __IRCTX_END__');
 var IRRECO = slice('// __IRRECO_START__', '// __IRRECO_END__');
 
 global.window = { IRCountry: { matches: function (a, b) { return String(a).trim().toUpperCase() === String(b).trim().toUpperCase(); } } };
+var DC1_EPOCH_ = require('./_dc1-source-epoch.js').epochStub();   // DC1-R1 - the production write signal; constant = nothing written
 global.document = { getElementById: function () { return null; }, querySelectorAll: function () { return []; } };
 global.AbortController = function () { this.signal = {}; this.abort = function () { this._aborted = true; }; };
 
@@ -41,7 +42,7 @@ function makeApi(active, env) { var calls = { getWorkspace: 0, lastParams: null 
 // CP2T-R1 - meta carries the handler-version marker every deployed handler at or after R5C stamps; the
 // session cache reads it, so an envelope without it is a pre-R5C response rather than a minimal one.
 function envOk(lines) { return { success: true, data: { lines: lines, pagination: { page: 1, size: 100, total: lines.length }, dataVersion: { formulaVersion: 'v4.7', sourceDataAsOf: '2026-08-01' } }, meta: { requestId: 'REQ-H1', calculationMonth: '2026-08', planningCycle: 'RECO-2026-08', recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e' }, errors: [] }; }
-function freshLoad(active, env, ctx) { if (typeof invalidateRecommendationSessionCache === 'function') invalidateRecommendationSessionCache(); _irRecoInvalidate('CONTEXT_NOT_READY'); var api = makeApi(active, env); global.window.KM = { api: api }; setCtx(ctx || READY); return Promise.resolve(loadRecommendationWorkspace_()).then(tick).then(function () { return api; }); }
+function freshLoad(active, env, ctx) { if (typeof invalidateRecommendationSessionCache === 'function') invalidateRecommendationSessionCache(); _irRecoInvalidate('CONTEXT_NOT_READY'); var api = makeApi(active, env); global.window.KM = { api: api, DB: { sourceWriteEpoch: DC1_EPOCH_ } }; setCtx(ctx || READY); return Promise.resolve(loadRecommendationWorkspace_()).then(tick).then(function () { return api; }); }
 
 // ---- fixtures --------------------------------------------------------------------------------------
 // D18 valid-zero gap/suggested; D30 gap 200; D45 gap 500 / suggested 520; D90 MISSING values (null → "—").
@@ -114,7 +115,7 @@ function whLine(over) { var L = { recommendationLineId: 'W1', recommendationMode
 
   section('Y/Z · session cache preserves horizons with ZERO refetch');
   invalidateRecommendationSessionCache(); _irRecoInvalidate('CONTEXT_NOT_READY');
-  var api = makeApi(true, envOk([mktLine()])); global.window.KM = { api: api }; setCtx(READY);
+  var api = makeApi(true, envOk([mktLine()])); global.window.KM = { api: api, DB: { sourceWriteEpoch: DC1_EPOCH_ } }; setCtx(READY);
   await Promise.resolve(loadRecommendationWorkspace_()).then(tick);
   ok(api._calls.getWorkspace === 1, 'pre: first load fetched once');
   _irRecoInvalidate('CONTEXT_NOT_READY');                     // reset page state; keep the session cache

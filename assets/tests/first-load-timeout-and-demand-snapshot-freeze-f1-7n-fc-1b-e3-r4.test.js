@@ -175,7 +175,8 @@ function buildClient(opt) {
               meta: { serverDurationMs: 41230, tablesRead: 21, rowsReturned: 6120,
                 recentWindow: { amazon_daily_sales_snapshot: { before: 52000, after: 1900, dropped: 50100, keep: 14 } } } });
       } },
-      DB: { adaptInventoryReplenishmentWorkspace: function (d) { return { getMarketplaceSkus: (d.marketplace_skus || []) }; } },
+      DB: { adaptInventoryReplenishmentWorkspace: function (d) { return { getMarketplaceSkus: (d.marketplace_skus || []) }; },
+        sourceWriteEpoch: require('./_dc1-source-epoch.js').epochStub() },   // DC1-R1 - the production write signal
       loadState: { STATES: { READY: 'READY', EMPTY: 'EMPTY', ERROR: 'ERROR', INITIAL_LOADING: 'IL' } } } };
   var doc = { getElementById: function (id) { return Object.prototype.hasOwnProperty.call(sel, id) ? { value: sel[id] } : null; } };
   // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.3 — the refresh now records WHICH owner dispatched it, so the two
@@ -189,7 +190,10 @@ function buildClient(opt) {
     // half it hands the verified pair to. Without the second one every call below is a ReferenceError.
     extractFn(PAGE, '_irWorkspaceRefresh_'), extractFn(PAGE, '_irRunVerifiedSearch_'),
     extractFn(PAGE, 'searchReplenishment'),
-    extractFn(PAGE, '_irPendingFilters_')].join(NL);
+    extractFn(PAGE, '_irPendingFilters_'),
+    // DC1-R1 - the Search now asks the source-write epoch before it reuses the model or the held exposure.
+    'var _irExposureByScope = {}; function _irExposureScopeKey_() { return ""; }',
+    require('./_dc1-source-epoch.js').helperSrc(PAGE)].join(NL);
   var f = new Function('window', 'document', 'alert', '_irSearch', '_irRegion_', '_irRenderSearchGate_', '_irApplySearch_',
     '_irEffectiveWorkspace', '_replenDemoOn', '_irNowMs_', 'renderReplenishment', '_irRenderError_',
     'var _irReadModel=null,_irReadSeq=0,_irReadModelAt=0,_irReadModelHasCarrier=false,_irLastReadMeta=null,replenCategoryTab="All";'

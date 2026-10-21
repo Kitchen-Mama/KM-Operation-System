@@ -57,6 +57,8 @@ var OTHER_COMPANY = { company: 'Res US', country: 'US', marketplace: 'Amazon' };
 var OTHER_SITE = { company: 'Kitchen Mama', country: 'CA', marketplace: 'Amazon' };
 
 global.window = { IRContext: { toScopeRequest: function () { return SCOPE; } }, KM_FLAGS: {} };
+var DC1_EPOCH_ = require('./_dc1-source-epoch.js').epochStub();   // DC1-R1 - the production write signal; constant = nothing written
+global.window.KM = { DB: { sourceWriteEpoch: DC1_EPOCH_ } };   // mounted before section A, which reads the store directly
 var DOMROWS = [];
 global.document = { querySelectorAll: function (sel) { return /scroll-row/.test(sel) ? DOMROWS : []; }, getElementById: function () { return null; } };
 global.AbortController = function () { this.signal = {}; this.abort = function () {}; };
@@ -128,7 +130,7 @@ function resetAll() {
 }
 // Serve the loader a FRESH response, so "the cache was bypassed" is observable as the fresh value arriving.
 function serveFresh(data, handler) {
-  global.window.KM = { api: { workspaceApiActive: function (n) { return n === 'recommendation'; },
+  global.window.KM = { DB: { sourceWriteEpoch: DC1_EPOCH_ }, api: { workspaceApiActive: function (n) { return n === 'recommendation'; },
     getWorkspace: function () { return Promise.resolve(envOf(data, handler)); } } };
 }
 function pickRate() { var b = _irCanonicalSalesBasis_(SKU); return b ? b.avgSalesPerDay : null; }
@@ -203,7 +205,9 @@ function seedStampedRecord(scope, data, handler) {
     envelopeData: data, meta: { requestId: 'rid-old' }, cachedAt: Date.now(),
     revision: { calculationDate: '2026-10-16', calculationMonth: '2026-10', planningCycle: 'RECO-2026-10',
       formulaVersion: (data && data.dataVersion && data.dataVersion.formulaVersion) || null,
-      sourceDataAsOf: (data && data.dataVersion && data.dataVersion.sourceDataAsOf) || null }
+      sourceDataAsOf: (data && data.dataVersion && data.dataVersion.sourceDataAsOf) || null },
+    // DC1-R1 - and the source stamp a record written by this build carries (current: nothing written since).
+    source: _irSourceStamp_()
   };
   STORE[_IR_RECO_CACHE_KEY] = JSON.stringify(rec);
   _irRecoCacheMem = null;
@@ -253,7 +257,7 @@ Promise.resolve(p).then(function () {
   section('C  a CURRENT record is still cached, and a confirmed zero is not mistaken for an absence');
   // ---------------------------------------------------------------------------------------------------
   resetAll();
-  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(0)));
+  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(0)), _irSourceStamp_());   // DC1-R1 - stored as the live path stores it
   var hit = _irRecoCacheGet(SCOPE);
   ok(hit !== null, 'C1  a record stored by THIS build is served - the cache still does its job');
   eq(hit && hit.envelopeData.lines[0].horizonBasis.avgSalesPerDay, 0,
@@ -262,7 +266,7 @@ Promise.resolve(p).then(function () {
     'C3  the version information the server sent is still carried through');
 
   resetAll();
-  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(null, 'SALES_BASIS_UNAVAILABLE')));
+  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(null, 'SALES_BASIS_UNAVAILABLE')), _irSourceStamp_());   // DC1-R1 - stored as the live path stores it
   ok(_irRecoCacheGet(SCOPE) !== null,
     'C4  a CURRENT response whose basis is a named error is still a success and is still cached - '
     + 'refusing it would be the CP2S B7 defect moved into the cache');
@@ -271,7 +275,7 @@ Promise.resolve(p).then(function () {
   section('D  company and site isolation - a key is not a scope');
   // ---------------------------------------------------------------------------------------------------
   resetAll();
-  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(9)));
+  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(9)), _irSourceStamp_());   // DC1-R1 - stored as the live path stores it
   ok(_irRecoCacheGet(OTHER_COMPANY) === null,
     'D1  the same country+marketplace under ANOTHER COMPANY is a different key - US holds both KM and Res US');
   ok(_irRecoCacheGet(OTHER_SITE) === null, 'D2  and another country is another key');
@@ -302,7 +306,7 @@ Promise.resolve(p).then(function () {
   // answered" look identical from outside. Item 1 of the approval is to tell them apart; a screenshot
   // cannot, and neither could anyone reading this page's state.
   resetAll();
-  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(4.25)));
+  _irRecoCacheSet(SCOPE, envOf(currentEnvelopeData(4.25)), _irSourceStamp_());   // DC1-R1 - stored as the live path stores it
   return Promise.resolve(loadRecommendationWorkspace_()).then(function () {
     return new Promise(function (r) { setTimeout(r, 0); });
   });

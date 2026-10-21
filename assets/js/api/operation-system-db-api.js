@@ -7207,6 +7207,178 @@ window.KM.DB.refreshFactoryStockTables = async function() {
     return { success: true, factoryStock: window._opDbCache.factoryStock.length, factoryStockMovements: window._opDbCache.factoryStockMovements.length };
 };
 
+// ========================================================================================================
+// DC1-R1 — THE SOURCE-WRITE EPOCH: THE CANONICAL WRITE SIGNAL SITE INVENTORY WAS WAITING FOR.
+// ========================================================================================================
+// Site Inventory keeps four answers past the moment they were read: the recommendation answer (Avg Sales,
+// Days of Supply) in memory AND in a sessionStorage cache, the first-layer read model, and the per-site
+// exposure tables (shipments, plans, allocation drafts). Nothing told any of them that a source had been
+// written. `invalidateRecommendationSessionCache` had no caller; `_irExposureRefresh_` says in its own
+// comment that it is the user's only path to exposure truth "until a canonical write signal exists". So an
+// operator who imported a forecast, adjusted overseas stock or confirmed a shipment on another page and came
+// back saw Current Inventory re-read behind the screen while Avg Sales and Days of Supply were restored with
+// ZERO requests from before the write — Days of Supply dividing fresh stock by a stale rate.
+//
+// THE SIGNAL. Two monotonic counters, kept per browser tab in sessionStorage (the same lifetime as the cache
+// they invalidate, so a reload keeps both or loses both):
+//   planning  — a write that can change what recommendation.workspace.get (42_) or the first-layer
+//               inventoryReplenishment read (60_) computes from: master data, forecasts, events, target
+//               rules, campaigns, inventory, factory stock, allocation rules, shipping plans, shipments,
+//               request-order line sources, purchase-order lines.
+//   exposure  — a write to the six tables Site Inventory reads lazily per site: shipments, shipment_lines,
+//               shipping_plans, shipping_plan_lines, shipping_allocation_drafts, shipping_allocation_draft_lines.
+// A reader stamps the counters it was issued under and compares them later. A different number means a
+// write it cannot have seen; a missing number means it cannot tell — and UNKNOWN IS NEVER READ AS SAME.
+//
+// BUMPED AT DISPATCH AND AGAIN AT SETTLE, WHATEVER THE OUTCOME. At dispatch, because a read issued before
+// the write and answered after it may describe either state. At settle, because a read issued WHILE the
+// write was in the air is the same question. A failure, a partial save and a timeout all bump: this layer
+// cannot prove a zero write and does not try — `zeroWriteProven` stays the one authority on that, and the
+// cost of an unnecessary bump is one re-read, never a wrong number.
+//
+// ONE DECLARED LIST, WRAPPED IN ONE PLACE. Every write-capable KM.DB function is named below with the
+// families it can affect, or with the reason it affects none. The list is enforced by
+// dc1-r1-source-write-epoch-and-reader-invalidation.test.js, which scans this file for write-capable
+// functions and fails on any that is not classified — a new writer cannot quietly skip the signal.
+//
+// NOT COVERED, AND SAID SO: a write made in ANOTHER tab or by another person, and the server's own scheduled
+// imports. Those need a server-side source revision; until then the reader's day boundary is the only bound.
+var _KM_SOURCE_EPOCH_KEY_ = 'km_source_write_epoch.v1';
+var _KM_SOURCE_FAMILIES_ = ['planning', 'exposure'];
+var _KM_SOURCE_WRITE_FAMILIES_ = {
+    // master data / configuration that 42_ or 60_ reads
+    upsertMarketplace: ['planning'], setMarketplaceAllocationPriority: ['planning'],
+    saveReplenishmentDemandAllocationRules: ['planning'], upsertMarketplaceSku: ['planning'],
+    updateMarketplaceSkuModel: ['planning'], importMarketplaceSkusBatch: ['planning'],
+    upsertSkuDetail: ['planning'], updateSkuLifecycle: ['planning'],
+    // forecast, events, target rules, campaigns
+    importFcRegularForecastBatch: ['planning'], upsertFcSpecialEvent: ['planning'],
+    importFcSpecialEventsBatch: ['planning'], deleteFcSpecialEvent: ['planning'],
+    upsertFcTargetRule: ['planning'], deleteFcTargetRule: ['planning'],
+    upsertCampaign: ['planning'], upsertCampaignSkuLines: ['planning'],
+    // inventory
+    importOverseasInventorySnapshotBatch: ['planning'], adjustOverseasInventory: ['planning'],
+    adjustFactoryInventory: ['planning'], factoryInventoryImportCommit: ['planning'],
+    // request orders and purchase orders (request_order_line_sources, purchase_order_lines)
+    createRequestOrderDraft: ['planning'], submitRequestOrderAllocationDrafts: ['planning'],
+    updateRequestOrderStatus: ['planning'], updateRequestOrderLineQty: ['planning'],
+    cancelRequestOrderTier: ['planning'], upsertRequestOrderSiteConfirmations: ['planning'],
+    sendRequestOrderOrchestration: ['planning'], createPurchaseOrderFromRequest: ['planning'],
+    updatePurchaseOrderStatus: ['planning'], updatePurchaseOrderLine: ['planning'],
+    updatePurchaseOrderHeader: ['planning'], receivePurchaseOrderLines: ['planning'],
+    // shipping plans and shipments: an incoming quantity for 42_ AND an exposure table for the panel
+    createShippingPlansBatch: ['planning', 'exposure'], updateShippingPlanStatus: ['planning', 'exposure'],
+    updateShippingPlanLineQty: ['planning', 'exposure'], appendShippingPlanNote: ['planning', 'exposure'],
+    completeShippingPlan: ['planning', 'exposure'], updateShippingPlanRationale: ['planning', 'exposure'],
+    selectShippingPlanCarrier: ['planning', 'exposure'], combineShippingPlans: ['planning', 'exposure'],
+    uncombineShippingPlans: ['planning', 'exposure'], createShipmentFromPlan: ['planning', 'exposure'],
+    cancelShipmentDraft: ['planning', 'exposure'], updateShipment: ['planning', 'exposure'],
+    confirmShipmentAndDispatch: ['planning', 'exposure'], generateShipmentLineAllocations: ['planning', 'exposure'],
+    updateShipmentReceipt: ['planning', 'exposure'], advanceShipmentRoutePoint: ['planning', 'exposure'],
+    updateShipmentEta: ['planning', 'exposure'], reconcileShipmentEta: ['planning', 'exposure'],
+    submitAllocationDraftsToShippingPlans: ['planning', 'exposure'], submitShippingAllocationDrafts: ['planning', 'exposure'],
+    // allocation drafts: read by the Execution panel, by neither 42_ nor 60_'s first layer
+    upsertShippingAllocationDraft: ['exposure'], upsertShippingAllocationDraftLines: ['exposure'],
+    upsertShippingAllocationDraftAtomic: ['exposure'], cancelShippingAllocationDraft: ['exposure'],
+    generateWeeklyAiPlanDraft: ['exposure'], updateRecommendationDecisionLocked: ['exposure'],
+    // writes that reach no table a planning read or the exposure panel consumes
+    updatePricing: [], upsertSkuRegionalDetail: [], syncMarketplaceSkusToSkuRegionalDetails: [],
+    upsertTaxReferralRate: [], upsertTaxRateComponent: [], saveFactoryOperationConfig: [],
+    importCarrierRateTemplate: [], upsertCarrierLeadTime: [], saveFxRateBook: [], updateAutomationSchedule: [],
+    generateShipmentDocument: [], retryDocumentGeneration: [],
+    upsertRequestOrderAllocationDraft: [], upsertRequestOrderAllocationDraftLines: [],
+    ensureAndEditAllocationDraft: [], startRequestOrderDraftJob: [], continueRequestOrderDraftJob: [],
+    cancelRequestOrderDraftJob: [],
+    recalculateInventoryReplenishmentGapAll: [], recalculateOrderPlanningGapAll: [],
+    startInventoryReplenishmentGapJob: [], startOrderPlanningGapJob: [],
+    cancelInventoryReplenishmentGapJob: [], cancelOrderPlanningGapJob: []
+};
+// Why each family-less writer is family-less. Kept beside the list so a reviewer reads the claim and its
+// reason together; the test requires every [] above to have one.
+var _KM_SOURCE_WRITE_EXEMPT_REASON_ = {
+    updatePricing: 'pricing_list — prices, not a planning input',
+    upsertSkuRegionalDetail: 'sku_regional_details — read by neither 42_ nor 60_',
+    syncMarketplaceSkusToSkuRegionalDetails: 'writes sku_regional_details only',
+    upsertTaxReferralRate: 'tax tables — pricing only', upsertTaxRateComponent: 'tax tables — pricing only',
+    saveFactoryOperationConfig: 'factory operation config — read by 62_ only',
+    importCarrierRateTemplate: 'carrier_rate_cards — the method registry owns its own read',
+    upsertCarrierLeadTime: 'carrier_lead_times — the method registry owns its own read',
+    saveFxRateBook: 'FX rate book — pricing only', updateAutomationSchedule: 'schedule settings, no data row',
+    generateShipmentDocument: 'document files only', retryDocumentGeneration: 'document files only',
+    upsertRequestOrderAllocationDraft: 'request_order_allocation_drafts — no Site Inventory reader',
+    upsertRequestOrderAllocationDraftLines: 'request_order_allocation_draft_lines — no Site Inventory reader',
+    ensureAndEditAllocationDraft: 'request_order_allocation_drafts — no Site Inventory reader',
+    startRequestOrderDraftJob: 'request_order_allocation_drafts — no Site Inventory reader',
+    continueRequestOrderDraftJob: 'request_order_allocation_drafts — no Site Inventory reader',
+    cancelRequestOrderDraftJob: 'request_order_allocation_drafts — no Site Inventory reader',
+    recalculateInventoryReplenishmentGapAll: 'derived gap tables — invalidated by refreshInventoryGapAfterRecalc_',
+    recalculateOrderPlanningGapAll: 'derived gap tables — no Site Inventory source',
+    startInventoryReplenishmentGapJob: 'derived gap tables — invalidated by refreshInventoryGapAfterRecalc_',
+    startOrderPlanningGapJob: 'derived gap tables — no Site Inventory source',
+    cancelInventoryReplenishmentGapJob: 'stops a derived-table job', cancelOrderPlanningGapJob: 'stops a derived-table job'
+};
+var _kmSourceEpochMem_ = { planning: 0, exposure: 0, last: null };
+function _kmSourceEpochRead_() {
+    var out = { planning: _kmSourceEpochMem_.planning, exposure: _kmSourceEpochMem_.exposure, last: _kmSourceEpochMem_.last };
+    try {
+        if (typeof sessionStorage === 'undefined' || !sessionStorage) return out;
+        var raw = sessionStorage.getItem(_KM_SOURCE_EPOCH_KEY_);
+        if (!raw) return out;
+        var o = JSON.parse(raw);
+        _KM_SOURCE_FAMILIES_.forEach(function (f) {
+            var n = o && o[f];
+            // The larger of the two: the stored value survives a reload, the in-memory one survives a storage
+            // that stopped accepting writes. Neither may ever move a counter BACKWARDS.
+            if (typeof n === 'number' && isFinite(n) && n > out[f]) out[f] = n;
+        });
+        if (o && o.last) out.last = o.last;
+    } catch (e) { /* unreadable storage: the in-memory counters still only ever grow */ }
+    return out;
+}
+function _kmNoteSourceWrite_(writer, families, phase) {
+    if (!families || !families.length) return;
+    var e = _kmSourceEpochRead_();
+    families.forEach(function (f) { e[f] = (e[f] || 0) + 1; });
+    e.last = { writer: String(writer), families: families.slice(), phase: String(phase), at: Date.now() };
+    _kmSourceEpochMem_ = { planning: e.planning, exposure: e.exposure, last: e.last };
+    try {
+        if (typeof sessionStorage !== 'undefined' && sessionStorage) {
+            sessionStorage.setItem(_KM_SOURCE_EPOCH_KEY_, JSON.stringify({ planning: e.planning, exposure: e.exposure, last: e.last }));
+        }
+    } catch (e2) { /* the in-memory counters already moved; a reader in this page still sees the write */ }
+}
+// The counters, read-only. `last` names the most recent writer and phase — diagnostic only, never compared.
+window.KM.DB.sourceWriteEpoch = function () {
+    var e = _kmSourceEpochRead_();
+    return { planning: e.planning, exposure: e.exposure, last: e.last ? JSON.parse(JSON.stringify(e.last)) : null };
+};
+window.KM.DB.sourceWriteFamilies = function (name) {
+    var f = _KM_SOURCE_WRITE_FAMILIES_[String(name)];
+    return f ? f.slice() : null;
+};
+(function _kmWrapSourceWriters_() {
+    var missing = [];
+    Object.keys(_KM_SOURCE_WRITE_FAMILIES_).forEach(function (name) {
+        var fn = window.KM.DB[name];
+        if (typeof fn !== 'function') { missing.push(name); return; }
+        var fam = _KM_SOURCE_WRITE_FAMILIES_[name];
+        if (!fam.length || fn.__kmSourceWriter) return;
+        var wrapped = function () {
+            _kmNoteSourceWrite_(name, fam, 'DISPATCH');
+            var r;
+            try { r = fn.apply(this, arguments); }
+            catch (err) { _kmNoteSourceWrite_(name, fam, 'SETTLED'); throw err; }
+            return Promise.resolve(r).then(function (v) { _kmNoteSourceWrite_(name, fam, 'SETTLED'); return v; },
+                function (err2) { _kmNoteSourceWrite_(name, fam, 'SETTLED'); throw err2; });
+        };
+        wrapped.__kmSourceWriter = { name: name, families: fam.slice() };
+        window.KM.DB[name] = wrapped;
+    });
+    // A name in the list with no function behind it is a list that has drifted from the file. Reported, not
+    // thrown: a missing writer cannot be called, so it cannot write unseen.
+    window.KM.DB._sourceWriterListDrift = missing;
+})();
+
 // ========================================
 // Debug & Reload Helpers
 // ========================================

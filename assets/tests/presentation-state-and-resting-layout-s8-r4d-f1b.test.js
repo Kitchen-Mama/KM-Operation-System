@@ -21,6 +21,7 @@
 // neither gap has a dynamic occupant any more. No margin value changed.
 'use strict';
 var fs = require('fs');
+var DC1_EPOCH_ = require('./_dc1-source-epoch.js').epochStub();   // DC1-R1 - the production write signal; constant = nothing written
 var path = require('path');
 var vm = require('vm');
 var ROOT = path.join(__dirname, '..', '..');
@@ -73,7 +74,7 @@ function makeIrHarness(opts, srcOverride) {
           return Promise.resolve({ success: true, data: { rows: [] } });
         }
       },
-      DB: { adaptInventoryReplenishmentWorkspace: function () { return { getMarketplaceSkus: [{ sku: 'SKU-A' }] }; } },
+      DB: { sourceWriteEpoch: DC1_EPOCH_, adaptInventoryReplenishmentWorkspace: function () { return { getMarketplaceSkus: [{ sku: 'SKU-A' }] }; } },
       // The registry is the picker authority: the bootstrap VALIDATES a remembered scope against it before
       // showing it, so the harness has to offer the four sites the fixtures use or every remembered scope
       // would be discarded as retired and the restore half of §A.1 could never be observed.

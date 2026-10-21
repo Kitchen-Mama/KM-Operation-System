@@ -551,6 +551,11 @@ eval(extractFn(INV, '_irApplySearch_'));
 // without it in the sandbox every execution below ends in a ReferenceError rather than an assertion.
 eval(extractFn(INV, '_irRunVerifiedSearch_'));
 eval(extractFn(INV, 'searchReplenishment'));
+// DC1-R1 - the Search now asks the source-write epoch before it reuses the model or the held exposure.
+var _irExposureByScope = {}; function _irExposureScopeKey_() { return ''; }
+eval(require('./_dc1-source-epoch.js').helperSrc(INV));
+global.window.KM = global.window.KM || {}; global.window.KM.DB = global.window.KM.DB || {};
+global.window.KM.DB.sourceWriteEpoch = require('./_dc1-source-epoch.js').epochStub();
 
 (async function () {
   section('B. the Search gate — EXECUTING the real shipped functions');
@@ -607,6 +612,7 @@ eval(extractFn(INV, 'searchReplenishment'));
   // ---- B4. a Search over an already-loaded read model costs ZERO further requests ----------------------
   var before = wsReads.length;
   _irReadModel = { getMarketplaces: [] };
+  _irReadModelSource = _irSourceStamp_();   // DC1-R1 - as the shipped refresh stamps it: read under the current sources
   selCountry = 'DE'; selMkt = 'MKT-2';
   searchReplenishment();
   eq(wsReads.length, before, 'B4. a Search with the scope-independent read model loaded issues no new request');

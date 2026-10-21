@@ -21,6 +21,7 @@
 // here passes on a CSS declaration alone.
 'use strict';
 var fs = require('fs');
+var DC1_EPOCH_ = require('./_dc1-source-epoch.js').epochStub();   // DC1-R1 - the production write signal; constant = nothing written
 var path = require('path');
 var vm = require('vm');
 var ROOT = path.join(__dirname, '..', '..');
@@ -127,7 +128,7 @@ function harness(srcOverride) {
         createRegion: function () { return { beginLoad: function () {}, set: function () {} }; } },
       api: { workspaceApiActive: function () { return true; },
         getWorkspace: function (n) { reads.push(n); return Promise.resolve({ success: true, data: { rows: [] } }); } },
-      DB: { adaptInventoryReplenishmentWorkspace: function () { return { getMarketplaceSkus: [{ sku: 'SKU-A' }] }; } },
+      DB: { sourceWriteEpoch: DC1_EPOCH_, adaptInventoryReplenishmentWorkspace: function () { return { getMarketplaceSkus: [{ sku: 'SKU-A' }] }; } },
       scopeRegistry: { STATUS: { READY: 'READY', EMPTY: 'EMPTY', ERROR: 'ERROR' },
         ensureLoaded: function () { return Promise.resolve({ status: 'READY', model: { getMarketplaces: [
           { marketplace_id: 'MP-US', country: 'US', marketplace: 'Amazon' },

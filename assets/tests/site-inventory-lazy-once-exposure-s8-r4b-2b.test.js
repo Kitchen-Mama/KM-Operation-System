@@ -184,7 +184,9 @@ var LIFTED_FNS = ['_irWsGet', '_irExposureScopeKey_', '_irExposureSite_', '_irEx
 function lazySrc(P) {
   return LIFTED.map(function (v) { return extractVar(P, v); })
     .concat(['var _irExposureByScope = {}; var _irExposureSeq = 0; var _irReadModel = null;'])
-    .concat(LIFTED_FNS.map(function (f) { return extractFn(P, f); })).join(NL);
+    .concat(LIFTED_FNS.map(function (f) { return extractFn(P, f); }))
+    // DC1-R1 - _irEnsureExposureLoaded_ stamps each entry with the source epoch its read was issued under.
+    .concat([require('./_dc1-source-epoch.js').helperSrc(P)]).join(NL);
 }
 // `pageSrc` lets a mutant be driven through the SAME harness as the shipped code.
 function build(opt, pageSrc) {

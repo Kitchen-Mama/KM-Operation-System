@@ -2106,8 +2106,50 @@ function _irAvgSalesCellClass_(item) {
     if (item && item.avgSalesCellState === 'READ_FAILED') return ' replen-cell--avg-error';
     return '';
 }
+// DC1-R1 — TWO DATES ON ONE ROW, STATED RATHER THAN UNIFIED.
+//
+// Avg Sales / Days of Supply come from the live recommendation.workspace.get, whose window is anchored on the
+// RECOMMENDATION_CALCULATION_DATE Script Property (42_ recoWsResolveCalcDate_; no clock). Gap and Suggested
+// Qty are the materialised rows, whose calculation_date the gap job derives from its own Asia/Taipei run day
+// (43_ gapCalcContextForJob_) and which ignores that Property. Both are documented authorities and neither is
+// wrong, so neither number is changed here and no date is forced onto the other. What was missing is that
+// the screen never said so: a 2026-08-19 sales window beside an October gap read as one calculation. The
+// note names the anchor the rate was computed for, and - only when they differ - the gap's date beside it.
+// Nothing is invented: no anchor reported, no note.
+function _irAvgSalesWindowNote_() {
+    var st = (typeof _irRecoState !== 'undefined') ? _irRecoState : null;
+    if (!st || !st.loadedOk || !st.calculationDate) return '';
+    if (typeof _irResultMatchesAppliedScope_ === 'function' && !_irResultMatchesAppliedScope_(st)) return '';
+    var anchor = String(st.calculationDate);
+    var note = 'Avg Sales/day: up to 30 normal sales days in the 90 completed days before ' + anchor
+        + ' (the recommendation calculation date).';
+    var ms = (typeof _irMatState !== 'undefined') ? _irMatState : null;
+    var gapDate = null;
+    if (ms && ms.loadedOk && Array.isArray(ms.rows)
+        && (typeof _irAppliedScopeKey_ !== 'function' || ms.appliedScopeKey === _irAppliedScopeKey_())) {
+        for (var i = 0; i < ms.rows.length; i++) {
+            if (ms.rows[i] && ms.rows[i].calculation_date) { gapDate = String(ms.rows[i].calculation_date); break; }
+        }
+    }
+    if (gapDate && gapDate !== anchor) {
+        note += ' Gap and Suggested Qty are calculated as of ' + gapDate
+            + ' - a different date, set by the gap calculation run.';
+    }
+    return note;
+}
+// The ONE title text for the Avg Sales cell, used by the row builder and both async painters.
+function _irAvgSalesTitleText_(item) {
+    var parts = [];
+    var q = _irAvgSalesQualityNote_(item);
+    if (q) parts.push(q);
+    if (item && item.avgSalesCellState === 'READY') {
+        var w = _irAvgSalesWindowNote_();
+        if (w) parts.push(w);
+    }
+    return parts.join(' ');
+}
 function _irAvgSalesTitleAttr_(item) {
-    var note = _irAvgSalesQualityNote_(item);
+    var note = _irAvgSalesTitleText_(item);
     return note ? ' title="' + escapeReplenHtml(note) + '"' : '';
 }
 // The visible mark. A quality error means no number exists, so it is named; a warning sits beside a real
@@ -9584,6 +9626,9 @@ function _irEffectiveWorkspace() {
         window.KM.api.workspaceApiActive('inventoryReplenishment'));
 }
 var _irReadModel = null;   // workspace-sourced { getX: [...] } keyed by getter name, or null = Legacy
+// DC1-R1 - the source epoch + Taipei day the model's read was ISSUED under. Search reuses the model only
+// while _irSourceVerdict_ answers SAME for it; null (never stamped) is UNKNOWN and is read again.
+var _irReadModelSource = null;
 var _irReadSeq = 0;
 
 // ================================================================================================================
@@ -9762,7 +9807,8 @@ function _irEnsureExposureLoaded_(opts) {
     }
     var gen = ++_irExposureSeq;
     var entry = { key: key, state: IR_EXPOSURE_STATES_.LOADING, promise: null, model: null, indexes: null,
-        loadedAt: 0, generation: gen, error: null, requestedAt: (typeof _irNowMs_ === 'function') ? _irNowMs_() : 0 };
+        loadedAt: 0, generation: gen, error: null, requestedAt: (typeof _irNowMs_ === 'function') ? _irNowMs_() : 0,
+        source: _irSourceStamp_() };   // DC1-R1 - the epoch this read is ISSUED under
     _irExposureByScope[key] = entry;
     // The SAME canonical action the primary read uses, with an exposure-only `only` list. No new action, no
     // router change, no contract bump - 60_ has owned the `only` contract since the deployed SIR stamp.
@@ -9826,6 +9872,48 @@ function _irInvalidateExposureForKey_(key) {
     return true;
 }
 function _irInvalidateActiveExposure_() { return _irInvalidateExposureForKey_(_irExposureScopeKey_()); }
+// DC1-R1 — THE CANONICAL WRITE SIGNAL THE COMMENT BELOW WAS WAITING FOR, AND THE ONE THING IT MAY NOT DO.
+//
+// An exposure entry records the source epoch its read was issued under (_irEnsureExposureLoaded_). At the two
+// moments the page already re-establishes what it shows - an operator Search, and a restored mount - an entry
+// read before a shipment / plan / allocation-draft write (or on an earlier Taipei day) is retired, so the next
+// expand reads it again exactly as a first visit would.
+//
+// IT NEVER RETIRES OVER A MANUAL PLAN THAT HAS NOT REACHED THE DATABASE. A re-read ends in
+// _irHydrateDraftForAppliedScope_, which adopts the persisted drafts and clears the unsaved marks - correct
+// when the database holds what the operator typed, and a silent loss when it does not. So if ANY route has a
+// debounced write not yet sent, a write in flight, an edit that landed during a write, a pending line
+// cancel, or a save that failed, the stale entry is KEPT and the decision is recorded by name. The operator's
+// own Refresh, and their next Search once the plan has saved, still reach the new rows.
+function _irLocalPlanPending_() {
+    var out = {};
+    function add(map, test) {
+        if (!map || typeof map !== 'object') return;
+        Object.keys(map).forEach(function (k) { if (test(map[k])) out[k] = true; });
+    }
+    if (typeof _irUnsavedRoutes !== 'undefined') add(_irUnsavedRoutes, function () { return true; });
+    if (typeof _draftDbTimers !== 'undefined') add(_draftDbTimers, function (v) { return v != null; });
+    if (typeof _draftDbInFlight !== 'undefined') add(_draftDbInFlight, function (v) { return !!v; });
+    if (typeof _draftDbDirty !== 'undefined') add(_draftDbDirty, function (v) { return !!v; });
+    if (typeof _pendingDraftCancels !== 'undefined') add(_pendingDraftCancels, function (v) { return Array.isArray(v) ? v.length > 0 : !!v; });
+    return Object.keys(out).sort();
+}
+var _irExposureSourceCheck = null;   // the last decision, for acceptance: { why, key, outcome, reason, pending }
+function _irExposureRetireIfSourceMoved_(why) {
+    var key = _irExposureScopeKey_();
+    var e = key ? _irExposureByScope[key] : null;
+    var rec = { why: String(why || ''), key: key || null, outcome: null, reason: null, pending: [] };
+    _irExposureSourceCheck = rec;
+    if (!e) { rec.outcome = 'NO_ENTRY'; return rec.outcome; }
+    var v = _irSourceVerdict_(e.source, 'exposure');
+    if (v.verdict === 'SAME') { rec.outcome = 'CURRENT'; return rec.outcome; }
+    rec.reason = v.reason;
+    var pend = _irLocalPlanPending_();
+    if (pend.length) { rec.outcome = 'KEPT_FOR_LOCAL_PLAN'; rec.pending = pend; return rec.outcome; }
+    delete _irExposureByScope[key];   // an in-flight read for it finds itself replaced and installs nothing
+    rec.outcome = 'RETIRED';
+    return rec.outcome;
+}
 // The operator's explicit re-read of THIS site, and the one explicit retry a FAILED entry is allowed. Other
 // sites' entries are untouched - that is the whole point of a per-site map. Until a canonical write signal
 // exists, this is the user-controlled path to exposure truth after a write made elsewhere.
@@ -10280,6 +10368,10 @@ function _irBootstrapScope_() {
         _irSetSelectors_(remembered);
         _irSearch.status = 'READY';
         _irSearch.error = null;
+        // DC1-R1 - a held exposure read before a shipment / plan / draft write made elsewhere is retired
+        // BEFORE the repaint, so nothing paints from it; the next expand reads it as a first visit does. It
+        // is kept, and the decision recorded, while any manual route has not reached the database.
+        rec.exposureSourceCheck = _irExposureRetireIfSourceMoved_('RESTORED_MOUNT');
         if (typeof renderReplenishment === 'function') renderReplenishment();
         // CP2X-R4-R1 §B — THE SALES BASIS IS RESTORED TOO, OR IT IS RE-READ ONCE.
         //
@@ -11002,6 +11094,7 @@ function _irErrDetail_(err) {
 }
 function _irRenderError_(err) {
     _irReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
+    _irReadModelSource = null;
     var rg = _irRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
     var code = (err && err.code) || 'INVENTORY_REPLENISHMENT_READ_FAILED';
     var message = (err && err.message) || 'Inventory Replenishment read failed';
@@ -11205,6 +11298,7 @@ function _irWorkspaceRefresh_(opts) {
             });
     }
     var mySeq = ++_irReadSeq;
+    var _srcAtIssue = _irSourceStamp_();   // DC1-R1 - what the model will be able to say it was read under
     // §16.3 — an UNDECLARED owner is recorded as such rather than guessed. A ledger that invented a
     // plausible owner would be worse than none: it is the attribution itself that is in question.
     var _owner = (opts && opts.owner) ? String(opts.owner) : 'UNDECLARED';
@@ -11300,6 +11394,7 @@ function _irWorkspaceRefresh_(opts) {
                     at: _irNowMs_() };
             } catch (e) { _irLastReadMeta = null; }
             _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
+            _irReadModelSource = _srcAtIssue;
             // ==========================================================================================
             // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §3 — THE CATALOGUE WAS SETTLED EMPTY, AND THAT IS WHY THE
             // LANE HAD NO METHODS.
@@ -11564,7 +11659,14 @@ function _irRunVerifiedSearch_(pending) {
     // ZERO further requests. Fail-closed — a bounded region error, never a silent legacy broad fallback.
     if (_irEffectiveWorkspace()) {
         var mySeq = ++_irSearch.seq;
-        if (_irReadModel) { _irApplySearch_(pending, mySeq); return; }
+        // DC1-R1 - A LOADED MODEL IS REUSED ONLY WHILE IT IS STILL THE CURRENT ONE. It used to be reused
+        // whatever had happened since, so an overseas adjustment, a forecast import or a shipment confirmed
+        // on another page never reached this table until a reload. A Search is the operator asking again,
+        // and the held exposure is checked at the same moment (unless a manual plan is still unsaved).
+        var _rmVerdict = _irReadModel ? _irSourceVerdict_(_irReadModelSource, 'planning') : null;
+        _irSearch.lastModelReuse = _rmVerdict ? (_rmVerdict.verdict === 'SAME' ? 'REUSED' : _rmVerdict.reason) : 'NO_MODEL';
+        _irExposureRetireIfSourceMoved_('SEARCH');
+        if (_irReadModel && _rmVerdict && _rmVerdict.verdict === 'SAME') { _irApplySearch_(pending, mySeq); return; }
         _irSearch.inFlight = true; _irSearch.status = 'LOADING'; _irSearch.error = null;
         _irRenderSearchGate_();
         // F1-7N-FB-3 §C — Search is the ONLY thing that reads the inventory workspace. (FB-2A routed this
@@ -14673,6 +14775,49 @@ function _irRecoRevisionVerdict_(a, b) {
   }
   return unknown ? 'UNKNOWN' : 'SAME';
 }
+// DC1-R1 — WHAT A HELD ANSWER WAS READ UNDER, AND WHETHER THAT STILL HOLDS.
+//
+// The revision above compares an answer with ANOTHER ANSWER, so it can only be asked once a second read has
+// already been paid for. What a held answer needed was a fact about the SOURCES that the page can know
+// without reading: whether anything has been written since. KM.DB.sourceWriteEpoch is that fact - two
+// counters every writer moves at dispatch and again at settle (operation-system-db-api.js, DC1-R1). A reader
+// stamps them when its request is ISSUED, never when its answer lands: an answer that crossed a write in
+// flight may describe either side of it, and is therefore stamped as the older one.
+//
+// AND THE DAY. This tab cannot see the server's own scheduled imports (sales and inventory refresh daily),
+// nor a write in another tab. Those need a server-side source revision that does not exist yet. Until it
+// does, an answer read on an earlier Asia/Taipei day - the planning calendar 43_ uses - is not served as
+// current. That bounds the blind spot to the same day; it does not close it.
+//
+// UNKNOWN IS NEVER SAME. No signal, no stamp, or an unreadable counter each answer UNKNOWN, and every reader
+// treats UNKNOWN exactly as it treats a write it can see: it reads again.
+// Asia/Taipei is a fixed UTC+8 with no DST, so the calendar day is pure epoch arithmetic (days since
+// 1970-01-01 -> civil date), the same reasoning 43_ gapCalcTaipeiYmd_ states. No Date object, no local zone.
+function _irTaipeiDay_(ms) {
+  var z = Math.floor((ms + 480 * 60000) / 86400000) + 719468;
+  var era = Math.floor(z / 146097), doe = z - era * 146097;
+  var yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  var doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100)), mp = Math.floor((5 * doy + 2) / 153);
+  var d = doy - Math.floor((153 * mp + 2) / 5) + 1, m = mp < 10 ? mp + 3 : mp - 9, y = yoe + era * 400 + (m <= 2 ? 1 : 0);
+  return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
+}
+function _irSourceStamp_() {
+  var f = (typeof window !== 'undefined' && window.KM && window.KM.DB) ? window.KM.DB.sourceWriteEpoch : null;
+  if (typeof f !== 'function') return null;
+  var e = null;
+  try { e = f(); } catch (x) { return null; }
+  if (!e || typeof e.planning !== 'number' || typeof e.exposure !== 'number') return null;
+  return { planning: e.planning, exposure: e.exposure, day: _irTaipeiDay_(Date.now()) };
+}
+// { verdict: 'SAME' | 'SUPERSEDED' | 'UNKNOWN', reason } for one family ('planning' | 'exposure').
+function _irSourceVerdict_(stamp, family) {
+  var cur = _irSourceStamp_();
+  if (!cur) return { verdict: 'UNKNOWN', reason: 'SOURCE_EPOCH_UNAVAILABLE' };
+  if (!stamp || typeof stamp[family] !== 'number' || !stamp.day) return { verdict: 'UNKNOWN', reason: 'SOURCE_EPOCH_UNKNOWN' };
+  if (stamp[family] !== cur[family]) return { verdict: 'SUPERSEDED', reason: 'SOURCE_WRITTEN_SINCE' };
+  if (stamp.day !== cur.day) return { verdict: 'SUPERSEDED', reason: 'SOURCE_CYCLE_CHANGED' };
+  return { verdict: 'SAME', reason: null };
+}
 var _irRecoCacheMem = null;                                // lazy in-memory mirror of the session store
 function _irRecoCacheLoad() {
   if (_irRecoCacheMem) return _irRecoCacheMem;
@@ -14720,10 +14865,20 @@ function _irRecoCacheGet(scopeReq) {
   // `revisionComplete: false` on the answer source, and the verdict function still answers UNKNOWN
   // rather than SAME, so a missing field is never read as evidence that nothing changed.
   if (e.revision === null || e.revision === undefined) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); _irRecoCacheDecision_('MISS', 'REVISION_ABSENT_LEGACY'); return null; }
+  // DC1-R1 — and the SOURCES it was read from must not have moved since. A record from before this build
+  // carries no stamp and is UNKNOWN; a write since, or a new Taipei day, is SUPERSEDED. Each is dropped on
+  // the way past. With no signal at all nothing can be compared, so the record is not served - and kept,
+  // because the absence is a property of this page, not of the record.
+  var _sv = _irSourceVerdict_(e.source, 'planning');
+  if (_sv.verdict !== 'SAME') {
+    if (_sv.reason !== 'SOURCE_EPOCH_UNAVAILABLE') { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); }
+    _irRecoCacheDecision_('MISS', _sv.reason);
+    return null;
+  }
   _irRecoCacheDecision_('HIT', _irRecoRevisionComplete_(e.revision) ? null : 'SERVED_REVISION_INCOMPLETE');
   return e;
 }
-function _irRecoCacheSet(scopeReq, env) {
+function _irRecoCacheSet(scopeReq, env, issueStamp) {
   var k = _irRecoCacheKey(scopeReq);
   if (!k || !env || env.success !== true) { _irRecoCacheDecision_('NOT_STORED', 'NOT_A_SUCCESS'); return; }   // successes only
   // CP2T-R1 — an answer from a handler whose computation this build does not accept is SHOWN (it is what the
@@ -14750,6 +14905,8 @@ function _irRecoCacheSet(scopeReq, env) {
       dataVersion: (env.data && env.data.dataVersion) || null
     },
     revision: _irRecoRevisionFromEnv_(env),
+    // DC1-R1 - the source epoch and Taipei day the READ WAS ISSUED under (null = unknown, never served).
+    source: issueStamp ? { planning: issueStamp.planning, exposure: issueStamp.exposure, day: issueStamp.day } : null,
     cachedAt: (typeof Date !== 'undefined' && Date.now) ? Date.now() : null
   };
   _irRecoCacheMem = c; _irRecoCachePersist();
@@ -15135,10 +15292,14 @@ function _irRecoCancelInFlight_(status) {
 function _irRecoEnsureForRestoredScope_() {
   if (typeof _irRecommendationWorkspaceEnabled !== 'function' || !_irRecommendationWorkspaceEnabled()) return 'DISABLED';
   var st = _irRecoState || {};
-  if (st.loadedOk && typeof _irResultMatchesAppliedScope_ === 'function' && _irResultMatchesAppliedScope_(st)) {
+  // DC1-R1 - "settled" also means "settled under the sources that exist now". An answer read before a
+  // write made on another page, or on an earlier Taipei day, is not the operator's answer any more; the
+  // loader below re-reads it (or restores a store entry that IS current) rather than repainting it.
+  var _cur = _irSourceVerdict_(st.source, 'planning').verdict === 'SAME';
+  if (_cur && st.loadedOk && typeof _irResultMatchesAppliedScope_ === 'function' && _irResultMatchesAppliedScope_(st)) {
     return 'ALREADY_SETTLED';
   }
-  if (st.status === 'LOADING') return 'ALREADY_LOADING';
+  if (_cur && st.status === 'LOADING') return 'ALREADY_LOADING';
   if (typeof loadRecommendationWorkspace_ !== 'function') return 'NO_LOADER';
   try { loadRecommendationWorkspace_(); } catch (e) { return 'THREW'; }
   return (_irRecoState && _irRecoState.fromCache) ? 'FROM_CACHE' : 'REREAD_ISSUED';
@@ -15152,8 +15313,14 @@ function loadRecommendationWorkspace_() {
   var scopeReq = _irRecoScopeRequest();
   if (!scopeReq) { _irRecoInvalidate('CONTEXT_NOT_READY'); _irRecoRerenderSummaries(); return null; }
   var ctxKey = JSON.stringify(scopeReq);
-  // dedupe: identical scope already loading or loaded → no duplicate request from repeated calls / renders
-  if (_irRecoState.contextKey === ctxKey && (_irRecoState.status === 'LOADING' || _irRecoState.loadedOk)) return null;
+  // DC1-R1 - the source epoch and Taipei day THIS request is issued under. Read once, here, so the state,
+  // the store entry and the dedupe below all describe the same instant.
+  var issueStamp = _irSourceStamp_();
+  // dedupe: identical scope already loading or loaded → no duplicate request from repeated calls / renders.
+  // DC1-R1 - but only while no source has been written since that read was issued: an in-flight or settled
+  // answer that predates a write is not a duplicate of the question being asked now.
+  if (_irRecoState.contextKey === ctxKey && (_irRecoState.status === 'LOADING' || _irRecoState.loadedOk)
+    && _irSourceVerdict_(_irRecoState.source, 'planning').verdict === 'SAME') return null;
   // F1-4B-FM3a SESSION CACHE HIT: a previously-successful canonical result for this exact scope → restore it
   // with ZERO HTTP (survives navigate-away/back + re-expand within the browser session). Abort any in-flight
   // request for a superseded scope and bump the sequence so a late response can't clobber the cached state.
@@ -15166,6 +15333,7 @@ function loadRecommendationWorkspace_() {
         cachedEntry.meta || {}), errors: [] };
     _irRecoApplyEnvelope(cachedEnv, ctxKey, scopeReq);
     _irRecoState.fromCache = true;
+    _irRecoState.source = cachedEntry.source || null;   // DC1-R1 - verified SAME by _irRecoCacheGet just now
     _irRecoRerenderSummaries();
     _irRecoUpdateSuggestedCells();
     _irRecoRefreshVelocityCells_();   // LIVE9V: cache-hit path also refreshes the velocity cells to the canonical rate
@@ -15184,6 +15352,7 @@ function loadRecommendationWorkspace_() {
   var appliedKeyAtIssue = _irAppliedScopeKey_();   // CP2U-R2 - read ONCE, so both arms stamp the same site
   _irRecoState.contextKey = ctxKey; _irRecoState.seq = my; _irRecoState.scope = scopeReq;
   _irRecoState.appliedScopeKey = appliedKeyAtIssue;   // S8-R4D-F1A — the scope this request was issued for
+  _irRecoState.source = issueStamp;                   // DC1-R1 — and the sources it was issued against
   _irRecoRerenderSummaries();
   _irRecoPaintReadStateCells_();   // CP2U-R2: the cells say "still reading" instead of holding a stale number
   var _t0 = (typeof Date !== 'undefined' && Date.now) ? Date.now() : null;   // client-latency stamp (diagnostic only)
@@ -15210,7 +15379,10 @@ function loadRecommendationWorkspace_() {
       _IR_RECO_DIAG_.server.canonicalRead = _m.canonicalRead || null;
     } catch (_eSrv) {}
     _irRecoApplyEnvelope(env, ctxKey, scopeReq);
-    _irRecoCacheSet(scopeReq, env);   // FM3a: cache ONLY a successful canonical envelope (guarded inside)
+    // DC1-R1 - stamped with the ISSUE instant, not this one: a write that started while this read was in
+    // the air makes the answer older than the sources, and the next lookup must see that.
+    _irRecoState.source = issueStamp;
+    _irRecoCacheSet(scopeReq, env, issueStamp);   // FM3a: cache ONLY a successful canonical envelope (guarded inside)
     _irRecoRerenderSummaries();
     _irRecoUpdateSuggestedCells();
     _irRecoRefreshVelocityCells_();   // LIVE9V: re-render Avg Sales/day + Days of Supply with the now-loaded canonical rate
@@ -16016,7 +16188,7 @@ function _irRecoUpdateVelocityCells_() {
     var avg = row.querySelector('.replen-avg-cell');
     if (avg) {
       avg.className = 'scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item);
-      var note = _irAvgSalesQualityNote_(item);
+      var note = _irAvgSalesTitleText_(item);   // DC1-R1 - the one title helper (quality note + window note)
       // REMOVED rather than set to '', so a cell that recovers does not keep an empty tooltip box.
       if (note) avg.setAttribute('title', note); else avg.removeAttribute('title');
       avg.innerHTML = item.avgDailySales + _irAvgSalesFlagHtml_(item);
@@ -16097,7 +16269,7 @@ function _irRecoPaintReadStateCells_() {
     var avg = row.querySelector('.replen-avg-cell');
     if (avg) {
       avg.className = 'scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item);
-      var note = _irAvgSalesQualityNote_(item);
+      var note = _irAvgSalesTitleText_(item);   // DC1-R1 - the one title helper (quality note + window note)
       // REMOVED rather than blanked, so a cell that recovers does not keep an empty tooltip box.
       if (note) avg.setAttribute('title', note); else avg.removeAttribute('title');
       avg.innerHTML = mark + _irAvgSalesFlagHtml_(item);

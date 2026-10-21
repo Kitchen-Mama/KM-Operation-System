@@ -31,6 +31,7 @@
 var fs = require('fs');
 var path = require('path');
 var ROOT = path.join(__dirname, '..', '..');
+var DC1_EPOCH_ = require('./_dc1-source-epoch.js').epochStub();   // DC1-R1 - the production write signal; constant = nothing written
 
 var passed = 0, failed = 0;
 function ok(c, m, d) { if (c) { passed++; console.log('ok   ' + m); } else { failed++; console.log('FAIL ' + m + (d === undefined ? '' : '\n       got ' + JSON.stringify(d))); } }
@@ -99,7 +100,7 @@ function envelopeFor(scope, n) {
 global.window = {
   IRContext: { toScopeRequest: function () { return CURRENT; } },
   KM_FLAGS: {},
-  KM: { DB: { getInventoryReplenishmentGap: function (scopeReq) {
+  KM: { DB: { sourceWriteEpoch: DC1_EPOCH_, getInventoryReplenishmentGap: function (scopeReq) {
     GAP_NET++;
     var rec = { scope: scopeReq };
     rec.promise = new Promise(function (res) { rec.resolve = res; });
@@ -321,7 +322,7 @@ function main() {
     _irRecoCacheSet(US, { success: true,
       data: { lines: [], dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-01T00:00:00Z' } },
       meta: { recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e', calculationMonth: '2026-11',
-        planningCycle: 'RECO-2026-11' } });                       // no calculationDate
+        planningCycle: 'RECO-2026-11' } }, _irSourceStamp_());                       // no calculationDate
     var partial = _irRecoCacheGet(US);
     ok(partial !== null, 'G11a a record whose SERVER omitted a revision field is still SERVED');
     eq(_irRecoReadDiag_().cache, { outcome: 'HIT', reason: 'SERVED_REVISION_INCOMPLETE' },
@@ -339,7 +340,7 @@ function main() {
     _irRecoCacheSet(US, { success: true,
       data: { lines: [], dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: '2026-10-01T00:00:00Z' } },
       meta: { recommendationWorkspaceHandlerVersion: 'fm5-r4ui-r5e', calculationDate: '2026-10-18',
-        calculationMonth: '2026-11', planningCycle: 'RECO-2026-11' } });
+        calculationMonth: '2026-11', planningCycle: 'RECO-2026-11' } }, _irSourceStamp_());
     eq(_irRecoReadDiag_().cache, { outcome: 'STORED', reason: null }, 'H1  a stored success says so');
     ok(_irRecoCacheGet(US) !== null, 'H1a and it is retrievable');
     eq(_irRecoReadDiag_().cache, { outcome: 'HIT', reason: null }, 'H2  a complete hit says so, with no caveat');
@@ -352,7 +353,7 @@ function main() {
     // so every later lookup misses and every site switch pays a full request.
     _irRecoCacheSet(US, { success: true, data: { lines: [], dataVersion: { formulaVersion: 'FV-7', sourceDataAsOf: 'X' } },
       meta: { recommendationWorkspaceHandlerVersion: 'some-other-build', calculationDate: '2026-10-18',
-        calculationMonth: '2026-11', planningCycle: 'RECO-2026-11' } });
+        calculationMonth: '2026-11', planningCycle: 'RECO-2026-11' } }, _irSourceStamp_());
     eq(_irRecoReadDiag_().cache, { outcome: 'NOT_STORED', reason: 'HANDLER_NOT_ACCEPTED' },
       'H4  and the condition that disables caching ENTIRELY is named rather than inferred from slowness');
     eq(_irRecoCacheGet(US), null, 'H5  nothing was stored, so the next lookup misses');

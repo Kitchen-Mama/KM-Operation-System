@@ -480,7 +480,7 @@ vm.runInContext('function escapeReplenHtml(v){ return String(v==null?"":v).repla
   var j = IRPAGE.indexOf('\n};', i);
   vm.runInContext(IRPAGE.slice(i, j + 3), cellCtx);
 });
-['_irAvgSalesQualityNote_', '_irAvgSalesCellClass_', '_irAvgSalesTitleAttr_', '_irAvgSalesFlagHtml_']
+['_irAvgSalesQualityNote_', '_irAvgSalesWindowNote_', '_irAvgSalesTitleText_', '_irAvgSalesCellClass_', '_irAvgSalesTitleAttr_', '_irAvgSalesFlagHtml_']
   .forEach(function (fn) { vm.runInContext(extractFn(IRPAGE, fn), cellCtx); });
 function cell(item, fn) { cellBox.__i = item; return vm.runInContext(fn + '(__i)', cellCtx); }
 

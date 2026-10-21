@@ -329,7 +329,7 @@ vmD.runInContext('function getReplenishmentData(){ return ITEMS; }', ctxE);
   var i = IRSRC.indexOf('var ' + name + ' = {');
   vmD.runInContext(IRSRC.slice(i, IRSRC.indexOf('};', i) + 2), ctxE);
 });
-['_irAvgSalesQualityNote_', '_irAvgSalesCellClass_', '_irAvgSalesFlagHtml_', '_irDosCellClass_',
+['_irAvgSalesQualityNote_', '_irAvgSalesWindowNote_', '_irAvgSalesTitleText_', '_irAvgSalesCellClass_', '_irAvgSalesFlagHtml_', '_irDosCellClass_',
  '_irRecoUpdateVelocityCells_'].forEach(function (fn) { vmD.runInContext(fnBody(IRSRC, fn), ctxE); });
 
 var beforeExecA = T.panels['SKU-A'].exec, beforeInputA = T.panels['SKU-A'].input;
