@@ -259,6 +259,132 @@ function _fcShareUnavailableTitle_(projections) {
          'This is never substituted with a planning-window share or with a browser-clock month.';
 }
 
+/* FC1-R1 PHASE 1 — HISTORICAL ACTUAL AND ACHIEVEMENT: THE CONTRACT AND ITS STATES, WITH NO SOURCE.
+
+   The Owner split this feature in two. Phase 1 delivers the columns, the interface and the data
+   contract; phase 2 connects a source. So this block has an answer for every cell and a number for
+   none of them, and that is the deliverable rather than a gap in it.
+
+   THE SOURCE IS NAMED, NOT REACHED. `fc_achievement_monthly` is the designated monthly source (grain:
+   month x company x country x marketplace x SKU, the FC upsert key plus a month). `connected` is false
+   and nothing in this page reads it, fetches it, or substitutes anything for it — not a fixture, not
+   the CP2W test port, not a value derived in the browser. A history cell asked about while the source
+   is unconnected says so by name, whatever record it was handed: the state is decided by the SOURCE
+   before any row is looked at, so a stray record cannot become a displayed number.
+
+   ZERO IS A VALUE; ABSENCE IS NOT (Owner-confirmed display rule). An explicit numeric 0 renders 0.
+   null, '', a missing row, a non-number and an unconnected source all render as a named missing state
+   and never as 0. Achievement is refused rather than computed whenever either side is not an explicit
+   number, and a forecast of exactly 0 has no achievement at all — dividing by it would print
+   Infinity or 0%, and both would be invented.
+
+   NOTHING HERE IS A FORMULA ANY EXISTING VIEW USES. The Forecast month view renders exactly what it
+   rendered before; Total FC, both Annual Share columns, Prev Month, Site Inventory Avg Sales and every
+   campaign/event exclusion are untouched. */
+var FC_HISTORY_SOURCE_ = Object.freeze({ table: 'fc_achievement_monthly', connected: false, phase: 2 });
+var FC_HISTORY_STATE_ = Object.freeze({
+  VALUE: 'VALUE',
+  NOT_CONNECTED: 'FC_HISTORY_NOT_CONNECTED',
+  ACTUAL_MISSING: 'FC_ACTUAL_MISSING',
+  ACTUAL_NOT_FINAL: 'FC_ACTUAL_NOT_FINAL',
+  FORECAST_MISSING: 'FC_FORECAST_MISSING',
+  FORECAST_ZERO: 'FC_ACHIEVEMENT_UNDEFINED_ZERO_FORECAST'
+});
+var FC_HISTORY_STATE_TEXT_ = {
+  FC_HISTORY_NOT_CONNECTED: 'Historical sales are not connected yet (phase 2). Nothing is shown rather than a guess.',
+  FC_ACTUAL_MISSING: 'No actual is recorded for this month. Missing is not zero.',
+  FC_ACTUAL_NOT_FINAL: 'This month is not closed yet, so its actual may still change.',
+  FC_FORECAST_MISSING: 'No forecast is stored for this month, so there is nothing to measure against.',
+  FC_ACHIEVEMENT_UNDEFINED_ZERO_FORECAST: 'The forecast for this month is 0, so achievement is undefined.'
+};
+var FC_REGULAR_MONTH_VIEWS_ = ['forecast', 'actual', 'achievement'];
+var _fcRegularMonthView_ = 'forecast';
+
+/* An explicit number or null. 0 and '0' are numbers; '', null, undefined, NaN and words are not. */
+function _fcHistoryExplicitNumber_(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  if (typeof v === 'string' && /^\s*-?\d+(\.\d+)?\s*$/.test(v)) return Number(v);
+  return null;
+}
+
+/* The monthly record key: the FC upsert key (company + country + marketplace + sku) and a YYYY-MM
+   month, normalised the way _regularFindFc compares them. Phase 2 joins on exactly this. */
+function _fcHistoryKey_(company, country, marketplace, sku, year, monthIndex) {
+  function up(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+  var m = Number(monthIndex);
+  if (!isFinite(Number(year)) || !isFinite(m) || m < 0 || m > 11) return null;
+  return [up(company), up(country), String(marketplace == null ? '' : marketplace).trim().toLowerCase(), up(sku),
+    String(year) + '-' + (m < 9 ? '0' : '') + (m + 1)].join('|');
+}
+
+function _fcHistoryActualCell_(source, record) {
+  if (!source || source.connected !== true) return { state: FC_HISTORY_STATE_.NOT_CONNECTED, value: null };
+  if (!record) return { state: FC_HISTORY_STATE_.ACTUAL_MISSING, value: null };
+  var n = _fcHistoryExplicitNumber_(record.actual_units);
+  if (n == null) return { state: FC_HISTORY_STATE_.ACTUAL_MISSING, value: null };
+  if (record.is_final !== true) return { state: FC_HISTORY_STATE_.ACTUAL_NOT_FINAL, value: null };
+  return { state: FC_HISTORY_STATE_.VALUE, value: n };
+}
+
+function _fcAchievementCell_(forecastRaw, actualCell) {
+  if (!actualCell || actualCell.state !== FC_HISTORY_STATE_.VALUE) {
+    return { state: (actualCell && actualCell.state) || FC_HISTORY_STATE_.ACTUAL_MISSING, value: null };
+  }
+  var f = _fcHistoryExplicitNumber_(forecastRaw);
+  if (f == null) return { state: FC_HISTORY_STATE_.FORECAST_MISSING, value: null };
+  if (f === 0) return { state: FC_HISTORY_STATE_.FORECAST_ZERO, value: null };
+  return { state: FC_HISTORY_STATE_.VALUE, value: Math.round(actualCell.value / f * 1000) / 10 };
+}
+
+/* Phase 1 has no records map at all — there is nothing to look a key up IN, by design. */
+function _fcHistoryRecordFor_(key) { return null; }
+
+function _fcHistoryCellText_(cell, kind) {
+  if (cell && cell.state === FC_HISTORY_STATE_.VALUE) {
+    return kind === 'pct' ? cell.value.toFixed(1) + '%' : cell.value.toLocaleString();
+  }
+  return _FC_SHARE_DASH_;
+}
+
+/* The Regular table's twelve month cells for the current month view. The Forecast view returns the
+   markup this table has always rendered, character for character. */
+function _fcRegularMonthCellsHtml_(item, view) {
+  if (view !== 'actual' && view !== 'achievement') {
+    return item.months.map(m => `<div class="scroll-cell cell-month">${m.toLocaleString()}</div>`).join('');
+  }
+  var raw = item.fcRaw || [];
+  var out = '';
+  for (var i = 0; i < 12; i++) {
+    var key = _fcHistoryKey_(item.company, item.country, item.marketplace, item.sku, item.year, i);
+    var actual = _fcHistoryActualCell_(FC_HISTORY_SOURCE_, key ? _fcHistoryRecordFor_(key) : null);
+    var cell = view === 'achievement' ? _fcAchievementCell_(raw[i], actual) : actual;
+    var title = cell.state === FC_HISTORY_STATE_.VALUE ? '' : (FC_HISTORY_STATE_TEXT_[cell.state] || '');
+    out += '<div class="scroll-cell cell-month" data-fc-history-state="' + cell.state + '"' +
+      (title ? ' title="' + _fcColEsc_(title) + '"' : '') + '>' + _fcHistoryCellText_(cell, view === 'achievement' ? 'pct' : 'units') + '</div>';
+  }
+  return out;
+}
+
+/* The view switch. A view choice, not an edit: refused while Base FC is being edited, because the
+   editable grid is a Forecast grid and an Actual-coloured table under it would misdescribe it. */
+function fcSetRegularMonthView(view) {
+  if (FC_REGULAR_MONTH_VIEWS_.indexOf(view) === -1) return;
+  if (typeof fcEditState !== 'undefined' && fcEditState && fcEditState.isEditing) return;
+  _fcRegularMonthView_ = view;
+  _fcSyncRegularMonthViewButtons_();
+  renderFcRegularTable();
+}
+function _fcSyncRegularMonthViewButtons_() {
+  if (typeof document === 'undefined') return;
+  var host = document.getElementById('fc-month-view');
+  if (!host || !host.querySelectorAll) return;
+  host.querySelectorAll('button[data-view]').forEach(function (b) {
+    var on = b.getAttribute('data-view') === _fcRegularMonthView_;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
 // Render Regular Forecast Table
 function renderFcRegularTable() {
   const fixedBody = document.getElementById('fc-regular-fixed-body');
@@ -329,7 +455,7 @@ function renderFcRegularTable() {
         <div class="scroll-cell">${item.country}</div>
         <div class="scroll-cell">${item.category}</div>
         <div class="scroll-cell">${item.series}</div>
-        ${item.months.map(m => `<div class="scroll-cell cell-month">${m.toLocaleString()}</div>`).join('')}
+        ${_fcRegularMonthCellsHtml_(item, _fcRegularMonthView_)}
         <div class="scroll-cell cell-total">${total.toLocaleString()}</div>
         <div class="scroll-cell cell-percentage" title="${fcShareTitle}">${share.company}</div>
         <div class="scroll-cell cell-percentage" title="${fcShareTitle}">${share.site}</div>
@@ -583,6 +709,9 @@ function updateActionButtons(tab) {
         btn.style.display = fcEditState.isEditing ? 'none' : 'inline-flex';
       } else if (btn.id === 'fc-save-btn' || btn.id === 'fc-cancel-btn') {
         btn.style.display = fcEditState.isEditing ? 'inline-flex' : 'none';
+      } else if (btn.id === 'fc-month-view') {
+        // FC1-R1 — a view of the Regular table only, and not offered over the editable grid.
+        btn.style.display = fcEditState.isEditing ? 'none' : 'inline-flex';
       }
     });
   } else if (tab === 'event') {
@@ -763,6 +892,8 @@ function enterFcEditMode() {
 // Confirm edit mode — snapshot the exact currently-loaded Regular rows, lock scope-changing controls, render editable.
 function confirmFcEdit() {
   closeFcModal();
+  // FC1-R1 — editing is of the FORECAST, so the table returns to the Forecast view first.
+  _fcRegularMonthView_ = 'forecast'; _fcSyncRegularMonthViewButtons_();
   fcEditState.isEditing = true;
   fcEditState.dirty = new Map();
   // Immutable snapshot of the currently-loaded (filtered + paginated) live rows.
@@ -2894,8 +3025,17 @@ function toggleRegularMethodFields() {
   const growthGroup = document.getElementById('regular-growth-group');
   const methodDesc = document.getElementById('method-description');
   function show(el, on) { if (el) el.style.display = on ? '' : 'none'; }
+  // FC1-R1 — the two history rows belong to the history methods only.
+  show(document.getElementById('regular-interval-row'), method === 'intervalAverage');
+  show(document.getElementById('regular-history-ref'), _fcIsHistoryMethod_(method));
 
-  if (method === 'actual') {
+  if (_fcIsHistoryMethod_(method)) {
+    show(baseRow, false); show(basedRow, false); show(growthGroup, true);
+    methodDesc.innerHTML = method === 'lastYearActual'
+      ? '<strong>Last Year Same Month Actual × Growth:</strong> each SKU’s actual sales for the Target Month one year earlier, times the Growth Rate. <strong>Not available yet</strong> — historical sales are connected in phase 2, so this method cannot Preview or Save.'
+      : '<strong>Interval Average excl. Events × Growth:</strong> each SKU’s average over the chosen interval with campaign and event days excluded, times the Growth Rate. <strong>Not available yet</strong> — historical sales are connected in phase 2, so this method cannot Preview or Save.';
+    _fcRenderHistoryRef_();
+  } else if (method === 'actual') {
     show(baseRow, true); show(basedRow, false); show(growthGroup, true);
     methodDesc.innerHTML = '<strong>Apply Growth Rate:</strong> take each in-scope SKU’s existing forecast for the <em>Base Year + Base Month</em>, apply the Growth Rate, and write the result into the <em>Target Year + Target Month</em>. Only that one month is updated.';
   } else if (method === 'prevMonth') {
@@ -2948,6 +3088,60 @@ function _regularSyncBasedFromTarget() {
 function onRegularTargetChange() {
   _regularSyncBasedFromTarget();
   _regularClearPreview();   // also disables Save — a preview and its Save are one object
+  _fcRenderHistoryRef_();   // FC1-R1 — the reference month follows the Target
+}
+
+/* FC1-R1 — THE TWO HISTORY METHODS: AN INTERFACE AND A NAMED REFUSAL, NEVER A PREVIEW.
+   Both need sales older than anything this page can read. Until phase 2 connects that, selecting
+   either one shows what it WOULD read and why it cannot, and Preview and Save refuse by name. An
+   unknown method used to fall through to the Manual branch of _regularBuildPreview, which builds an
+   editable preview that Save will write; these two are stopped before that branch is reached. */
+var FC_HISTORY_METHODS_ = ['lastYearActual', 'intervalAverage'];
+var FC_BUILDER_HISTORY_MAX_CELLS_ = 3;   // Owner: never wider than three history cells
+var FC_HISTORY_METHOD_REFUSAL_ = 'FC_HISTORY_METHOD_NOT_AVAILABLE';
+function _fcIsHistoryMethod_(method) { return FC_HISTORY_METHODS_.indexOf(method) !== -1; }
+
+/* The reference cells for the selected history method. Phase 1: each states its period and that the
+   source is not connected. Returns the cells so the cap is checkable without a DOM. */
+function _fcHistoryRefCells_(method, targetYear, targetMonth, intervalFrom, intervalTo) {
+  var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var cells = [];
+  var y = Number(targetYear), m = Number(targetMonth);
+  var targetOk = isFinite(y) && isFinite(m) && m >= 0 && m <= 11;
+  if (method === 'lastYearActual') {
+    cells.push(targetOk
+      ? { label: 'Actual ' + MON[m] + ' ' + (y - 1), state: FC_HISTORY_STATE_.NOT_CONNECTED }
+      : { label: 'Actual (choose a Target first)', state: FC_HISTORY_STATE_.NOT_CONNECTED });
+  } else if (method === 'intervalAverage') {
+    var f = /^\d{4}-\d{2}$/.test(String(intervalFrom || '')) ? String(intervalFrom) : '';
+    var t = /^\d{4}-\d{2}$/.test(String(intervalTo || '')) ? String(intervalTo) : '';
+    var label = (f && t) ? ('Interval average ' + f + ' to ' + t + ', events excluded') : 'Interval average (choose From and To)';
+    if (f && t && f > t) label = 'Interval From is after Interval To';
+    cells.push({ label: label, state: FC_HISTORY_STATE_.NOT_CONNECTED });
+  }
+  return cells.slice(0, FC_BUILDER_HISTORY_MAX_CELLS_);
+}
+
+function _fcRenderHistoryRef_() {
+  if (typeof document === 'undefined') return;
+  var box = document.getElementById('regular-history-ref');
+  var sel = document.getElementById('regular-update-method');
+  if (!box || !sel) return;
+  if (!_fcIsHistoryMethod_(sel.value)) { box.innerHTML = ''; return; }
+  var val = function (id) { var e = document.getElementById(id); return e ? e.value : ''; };
+  var cells = _fcHistoryRefCells_(sel.value, parseInt(val('regular-target-year'), 10), parseInt(val('regular-target-month'), 10),
+    val('regular-interval-from'), val('regular-interval-to'));
+  box.innerHTML = cells.map(function (c) {
+    return '<div class="fc-form-group" data-fc-history-state="' + c.state + '"><label>' + _fcColEsc_(c.label) + '</label>' +
+      '<span class="fc-hint" title="' + _fcColEsc_(FC_HISTORY_STATE_TEXT_[c.state] || '') + '">' + _FC_SHARE_DASH_ +
+      ' not connected (phase 2)</span></div>';
+  }).join('');
+}
+
+/* The refusal both entry points share, so Preview and Save say the same thing. */
+function _fcHistoryMethodRefusalText_() {
+  return 'This method needs historical sales, which are connected in phase 2 (' + FC_HISTORY_METHOD_REFUSAL_ +
+    '). Nothing was previewed and nothing will be saved.';
 }
 
 // ===== Regular Forecast Builder — preview + bulk single-month save =====
@@ -3038,6 +3232,10 @@ function _regularBuildPreview() {
   var targetMonth = parseInt((document.getElementById('regular-target-month') || {}).value, 10);
   var method = document.getElementById('regular-update-method').value;
   var rate = parseFloat((document.getElementById('regular-growth-rate') || {}).value) || 0;
+  // FC1-R1 — before any branch below: an unrecognised method would otherwise build the Manual preview.
+  if (_fcIsHistoryMethod_(method)) {
+    _regularClearPreview(); _setRegularManualHelp(_fcHistoryMethodRefusalText_(), '#b45309'); return;
+  }
 
   if (!country || !marketplace) { _setRegularManualHelp('Country and Marketplace are required.', '#b45309'); return; }
   if (isNaN(targetYear)) { _setRegularManualHelp('Target Year is required.', '#b45309'); return; }
@@ -5791,6 +5989,11 @@ function checkDataExists(sku, year, monthIndex = null) {
 // Live: idempotent bulk upsert via importFcRegularForecastBatch (business key year|company|country|
 // marketplace|sku; preserves forecast_id). Demo: in-memory only, clearly labeled.
 function saveRegularUpdate() {
+  // FC1-R1 — a history method never writes, whatever preview object is lying around.
+  var _selMethod = (document.getElementById('regular-update-method') || {}).value;
+  if (_fcIsHistoryMethod_(_selMethod) || (_regularPreview && _fcIsHistoryMethod_(_regularPreview.method))) {
+    _setRegularSaveEnabled(false); _setRegularManualHelp(_fcHistoryMethodRefusalText_(), '#b45309'); return;
+  }
   if (!_regularPreview || !_regularPreview.rows.length) { alert('Click Preview first to review changes before saving.'); return; }
   var P = _regularPreview;
   var monthKey = REG_MONTH_KEYS[P.targetMonth];
@@ -7945,6 +8148,9 @@ function _getDbFcRegularData() {
             series: r.series,
             months: [r.jan, r.feb, r.mar, r.apr, r.may, r.jun, r.jul, r.aug, r.sep, r.oct, r.nov, r.dec]
                 .map(function(v) { return Math.ceil(Number(v) || 0); }), // whole-unit display
+            // FC1-R1 — the months AS STORED, for achievement only. `months` above coerces a blank to 0
+            // for display, and that stays; achievement must tell "forecast 0" from "no forecast".
+            fcRaw: [r.jan, r.feb, r.mar, r.apr, r.may, r.jun, r.jul, r.aug, r.sep, r.oct, r.nov, r.dec],
             forecastStatus: r.forecastStatus,
             fcShare: r.fcShare
         };

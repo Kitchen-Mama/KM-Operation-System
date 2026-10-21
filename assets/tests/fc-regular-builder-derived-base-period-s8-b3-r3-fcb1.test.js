@@ -134,6 +134,9 @@ ok(/_setRegularSaveEnabled\(false\)/.test(fnSrc(FCS, '_regularClearPreview')),
   var ctx = vm.createContext(box);
   vm.runInContext('function _setRegularSaveEnabled(on){ saveEnabled = !!on; }', ctx);
   vm.runInContext('function _setRegularManualHelp(){}', ctx);
+  vm.runInContext('function _fcRenderHistoryRef_(){}', ctx);   // FC1-R1 — not under test here
+  vm.runInContext(fnSrc(FCS, '_fcIsHistoryMethod_'), ctx);   // FC1-R1 — the REAL guard, not a stub
+  vm.runInContext('var FC_HISTORY_METHODS_ = ' + JSON.stringify(['lastYearActual', 'intervalAverage']) + ';', ctx);
   vm.runInContext(fnSrc(FCS, '_regularDerivedBasePeriod_'), ctx);
   vm.runInContext(fnSrc(FCS, '_regularSyncBasedFromTarget'), ctx);
   vm.runInContext(fnSrc(FCS, '_regularClearPreview'), ctx);
@@ -188,6 +191,9 @@ section('C  the preview derives the period ITSELF - a locked field is not a sour
   vm.runInContext('function _regularRenderPreview(){ rendered++; }', ctx);
   vm.runInContext('function _setRegularSaveEnabled(on){ saveEnabled = !!on; }', ctx);
   vm.runInContext('function _setRegularManualHelp(){}', ctx);
+  vm.runInContext('function _fcRenderHistoryRef_(){}', ctx);   // FC1-R1 — not under test here
+  vm.runInContext(fnSrc(FCS, '_fcIsHistoryMethod_'), ctx);   // FC1-R1 — the REAL guard, not a stub
+  vm.runInContext('var FC_HISTORY_METHODS_ = ' + JSON.stringify(['lastYearActual', 'intervalAverage']) + ';', ctx);
   vm.runInContext('function _regularClearPreview(){ _regularPreview = null; saveEnabled = false; }', ctx);
   vm.runInContext('function _regularMode(){ return "single"; }', ctx);
   vm.runInContext('function _regularSelectedSite(){ return { company: "KM", country: "US", marketplace: "Amazon" }; }', ctx);
@@ -289,6 +295,9 @@ section('E  the single-month write, EXECUTED against a fixture');
   vm.runInContext('function closeFcModal(){}', ctx);
   vm.runInContext('var FC_SLICE_ = { REGULAR: "regular" }; var FC_MSG_ = { SAVED: "Saved" };', ctx);
   vm.runInContext('function _regularSelectedSite(){ return { company: "KM", country: "US", marketplace: "Amazon" }; }', ctx);
+  vm.runInContext(fnSrc(FCS, '_fcIsHistoryMethod_'), ctx);   // FC1-R1 — the REAL guard, not a stub
+  vm.runInContext('var FC_HISTORY_METHODS_ = ' + JSON.stringify(['lastYearActual', 'intervalAverage']) + ';', ctx);
+  vm.runInContext('function _setRegularManualHelp(){}', ctx);
   vm.runInContext(fnSrc(FCS, 'saveRegularUpdate'), ctx);
   vm.runInContext('saveRegularUpdate()', ctx);
 

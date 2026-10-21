@@ -382,7 +382,7 @@ both. Only the **exclusion-date machinery** is reused; the aggregation is new.
 
 | # | question | status | as of |
 |---|---|---|---|
-| 1.2 | raw sales row → selling entity | **MISSING_OWNER_INPUT #1** — the one open mapping | — |
+| 1.2 | raw sales row → selling entity | **MISSING_OWNER_INPUT #1** — **DEFERRED TO PHASE 2 BY THE OWNER** (not resolved; §9) | 2026-10-21 |
 | 1.2 | the DB identity model (`company` on `marketplaces` / `marketplace_skus`) | **OWNER-CONFIRMED, not re-opened** | standing |
 | 1.3 | does `channel` separate companies | **ANSWERED: no** (observed constant `Amazon`) | 2026-08-03 |
 | 1.4 | snapshot row → site identity | **ANSWERED** (via `marketplaces` / `marketplace_skus`) | standing |
@@ -391,7 +391,8 @@ both. Only the **exclusion-date machinery** is reused; the aggregation is new.
 | 3.3 | duplicates (destination sheet) | **ANSWERED: 0 duplicate groups, 0 conflicting**; the 6,382-group figure is a superseded **2026-08-03 snapshot** | latest Owner attachment |
 | 3.3 | duplicates (BigQuery source) | **UNKNOWN** — no reading of `Raw Daily Sales` exists | — |
 | 3.3 | of the attachment's 353 invalid date keys, how many are blank | **ANSWERED: all 353** (Owner-stated). Scoped to that attachment; the present-but-unreadable path still fails closed | 2026-10-16 |
-| **Q1** | is the **raw source** complete for a month | **MISSING_OWNER_INPUT #3**, now three parts: completion signal **+** omit-zero rule **+** report-coverage evidence | — |
+| **Q1** | is the **raw source** complete for a month | **MISSING_OWNER_INPUT #3**, now three parts: completion signal **+** omit-zero rule **+** report-coverage evidence — **DEFERRED TO PHASE 2 BY THE OWNER** (not resolved; §9) | 2026-10-21 |
+| display | how 0, null, a missing row and an unconnected source are shown | **CONFIRMED (Owner):** an explicit 0 shows 0; everything else stays a named missing state | 2026-10-21 |
 | **Q2** | did the **import** land as many distinct keys as the source had | **ANSWERED: instrument exists** (`amazonReadDailyGapAware_`) — a **coverage** check only: no key identities, no values | standing |
 | **Q3** | is **this SKU** missing on this date | **method ANSWERED**; the zero-vs-absent half depends on #3, which now has **three** parts (§4.2) | — |
 | 5 | exclusion identity mapping | **ANSWERED** (frozen, reused) | standing |
@@ -467,3 +468,36 @@ historical API was added**.
 That +38,000 is scoped to the FX Rate Book exactly as the +10,000 before it was scoped to IR. It is not
 a budget for an FC historical read path, and 1,159 bytes could not hold one. D-S8-B3-62's conclusion
 stands: the interval mode needs a server-side owner, and placing one needs its own size decision.
+
+---
+
+## 9. The Owner's phase split (FC1-R1, 2026-10-21)
+
+**Phase 1 connects no historical source.** No history API, no BigQuery query, no GS budget request for a
+history read, no empty production table and no back-filled empty rows. What phase 1 delivers is in
+`FC_HISTORY_ACHIEVEMENT_PHASE1_CONTRACT.md`: the month views, the two history-based builder methods in a
+named not-computable state, and the row contract phase 2 must satisfy.
+
+| item | status after the split |
+|---|---|
+| `MISSING_OWNER_INPUT #1` — raw sales row → selling entity | **DEFERRED TO PHASE 2 BY THE OWNER.** Not resolved, and not to be reported as resolved. |
+| `MISSING_OWNER_INPUT #3` — completion signal + omit-zero rule + coverage | **DEFERRED TO PHASE 2 BY THE OWNER.** Not resolved, and not to be reported as resolved. |
+| display of 0 / null / missing / unconnected | **CONFIRMED (Owner).** An explicit 0 shows 0. null, a missing row and an unconnected source stay missing, by name. |
+| designated source for monthly Actual and achievement | **`fc_achievement_monthly`** (Owner). Its grain is the FC upsert key plus a month. |
+
+**The phase-2 entry check, kept short so it can actually be run.** Read-only, by someone with access to
+the BigQuery project. Nothing below is authorised by this document:
+
+1. **#1:** list the columns of `Raw Daily Sales` (the table schema, not the import's field map) and say
+   whether any of them is a seller, merchant, account or store id. If none, say whether each account
+   writes to its own table or dataset.
+2. **#3(a):** name the field or job that marks a report date as final, if one exists.
+3. **#3(b):** for one SKU that is known to have sold nothing on one date, does that date have a row with
+   units 0, or no row?
+4. **#3(c):** for that same date, what states which SKUs the report was supposed to cover?
+
+Answer 3 = "a 0 row" settles #3(b) and, with 2 and 4, makes a month provable. Answer 3 = "no row" means a
+missing day stays MISSING and the month is refused, exactly as §4.2 already says.
+
+**The GS position does not move.** The +38,000 approved for FX is spent on FX; 1,159 bytes remain. A
+history read path needs its own size decision in phase 2 and borrows nothing from this one.

@@ -1202,7 +1202,22 @@ var ROUND_TOKENS = [
   // THE CSS TOKEN DOES NOT MOVE. No stylesheet changed this round.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
-  'r62-revisitrestore-20261019'];
+  'r62-revisitrestore-20261019',
+
+  // FC1-R1 phase 1 - r63. THE PREVIOUS TOKEN IS SPENT, AND THAT WAS VERIFIED RATHER THAN ASSUMED.
+  //
+  // git ls-remote reported origin/main at 7376bee8 on 2026-10-21, and index.html at 7376bee8 carries r62,
+  // so r62 has been served and can never be reused.
+  //
+  // WHAT CHANGED, and why a browser holding r62 must not keep it: fc-summary.js gains the Regular month
+  // view (Forecast / Actual / Achievement %) and two history-based builder methods that refuse to Preview
+  // or Save by name. fc-summary.html is fetched no-store, but the script is not: a browser left on the r62
+  // script would render the new markup with no handler behind its buttons.
+  //
+  // THE WHOLE CO-DEPLOYED SET MOVES: 56 entries in index.html and 13 in app.js. No stylesheet changed.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r63-fchistphase1-20261021'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

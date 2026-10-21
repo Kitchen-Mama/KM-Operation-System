@@ -6719,3 +6719,32 @@ write path inside a release about rate books would make one candidate out of two
 round starts with the measurement rather than the question.
 
 ---
+
+### D-S8-B3-183 — FC history is split in two phases, and phase 1 connects nothing — **DECIDED (Owner, FC1-R1)**
+
+The Owner moved the FC history source out of the current phase. Phase 1 ships the Regular month views
+(Forecast / Actual / Achievement %), the two history-based builder methods in a named not-computable
+state, and the `fc_achievement_monthly` row contract. Phase 2 connects a source and switches the
+methods on.
+
+`MISSING_OWNER_INPUT #1` and `#3` are recorded as **DEFERRED TO PHASE 2 BY THE OWNER** — not resolved.
+The display rule is **CONFIRMED**: an explicit 0 shows 0; null, a missing row and an unconnected source
+stay missing, by name. No history API, no BigQuery, no GS request, no empty table, no back-fill.
+
+Contract: `FC_HISTORY_ACHIEVEMENT_PHASE1_CONTRACT.md`. Evidence:
+`fc-history-achievement-phase1-interface-fc1-r1.test.js`.
+
+### D-S8-B3-184 — An unknown builder method used to build a saveable Manual preview — **FIXED (FC1-R1)**
+
+`_regularBuildPreview` branches on `actual` and `prevMonth` and treats **everything else** as Manual:
+`newQty` stays null and the preview renders an editable row that Save writes. Adding the two history
+methods as plain options would therefore have shipped them as a disguised Manual Entry. Both Preview and
+Save now refuse a history method by name, ahead of every branch, and Save refuses on the selected method
+**or** a leftover preview. Mutant M1 removes the Preview guard and is caught.
+
+### D-S8-B3-182 — status unchanged: **OPEN, now an Owner decision**
+
+Phase 1 confirmed the display rule this entry says the existing Apply Growth Rate and Previous Month
+previews break (a missing base row offered as 0). Fixing it changes an existing formula's missing-value
+handling, which FC1-R1 was told not to do. It stays OPEN until the Owner says whether those two methods
+should refuse a missing base the way the history methods do.

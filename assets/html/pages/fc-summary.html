@@ -75,6 +75,17 @@
                                 <div class="km-action-menu__panel fc-display-panel" id="fc-display-panel" role="group" aria-label="Column display" hidden></div>
                             </div>
                         </div>
+                        <!-- FC1-R1 VIEW CONTROL — what the Regular table's twelve month cells show. Forecast is
+                             the table as it has always been; Actual and Achievement % are phase 1 interface
+                             only and render a named missing state until a history source is connected. -->
+                        <div class="fc-display-control fc-btn-regular" id="fc-month-view">
+                            <span class="fc-display-label" id="fc-month-view-label">Months</span>
+                            <div class="forecast-chart-view-toggle" role="group" aria-labelledby="fc-month-view-label">
+                                <button type="button" data-view="forecast" class="is-active" aria-pressed="true" onclick="fcSetRegularMonthView('forecast')">Forecast</button>
+                                <button type="button" data-view="actual" aria-pressed="false" onclick="fcSetRegularMonthView('actual')">Actual</button>
+                                <button type="button" data-view="achievement" aria-pressed="false" onclick="fcSetRegularMonthView('achievement')">Achievement %</button>
+                            </div>
+                        </div>
                         <!-- PRIMARY -->
                         <button class="fc-btn fc-btn--add fc-btn-event" onclick="openAddEventModal()">+ New FC Update</button>
                         <!-- Contextual edit controls. Save/Cancel were NOT relocated: they are modal to an
@@ -522,9 +533,26 @@
                                         <option value="actual">Apply Growth Rate</option>
                                         <option value="prevMonth">Adjust From Previous Month Forecast</option>
                                         <option value="manual">Manual Entry</option>
+                                        <!-- FC1-R1 — phase 1 interface for the two history-based methods. They name
+                                             why they cannot compute and never produce a saveable Preview. -->
+                                        <option value="lastYearActual">Last Year Same Month Actual × Growth (phase 2)</option>
+                                        <option value="intervalAverage">Interval Average excl. Events × Growth (phase 2)</option>
                                     </select>
                                 </div>
                             </div>
+                            <!-- Interval (Interval Average) — the months the average would be taken over. -->
+                            <div class="fc-form-row" id="regular-interval-row" style="display:none;">
+                                <div class="fc-form-group">
+                                    <label>Interval From</label>
+                                    <input type="month" id="regular-interval-from" onchange="_fcRenderHistoryRef_()">
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Interval To</label>
+                                    <input type="month" id="regular-interval-to" onchange="_fcRenderHistoryRef_()">
+                                </div>
+                            </div>
+                            <!-- History reference — at most three cells, so the builder never widens. -->
+                            <div class="fc-form-row" id="regular-history-ref" style="display:none;"></div>
                             <!-- Base Year/Month (Apply Growth Rate) -->
                             <div class="fc-form-row" id="regular-base-row" style="display:none;">
                                 <div class="fc-form-group">

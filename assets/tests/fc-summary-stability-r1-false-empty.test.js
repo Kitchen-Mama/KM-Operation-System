@@ -114,6 +114,9 @@ global._fcColVisApply_ = function () {};
 global._fcNum_ = function (v) { return Number(v) || 0; };
 global._fcShareCells_ = function () { return ''; };
 global._fcShareUnavailableTitle_ = function () { return ''; };
+// FC1-R1 — the month cells are painted by their own helper now; stubbed for the same reason as the rest.
+global._fcRegularMonthView_ = 'forecast';
+global._fcRegularMonthCellsHtml_ = function () { return ''; };
 global.syncFcScroll = function () {};
 global._seFingerprint_ = function () { return 'FP'; };   // called by _getDbFcEventData per row
 

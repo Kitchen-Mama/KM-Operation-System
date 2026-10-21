@@ -82,7 +82,7 @@ var ZERO_WRITE_SRC = extractFn(DBAPI, '_kmZeroWriteProven_');
 var CANON_SRC = extractFn(DBAPI, '_kmExtractCanonicalCode_');
 var CANON_LIST = extractVar(DBAPI, 'KM_CANONICAL_CODES');
 
-var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
+var VARS = ['FC_PREREQ_', '_fcRegularMonthView_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
   // FC-SUMMARY-R2B-A2-R3 — the retry-state map. The banner's LABEL and the sentence that names it now
   // come from one place, so both must be in the sandbox for the functions below to resolve.
   'FC_RETRY_', 'FC_RETRY_LABEL_',
@@ -109,6 +109,8 @@ var FNS = ['_fcEpoch_', '_fcOwns_', '_fcMetricsSnapshot_',
   '_fcErrDetail_', '_fcEffectiveWorkspace',
   // §5 — the edit-mode entry/exit pair for both tables
   '_fcEditCounts', '_fcUpdateEditStatus', '_fcSetEditLock', '_fcSetSaveEnabled', 'confirmFcEdit',
+  // FC1-R1 — confirmFcEdit returns the Regular table to the Forecast month view first.
+  '_fcSyncRegularMonthViewButtons_',
   'exitEditMode', '_fcEventCounts', '_fcEventUpdateStatus', '_fcEventSetEditLock',
   '_fcEventSetSaveEnabled', 'enterEventEditMode', 'exitEventEditMode'];
 
