@@ -6716,3 +6716,72 @@ Cumulative since `origin/main` (`7376bee8`): `index.html`, `assets/js/app.js` (t
 `7376bee8`, so no browser has fetched it; re-check before publishing.
 
 **APPS_SCRIPT_SYNC_REQUIRED: none. NOT PUSHED. NOT SYNCED. NOT DEPLOYED.**
+
+---
+
+## DC1-R1 — main-line data coherence and Gap: the audit, and a source write the page now hears
+
+**Frontend only.** No `.gs` byte changed (4,666,841 / 4,668,000), no Apps Script sync, no Script Property,
+schema, schedule or persisted cache touched, no production recalculation, Save, Submit or write. Premises
+from the Owner's latest response: Production R55, contract 21, list 18, required actions 50,
+`mixed_deployment=false`. Not part of R55 (`7376bee8`); FC1-R2 (`1ad5c322`) stays as it was.
+
+| commit | what |
+|---|---|
+| `006bfd74` | the fix, test-first (52 red against the pre-fix sources with all 8 controls green; 78/78 after; 5 mutants) |
+| `fc615a20` | six captures the fix invalidated, re-taken |
+| `4828cc20` | `DC1_R1_MAINLINE_DATA_COHERENCE_AND_GAP_AUDIT.md`, register D-S8-B3-185..188, the PSB exit's raw record |
+| `f09e63af` | the Taipei-day helper rewritten without `Math.floor` - the first full regression showed the read block is scanned for formulas (fm2b F2) |
+| `c87f9707` | every page-pinned capture re-taken against the final source (four in-place modes, c9 frames, cp2r batch seventeen, boot census) |
+
+What changed is D-S8-B3-185 and the audit §3: a per-tab source-write epoch in `operation-system-db-api.js`
+(every write-capable KM.DB function declared and wrapped in one place; bumped at dispatch and settle whatever
+the outcome), and Site Inventory's recommendation answer, read model and exposure map stamped at issue and
+re-read when a write, a new Asia/Taipei day, a missing stamp or a missing signal says they may be stale — the
+exposure never over an unsaved manual route. The Avg Sales tooltip now names its calculation date (D-S8-B3-186).
+
+### Clean full regression at the frozen HEAD
+
+```
+HEAD      c87f9707
+total 693   clean 693   not_clean 0
+registered 693   executed 693   integrity INTACT   complete true   stderr 0 bytes
+```
+
+The first full regression, at `4828cc20`, executed 693/693 with the worktree INTACT and named three
+suites not clean: two captures pinned to the page that the earlier affected-suite run had not reached
+(c9 frames, the boot census) and fm2b F2, the formula scan of the read block. All three were repaired
+or re-taken (`f09e63af`, `c87f9707`) and the second pass above is clean. Both passes' raw output is in
+`docs/evidence/dc1-r1-source-write-epoch/` (`sweep-1-at-4828cc20.*`, `sweep-2-at-c87f9707.*`).
+The PSB bootstrap suite ran clean in both (205/0, 32 mutants); D-S8-B3-188 stays OPEN all the same.
+
+### Still open, by name
+- D-S8-B3-186 — the Avg Sales anchor policy (`RECOMMENDATION_CALCULATION_DATE` is manual; observed 2026-08-19).
+- D-S8-B3-187 — cross-tab / other-user / scheduled-import writes need a server source revision (~3,400 B vs
+  1,159 B headroom; plan only).
+- D-S8-B3-188 — the PSB bootstrap suite's early exit (FC1-R2). OPEN; not closed by this round's clean run.
+
+### FX phase 1 — the Owner's manual steps (nothing here is done by the agent)
+Scope as confirmed: one editor, `vic.zhou@shopkitchenmama.com`; no Google Login or role work; the Owner
+enters the Administration rate-book coefficients, not `pricing_list` rows.
+1. Apps Script editor → Project Settings → Script Properties → add `KM_FX_RATE_BOOK_EDITORS` =
+   `vic.zhou@shopkitchenmama.com` (comma-separated if ever more; case-insensitive; `*` is refused by name).
+   Change nothing else — not the deployment's access, not "Execute as", not OAuth scopes.
+2. Signed in as that address, open the FX Rate Book page (one `fxRateBook.get`, read-only) and read
+   `may_edit` / `authority_reason`:
+   - `true` / `null` → the caller is identified and allowed. FX may then be considered for a first write.
+   - `FX_NOT_AUTHORIZED` → the caller IS identified, but as a different address; check the signed-in account.
+   - `FX_AUTHORITY_UNVERIFIABLE` → this deployment cannot see who calls it. STOP and report; the minimal
+     fix is an Owner decision about the deployment and is not taken here.
+   Until that GET is read, `FX_AUTHORITY_NOT_CONFIGURED` says only that the list is empty — it says nothing
+   about identifiability, because 75_ checks configuration before identity.
+3. Initialising the rate book (the coefficients) and any repair of existing `pricing_list` rows are two
+   separate acts; neither is batch-repricing, and existing manual prices are not touched.
+
+### GITHUB_PAGES_FILES when this is pushed
+Cumulative since `origin/main` (`7376bee8`): `index.html`, `assets/js/app.js` (token r63),
+`assets/js/pages/fc-summary.js`, `assets/html/pages/fc-summary.html`,
+`assets/js/api/operation-system-db-api.js`, `assets/js/pages/inventory-replenishment.js`. r63 is reused —
+`git ls-remote` still reports `7376bee8`; re-check before publishing.
+
+**APPS_SCRIPT_SYNC_REQUIRED: none. NOT PUSHED. NOT SYNCED. NOT DEPLOYED.**
