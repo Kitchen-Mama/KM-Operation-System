@@ -1217,6 +1217,10 @@ var ROUND_TOKENS = [
   // THE WHOLE CO-DEPLOYED SET MOVES: 56 entries in index.html and 13 in app.js. No stylesheet changed.
   //
   // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  //
+  // FC1-R2 RIDES ON r63, and that was verified rather than assumed: git ls-remote still reported
+  // origin/main at 7376bee8 when FC1-R2 changed fc-summary.js and operation-system-db-api.js, so no
+  // browser has been served r63 and a token nobody has fetched may still describe new bytes.
   'r63-fchistphase1-20261021'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

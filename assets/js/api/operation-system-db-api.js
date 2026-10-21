@@ -3216,6 +3216,9 @@ window.KM.DB.adaptFcSummaryWorkspaceSlice = function(data) {
     if (data.observed_at) out.observedAt = String(data.observed_at);
     if (data.slice) out.slice = String(data.slice);
     if (data.counts && typeof data.counts === 'object') out.counts = data.counts;
+    // FC1-R2 — 58_ reports per-table truncation as `capped`. It was dropped here, so a page holding a
+    // capped Regular forecast could not tell "no row" from "a row the server did not send".
+    if (data.capped && typeof data.capped === 'object') out.capped = data.capped;
     return out;
 };
 // F1-7H: adapt the scoped SKU Details workspace View-Model to the SAME arrays the SKU pages consume from the broad cache —

@@ -86,9 +86,13 @@ Manual, Site Inventory Avg Sales, every campaign / event exclusion, Total FC and
 columns. The acceptance suite proves the three existing builder methods compute **identical previews** to
 the R55 candidate `7376bee8` by running both versions of `_regularBuildPreview` on the same inputs.
 
-**Still open and not changed here: D-S8-B3-182.** The existing Apply Growth Rate and Previous Month
-methods turn a *missing* base row into a forecast of 0 in a saveable preview. That is the rule §2 forbids
-for display, applied to an existing formula — so fixing it is an Owner decision, not part of phase 1.
+**D-S8-B3-182 — FIXED in FC1-R2 (Owner-approved).** Apply Growth Rate and Previous Month used to turn a
+missing base row, a blank base cell or a non-number into 0 in a saveable preview. They now read the base
+from the cell as stored and refuse the whole preview, naming SKU, period and reason (`BASE_ROW_MISSING`,
+`BASE_MONTH_BLANK`, `BASE_VALUE_INVALID`, `BASE_PERIOD_MISSING`). An explicit 0 is still a base. The
+formula for a valid base is unchanged. All three methods also refuse when the Regular forecast is not
+loaded (`FC_SOURCE_NOT_READY`) or arrived truncated (`FC_SOURCE_CAPPED`), and methods are a closed list
+(`FC_METHOD_UNKNOWN`). Evidence: `fc-builder-base-refusal-and-method-guard-fc1-r2.test.js`.
 
 ## 6. Evidence
 

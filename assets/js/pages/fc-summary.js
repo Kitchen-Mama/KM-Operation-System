@@ -3144,6 +3144,81 @@ function _fcHistoryMethodRefusalText_() {
     '). Nothing was previewed and nothing will be saved.';
 }
 
+/* FC1-R2 — THE BUILDER'S BASE IS READ, NOT ASSUMED (D-S8-B3-182).
+
+   Apply Growth Rate and Adjust From Previous Month used to read `Number(baseRow[m]) || 0` from a row
+   the adapter had already coerced with `parseFloat(x) || 0`, and a missing row was `0` outright. A
+   blank cell, a word, a missing row and a real 0 all reached the operator as the same number, in a
+   preview offering to write it. The base is now read from the cell AS STORED (`row.raw`, which the
+   adapter keeps), and only an explicit number is a base. Anything else refuses the WHOLE preview, by
+   SKU, period and reason: a batch that silently skipped the bad SKUs would be a write the operator did
+   not review, and one that filled them would be the defect itself.
+
+   The formula for a valid base is untouched: max(0, round(base x (1 + rate/100))).
+
+   METHODS ARE A CLOSED LIST. The preview branches on `actual` and `prevMonth` and treats everything
+   else as Manual, so an unknown value used to build an editable, saveable preview. */
+var FC_REGULAR_METHODS_ = ['actual', 'prevMonth', 'manual'];
+var FC_BASE_REASON_TEXT_ = {
+  BASE_ROW_MISSING: 'there is no forecast row for this SKU in that year',
+  BASE_MONTH_BLANK: 'the base month is blank',
+  BASE_VALUE_INVALID: 'the base month is not a number',
+  BASE_PERIOD_MISSING: 'the base year or month is not set',
+  FC_SOURCE_NOT_READY: 'the Regular forecast has not finished loading',
+  FC_SOURCE_CAPPED: 'the Regular forecast arrived truncated, so a missing row cannot be told from a row that was not sent',
+  FC_METHOD_UNKNOWN: 'this update method is not one the builder knows',
+  FC_PREVIEW_METHOD_MISMATCH: 'the update method changed after Preview',
+  FC_PREVIEW_STALE: 'the base period changed after Preview',
+  FC_PREVIEW_BASE_UNPROVEN: 'this preview carries a value whose base was never read'
+};
+function _regularMethodVerdict_(method) {
+  if (_fcIsHistoryMethod_(method)) return { ok: false, code: FC_HISTORY_METHOD_REFUSAL_ };
+  if (FC_REGULAR_METHODS_.indexOf(method) === -1) return { ok: false, code: 'FC_METHOD_UNKNOWN' };
+  return { ok: true, code: null };
+}
+/* Is the Regular forecast complete enough to build a write from? Demo rows are in memory and whole. */
+function _regularSourceIntegrity_() {
+  if (typeof _fcUseDb === 'function' && !_fcUseDb()) return { ok: true, code: null };
+  if (typeof _fcRegularSourceReady_ === 'function' && !_fcRegularSourceReady_()) return { ok: false, code: 'FC_SOURCE_NOT_READY' };
+  var cap = (typeof _fcReadModel !== 'undefined' && _fcReadModel && _fcReadModel.capped) || null;
+  if (cap && cap.fcRegularForecast === true) return { ok: false, code: 'FC_SOURCE_CAPPED' };
+  return { ok: true, code: null };
+}
+/* One base cell: { ok, value } or { ok:false, code }. Reads the stored cell, never the display value. */
+function _regularBaseValue_(row, monthIndex) {
+  var m = Number(monthIndex);
+  if (!isFinite(m) || m < 0 || m > 11 || Math.floor(m) !== m) return { ok: false, code: 'BASE_PERIOD_MISSING' };
+  if (!row) return { ok: false, code: 'BASE_ROW_MISSING' };
+  var key = REG_MONTH_KEYS[m];
+  var cell = (row.raw && typeof row.raw === 'object') ? row.raw[key] : row[key];
+  if (cell === undefined || cell === null || (typeof cell === 'string' && cell.trim() === '')) return { ok: false, code: 'BASE_MONTH_BLANK' };
+  var n = _fcHistoryExplicitNumber_(cell);
+  if (n == null) return { ok: false, code: 'BASE_VALUE_INVALID' };
+  return { ok: true, value: n };
+}
+function _regularBaseRefusalText_(code, items) {
+  var head = code + ' — ' + (FC_BASE_REASON_TEXT_[code] || code) + '. Nothing was previewed and nothing will be saved.';
+  if (!items || !items.length) return head;
+  return items.length + ' SKU(s) have no usable base, so nothing can be saved: ' + items.map(function (it) {
+    return it.sku + ' ' + it.period + ' ' + it.code + ' (' + (FC_BASE_REASON_TEXT_[it.code] || it.code) + ')';
+  }).join('; ') + '.';
+}
+/* Refuse a preview: drop any earlier saveable one, say why, and list every bad SKU. Not saveable. */
+function _regularRefusePreview_(code, items) {
+  _regularClearPreview();
+  var text = _regularBaseRefusalText_(code, items);
+  _setRegularManualHelp(text, '#b45309');
+  var box = (typeof document !== 'undefined') ? document.getElementById('regular-preview') : null;
+  if (box && items && items.length) {
+    box.innerHTML = '<table class="fc-assist-preview-table" data-fc-preview-refused="' + code + '"><thead><tr><th>SKU</th><th>Base period</th><th>Reason</th></tr></thead><tbody>' +
+      items.map(function (it) {
+        return '<tr><td>' + _fmvEscapeHtml(it.sku) + '</td><td>' + it.period + '</td><td>' + it.code + ' — ' +
+          _fmvEscapeHtml(FC_BASE_REASON_TEXT_[it.code] || it.code) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    box.style.display = '';
+  }
+}
+
 // ===== Regular Forecast Builder — preview + bulk single-month save =====
 var REG_MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 var _regularPreview = null;   // { targetYear, targetMonth, method, rows:[...] }
@@ -3224,6 +3299,9 @@ function _regularCandidateSkus(site) {
 // Build the Preview (affected SKUs, Old → New → Difference for the single Target Month).
 function _regularBuildPreview() {
   _regularCloseAllMs();   // Preview closes the multiselect panels
+  // FC1-R2 — a new Preview replaces the old one, so the old one stops being saveable FIRST: every early
+  // return below would otherwise leave the previous preview, and its Save, live under a changed form.
+  _regularClearPreview();
   var site = _regularSelectedSite();
   var company = site.company, country = site.country, marketplace = site.marketplace;
   var targetYear = parseInt(document.getElementById('regular-target-year').value);
@@ -3236,6 +3314,8 @@ function _regularBuildPreview() {
   if (_fcIsHistoryMethod_(method)) {
     _regularClearPreview(); _setRegularManualHelp(_fcHistoryMethodRefusalText_(), '#b45309'); return;
   }
+  // FC1-R2 — and anything else outside the closed list is refused by name, not run as Manual.
+  if (!_regularMethodVerdict_(method).ok) { _regularRefusePreview_('FC_METHOD_UNKNOWN', []); return; }
 
   if (!country || !marketplace) { _setRegularManualHelp('Country and Marketplace are required.', '#b45309'); return; }
   if (isNaN(targetYear)) { _setRegularManualHelp('Target Year is required.', '#b45309'); return; }
@@ -3247,9 +3327,19 @@ function _regularBuildPreview() {
     _regularClearPreview(); return;
   }
 
+  // FC1-R2 — every method builds a WRITE from these rows (Manual preserves the other eleven months from
+  // the target row), so an unloaded or truncated source refuses all three, not only the base methods.
+  var integrity = _regularSourceIntegrity_();
+  if (!integrity.ok) { _regularRefusePreview_(integrity.code, []); return; }
+
   var rows = _regularFcRows();
   var baseYear, baseMonth;
-  if (method === 'actual') { baseYear = parseInt(document.getElementById('regular-base-year').value); baseMonth = parseInt((document.getElementById('regular-base-month') || {}).value || '0'); }
+  if (method === 'actual') {
+    baseYear = parseInt(document.getElementById('regular-base-year').value, 10);
+    // FC1-R2 — no fallback: a blank Base Month used to read as '0', which is January.
+    baseMonth = parseInt((document.getElementById('regular-base-month') || {}).value, 10);
+    if (isNaN(baseYear) || isNaN(baseMonth) || baseMonth < 0 || baseMonth > 11) { _regularRefusePreview_('BASE_PERIOD_MISSING', []); return; }
+  }
   // FCB1 — DERIVED HERE, not read back out of the locked fields. A disabled attribute is a
   // presentation choice removed with one devtools click, and a field left over from a previous open
   // still carries its old value; the period this preview is about to write may not be guessable.
@@ -3259,20 +3349,28 @@ function _regularBuildPreview() {
     baseYear = derived.year; baseMonth = derived.month;
   }
 
+  var basePeriod = (baseYear == null) ? '' : (baseYear + '-' + (baseMonth < 9 ? '0' : '') + (baseMonth + 1));
+  var badBases = [];
   var previewRows = candidates.map(function(c){
     var targetRow = _regularFindFc(rows, company, country, marketplace, c.sku, targetYear);
     var existing = _regularExistingMonths(targetRow);
     var oldRaw = existing[REG_MONTH_KEYS[targetMonth]];
     var oldQty = (oldRaw === '' || oldRaw == null) ? null : (Math.round(Number(oldRaw)) || 0);
-    var newQty = null;
+    var newQty = null, base = null;
     if (method === 'actual' || method === 'prevMonth') {
       var baseRow = _regularFindFc(rows, company, country, marketplace, c.sku, baseYear);
-      var baseVal = baseRow ? (Number(baseRow[REG_MONTH_KEYS[baseMonth]]) || 0) : 0;
-      newQty = Math.max(0, Math.round(baseVal * (1 + rate / 100)));
+      var b = _regularBaseValue_(baseRow, baseMonth);
+      if (!b.ok) { badBases.push({ sku: c.sku, period: basePeriod, code: b.code }); }
+      else {
+        newQty = Math.max(0, Math.round(b.value * (1 + rate / 100)));
+        base = { year: baseYear, month: baseMonth, value: b.value };   // the proof Save checks for
+      }
     } // manual → newQty stays null (user types it in the preview)
     return { sku: c.sku, company: c.company || company, country: country, marketplace: marketplace,
-      category: c.category, series: c.series, existing: existing, oldQty: oldQty, newQty: newQty };
+      category: c.category, series: c.series, existing: existing, oldQty: oldQty, newQty: newQty, base: base };
   });
+  // FC1-R2 — one unusable base refuses the batch: no auto-zero, no silent skip, every bad SKU named.
+  if (badBases.length) { _regularRefusePreview_(badBases[0].code, badBases); return; }
 
   // FCB1 — the period actually used is recorded ON the preview. Asking an operator to check a number
   // against a period that is only implied is asking them to check it against what they assume.
@@ -5994,6 +6092,24 @@ function saveRegularUpdate() {
   if (_fcIsHistoryMethod_(_selMethod) || (_regularPreview && _fcIsHistoryMethod_(_regularPreview.method))) {
     _setRegularSaveEnabled(false); _setRegularManualHelp(_fcHistoryMethodRefusalText_(), '#b45309'); return;
   }
+  // FC1-R2 — Save re-checks for itself; a disabled button is a presentation, not a guard.
+  var _saveRefusal = (function () {
+    if (!_regularMethodVerdict_(_selMethod).ok) return 'FC_METHOD_UNKNOWN';
+    if (!_regularPreview) return null;
+    if (_regularPreview.method !== _selMethod) return 'FC_PREVIEW_METHOD_MISMATCH';
+    if (_regularPreview.method === 'actual') {
+      var by = parseInt((document.getElementById('regular-base-year') || {}).value, 10);
+      var bm = parseInt((document.getElementById('regular-base-month') || {}).value, 10);
+      if (by !== _regularPreview.baseYear || bm !== _regularPreview.baseMonth) return 'FC_PREVIEW_STALE';
+    }
+    var integ = _regularSourceIntegrity_();
+    if (!integ.ok) return integ.code;
+    if (_regularPreview.method !== 'manual' && (_regularPreview.rows || []).some(function (r) {
+      return !r.base || typeof r.base.value !== 'number' || r.base.year !== _regularPreview.baseYear || r.base.month !== _regularPreview.baseMonth;
+    })) return 'FC_PREVIEW_BASE_UNPROVEN';
+    return null;
+  })();
+  if (_saveRefusal) { _regularRefusePreview_(_saveRefusal, []); return; }
   if (!_regularPreview || !_regularPreview.rows.length) { alert('Click Preview first to review changes before saving.'); return; }
   var P = _regularPreview;
   var monthKey = REG_MONTH_KEYS[P.targetMonth];
@@ -6316,6 +6432,13 @@ function _fcMergeSlice_(name, adapted) {
   });
   if (adapted.facets) _fcReadModel.facets = adapted.facets;
   if (adapted.counts) _fcReadModel.counts = adapted.counts;
+  /* FC1-R2 — completeness travels with the rows it describes: each key that landed records whether the
+     server truncated it. An answer that says nothing about truncation (an older server) records false,
+     which is what the page assumed before this field was carried at all. */
+  if (landed.length) {
+    if (!_fcReadModel.capped) _fcReadModel.capped = {};
+    landed.forEach(function (k) { _fcReadModel.capped[k] = !!(adapted.capped && adapted.capped[k] === true); });
+  }
   /* The Year dropdown's options. Bootstrap carries the server-derived universe (computed from every
      Regular row before the rows were dropped); a regular slice re-derives from the rows it just
      brought. Both go through the page's own ordering, so the dropdown is unchanged either way. */

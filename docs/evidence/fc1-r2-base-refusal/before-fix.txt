@@ -1,0 +1,54 @@
+FC1-R2 counter-example suite run against 0f8294a5 (BEFORE the fix). Controls pass; the defects fail.
+
+ok   A1  SKU-B 2025 Jun: coerced to 0 for display, still '' in raw - the distinction survives the adapter
+FAIL A2  a CAPPED answer reaches the page model as capped - truncation is not dropped at the adapter
+FAIL A3  and a complete one as not capped
+ok   B1  Apply Growth: base 100 x 1.10 = 110
+ok   B2  an explicit 0 base is a base: 0, and the preview stands
+ok   B3  and it can be saved
+ok   B4  Previous Month across the year: Jan 2026 reads Dec 2025 (50 x 1.10 = 55)
+ok   B5  and records the derived period
+FAIL C1  blank base cell: no preview object and Save disabled
+FAIL C1  blank base cell: the refusal names SKU-B / 2025-06 / BASE_MONTH_BLANK
+FAIL C2  no base row at all: no preview object and Save disabled
+FAIL C2  no base row at all: the refusal names SKU-C / 2025-06 / BASE_ROW_MISSING
+FAIL C3  a word in the base cell: no preview object and Save disabled
+FAIL C3  a word in the base cell: the refusal names SKU-D / 2025-06 / BASE_VALUE_INVALID
+FAIL C4  "1,200" is not silently read as 1: no preview object and Save disabled
+FAIL C4  "1,200" is not silently read as 1: the refusal names SKU-E / 2025-06 / BASE_VALUE_INVALID
+FAIL C5  Previous Month across the year, blank Dec 2025: no preview object and Save disabled
+FAIL C5  Previous Month across the year, blank Dec 2025: the refusal names SKU-B / 2025-12 / BASE_MONTH_BLANK
+FAIL D1  mixed batch: no preview object and Save disabled
+FAIL D1  mixed batch: the refusal names SKU-B / 2025-06 / BASE_MONTH_BLANK
+FAIL D2  every bad SKU is listed, not just the first
+ok   D3  a good SKU is not reported as bad
+FAIL D4  Save after the refusal writes NOTHING
+FAIL E1  Apply Growth with no Base Month: no preview object and Save disabled
+FAIL E1  Apply Growth with no Base Month: the refusal names BASE_PERIOD_MISSING
+FAIL E2  Apply Growth with no Base Year: no preview object and Save disabled
+FAIL E2  Apply Growth with no Base Year: the refusal names BASE_PERIOD_MISSING
+FAIL F1  capped source, Apply Growth: no preview object and Save disabled
+FAIL F1  capped source, Apply Growth: the refusal names FC_SOURCE_CAPPED
+FAIL F2  capped source, Manual - a missing target row would be written blank: no preview object and Save disabled
+FAIL F2  capped source, Manual - a missing target row would be written blank: the refusal names FC_SOURCE_CAPPED
+FAIL F3  source not ready: no preview object and Save disabled
+FAIL F3  source not ready: the refusal names FC_SOURCE_NOT_READY
+ok   F4  CONTROL: the same rows, complete and ready, give the same 110
+ok   G1  a history method: no preview object and Save disabled
+ok   G1  a history method: the refusal names FC_HISTORY_METHOD_NOT_AVAILABLE
+FAIL G2  an unknown method is refused by name, not run as Manual: no preview object and Save disabled
+FAIL G2  an unknown method is refused by name, not run as Manual: the refusal names FC_METHOD_UNKNOWN
+ok   G3  and cannot be saved
+ok   H1  setup: a valid Apply Growth preview
+FAIL H2  method switched under it -> Save writes nothing
+FAIL H3  and says why
+FAIL H4  base period edited after Preview -> Save writes nothing (FC_PREVIEW_STALE)
+FAIL H5  a refused rebuild CLEARS the earlier saveable preview
+FAIL H6  so Save has nothing to write
+FAIL H7  a preview object whose rows carry no proven base is refused by Save itself, not by the button
+ok   I1  Manual builds its editable preview as before
+ok   J1  the complete chain writes once
+ok   J2  the target month carries the computed value
+ok   J3  every other month is the stored value, including the real 0 and the blank
+FAIL J4  the refused chain writes NOTHING - the stored 66 stays 66
+FAIL  16 passed, 35 failed

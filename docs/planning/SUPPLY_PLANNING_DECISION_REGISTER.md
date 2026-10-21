@@ -6748,3 +6748,26 @@ Phase 1 confirmed the display rule this entry says the existing Apply Growth Rat
 previews break (a missing base row offered as 0). Fixing it changes an existing formula's missing-value
 handling, which FC1-R1 was told not to do. It stays OPEN until the Owner says whether those two methods
 should refuse a missing base the way the history methods do.
+
+### D-S8-B3-182 — **FIXED (FC1-R2, Owner-approved, frontend only)**
+
+Recorded OPEN above; closed here. The base of Apply Growth Rate and Previous Month is read from the cell
+as stored (`row.raw`, which the adapter already kept) and only an explicit number is a base. A missing
+row, a blank cell, a non-number (including `"1,200"`, which `parseFloat` used to read as 1) and a blank
+Base Month (which used to read as January) each refuse the WHOLE preview, naming every bad SKU with its
+base period and reason. Nothing is filled, nothing is skipped. An explicit 0 is a base; the formula for a
+valid base is unchanged; Previous Month still crosses the year the same way.
+
+**The cap is now visible.** `58_` reported `capped` per table and `adaptFcSummaryWorkspaceSlice` dropped
+it, so the page could not tell "no row" from "a row the server did not send". It is carried to
+`_fcReadModel.capped`, and all three methods — Manual included, because Manual preserves the other eleven
+months from the target row — refuse a capped or unloaded source.
+
+**Save checks for itself.** It refuses an unknown method, a preview built for another method, an Apply
+Growth preview whose base period was edited afterwards, an unloaded or capped source, and any non-Manual
+row without the base it was computed from. A refused rebuild clears the earlier saveable preview first.
+
+Written test-first: `fc-builder-base-refusal-and-method-guard-fc1-r2.test.js` failed 35 of 51 against
+`0f8294a5` (controls passing) and passes 56/56 with 5 mutants after. The chain under test is the real
+adapter, the real merge, the real builder and the real Save into a spy: the refused path writes nothing
+and the stored target value stays.

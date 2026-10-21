@@ -55,6 +55,19 @@ function fnSrc(src, name) {
   }
   throw new Error('unbalanced fn: ' + name);
 }
+// FC1-R2 — a top-level var declaration, up to its terminating semicolon at bracket depth 0.
+function varSrc(src, name) {
+  var m = new RegExp('^var ' + name + '\\s*=', 'm').exec(src);
+  if (!m) throw new Error('var not found: ' + name);
+  var d = 0;
+  for (var j = m.index; j < src.length; j++) {
+    var c = src[j];
+    if (c === '{' || c === '[' || c === '(') d++;
+    else if (c === '}' || c === ']' || c === ')') d--;
+    else if (c === ';' && d === 0) return src.slice(m.index, j + 1);
+  }
+  throw new Error('unterminated var: ' + name);
+}
 // The builder modal's markup slice, so a selector assertion cannot accidentally match another modal.
 var MODAL = (function () {
   var i = HTML.indexOf('id="fc-regular-update-modal"');
@@ -137,6 +150,10 @@ ok(/_setRegularSaveEnabled\(false\)/.test(fnSrc(FCS, '_regularClearPreview')),
   vm.runInContext('function _fcRenderHistoryRef_(){}', ctx);   // FC1-R1 — not under test here
   vm.runInContext(fnSrc(FCS, '_fcIsHistoryMethod_'), ctx);   // FC1-R1 — the REAL guard, not a stub
   vm.runInContext('var FC_HISTORY_METHODS_ = ' + JSON.stringify(['lastYearActual', 'intervalAverage']) + ';', ctx);
+  ['FC_REGULAR_METHODS_', 'FC_HISTORY_METHOD_REFUSAL_', 'FC_BASE_REASON_TEXT_'].forEach(function (v) { vm.runInContext(varSrc(FCS, v), ctx); });   // FC1-R2
+  ['_fcHistoryExplicitNumber_', '_regularMethodVerdict_', '_regularSourceIntegrity_', '_regularBaseValue_', '_regularBaseRefusalText_', '_regularRefusePreview_']
+    .forEach(function (f) { vm.runInContext(fnSrc(FCS, f), ctx); });
+  vm.runInContext('function _fmvEscapeHtml(s){ return String(s == null ? "" : s); }', ctx);
   vm.runInContext(fnSrc(FCS, '_regularDerivedBasePeriod_'), ctx);
   vm.runInContext(fnSrc(FCS, '_regularSyncBasedFromTarget'), ctx);
   vm.runInContext(fnSrc(FCS, '_regularClearPreview'), ctx);
@@ -194,6 +211,10 @@ section('C  the preview derives the period ITSELF - a locked field is not a sour
   vm.runInContext('function _fcRenderHistoryRef_(){}', ctx);   // FC1-R1 — not under test here
   vm.runInContext(fnSrc(FCS, '_fcIsHistoryMethod_'), ctx);   // FC1-R1 — the REAL guard, not a stub
   vm.runInContext('var FC_HISTORY_METHODS_ = ' + JSON.stringify(['lastYearActual', 'intervalAverage']) + ';', ctx);
+  ['FC_REGULAR_METHODS_', 'FC_HISTORY_METHOD_REFUSAL_', 'FC_BASE_REASON_TEXT_'].forEach(function (v) { vm.runInContext(varSrc(FCS, v), ctx); });   // FC1-R2
+  ['_fcHistoryExplicitNumber_', '_regularMethodVerdict_', '_regularSourceIntegrity_', '_regularBaseValue_', '_regularBaseRefusalText_', '_regularRefusePreview_']
+    .forEach(function (f) { vm.runInContext(fnSrc(FCS, f), ctx); });
+  vm.runInContext('function _fmvEscapeHtml(s){ return String(s == null ? "" : s); }', ctx);
   vm.runInContext('function _regularClearPreview(){ _regularPreview = null; saveEnabled = false; }', ctx);
   vm.runInContext('function _regularMode(){ return "single"; }', ctx);
   vm.runInContext('function _regularSelectedSite(){ return { company: "KM", country: "US", marketplace: "Amazon" }; }', ctx);
@@ -271,12 +292,14 @@ section('E  the single-month write, EXECUTED against a fixture');
                    jul: 77, aug: 88, sep: 99, oct: 100, nov: 111, dec: 122 };
   var captured = null;
   var box = { console: console,
-    document: { getElementById: function (id) { return els[id] || null; } },
+    // FC1-R2 — Save checks the SELECTED method against the preview's, so the select must exist here.
+    document: { getElementById: function (id) { return id === 'regular-update-method' ? { value: 'prevMonth' } : (els[id] || null); } },
     REG_MONTH_KEYS: ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],
     alerts: [], captured: null,
     _regularPreview: { targetYear: 2026, targetMonth: 5, method: 'prevMonth', baseYear: 2026, baseMonth: 4,
       rows: [{ sku: 'SKU-1', company: 'KM', country: 'US', marketplace: 'Amazon',
-               existing: EXISTING, oldQty: 66, newQty: 110 }] },
+               existing: EXISTING, oldQty: 66, newQty: 110,
+               base: { year: 2026, month: 4, value: 100 } }] },   // FC1-R2 — the base this row was computed from
     window: { KM: { DB: { importFcRegularForecastBatch: function (rows, opts) {
       captured = { rows: rows, opts: opts };
       return { then: function () { return { catch: function () {} }; } };
@@ -297,6 +320,10 @@ section('E  the single-month write, EXECUTED against a fixture');
   vm.runInContext('function _regularSelectedSite(){ return { company: "KM", country: "US", marketplace: "Amazon" }; }', ctx);
   vm.runInContext(fnSrc(FCS, '_fcIsHistoryMethod_'), ctx);   // FC1-R1 — the REAL guard, not a stub
   vm.runInContext('var FC_HISTORY_METHODS_ = ' + JSON.stringify(['lastYearActual', 'intervalAverage']) + ';', ctx);
+  ['FC_REGULAR_METHODS_', 'FC_HISTORY_METHOD_REFUSAL_', 'FC_BASE_REASON_TEXT_'].forEach(function (v) { vm.runInContext(varSrc(FCS, v), ctx); });   // FC1-R2
+  ['_fcHistoryExplicitNumber_', '_regularMethodVerdict_', '_regularSourceIntegrity_', '_regularBaseValue_', '_regularBaseRefusalText_', '_regularRefusePreview_']
+    .forEach(function (f) { vm.runInContext(fnSrc(FCS, f), ctx); });
+  vm.runInContext('function _fmvEscapeHtml(s){ return String(s == null ? "" : s); }', ctx);
   vm.runInContext('function _setRegularManualHelp(){}', ctx);
   vm.runInContext(fnSrc(FCS, 'saveRegularUpdate'), ctx);
   vm.runInContext('saveRegularUpdate()', ctx);

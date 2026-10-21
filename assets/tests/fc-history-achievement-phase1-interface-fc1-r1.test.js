@@ -61,6 +61,16 @@ function varSrc(src, name) {
   throw new Error('unterminated var: ' + name);
 }
 
+// FC1-R2 — the builder's closed method list, base reader and source gate, loaded wherever the page has them.
+var FC1R2_VARS = ['FC_REGULAR_METHODS_', 'FC_BASE_REASON_TEXT_'];
+var FC1R2_FNS = ['_fcHistoryExplicitNumber_', '_regularMethodVerdict_', '_regularSourceIntegrity_', '_regularBaseValue_',
+  '_regularBaseRefusalText_', '_regularRefusePreview_'];
+function loadFc1r2(ctx, src) {
+  vm.runInContext('function _fmvEscapeHtml(s){ return String(s == null ? "" : s); }', ctx);
+  FC1R2_VARS.forEach(function (v) { if (src.indexOf('\nvar ' + v + ' =') !== -1) vm.runInContext(varSrc(src, v), ctx); });
+  FC1R2_FNS.forEach(function (f) { if (src.indexOf('function ' + f + '(') !== -1) vm.runInContext(fnSrc(src, f), ctx); });
+}
+
 var HISTORY_VARS = ['FC_HISTORY_SOURCE_', 'FC_HISTORY_STATE_', 'FC_HISTORY_STATE_TEXT_', 'FC_REGULAR_MONTH_VIEWS_',
   '_fcRegularMonthView_', 'FC_HISTORY_METHODS_', 'FC_BUILDER_HISTORY_MAX_CELLS_', 'FC_HISTORY_METHOD_REFUSAL_', '_FC_SHARE_DASH_'];
 var HISTORY_FNS = ['_fcHistoryExplicitNumber_', '_fcHistoryKey_', '_fcHistoryActualCell_', '_fcAchievementCell_',
@@ -110,11 +120,12 @@ function previewCtx(src, method, opts) {
     vm.runInContext(fnSrc(src, '_fcIsHistoryMethod_'), ctx);
     vm.runInContext(fnSrc(src, '_fcHistoryMethodRefusalText_'), ctx);
   }
+  loadFc1r2(ctx, src);
   return ctx;
 }
 
 function saveCtx(src, selectValue, preview) {
-  var els = { 'regular-update-method': { value: selectValue } };
+  var els = { 'regular-update-method': { value: selectValue }, 'regular-base-year': { value: '2025' }, 'regular-base-month': { value: '5' } };
   var box = { console: console, document: { getElementById: function (id) { return els[id] || null; } },
     REG_MONTH_KEYS: ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],
     alerts: [], captured: null, help: '', _regularPreview: preview,
@@ -126,8 +137,10 @@ function saveCtx(src, selectValue, preview) {
    'function _setRegularSaveEnabled(){}', 'function _setRegularManualHelp(m){ help = String(m || ""); }', 'function _fcEpoch_(){ return 1; }',
    'function _fcSettleWrite_(){}', 'function _fcFailWrite_(){}', 'function _fcAfterWriteScoped_(){}', 'function _fcCountsLine_(){ return ""; }',
    'function renderFcRegularTable(){}', 'function closeFcModal(){}', 'var FC_SLICE_ = { REGULAR: "regular" }; var FC_MSG_ = { SAVED: "Saved" };',
-   'function _regularSelectedSite(){ return { company: "KM", country: "US", marketplace: "Amazon" }; }'
+   'function _regularSelectedSite(){ return { company: "KM", country: "US", marketplace: "Amazon" }; }',
+   'function _regularClearPreview(){ _regularPreview = null; }'
   ].forEach(function (s) { vm.runInContext(s, ctx); });
+  loadFc1r2(ctx, src);
   vm.runInContext(varSrc(src, 'FC_HISTORY_METHODS_'), ctx);
   vm.runInContext(varSrc(src, 'FC_HISTORY_METHOD_REFUSAL_'), ctx);
   vm.runInContext(fnSrc(src, '_fcIsHistoryMethod_'), ctx);
@@ -138,7 +151,8 @@ function saveCtx(src, selectValue, preview) {
 }
 
 var EXISTING = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-var WRITABLE_ROWS = [{ sku: 'SKU-1', company: 'KM', country: 'US', marketplace: 'Amazon', existing: EXISTING, oldQty: 6, newQty: 999 }];
+var WRITABLE_ROWS = [{ sku: 'SKU-1', company: 'KM', country: 'US', marketplace: 'Amazon', existing: EXISTING, oldQty: 6, newQty: 999,
+  base: { year: 2025, month: 5, value: 908 } }];   // FC1-R2 — a real preview row carries the base it was computed from
 
 // ===================================================================================================
 function checks(src) {
@@ -241,7 +255,7 @@ function checks(src) {
   var s2 = saveCtx(src, 'actual', { targetYear: 2026, targetMonth: 5, method: 'intervalAverage', rows: WRITABLE_ROWS });
   ok(s2.captured === null, 'I2  a preview object claiming a history method -> no write call');
   ok(s1.help.indexOf('FC_HISTORY_METHOD_NOT_AVAILABLE') !== -1, 'I3  and the operator is told why');
-  var s3 = saveCtx(src, 'actual', { targetYear: 2026, targetMonth: 5, method: 'actual', rows: WRITABLE_ROWS });
+  var s3 = saveCtx(src, 'actual', { targetYear: 2026, targetMonth: 5, method: 'actual', baseYear: 2025, baseMonth: 5, rows: WRITABLE_ROWS });
   ok(s3.captured && s3.captured.length === 1 && s3.captured[0].jun === 999, 'I4  CONTROL: an existing method still writes exactly as before');
 
   section('J  the three existing methods compute exactly what the R55 candidate computed');
@@ -249,7 +263,10 @@ function checks(src) {
     [0, 5].forEach(function (tm, t) {
       var A = previewCtx(FCS_BEFORE, m, { targetMonth: tm }), B = previewCtx(src, m, { targetMonth: tm });
       vm.runInContext('_regularBuildPreview()', A); vm.runInContext('_regularBuildPreview()', B);
-      ok(A._regularPreview && JSON.stringify(A._regularPreview) === JSON.stringify(B._regularPreview) && A.saveEnabled === B.saveEnabled,
+      // FC1-R2 — rows now carry the base proof Save checks, so the comparison is of what was COMPUTED.
+      var proj = function (P) { return P && { t: [P.targetYear, P.targetMonth, P.method, P.baseYear, P.baseMonth],
+        rows: P.rows.map(function (r) { return [r.sku, r.oldQty, r.newQty, r.existing]; }) }; };
+      ok(A._regularPreview && JSON.stringify(proj(A._regularPreview)) === JSON.stringify(proj(B._regularPreview)) && A.saveEnabled === B.saveEnabled,
         'J' + (1 + 2 * k + t) + '  ' + m + ', target month ' + tm + ': identical preview, row for row', { before: A._regularPreview, after: B._regularPreview });
     });
   });
