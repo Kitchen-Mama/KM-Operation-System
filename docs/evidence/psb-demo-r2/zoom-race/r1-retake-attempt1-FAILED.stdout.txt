@@ -1,0 +1,51 @@
+ok   the production page mounted with no boot error
+ok   the header names the database read time (72_ read_at, Taipei) and not a constant prepared date
+ok   Activity price lists the activities by campaign_id, name, period and recorded status
+ok   recorded deal prices are drawn for this activity
+ok   missing, currency and duplicate lines are named, never priced
+ok   no activity is called live: the note says it does not decide today, and no "live" word is on the activity
+ok   the table carries an Activity price column
+ok   the canonical rows are untouched by choosing an activity
+ok   chart and table show the same activity price for the same product
+ok   two temporary competitors are drawn
+ok   a competitor without both band ends gets no band; the one with both gets one
+ok   competitors are not in the product table
+ok   competitors do not change the KPI strip
+ok   the canonical rows are untouched by adding competitors
+ok   the axis did not move at any point during the drag (min, max, step and every tick)
+ok   exactly one product carries a simulation after the drag
+ok   the simulation moved in whole currency units and kept its cents
+ok   every other activity price point stayed where it was
+ok   floor and list caps did not move
+ok   the recorded deal price of the dragged product is unchanged (data-recorded-c)
+ok   the original stays on the chart as a ghost
+ok   the canonical rows are untouched by the drag
+ok   a typed price is applied exactly
+ok   ArrowUp moves the focused point up by one unit
+ok   Undo restores the previous simulated price
+ok   Reset this product removes its simulation
+ok   Escape during a drag puts the point back and records nothing
+ok   two products can be simulated independently
+ok   Reset all removes every simulation in this context
+ok   another activity shows none of the first activity’s simulations
+ok   another activity shows none of the first activity’s competitors
+ok   the everyday view shows none of the activity simulations or competitors
+ok   in the everyday view the drag moves the everyday price point
+ok   everyday drag leaves floor and list caps alone
+ok   back on the first activity, its own simulation and competitors are still there (in memory)
+ok   a site change drops every simulation and competitor
+ok   a site change returns to the everyday view
+ok   the CA site lists only its own activity
+FAIL zoomed and scrolled, two gridlines of pointer travel is two gridlines of price (screen transform honoured)  got {"moved":null,"expected":1000,"g":{"pick":0,"scale":1,"tickPx":48,"step":500}}
+ok   desktop: controls, chart and legend do not overlap
+ok   narrow (820px): controls, chart and legend do not overlap
+ok   zero write requests on the wire for the whole demo (replay log)
+ok   no fetch, XHR or beacon left the page except the replayed reads
+ok   no uncaught error in the page during the whole demo
+ok   the canonical rows are byte-identical after everything
+ok   nothing was written to browser storage or the URL
+ok   after a reload: no simulation, no competitor, everyday view, recorded prices
+ok   after a reload the canonical rows are the same bytes as at first mount
+
+47 passed, 1 failed, complete true
+wrote C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\wt-product-strategy-board-p0\docs\evidence\psb-demo-r1\demo.json

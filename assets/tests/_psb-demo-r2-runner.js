@@ -253,8 +253,17 @@ function main() {
       return p.then(function () { return delay(120); }).then(function () { return { x: c.x, y: c.y + dyPx }; });
     });
   }
+  /* Same wait as the R1 runner (see there): before a drag whose COMMIT is asserted, the chart must have
+     stopped rebuilding for 500 ms, so a late repaint cannot end it. The interrupted-drag cases do not
+     wait: there a rebuild ending the drag is the point. Never settling is a failure, not a skip. */
+  function settle() {
+    return js('new Promise(function(res){var v=document.getElementById("view");var last=Date.now(),t0=last;'
+      + 'var mo=new MutationObserver(function(){last=Date.now();});mo.observe(v,{childList:true});'
+      + '(function tick(){var now=Date.now();if(now-last>=500){mo.disconnect();res(true);}else if(now-t0>5000){mo.disconnect();res(false);}else setTimeout(tick,50);})();})')
+      .then(function (q) { if (!q) throw new Error('the chart never stopped rebuilding (5 s) before a drag'); });
+  }
   function fullDrag(sel, index, dyPx) {
-    return pressAndMove(sel, index, dyPx).then(function (at) {
+    return settle().then(function () { return pressAndMove(sel, index, dyPx); }).then(function (at) {
       return mouse('mouseReleased', at.x, at.y).then(function () { return delay(200); });
     });
   }

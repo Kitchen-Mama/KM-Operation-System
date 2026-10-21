@@ -1,0 +1,562 @@
+{
+  "round": "PSB-DEMO-R1",
+  "takenAt": "2026-10-21T13:29:12.183Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "sources": {
+    "assets/js/product-strategy/psb-board-ui.js": "e627a21001e2242e",
+    "assets/js/product-strategy/psb-selectors.js": "791d72ef74223641",
+    "assets/css/product-strategy-board.css": "e4e2f59cf16b8ca4",
+    "assets/tests/_psb-demo-capture.js": "9b6e97efe3c3e87a",
+    "assets/tests/_psb-demo-runner.js": "e69c38f7d11a30e7"
+  },
+  "steps": [
+    {
+      "name": "mounted",
+      "data": {
+        "meta": "Price architecture · Kitchen Mama · US · Amazon · database read 2026-09-12 08:00 (Taipei)",
+        "cols": 6,
+        "axis": {
+          "lo": "1500",
+          "hi": "6000",
+          "step": "500",
+          "ticks": "1500@496,2000@448,2500@400,3000@352,3500@304,4000@256,4500@208,5000@160,5500@112,6000@64"
+        },
+        "wire": [
+          "getClientCapabilities",
+          "productPricing.siteUniverse.get",
+          "productPricing.workspace.get"
+        ],
+        "scrollW": 1440
+      }
+    },
+    {
+      "name": "activity chosen",
+      "data": {
+        "activity": [
+          {
+            "data-price-c": "2931",
+            "data-recorded-c": "2931",
+            "data-state": "PRICED"
+          },
+          {
+            "data-price-c": "3046",
+            "data-recorded-c": "3046",
+            "data-state": "PRICED"
+          }
+        ],
+        "states": {
+          "PROMOTION_CURRENCY_MISMATCH": 1,
+          "DUPLICATE_CAMPAIGN_LINE": 1,
+          "DEAL_PRICE_MISSING": 1,
+          "PRICED": 2,
+          "PROMOTION_CURRENCY_UNRESOLVED": 1
+        },
+        "note": "Showing the deal prices recorded for this activity (7 SKUs). Recorded period and status are shown as recorded — this view does not say the activity is running today. The everyday price stays on the chart for comparison."
+      }
+    },
+    {
+      "name": "competitors added",
+      "data": {
+        "comps": [
+          {
+            "data-competitor-id": "TEMP-COMP-1",
+            "data-price-c": "2750",
+            "data-lo-c": "",
+            "data-hi-c": ""
+          },
+          {
+            "data-competitor-id": "TEMP-COMP-2",
+            "data-price-c": "3300",
+            "data-lo-c": "3000",
+            "data-hi-c": "3600"
+          }
+        ],
+        "bands": 1
+      }
+    },
+    {
+      "name": "dragged",
+      "data": {
+        "sim": {
+          "data-node-key": "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/",
+          "data-sim-c": "2231",
+          "data-sim-from-c": "2931",
+          "data-activity-state": "PRICED",
+          "data-regular-c": "3664"
+        },
+        "during": 8
+      }
+    },
+    {
+      "name": "demo state after drag",
+      "data": {
+        "demo": {
+          "priceView": "activity",
+          "activityId": "CMP-PBDD-2026",
+          "sims": {
+            "Kitchen Mama|US|Amazon|ACTIVITY:CMP-PBDD-2026": {
+              "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/": {
+                "from_c": 2931,
+                "to_c": 2231,
+                "currency": "USD"
+              }
+            }
+          },
+          "undo": 1,
+          "selected": "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/",
+          "competitors": {
+            "Kitchen Mama|US|Amazon|Electric Can Opener|USD|ACTIVITY:CMP-PBDD-2026": [
+              {
+                "id": "TEMP-COMP-1",
+                "name": "Rival A",
+                "price_c": 2750,
+                "lo_c": null,
+                "hi_c": null,
+                "currency": "USD",
+                "temporary": true
+              },
+              {
+                "id": "TEMP-COMP-2",
+                "name": "Rival B",
+                "price_c": 3300,
+                "lo_c": 3000,
+                "hi_c": 3600,
+                "currency": "USD",
+                "temporary": true
+              }
+            ]
+          },
+          "dragging": false,
+          "simCtx": "Kitchen Mama|US|Amazon|ACTIVITY:CMP-PBDD-2026"
+        },
+        "uncaught": []
+      }
+    },
+    {
+      "name": "comfortable + zoom + scroll",
+      "data": {
+        "sw": 1644,
+        "cw": 1094,
+        "sl": 548
+      }
+    },
+    {
+      "name": "wire",
+      "data": {
+        "actions": [
+          "getClientCapabilities",
+          "productPricing.siteUniverse.get",
+          "productPricing.workspace.get",
+          "productPricing.workspace.get",
+          "productPricing.workspace.get"
+        ],
+        "net": {
+          "fetch": [],
+          "xhr": [],
+          "beacon": []
+        }
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "the production page mounted with no boot error",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "the header names the database read time (72_ read_at, Taipei) and not a constant prepared date",
+      "ok": true,
+      "got": "Price architecture · Kitchen Mama · US · Amazon · database read 2026-09-12 08:00 (Taipei)"
+    },
+    {
+      "name": "Activity price lists the activities by campaign_id, name, period and recorded status",
+      "ok": true,
+      "got": [
+        "=Choose an activity…",
+        "CMP-PBDD-2026=Prime Big Deal Days  ·  2026-10-07 to 2026-10-08  ·  recorded status: active",
+        "CMP-BF-2026=Black Friday  ·  2026-11-27 to 2026-12-01  ·  recorded status: scheduled"
+      ]
+    },
+    {
+      "name": "recorded deal prices are drawn for this activity",
+      "ok": true,
+      "got": 2
+    },
+    {
+      "name": "missing, currency and duplicate lines are named, never priced",
+      "ok": true,
+      "got": {
+        "PROMOTION_CURRENCY_MISMATCH": 1,
+        "DUPLICATE_CAMPAIGN_LINE": 1,
+        "DEAL_PRICE_MISSING": 1,
+        "PRICED": 2,
+        "PROMOTION_CURRENCY_UNRESOLVED": 1
+      }
+    },
+    {
+      "name": "no activity is called live: the note says it does not decide today, and no \"live\" word is on the activity",
+      "ok": true,
+      "got": "Showing the deal prices recorded for this activity (7 SKUs). Recorded period and status are shown as recorded — this view does not say the activity is running today. The everyday price stays on the chart for comparison."
+    },
+    {
+      "name": "the table carries an Activity price column",
+      "ok": true,
+      "got": [
+        "",
+        "Model",
+        "Representative SKU",
+        "Variants",
+        "Series",
+        "Floor",
+        "Everyday",
+        "List",
+        "Official deal",
+        "Proposed",
+        "Activity price",
+        "Status",
+        "Data quality"
+      ]
+    },
+    {
+      "name": "the canonical rows are untouched by choosing an activity",
+      "ok": true,
+      "got": [
+        "80569e3b-c3b21a7e-88057",
+        "80569e3b-c3b21a7e-88057"
+      ]
+    },
+    {
+      "name": "chart and table show the same activity price for the same product",
+      "ok": true,
+      "got": {
+        "chart": "2931",
+        "table": "29.31 USD",
+        "label": "Can Opener Mini"
+      }
+    },
+    {
+      "name": "two temporary competitors are drawn",
+      "ok": true,
+      "got": [
+        {
+          "data-competitor-id": "TEMP-COMP-1",
+          "data-price-c": "2750",
+          "data-lo-c": "",
+          "data-hi-c": ""
+        },
+        {
+          "data-competitor-id": "TEMP-COMP-2",
+          "data-price-c": "3300",
+          "data-lo-c": "3000",
+          "data-hi-c": "3600"
+        }
+      ]
+    },
+    {
+      "name": "a competitor without both band ends gets no band; the one with both gets one",
+      "ok": true,
+      "got": 1
+    },
+    {
+      "name": "competitors are not in the product table",
+      "ok": true,
+      "got": [
+        7,
+        7
+      ]
+    },
+    {
+      "name": "competitors do not change the KPI strip",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "the canonical rows are untouched by adding competitors",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "the axis did not move at any point during the drag (min, max, step and every tick)",
+      "ok": true,
+      "got": {
+        "before": {
+          "lo": "1500",
+          "hi": "6000",
+          "step": "500",
+          "ticks": "1500@496,2000@448,2500@400,3000@352,3500@304,4000@256,4500@208,5000@160,5500@112,6000@64"
+        },
+        "during": 8
+      }
+    },
+    {
+      "name": "exactly one product carries a simulation after the drag",
+      "ok": true,
+      "got": [
+        {
+          "data-node-key": "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/",
+          "data-sim-c": "2231",
+          "data-sim-from-c": "2931",
+          "data-activity-state": "PRICED",
+          "data-regular-c": "3664"
+        }
+      ]
+    },
+    {
+      "name": "the simulation moved in whole currency units and kept its cents",
+      "ok": true,
+      "got": {
+        "data-node-key": "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/",
+        "data-sim-c": "2231",
+        "data-sim-from-c": "2931",
+        "data-activity-state": "PRICED",
+        "data-regular-c": "3664"
+      }
+    },
+    {
+      "name": "every other activity price point stayed where it was",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "floor and list caps did not move",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "the recorded deal price of the dragged product is unchanged (data-recorded-c)",
+      "ok": true,
+      "got": [
+        {
+          "data-price-c": "2931",
+          "data-recorded-c": "2931",
+          "data-state": "PRICED"
+        },
+        {
+          "data-price-c": "2231",
+          "data-recorded-c": "2931",
+          "data-state": "PRICED"
+        }
+      ]
+    },
+    {
+      "name": "the original stays on the chart as a ghost",
+      "ok": true,
+      "got": 1
+    },
+    {
+      "name": "the canonical rows are untouched by the drag",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "a typed price is applied exactly",
+      "ok": true,
+      "got": [
+        {
+          "data-node-key": "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/",
+          "data-sim-c": "1999",
+          "data-sim-from-c": "2931",
+          "data-activity-state": "PRICED",
+          "data-regular-c": "3664"
+        }
+      ]
+    },
+    {
+      "name": "ArrowUp moves the focused point up by one unit",
+      "ok": true,
+      "got": [
+        {
+          "data-node-key": "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/",
+          "data-sim-c": "2099",
+          "data-sim-from-c": "2931",
+          "data-activity-state": "PRICED",
+          "data-regular-c": "3664"
+        }
+      ]
+    },
+    {
+      "name": "Undo restores the previous simulated price",
+      "ok": true,
+      "got": [
+        {
+          "data-node-key": "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/",
+          "data-sim-c": "1999",
+          "data-sim-from-c": "2931",
+          "data-activity-state": "PRICED",
+          "data-regular-c": "3664"
+        }
+      ]
+    },
+    {
+      "name": "Reset this product removes its simulation",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "Escape during a drag puts the point back and records nothing",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "two products can be simulated independently",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "Reset all removes every simulation in this context",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "another activity shows none of the first activity’s simulations",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "another activity shows none of the first activity’s competitors",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "the everyday view shows none of the activity simulations or competitors",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "in the everyday view the drag moves the everyday price point",
+      "ok": true,
+      "got": [
+        {
+          "data-node-key": "G|Electric Can Opener|USD|Can Opener|2102/1640//",
+          "data-sim-c": "2702",
+          "data-sim-from-c": "2102",
+          "data-activity-state": null,
+          "data-regular-c": "2102"
+        }
+      ]
+    },
+    {
+      "name": "everyday drag leaves floor and list caps alone",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "back on the first activity, its own simulation and competitors are still there (in memory)",
+      "ok": true,
+      "got": {
+        "comps": 2
+      }
+    },
+    {
+      "name": "a site change drops every simulation and competitor",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "a site change returns to the everyday view",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "the CA site lists only its own activity",
+      "ok": true,
+      "got": [
+        "=Choose an activity…",
+        "CMP-CA-SPRING=CA Spring Sale  ·  2027-03-01 to 2027-03-14  ·  recorded status: scheduled"
+      ]
+    },
+    {
+      "name": "zoomed and scrolled, two gridlines of pointer travel is two gridlines of price (screen transform honoured)",
+      "ok": false,
+      "got": {
+        "moved": null,
+        "expected": 1000,
+        "g": {
+          "pick": 0,
+          "scale": 1,
+          "tickPx": 48,
+          "step": 500
+        }
+      }
+    },
+    {
+      "name": "desktop: controls, chart and legend do not overlap",
+      "ok": true,
+      "got": {
+        "ctlChart": false,
+        "chartLegend": false,
+        "legOverlap": 0,
+        "ctlOverlap": 0,
+        "pageScrollsX": false,
+        "scrollW": 1440,
+        "clientW": 1440
+      }
+    },
+    {
+      "name": "narrow (820px): controls, chart and legend do not overlap",
+      "ok": true,
+      "got": {
+        "ctlChart": false,
+        "chartLegend": false,
+        "legOverlap": 0,
+        "ctlOverlap": 0,
+        "pageScrollsX": false,
+        "scrollW": 820,
+        "clientW": 820
+      }
+    },
+    {
+      "name": "zero write requests on the wire for the whole demo (replay log)",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "no fetch, XHR or beacon left the page except the replayed reads",
+      "ok": true,
+      "got": {
+        "fetch": [],
+        "xhr": [],
+        "beacon": []
+      }
+    },
+    {
+      "name": "no uncaught error in the page during the whole demo",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "the canonical rows are byte-identical after everything",
+      "ok": true,
+      "got": [
+        "80569e3b-c3b21a7e-88057",
+        "80569e3b-c3b21a7e-88057"
+      ]
+    },
+    {
+      "name": "nothing was written to browser storage or the URL",
+      "ok": true,
+      "got": {
+        "storage": {
+          "local": 0,
+          "session": 0
+        },
+        "url": "_psb-demo-page.html",
+        "nonGetFetch": 0
+      }
+    },
+    {
+      "name": "after a reload: no simulation, no competitor, everyday view, recorded prices",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "after a reload the canonical rows are the same bytes as at first mount",
+      "ok": true,
+      "got": null
+    }
+  ],
+  "complete": true,
+  "passed": 47,
+  "failed": 1
+}

@@ -173,10 +173,22 @@ function main() {
     + 'url: location.href.split("/").pop(), scrollW: document.documentElement.scrollWidth, uncaught: window.__uncaught||null'
     + '};})()';
   function read() { return js(READ); }
+  /* PSB-DEMO-R2 — WAIT FOR THE CHART TO STOP REBUILDING BEFORE A DRAG WHOSE COMMIT IS ASSERTED.
+     Measured (docs/evidence/psb-demo-r2/zoom-race/): a zoom click schedules a size-observer repaint
+     that can land one frame AFTER the press. Since R2 a rebuild ends an unfinished drag and commits
+     nothing — as specified — so a drag pressed into that frame records nothing. The pre-R2 UI hid the
+     race: the release reached the REBUILT handle, which committed a drag it did not own. The wait is
+     500 ms with no #view rebuild, capped at 5 s; if it never settles the run FAILS, it is not skipped. */
+  function settle() {
+    return js('new Promise(function(res){var v=document.getElementById("view");var last=Date.now(),t0=last;'
+      + 'var mo=new MutationObserver(function(){last=Date.now();});mo.observe(v,{childList:true});'
+      + '(function tick(){var now=Date.now();if(now-last>=500){mo.disconnect();res(true);}else if(now-t0>5000){mo.disconnect();res(false);}else setTimeout(tick,50);})();})')
+      .then(function (q) { if (!q) throw new Error('the chart never stopped rebuilding (5 s) before a drag'); });
+  }
   function dragBy(sel, index, dyPx, opts) {
     opts = opts || {};
     var trace = [];
-    return centerOf(sel, index).then(function (c) {
+    return settle().then(function () { return centerOf(sel, index); }).then(function (c) {
       if (!c) throw new Error('no drag handle ' + sel);
       var x = c.x, y = c.y;
       var p = mouse('mouseMoved', x, y, 0).then(function () { return mouse('mousePressed', x, y); });

@@ -1,0 +1,38 @@
+// Builds a scratch, instrumented copy of the R1 runner. Writes nowhere in the repo except the page file
+// the runner itself creates and deletes.
+const fs = require('fs');
+const root = process.argv[2].replace(/\\/g, '/');
+const out = process.argv[3];
+let t = fs.readFileSync(root + '/assets/tests/_psb-demo-runner.js', 'utf8').replace(/\r\n/g, '\n');
+function rep(a, b) { if (t.split(a).length !== 2) throw new Error('anchor: ' + a.slice(0, 60)); t = t.replace(a, b); }
+rep("var ROOT = path.join(__dirname, '..', '..');", 'var ROOT = ' + JSON.stringify(root) + ';');
+rep("require('./_p1b8c-visual-runner.js')", 'require(' + JSON.stringify(root + '/assets/tests/_p1b8c-visual-runner.js') + ')');
+// instrument the zoom drag: per-move drag state and #view rebuilds, plus the state just before the press
+rep("      var dy = -2 * g.tickPx * g.scale;\n",
+  "      var dy = -2 * g.tickPx * g.scale;\n"
+  + "      return js('(function(){window.__mo=0;new MutationObserver(function(m){m.forEach(function(r){if(r.type===\"childList\"&&r.target.id===\"view\")window.__mo++;});}).observe(document.getElementById(\"view\"),{childList:true});"
+  + "var h=document.querySelectorAll(\".col:not(.col-competitor) .mk-reg-group\")[' + g.pick + '];"
+  + "return {demo:PSB_BOARD.demoState(),handleDraggable:h&&h.getAttribute(\"data-draggable\"),cursor:h&&h.style.cursor,hasCtl:!!document.querySelector(\"[data-demo-ctl=demoControls]\"),priceView:(document.querySelector(\"[data-demo-ctl=demoControls]\")||{getAttribute:function(){return null;}}).getAttribute(\"data-price-view\")};})()')\n"
+  + "        .then(function (pre) { console.log('PROBE pre-press ' + JSON.stringify(pre)); return probeDrag(g, dy); })\n"
+  + "        .then(function () {\n");
+rep("      return dragBy('.col:not(.col-competitor) .mk-reg-group', g.pick, dy).then(function () {",
+  "      return Promise.resolve().then(function () {");
+rep("          .then(function (r) { return { g: g, r: r }; });\n      });\n    })",
+  "          .then(function (r) { return { g: g, r: r }; });\n      });\n    }); })");
+rep("  function key(k, shift) {",
+  "  function probeDrag(g, dy) {\n"
+  + "    var sel = '.col:not(.col-competitor) .mk-reg-group';\n"
+  + "    return centerOf(sel, g.pick).then(function (c) {\n"
+  + "      var tr = [];\n"
+  + "      var p = mouse('mouseMoved', c.x, c.y, 0).then(function () { return mouse('mousePressed', c.x, c.y); })\n"
+  + "        .then(function () { return js('({d:PSB_BOARD.demoState().dragging,mo:window.__mo,hit:(function(){var e=document.elementFromPoint(' + c.x + ',' + c.y + ');return e?(e.tagName+\".\"+(e.getAttribute(\"class\")||\"\")):null;})()})'); })\n"
+  + "        .then(function (s) { console.log('PROBE after press ' + JSON.stringify(s) + ' at ' + JSON.stringify(c)); });\n"
+  + "      for (var i = 1; i <= 8; i++) (function (k) { p = p.then(function () { return mouse('mouseMoved', c.x, c.y + dy * k / 8); }).then(function () { return js('({d:PSB_BOARD.demoState().dragging,mo:window.__mo})'); }).then(function (s) { tr.push((s.d ? 'D' : '-') + s.mo); }); }(i));\n"
+  + "      return p.then(function () { return mouse('mouseReleased', c.x, c.y + dy); }).then(function () { return delay(200); })\n"
+  + "        .then(function () { return js('({sims:PSB_BOARD.demoState().sims,mo:window.__mo,uncaught:window.__uncaught})'); })\n"
+  + "        .then(function (r) { console.log('PROBE moves ' + tr.join(' ') + ' after ' + JSON.stringify(r)); });\n"
+  + "    });\n"
+  + "  }\n"
+  + "  function key(k, shift) {");
+fs.writeFileSync(out, t);
+console.log('built ' + out);

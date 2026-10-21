@@ -1,0 +1,12 @@
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress0D 0D 0D 0D 0D 0D 0D 0D 0D  total 12  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress12 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress0D 12- 12- 12- 12- 12- 12- 12- 12-  total 12  sims {}
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102
+wait=0  view rebuilds during drag (per move, D=drag alive): prePress0 postPress12D 12D 12D 12D 12D 12D 12D 12D 12D  total 24  sim to_c=3102

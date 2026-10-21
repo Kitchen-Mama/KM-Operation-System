@@ -1,0 +1,57 @@
+// Scratch diagnostic, not a test: does the chart rebuild DURING the R1 zoom drag, and does a settle wait change it?
+'use strict';
+var fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process');
+var ROOT = process.argv[2];
+var RUN = require(path.join(ROOT, 'assets/tests/_p1b8c-visual-runner.js'));
+function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+function cdp(u) {
+  var ws = new WebSocket(u), id = 0, pend = {};
+  ws.onmessage = function (m) { var d = JSON.parse(m.data); if (d.id && pend[d.id]) { var p = pend[d.id]; delete pend[d.id]; d.error ? p.rej(new Error(JSON.stringify(d.error))) : p.res(d.result); } };
+  var open = new Promise(function (r, j) { ws.onopen = r; ws.onerror = j; });
+  return { send: function (m, p) { return open.then(function () { return new Promise(function (r, j) { var k = ++id; pend[k] = { res: r, rej: j }; ws.send(JSON.stringify({ id: k, method: m, params: p || {} })); }); }); }, close: function () { ws.close(); } };
+}
+var html = RUN.buildPage({ view: 'category', activated: true });
+var anchor = '<script src="assets/tests/_p1b8c-capture.js"></script>';
+html = html.replace(anchor, anchor + '\n  <script src="assets/tests/_psb-demo-capture.js"></script>');
+var pageFile = path.join(ROOT, 'assets', 'tests', '_psb-demo-page.html');
+fs.writeFileSync(pageFile, html, 'utf8');
+var profile = fs.mkdtempSync(path.join(os.tmpdir(), 'psb-probe-'));
+var chrome = cp.spawn(RUN.findBrowser(), ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run', '--hide-scrollbars',
+  '--force-device-scale-factor=1', '--allow-file-access-from-files', '--remote-debugging-port=0', '--user-data-dir=' + profile,
+  '--window-size=1440,1100', 'about:blank'], { stdio: 'ignore' });
+var c;
+function js(e) { return c.send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }).then(function (r) { if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; }); }
+function mouse(t, x, y, b) { return c.send('Input.dispatchMouseEvent', { type: t, x: x, y: y, button: 'left', buttons: b === undefined ? (t === 'mouseReleased' ? 0 : 1) : b, clickCount: 1 }); }
+function waitFor(e) { var t0 = Date.now(); return (function loop() { return js(e).then(function (v) { if (v) return v; if (Date.now() - t0 > 30000) throw new Error('timeout ' + e); return delay(100).then(loop); }); })(); }
+function clickSel(sel) {
+  return js('(function(){var e=document.querySelector(' + JSON.stringify(sel) + ');if(!e)return null;e.scrollIntoView({block:"center"});var r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()')
+    .then(function (p) { if (!p) return null; return mouse('mouseMoved', p.x, p.y, 0).then(function () { return mouse('mousePressed', p.x, p.y); }).then(function () { return mouse('mouseReleased', p.x, p.y); }); });
+}
+function once(wait) {
+  return js('location.reload()').catch(function () {}).then(function () { return delay(500); })
+    .then(function () { return waitFor('window.__ready === true && !!document.querySelector("svg.chart")'); })
+    .then(function () { return clickSel('#mode-comfortable'); })
+    .then(function () { return js('(function(){var b=document.querySelector("[data-zoom=\\"1.5\\"]");if(b&&b.tagName==="BUTTON"){b.click();}var w=document.querySelector(".chartwrap");if(w){w.scrollLeft=Math.round(w.scrollWidth/3);}return true;})()'); })
+    .then(function () { return delay(wait); })
+    .then(function () { return js('(function(){window.__mo=0;window.__moAt=[];new MutationObserver(function(m){m.forEach(function(r){if(r.type==="childList"&&r.target.id==="view"){window.__mo++;}});}).observe(document.getElementById("view"),{childList:true});return true;})()'); })
+    .then(function () {
+      return js('(function(){var svgEl=document.querySelector("svg.chart");var px=Number(svgEl.getAttribute("data-tick-px"));var r=svgEl.getBoundingClientRect();var vb=Number(svgEl.getAttribute("data-vb-h"));var cols=document.querySelectorAll(".col:not(.col-competitor)");var pick=-1;for(var i=0;i<cols.length;i++){var b=cols[i].querySelector(".mk-reg-group").getBoundingClientRect();if(b.left>r.left+80&&b.right<window.innerWidth-20){pick=i;break;}}var h=cols[pick].querySelector(".mk-reg-group");h.scrollIntoView({block:"center",inline:"center"});var hb=h.getBoundingClientRect();return {pick:pick,x:hb.left+hb.width/2,y:hb.top+hb.height/2,dy:-2*px*(r.height/vb)};})()');
+    })
+    .then(function (g) {
+      var p = mouse('mouseMoved', g.x, g.y, 0).then(function () { return mouse('mousePressed', g.x, g.y); });
+      var trace = [];
+      for (var i = 1; i <= 8; i++) (function (k) { p = p.then(function () { return mouse('mouseMoved', g.x, g.y + g.dy * k / 8); }).then(function () { return js('({mo:window.__mo,d:PSB_BOARD.demoState().dragging})'); }).then(function (s) { trace.push(s.mo + (s.d ? 'D' : '-')); }); }(i));
+      return p.then(function () { return mouse('mouseReleased', g.x, g.y + g.dy); }).then(function () { return delay(200); })
+        .then(function () { return js('({mo:window.__mo,sims:PSB_BOARD.demoState().sims})'); })
+        .then(function (r) { console.log('wait=' + wait + '  view rebuilds during drag (per move, D=drag alive): ' + trace.join(' ') + '  total ' + r.mo + '  sims ' + JSON.stringify(r.sims)); });
+    });
+}
+var portFile = path.join(profile, 'DevToolsActivePort'), t0 = Date.now();
+(function waitPort() { if (fs.existsSync(portFile) && fs.readFileSync(portFile, 'utf8').split(/\r?\n/)[0]) return Promise.resolve(fs.readFileSync(portFile, 'utf8').split(/\r?\n/)[0]); if (Date.now() - t0 > 20000) return Promise.reject(new Error('no port')); return delay(100).then(waitPort); })()
+  .then(function (port) { return fetch('http://127.0.0.1:' + port + '/json/list').then(function (r) { return r.json(); }); })
+  .then(function (l) { c = cdp(l.filter(function (t) { return t.type === 'page'; })[0].webSocketDebuggerUrl); return c.send('Page.enable'); })
+  .then(function () { return c.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false }); })
+  .then(function () { return c.send('Page.navigate', { url: 'file:///' + pageFile.replace(/\\/g, '/').replace(/ /g, '%20') }); })
+  .then(function () { return once(0); }).then(function () { return once(0); }).then(function () { return once(800); }).then(function () { return once(800); })
+  .catch(function (e) { console.log('ERROR ' + e.stack); })
+  .then(function () { c && c.close(); try { chrome.kill(); } catch (e) {} try { fs.unlinkSync(pageFile); } catch (e) {} setTimeout(function () { process.exit(0); }, 300); });
