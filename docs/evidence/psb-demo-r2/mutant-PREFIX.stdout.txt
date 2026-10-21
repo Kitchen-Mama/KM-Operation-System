@@ -1,0 +1,55 @@
+ok   the production page mounted with no boot error
+ok   one site and one category draw a USD panel and a EUR panel
+FAIL every demo control id is unique (two panels do not share a control id)  got ["demoControls","priceView-everyday","priceView-activity","simCount","simUndo","simResetAll","competitorList","compAdd"]
+FAIL Add competitor in the USD panel opens a form in the USD panel only  got {"usd":true,"eur":true}
+ok   add: the USD competitor is drawn in the USD panel
+FAIL add: the EUR panel shows no competitor and no chip  got {"comps":[{"data-competitor-id":"TEMP-COMP-1","data-price-c":"2750","data-currency":null}],"chips":[{"data-competitor-id":"TEMP-COMP-1"}]}
+FAIL add: the EUR axis did not move  got {"before":{"lo":"6500","hi":"17500","step":"500","ticks":"6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,16500,17000,17500"},"after":{"lo":"2500","hi":"17500","step":"500","ticks":"2500,3000,3500,4000,4500,5000,5500,6000,6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,
+FAIL add: the competitor is filed under a key that names its currency, and carries that currency  got {"Kitchen Mama|US|Amazon|Electric Can Opener|EVERYDAY":[{"id":"TEMP-COMP-1","name":"Rival U","price_c":2750,"lo_c":null,"hi_c":null,"currency":"USD","temporary":true}]}
+FAIL Edit in the USD panel opens the form in the USD panel only  got {"usd":true,"eur":true}
+ok   edit: the USD competitor moved to 5.00 in the USD panel
+FAIL edit: the EUR panel still shows no competitor and its axis did not move  got {"comps":[{"data-competitor-id":"TEMP-COMP-1","data-price-c":"500","data-currency":null}],"axis":{"lo":"0","hi":"18000","step":"1000","ticks":"0,1000,2000,3000,4000,5000,6000,7000,8000,9000,10000,11000,12000,13000,14000,15000,16000,17000,18000"}}
+ok   delete: the USD competitor is gone
+ok   delete: the EUR panel and axis are as they were
+ok   activity: both panels follow the one price view
+ok   activity: no everyday competitor in either panel
+FAIL Add competitor in the EUR panel opens a form in the EUR panel only  got {"usd":true,"eur":true}
+FAIL activity: the EUR competitor is in the EUR panel only  got {"eur":[{"data-competitor-id":"TEMP-COMP-3","data-price-c":"900","data-currency":null}],"usd":[{"data-competitor-id":"TEMP-COMP-3","data-price-c":"900","data-currency":null}]}
+FAIL activity: the USD axis did not move for a EUR competitor  got {"before":{"lo":"1500","hi":"6000","step":"500","ticks":"1500,2000,2500,3000,3500,4000,4500,5000,5500,6000"},"after":{"lo":"500","hi":"6000","step":"500","ticks":"500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000"}}
+FAIL back to everyday: USD has its competitor, EUR has none  got {"usd":[{"data-competitor-id":"TEMP-COMP-2","data-price-c":"2750","data-currency":null}],"eur":[{"data-competitor-id":"TEMP-COMP-2","data-price-c":"2750","data-currency":null}]}
+FAIL back to everyday: the EUR axis is the one it started with  got {"lo":"2500","hi":"17500","step":"500","ticks":"2500,3000,3500,4000,4500,5000,5500,6000,6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,16500,17000,17500"}
+FAIL every demo control id is still unique with forms and chips on screen  got ["demoControls","priceView-everyday","priceView-activity","simCount","simUndo","simResetAll","competitorList","compAdd"]
+ok   a completed drag commits one simulation (the lifecycle it always had)
+ok   mid-drag: a drag is under way before leaving
+FAIL left mid-drag: no drag is left behind (state, attribute, readout)  got {"dragging":true,"attr":0,"readouts":0}
+FAIL left mid-drag: the document keydown listeners are back to their count before the press  got {"before":{"document":{"keydown":5,"keydownCapture":1,"pointer":0,"keydownWho":["capture script 3:0 ","bubble script 28:694 ","bubble script 22:1652 ","bubble script 21:5891 ","bubble script 21:5907 "]},"window":{"keydown":1,"keydownCapture":0,"pointer":0,"keydownWho":["bubble script 3:0 "]}},"after":{"document":{"keydown":6,"keydownCapture":2,"pointer":0,"keydownWho":["capture script 3:0 ","captu
+FAIL left mid-drag: the next Escape reaches the page and nothing prevents it  got []
+ok   left mid-drag: another component’s document capture listener still fires
+ok   returned: the release while away committed nothing, and the completed simulation is still there
+ok   returned: no uncaught error from the interrupted drag
+ok   returned: the drag left no capture listener behind across leave/return
+ok   returned: an ordinary drag works again and commits
+ok   returned: after that drag the listeners are back at rest
+FAIL context switched mid-drag: no drag is left behind (state, attribute, readout)  got {"dragging":true,"attr":0,"readouts":0}
+FAIL context switched mid-drag: the document keydown listeners are back to their count before the press  got {"before":{"document":{"keydown":7,"keydownCapture":1,"pointer":0,"keydownWho":["capture script 3:0 ","bubble script 28:694 ","bubble script 22:1652 ","bubble script 21:5891 ","bubble script 21:5907 ","bubble script 21:5891 ","bubble script 21:5907 "]},"window":{"keydown":1,"keydownCapture":0,"pointer":0,"keydownWho":["bubble script 3:0 "]}},"after":{"document":{"keydown":8,"keydownCapture":2,"poi
+FAIL context switched mid-drag: the next Escape reaches the page and nothing prevents it  got []
+ok   context switched mid-drag: another component’s document capture listener still fires
+ok   context switched: the release committed nothing in either context
+ok   context switched: back in everyday, an ordinary drag works and commits
+FAIL chart rebuilt mid-drag: no drag is left behind (state, attribute, readout)  got {"dragging":true,"attr":0,"readouts":0}
+FAIL chart rebuilt mid-drag: the document keydown listeners are back to their count before the press  got {"before":{"document":{"keydown":7,"keydownCapture":1,"pointer":0,"keydownWho":["capture script 3:0 ","bubble script 28:694 ","bubble script 22:1652 ","bubble script 21:5891 ","bubble script 21:5907 ","bubble script 21:5891 ","bubble script 21:5907 "]},"window":{"keydown":1,"keydownCapture":0,"pointer":0,"keydownWho":["bubble script 3:0 "]}},"after":{"document":{"keydown":8,"keydownCapture":2,"poi
+FAIL chart rebuilt mid-drag: the next Escape reaches the page and nothing prevents it  got []
+ok   chart rebuilt mid-drag: another component’s document capture listener still fires
+ok   rebuilt: the release committed nothing
+ok   rebuilt: an ordinary drag works and commits
+ok   during a drag Escape still cancels it, and is consumed by the drag
+ok   the Escape-cancelled drag committed nothing
+ok   zero write requests on the wire (replay log)
+ok   no XHR or beacon left the page
+ok   no uncaught error during the whole run
+ok   the canonical rows are byte-identical after everything
+ok   nothing was written to browser storage or the URL
+ok   after a reload: no simulation, no competitor, both axes as first drawn
+
+30 passed, 22 failed, complete true
+wrote C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\wt-product-strategy-board-p0\docs\evidence\psb-demo-r2\demo-r2.json

@@ -1,0 +1,919 @@
+{
+  "round": "PSB-DEMO-R2",
+  "takenAt": "2026-10-21T13:36:30.159Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "sources": {
+    "assets/js/product-strategy/psb-board-ui.js": "e627a21001e2242e",
+    "assets/js/product-strategy/psb-selectors.js": "791d72ef74223641",
+    "assets/css/product-strategy-board.css": "e4e2f59cf16b8ca4",
+    "assets/tests/_psb-demo-capture.js": "9b6e97efe3c3e87a",
+    "assets/tests/_psb-demo-r2-capture.js": "2fa319c94ccd4b49",
+    "assets/tests/_psb-demo-r2-runner.js": "f8d0525c9ff548e6"
+  },
+  "steps": [
+    {
+      "name": "mounted",
+      "data": {
+        "panels": [
+          "EUR",
+          "USD"
+        ],
+        "usdAxis": {
+          "lo": "1500",
+          "hi": "6000",
+          "step": "500",
+          "ticks": "1500,2000,2500,3000,3500,4000,4500,5000,5500,6000"
+        },
+        "eurAxis": {
+          "lo": "6500",
+          "hi": "17500",
+          "step": "500",
+          "ticks": "6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,16500,17000,17500"
+        },
+        "dupIds": [],
+        "preexistingChartControlDupIds": [
+          "meetingToggle",
+          "chartControls",
+          "mode-auto",
+          "mode-comfortable",
+          "view-clean",
+          "view-detail",
+          "layersToggle",
+          "layersCount",
+          "zoom-reset",
+          "chartLegend"
+        ]
+      }
+    },
+    {
+      "name": "USD competitor added",
+      "data": {
+        "usd": [
+          {
+            "data-competitor-id": "TEMP-COMP-1",
+            "data-price-c": "2750",
+            "data-currency": "USD"
+          }
+        ],
+        "eur": [],
+        "demo": {
+          "Kitchen Mama|US|Amazon|Electric Can Opener|USD|EVERYDAY": [
+            {
+              "id": "TEMP-COMP-1",
+              "name": "Rival U",
+              "price_c": 2750,
+              "lo_c": null,
+              "hi_c": null,
+              "currency": "USD",
+              "temporary": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "listeners at rest",
+      "data": {
+        "document": {
+          "keydown": 5,
+          "keydownCapture": 1,
+          "pointer": 0,
+          "keydownWho": [
+            "capture script 3:0 ",
+            "bubble script 28:694 ",
+            "bubble script 22:1652 ",
+            "bubble script 21:5956 ",
+            "bubble script 21:5972 "
+          ]
+        },
+        "window": {
+          "keydown": 1,
+          "keydownCapture": 0,
+          "pointer": 0,
+          "keydownWho": [
+            "bubble script 3:0 "
+          ]
+        }
+      }
+    },
+    {
+      "name": "listeners during the drag",
+      "data": {
+        "document": {
+          "keydown": 6,
+          "keydownCapture": 2,
+          "pointer": 0,
+          "keydownWho": [
+            "capture script 3:0 ",
+            "capture script 21:1218 ",
+            "bubble script 28:694 ",
+            "bubble script 22:1652 ",
+            "bubble script 21:5956 ",
+            "bubble script 21:5972 "
+          ]
+        },
+        "window": {
+          "keydown": 1,
+          "keydownCapture": 0,
+          "pointer": 0,
+          "keydownWho": [
+            "bubble script 3:0 "
+          ]
+        }
+      }
+    },
+    {
+      "name": "PRE-EXISTING (not this round): document keydown listeners after one leave/return",
+      "data": {
+        "before": 5,
+        "after": 7,
+        "who": [
+          "capture script 3:0 ",
+          "bubble script 28:694 ",
+          "bubble script 22:1652 ",
+          "bubble script 21:5956 ",
+          "bubble script 21:5972 ",
+          "bubble script 21:5956 ",
+          "bubble script 21:5972 "
+        ]
+      }
+    },
+    {
+      "name": "rebuild trigger found",
+      "data": true
+    },
+    {
+      "name": "wire",
+      "data": {
+        "actions": [
+          "getClientCapabilities",
+          "productPricing.siteUniverse.get",
+          "productPricing.workspace.get"
+        ],
+        "net": {
+          "fetch": [],
+          "xhr": [],
+          "beacon": []
+        }
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "the production page mounted with no boot error",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "one site and one category draw a USD panel and a EUR panel",
+      "ok": true,
+      "got": [
+        "EUR",
+        "USD"
+      ]
+    },
+    {
+      "name": "every demo control id is unique (two panels do not share a control id)",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "Add competitor in the USD panel opens a form in the USD panel only",
+      "ok": true,
+      "got": {
+        "usd": true,
+        "eur": false
+      }
+    },
+    {
+      "name": "add: the USD competitor is drawn in the USD panel",
+      "ok": true,
+      "got": [
+        {
+          "data-competitor-id": "TEMP-COMP-1",
+          "data-price-c": "2750",
+          "data-currency": "USD"
+        }
+      ]
+    },
+    {
+      "name": "add: the EUR panel shows no competitor and no chip",
+      "ok": true,
+      "got": {
+        "comps": [],
+        "chips": []
+      }
+    },
+    {
+      "name": "add: the EUR axis did not move",
+      "ok": true,
+      "got": {
+        "before": {
+          "lo": "6500",
+          "hi": "17500",
+          "step": "500",
+          "ticks": "6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,16500,17000,17500"
+        },
+        "after": {
+          "lo": "6500",
+          "hi": "17500",
+          "step": "500",
+          "ticks": "6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,16500,17000,17500"
+        }
+      }
+    },
+    {
+      "name": "add: the competitor is filed under a key that names its currency, and carries that currency",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|Electric Can Opener|USD|EVERYDAY": [
+          {
+            "id": "TEMP-COMP-1",
+            "name": "Rival U",
+            "price_c": 2750,
+            "lo_c": null,
+            "hi_c": null,
+            "currency": "USD",
+            "temporary": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "Edit in the USD panel opens the form in the USD panel only",
+      "ok": true,
+      "got": {
+        "usd": true,
+        "eur": false
+      }
+    },
+    {
+      "name": "edit: the USD competitor moved to 5.00 in the USD panel",
+      "ok": true,
+      "got": [
+        {
+          "data-competitor-id": "TEMP-COMP-1",
+          "data-price-c": "500",
+          "data-currency": "USD"
+        }
+      ]
+    },
+    {
+      "name": "edit: the EUR panel still shows no competitor and its axis did not move",
+      "ok": true,
+      "got": {
+        "comps": [],
+        "axis": {
+          "lo": "6500",
+          "hi": "17500",
+          "step": "500",
+          "ticks": "6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,16500,17000,17500"
+        }
+      }
+    },
+    {
+      "name": "delete: the USD competitor is gone",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "delete: the EUR panel and axis are as they were",
+      "ok": true,
+      "got": {
+        "lo": "6500",
+        "hi": "17500",
+        "step": "500",
+        "ticks": "6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,16500,17000,17500"
+      }
+    },
+    {
+      "name": "activity: both panels follow the one price view",
+      "ok": true,
+      "got": "activity"
+    },
+    {
+      "name": "activity: no everyday competitor in either panel",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "Add competitor in the EUR panel opens a form in the EUR panel only",
+      "ok": true,
+      "got": {
+        "usd": false,
+        "eur": true
+      }
+    },
+    {
+      "name": "activity: the EUR competitor is in the EUR panel only",
+      "ok": true,
+      "got": {
+        "eur": [
+          {
+            "data-competitor-id": "TEMP-COMP-3",
+            "data-price-c": "900",
+            "data-currency": "EUR"
+          }
+        ],
+        "usd": []
+      }
+    },
+    {
+      "name": "activity: the USD axis did not move for a EUR competitor",
+      "ok": true,
+      "got": {
+        "before": {
+          "lo": "1500",
+          "hi": "6000",
+          "step": "500",
+          "ticks": "1500,2000,2500,3000,3500,4000,4500,5000,5500,6000"
+        },
+        "after": {
+          "lo": "1500",
+          "hi": "6000",
+          "step": "500",
+          "ticks": "1500,2000,2500,3000,3500,4000,4500,5000,5500,6000"
+        }
+      }
+    },
+    {
+      "name": "back to everyday: USD has its competitor, EUR has none",
+      "ok": true,
+      "got": {
+        "usd": [
+          {
+            "data-competitor-id": "TEMP-COMP-2",
+            "data-price-c": "2750",
+            "data-currency": "USD"
+          }
+        ],
+        "eur": []
+      }
+    },
+    {
+      "name": "back to everyday: the EUR axis is the one it started with",
+      "ok": true,
+      "got": {
+        "lo": "6500",
+        "hi": "17500",
+        "step": "500",
+        "ticks": "6500,7000,7500,8000,8500,9000,9500,10000,10500,11000,11500,12000,12500,13000,13500,14000,14500,15000,15500,16000,16500,17000,17500"
+      }
+    },
+    {
+      "name": "every demo control id is still unique with forms and chips on screen",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "a completed drag commits one simulation (the lifecycle it always had)",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|EVERYDAY": {
+          "G|Electric Can Opener|USD|Can Opener Pro|2263/1765/2761/": {
+            "from_c": 2263,
+            "to_c": 2863,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "mid-drag: a drag is under way before leaving",
+      "ok": true,
+      "got": true
+    },
+    {
+      "name": "left mid-drag: no drag is left behind (state, attribute, readout)",
+      "ok": true,
+      "got": {
+        "dragging": false,
+        "attr": 0,
+        "readouts": 0
+      }
+    },
+    {
+      "name": "left mid-drag: the document keydown listeners are back to their count before the press",
+      "ok": true,
+      "got": {
+        "before": {
+          "document": {
+            "keydown": 5,
+            "keydownCapture": 1,
+            "pointer": 0,
+            "keydownWho": [
+              "capture script 3:0 ",
+              "bubble script 28:694 ",
+              "bubble script 22:1652 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 "
+            ]
+          },
+          "window": {
+            "keydown": 1,
+            "keydownCapture": 0,
+            "pointer": 0,
+            "keydownWho": [
+              "bubble script 3:0 "
+            ]
+          }
+        },
+        "after": {
+          "document": {
+            "keydown": 5,
+            "keydownCapture": 1,
+            "pointer": 0,
+            "keydownWho": [
+              "capture script 3:0 ",
+              "bubble script 28:694 ",
+              "bubble script 22:1652 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 "
+            ]
+          },
+          "window": {
+            "keydown": 1,
+            "keydownCapture": 0,
+            "pointer": 0,
+            "keydownWho": [
+              "bubble script 3:0 "
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "left mid-drag: the next Escape reaches the page and nothing prevents it",
+      "ok": true,
+      "got": [
+        {
+          "prevented": false
+        }
+      ]
+    },
+    {
+      "name": "left mid-drag: another component’s document capture listener still fires",
+      "ok": true,
+      "got": [
+        2,
+        3
+      ]
+    },
+    {
+      "name": "returned: the release while away committed nothing, and the completed simulation is still there",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|EVERYDAY": {
+          "G|Electric Can Opener|USD|Can Opener Pro|2263/1765/2761/": {
+            "from_c": 2263,
+            "to_c": 2863,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "returned: no uncaught error from the interrupted drag",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "returned: the drag left no capture listener behind across leave/return",
+      "ok": true,
+      "got": {
+        "before": {
+          "keydown": 5,
+          "keydownCapture": 1,
+          "pointer": 0,
+          "keydownWho": [
+            "capture script 3:0 ",
+            "bubble script 28:694 ",
+            "bubble script 22:1652 ",
+            "bubble script 21:5956 ",
+            "bubble script 21:5972 "
+          ]
+        },
+        "after": {
+          "keydown": 7,
+          "keydownCapture": 1,
+          "pointer": 0,
+          "keydownWho": [
+            "capture script 3:0 ",
+            "bubble script 28:694 ",
+            "bubble script 22:1652 ",
+            "bubble script 21:5956 ",
+            "bubble script 21:5972 ",
+            "bubble script 21:5956 ",
+            "bubble script 21:5972 "
+          ]
+        }
+      }
+    },
+    {
+      "name": "returned: an ordinary drag works again and commits",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|EVERYDAY": {
+          "G|Electric Can Opener|USD|Can Opener Pro|2263/1765/2761/": {
+            "from_c": 2263,
+            "to_c": 2863,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener|2102/1640//": {
+            "from_c": 2102,
+            "to_c": 1602,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "returned: after that drag the listeners are back at rest",
+      "ok": true,
+      "got": {
+        "rest": {
+          "document": {
+            "keydown": 7,
+            "keydownCapture": 1,
+            "pointer": 0,
+            "keydownWho": [
+              "capture script 3:0 ",
+              "bubble script 28:694 ",
+              "bubble script 22:1652 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 "
+            ]
+          },
+          "window": {
+            "keydown": 1,
+            "keydownCapture": 0,
+            "pointer": 0,
+            "keydownWho": [
+              "bubble script 3:0 "
+            ]
+          }
+        },
+        "now": {
+          "document": {
+            "keydown": 7,
+            "keydownCapture": 1,
+            "pointer": 0,
+            "keydownWho": [
+              "capture script 3:0 ",
+              "bubble script 28:694 ",
+              "bubble script 22:1652 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 "
+            ]
+          },
+          "window": {
+            "keydown": 1,
+            "keydownCapture": 0,
+            "pointer": 0,
+            "keydownWho": [
+              "bubble script 3:0 "
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "context switched mid-drag: no drag is left behind (state, attribute, readout)",
+      "ok": true,
+      "got": {
+        "dragging": false,
+        "attr": 0,
+        "readouts": 0
+      }
+    },
+    {
+      "name": "context switched mid-drag: the document keydown listeners are back to their count before the press",
+      "ok": true,
+      "got": {
+        "before": {
+          "document": {
+            "keydown": 7,
+            "keydownCapture": 1,
+            "pointer": 0,
+            "keydownWho": [
+              "capture script 3:0 ",
+              "bubble script 28:694 ",
+              "bubble script 22:1652 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 "
+            ]
+          },
+          "window": {
+            "keydown": 1,
+            "keydownCapture": 0,
+            "pointer": 0,
+            "keydownWho": [
+              "bubble script 3:0 "
+            ]
+          }
+        },
+        "after": {
+          "document": {
+            "keydown": 7,
+            "keydownCapture": 1,
+            "pointer": 0,
+            "keydownWho": [
+              "capture script 3:0 ",
+              "bubble script 28:694 ",
+              "bubble script 22:1652 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 "
+            ]
+          },
+          "window": {
+            "keydown": 1,
+            "keydownCapture": 0,
+            "pointer": 0,
+            "keydownWho": [
+              "bubble script 3:0 "
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "context switched mid-drag: the next Escape reaches the page and nothing prevents it",
+      "ok": true,
+      "got": [
+        {
+          "prevented": false
+        }
+      ]
+    },
+    {
+      "name": "context switched mid-drag: another component’s document capture listener still fires",
+      "ok": true,
+      "got": [
+        3,
+        4
+      ]
+    },
+    {
+      "name": "context switched: the release committed nothing in either context",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|EVERYDAY": {
+          "G|Electric Can Opener|USD|Can Opener Pro|2263/1765/2761/": {
+            "from_c": 2263,
+            "to_c": 2863,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener|2102/1640//": {
+            "from_c": 2102,
+            "to_c": 1602,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "context switched: back in everyday, an ordinary drag works and commits",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|EVERYDAY": {
+          "G|Electric Can Opener|USD|Can Opener Pro|2263/1765/2761/": {
+            "from_c": 2263,
+            "to_c": 2863,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener|2102/1640//": {
+            "from_c": 2102,
+            "to_c": 1602,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener Pro|2275//2776/": {
+            "from_c": 2275,
+            "to_c": 1875,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "chart rebuilt mid-drag: no drag is left behind (state, attribute, readout)",
+      "ok": false,
+      "got": {
+        "dragging": true,
+        "attr": 0,
+        "readouts": 0
+      }
+    },
+    {
+      "name": "chart rebuilt mid-drag: the document keydown listeners are back to their count before the press",
+      "ok": false,
+      "got": {
+        "before": {
+          "document": {
+            "keydown": 7,
+            "keydownCapture": 1,
+            "pointer": 0,
+            "keydownWho": [
+              "capture script 3:0 ",
+              "bubble script 28:694 ",
+              "bubble script 22:1652 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 "
+            ]
+          },
+          "window": {
+            "keydown": 1,
+            "keydownCapture": 0,
+            "pointer": 0,
+            "keydownWho": [
+              "bubble script 3:0 "
+            ]
+          }
+        },
+        "after": {
+          "document": {
+            "keydown": 8,
+            "keydownCapture": 2,
+            "pointer": 0,
+            "keydownWho": [
+              "capture script 3:0 ",
+              "capture script 21:1218 ",
+              "bubble script 28:694 ",
+              "bubble script 22:1652 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 ",
+              "bubble script 21:5956 ",
+              "bubble script 21:5972 "
+            ]
+          },
+          "window": {
+            "keydown": 1,
+            "keydownCapture": 0,
+            "pointer": 0,
+            "keydownWho": [
+              "bubble script 3:0 "
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "chart rebuilt mid-drag: the next Escape reaches the page and nothing prevents it",
+      "ok": false,
+      "got": []
+    },
+    {
+      "name": "chart rebuilt mid-drag: another component’s document capture listener still fires",
+      "ok": true,
+      "got": [
+        4,
+        5
+      ]
+    },
+    {
+      "name": "rebuilt: the release committed nothing",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|EVERYDAY": {
+          "G|Electric Can Opener|USD|Can Opener Pro|2263/1765/2761/": {
+            "from_c": 2263,
+            "to_c": 2863,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener|2102/1640//": {
+            "from_c": 2102,
+            "to_c": 1602,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener Pro|2275//2776/": {
+            "from_c": 2275,
+            "to_c": 1875,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "rebuilt: an ordinary drag works and commits",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|EVERYDAY": {
+          "G|Electric Can Opener|USD|Can Opener Pro|2263/1765/2761/": {
+            "from_c": 2263,
+            "to_c": 2863,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener|2102/1640//": {
+            "from_c": 2102,
+            "to_c": 1602,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener Pro|2275//2776/": {
+            "from_c": 2275,
+            "to_c": 1875,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/": {
+            "from_c": 3664,
+            "to_c": 3264,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "during a drag Escape still cancels it, and is consumed by the drag",
+      "ok": true,
+      "got": {
+        "esc": [],
+        "d": false
+      }
+    },
+    {
+      "name": "the Escape-cancelled drag committed nothing",
+      "ok": true,
+      "got": {
+        "Kitchen Mama|US|Amazon|EVERYDAY": {
+          "G|Electric Can Opener|USD|Can Opener Pro|2263/1765/2761/": {
+            "from_c": 2263,
+            "to_c": 2863,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener|2102/1640//": {
+            "from_c": 2102,
+            "to_c": 1602,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener Pro|2275//2776/": {
+            "from_c": 2275,
+            "to_c": 1875,
+            "currency": "USD"
+          },
+          "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/": {
+            "from_c": 3664,
+            "to_c": 3264,
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "zero write requests on the wire (replay log)",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "no XHR or beacon left the page",
+      "ok": true,
+      "got": {
+        "fetch": [],
+        "xhr": [],
+        "beacon": []
+      }
+    },
+    {
+      "name": "no uncaught error during the whole run",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "the canonical rows are byte-identical after everything",
+      "ok": true,
+      "got": [
+        "aeb68e46-193ed4b3-124052",
+        "aeb68e46-193ed4b3-124052"
+      ]
+    },
+    {
+      "name": "nothing was written to browser storage or the URL",
+      "ok": true,
+      "got": {
+        "storage": {
+          "local": 0,
+          "session": 0
+        },
+        "url": "_psb-demo-r2-page.html"
+      }
+    },
+    {
+      "name": "after a reload: no simulation, no competitor, both axes as first drawn",
+      "ok": true,
+      "got": null
+    }
+  ],
+  "mutant": "M6",
+  "mutantWhy": "a chart rebuild does not end the drag",
+  "mutantSourceSha": "b48211762afc1702",
+  "complete": true,
+  "passed": 49,
+  "failed": 3
+}

@@ -1,0 +1,55 @@
+ok   the production page mounted with no boot error
+ok   one site and one category draw a USD panel and a EUR panel
+ok   every demo control id is unique (two panels do not share a control id)
+ok   Add competitor in the USD panel opens a form in the USD panel only
+ok   add: the USD competitor is drawn in the USD panel
+ok   add: the EUR panel shows no competitor and no chip
+ok   add: the EUR axis did not move
+ok   add: the competitor is filed under a key that names its currency, and carries that currency
+ok   Edit in the USD panel opens the form in the USD panel only
+ok   edit: the USD competitor moved to 5.00 in the USD panel
+ok   edit: the EUR panel still shows no competitor and its axis did not move
+ok   delete: the USD competitor is gone
+ok   delete: the EUR panel and axis are as they were
+ok   activity: both panels follow the one price view
+ok   activity: no everyday competitor in either panel
+ok   Add competitor in the EUR panel opens a form in the EUR panel only
+ok   activity: the EUR competitor is in the EUR panel only
+ok   activity: the USD axis did not move for a EUR competitor
+ok   back to everyday: USD has its competitor, EUR has none
+ok   back to everyday: the EUR axis is the one it started with
+ok   every demo control id is still unique with forms and chips on screen
+ok   a completed drag commits one simulation (the lifecycle it always had)
+ok   mid-drag: a drag is under way before leaving
+ok   left mid-drag: no drag is left behind (state, attribute, readout)
+ok   left mid-drag: the document keydown listeners are back to their count before the press
+ok   left mid-drag: the next Escape reaches the page and nothing prevents it
+ok   left mid-drag: another component’s document capture listener still fires
+ok   returned: the release while away committed nothing, and the completed simulation is still there
+ok   returned: no uncaught error from the interrupted drag
+ok   returned: the drag left no capture listener behind across leave/return
+ok   returned: an ordinary drag works again and commits
+ok   returned: after that drag the listeners are back at rest
+ok   context switched mid-drag: no drag is left behind (state, attribute, readout)
+ok   context switched mid-drag: the document keydown listeners are back to their count before the press
+ok   context switched mid-drag: the next Escape reaches the page and nothing prevents it
+ok   context switched mid-drag: another component’s document capture listener still fires
+ok   context switched: the release committed nothing in either context
+ok   context switched: back in everyday, an ordinary drag works and commits
+ok   chart rebuilt mid-drag: no drag is left behind (state, attribute, readout)
+ok   chart rebuilt mid-drag: the document keydown listeners are back to their count before the press
+ok   chart rebuilt mid-drag: the next Escape reaches the page and nothing prevents it
+ok   chart rebuilt mid-drag: another component’s document capture listener still fires
+ok   rebuilt: the release committed nothing
+ok   rebuilt: an ordinary drag works and commits
+ok   during a drag Escape still cancels it, and is consumed by the drag
+ok   the Escape-cancelled drag committed nothing
+ok   zero write requests on the wire (replay log)
+ok   no XHR or beacon left the page
+ok   no uncaught error during the whole run
+ok   the canonical rows are byte-identical after everything
+ok   nothing was written to browser storage or the URL
+ok   after a reload: no simulation, no competitor, both axes as first drawn
+
+52 passed, 0 failed, complete true
+wrote C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\wt-product-strategy-board-p0\docs\evidence\psb-demo-r2\demo-r2.json

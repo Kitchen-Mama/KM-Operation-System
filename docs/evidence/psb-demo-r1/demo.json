@@ -1,13 +1,13 @@
 {
   "round": "PSB-DEMO-R1",
-  "takenAt": "2026-10-21T11:52:24.808Z",
+  "takenAt": "2026-10-21T13:36:44.283Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "assets/js/product-strategy/psb-board-ui.js": "bac5817c8fa81d6f",
+    "assets/js/product-strategy/psb-board-ui.js": "e627a21001e2242e",
     "assets/js/product-strategy/psb-selectors.js": "791d72ef74223641",
     "assets/css/product-strategy-board.css": "e4e2f59cf16b8ca4",
     "assets/tests/_psb-demo-capture.js": "9b6e97efe3c3e87a",
-    "assets/tests/_psb-demo-runner.js": "0c691b54157b9f66"
+    "assets/tests/_psb-demo-runner.js": "1ddae2e8d976749b"
   },
   "steps": [
     {
@@ -97,14 +97,15 @@
             "Kitchen Mama|US|Amazon|ACTIVITY:CMP-PBDD-2026": {
               "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/": {
                 "from_c": 2931,
-                "to_c": 2231
+                "to_c": 2231,
+                "currency": "USD"
               }
             }
           },
           "undo": 1,
           "selected": "G|Electric Can Opener|USD|Can Opener Mini|3664/2858/4470/",
           "competitors": {
-            "Kitchen Mama|US|Amazon|Electric Can Opener|ACTIVITY:CMP-PBDD-2026": [
+            "Kitchen Mama|US|Amazon|Electric Can Opener|USD|ACTIVITY:CMP-PBDD-2026": [
               {
                 "id": "TEMP-COMP-1",
                 "name": "Rival A",
