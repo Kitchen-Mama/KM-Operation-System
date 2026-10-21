@@ -150,30 +150,40 @@ request or token, and does not read `getEffectiveUser`. It is a `.gs.txt` outsid
 so no sync or bundle can carry it.
 
 1. *Project Settings →* "Show appsscript.json in editor" if it is hidden. Replace the manifest with the
-   Git version. Before saving, compare: the old three scopes, the Sheets v4 and BigQuery v2 services,
-   `Asia/Taipei`, `executeAs: USER_DEPLOYING` and `access: ANYONE_ANONYMOUS` must all be as they were.
-   Save.
+   Git version. Before saving, compare: `oauthScopes` must hold **exactly these four approved scopes**,
+   no more and no fewer —
+   - `https://www.googleapis.com/auth/spreadsheets`
+   - `https://www.googleapis.com/auth/script.scriptapp`
+   - `https://www.googleapis.com/auth/bigquery`
+   - `https://www.googleapis.com/auth/userinfo.email`
+   — and the Sheets v4 and BigQuery v2 services, `Asia/Taipei`, `executeAs: USER_DEPLOYING` and
+   `access: ANYONE_ANONYMOUS` must all be as they were. Save.
 2. Add a NEW editor file named `TEMP_CheckFxIdentity`. If a file or function of that name already
    exists in the project, **read it in full and compare it line by line with the Git text**; use it only
    if it is identical, otherwise replace its whole content with the Git text. Paste nothing else.
 3. In the editor's function menu choose **`TEMP_CheckFxIdentity` and nothing else**, then Run. Do not
    run any other function to get the prompt — several of them write or schedule.
-4. **The consent screen lists every scope the project requests, not just the new one.** Check it
-   against exactly these four, and stop only if anything ELSE appears (the wording in brackets is
-   approximate — Google words them its own way; match each line by meaning):
-   - `https://www.googleapis.com/auth/spreadsheets` (see, edit, create and delete your spreadsheets)
-   - `https://www.googleapis.com/auth/script.scriptapp` (run when you are not present)
-   - `https://www.googleapis.com/auth/bigquery` (view and manage your BigQuery data)
-   - `https://www.googleapis.com/auth/userinfo.email` (see your primary Google Account email address)
-   Any fifth permission, or one of these missing → the wrong manifest was pasted: cancel, stop, report.
-5. Read the execution log line:
-   - `active_email` = your address, `caller_on_editor_list: true` → the editor identifies you and the
-     list matches. That is all it proves.
-   - `active_error` naming `userinfo.email` → the scope is still missing: the manifest was not saved.
-   Then **delete the `TEMP_CheckFxIdentity` file**, save, and confirm it is gone from the file list.
-   It must not be in the project when the next step creates a version.
-6. *Manage deployments → Edit → New version* (the same `/exec`). Then one `fxRateBook.get` (open
-   *Administration → FX Rate Book*; it writes nothing) and record `may_edit` / `authority_reason`:
+4. **The consent screen is not the manifest check — step 1 is.** Google may show only what this account
+   has not yet granted, so the screen need not list all four, and an earlier permission missing from it
+   does not mean the manifest was pasted wrongly. **Stop** (cancel, do not continue, report) if any of
+   these happens:
+   - a permission outside the four approved scopes appears;
+   - continuing would mean declining a permission the project needs (any of the four);
+   - the diagnostic ends in an error, or logs an `active_error`.
+5. Read the execution log line. **Only if all three hold** —
+   - there is no `active_error`,
+   - `active_email` is your own address,
+   - `caller_on_editor_list: true` —
+   go on to step 6. Otherwise **stop here and report**. Do not delete-and-version, and do not change
+   anything to make it pass. An `active_error` is recorded **verbatim**, including one that names
+   `userinfo.email`: its cause is **not confirmed**, so it is not concluded that the manifest was unsaved
+   or that anything else is to blame. Do not change the deployment identity, the access mode or the
+   allowlist mechanism, at this step or any other. While stopped, create no version: the diagnostic
+   file is still in the project, and the rollback below removes it.
+6. The diagnostic succeeded. **Delete the `TEMP_CheckFxIdentity` file**, save, and confirm it is gone
+   from the file list. Then *Manage deployments → Edit → New version* (the same `/exec`), and one
+   `fxRateBook.get` (open *Administration → FX Rate Book*; it writes nothing). Record `may_edit` /
+   `authority_reason`:
    - `may_edit: true` → the Web App identified you and you are on the allowlist.
    - still `FX_AUTHORITY_UNVERIFIABLE` → **record it and leave the cause UNDETERMINED.** The editor
      identifying you does not mean the Web App can; the access mode is one candidate, not a finding.
@@ -181,8 +191,8 @@ so no sync or bundle can carry it.
      the browser, no `getEffectiveUser` (that is the deployer, not the caller). All three stay refused.
 7. Stop. No FX save, no rate initialised, no price recalculated by this step.
 
-**Rollback:** paste the previous manifest (the three scopes), save, new version. If the diagnostic
-file was left behind, delete it. Nothing else to undo.
+**Rollback:** first delete the `TEMP_CheckFxIdentity` file if it is still in the project, then paste the
+previous manifest (the three scopes), save, new version. Nothing else to undo.
 
 ## 6. ROLLBACK — backend and frontend are separate
 

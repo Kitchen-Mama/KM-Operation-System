@@ -319,11 +319,31 @@ function runbookStepsGate(md) {
   if (s.indexOf('not by opening the Web App') === -1) v.push('NO_NOT_VIA_WEB_APP');
   if (s.indexOf(DIAG_REL) === -1 || s.indexOf('`TEMP_CheckFxIdentity` and nothing else') === -1) v.push('DIAGNOSTIC_NOT_NAMED');
   if (!/compare it line by line with the Git text/.test(s)) v.push('NO_LINE_BY_LINE_CHECK');
-  if (/naming \*only\*|only list(s)? the new|just the new one\)/.test(s) || s.indexOf('lists every scope the project requests, not just the new one') === -1) v.push('CONSENT_ASSUMES_ONLY_NEW');
-  EXPECTED_SCOPES.forEach(function (u) { if (s.indexOf('`' + u + '`') === -1) v.push('CONSENT_MISSING ' + u.split('/').pop()); });
-  if (s.indexOf('stop only if anything ELSE appears') === -1) v.push('NO_EXTRA_ONLY_STOP');
-  var del = s.indexOf('**delete the `TEMP_CheckFxIdentity` file**'), ver = s.indexOf('New version');
+  /* FX-AUTH-R1 final correction — THE MANIFEST IS CHECKED IN THE MANIFEST, NOT ON THE CONSENT SCREEN.
+     Google may show only what an account has not yet granted, so the screen is no list to count. Step 1
+     holds the exact four; the screen stops the run only for an extra permission, a declined required
+     one, or a diagnostic error. An error naming userinfo.email is kept verbatim with its cause unconfirmed. */
+  var s1 = s.slice(s.indexOf('1. *Project Settings'), s.indexOf('2. Add a NEW editor file'));
+  if (s1.indexOf('exactly these four approved scopes') === -1 || s1.indexOf('no more and no fewer') === -1) v.push('MANIFEST_NOT_EXACT_FOUR');
+  EXPECTED_SCOPES.forEach(function (u) { if (s1.indexOf('`' + u + '`') === -1) v.push('MANIFEST_LIST_MISSING ' + u.split('/').pop()); });
+  if (/naming \*only\*|only list(s)? the new|lists every scope the project requests|one of these missing|wrong manifest was pasted: cancel/.test(s)
+    || s.indexOf('need not list all four') === -1) v.push('CONSENT_TREATED_AS_MANIFEST_CHECK');
+  if (s.indexOf('does not mean the manifest was pasted wrongly') === -1) v.push('MISSING_OLD_PERMISSION_READ_AS_WRONG_MANIFEST');
+  if (s.indexOf('a permission outside the four approved scopes appears') === -1) v.push('NO_STOP_ON_EXTRA');
+  if (s.indexOf('declining a permission the project needs') === -1) v.push('NO_STOP_ON_DECLINED');
+  if (s.indexOf('the diagnostic ends in an error') === -1) v.push('NO_STOP_ON_DIAGNOSTIC_ERROR');
+  if (!/recorded \*\*verbatim\*\*, including one that names\s+`userinfo\.email`: its cause is \*\*not confirmed\*\*/.test(s)
+    || /the manifest was not saved\b|means the manifest was not saved/.test(s)) v.push('USERINFO_ERROR_ATTRIBUTED');
+  var gIf = s.indexOf('**Only if all three hold**'), gErr = s.indexOf('there is no `active_error`'),
+    gMe = s.indexOf('`active_email` is your own address'), gList = s.indexOf('`caller_on_editor_list: true` —'),
+    gStop = s.indexOf('stop here and report');
+  var del = s.indexOf('**Delete the `TEMP_CheckFxIdentity` file**'), ver = s.indexOf('New version');
+  if ([gIf, gErr, gMe, gList, gStop].some(function (x) { return x < 0; }) || !(gIf < gErr && gErr < gMe && gMe < gList && gList < del))
+    v.push('DELETE_AND_VERSION_NOT_GATED_ON_SUCCESS');
   if (del < 0 || ver < 0 || del > ver) v.push('DIAGNOSTIC_NOT_DELETED_BEFORE_VERSION');
+  if (!/Do not change the deployment identity, the access mode or the\s+allowlist mechanism/.test(s)) v.push('DEPLOYMENT_CHANGE_NOT_FORBIDDEN');
+  var rb = s.slice(s.indexOf('**Rollback:**'));
+  if (!(rb.indexOf('first delete the `TEMP_CheckFxIdentity` file') >= 0 && rb.indexOf('first delete') < rb.indexOf('new version'))) v.push('ROLLBACK_VERSIONS_BEFORE_DELETE');
   if (/access mode still hides the caller/.test(s) || s.indexOf('leave the cause UNDETERMINED') === -1
     || s.indexOf('does not mean the Web App can') === -1) v.push('WEB_RESULT_ATTRIBUTED');
   if (/cause not determined/.test(md) === false) v.push('NOTE_ROW_ATTRIBUTED');
@@ -333,7 +353,7 @@ function runbookStepsGate(md) {
   return v;
 }
 eq(diagnosticGate(DIAG), [], 'G1 the diagnostic is one function that reads the caller and ONE property, writes nothing, logs one line without the list');
-eq(runbookStepsGate(RUNBOOK), [], 'G2 §5A: consent via the diagnostic not /exec, the full four-scope list, delete before the version, a Web UNVERIFIABLE left undetermined');
+eq(runbookStepsGate(RUNBOOK), [], 'G2 §5A: consent via the diagnostic not /exec; exactly four scopes in the manifest; the screen stops only for an extra, a declined or an error; delete and version only after success; a Web UNVERIFIABLE left undetermined');
 var APPS = fs.readdirSync(path.join(ROOT, GS));
 eq(APPS.filter(function (f) { return /TEMP_CheckFxIdentity/.test(f) || /TEMP_CheckFxIdentity/.test(read(GS + f)); }), [],
   'G3 the diagnostic is in no file of the Apps Script folder, so no sync, bundle or version can carry it');
@@ -394,14 +414,15 @@ mutant('M21', 'the runbook claims the execution log tells the causes apart', run
 mutant('M22', '§5A goes back to opening /exec for consent', runbookStepsGate, RUNBOOK, function (s) {
   return swap(s, 'editor — not by opening the Web App, and never by running a business function or a trigger.',
     'editor, or by opening the `/exec` once as the Owner to get the prompt.'); });
-mutant('M23', '§5A assumes the prompt names only the new permission', runbookStepsGate, RUNBOOK, function (s) {
-  return swap(s, 'lists every scope the project requests, not just the new one', 'names *only* the new email permission'); });
-mutant('M24', '§5A drops one of the four scopes from the consent list', runbookStepsGate, RUNBOOK, function (s) {
-  return swap(s, '   - `https://www.googleapis.com/auth/bigquery` (view and manage your BigQuery data)\n', ''); });
+mutant('M23', '§5A demands the consent screen list all four (the corrected-away claim)', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, 'Google may show only what this account\n   has not yet granted, so the screen need not list all four,',
+    'The consent screen lists every scope the project requests,'); });
+mutant('M24', '§5A drops one of the four scopes from the manifest check', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '   - `https://www.googleapis.com/auth/bigquery`\n', ''); });
 mutant('M25', '§5A attributes a Web UNVERIFIABLE to the access mode', runbookStepsGate, RUNBOOK, function (s) {
   return swap(s, '**record it and leave the cause UNDETERMINED.**', 'the access mode still hides the caller.'); });
 mutant('M26', '§5A creates the version before deleting the diagnostic', runbookStepsGate, RUNBOOK, function (s) {
-  return swap(s, '   Then **delete the `TEMP_CheckFxIdentity` file**, save, and confirm it is gone from the file list.\n', ''); });
+  return swap(s, '**Delete the `TEMP_CheckFxIdentity` file**, save, and confirm it is gone\n   from the file list. Then ', ''); });
 mutant('M27', '§5A no longer asks for a line-by-line check of an existing copy', runbookStepsGate, RUNBOOK, function (s) {
   return swap(s, 'compare it line by line with the Git text', 'reuse it'); });
 mutant('M28', 'the diagnostic writes a property', diagnosticGate, DIAG, function (s) {
@@ -419,6 +440,29 @@ mutant('M33', 'the diagnostic opens the spreadsheet', diagnosticGate, DIAG, func
   return swap(s, "  Logger.log(JSON.stringify(out));", "  out.n = SpreadsheetApp.getActiveSpreadsheet().getName();\n  Logger.log(JSON.stringify(out));"); });
 mutant('M34', 'the diagnostic grows a second function', diagnosticGate, DIAG, function (s) {
   return s + '\nfunction TEMP_helper() { return 1; }\n'; });
+// FX-AUTH-R1 final correction — the consent screen, the stop conditions, the success gate
+mutant('M35', '§5A reads an old permission missing from the screen as a wrong manifest', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, 'does not mean the manifest was pasted wrongly', 'means the manifest was pasted wrongly'); });
+mutant('M36', '§5A blames a userinfo.email error on an unsaved manifest', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, 'its cause is **not confirmed**, so it is not concluded that the manifest was unsaved\n   or that anything else is to blame.',
+    'it means the manifest was not saved.'); });
+mutant('M37', '§5A deletes and versions whatever the diagnostic says', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '**Only if all three hold** —', 'Whatever it shows —'); });
+mutant('M38', '§5A drops caller_on_editor_list from the success condition', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '   - `caller_on_editor_list: true` —\n', '   —\n'); });
+mutant('M39', '§5A no longer stops on an extra permission', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '   - a permission outside the four approved scopes appears;\n', ''); });
+mutant('M40', '§5A no longer stops when a required permission would be declined', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '   - continuing would mean declining a permission the project needs (any of the four);\n', ''); });
+mutant('M41', '§5A no longer stops on a diagnostic error', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '   - the diagnostic ends in an error, or logs an `active_error`.\n', ''); });
+mutant('M42', '§5A stops forbidding a change of deployment identity, access or allowlist', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, 'Do not change the deployment identity, the access mode or the\n   allowlist mechanism, at this step or any other. ', ''); });
+mutant('M43', 'the rollback versions before removing the diagnostic', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '**Rollback:** first delete the `TEMP_CheckFxIdentity` file if it is still in the project, then paste the\nprevious manifest (the three scopes), save, new version.',
+    '**Rollback:** paste the previous manifest (the three scopes), save, new version, then delete the diagnostic file.'); });
+mutant('M44', 'the manifest check stops saying exactly four', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '`oauthScopes` must hold **exactly these four approved scopes**,\n   no more and no fewer —', '`oauthScopes` should include these scopes —'); });
 eq(survived, 0, 'M  0 mutants survived (' + caught + ' caught)');
 eq(vacuous, 0, 'M  0 vacuous mutants');
 

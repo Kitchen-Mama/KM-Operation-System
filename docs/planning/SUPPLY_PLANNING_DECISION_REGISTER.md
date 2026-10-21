@@ -6809,3 +6809,31 @@ exited 1 with no summary while one of its mutants was applied to `operation-syst
 restored with the sweep's command and verified; the suite passes alone and in later full runs. That is not a
 cause. Raw record kept in `docs/evidence/psb-early-exit-fc1r2/`; FC1-R2's "intermittent" wording is
 superseded by OPEN.
+
+### D-S8-B3-189 — K5 PROBE ERROR in the full regression at `0170d40c` — **OPEN, cause unresolved**
+
+`product-strategy-lifecycle-p1-b8d-r8` K5 failed once with `PROBE ERROR: UNKNOWN: unknown error, open
+'…\assets\js\pages\product-strategy-board.js'` while swapping in a mutant. Worktree INTACT. The suite
+passed alone straight afterwards, and passed again inside the 696/696 sweep at `290b7462`. Neither pass
+explains the error. The earlier "transient Windows I/O fault" wording was a guess and is withdrawn. Kept:
+`docs/evidence/fx-auth-r1/K5-PROBE-ERROR.md`, the sweep JSON and the rerun stdout. No assertion was
+loosened and no retry was added. If it recurs: keep the raw output, note what else was running, and report
+without re-running.
+
+### D-S8-B3-190 — `boot()` adds two document Escape listeners on every mount and never removes them — **OPEN (follow-up fatigue test; not in the Demo scope)**
+
+Measured in Chrome during PSB-DEMO-R2 (DOMDebugger, `docs/evidence/psb-demo-r2/demo-r2.json`, step
+"PRE-EXISTING"): document keydown listeners went from 5 to 7 after one leave/return. Both are
+`psb-board-ui.js` `boot()`'s popover-close and fullscreen-exit handlers, which date from 2026-09-09.
+Each is guarded by state, so neither does anything visible, but they accumulate per visit. They predate
+PSB-DEMO and are outside its two boundaries. Follow-up: a fatigue test of N leave/return cycles counting
+listeners, then register once or remove on unmount.
+
+### D-S8-B3-191 — Chart controls repeat their ids in every currency panel — **OPEN (follow-up fatigue test; not in the Demo scope)**
+
+When a category draws more than one currency panel, `chartControls`, `mode-*`, `view-*`, `layersToggle`,
+`layersCount`, `zoom-*`, `chartLegend` and `meetingToggle` appear once per panel with the same id.
+Measured in PSB-DEMO-R2's two-currency capture. They act on global board state by design, so clicking
+either copy is equivalent. Many suites address them by id. The PSB-DEMO controls were made per-panel in
+R2; these were not. Follow-up: decide on unique ids or a single shared control bar, together with the
+suites that pin them.

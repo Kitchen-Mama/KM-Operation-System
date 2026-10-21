@@ -6904,3 +6904,28 @@ swallowing the next Escape.
 Both are outside the two boundaries this round was asked to fix.
 
 **NOT PUSHED. NOT SYNCED. NOT DEPLOYED.**
+
+### FX-AUTH-R1 — final correction of §5A (docs and tests only; PSB product code frozen)
+
+- **The manifest is checked in the manifest.** Step 1 now requires `oauthScopes` to hold exactly the four
+  approved scopes, no more and no fewer.
+- **The consent screen is not a list to count.** Google may show only what the account has not yet
+  granted, so a missing earlier permission is not read as a wrong manifest. The run stops for exactly
+  three things:
+  - an extra permission;
+  - having to decline a required one;
+  - a diagnostic error.
+- **A `userinfo.email` error is kept verbatim, with its cause unconfirmed.** It is not concluded that the
+  manifest was unsaved.
+- **Delete-and-version happens only after the diagnostic succeeds:** no `active_error`, your own address,
+  and `caller_on_editor_list: true`. Otherwise stop and report, and create no version while the
+  diagnostic file is still in the project. The rollback removes the diagnostic before it versions.
+  Deployment identity, access mode and the allowlist mechanism are not to be changed at any step.
+- **Guards.** The gates that pinned the corrected-away wording were replaced. There are 10 new mutants,
+  M35–M44, and M23/M24/M26 were re-anchored. `fx-auth-userinfo-email-scope-fx-auth-r1.test.js`: 36
+  assertions, 44 mutants, 0 survived.
+- **Register.** D-S8-B3-189 (K5, OPEN), D-S8-B3-190 (boot Escape listeners) and D-S8-B3-191 (repeated
+  chart-control ids) are entered as follow-up fatigue tests, outside the Demo scope.
+
+No Demo re-take and no full sweep this round (docs and tests only, as instructed). **NOT PUSHED. NOT
+SYNCED. Cloud manifest not applied. No FX save, no rate, no price.**
