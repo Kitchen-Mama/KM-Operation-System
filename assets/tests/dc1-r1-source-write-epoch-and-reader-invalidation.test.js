@@ -316,10 +316,11 @@ function partB() {
     for (var ms = RealDate.UTC(2000, 0, 1); ms < RealDate.UTC(2030, 0, 1); ms += 3600000 * 7 + 60000 * 13) {
       n++; if (day(ms) !== new RealDate(ms + 8 * 3600000).toISOString().slice(0, 10)) bad++;
     }
-    eq(bad, 0, 'T1  ' + n + ' instants 2000-2029, leap years included: the arithmetic matches UTC+8 exactly');
+    eq(bad, 0, 'T1  ' + n + ' instants 2000-2029, leap years included: the date matches UTC+8 exactly');
     eq([day(RealDate.UTC(2026, 9, 31, 15, 59, 59, 999)), day(RealDate.UTC(2026, 9, 31, 16, 0, 0))], ['2026-10-31', '2026-11-01'],
       'T2  the boundary is Taipei midnight (16:00Z), and it crosses the month');
-    ok(!/new Date/.test(fnSrc(IRSRC, '_irTaipeiDay_')), 'T3  no Date object - no local zone can leak in');
+    ok(!/get(FullYear|Month|Date|Hours|Day|TimezoneOffset)\(/.test(fnSrc(IRSRC, '_irTaipeiDay_')) && /toISOString/.test(fnSrc(IRSRC, '_irTaipeiDay_')),
+      'T3  only UTC is read (toISOString), never a local-zone accessor - no local zone can leak in');
   } else { failed += 3; console.log('FAIL T1-T3 _irTaipeiDay_ is absent (counted as 3)'); }
   section('B. the recommendation answer - settled state and session cache against the write signal');
   var r = makeReco();

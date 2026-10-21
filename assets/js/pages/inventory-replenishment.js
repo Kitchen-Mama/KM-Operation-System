@@ -14791,15 +14791,11 @@ function _irRecoRevisionVerdict_(a, b) {
 //
 // UNKNOWN IS NEVER SAME. No signal, no stamp, or an unreadable counter each answer UNKNOWN, and every reader
 // treats UNKNOWN exactly as it treats a write it can see: it reads again.
-// Asia/Taipei is a fixed UTC+8 with no DST, so the calendar day is pure epoch arithmetic (days since
-// 1970-01-01 -> civil date), the same reasoning 43_ gapCalcTaipeiYmd_ states. No Date object, no local zone.
+// Asia/Taipei is a fixed UTC+8 with no DST (the reasoning 43_ gapCalcTaipeiYmd_ states), so shifting the
+// instant by eight hours and reading its UTC calendar date IS the Taipei date. toISOString is UTC by
+// definition, so no local zone can leak in.
 function _irTaipeiDay_(ms) {
-  var z = Math.floor((ms + 480 * 60000) / 86400000) + 719468;
-  var era = Math.floor(z / 146097), doe = z - era * 146097;
-  var yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
-  var doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100)), mp = Math.floor((5 * doy + 2) / 153);
-  var d = doy - Math.floor((153 * mp + 2) / 5) + 1, m = mp < 10 ? mp + 3 : mp - 9, y = yoe + era * 400 + (m <= 2 ? 1 : 0);
-  return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
+  return new Date(ms + 480 * 60000).toISOString().slice(0, 10);
 }
 function _irSourceStamp_() {
   var f = (typeof window !== 'undefined' && window.KM && window.KM.DB) ? window.KM.DB.sourceWriteEpoch : null;

@@ -22,9 +22,9 @@ ok   A12c every writer with a family is wrapped  (got [], want [])
 ok   A12d and no name in the list is missing from the file  (got [], want [])
 
 == T. the Taipei day is pure arithmetic, and it is the calendar 43_ uses ==
-ok   T1  36443 instants 2000-2029, leap years included: the arithmetic matches UTC+8 exactly  (got 0, want 0)
+ok   T1  36443 instants 2000-2029, leap years included: the date matches UTC+8 exactly  (got 0, want 0)
 ok   T2  the boundary is Taipei midnight (16:00Z), and it crosses the month  (got ["2026-10-31","2026-11-01"], want ["2026-10-31","2026-11-01"])
-ok   T3  no Date object - no local zone can leak in
+ok   T3  only UTC is read (toISOString), never a local-zone accessor - no local zone can leak in
 
 == B. the recommendation answer - settled state and session cache against the write signal ==
 ok   B0  a cold site reads once  (got 1, want 1)

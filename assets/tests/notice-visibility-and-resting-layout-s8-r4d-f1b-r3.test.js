@@ -146,7 +146,7 @@ function harness(srcOverride) {
     Boolean: Boolean, RegExp: RegExp, Error: Error, Set: Set, Map: Map, isFinite: isFinite, isNaN: isNaN,
     parseInt: parseInt, parseFloat: parseFloat, encodeURIComponent: encodeURIComponent,
     decodeURIComponent: decodeURIComponent, setTimeout: setTimeout, clearTimeout: clearTimeout,
-    setInterval: function () {}, clearInterval: function () {}, Date: { now: function () { return 1000000; } },
+    setInterval: function () {}, clearInterval: function () {}, Date: (function () { function D(a) { return new Date(arguments.length ? a : 1000000); } D.now = function () { return 1000000; }; return D; })(),   // DC1-R1 - constructible, same fixed clock
     localStorage: win.localStorage, fetch: function () { return Promise.reject(new Error('none')); }
   };
   sb.globalThis = sb; sb.self = sb;

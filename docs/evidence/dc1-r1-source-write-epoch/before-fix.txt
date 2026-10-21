@@ -1,6 +1,6 @@
-# DC1-R1 BEFORE: the final DC1-R1 suite run against the PRE-FIX sources (HEAD blobs, extracted)
-# HEAD 1ad5c322c4740272bce38de6a021f97c30d6a364  db-api blob fdd84b9fc09d2efe7c252ffb26c57d349f1f5919  IR blob 22418e4a424ca525e2ace2f3c1eaf1522c5ef0cf
-# command: DC1_SRC_DIR=<extracted HEAD tree> node assets/tests/dc1-r1-source-write-epoch-and-reader-invalidation.test.js
+# DC1-R1 BEFORE: the final DC1-R1 suite run against the PRE-FIX sources (1ad5c322 blobs, extracted)
+# pre-fix commit 1ad5c322  db-api blob fdd84b9fc09d2efe7c252ffb26c57d349f1f5919  IR blob 22418e4a424ca525e2ace2f3c1eaf1522c5ef0cf
+# command: DC1_SRC_DIR=<extracted pre-fix tree> node assets/tests/dc1-r1-source-write-epoch-and-reader-invalidation.test.js
 
 == A. the signal - real db-api, real writers, stubbed network ==
 FAIL A0  KM.DB.sourceWriteEpoch exists - the canonical write signal
