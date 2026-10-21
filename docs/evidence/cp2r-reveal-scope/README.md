@@ -295,3 +295,41 @@ at or above its run’s median leaves that median exactly where it is. Pair 2 (�
 (−48.5 ms) are also not the largest deltas in the batch — pair 1 is, at −126.0 ms, with no outlier at all.
 
 Nothing else ran on the machine while these twelve runs were taken.
+
+---
+
+## FX1-R4-R1 RE-TOOK IT AGAIN, BOTH ARMS — the fourteenth batch of this design
+
+FX1-R4-R1 did not change `inventory-replenishment.js`. It changed
+`assets/js/api/operation-system-db-api.js` — the transport now keeps the server's whole `errors[]`
+instead of the first entry (D-S8-B3-180) — and that file is one of the four this capture pins, so §E1
+refused the thirteenth batch (`got 20ba76100978f326, want 5279e0bab344d7b3`), exactly as designed.
+
+**A first attempt at this batch was interrupted and is NOT this batch.** The machine rebooted uncleanly
+at 09:15 on 2026-10-21 with the driver part-way through, leaving the unscoped arm's two identifiers in
+the page. Recovery confirmed the driver and its child were gone, restored exactly those two lines
+(blob back to `22418e4a`, the committed one), and discarded every partial capture. Nothing from that
+attempt is in this directory; the batch below was taken from scratch on one build.
+
+Twelve runs, 100 rows each, five expands each, **no fatals**. The shipped source was restored and
+**verified by bytes** when the driver finished; the capture's `sources` pin the page at
+`c0ffbce98e0e9327` and the adapter at `20ba76100978f326`.
+
+| row | unscoped | scoped | paired delta | improved in |
+|---|---:|---:|---:|---|
+| click → first paint | 59.7 ms | 61.4 ms | +2.4 ms | 2 of 6 |
+| click → full ready | 217.1 ms | 128.1 ms | **−84.1 ms** | **6 of 6** |
+| assembly in handler | 28.4 ms | 27.4 ms | −1.0 ms | 4 of 6 |
+| assembly after handler | 174.6 ms | 80.8 ms | **−90.6 ms** | **6 of 6** |
+| handler sync | 30.3 ms | 29.5 ms | −1.2 ms | 4 of 6 |
+
+The two load-bearing rows reproduce for the fourteenth time: **−90.6 / −84.1 ms, 6 of 6 and 6 of 6**.
+
+**ONE outlier, in the SCOPED arm — the direction that works AGAINST the conclusion — and kept.** The
+scan over `ms_click_to_exec_resolved` found 60 samples, median 171.8 ms, threshold 687.4 ms, and
+`scoped-1` read **900.2 ms** on its FIRST expand (`900.2, 129.1, 147.8, 107.2, 112.0`). The run's
+median of five is **129.1** and is unchanged by it, and pair 1 still improves by −89.4 ms.
+
+**The machine was NOT quiet, and this batch does not claim it was.** The Owner's own Chrome (~40
+processes) and the Codex, AWS and Adobe Node runtimes were running throughout; none was started by
+this round and none was stopped by it. No other process touched this repository during the twelve runs.

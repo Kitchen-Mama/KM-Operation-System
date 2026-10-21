@@ -447,3 +447,23 @@ by calling the frozen owner. And the **`EMITS_ZERO` branch is refused rather tha
 **Not claimed:** nothing is implemented, nothing is connected, and no byte was added to the Apps
 Script load surface. The budget position in §6 is unchanged, and D-S8-B3-62's conclusion stands — the
 interval mode still needs a server-side owner that the current gate has no room for.
+
+---
+
+## 8. Re-confirmed during FX1-R4-R1 (2026-10-21) — read-only, nothing connected
+
+**Status re-checked, not re-litigated.** `MISSING_OWNER_INPUT #1` (raw sales row → selling entity) and
+`#3` (completion signal + omit-zero rule + report coverage) are **both still open**. No file named in §7
+changed since CP2W except through unrelated IR performance rounds, no BigQuery was queried and **no
+historical API was added**.
+
+**The budget table in §6 is now historical, and the position it describes is tighter, not looser.**
+
+| | bytes | status |
+|---|---|---|
+| current gate | **4,668,000** | Owner-approved (FX1-R4), spent on the four FX files |
+| measured at R55 | **4,666,841** | headroom **1,159** |
+
+That +38,000 is scoped to the FX Rate Book exactly as the +10,000 before it was scoped to IR. It is not
+a budget for an FC historical read path, and 1,159 bytes could not hold one. D-S8-B3-62's conclusion
+stands: the interval mode needs a server-side owner, and placing one needs its own size decision.
