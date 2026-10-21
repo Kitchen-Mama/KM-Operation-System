@@ -1,0 +1,33 @@
+// FX-AUTH-R1 — TEMPORARY, READ-ONLY EDITOR DIAGNOSTIC. NOT PART OF ANY RELEASE.
+// Kept as .gs.txt outside assets/specs/active/apps-script/ so no sync, bundle or deployment can carry it.
+// The Owner pastes it into a NEW temporary file in the Apps Script editor, runs it once from the editor,
+// reads the log, and DELETES the file before saving a deployment version (runbook R55 §5A).
+//
+// What it does: asks Apps Script who is running it, and whether that address is on the FX editor list.
+// What it reads: Session.getActiveUser() and ONE Script Property, KM_FX_RATE_BOOK_EDITORS.
+// What it never does: write anything, read any other property, print the list itself, open a
+//   spreadsheet, touch triggers, make a request, or read getEffectiveUser (the deployer is not the caller).
+// What it cannot tell you: whether the WEB APP can identify a caller. The editor always runs as the
+//   person at the keyboard; a web request may not. See §5A step 6.
+function TEMP_CheckFxIdentity() {
+  var out = {
+    check: 'TEMP_CheckFxIdentity',
+    active_email: null,
+    active_error: null,
+    editors_property_present: null,
+    caller_on_editor_list: null
+  };
+  try {
+    out.active_email = String(Session.getActiveUser().getEmail() || '');
+  } catch (e) {
+    out.active_error = String((e && e.message) || e).slice(0, 300);
+  }
+  var raw = PropertiesService.getScriptProperties().getProperty('KM_FX_RATE_BOOK_EDITORS');
+  var list = String(raw === null || raw === undefined ? '' : raw).split(',')
+    .map(function (s) { return String(s).trim().toLowerCase(); })
+    .filter(function (s) { return s !== ''; });
+  out.editors_property_present = list.length > 0;
+  if (out.active_email) out.caller_on_editor_list = list.indexOf(out.active_email.toLowerCase()) !== -1;
+  Logger.log(JSON.stringify(out));
+  return out;
+}

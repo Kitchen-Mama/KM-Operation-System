@@ -6827,3 +6827,34 @@ the cause is the access/identity mode — an Owner decision this round does not 
 `BUNDLE_REBUILD_REQUIRED`: no. GITHUB_PAGES_FILES: unchanged by this round.
 **NOT PUSHED. NOT SYNCED. NOT DEPLOYED. No FX save, no rate initialised, no price recalculated, no
 Script Property written.**
+
+### FX-AUTH-R1 — correction: the Owner steps, the diagnostic, and K5 as it really stands
+
+Docs and tests only. The manifest is still the old bytes plus `userinfo.email`. No `.gs`, no bundle, no
+`executeAs`/`access` and no authority decision moved (guarded: nothing under the Apps Script folder
+differs from `0170d40c`).
+
+- **§5A rewritten.** Three things in the first version were wrong, and all in the same direction: each
+  let a step look finished before it had proved anything.
+  - Consent was to be triggered by opening `/exec`. It now comes from ONE reviewed, read-only editor
+    diagnostic, `docs/planning/fx-auth-r1/TEMP_CheckFxIdentity.gs.txt`. That diagnostic reads the caller
+    and the single property `KM_FX_RATE_BOOK_EDITORS`, writes nothing, and logs one line. That line does
+    not contain the editor list or any other property. If a copy of that name already exists in the
+    cloud project, the Owner compares it line by line and uses it only if it is identical. The diagnostic
+    is deleted before the version is created, and it lives outside the Apps Script folder so no sync
+    can carry it.
+  - The consent screen was assumed to name only the new permission. The Owner now checks it against all
+    four scopes and stops only if anything else appears, or if one of the four is missing.
+  - A Web `FX_AUTHORITY_UNVERIFIABLE` after the editor identified the Owner was read as "the access
+    mode". It is now recorded with its cause **undetermined**. The editor identifying the Owner does not
+    show that the Web App can.
+- **Guards.** `fx-auth-userinfo-email-scope-fx-auth-r1.test.js` §G runs the diagnostic in a sandbox.
+  - Every write, every other property and every other Google service is a trap.
+  - Four cases are run: a throw, the Owner listed, the Owner not listed, the list absent.
+  - It holds the §5A steps and their order.
+  - 13 new mutants, M22–M34, all caught: 36 assertions and 34 mutants in total.
+- **K5 is OPEN, cause unresolved** (`docs/evidence/fx-auth-r1/K5-PROBE-ERROR.md`). The sweep's PROBE ERROR
+  and the single passing rerun are both kept. The `c0f0f6fa` commit message's "transient Windows I/O
+  fault" was a guess and is withdrawn. No assertion was loosened and no retry was added.
+
+**NOT PUSHED. NOT SYNCED. Cloud manifest not applied. No FX save, no rate, no price.**

@@ -119,13 +119,14 @@ Evaluated by loading `63_` at `7376bee8`, not read from prose:
    | what happened | who acts |
    |---|---|
    | **a permission exception** — the manifest's explicit `oauthScopes` lack `userinfo.email`, so the call throws | the scope sync in §5A |
-   | **an empty email** — the call succeeds and returns `''` (the access/identity mode does not reveal the caller) | Owner decision on access mode — not changed by any runbook |
+   | **an empty email** — the call succeeds and returns `''` | the Owner, after recording it — **cause not determined** (see §5A step 6); not attributed to the access mode by default |
 
    **The response cannot tell them apart, and neither can the execution log**: `75_` catches the
-   exception and logs nothing. Only a direct, read-only `Session.getActiveUser().getEmail()` shows which
-   — it throws a missing-permission error naming `userinfo.email` in the first case and returns `''` in
-   the second. So do not explain the code as "execute-as-owner" by default. The Owner's measurement on
-   2026-10-21 (allowlist present) was the **first** case: `docs/evidence/fx-auth-r1/owner-measurement.json`.
+   exception and logs nothing. The editor diagnostic in §5A (`TEMP_CheckFxIdentity`) shows whether the
+   call throws for the person running it — but it runs in the EDITOR, so it says nothing certain about
+   what the Web App sees. Do not explain the code as "execute-as-owner" by default. The Owner's
+   measurement on 2026-10-21 (allowlist present) was the **first** case:
+   `docs/evidence/fx-auth-r1/owner-measurement.json`.
 4. Stop there. The write steps of the post-publish acceptance (release log, FX1-R4 §"steps 4 onward
    write") are **not** part of this release check.
 
@@ -138,27 +139,50 @@ identity first. No rate is initialised and no price is written by anything in th
 Prepared locally only. **Production is unchanged until the Owner does this.** It moves **one file**:
 `assets/specs/active/apps-script/appsscript.json`, whose only change is one added line in
 `oauthScopes`. No `.gs` file, no bundle, no Script Property, no `executeAs`, no `access` and no OAuth
-client setting moves.
+client setting moves. Authorisation is obtained by running ONE reviewed, read-only diagnostic from the
+editor — not by opening the Web App, and never by running a business function or a trigger.
+
+**The diagnostic** is `docs/planning/fx-auth-r1/TEMP_CheckFxIdentity.gs.txt`. It reads
+`Session.getActiveUser()` and the ONE property `KM_FX_RATE_BOOK_EDITORS`, and logs only: the address
+Apps Script reports (or the error), whether the editor list is set, and whether that address is on it.
+It writes nothing, prints no other property and not the list itself, touches no spreadsheet, trigger,
+request or token, and does not read `getEffectiveUser`. It is a `.gs.txt` outside the Apps Script folder
+so no sync or bundle can carry it.
 
 1. *Project Settings →* "Show appsscript.json in editor" if it is hidden. Replace the manifest with the
    Git version. Before saving, compare: the old three scopes, the Sheets v4 and BigQuery v2 services,
    `Asia/Taipei`, `executeAs: USER_DEPLOYING` and `access: ANYONE_ANONYMOUS` must all be as they were.
-2. Save. Authorise the added scope as the Owner when Google asks (for example on opening the `/exec`
-   once as the Owner) — **do not run an editor function to trigger it**; several of them write.
-   A prompt naming *only* "see your primary Google Account email address" is the expected one;
-   a prompt for anything else means the wrong manifest was pasted — stop.
-3. *Manage deployments → Edit → New version* (the same `/exec`).
-4. One `fxRateBook.get` (open *Administration → FX Rate Book*; it writes nothing). Record
-   `may_edit` / `authority_reason`.
-   - `may_edit: true` → identified and on the allowlist.
-   - `FX_AUTHORITY_UNVERIFIABLE` again → repeat the same read-only check the Owner used to find the
-     first case. No exception any more → the second case of the §5 note: the scope is fixed and the
-     access mode still hides the caller. An Owner decision, not a reason to set `*`,
-     to send an email from the browser, or to read `getEffectiveUser` (that is the deployer, not the
-     caller). All three stay refused.
-5. Stop. No FX save, no rate initialised, no price recalculated by this step.
+   Save.
+2. Add a NEW editor file named `TEMP_CheckFxIdentity`. If a file or function of that name already
+   exists in the project, **read it in full and compare it line by line with the Git text**; use it only
+   if it is identical, otherwise replace its whole content with the Git text. Paste nothing else.
+3. In the editor's function menu choose **`TEMP_CheckFxIdentity` and nothing else**, then Run. Do not
+   run any other function to get the prompt — several of them write or schedule.
+4. **The consent screen lists every scope the project requests, not just the new one.** Check it
+   against exactly these four, and stop only if anything ELSE appears (the wording in brackets is
+   approximate — Google words them its own way; match each line by meaning):
+   - `https://www.googleapis.com/auth/spreadsheets` (see, edit, create and delete your spreadsheets)
+   - `https://www.googleapis.com/auth/script.scriptapp` (run when you are not present)
+   - `https://www.googleapis.com/auth/bigquery` (view and manage your BigQuery data)
+   - `https://www.googleapis.com/auth/userinfo.email` (see your primary Google Account email address)
+   Any fifth permission, or one of these missing → the wrong manifest was pasted: cancel, stop, report.
+5. Read the execution log line:
+   - `active_email` = your address, `caller_on_editor_list: true` → the editor identifies you and the
+     list matches. That is all it proves.
+   - `active_error` naming `userinfo.email` → the scope is still missing: the manifest was not saved.
+   Then **delete the `TEMP_CheckFxIdentity` file**, save, and confirm it is gone from the file list.
+   It must not be in the project when the next step creates a version.
+6. *Manage deployments → Edit → New version* (the same `/exec`). Then one `fxRateBook.get` (open
+   *Administration → FX Rate Book*; it writes nothing) and record `may_edit` / `authority_reason`:
+   - `may_edit: true` → the Web App identified you and you are on the allowlist.
+   - still `FX_AUTHORITY_UNVERIFIABLE` → **record it and leave the cause UNDETERMINED.** The editor
+     identifying you does not mean the Web App can; the access mode is one candidate, not a finding.
+     Report it; do not change the deployment. And never as a workaround: no `*`, no email sent from
+     the browser, no `getEffectiveUser` (that is the deployer, not the caller). All three stay refused.
+7. Stop. No FX save, no rate initialised, no price recalculated by this step.
 
-**Rollback:** paste the previous manifest (the three scopes), save, new version. Nothing else to undo.
+**Rollback:** paste the previous manifest (the three scopes), save, new version. If the diagnostic
+file was left behind, delete it. Nothing else to undo.
 
 ## 6. ROLLBACK — backend and frontend are separate
 

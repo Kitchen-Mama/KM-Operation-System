@@ -234,6 +234,114 @@ eq(APPROVALS.withApproved(APPROVALS.BASELINE), EXPECTED_SCOPES, 'F3 baseline plu
 eq(APPROVALS.withApproved(EXPECTED_SCOPES), EXPECTED_SCOPES, 'F4 and applying it twice adds nothing');
 
 // ===================================================================================================
+console.log('\n=== G  THE OWNER STEPS (§5A) AND THE ONE DIAGNOSTIC THEY USE — FX-AUTH-R1 correction ===');
+/* The first §5A told the Owner to trigger consent by opening /exec, assumed the prompt would name only
+   the new permission, and read a Web App UNVERIFIABLE after an editor success as "the access mode".
+   All three were wrong in the same direction: they let a step look finished when it had not proved
+   anything. These gates hold the corrected steps, and execute the diagnostic they depend on. */
+var DIAG_REL = 'docs/planning/fx-auth-r1/TEMP_CheckFxIdentity.gs.txt';
+var DIAG = read(DIAG_REL);
+function section5A(md) {
+  var i = md.indexOf('## 5A. FX-AUTH-R1'), j = md.indexOf('## 6. ROLLBACK', i);
+  return i < 0 || j < 0 ? '' : md.slice(i, j);
+}
+function stripLineComments(src) { return lf(src).split('\n').map(function (l) { return l.replace(/^\s*\/\/.*$/, ''); }).join('\n'); }
+function runDiag(src, opts) {
+  var touches = { other: [], props: [], logs: [] };
+  function trap(name) {
+    return new Proxy(function () {}, {
+      get: function (_t, k) { touches.other.push(name + '.' + String(k)); throw new Error('TRAP ' + name + '.' + String(k)); },
+      apply: function () { touches.other.push(name + '()'); throw new Error('TRAP ' + name); }
+    });
+  }
+  var ctx = {
+    JSON: JSON, String: String,
+    Session: {
+      getActiveUser: function () {
+        if (opts.active === 'THROW') throw new Error('You do not have permission to call Session.getActiveUser. Required permissions: ' + SCOPE);
+        return { getEmail: function () { return opts.active; } };
+      },
+      getEffectiveUser: function () { touches.other.push('Session.getEffectiveUser'); return { getEmail: function () { return OWNER; } }; }
+    },
+    PropertiesService: { getScriptProperties: function () {
+      return new Proxy({}, { get: function (_t, k) {
+        if (k === 'getProperty') return function (key) { touches.props.push(key); return key === 'KM_FX_RATE_BOOK_EDITORS' ? opts.editors : 'SECRET-' + key; };
+        touches.other.push('ScriptProperties.' + String(k));
+        return function () { throw new Error('TRAP ScriptProperties.' + String(k)); };
+      } });
+    } },
+    Logger: { log: function (s) { touches.logs.push(String(s)); } }
+  };
+  ['SpreadsheetApp', 'ScriptApp', 'UrlFetchApp', 'LockService', 'CacheService', 'DriveApp', 'MailApp', 'GmailApp',
+    'BigQuery', 'Sheets', 'Utilities', 'ContentService', 'HtmlService', 'DocumentApp'].forEach(function (g) { ctx[g] = trap(g); });
+  vm.createContext(ctx);
+  vm.runInContext(src, ctx);
+  var res = null, err = null;
+  try { res = vm.runInContext('TEMP_CheckFxIdentity()', ctx); } catch (e) { err = e.message; }
+  return { res: res ? JSON.parse(JSON.stringify(res)) : null, err: err, touches: touches };
+}
+function diagnosticGate(src) {
+  var v = [];
+  var code = stripLineComments(src);
+  var fns = code.match(/^\s*function\s+[A-Za-z0-9_$]+\s*\(/gm) || [];
+  if (fns.length !== 1 || !/^\s*function TEMP_CheckFxIdentity\(\)/m.test(code)) v.push('NOT_EXACTLY_ONE_FUNCTION');
+  ['setProperty', 'deleteProperty', 'deleteAllProperties', 'setProperties', 'getProperties', 'getKeys',
+    'getEffectiveUser', 'getOAuthToken', 'getIdentityToken', 'SpreadsheetApp', 'ScriptApp', 'UrlFetchApp',
+    'newTrigger', 'LockService', 'DriveApp', 'MailApp', 'GmailApp', 'BigQuery', 'Sheets.', 'getUserProperties',
+    'getDocumentProperties', 'console.log(raw', 'Logger.log(raw', 'Logger.log(list'].forEach(function (tok) {
+    if (code.indexOf(tok) !== -1) v.push('FORBIDDEN ' + tok);
+  });
+  var cases = [
+    { editors: OWNER + ',secret.other@shopkitchenmama.com', active: 'THROW' },
+    { editors: OWNER + ',secret.other@shopkitchenmama.com', active: OWNER },
+    { editors: 'secret.other@shopkitchenmama.com', active: OWNER },
+    { editors: null, active: OWNER }
+  ];
+  var out = cases.map(function (c) { return runDiag(src, c); });
+  out.forEach(function (o, i) {
+    if (o.err) v.push('THREW case' + i + ' ' + o.err);
+    if (o.touches.other.length) v.push('TOUCHED case' + i + ' ' + o.touches.other.join(','));
+    if (o.touches.props.some(function (k) { return k !== 'KM_FX_RATE_BOOK_EDITORS'; })) v.push('READ_OTHER_PROPERTY case' + i);
+    if (o.touches.logs.some(function (l) { return /secret\.other|SECRET-/.test(l); })) v.push('LOGGED_LIST_OR_PROPERTY case' + i);
+    if (o.touches.logs.length !== 1) v.push('LOG_LINES_NOT_ONE case' + i);
+  });
+  if (!(out[0].res && out[0].res.active_error && out[0].res.active_error.indexOf(SCOPE) !== -1 && !out[0].res.active_email)) v.push('THROW_NOT_REPORTED');
+  if (!(out[1].res && out[1].res.active_email === OWNER && out[1].res.caller_on_editor_list === true)) v.push('OWNER_NOT_MATCHED');
+  if (!(out[2].res && out[2].res.caller_on_editor_list === false)) v.push('NOT_LISTED_NOT_FALSE');
+  if (!(out[3].res && out[3].res.editors_property_present === false && out[3].res.caller_on_editor_list === false)) v.push('ABSENT_LIST_NOT_REPORTED');
+  return v;
+}
+function runbookStepsGate(md) {
+  var v = [];
+  var s = section5A(md);
+  if (!s) return ['NO_5A'];
+  if (/opening the `\/exec`/.test(s) || /open(ing)? (the )?\/exec[^\n]*(authori|consent|prompt)/i.test(s)) v.push('AUTH_VIA_EXEC');
+  if (s.indexOf('not by opening the Web App') === -1) v.push('NO_NOT_VIA_WEB_APP');
+  if (s.indexOf(DIAG_REL) === -1 || s.indexOf('`TEMP_CheckFxIdentity` and nothing else') === -1) v.push('DIAGNOSTIC_NOT_NAMED');
+  if (!/compare it line by line with the Git text/.test(s)) v.push('NO_LINE_BY_LINE_CHECK');
+  if (/naming \*only\*|only list(s)? the new|just the new one\)/.test(s) || s.indexOf('lists every scope the project requests, not just the new one') === -1) v.push('CONSENT_ASSUMES_ONLY_NEW');
+  EXPECTED_SCOPES.forEach(function (u) { if (s.indexOf('`' + u + '`') === -1) v.push('CONSENT_MISSING ' + u.split('/').pop()); });
+  if (s.indexOf('stop only if anything ELSE appears') === -1) v.push('NO_EXTRA_ONLY_STOP');
+  var del = s.indexOf('**delete the `TEMP_CheckFxIdentity` file**'), ver = s.indexOf('New version');
+  if (del < 0 || ver < 0 || del > ver) v.push('DIAGNOSTIC_NOT_DELETED_BEFORE_VERSION');
+  if (/access mode still hides the caller/.test(s) || s.indexOf('leave the cause UNDETERMINED') === -1
+    || s.indexOf('does not mean the Web App can') === -1) v.push('WEB_RESULT_ATTRIBUTED');
+  if (/cause not determined/.test(md) === false) v.push('NOTE_ROW_ATTRIBUTED');
+  if (/Owner decision on access mode — not changed by any runbook/.test(md)) v.push('NOTE_ROW_STILL_ACCESS_MODE');
+  if (!/no `\*`, no email sent from\s+the browser, no `getEffectiveUser`/.test(s)) v.push('SHORTCUTS_NOT_REFUSED');
+  if (/\b(clasp|business function to|run \w+_\(\))/.test(s.replace('never by running a business function', ''))) v.push('RUNS_OTHER_CODE');
+  return v;
+}
+eq(diagnosticGate(DIAG), [], 'G1 the diagnostic is one function that reads the caller and ONE property, writes nothing, logs one line without the list');
+eq(runbookStepsGate(RUNBOOK), [], 'G2 §5A: consent via the diagnostic not /exec, the full four-scope list, delete before the version, a Web UNVERIFIABLE left undetermined');
+var APPS = fs.readdirSync(path.join(ROOT, GS));
+eq(APPS.filter(function (f) { return /TEMP_CheckFxIdentity/.test(f) || /TEMP_CheckFxIdentity/.test(read(GS + f)); }), [],
+  'G3 the diagnostic is in no file of the Apps Script folder, so no sync, bundle or version can carry it');
+ok(DIAG_REL.indexOf(GS) !== 0 && /\.gs\.txt$/.test(DIAG_REL), 'G4 and it lives outside that folder as .gs.txt');
+eq(git(['diff', '--name-only', '0170d40c', '--', GS]).trim(), '',
+  'G5 the correction moved nothing under the Apps Script folder (manifest still one added scope; no .gs, no bundle)');
+
+// ===================================================================================================
 console.log('\n=== M  MUTANTS ===');
 var caught = 0, survived = 0, vacuous = 0;
 function swap(s, a, b) {
@@ -282,6 +390,35 @@ mutant('M20', 'the runbook row goes back to execute-as-owner', runbookGate, RUNB
   return swap(s, "the caller's email could not be read — **two causes, one code** (below)", 'the deployment cannot see the caller (execute-as-owner)'); });
 mutant('M21', 'the runbook claims the execution log tells the causes apart', runbookGate, RUNBOOK, function (s) {
   return swap(s, 'neither can the execution log', 'the execution log can'); });
+// FX-AUTH-R1 correction — the steps and the diagnostic
+mutant('M22', '§5A goes back to opening /exec for consent', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, 'editor — not by opening the Web App, and never by running a business function or a trigger.',
+    'editor, or by opening the `/exec` once as the Owner to get the prompt.'); });
+mutant('M23', '§5A assumes the prompt names only the new permission', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, 'lists every scope the project requests, not just the new one', 'names *only* the new email permission'); });
+mutant('M24', '§5A drops one of the four scopes from the consent list', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '   - `https://www.googleapis.com/auth/bigquery` (view and manage your BigQuery data)\n', ''); });
+mutant('M25', '§5A attributes a Web UNVERIFIABLE to the access mode', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '**record it and leave the cause UNDETERMINED.**', 'the access mode still hides the caller.'); });
+mutant('M26', '§5A creates the version before deleting the diagnostic', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, '   Then **delete the `TEMP_CheckFxIdentity` file**, save, and confirm it is gone from the file list.\n', ''); });
+mutant('M27', '§5A no longer asks for a line-by-line check of an existing copy', runbookStepsGate, RUNBOOK, function (s) {
+  return swap(s, 'compare it line by line with the Git text', 'reuse it'); });
+mutant('M28', 'the diagnostic writes a property', diagnosticGate, DIAG, function (s) {
+  return swap(s, "  Logger.log(JSON.stringify(out));", "  PropertiesService.getScriptProperties().setProperty('FX_CHECK_LAST', 'x');\n  Logger.log(JSON.stringify(out));"); });
+mutant('M29', 'the diagnostic dumps every property', diagnosticGate, DIAG, function (s) {
+  return swap(s, "  Logger.log(JSON.stringify(out));", "  out.all = PropertiesService.getScriptProperties().getProperties();\n  Logger.log(JSON.stringify(out));"); });
+mutant('M30', 'the diagnostic prints the editor list itself', diagnosticGate, DIAG, function (s) {
+  return swap(s, "  Logger.log(JSON.stringify(out));", "  out.list = raw;\n  Logger.log(JSON.stringify(out));"); });
+mutant('M31', 'the diagnostic falls back to the deployer', diagnosticGate, DIAG, function (s) {
+  return swap(s, "    out.active_error = String((e && e.message) || e).slice(0, 300);",
+    "    out.active_email = String(Session.getEffectiveUser().getEmail());"); });
+mutant('M32', 'the diagnostic reads a second property', diagnosticGate, DIAG, function (s) {
+  return swap(s, "  Logger.log(JSON.stringify(out));", "  out.k = PropertiesService.getScriptProperties().getProperty('KM_FX_RATE_BOOK') ? 1 : 0;\n  Logger.log(JSON.stringify(out));"); });
+mutant('M33', 'the diagnostic opens the spreadsheet', diagnosticGate, DIAG, function (s) {
+  return swap(s, "  Logger.log(JSON.stringify(out));", "  out.n = SpreadsheetApp.getActiveSpreadsheet().getName();\n  Logger.log(JSON.stringify(out));"); });
+mutant('M34', 'the diagnostic grows a second function', diagnosticGate, DIAG, function (s) {
+  return s + '\nfunction TEMP_helper() { return 1; }\n'; });
 eq(survived, 0, 'M  0 mutants survived (' + caught + ' caught)');
 eq(vacuous, 0, 'M  0 vacuous mutants');
 
