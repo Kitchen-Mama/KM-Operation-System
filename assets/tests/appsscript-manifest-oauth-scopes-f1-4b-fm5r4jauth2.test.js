@@ -38,7 +38,12 @@ var FORBIDDEN = [
   'https://www.googleapis.com/auth/script.send_mail'
 ];
 FORBIDDEN.forEach(function (s) { ok(scopes.indexOf(s) === -1, 'no unused scope ' + s + ' (no UrlFetch/Drive/Mail usage in the code)'); });
-ok(scopes.length === 3, 'exactly 3 scopes (spreadsheets, script.scriptapp, bigquery) — minimal set');
+// FX-AUTH-R1 — the exact approved list, not a count: the three AUTH2 scopes plus ONLY the additions
+// recorded with an Owner approval in _oauth-scope-approvals.js (today: userinfo.email, for 75_'s caller).
+var SCOPE_APPROVALS = require('./_oauth-scope-approvals.js');
+ok(JSON.stringify(scopes) === JSON.stringify(SCOPE_APPROVALS.EXPECTED),
+  'exactly the approved scopes, in order (spreadsheets, script.scriptapp, bigquery + ' + SCOPE_APPROVALS.ADDED.join(', ')
+  + ') — minimal set; got ' + JSON.stringify(scopes));
 
 section('preserved project config (Phase 2 must-preserve)');
 ok(m.timeZone === 'Asia/Taipei', 'timeZone = Asia/Taipei (frozen operational cadence)');

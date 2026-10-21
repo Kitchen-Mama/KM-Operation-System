@@ -514,7 +514,8 @@ eq(svcs.filter(function (s) { return s.serviceId === 'sheets'; }),
   [{ userSymbol: 'Sheets', version: 'v4', serviceId: 'sheets' }],
   'J6  the manifest declares Sheets v4 exactly once');
 eq(svcs.filter(function (s) { return s.serviceId === 'bigquery'; }).length, 1, 'J6a BigQuery preserved');
-eq(MANIFEST.oauthScopes.length, 3, 'J6b the three OAuth scopes are unchanged');
+eq(MANIFEST.oauthScopes, require(path.join(ROOT, 'assets/tests/_oauth-scope-approvals.js')).EXPECTED,
+  'J6b the three OAuth scopes are unchanged, plus only the Owner-approved FX-AUTH-R1 addition');
 eq(MANIFEST.timeZone, 'Asia/Taipei', 'J6c and the timezone — which is what makes a date cell local midnight');
 var ADV = require(path.join(ROOT, 'assets/tests/_advanced-services-state.js'));
 ok(ADV.PRODUCT_RUNTIME_DEPENDENCY === true,

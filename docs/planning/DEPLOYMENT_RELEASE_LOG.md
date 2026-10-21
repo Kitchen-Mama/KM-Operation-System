@@ -6785,3 +6785,45 @@ Cumulative since `origin/main` (`7376bee8`): `index.html`, `assets/js/app.js` (t
 `git ls-remote` still reports `7376bee8`; re-check before publishing.
 
 **APPS_SCRIPT_SYNC_REQUIRED: none. NOT PUSHED. NOT SYNCED. NOT DEPLOYED.**
+
+## FX-AUTH-R1 — the measured missing scope: `userinfo.email`, added locally and nowhere else
+
+**What was measured (Owner, Production, read-only, 2026-10-21).** After `KM_FX_RATE_BOOK_EDITORS` was set
+by hand: `allowlist_present = true`, and `Session.getActiveUser()` **threw** because the manifest's explicit
+`oauthScopes` do not include `https://www.googleapis.com/auth/userinfo.email`. `75_` catches that throw as
+`''`, so the page answered `FX_AUTHORITY_UNVERIFIABLE` — the code this ledger's FX1-R4-R1 §6 and the
+"FX phase 1" steps above explained only as "the deployment cannot see who calls it". That reading was
+incomplete: the code covers **two** causes, a permission exception and a genuinely empty email, and the
+measured one was the first. Kept as `docs/evidence/fx-auth-r1/owner-measurement.json`, as reported, with
+what was not measured named.
+
+**The change (Owner-approved, local only).** `assets/specs/active/apps-script/appsscript.json` gains one
+line: `userinfo.email` after the existing three scopes. Byte-checked against `26b35b6c`: the three scopes,
+BigQuery v2, Sheets v4, `Asia/Taipei`, V8, STACKDRIVER, `executeAs: USER_DEPLOYING` and
+`access: ANYONE_ANONYMOUS` are identical. **No `.gs` file, no generated bundle, no API, no frontend file
+moved.** The FX allowlist, the `*` refusal, the fail-closed path and the io-only authority are unchanged;
+no browser-sent email is trusted, and `getEffectiveUser` is read nowhere.
+
+**The guards were adjusted, not loosened.** Seven suites pinned "exactly three scopes" or "the scope set at
+an older commit". Each now compares against *that set plus exactly the approved additions*, recorded once in
+`assets/tests/_oauth-scope-approvals.js` with round and reason. Checked on the real file: removing
+`userinfo.email` fails all eight scope suites, and so does adding `auth/drive` beside it. The new suite
+`fx-auth-userinfo-email-scope-fx-auth-r1.test.js` (31 assertions, 21 mutants, 0 survived) pins the exact
+list as a literal, checks the raw manifest is the old bytes plus one line, runs `75_` in a sandbox (a throw
+and an empty email both refuse; `*`, a request-body email and the deployer never authorise), and holds the
+runbook to both causes.
+
+**Runbook.** `R55_PRODUCTION_RELEASE_RUNBOOK.md` §5 now names both causes of `FX_AUTHORITY_UNVERIFIABLE`,
+says that neither the response nor the execution log can tell them apart (`75_` logs nothing), and adds
+§5A — the Owner-run manifest sync for this one scope, with re-consent, one read-only `fxRateBook.get`, and
+a rollback. Step 2 of "FX phase 1" above should be read with that correction: `UNVERIFIABLE` is not by
+itself "execute-as-owner".
+
+**Not claimed.** That the Owner will be identified once the scope is granted. It is expected; it is proved
+only by the Owner's next `fxRateBook.get` after §5A. If that still answers `UNVERIFIABLE` with no exception,
+the cause is the access/identity mode — an Owner decision this round does not take.
+
+**APPS_SCRIPT_SYNC_REQUIRED (Owner-run, per runbook §5A, after the push):** `appsscript.json` only.
+`BUNDLE_REBUILD_REQUIRED`: no. GITHUB_PAGES_FILES: unchanged by this round.
+**NOT PUSHED. NOT SYNCED. NOT DEPLOYED. No FX save, no rate initialised, no price recalculated, no
+Script Property written.**

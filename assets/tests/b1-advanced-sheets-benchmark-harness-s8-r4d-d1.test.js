@@ -131,9 +131,13 @@ if (STATE.SHEETS_ENABLED) {
   var manifestPre = JSON.parse(cp.execFileSync('git', ['show', PRE_SHA + ':' + MANIFEST_REL],
     { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
   var strip = function (m) { var c = JSON.parse(JSON.stringify(m)); delete c.dependencies; return c; };
-  eq(strip(MANIFEST), strip(manifestPre),
+  // FX-AUTH-R1 — the Owner-approved scope addition is taken back out, and ONLY it; anything else that moved
+  // outside dependencies still fails here.
+  var SCOPE_APPROVALS = require(path.join(ROOT, 'assets/tests/_oauth-scope-approvals.js'));
+  eq(strip(SCOPE_APPROVALS.stripApproved(MANIFEST)), strip(manifestPre),
     'B1b and EVERY key outside dependencies is byte-identical to ' + PRE_SHA + ' — timezone, scopes, webapp, '
-    + 'runtimeVersion and exceptionLogging are not collateral of a service addition');
+    + 'runtimeVersion and exceptionLogging are not collateral of a service addition (less the approved '
+    + SCOPE_APPROVALS.ADDED.join(', ') + ')');
   var preServices = (manifestPre.dependencies || {}).enabledAdvancedServices || [];
   eq(services.filter(function (x) { return x.serviceId !== 'sheets'; }), preServices,
     'B1c and the pre-existing service list survives the addition unchanged, in order');

@@ -1,0 +1,21 @@
+{
+  "round": "FX-AUTH-R1",
+  "what": "The Owner's production measurement that caused this round, recorded as reported. Not taken by the agent; nothing in this file was re-derived or completed by inference.",
+  "recordedAt": "2026-10-21",
+  "measuredBy": "Owner (vic.zhou@shopkitchenmama.com), on Production, after setting KM_FX_RATE_BOOK_EDITORS by hand",
+  "readOnly": true,
+  "reported": {
+    "allowlist_present": true,
+    "Session.getActiveUser": "threw - the manifest's explicit oauthScopes do not include https://www.googleapis.com/auth/userinfo.email"
+  },
+  "howTheCodeTurnsThatIntoTheRefusal": [
+    "75_ fxBookDefaultIo_().user() wraps Session.getActiveUser().getEmail() in try/catch and returns '' on a throw.",
+    "fxBookAuthority_ finds the allowlist set (so not FX_AUTHORITY_NOT_CONFIGURED) and the caller '' -> FX_AUTHORITY_UNVERIFIABLE.",
+    "So the page showed the same code the runbook explained only as 'execute-as-owner cannot see the caller'. The measured cause was a missing scope, which is a different fault with a different fix."
+  ],
+  "notMeasured": [
+    "Whether getActiveUser returns the Owner's address once the scope is granted. That needs the Owner's sync + re-consent + one more fxRateBook.get; until then it is expected, not proved.",
+    "The exact exception text. It was reported as a missing-permission error naming userinfo.email; it is not quoted here because it was not captured verbatim."
+  ],
+  "decision": "Owner approved a LOCAL change adding only userinfo.email to oauthScopes. Production unchanged in this round. executeAs, access, the OAuth client, every .gs file and the generated bundle are unchanged."
+}

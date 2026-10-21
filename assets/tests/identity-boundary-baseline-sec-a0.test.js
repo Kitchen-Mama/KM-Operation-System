@@ -38,6 +38,7 @@ var path = require('path');
 var vm = require('vm');
 
 var ROOT = path.join(__dirname, '..', '..');
+var SCOPE_APPROVALS = require(path.join(__dirname, '_oauth-scope-approvals.js'));   // FX-AUTH-R1
 var JS = path.join(ROOT, 'assets', 'js');
 var GSDIR = path.join(ROOT, 'assets', 'specs', 'active', 'apps-script');
 
@@ -141,12 +142,12 @@ console.log('\n=== §A  THE POSTURE, AS PUBLISHED  (each line: if it changes, re
      honoured - because the deployment mode that cannot identify a caller is exactly the one in which
      somebody reaches for a wildcard. So this is the boundary tightening for one action, not loosening.
 
-     AND THE CONSEQUENCE IS STATED RATHER THAN DISCOVERED. Under ANYONE_ANONYMOUS + USER_DEPLOYING,
-     Session.getActiveUser() returns the empty string for essentially every caller, so fxRateBook.save
-     is refused for essentially everybody until the Owner changes the deployment ACCESS setting. That
-     is the designed state: the FX1-R4 instruction forbids changing the Web App execution identity or
-     the OAuth scopes to work around it, and the Administration page shows the refusal code instead of
-     a button that silently does nothing.
+     AND THE CONSEQUENCE IS STATED RATHER THAN DISCOVERED. FX-AUTH-R1 corrected the reason: the Owner's
+     measured fxRateBook.get (allowlist present) showed Session.getActiveUser() THROWING for a missing
+     userinfo.email scope, which 75_ catches as '' and reports as FX_AUTHORITY_UNVERIFIABLE. The Owner
+     approved adding that one scope; executeAs and access are unchanged, and an empty email (rather than
+     a throw) is still possible under ANYONE_ANONYMOUS + USER_DEPLOYING. Either way the page shows the
+     refusal code instead of a button that silently does nothing.
 
      THE LIST IS PINNED, not merely bounded. A second file arriving here is the thing this census
      exists to notice. */
@@ -173,7 +174,10 @@ console.log('\n=== §A  THE POSTURE, AS PUBLISHED  (each line: if it changes, re
      migration cost, not a defect: SEC-A2 adding this scope means re-authorisation by the deployer. */
   ok(MANIFEST.oauthScopes.indexOf('https://www.googleapis.com/auth/script.external_request') < 0,
     'A9 no external_request scope — the server cannot currently verify an assertion from anyone');
-  eq(MANIFEST.oauthScopes.length, 3, 'A9a exactly three scopes, so A9 is about the whole list');
+  /* FX-AUTH-R1 — the list is the approved one, not "three". userinfo.email lets 75_ READ the caller it was
+     already asking for; it is not a token verifier and does not change executeAs or access. */
+  eq(MANIFEST.oauthScopes, SCOPE_APPROVALS.EXPECTED,
+    'A9a exactly the approved scopes (the three + ' + SCOPE_APPROVALS.ADDED.join(', ') + '), so A9 is about the whole list');
 }());
 
 // ===================================================================================================
@@ -442,7 +446,7 @@ mut('G3 an external_request scope appears (a token verifier arrived without a de
   '"https://www.googleapis.com/auth/bigquery",\n    "https://www.googleapis.com/auth/script.external_request"',
   function (s) {
     var m = JSON.parse(s);
-    return m.oauthScopes.length !== 3
+    return JSON.stringify(m.oauthScopes) !== JSON.stringify(SCOPE_APPROVALS.EXPECTED)
       || m.oauthScopes.indexOf('https://www.googleapis.com/auth/script.external_request') >= 0;
   });
 

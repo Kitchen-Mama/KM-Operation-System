@@ -46,7 +46,8 @@ if the sync cannot happen soon, run the **frontend rollback** in §6B.
 - [ ] **P-4** You will **edit the existing deployment → New version**. Creating a new deployment mints a
       different `/exec`, and the frontend keeps talking to the old one.
 - [ ] **P-5** Do **not** change *Execute as*, *Who has access*, OAuth scopes or Script Properties. None
-      is part of R55.
+      is part of R55. (The one scope the Owner has since approved, `userinfo.email`, is a separate step
+      with its own manifest sync — §5A — and is not taken during this section.)
 
 ## 2. BACKEND SYNC — four files, `63_` LAST
 
@@ -106,17 +107,58 @@ Evaluated by loading `63_` at `7376bee8`, not read from prose:
    | absent, `may_edit: true` | caller identified and on the allowlist | — |
    | `FX_AUTHORITY_NOT_CONFIGURED` | `KM_FX_RATE_BOOK_EDITORS` unset | Owner decision |
    | `FX_AUTHORITY_WILDCARD_REFUSED` | it is `*` | Owner replaces it with real addresses |
-   | `FX_AUTHORITY_UNVERIFIABLE` | the deployment cannot see the caller (execute-as-owner) | Owner decision on access mode |
+   | `FX_AUTHORITY_UNVERIFIABLE` | the caller's email could not be read — **two causes, one code** (below) | see the note |
    | `FX_NOT_AUTHORIZED` | identified, not listed | Owner adds the address |
 
    **Expected today: `FX_AUTHORITY_UNVERIFIABLE` or `FX_AUTHORITY_NOT_CONFIGURED`.** Either is correct
    fail-closed behaviour and **neither is a release failure**.
+
+   **`FX_AUTHORITY_UNVERIFIABLE` is not one fact (FX-AUTH-R1).** `75_` reads the caller with
+   `Session.getActiveUser().getEmail()` inside a `try`, and a throw and an empty answer both become `''`:
+
+   | what happened | who acts |
+   |---|---|
+   | **a permission exception** — the manifest's explicit `oauthScopes` lack `userinfo.email`, so the call throws | the scope sync in §5A |
+   | **an empty email** — the call succeeds and returns `''` (the access/identity mode does not reveal the caller) | Owner decision on access mode — not changed by any runbook |
+
+   **The response cannot tell them apart, and neither can the execution log**: `75_` catches the
+   exception and logs nothing. Only a direct, read-only `Session.getActiveUser().getEmail()` shows which
+   — it throws a missing-permission error naming `userinfo.email` in the first case and returns `''` in
+   the second. So do not explain the code as "execute-as-owner" by default. The Owner's measurement on
+   2026-10-21 (allowlist present) was the **first** case: `docs/evidence/fx-auth-r1/owner-measurement.json`.
 4. Stop there. The write steps of the post-publish acceptance (release log, FX1-R4 §"steps 4 onward
    write") are **not** part of this release check.
 
 **What may be claimed afterwards:** *R55 deployed; FX Rate Book readable.* **What may not:** *FX enabled
 in production.* That claim needs a real save by an identified editor, which needs an Owner decision on
 identity first. No rate is initialised and no price is written by anything in this runbook.
+
+## 5A. FX-AUTH-R1 — THE `userinfo.email` SCOPE (separate, Owner-run, after §5)
+
+Prepared locally only. **Production is unchanged until the Owner does this.** It moves **one file**:
+`assets/specs/active/apps-script/appsscript.json`, whose only change is one added line in
+`oauthScopes`. No `.gs` file, no bundle, no Script Property, no `executeAs`, no `access` and no OAuth
+client setting moves.
+
+1. *Project Settings →* "Show appsscript.json in editor" if it is hidden. Replace the manifest with the
+   Git version. Before saving, compare: the old three scopes, the Sheets v4 and BigQuery v2 services,
+   `Asia/Taipei`, `executeAs: USER_DEPLOYING` and `access: ANYONE_ANONYMOUS` must all be as they were.
+2. Save. Authorise the added scope as the Owner when Google asks (for example on opening the `/exec`
+   once as the Owner) — **do not run an editor function to trigger it**; several of them write.
+   A prompt naming *only* "see your primary Google Account email address" is the expected one;
+   a prompt for anything else means the wrong manifest was pasted — stop.
+3. *Manage deployments → Edit → New version* (the same `/exec`).
+4. One `fxRateBook.get` (open *Administration → FX Rate Book*; it writes nothing). Record
+   `may_edit` / `authority_reason`.
+   - `may_edit: true` → identified and on the allowlist.
+   - `FX_AUTHORITY_UNVERIFIABLE` again → repeat the same read-only check the Owner used to find the
+     first case. No exception any more → the second case of the §5 note: the scope is fixed and the
+     access mode still hides the caller. An Owner decision, not a reason to set `*`,
+     to send an email from the browser, or to read `getEffectiveUser` (that is the deployer, not the
+     caller). All three stay refused.
+5. Stop. No FX save, no rate initialised, no price recalculated by this step.
+
+**Rollback:** paste the previous manifest (the three scopes), save, new version. Nothing else to undo.
 
 ## 6. ROLLBACK — backend and frontend are separate
 

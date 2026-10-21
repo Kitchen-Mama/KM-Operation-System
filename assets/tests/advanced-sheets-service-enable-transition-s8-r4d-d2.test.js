@@ -217,9 +217,12 @@ ok(!/R44/.test(read(GS + '01_router.gs')),
   'U6b 01_ is NOT stamped R44 — no action, no route and no request field moved');
 
 var preManifest = JSON.parse(PRE_MANIFEST_SRC), nowManifest = JSON.parse(NOW_MANIFEST_SRC);
-eq(nowManifest.oauthScopes, preManifest.oauthScopes,
-  'U5  OAUTH_SCOPE_CHANGE_REQUIRED = NO — the scope set at ' + PRE_SHA + ' and now are identical, so no '
-  + 'new consent is expected and an unexpected prompt is a signal, not noise');
+// FX-AUTH-R1 — the Sheets transition itself still needed no scope. The only addition since is the one the
+// Owner approved for 75_'s caller check, named in _oauth-scope-approvals.js; any other difference fails.
+var SCOPE_APPROVALS = require(path.join(ROOT, 'assets/tests/_oauth-scope-approvals.js'));
+eq(nowManifest.oauthScopes, SCOPE_APPROVALS.withApproved(preManifest.oauthScopes),
+  'U5  OAUTH_SCOPE_CHANGE_REQUIRED = NO for this transition — the scope set now is the one at ' + PRE_SHA
+  + ' plus exactly the approved ' + SCOPE_APPROVALS.ADDED.join(', ') + ', so any other consent prompt is a signal, not noise');
 eq(nowManifest.webapp, preManifest.webapp,
   'U6  the Web App executeAs / access settings are unchanged');
 eq([nowManifest.timeZone, nowManifest.runtimeVersion, nowManifest.exceptionLogging],
@@ -232,7 +235,7 @@ console.log('\n================ V — ROLLBACK IS DEFINED, NOT IMPROVISED ======
 
 // A NO-GO must restore the PRE state exactly. Rather than assert prose, compute it: strip the Sheets entry
 // from the current manifest and the result must be byte-identical to the manifest at PRE_SHA.
-var rolledBack = JSON.parse(JSON.stringify(nowManifest));
+var rolledBack = SCOPE_APPROVALS.stripApproved(nowManifest);   // FX-AUTH-R1 — that round's own rollback
 rolledBack.dependencies.enabledAdvancedServices = rolledBack.dependencies.enabledAdvancedServices
   .filter(function (s) { return String(s.serviceId).toLowerCase() !== 'sheets'; });
 eq(rolledBack, preManifest,
@@ -337,7 +340,7 @@ var dBigQueryGone = function (t) {
   var list = (JSON.parse(t.manifest).dependencies || {}).enabledAdvancedServices || [];
   return list.filter(function (s) { return s.serviceId === 'bigquery'; }).length !== 1;
 };
-var dScope = function (t) { return JSON.stringify(JSON.parse(t.manifest).oauthScopes) !== JSON.stringify(preManifest.oauthScopes); };
+var dScope = function (t) { return JSON.stringify(JSON.parse(t.manifest).oauthScopes) !== JSON.stringify(SCOPE_APPROVALS.withApproved(preManifest.oauthScopes)); };
 var dWebapp = function (t) { return JSON.stringify(JSON.parse(t.manifest).webapp) !== JSON.stringify(preManifest.webapp); };
 var dTimeZone = function (t) { return JSON.parse(t.manifest).timeZone !== preManifest.timeZone; };
 var B1_OWNER_ = '60_api_v1_inventory_replenishment_workspace.gs';
@@ -408,7 +411,7 @@ var dProbeRange = function (t) {
 var dProbeId = function (t) { return (stripComments(t.probe).match(/1[A-Za-z0-9_-]{30,}/g) || []).length > 0; };
 var dProbeTiming = function (t) { return /Date\.now\(\)|getTime\(\)|_MS\b|elapsed/i.test(stripComments(t.probe)); };
 var dRollback = function (t) {
-  var m = JSON.parse(t.manifest);
+  var m = SCOPE_APPROVALS.stripApproved(JSON.parse(t.manifest));
   m.dependencies.enabledAdvancedServices = m.dependencies.enabledAdvancedServices
     .filter(function (s) { return String(s.serviceId).toLowerCase() !== 'sheets'; });
   return JSON.stringify(m) !== JSON.stringify(preManifest);

@@ -49,11 +49,8 @@ module.exports = {
 
   // The OAuth scopes the manifest must carry, unchanged. B1 needs NO new scope — .../auth/spreadsheets is
   // already granted — so a scope appearing alongside a service addition is a fault, not a side effect.
-  REQUIRED_OAUTH_SCOPES: [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/script.scriptapp',
-    'https://www.googleapis.com/auth/bigquery'
-  ],
+  // FX-AUTH-R1 — plus the Owner-approved additions recorded in _oauth-scope-approvals.js, and nothing else.
+  REQUIRED_OAUTH_SCOPES: require('./_oauth-scope-approvals.js').EXPECTED,
 
   // The Web App deployment settings an advanced-service change must not disturb.
   REQUIRED_WEBAPP: { executeAs: 'USER_DEPLOYING', access: 'ANYONE_ANONYMOUS' }

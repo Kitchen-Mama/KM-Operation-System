@@ -335,9 +335,14 @@ var APPSSCRIPT = (function () {
   });
   return hits;
 })();
+// FX-AUTH-R1 — the Owner later approved userinfo.email for a DIFFERENT purpose (75_'s FX editor check).
+// This migration still requested nothing: the manifest must hold exactly the approved list, the migration
+// file itself still never reaches for identity (B10/B11, B13), and the actor stays a constant.
+var SCOPE_APPROVALS = require(path.join(__dirname, '_oauth-scope-approvals.js'));
 APPSSCRIPT.forEach(function (f) {
-  ok(f.body.indexOf('userinfo.email') === -1,
-    'B12 ' + f.path + ' does not request userinfo.email');
+  ok(JSON.stringify(JSON.parse(f.body).oauthScopes) === JSON.stringify(SCOPE_APPROVALS.EXPECTED)
+    && SCOPE_APPROVALS.APPROVED_ADDITIONS.some(function (a) { return /userinfo\.email$/.test(a.scope) && a.round === 'FX-AUTH-R1'; }),
+    'B12 ' + f.path + ' requests userinfo.email only as the FX-AUTH-R1 approval, not for this migration');
 });
 ok(MIG_SRC.indexOf('oauthScopes') === -1 && MIG_SRC.indexOf('userinfo.email') === -1
   || /Required permission: https:\/\/www\.googleapis\.com\/auth\/userinfo\.email/.test(MIG_SRC),

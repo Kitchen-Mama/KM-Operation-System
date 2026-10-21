@@ -598,11 +598,14 @@ eq(manifestChangedBetween(B8D_PRE_SHA, 'dc3f6fd2260ee91bb844e9b81427619b7ad55218
    only the last duplicate, so a widened set injected ABOVE the real one would parse away to nothing. */
 eq((SRC.manifest.match(/"oauthScopes"/g) || []).length, 1,
   'G5a the manifest declares oauthScopes EXACTLY ONCE — a duplicate key parses away and would hide G5b');
+/* FX-AUTH-R1 — one widening has been decided since, by the Owner and by name (_oauth-scope-approvals.js).
+   G5b now reads "the inherited set plus exactly that", so every OTHER widening still fails here. */
+var SCOPE_APPROVALS = require(path.join(ROOT, 'assets/tests/_oauth-scope-approvals.js'));
 eq(JSON.parse(SRC.manifest).oauthScopes,
-  JSON.parse(cp.execFileSync('git', ['show', B8D_PRE_SHA + ':assets/specs/active/apps-script/appsscript.json'],
-    { cwd: ROOT, encoding: 'utf8' })).oauthScopes,
-  'G5b and the scope set is STILL the one activation inherited — no round since has widened what the '
-  + 'deployment may do, which is what G5 was always defending');
+  SCOPE_APPROVALS.withApproved(JSON.parse(cp.execFileSync('git', ['show', B8D_PRE_SHA + ':assets/specs/active/apps-script/appsscript.json'],
+    { cwd: ROOT, encoding: 'utf8' })).oauthScopes),
+  'G5b and the scope set is STILL the one activation inherited, plus only the Owner-approved '
+  + SCOPE_APPROVALS.ADDED.join(', ') + ' — no other round has widened what the deployment may do');
 
 /* ==================================================================================================
    G6 — TWO EXACT SETS, TWO ROUNDS, TWO FIXED BOUNDARIES.   (split at P1-B8D-R10D)
@@ -1171,7 +1174,7 @@ function scopeGateFails(manifestSrc) {
   if ((manifestSrc.match(/"oauthScopes"/g) || []).length !== 1) return true;        // G5a
   var base = JSON.parse(cp.execFileSync('git', ['show', B8D_PRE_SHA + ':assets/specs/active/apps-script/appsscript.json'],
     { cwd: ROOT, encoding: 'utf8' })).oauthScopes;
-  return JSON.stringify(JSON.parse(manifestSrc).oauthScopes) !== JSON.stringify(base);  // G5b
+  return JSON.stringify(JSON.parse(manifestSrc).oauthScopes) !== JSON.stringify(SCOPE_APPROVALS.withApproved(base));  // G5b
 }
 mut('K14 appsscript.json gains an OAuth scope — G5a/G5b', function () {
   var m = swapIn(SRC.manifest, '"timeZone"',
@@ -1179,8 +1182,8 @@ mut('K14 appsscript.json gains an OAuth scope — G5a/G5b', function () {
   return m !== SRC.manifest && !scopeGateFails(SRC.manifest) && scopeGateFails(m);
 });
 mut('K14a a scope is APPENDED to the real list rather than duplicated — G5b', function () {
-  var m = swapIn(SRC.manifest, '"https://www.googleapis.com/auth/bigquery"',
-    '"https://www.googleapis.com/auth/bigquery",\n    "https://www.googleapis.com/auth/drive"');
+  var m = swapIn(SRC.manifest, '"https://www.googleapis.com/auth/userinfo.email"',
+    '"https://www.googleapis.com/auth/userinfo.email",\n    "https://www.googleapis.com/auth/drive"');
   return m !== SRC.manifest && !scopeGateFails(SRC.manifest) && scopeGateFails(m);
 });
 mut('K14b the advanced-service addition alone is NOT a scope widening — G5b stays green', function () {
