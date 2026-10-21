@@ -161,10 +161,10 @@ function main() {
     + 'tableRows: document.querySelectorAll("#productTable tbody tr").length,'
     + 'tableHeads: Array.prototype.map.call(document.querySelectorAll("#productTable thead th"),function(t){return t.textContent;}),'
     + 'kpi: (document.querySelector(".kpis")||{}).textContent||"",'
-    + 'simCount: (document.getElementById("simCount")||{getAttribute:function(){return null;}}).getAttribute("data-count"),'
+    + 'simCount: (document.querySelector("[data-demo-ctl=\\"simCount\\"]")||{getAttribute:function(){return null;}}).getAttribute("data-count"),'
     + 'meta: (document.getElementById("readTimeMeta")||{}).textContent||null,'
-    + 'activityOptions: Array.prototype.map.call(document.querySelectorAll("#activitySelect option"),function(o){return o.value+"="+o.textContent;}),'
-    + 'activityNote: (document.getElementById("activityNote")||{}).textContent||null,'
+    + 'activityOptions: Array.prototype.map.call(document.querySelectorAll("[data-demo-ctl=\\"activitySelect\\"] option"),function(o){return o.value+"="+o.textContent;}),'
+    + 'activityNote: (document.querySelector("[data-demo-ctl=\\"activityNote\\"]")||{}).textContent||null,'
     + 'viewText: (document.getElementById("view")||{}).innerText||"",'
     + 'canonicalHash: (h1.toString(16)+"-"+h2.toString(16)+"-"+s.length),'
     + 'wire: (window.__wire&&window.__wire.log)?window.__wire.log.map(function(x){return x.action;}):null,'
@@ -241,14 +241,14 @@ function main() {
       return shot('01-everyday');
     })
     // ---- 1. choose an activity ----
-    .then(function () { return click('#priceView-activity'); })
+    .then(function () { return click('#priceView-activity-USD'); })
     .then(function () { return read(); })
     .then(function (r) {
       check('Activity price lists the activities by campaign_id, name, period and recorded status',
         r.activityOptions.some(function (o) { return /^CMP-PBDD-2026=Prime Big Deal Days\s+·\s+2026-10-07 to 2026-10-08\s+·\s+recorded status: active$/.test(o); })
         && r.activityOptions.some(function (o) { return /^CMP-BF-2026=Black Friday/.test(o); })
         && !r.activityOptions.some(function (o) { return /CMP-CA-SPRING/.test(o); }), r.activityOptions);
-      return js('(function(){var s=document.getElementById("activitySelect");s.value="CMP-PBDD-2026";s.dispatchEvent(new Event("change",{bubbles:true}));return true;})()');
+      return js('(function(){var s=document.getElementById("activitySelect-USD");s.value="CMP-PBDD-2026";s.dispatchEvent(new Event("change",{bubbles:true}));return true;})()');
     })
     .then(function () { return delay(200); }).then(function () { return read(); })
     .then(function (r) {
@@ -275,16 +275,16 @@ function main() {
       return shot('02-activity');
     })
     // ---- 2. add competitors ----
-    .then(function () { return click('#compAdd'); })
-    .then(function () { return typeInto('#compName', 'Rival A'); })
-    .then(function () { return typeInto('#compPrice', '27.50'); })
-    .then(function () { return click('#compSave'); })
-    .then(function () { return click('#compAdd'); })
-    .then(function () { return typeInto('#compName', 'Rival B'); })
-    .then(function () { return typeInto('#compPrice', '33.00'); })
-    .then(function () { return typeInto('#compLo', '30.00'); })
-    .then(function () { return typeInto('#compHi', '36.00'); })
-    .then(function () { return click('#compSave'); })
+    .then(function () { return click('#compAdd-USD'); })
+    .then(function () { return typeInto('#compName-USD', 'Rival A'); })
+    .then(function () { return typeInto('#compPrice-USD', '27.50'); })
+    .then(function () { return click('#compSave-USD'); })
+    .then(function () { return click('#compAdd-USD'); })
+    .then(function () { return typeInto('#compName-USD', 'Rival B'); })
+    .then(function () { return typeInto('#compPrice-USD', '33.00'); })
+    .then(function () { return typeInto('#compLo-USD', '30.00'); })
+    .then(function () { return typeInto('#compHi-USD', '36.00'); })
+    .then(function () { return click('#compSave-USD'); })
     .then(function () { return read(); })
     .then(function (r) {
       step('competitors added', { comps: r.comps, bands: r.compBands });
@@ -328,8 +328,8 @@ function main() {
       return shot('04-dragged');
     })
     // ---- 4. exact entry, keyboard, undo, reset, escape ----
-    .then(function () { return typeInto('#simInput', '19.99'); })
-    .then(function () { return click('#simApply'); })
+    .then(function () { return typeInto('#simInput-USD', '19.99'); })
+    .then(function () { return click('#simApply-USD'); })
     .then(function () { return read(); })
     .then(function (r) {
       var m = r.cols.filter(function (c) { return c['data-sim-c'] !== null; });
@@ -341,13 +341,13 @@ function main() {
     .then(function (r) {
       var m = r.cols.filter(function (c) { return c['data-sim-c'] !== null; });
       check('ArrowUp moves the focused point up by one unit', m.length === 1 && m[0]['data-sim-c'] === '2099', m);
-      return click('#simUndo');
+      return click('#simUndo-USD');
     })
     .then(function () { return read(); })
     .then(function (r) {
       var m = r.cols.filter(function (c) { return c['data-sim-c'] !== null; });
       check('Undo restores the previous simulated price', m.length === 1 && m[0]['data-sim-c'] === '1999', m);
-      return click('#simResetOne');
+      return click('#simResetOne-USD');
     })
     .then(function () { return read(); })
     .then(function (r) {
@@ -364,7 +364,7 @@ function main() {
     .then(function () { return read(); })
     .then(function (r) {
       check('two products can be simulated independently', r.cols.filter(function (c) { return c['data-sim-c'] !== null; }).length === 2, null);
-      return click('#simResetAll');
+      return click('#simResetAll-USD');
     })
     .then(function () { return read(); })
     .then(function (r) {
@@ -374,12 +374,12 @@ function main() {
     })
     .then(function (idx) { return dragBy('.mk-activity-group', idx, 40); })
     // ---- 5. isolation: activity, price mode, site ----
-    .then(function () { return js('(function(){var s=document.getElementById("activitySelect");s.value="CMP-BF-2026";s.dispatchEvent(new Event("change",{bubbles:true}));return true;})()'); })
+    .then(function () { return js('(function(){var s=document.getElementById("activitySelect-USD");s.value="CMP-BF-2026";s.dispatchEvent(new Event("change",{bubbles:true}));return true;})()'); })
     .then(function () { return delay(200); }).then(function () { return read(); })
     .then(function (r) {
       check('another activity shows none of the first activity’s simulations', r.cols.every(function (c) { return c['data-sim-c'] === null; }), null);
       check('another activity shows none of the first activity’s competitors', r.comps.length === 0, r.comps);
-      return click('#priceView-everyday');
+      return click('#priceView-everyday-USD');
     })
     .then(function () { return read(); })
     .then(function (r) {
@@ -392,9 +392,9 @@ function main() {
       var m = r.cols.filter(function (c) { return c['data-sim-c'] !== null; });
       check('in the everyday view the drag moves the everyday price point', m.length === 1 && Number(m[0]['data-sim-c']) > Number(m[0]['data-sim-from-c']), m);
       check('everyday drag leaves floor and list caps alone', JSON.stringify(r.caps) === JSON.stringify(first.caps), null);
-      return click('#priceView-activity');
+      return click('#priceView-activity-USD');
     })
-    .then(function () { return js('(function(){var s=document.getElementById("activitySelect");s.value="CMP-PBDD-2026";s.dispatchEvent(new Event("change",{bubbles:true}));return true;})()'); })
+    .then(function () { return js('(function(){var s=document.getElementById("activitySelect-USD");s.value="CMP-PBDD-2026";s.dispatchEvent(new Event("change",{bubbles:true}));return true;})()'); })
     .then(function () { return delay(200); }).then(function () { return read(); })
     .then(function (r) {
       check('back on the first activity, its own simulation and competitors are still there (in memory)',
@@ -408,7 +408,7 @@ function main() {
     .then(function (r) {
       check('a site change drops every simulation and competitor', r.cols.every(function (c) { return c['data-sim-c'] === null; }) && r.comps.length === 0, null);
       check('a site change returns to the everyday view', r.activityOptions.length === 0, r.activityOptions);
-      return click('#priceView-activity').then(read);
+      return click('#priceView-activity-CAD').then(read);
     })
     .then(function (r) {
       check('the CA site lists only its own activity', r.activityOptions.length === 2
@@ -443,8 +443,8 @@ function main() {
       return click('#mode-auto').catch(function () { return null; });
     })
     // ---- 7. layout at desktop and narrow width ----
-    .then(function () { return click('#priceView-activity').catch(function () { return null; }); })
-    .then(function () { return js('(function(){var s=document.getElementById("activitySelect");if(s){s.value="CMP-PBDD-2026";s.dispatchEvent(new Event("change",{bubbles:true}));}return true;})()'); })
+    .then(function () { return click('#priceView-activity-USD').catch(function () { return null; }); })
+    .then(function () { return js('(function(){var s=document.getElementById("activitySelect-USD");if(s){s.value="CMP-PBDD-2026";s.dispatchEvent(new Event("change",{bubbles:true}));}return true;})()'); })
     .then(function () { return delay(200); })
     .then(function () {
       /* #__measurements is the acceptance harness's own one-line JSON dump (buildPage), not part of the
@@ -452,7 +452,7 @@ function main() {
          have. It is hidden for the measurement and nothing else. */
       var LAYOUT_READ = '(function(){var mp=document.getElementById("__measurements");if(mp)mp.style.display="none";function box(e){var r=e.getBoundingClientRect();return {l:r.left,t:r.top,r:r.right,b:r.bottom};}'
         + 'function hit(a,b){return a.l<b.r&&b.l<a.r&&a.t<b.b&&b.t<a.b;}'
-        + 'var ctl=document.getElementById("demoControls"),wrap=document.querySelector(".chartwrap"),leg=document.getElementById("chartLegend");'
+        + 'var ctl=document.querySelector("[data-demo-ctl=\\"demoControls\\"]"),wrap=document.querySelector(".chartwrap"),leg=document.getElementById("chartLegend");'
         + 'var items=Array.prototype.map.call(leg?leg.querySelectorAll(".legend-item"):[],box);var legOverlap=0;'
         + 'for(var i=0;i<items.length;i++)for(var j=i+1;j<items.length;j++)if(hit(items[i],items[j]))legOverlap++;'
         + 'var kids=Array.prototype.map.call(ctl?ctl.children:[],box);var ctlOverlap=0;for(var a=0;a<kids.length;a++)for(var b2=a+1;b2<kids.length;b2++)if(hit(kids[a],kids[b2]))ctlOverlap++;'

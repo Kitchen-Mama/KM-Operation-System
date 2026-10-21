@@ -742,9 +742,10 @@
     sims: {},                       // sims[siteKey|ctx][nodeKey] = { from_c, to_c }
     undo: [],                       // { ctx, key, prev } — prev is the entry it replaced, or null
     selected: null,                 // node key of the product the editor is showing
-    competitors: {},                // competitors[siteKey|category|ctx] = [{ id, name, price_c, lo_c, hi_c }]
+    competitors: {},                // competitors[siteKey|category|currency|ctx] = [{ id, name, price_c, lo_c, hi_c, currency }]
     compSeq: 0,
     compFormOpen: false,
+    compFormCur: '',                // PSB-DEMO-R2 — the ONE panel (its currency) whose form is open
     compEditing: null,              // competitor id being edited, or null
     compError: null,
     simError: null,
@@ -763,13 +764,48 @@
   }
   function demoActivityOn() { return DEMO.priceView === 'activity' && DEMO.activityId !== ''; }
   function demoSimCtx() { return demoSiteKey() + '|' + demoPriceCtx(); }
-  function demoCompCtx(category) { return demoSiteKey() + '|' + (category || '') + '|' + demoPriceCtx(); }
+  /* PSB-DEMO-R2 — THE CURRENCY IS PART OF A COMPETITOR'S IDENTITY. R1 filed competitors under site +
+     category + price context, and one category on one site can draw a panel PER CURRENCY: a competitor
+     entered in USD was then read back by the EUR panel, drawn there as if it were a EUR price, and
+     widened the EUR axis. Nothing converts between currencies here, and nothing borrows: a panel reads
+     the key that names its own currency, and even then only entries recorded in that currency. */
+  function demoCompCtx(category, currency) {
+    return demoSiteKey() + '|' + (category || '') + '|' + (currency || '') + '|' + demoPriceCtx();
+  }
   function demoSimMap() { return DEMO.sims[demoSimCtx()] || {}; }
-  function demoSimCount() { return Object.keys(demoSimMap()).length; }
+  /** How many simulations the current context holds — for ONE panel's products when a currency is given. */
+  function demoSimCount(currency) {
+    var map = demoSimMap();
+    return Object.keys(map).filter(function (k) { return !currency || demoSimCurrency(k, map[k]) === currency; }).length;
+  }
+  function demoSimCurrency(key, entry) {
+    if (entry && entry.currency) return entry.currency;
+    var n = demoNodeByKey(key);
+    return n ? n.currency : '';
+  }
+  /* PSB-DEMO-R2 — THE ONE WAY A DRAG ENDS WITHOUT BEING RELEASED. Safe to call any number of times and
+     from anywhere: leaving the page, a change of the context the drag belongs to, and every rebuild of
+     the chart come here. It removes only what THIS drag added — its own keydown listener (by the
+     reference it registered), its own pointer capture, its readout and the offset on its handle — and it
+     commits nothing. It does not redraw: whoever is tearing the chart down is already doing that. */
+  function demoCancelDrag() {
+    var d = DEMO.drag;
+    if (!d) return false;
+    DEMO.drag = null;
+    if (d.onKey) { try { document.removeEventListener('keydown', d.onKey, true); } catch (e) {} }
+    var h = d.handle;
+    if (h) {
+      try { if (h.hasPointerCapture && h.hasPointerCapture(d.pointerId)) h.releasePointerCapture(d.pointerId); } catch (e) {}
+      try { h.removeAttribute('transform'); h.removeAttribute('data-dragging'); } catch (e) {}
+    }
+    if (d.readout && d.readout.parentNode) d.readout.parentNode.removeChild(d.readout);
+    return true;
+  }
   function demoClearAll() {
+    demoCancelDrag();
     DEMO.priceView = 'everyday'; DEMO.activityId = ''; DEMO.sims = {}; DEMO.undo = [];
-    DEMO.selected = null; DEMO.competitors = {}; DEMO.compFormOpen = false; DEMO.compEditing = null;
-    DEMO.compError = null; DEMO.simError = null; DEMO.drag = null;
+    DEMO.selected = null; DEMO.competitors = {}; DEMO.compFormOpen = false; DEMO.compFormCur = ''; DEMO.compEditing = null;
+    DEMO.compError = null; DEMO.simError = null;
   }
 
   /** The activities this site's rows carry. */
@@ -806,48 +842,60 @@
     if (base === null || base === undefined) return false;
     if (prev && prev.to_c === toC) return false;
     if (!prev && toC === base) return false;
-    DEMO.undo.push({ ctx: ctx, key: key, prev: prev ? { from_c: prev.from_c, to_c: prev.to_c } : null });
+    var cur = n.currency || '';
+    DEMO.undo.push({ ctx: ctx, key: key, currency: cur, prev: prev ? { from_c: prev.from_c, to_c: prev.to_c, currency: cur } : null });
     if (toC === base) delete map[key];
-    else map[key] = { from_c: base, to_c: toC };
+    else map[key] = { from_c: base, to_c: toC, currency: cur };
     return true;
   }
   function demoResetOne(key) {
     var ctx = demoSimCtx(), map = DEMO.sims[ctx] || {};
     if (!map[key]) return false;
-    DEMO.undo.push({ ctx: ctx, key: key, prev: { from_c: map[key].from_c, to_c: map[key].to_c } });
+    var cur = demoSimCurrency(key, map[key]);
+    DEMO.undo.push({ ctx: ctx, key: key, currency: cur, prev: { from_c: map[key].from_c, to_c: map[key].to_c, currency: cur } });
     delete map[key];
     return true;
   }
-  function demoResetAll() {
-    var ctx = demoSimCtx();
-    if (!DEMO.sims[ctx] || !Object.keys(DEMO.sims[ctx]).length) return false;
-    delete DEMO.sims[ctx];
-    DEMO.undo = DEMO.undo.filter(function (u) { return u.ctx !== ctx; });
+  /** PSB-DEMO-R2 — Reset all in ONE panel resets that panel's products, not the other currency's. */
+  function demoResetAll(currency) {
+    var ctx = demoSimCtx(), map = DEMO.sims[ctx];
+    if (!map) return false;
+    var gone = Object.keys(map).filter(function (k) { return !currency || demoSimCurrency(k, map[k]) === currency; });
+    if (!gone.length) return false;
+    gone.forEach(function (k) { delete map[k]; });
+    if (!Object.keys(map).length) delete DEMO.sims[ctx];
+    DEMO.undo = DEMO.undo.filter(function (u) { return !(u.ctx === ctx && (!currency || u.currency === currency)); });
     return true;
   }
-  /** Undo the last change made IN THIS CONTEXT. A change in another site or activity is not on screen,
-   *  so undoing it from here would alter something nobody is looking at. */
-  function demoUndo() {
+  /** Undo the last change made IN THIS CONTEXT — and, from a panel, to that panel's products. A change in
+   *  another site, activity or currency is not what this control is next to, so undoing it from here
+   *  would alter something nobody is looking at. */
+  function demoUndo(currency) {
     var ctx = demoSimCtx();
     for (var i = DEMO.undo.length - 1; i >= 0; i--) {
       if (DEMO.undo[i].ctx !== ctx) continue;
+      if (currency && DEMO.undo[i].currency !== currency) continue;
       var u = DEMO.undo.splice(i, 1)[0];
       var map = DEMO.sims[ctx] || (DEMO.sims[ctx] = {});
-      if (u.prev) map[u.key] = { from_c: u.prev.from_c, to_c: u.prev.to_c };
+      if (u.prev) map[u.key] = { from_c: u.prev.from_c, to_c: u.prev.to_c, currency: u.prev.currency || u.currency };
       else delete map[u.key];
       DEMO.selected = u.key;
       return true;
     }
     return false;
   }
-  function demoUndoAvailable() {
+  function demoUndoAvailable(currency) {
     var ctx = demoSimCtx();
-    return DEMO.undo.some(function (u) { return u.ctx === ctx; });
+    return DEMO.undo.some(function (u) { return u.ctx === ctx && (!currency || u.currency === currency); });
   }
   var DEMO_NODES = {};               // the nodes the last chart drew, by key — for the editor and the keys
   function demoNodeByKey(key) { return DEMO_NODES[key] || null; }
 
-  function demoCompetitors(category) { return DEMO.competitors[demoCompCtx(category)] || []; }
+  /** One panel's competitors: the key that names its currency, and only entries recorded in it. */
+  function demoCompetitors(category, currency) {
+    return (DEMO.competitors[demoCompCtx(category, currency)] || [])
+      .filter(function (c) { return c.currency === currency; });
+  }
 
   /** "34.99" -> 3499; anything that is not a positive amount with at most two decimals -> null. */
   function demoParseMoney(v) {
@@ -876,8 +924,16 @@
 
   /* ---- THE CONTROLS: price view, activity, simulation editor, competitors ------------------------ */
   function demoControls(panel, category) {
+    /* PSB-DEMO-R2 — ONE SET OF CONTROLS PER PANEL, AND EVERY ID NAMES ITS PANEL. R1 gave both panels the
+       same ids, so a label, a test or a person reaching for "#compAdd" got whichever came first, and the
+       open form and the editor showed in every panel at once. Each control now carries its role in
+       data-demo-ctl and an id suffixed with the panel's currency; the form, the editor, Undo and Reset
+       all act on this panel's currency and nothing else. */
+    var CUR = panel.currency || '';
+    function cid(node, role) { node.id = role + '-' + CUR; node.setAttribute('data-demo-ctl', role); return node; }
     var box = el('div', 'demo-ctl');
-    box.id = 'demoControls';
+    cid(box, 'demoControls');
+    box.setAttribute('data-currency', CUR);
     box.setAttribute('data-price-view', DEMO.priceView);
     box.setAttribute('data-activity', DEMO.activityId);
 
@@ -887,11 +943,12 @@
     g1.appendChild(el('span', 'ctl-label', 'Prices'));
     [['everyday', 'Everyday price'], ['activity', 'Activity price']].forEach(function (m) {
       var b = el('button', 'segbtn' + (DEMO.priceView === m[0] ? ' is-on' : ''), m[1]);
-      b.id = 'priceView-' + m[0];
+      cid(b, 'priceView-' + m[0]);
       b.setAttribute('type', 'button');
       b.setAttribute('aria-pressed', DEMO.priceView === m[0] ? 'true' : 'false');
       b.addEventListener('click', function () {
         if (DEMO.priceView === m[0]) return;
+        demoCancelDrag();   // PSB-DEMO-R2 — a drag belongs to the context it started in
         DEMO.priceView = m[0]; DEMO.selected = null; DEMO.simError = null;
         renderData();
       });
@@ -904,10 +961,10 @@
       var g2 = el('div', 'ctl-group demo-activity');
       g2.setAttribute('data-group', 'activity');
       var lab = el('label', 'ctl-label', 'Activity');
-      lab.setAttribute('for', 'activitySelect');
+      lab.setAttribute('for', 'activitySelect-' + CUR);
       g2.appendChild(lab);
       var sel = document.createElement('select');
-      sel.id = 'activitySelect';
+      cid(sel, 'activitySelect');
       sel.className = 'demo-select';
       var o0 = document.createElement('option');
       o0.value = '';
@@ -924,13 +981,14 @@
       sel.value = DEMO.activityId;
       sel.disabled = !cat.activities.length;
       sel.addEventListener('change', function () {
+        demoCancelDrag();   // PSB-DEMO-R2
         DEMO.activityId = sel.value; DEMO.selected = null; DEMO.simError = null;
         renderData();
       });
       g2.appendChild(sel);
       var a = demoActivity();
       var note = el('p', 'demo-note');
-      note.id = 'activityNote';
+      cid(note, 'activityNote');
       if (a) {
         note.appendChild(document.createTextNode('Showing the deal prices recorded for this activity ('
           + a.sku_count + ' SKU' + (a.sku_count === 1 ? '' : 's') + '). Recorded period and status are '
@@ -953,24 +1011,25 @@
     /* ---- 2. the simulation editor ---- */
     var g3 = el('div', 'ctl-group demo-sim');
     g3.setAttribute('data-group', 'simulation');
-    var count = demoSimCount();
+    var count = demoSimCount(CUR);
     g3.appendChild(el('span', 'ctl-label', 'Simulation'));
     var tag = el('span', 'demo-tag', count
       ? count + ' simulated · not saved · gone on reload'
       : 'Drag a product’s ' + (demoActivityOn() ? 'deal price' : 'price') + ' point, or select it and type a price');
-    tag.id = 'simCount';
+    cid(tag, 'simCount');
     tag.setAttribute('data-count', String(count));
     g3.appendChild(tag);
     var n = DEMO.selected ? demoNodeByKey(DEMO.selected) : null;
+    if (n && (n.currency || '') !== CUR) n = null;   // the editor belongs to the selected product's panel
     if (n) {
       var pt = demoPointFor(n);
       var ed = el('span', 'demo-editor');
-      ed.id = 'simEditor';
+      cid(ed, 'simEditor');
       ed.setAttribute('data-node-key', n.key);
       ed.appendChild(el('b', null, n.label));
       ed.appendChild(document.createTextNode('  Original ' + money(pt.base_c, n.currency) + '  →  Simulated '));
       var inp = document.createElement('input');
-      inp.id = 'simInput';
+      cid(inp, 'simInput');
       inp.className = 'demo-input';
       inp.setAttribute('inputmode', 'decimal');
       inp.setAttribute('aria-label', 'Simulated price for ' + n.label);
@@ -985,39 +1044,41 @@
       inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); applyInput(); } });
       ed.appendChild(inp);
       var ap = el('button', 'btn btn-sm', 'Apply');
-      ap.id = 'simApply'; ap.setAttribute('type', 'button');
+      cid(ap, 'simApply'); ap.setAttribute('type', 'button');
       ap.addEventListener('click', applyInput);
       ed.appendChild(ap);
       var r1 = el('button', 'btn btn-sm', 'Reset this product');
-      r1.id = 'simResetOne'; r1.setAttribute('type', 'button');
+      cid(r1, 'simResetOne'); r1.setAttribute('type', 'button');
       r1.disabled = !pt.sim;
       r1.addEventListener('click', function () { if (demoResetOne(n.key)) renderData(); });
       ed.appendChild(r1);
       g3.appendChild(ed);
     }
     var ub = el('button', 'btn btn-sm', 'Undo');
-    ub.id = 'simUndo'; ub.setAttribute('type', 'button');
-    ub.disabled = !demoUndoAvailable();
-    ub.addEventListener('click', function () { if (demoUndo()) renderData(); });
+    cid(ub, 'simUndo'); ub.setAttribute('type', 'button');
+    ub.disabled = !demoUndoAvailable(CUR);
+    ub.addEventListener('click', function () { if (demoUndo(CUR)) renderData(); });
     g3.appendChild(ub);
     var rb = el('button', 'btn btn-sm', 'Reset all');
-    rb.id = 'simResetAll'; rb.setAttribute('type', 'button');
+    cid(rb, 'simResetAll'); rb.setAttribute('type', 'button');
     rb.disabled = !count;
-    rb.addEventListener('click', function () { if (demoResetAll()) { DEMO.selected = null; renderData(); } });
+    rb.addEventListener('click', function () { if (demoResetAll(CUR)) { DEMO.selected = null; renderData(); } });
     g3.appendChild(rb);
-    if (DEMO.simError) { var se = el('p', 'demo-error', DEMO.simError); se.id = 'simError'; g3.appendChild(se); }
+    if (DEMO.simError && n) { var se = el('p', 'demo-error', DEMO.simError); cid(se, 'simError'); g3.appendChild(se); }
     box.appendChild(g3);
 
     /* ---- 3. competitors: entered here, kept here, never mixed into this site's products ---- */
     var g4 = el('div', 'ctl-group demo-comp');
     g4.setAttribute('data-group', 'competitors');
     g4.appendChild(el('span', 'ctl-label', 'Competitors'));
-    var comps = demoCompetitors(category);
+    var comps = demoCompetitors(category, CUR);
+    var formHere = DEMO.compFormOpen && DEMO.compFormCur === CUR;
     var list = el('span', 'demo-comp-list');
-    list.id = 'competitorList';
+    cid(list, 'competitorList');
     comps.forEach(function (c) {
       var chip = el('span', 'demo-chip');
       chip.setAttribute('data-competitor-id', c.id);
+      chip.setAttribute('data-currency', c.currency);
       chip.appendChild(document.createTextNode(c.name + '  ' + money(c.price_c, panel.currency)
         + ((c.lo_c !== null || c.hi_c !== null)
           ? '  (' + (c.lo_c === null ? '…' : plain(c.lo_c)) + '–' + (c.hi_c === null ? '…' : plain(c.hi_c)) + ')' : '')));
@@ -1025,7 +1086,7 @@
       eb.setAttribute('type', 'button');
       eb.setAttribute('data-action', 'edit');
       eb.addEventListener('click', function () {
-        DEMO.compFormOpen = true; DEMO.compEditing = c.id; DEMO.compError = null; renderData();
+        DEMO.compFormOpen = true; DEMO.compFormCur = CUR; DEMO.compEditing = c.id; DEMO.compError = null; renderData();
       });
       chip.appendChild(eb);
       var xb = el('button', 'chip-btn', 'Delete');
@@ -1033,32 +1094,32 @@
       xb.setAttribute('data-action', 'delete');
       xb.setAttribute('aria-label', 'Delete competitor ' + c.name);
       xb.addEventListener('click', function () {
-        var k = demoCompCtx(category);
-        DEMO.competitors[k] = (DEMO.competitors[k] || []).filter(function (x) { return x.id !== c.id; });
-        if (DEMO.compEditing === c.id) { DEMO.compEditing = null; DEMO.compFormOpen = false; }
+        var k = demoCompCtx(category, CUR);
+        DEMO.competitors[k] = (DEMO.competitors[k] || []).filter(function (x) { return !(x.id === c.id && x.currency === CUR); });
+        if (DEMO.compEditing === c.id) { DEMO.compEditing = null; DEMO.compFormOpen = false; DEMO.compFormCur = ''; }
         renderData();
       });
       chip.appendChild(xb);
       list.appendChild(chip);
     });
     g4.appendChild(list);
-    if (!DEMO.compFormOpen) {
+    if (!formHere) {
       var add = el('button', 'btn btn-sm', 'Add competitor');
-      add.id = 'compAdd'; add.setAttribute('type', 'button');
+      cid(add, 'compAdd'); add.setAttribute('type', 'button');
       add.addEventListener('click', function () {
-        DEMO.compFormOpen = true; DEMO.compEditing = null; DEMO.compError = null; renderData();
+        DEMO.compFormOpen = true; DEMO.compFormCur = CUR; DEMO.compEditing = null; DEMO.compError = null; renderData();
       });
       g4.appendChild(add);
     } else {
       var editing = null;
       comps.forEach(function (c) { if (c.id === DEMO.compEditing) editing = c; });
       var form = el('span', 'demo-comp-form');
-      form.id = 'compForm';
+      cid(form, 'compForm');
       function field(id, label, value, required) {
         var f = el('label', 'demo-field');
         f.appendChild(el('span', null, label + (required ? ' *' : '')));
         var i = document.createElement('input');
-        i.id = id; i.className = 'demo-input';
+        cid(i, id); i.className = 'demo-input';
         if (id !== 'compName') i.setAttribute('inputmode', 'decimal');
         i.value = value;
         f.appendChild(i);
@@ -1070,7 +1131,7 @@
       var fL = field('compLo', 'Band low', editing && editing.lo_c !== null ? String(fromCents(editing.lo_c)) : '', false);
       var fH = field('compHi', 'Band high', editing && editing.hi_c !== null ? String(fromCents(editing.hi_c)) : '', false);
       var save = el('button', 'btn btn-sm', editing ? 'Save changes' : 'Add');
-      save.id = 'compSave'; save.setAttribute('type', 'button');
+      cid(save, 'compSave'); save.setAttribute('type', 'button');
       save.addEventListener('click', function () {
         var name = String(fN.value || '').trim();
         var p = demoParseMoney(fP.value);
@@ -1084,25 +1145,25 @@
         else if (lo !== null && lo > p) err = 'Band low cannot be above the price.';
         else if (hi !== null && hi < p) err = 'Band high cannot be below the price.';
         if (err) { DEMO.compError = err; renderData(); return; }
-        var k = demoCompCtx(category);
+        var k = demoCompCtx(category, CUR);
         var arr = DEMO.competitors[k] || (DEMO.competitors[k] = []);
         if (editing) {
           editing.name = name; editing.price_c = p; editing.lo_c = lo; editing.hi_c = hi;
         } else {
           arr.push({ id: 'TEMP-COMP-' + (++DEMO.compSeq), name: name, price_c: p, lo_c: lo, hi_c: hi,
-            currency: panel.currency, temporary: true });
+            currency: CUR, temporary: true });
         }
-        DEMO.compFormOpen = false; DEMO.compEditing = null; DEMO.compError = null;
+        DEMO.compFormOpen = false; DEMO.compFormCur = ''; DEMO.compEditing = null; DEMO.compError = null;
         renderData();
       });
       form.appendChild(save);
       var cancel = el('button', 'btn btn-sm', 'Cancel');
-      cancel.id = 'compCancel'; cancel.setAttribute('type', 'button');
+      cid(cancel, 'compCancel'); cancel.setAttribute('type', 'button');
       cancel.addEventListener('click', function () {
-        DEMO.compFormOpen = false; DEMO.compEditing = null; DEMO.compError = null; renderData();
+        DEMO.compFormOpen = false; DEMO.compFormCur = ''; DEMO.compEditing = null; DEMO.compError = null; renderData();
       });
       form.appendChild(cancel);
-      if (DEMO.compError) { var ce = el('p', 'demo-error', DEMO.compError); ce.id = 'compError'; form.appendChild(ce); }
+      if (DEMO.compError) { var ce = el('p', 'demo-error', DEMO.compError); cid(ce, 'compError'); form.appendChild(ce); }
       g4.appendChild(form);
     }
     g4.appendChild(el('p', 'demo-note', 'Entered for this discussion only: not saved, not one of this '
@@ -1124,17 +1185,15 @@
       return p.matrixTransform(m.inverse()).y;
     }
     function priceAt(yy) { return geo.lo + ((geo.bottom - yy) / geo.h) * (geo.hi - geo.lo); }
+    /* PSB-DEMO-R2 — a release commits only THIS handle's drag, and only into the context it started in.
+       Anything that ended the drag first (leaving, a context change, a rebuild) has already cancelled
+       it, so a late pointerup finds no drag of its own and does nothing. */
     function finish(commit) {
       var d = DEMO.drag;
-      if (!d) return;
-      DEMO.drag = null;
-      if (d.onKey) document.removeEventListener("keydown", d.onKey, true);
-      try { if (handle.hasPointerCapture && handle.hasPointerCapture(d.pointerId)) handle.releasePointerCapture(d.pointerId); } catch (e) {}
-      handle.removeAttribute('transform');
-      handle.removeAttribute('data-dragging');
-      if (d.readout && d.readout.parentNode) d.readout.parentNode.removeChild(d.readout);
+      if (!d || d.handle !== handle) return;
+      demoCancelDrag();
       DEMO.selected = n.key;
-      if (commit && d.now_c !== d.start_c) demoSetSim(n.key, d.now_c);
+      if (commit && d.now_c !== d.start_c && d.ctx === demoSimCtx()) demoSetSim(n.key, d.now_c);
       renderData();
     }
     handle.addEventListener('pointerdown', function (ev) {
@@ -1145,15 +1204,20 @@
       if (y0 === null) return;
       ev.preventDefault();
       ev.stopPropagation();
+      demoCancelDrag();   // never two drags, never a stale listener
       hideTip();
       try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
       var ro = svgText({ x: geo.cx + geo.half + 10, y: geo.y(pt.shown_c) + 4, 'class': 'demo-readout',
         'text-anchor': 'start' }, '');
       s.appendChild(ro);
-      DEMO.drag = { key: n.key, pointerId: ev.pointerId, start_c: pt.shown_c, now_c: pt.shown_c,
-        base_c: pt.base_c, y0: y0, moved: false, readout: ro, onKey: null };
-      /* Escape abandons the drag: the point goes back and nothing is recorded. */
-      DEMO.drag.onKey = function (kev) {
+      var mine = { key: n.key, pointerId: ev.pointerId, start_c: pt.shown_c, now_c: pt.shown_c,
+        base_c: pt.base_c, y0: y0, moved: false, readout: ro, onKey: null, handle: handle, ctx: demoSimCtx() };
+      DEMO.drag = mine;
+      /* Escape abandons the drag: the point goes back and nothing is recorded. It is consumed only while
+         THIS drag is the one under way; the listener is removed with the drag, so the page gets every
+         Escape after it. */
+      mine.onKey = function (kev) {
+        if (DEMO.drag !== mine) return;
         if (kev && kev.key === 'Escape') { kev.preventDefault(); kev.stopPropagation(); finish(false); }
       };
       document.addEventListener('keydown', DEMO.drag.onKey, true);
@@ -1161,7 +1225,7 @@
     });
     handle.addEventListener('pointermove', function (ev) {
       var d = DEMO.drag;
-      if (!d || d.key !== n.key || ev.pointerId !== d.pointerId) return;
+      if (!d || d.handle !== handle || ev.pointerId !== d.pointerId) return;
       var yy = svgY(ev);
       if (yy === null) return;
       var step = ev.altKey ? DEMO_FINE_STEP_C : DEMO_STEP_C;
@@ -1183,13 +1247,13 @@
     });
     handle.addEventListener('pointerup', function (ev) {
       var d = DEMO.drag;
-      if (!d || ev.pointerId !== d.pointerId) return;
+      if (!d || d.handle !== handle || ev.pointerId !== d.pointerId) return;
       finish(true);
     });
-    handle.addEventListener('pointercancel', function () { if (DEMO.drag) finish(false); });
+    handle.addEventListener('pointercancel', function () { finish(false); });
     handle.addEventListener('lostpointercapture', function () {
       /* Released by the system rather than by a pointerup this handler saw: nothing is committed. */
-      if (DEMO.drag && DEMO.drag.key === n.key) finish(false);
+      finish(false);
     });
   }
 
@@ -1233,7 +1297,7 @@
     /* PSB-DEMO-R1 — the activity prices and the entered competitors are drawn, so the axis holds them.
        A simulation widens it only when it lies OUTSIDE the axis the recorded prices produce: one inside
        changes nothing, so dropping a dragged point can never re-scale the chart under it. */
-    var demoComps = demoCompetitors((ns[0] || {}).category);
+    var demoComps = demoCompetitors((ns[0] || {}).category, panel.currency);
     var cols = ns.length + demoComps.length;
     dom = demoDomain(ns, demoComps, dom);
     var lay = layoutFor(ns, dom, cols);
@@ -1658,7 +1722,7 @@
     demoComps.forEach(function (c, j) {
       var cxc = x(ns.length + j);
       var cg = svg('g', { 'class': 'col col-competitor', 'data-competitor-id': c.id,
-        'data-temporary': 'true', 'data-price-c': c.price_c,
+        'data-temporary': 'true', 'data-price-c': c.price_c, 'data-currency': c.currency,
         'data-lo-c': c.lo_c === null ? '' : c.lo_c, 'data-hi-c': c.hi_c === null ? '' : c.hi_c,
         tabindex: '0', role: 'group',
         'aria-label': 'Competitor ' + c.name + ' (entered this session, not saved) '
@@ -2747,7 +2811,7 @@
       var lay = LAYOUT.deriveResponsiveChartLayout({
         containerWidth: (STATE.box || {}).w,
         availableHeight: (STATE.box || {}).h,
-        productCount: p.plotted.length + demoCompetitors(cat).length,
+        productCount: p.plotted.length + demoCompetitors(cat, p.currency).length,
         domainLowC: scopeDomain(p.plotted).lo,
         domainHighC: scopeDomain(p.plotted).hi,
         mode: STATE.fullscreen ? 'fullscreen' : STATE.chartMode
@@ -4894,6 +4958,7 @@
      And around the two that do rebuild, an ANCHOR, not a saved offset — see withViewport.
      ================================================================================================ */
   function paintView() {
+    demoCancelDrag();   // PSB-DEMO-R2 — the chart a drag was on is about to be rebuilt
     var host = byId('view');
     clear(host);
     if (STATE.view === 'overview') viewOverview(host);
@@ -5983,6 +6048,7 @@
     MOUNTED = false;
     disconnectContainer();
     hideTip();
+    demoCancelDrag();   // PSB-DEMO-R2 — leaving mid-drag leaves no listener, capture or readout behind
     STATE.openPopover = null;
     STATE.catMenuOpen = false;
     STATE.moreFiltersOpen = false;

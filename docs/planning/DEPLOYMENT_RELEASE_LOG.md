@@ -6858,3 +6858,49 @@ differs from `0170d40c`).
   fault" was a guess and is withdrawn. No assertion was loosened and no retry was added.
 
 **NOT PUSHED. NOT SYNCED. Cloud manifest not applied. No FX save, no rate, no price.**
+
+## PSB-DEMO-R2 — two boundaries from the review: competitor currency, and a drag that is not released
+
+Frontend only: `assets/js/product-strategy/psb-board-ui.js`. No price, formula, API, GS or Schema moved;
+single-point drag, original-vs-simulated, Undo/Reset, reload-clears and zero writes are unchanged.
+
+**1. Competitor currency.** One site and one category can draw a panel per currency. R1 filed
+competitors under site + category + price context.
+- Measured in Chrome before the fix:
+  - a USD competitor appeared in the EUR panel, at the same number, read as EUR;
+  - that moved the EUR axis from 6500 down to 2500;
+  - one click opened the form in both panels;
+  - the two panels shared every demo control id.
+- Now:
+  - the key is site + category + **currency** + price context;
+  - a panel reads only entries recorded in its own currency, and nothing is converted;
+  - every demo control id carries its panel's currency (`compAdd-USD`), with the role in `data-demo-ctl`;
+  - the form, the simulation editor, Undo and Reset all act on their own panel.
+
+**2. Drag lifecycle.** A press-and-move followed by leaving the page, a context switch or a chart
+rebuild left the drag behind. Its document keydown listener (one more after each interruption) went on
+swallowing the next Escape.
+- Now one idempotent `demoCancelDrag()` releases the drag's own pointer capture and removes its own
+  listener, readout and offset.
+  - It commits nothing and does not redraw.
+  - It is called from `paintView`, `unmount`, `demoClearAll`, the price-view and activity handlers, and
+    `pointerdown`.
+- A release commits only its own handle's drag, into the context it started in.
+
+**Evidence** (`docs/evidence/psb-demo-r2/`):
+- `demo-r2.json`: the R2 runner in Chrome on the shipped source.
+- `mutant-PREFIX.json`: the same runner against the pre-round UI read from `c0f0f6fa`. It is the
+  counter-example and must fail.
+- `mutant-M1..M6.json`: six one-change mutants, each of which must be caught.
+- PSB-DEMO-R1's `demo.json` is re-taken with its runner moved to the panel-suffixed ids.
+
+**PRE-EXISTING, NOT FIXED HERE (named so it is not mistaken for this round):**
+- `boot()` registers two document keydown listeners (popover close, fullscreen exit) on every mount and
+  never removes them. Each leave/return adds two. They are guarded by state, so they do nothing visible.
+- The chart controls (`chartControls`, `mode-*`, `view-*`, `layers*`, `zoom-*`, `chartLegend`,
+  `meetingToggle`) repeat their ids in every panel. They act on global state by design, and many suites
+  address them by id.
+
+Both are outside the two boundaries this round was asked to fix.
+
+**NOT PUSHED. NOT SYNCED. NOT DEPLOYED.**

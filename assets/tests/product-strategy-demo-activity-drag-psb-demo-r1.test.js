@@ -110,8 +110,9 @@ ok(!/localStorage|sessionStorage|indexedDB|document\.cookie|history\.(push|repla
 ok(!/KM\.(DB|api)|fetch\(|XMLHttpRequest|sendBeacon|transport/.test(DEMO), 'B2  the demo makes no request of any kind');
 ok(!/CANON\.rows\[|\._regular_c\s*=|\._deal_c\s*=|\.promo_price\s*=|\.campaigns\s*=/.test(DEMO),
   'B3  the demo never assigns to a canonical row, a node price or a campaign line');
-ok(/demoSiteKey\(\) \+ '\|' \+ demoPriceCtx\(\)/.test(DEMO) && /demoSiteKey\(\) \+ '\|' \+ \(category \|\| ''\) \+ '\|' \+ demoPriceCtx\(\)/.test(DEMO),
-  'B4  simulations are keyed by site + price context, competitors by site + category + price context');
+// PSB-DEMO-R2 — the competitor key gained the panel currency (one category can draw a panel per currency).
+ok(/demoSiteKey\(\) \+ '\|' \+ demoPriceCtx\(\)/.test(DEMO) && /demoSiteKey\(\) \+ '\|' \+ \(category \|\| ''\) \+ '\|' \+ \(currency \|\| ''\) \+ '\|' \+ demoPriceCtx\(\)/.test(DEMO),
+  'B4  simulations are keyed by site + price context, competitors by site + category + currency + price context');
 ok(/demoClearAll\(\);\s+\/\/ PSB-DEMO-R1/.test(UISRC), 'B5  a site change (clearScenarioState) drops the demo state');
 var chart = UISRC.slice(UISRC.indexOf('function renderChart(panel, thrC, findings)'), UISRC.indexOf('function ariaFor('));
 ok(/demoAttachDrag\(s, mk, n, geo\)/.test(chart) && /demoAttachDrag\(s, ag, n, geo\)/.test(chart),

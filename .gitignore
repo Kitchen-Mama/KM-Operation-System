@@ -20,3 +20,7 @@ docs/evidence/**/.chrome-profile-*
 
 # PSB-DEMO-R1: the demo runner generates this page on every run and deletes it after.
 assets/tests/_psb-demo-page.html
+
+# PSB-DEMO-R2: the R2 runner page and its mutated UI copy, generated per run and deleted after.
+assets/tests/_psb-demo-r2-page.html
+assets/tests/_psb-r2-mutant-ui.js
