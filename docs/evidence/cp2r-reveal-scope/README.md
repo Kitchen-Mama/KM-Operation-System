@@ -391,3 +391,28 @@ The two load-bearing rows reproduce for the sixteenth time: **−112.8 / −123.
 **No outlier.** 60 reveal samples, median 125.95 ms, threshold 503.8 ms; the largest is 334.9 ms
 (`unscoped-1`, first expand). Absolute figures are lower than batch fifteen in both arms — the machine, not
 the round, and why batches are never pooled.
+
+---
+
+## DC1-R1, SECOND TAKE — the seventeenth batch, because the sixteenth's build did not ship
+
+The full regression after batch sixteen found that DC1-R1's Asia/Taipei day helper, which lives in the
+recommendation read block, used `Math.floor` — and that block is scanned (fm2b F2) to prove it authors no
+recommendation formula. The helper was rewritten as `new Date(ms + 8h).toISOString().slice(0, 10)`. That
+changed `inventory-replenishment.js` again, so batch sixteen describes a build that was never the
+candidate. It stays above as history and is NOT the batch the suite reads.
+
+Twelve runs on ONE build, 100 rows each, five reveal expands each, **no fatals, stderr empty**, shipped page
+restored by bytes and both pinned files verified by sha256 against the pre-run hashes.
+
+| row | unscoped | scoped | paired delta | improved in |
+|---|---:|---:|---:|---|
+| click → first paint | 61.9 ms | 61.9 ms | −1.7 ms | 5 of 6 |
+| click → full ready | 228.8 ms | 128.9 ms | **−106.5 ms** | **6 of 6** |
+| assembly in handler | 27.1 ms | 28.5 ms | +2.0 ms | 2 of 6 |
+| assembly after handler | 179.1 ms | 80.9 ms | **−109.3 ms** | **6 of 6** |
+| handler sync | 29.6 ms | 31.3 ms | +2.5 ms | 2 of 6 |
+
+The two load-bearing rows reproduce for the seventeenth time: **−109.3 / −106.5 ms, 6 of 6 and 6 of 6**.
+
+**No outlier.** 60 reveal samples, median 138.65 ms, threshold 554.6 ms; the largest is 281.8 ms.

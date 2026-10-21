@@ -1,7 +1,7 @@
 {
   "round": "S8-B3-R3-CP2S-R2",
   "what": "in-place velocity update: what survives a real workspace arrival in a real browser",
-  "takenAt": "2026-10-21T07:48:39.438Z",
+  "takenAt": "2026-10-21T08:43:54.073Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "skus": 60,
   "recoReadsServed": 2,
@@ -11,14 +11,14 @@
   },
   "sources": {
     "index.html": "b295efa32fd7ad8b",
-    "assets/js/pages/inventory-replenishment.js": "90411cb7e136c6e5",
+    "assets/js/pages/inventory-replenishment.js": "74b78f585f981642",
     "assets/css/pages/inventory-replenishment.css": "74872c1b61ce9d47",
     "assets/tests/_cp2s-r2-inplace-dom-runner.js": "ef0476cf204d8f3a"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 731,
+      "t": 3081,
       "success": true,
       "dataKeys": [
         "product_strategy_enabled",
@@ -26,11 +26,11 @@
         "capabilitiesVersion"
       ],
       "counts": {},
-      "respondedAt": 731
+      "respondedAt": 3081
     },
     {
       "action": "inventoryScope.registry.get",
-      "t": 968,
+      "t": 3266,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -43,11 +43,11 @@
         "marketplaces": 1,
         "countries": 1
       },
-      "respondedAt": 968
+      "respondedAt": 3266
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 1709,
+      "t": 3924,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -95,11 +95,11 @@
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
       },
-      "respondedAt": 1709
+      "respondedAt": 3924
     },
     {
       "action": "inventoryReplenishmentGap.get",
-      "t": 1748,
+      "t": 3952,
       "success": true,
       "dataKeys": [
         "rows"
@@ -107,11 +107,11 @@
       "counts": {
         "rows": 240
       },
-      "respondedAt": 1748
+      "respondedAt": 3952
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 1750,
+      "t": 3953,
       "success": true,
       "dataKeys": [
         "lines",
@@ -120,11 +120,11 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 1750
+      "respondedAt": 3953
     },
     {
       "action": "inventoryReplenishment.workspace.get",
-      "t": 2716,
+      "t": 4924,
       "success": true,
       "dataKeys": [
         "marketplaces",
@@ -172,11 +172,11 @@
         "carrier_lead_times": 3,
         "carrier_rate_cards": 3
       },
-      "respondedAt": 2716
+      "respondedAt": 4924
     },
     {
       "action": "recommendation.workspace.get",
-      "t": 3796,
+      "t": 6004,
       "success": true,
       "dataKeys": [
         "lines",
@@ -185,7 +185,7 @@
       "counts": {
         "lines": 120
       },
-      "respondedAt": 3796
+      "respondedAt": 6004
     }
   ],
   "requestMarks": [],
@@ -219,36 +219,36 @@
     }
   ],
   "result": {
-    "capId": "inplace-1792568915156",
+    "capId": "inplace-1792572227620",
     "steps": [
       {
         "step": "app-ready",
-        "t": 431.5,
-        "v": 0.1
+        "t": 689.9,
+        "v": 0
       },
       {
         "step": "filter-bar",
-        "t": 463.4,
-        "v": 30.2
+        "t": 741.5,
+        "v": 50.4
       },
       {
         "step": "table",
-        "t": 1329,
+        "t": 1449.5,
         "v": 60
       },
       {
         "step": "first-reco-cell",
-        "t": 2229.5,
+        "t": 2355.7,
         "v": "7.0"
       },
       {
         "step": "exec-card",
-        "t": 2262.5,
+        "t": 2393.4,
         "v": 0
       },
       {
         "step": "edit-state-captured",
-        "t": 3329.2,
+        "t": 3461,
         "v": {
           "activeMark": "INPUT",
           "activeTag": "INPUT",
@@ -269,12 +269,12 @@
       },
       {
         "step": "second-arrival",
-        "t": 3400,
+        "t": 3513.1,
         "v": "11.0"
       },
       {
         "step": "done",
-        "t": 3660.5,
+        "t": 3764.7,
         "v": {
           "firstReadResolved": true,
           "firstCell": "7.0",
@@ -353,31 +353,31 @@
     "obs": {
       "gates": [
         {
-          "t": 1289.7,
+          "t": 1416.5,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 1289.7,
+          "t": 1416.5,
           "gate": "execution",
           "call": "abandon",
           "gen": 1
         },
         {
-          "t": 2230.3,
+          "t": 2356.7,
           "gate": "recommendation",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2230.3,
+          "t": 2356.7,
           "gate": "execution",
           "call": "abandon",
           "gen": 2
         },
         {
-          "t": 2242.2,
+          "t": 2371.8,
           "gate": "recommendation",
           "call": "begin",
           "gen": 3,
@@ -389,7 +389,7 @@
           }
         },
         {
-          "t": 2242.2,
+          "t": 2371.8,
           "gate": "execution",
           "call": "begin",
           "gen": 3,
@@ -401,7 +401,7 @@
           }
         },
         {
-          "t": 2242.6,
+          "t": 2372.4,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -418,7 +418,7 @@
           }
         },
         {
-          "t": 2253,
+          "t": 2384.8,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -435,7 +435,7 @@
           }
         },
         {
-          "t": 2262.5,
+          "t": 2393.4,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -452,14 +452,14 @@
           }
         },
         {
-          "t": 2263.2,
+          "t": 2394,
           "gate": "recommendation",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 2381.7,
+          "t": 2459.6,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -476,7 +476,7 @@
           }
         },
         {
-          "t": 2393.3,
+          "t": 2467.1,
           "gate": "execution",
           "call": "report",
           "gen": 3,
@@ -493,14 +493,14 @@
           }
         },
         {
-          "t": 2393.5,
+          "t": 2467.3,
           "gate": "execution",
           "call": "PAINTED",
           "gen": 3,
           "frameId": 1
         },
         {
-          "t": 3342,
+          "t": 3472.2,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -517,7 +517,7 @@
           }
         },
         {
-          "t": 3370,
+          "t": 3493.2,
           "gate": "recommendation",
           "call": "report",
           "gen": 3,
@@ -536,7 +536,7 @@
       ],
       "ensureLoaded": [
         {
-          "t": 2242.4,
+          "t": 2372.1,
           "scope": {
             "company": "",
             "country": "US",
@@ -548,9 +548,9 @@
       ],
       "errors": [],
       "raf": {
-        "fired": 136,
-        "firstAt": 1187,
-        "lastAt": 3645.2
+        "fired": 153,
+        "firstAt": 1030.7,
+        "lastAt": 3755.8
       }
     },
     "firstCellInfo": {
