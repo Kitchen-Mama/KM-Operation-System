@@ -6963,3 +6963,29 @@ After the commit, delete the file and do one read-only `get`. Plan:
 `docs/planning/fx-auth-r2/FX_AUTH_R2_CHANNEL_AUDIT_AND_PHASE1.md`.
 
 **NOT PUSHED. NOT DEPLOYED. No save, no initialisation, no repricing, no allowlist change.**
+
+### FX-AUTH-R2-R1 — the Editor tool lists what is approved, and binds it with SHA-256 (tool and tests only)
+
+- **The dry run now lists the whole payload.** Every entry is shown with its pair, rate, source,
+  `as_of`, effective period, status and version. Every ADDED / EDITED / REMOVED change is shown with its
+  full old and new entry.
+- **The confirm string is SHA-256 of what is sent.** It is `Utilities.computeDigest(SHA_256, UTF-8)` of
+  the payload object `{ doc_version, rates }`. That object is frozen once and is the same object passed
+  to `handleFxRateBookSave_`. The confirm string has the form `SAVE doc_version N -> N+1 sha256 <64 hex>`.
+- **The hand-written 32-bit hash is gone.** It collided:
+  - A: USD>CAD `1.37` / `manual-d1xinu-1vbz5wk`
+  - B: USD>CAD `1.38` / `manual-n3giwf-54gd4r`
+  - Both are 2026-10-22, open-ended, active, version 1.
+  - Both gave `411273e5`, reproduced here.
+  - They are kept as an offline counter-example only, **not proposed rates**.
+- **Results now:**
+  - A and B have different confirm strings;
+  - A's confirm is refused for B;
+  - the version is bound into the digest.
+- **Unchanged:**
+  - it dry-runs by default, with zero writes and no lock;
+  - a commit goes only through 75_'s full save path.
+- **Tests:** `fx-auth-r2-editor-save-path.test.js` passes 16 assertions with 16 mutants caught (M11–M16
+  new). No runtime file changed since `8da211de`, and no full sweep was run.
+
+**NOT PUSHED. NOT DEPLOYED. No save, no initialisation, no repricing.**

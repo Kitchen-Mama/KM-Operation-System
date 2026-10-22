@@ -1,7 +1,7 @@
 // FX-AUTH-R2 — PHASE 1, OWNER-ONLY, EDITOR-ONLY: SAVE THE FX RATE BOOK THROUGH 75_'S OWN SAVE PATH.
 // TEMPORARY. NOT PART OF ANY RELEASE. Kept as .gs.txt outside assets/specs/active/apps-script/ so no sync,
 // bundle or deployment can carry it. Pasted into a NEW editor file only with an explicit Owner approval
-// for one save, run from the editor, and DELETED afterwards (docs/planning/fx-auth-r2/ §4).
+// for one save, run from the editor, and DELETED afterwards (docs/planning/fx-auth-r2/ §4, §6).
 //
 // WHY IT EXISTS. The Web App cannot identify its caller: the page's fetch carries no credentials and the
 // deployment is ANYONE_ANONYMOUS, so fxRateBook.save refuses everybody (FX_AUTHORITY_UNVERIFIABLE). The
@@ -14,11 +14,19 @@
 // WHAT IT NEVER DOES: write a Script Property itself, build the book by hand, read getEffectiveUser, touch
 // pricing_list or any spreadsheet, call pricing.fxReconcile, create a trigger, or make a request.
 //
+// FX-AUTH-R2-R1 — THE CONFIRM STRING IS A SHA-256 OF EXACTLY WHAT IS SENT. The first version digested
+// the rates with a 32-bit hand-written hash, which collides: two different USD>CAD payloads (1.37 and
+// 1.38, different sources) produced the same confirm string. The digest is now
+// Utilities.computeDigest(SHA_256) over the UTF-8 JSON of the payload object { doc_version, rates } —
+// the SAME object, frozen once, that is handed to handleFxRateBookSave_. And the dry run prints that
+// payload in full, entry by entry, so what is approved is what is sent.
+//
 // HOW IT IS USED
 //   1. Edit ONLY the three constants below. TEMP_FX_RATES uses the exact entry shape of 75_.
 //   2. Run TEMP_FxRateBookEditorSave with TEMP_FX_CONFIRM = ''. That is a DRY RUN: it reports who you are
-//      to 75_, the stored doc_version, every validation error, every change it WOULD record, and the exact
-//      confirm string for THIS payload. Nothing is written.
+//      to 75_, the stored doc_version, every validation error, EVERY entry of the payload, every change
+//      with its full old and new entry, and the confirm string for THIS payload. Nothing is written and
+//      no lock is taken.
 //   3. Only with an Owner approval for this save: paste that confirm string into TEMP_FX_CONFIRM and run
 //      once more. Any change to the rates or the version makes the old confirm string wrong, and the run
 //      falls back to a dry run.
@@ -32,6 +40,8 @@ var TEMP_FX_CONFIRM = '';               // '' = dry run. To commit: the exact st
 
 function TEMP_FxRateBookEditorSave() {
   var out = { check: 'TEMP_FxRateBookEditorSave', handler: FX_BOOK_BUILD_VERSION_, mode: 'DRY_RUN' };
+  // THE PAYLOAD, FROZEN ONCE. Everything below — the listing, the digest and the save — reads this copy.
+  var payload = JSON.parse(JSON.stringify({ doc_version: TEMP_FX_EXPECTED_DOC_VERSION, rates: TEMP_FX_RATES }));
   var io = fxBookDefaultIo_();
   var auth = fxBookAuthority_(io);
   out.authority = { ok: auth.ok === true, code: auth.ok ? null : auth.code, user: auth.user || null };
@@ -39,17 +49,17 @@ function TEMP_FxRateBookEditorSave() {
 
   var current = fxBookReadDoc_(io);
   out.stored_doc_version = current.doc_version;
-  out.expected_doc_version = TEMP_FX_EXPECTED_DOC_VERSION;
-  out.rate_count = TEMP_FX_RATES.length;
-  var v = fxBookValidate_(TEMP_FX_RATES);
+  out.expected_doc_version = payload.doc_version;
+  out.rate_count = payload.rates.length;
+  out.payload_entries = payload.rates.map(TEMP_FxEntryView_);
+  var v = fxBookValidate_(payload.rates);
   out.valid = v.ok;
   out.errors = v.errors;
-  out.would_record = fxBookChangeRecords_(current.rates, TEMP_FX_RATES, auth.user, '(dry run)')
-    .map(function (r) { return r.change + ' ' + r.pair; });
-  out.confirm_for_this_payload = 'SAVE doc_version ' + TEMP_FX_EXPECTED_DOC_VERSION + ' -> '
-    + (TEMP_FX_EXPECTED_DOC_VERSION + 1) + ' digest ' + TEMP_FxDigest_(TEMP_FX_RATES);
+  out.changes = TEMP_FxChanges_(current.rates, payload.rates, auth.user);
+  out.confirm_for_this_payload = 'SAVE doc_version ' + payload.doc_version + ' -> '
+    + (payload.doc_version + 1) + ' sha256 ' + TEMP_FxSha256Hex_(JSON.stringify(payload));
 
-  if (typeof TEMP_FX_EXPECTED_DOC_VERSION !== 'number' || current.doc_version !== TEMP_FX_EXPECTED_DOC_VERSION) {
+  if (typeof payload.doc_version !== 'number' || current.doc_version !== payload.doc_version) {
     out.stopped = 'VERSION_NOT_THE_STORED_ONE';
   } else if (!v.ok) {
     out.stopped = 'INVALID';
@@ -60,7 +70,7 @@ function TEMP_FxRateBookEditorSave() {
 
   // THE ONE WRITE, and it is 75_'s: authority again, lock, CAS inside the lock, validation, log, commit, readback.
   out.mode = 'COMMIT';
-  var res = handleFxRateBookSave_({ payload: { doc_version: TEMP_FX_EXPECTED_DOC_VERSION, rates: TEMP_FX_RATES } });
+  var res = handleFxRateBookSave_({ payload: payload });
   out.result = { success: res.success === true,
     doc_version: res.data ? res.data.doc_version : null,
     errors: (res.errors || []).map(function (e) { return e.code; }),
@@ -69,9 +79,29 @@ function TEMP_FxRateBookEditorSave() {
   return out;
 }
 
-// A short, deterministic digest of the payload, so a confirm string is good for ONE reviewed payload only.
-function TEMP_FxDigest_(rates) {
-  var s = JSON.stringify(rates), h = 2166136261;
-  for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
-  return ('00000000' + h.toString(16)).slice(-8);
+// Every field an approver needs to see, in a fixed order, as the payload carries it.
+function TEMP_FxEntryView_(e) {
+  e = e || {};
+  return { pair: String(e.base_currency) + '>' + String(e.quote_currency), rate: e.rate, source: e.source,
+    as_of: e.as_of, effective_from: e.effective_from, effective_to: e.effective_to, status: e.status,
+    version: e.version };
+}
+
+// The change records 75_ itself would log, each with the FULL old and new entry beside it.
+function TEMP_FxChanges_(oldRates, newRates, who) {
+  function key(e) { return pricingFxPairKey_(e.base_currency, e.quote_currency) + '@' + pricingStr_(e.effective_from); }
+  var oldBy = {}, newBy = {};
+  (oldRates || []).forEach(function (e) { oldBy[key(e)] = e; });
+  (newRates || []).forEach(function (e) { newBy[key(e)] = e; });
+  return fxBookChangeRecords_(oldRates, newRates, who, '(dry run)').map(function (r) {
+    return { change: r.change, pair: r.pair, fields: r.fields || null,
+      old: oldBy[r.pair] ? TEMP_FxEntryView_(oldBy[r.pair]) : null,
+      new: newBy[r.pair] ? TEMP_FxEntryView_(newBy[r.pair]) : null };
+  });
+}
+
+// SHA-256 by Apps Script's own Utilities, over UTF-8. No hand-written hash.
+function TEMP_FxSha256Hex_(text) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
+  return bytes.map(function (b) { var h = (b & 0xff).toString(16); return h.length === 1 ? '0' + h : h; }).join('');
 }

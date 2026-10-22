@@ -71,13 +71,23 @@ build. If they do not, stop.
 **File:** `docs/planning/fx-auth-r2/TEMP_FxRateBookEditorSave.gs.txt`. It is temporary and lives
 outside the Apps Script folder, like the diagnostic.
 
-**What it is.** One editor function, plus a private digest helper. It:
+**What it is.** One editor function, plus three private helpers (entry view, change listing, SHA-256). It:
 1. asks `fxBookAuthority_` who is running it, which is the same allowlist and `getActiveUser` check the
    Web uses;
 2. reads the stored book;
 3. validates the payload with `fxBookValidate_`;
-4. lists the changes `fxBookChangeRecords_` would log;
-5. prints a confirm string bound to the stored `doc_version` **and** a digest of the exact payload.
+4. lists **every entry of the payload** — pair, rate, source, `as_of`, `effective_from`/`effective_to`,
+   status, version — and every change `fxBookChangeRecords_` would log (ADDED / EDITED / REMOVED), each
+   with its **full old and new entry**;
+5. prints a confirm string: `SAVE doc_version N -> N+1 sha256 <64 hex>`. That is
+   `Utilities.computeDigest(SHA_256, UTF-8)` over the JSON of the payload object `{ doc_version, rates }`.
+   The object is frozen once and is **the same object** handed to `handleFxRateBookSave_`, so what is
+   approved is byte-for-byte what is sent.
+
+**FX-AUTH-R2-R1 — why SHA-256.** The first version used a hand-written 32-bit hash, and it collided.
+USD>CAD `1.37` / `manual-d1xinu-1vbz5wk` and `1.38` / `manual-n3giwf-54gd4r` (both 2026-10-22, open-ended,
+active, version 1) both gave `411273e5`, so one payload could have been approved and the other
+committed. Those two are kept as an offline counter-example only. **They are not proposed rates.**
 
 With the confirm string empty, which is how it ships, that is all it does: a **dry run, zero writes**.
 Only when the confirm string matches THIS payload at THIS version does it make its one call,
@@ -88,7 +98,10 @@ commit, and readback. **It never calls `setProperty`, never builds the book by h
 
 **Offline verification** (`fx-auth-r2-editor-save-path.test.js`). The real 73_ helpers and the real 75_
 run in a sandbox over an in-memory Script Properties store, with the editor's `Session` stubbed:
-- a dry run makes 0 writes and takes no lock;
+- a dry run makes 0 writes and takes no lock, lists the payload in full, and lists an edit and a removal
+  with their full old (and new) entries;
+- the confirm string equals SHA-256 of `{doc_version, rates}`. For the counter-example, A and B now differ,
+  A's confirm is refused for B, and the version is part of what is bound;
 - a confirmed run makes exactly 1 write (`KM_FX_RATE_BOOK`), takes the lock once and releases it, moves
   doc_version 0 → 1, and every log entry has `by` = the Owner and a server ISO time;
 - a payload changed after its dry run is refused (the confirm does not match), with 0 writes;
@@ -99,10 +112,12 @@ run in a sandbox over an in-memory Script Properties store, with the editor's `S
   list are each refused, with 0 writes and no lock;
 - `getEffectiveUser`, spreadsheet, trigger, request and pricing services are trapped and never touched.
 
-Totals: 13 assertions and 10 wrapper mutants, all caught. The mutants cover: always commit, a
-version-only confirm, no version stop, writing the book directly, falling back to the deployer,
-committing without the lock, no authority stop, no validation stop, a commit-ready default, and calling
-the pricing reconcile. No runtime file changed since `8da211de` (§A5).
+Totals: 16 assertions and 16 wrapper mutants, all caught. The mutants cover: always commit, a digest
+without the version, no version stop, writing the book directly, falling back to the deployer,
+committing without the lock, no authority stop, no validation stop, a commit-ready default, calling the
+pricing reconcile, the 32-bit hash coming back, SHA-1, a broken signed-byte hex, the listing losing
+`version`, the change listing losing the old entry, and saving the live constant instead of the digested
+payload. No runtime file changed since `8da211de` (§A5).
 
 ## 5. Limits
 
@@ -136,11 +151,13 @@ the pricing reconcile. No runtime file changed since `8da211de` (§A5).
    - the authority,
    - the stored version,
    - any validation errors,
-   - the changes it would record,
+   - `payload_entries`: every pair, rate, source, `as_of`, `effective_from`/`effective_to`, status and
+     version, exactly as they will be sent,
+   - `changes`: every ADDED / EDITED / REMOVED, each with its full old and new entry,
    - the `handler`,
-   - the confirm string.
-3. **Approval B** — the exact rates payload: every pair, rate, source, `as_of`, `effective_from`/`to`
-   and status, as the dry run printed them.
+   - the confirm string (`… sha256 <64 hex>`).
+3. **Approval B** — the exact payload in `payload_entries` and the `changes` it produces, as that dry run
+   printed them. The confirm string is the SHA-256 of exactly that payload at that version.
 4. **Approval C** — ONE commit: paste that confirm string, run once, and send the log line. Any edit to
    the payload needs a new dry run and a new approval.
 5. **Delete the wrapper file.** Then one read-only `fxRateBook.get`: expect `doc_version 1` and the
