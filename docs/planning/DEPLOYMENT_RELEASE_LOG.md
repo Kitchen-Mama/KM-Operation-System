@@ -6989,3 +6989,29 @@ After the commit, delete the file and do one read-only `get`. Plan:
   new). No runtime file changed since `8da211de`, and no full sweep was run.
 
 **NOT PUSHED. NOT DEPLOYED. No save, no initialisation, no repricing.**
+
+### FX-INIT-R1 — the Editor diagnostic received; a draft initialisation payload (docs and tests only)
+
+- **Evidence received from the Owner.** The Editor diagnostic reports:
+  - `active_email=vic.zhou@shopkitchenmama.com`
+  - `active_error=null`
+  - `editors_property_present=true`
+  - `caller_on_editor_list=true`
+
+  Phase 1 is viable (FX-AUTH-R2 §3, row 1). The active deployment version and its time are still not
+  received.
+- **The tool is frozen at `b6ef4008`.** It is unchanged, and it ships with empty rates and an empty
+  confirm string.
+- **The draft is in `docs/planning/fx-init-r1/`.**
+  - Pairs: USD>AUD, CAD, EUR, GBP and JPY.
+  - Source: ECB eurofxref-daily for 2026-10-21, the latest published day. The raw file is saved in
+    `docs/evidence/fx-init-r1/`.
+  - Every row is derived as `(EUR>X)/(EUR>USD)`, half-up to 6 places.
+  - Each row: `effective_from` 2026-10-22, open-ended, active, version 1.
+  - Fed H.10 was used as a cross-check only.
+  - The predicted dry-run confirm string is `... sha256 7308aad6…`.
+- **Tests:** `fx-init-r1-draft.test.js` passes 26 assertions with 13 mutants caught. FX-AUTH-R2,
+  FX-AUTH-R1, the FX contract and the FX roundtrip pass. No full sweep was run, and no runtime file
+  changed.
+
+**NOT PUSHED. NOT DEPLOYED. No save, no Property initialised, no repricing.**

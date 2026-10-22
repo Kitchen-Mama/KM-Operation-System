@@ -1,0 +1,25 @@
+// FX-INIT-R1 DRAFT — the two constants to type into the TEMP_FxRateBookEditorSave editor file, FOR THE
+// READ-ONLY DRY RUN ONLY. NOT a release file; outside assets/specs/active/apps-script/.
+// Replace ONLY these two lines' values in the editor copy of the tool. Leave TEMP_FX_CONFIRM = '' exactly.
+// Source and derivation: docs/planning/fx-init-r1/FX_INIT_R1_DRAFT.md. Same entries, same key order, as
+// docs/planning/fx-init-r1/fx-rate-book-init-draft-r1.json.
+
+var TEMP_FX_EXPECTED_DOC_VERSION = 0;
+var TEMP_FX_RATES = [
+  { base_currency: 'USD', quote_currency: 'AUD', rate: 1.421666,
+    source: 'ECB eurofxref-daily 2026-10-21 (derived: 1.5971 / 1.1234)', as_of: '2026-10-21',
+    effective_from: '2026-10-22', effective_to: '', status: 'active', version: 1 },
+  { base_currency: 'USD', quote_currency: 'CAD', rate: 1.404575,
+    source: 'ECB eurofxref-daily 2026-10-21 (derived: 1.5779 / 1.1234)', as_of: '2026-10-21',
+    effective_from: '2026-10-22', effective_to: '', status: 'active', version: 1 },
+  { base_currency: 'USD', quote_currency: 'EUR', rate: 0.890155,
+    source: 'ECB eurofxref-daily 2026-10-21 (derived: 1 / 1.1234)', as_of: '2026-10-21',
+    effective_from: '2026-10-22', effective_to: '', status: 'active', version: 1 },
+  { base_currency: 'USD', quote_currency: 'GBP', rate: 0.746172,
+    source: 'ECB eurofxref-daily 2026-10-21 (derived: 0.83825 / 1.1234)', as_of: '2026-10-21',
+    effective_from: '2026-10-22', effective_to: '', status: 'active', version: 1 },
+  { base_currency: 'USD', quote_currency: 'JPY', rate: 157.877871,
+    source: 'ECB eurofxref-daily 2026-10-21 (derived: 177.36 / 1.1234)', as_of: '2026-10-21',
+    effective_from: '2026-10-22', effective_to: '', status: 'active', version: 1 }
+];
+// TEMP_FX_CONFIRM stays '' — this draft is for the dry run. A commit needs approvals B and C first.

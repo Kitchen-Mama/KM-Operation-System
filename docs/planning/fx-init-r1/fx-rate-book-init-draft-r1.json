@@ -1,0 +1,54 @@
+{
+  "_what": "FX-INIT-R1 DRAFT initialisation payload for KM_FX_RATE_BOOK. NOT WRITTEN ANYWHERE. Awaiting Owner approval.",
+  "_not_production": "A proposal under docs/planning/. No Script Property was written, no save was called, nothing was repriced. The Editor tool ships with TEMP_FX_RATES empty and TEMP_FX_CONFIRM empty; this file does not change that.",
+
+  "_source": {
+    "name": "European Central Bank - euro foreign exchange reference rates (eurofxref-daily)",
+    "url": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+    "human_page": "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html",
+    "published_for": "2026-10-21",
+    "retrieved_at": "2026-10-22T00:19:38Z",
+    "last_modified_header": "Wed, 21 Oct 2026 13:56:20 GMT",
+    "raw_evidence": "docs/evidence/fx-init-r1/ecb-eurofxref-daily-2026-10-21.xml",
+    "direction_as_published": "1 EUR = <rate> <currency>. EUR is the base of every published figure.",
+    "legs_as_published": {
+      "EUR>USD": "1.1234",
+      "EUR>AUD": "1.5971",
+      "EUR>CAD": "1.5779",
+      "EUR>GBP": "0.83825",
+      "EUR>JPY": "177.36"
+    }
+  },
+
+  "_derivation": {
+    "direction_stored": "1 USD = <rate> <quote_currency>  (base_currency USD, as 75_ resolves it; 75_ never inverts a stored rate)",
+    "formula": "USD>X = (EUR>X) / (EUR>USD);  USD>EUR = 1 / (EUR>USD)",
+    "rounding": "exact decimal division of the published strings, rounded half-up to 6 decimal places",
+    "every_row_is_derived": "The ECB publishes no USD-based figure, so all five rows are cross rates through EUR, computed once from the two legs recorded here."
+  },
+
+  "_cross_check_only": {
+    "name": "US Federal Reserve H.10, release of 2026-10-19 (latest data day 2026-10-16)",
+    "url": "https://www.federalreserve.gov/releases/h10/current/default.htm",
+    "use": "Plausibility check of the method only, on the latest day BOTH publish (2026-10-16). It is NOT a source of any rate below: its newest day is older than the ECB's."
+  },
+
+  "doc_version": 0,
+  "rates": [
+    { "base_currency": "USD", "quote_currency": "AUD", "rate": 1.421666,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 1.5971 / 1.1234)", "as_of": "2026-10-21",
+      "effective_from": "2026-10-22", "effective_to": "", "status": "active", "version": 1 },
+    { "base_currency": "USD", "quote_currency": "CAD", "rate": 1.404575,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 1.5779 / 1.1234)", "as_of": "2026-10-21",
+      "effective_from": "2026-10-22", "effective_to": "", "status": "active", "version": 1 },
+    { "base_currency": "USD", "quote_currency": "EUR", "rate": 0.890155,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 1 / 1.1234)", "as_of": "2026-10-21",
+      "effective_from": "2026-10-22", "effective_to": "", "status": "active", "version": 1 },
+    { "base_currency": "USD", "quote_currency": "GBP", "rate": 0.746172,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 0.83825 / 1.1234)", "as_of": "2026-10-21",
+      "effective_from": "2026-10-22", "effective_to": "", "status": "active", "version": 1 },
+    { "base_currency": "USD", "quote_currency": "JPY", "rate": 157.877871,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 177.36 / 1.1234)", "as_of": "2026-10-21",
+      "effective_from": "2026-10-22", "effective_to": "", "status": "active", "version": 1 }
+  ]
+}
