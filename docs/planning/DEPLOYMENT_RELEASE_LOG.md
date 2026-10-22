@@ -7117,3 +7117,56 @@ Plan: `docs/planning/PSB_DEMO_R3_READABILITY_DISCOUNT_PARTICIPANTS_PHASING.md`.
 - The one not clean is `map-canvas-acceptance`. The first desktop cold run loses the globe 3 of 3, and it also fails with the r63 files staged, so it is not this round. The old capture is kept and not re-pinned: `docs/evidence/psb-demo-r3/MAP-DESKTOP-COLD-RUN-FINDING.md`. It is open for its own round.
 
 **NOT PUSHED. NOT DEPLOYED.**
+
+### PSB-DEMO-R3 close-out (R55 F-2, F-1) + FC1-FINAL phase-1 close-out (frontend; joins the unreleased r64)
+
+**F-2.** The right-edge clip was already repaired by R3: edge labels flip, and the competitor header
+anchors to the edge.
+- **No F-2 code changed in this round.**
+- **Re-verified** in real Chrome on production's 2026-10-22 responses, with the new discount line.
+  The checks covered:
+  - 1920, 1440 and 820;
+  - with and without a competitor;
+  - the two-currency, long-name copy.
+- **Result:** 99 of 99 F-2 checks pass, both before and after. `44.79` prints in full.
+
+**F-1.** Root cause: the period arrived as `Date.toString()` text and was printed raw. The menu was
+sorted on that text, so BFCM came before Fall Prime.
+- **Fix:** `S.campaignDayOf` reads the day the text names, literally: no Date and no UTC.
+- **Display:** the menu and the tooltip print `2026-11-19 to 2026-11-30`, in start-day order.
+- **Unchanged:** the value, the adapter's `isoDay` contract, and period validity.
+- **Browser result:** 117 / 117. Before, it scored 110 / 117, and all 7 failures were F-1.
+
+**FC1-FINAL.**
+- **Builder Preview:** "Actual Sales (Mon YYYY)" between Category / Series and Current Forecast. The
+  period is Target Year − 1, same month. Every cell is "—", not connected. Nothing in the preview
+  rows, formulas, guards or Save payload moved.
+- **Special Events:** Actual Qty and Achievement % after FC Qty, read-only in Edit mode as well.
+  - The Columns menu offers them, and old preferences do not hide them.
+  - The phase-2 contract (inclusive days, Daily vs Monthly, zero vs missing, provisional, uncapped
+    achievement) is tested in isolation only.
+  - Overlap ownership and returns stay open for the Owner.
+- **Evidence:**
+  - Node: 107 assertions, 10 / 10 mutants caught.
+  - Real Chrome at 1440 and 820: 54 / 54. Before, the same runner scored 19 / 54.
+
+**R55 record corrected (§8):** 18 items, 17 PASS / 1 FAIL. IR showed the same 100 rows on every visit,
+17 of them unavailable from the first read. Production P3 stays FAIL until a new release is accepted.
+
+**Re-taken captures:**
+- `cp2t-fc-prevmonth`: 9 / 9.
+- `psb-demo-r1`: 48 / 48.
+- `psb-demo-r2`: 52 / 52, with PREFIX and M1–M6 caught.
+
+**Release:**
+- **Changed since `origin/main` `8da211de`:**
+  - R3's four PSB files, plus F-1 in `psb-selectors.js` and `psb-board-ui.js`;
+  - `assets/js/pages/fc-summary.js`, `assets/html/pages/fc-summary.html` and
+    `assets/css/pages/fc-overview.css`;
+  - `index.html` and `app.js`, token r64.
+- **Token:** r64 was prepared by R3 and never released, so it is shared and no new token is cut.
+- **Apps Script:** no sync, no bundle, no Property.
+
+Plan: `docs/planning/PSB_R3_CLOSEOUT_AND_FC1_FINAL.md`.
+
+**NOT PUSHED. NOT DEPLOYED.**

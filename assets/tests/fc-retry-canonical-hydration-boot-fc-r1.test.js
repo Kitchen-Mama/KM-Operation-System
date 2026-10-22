@@ -856,8 +856,11 @@ if (BASE_JS !== '__git_unavailable__') {
       // Every other byte of the stylesheet is still compared, and the rule this assertion exists for
       // is unchanged: a round may not disturb styling it has not declared.
       t = t.replace(/Special Event: \d+ scroll columns/, 'Special Event: <n> scroll columns');
+      // FC1-FINAL — Event columns 10 and 11 are Actual Qty and Achievement %, styling that round declares.
+      // Column 10's rule is already cut by the line below; column 11 is cut the same way, on both sides.
       ['#fc-regular-scroll-header > .header-cell:nth-child(20)',
-       '#fc-event-scroll-header > .header-cell:nth-child(10)'].forEach(function (sel) {
+       '#fc-event-scroll-header > .header-cell:nth-child(10)',
+       '#fc-event-scroll-header > .header-cell:nth-child(11)'].forEach(function (sel) {
         var i = t.indexOf(sel);
         while (i !== -1) {
           // The rule begins after the previous block closes, so any comment introducing it goes too.

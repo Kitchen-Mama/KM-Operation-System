@@ -100,3 +100,61 @@ loaded (`FC_SOURCE_NOT_READY`) or arrived truncated (`FC_SOURCE_CAPPED`), and me
 sandboxes: display rule, state ordering, no-source scan, builder cap, Preview and Save refusals, the
 before/after preview comparison, and four mutants (guard removed, source switched on, blank coerced to 0,
 zero forecast divided) each of which must be caught.
+
+## 7. FC1-FINAL — two more phase-1 columns on the same contract (2026-10-22)
+
+Both are **read-only reference columns**. Each cell shows `—` with the not-connected state and tooltip
+until phase 2 connects a source. Each cell is computed at render time from the row in hand and is
+stored on no row, so it cannot reach a write. No request, formula, rounding, base guard or Save payload
+changed.
+
+**7.1 Builder Preview — "Actual Sales (Mon YYYY)".**
+- **Where:** the shared Preview of the Regular Forecast Builder (New FC Update → Regular), between
+  Category / Series and Current Forecast.
+- **Which methods:** Apply Growth Rate, Previous Month and Manual.
+- **Period:** **Target Year − 1, the same Target Month**. Target Oct 2027 → Actual Sales (Oct 2026). It
+  is never the Base period and never the clock.
+- **Join:** the §3 key, using the row's own company, country, marketplace and SKU. Another site,
+  another SKU and the Target year's own month never answer for it.
+- **Display:** the §2 rule. An explicit final 0 shows 0. A missing or blank value shows `—`, never 0.
+  An unclosed month is NOT_FINAL.
+- **Unconnected source:** while the source is unconnected the lookup is not called at all.
+- **The two phase-2 methods** still refuse Preview and Save with `FC_HISTORY_METHOD_NOT_AVAILABLE`.
+- Implemented as `_fcPreviewRefPeriod_`, `_fcPreviewLastYearHeader_` and `_fcPreviewLastYearCell_`.
+
+**7.2 Special Events — Actual Qty and Achievement %, columns 10 and 11, right of FC Qty.**
+- **Visibility:** shown by default. The Columns menu keys are `actual-qty` and `achievement-pct`. A
+  preference saved before they existed does not hide them, and it keeps its other choices.
+- **Edit Event FC:** both stay read-only text. FC Qty is still the only input on a row.
+
+**Phase-2 contract, written now and connected to nothing** (`_fcEventActualCell_`,
+`_fcEventAchievementCell_`, proven in isolation only):
+
+| rule | contract |
+|---|---|
+| Actual Qty | units for the event's company / country / marketplace / SKU, start day to end day **inclusive** |
+| identity | the event row itself (`event_fc_id` / `campaign_id` and its own period); never matched by name. No campaign identity → `FC_EVENT_IDENTITY_MISSING` |
+| days | the site's activity-calendar days as recorded, `YYYY-MM-DD`; nothing passes through UTC |
+| part months | **Daily** sales only |
+| Monthly sales | only for a **whole** calendar month inside the period, marked complete; never pro-rated by day count |
+| Avg Sales event-day exclusion | does **not** apply: these are the event's days |
+| zero | an explicit, complete 0 for every day is 0 |
+| not a number | unconnected, a missing day (`FC_EVENT_ACTUAL_INCOMPLETE`), a duplicate day (`…_DUPLICATE_DAY`), not started (`FC_EVENT_NOT_STARTED`) — named, never 0 |
+| running event | the completed days so far, `FC_EVENT_ACTUAL_PROVISIONAL`, printed "(provisional)" |
+| Achievement % | Actual / FC × 100, one decimal, **uncapped**; Actual 0 on FC > 0 → 0.0%; Actual missing, FC missing or FC = 0 → named state, never Infinity |
+| **open — Owner, phase 2** | which event owns a day that two events of one SKU share (an overlap is answered `FC_EVENT_OVERLAP_UNRESOLVED`, not counted twice); whether returns are netted |
+
+The daily / monthly event source is **not named yet** (`FC_EVENT_HISTORY_SOURCE_` has `daily: null`,
+`monthly: null`, `connected: false`).
+
+**Evidence:**
+- `assets/tests/fc-preview-last-year-actual-and-event-achievement-fc1-final.test.js` covers:
+  - counter-examples at `2af8d156`;
+  - the real renderer for the three methods;
+  - isolation and the zero rule, on a connected source built inside the test;
+  - unchanged functions and payloads;
+  - the Event table, the Columns menu and old preferences;
+  - the contract;
+  - ten mutants.
+- `assets/tests/_fc1-final-runner.js` and `docs/evidence/fc1-final/` are a real Chrome run at 1440 and
+  820, on a fixture served only by that runner. Save is never clicked.

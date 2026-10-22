@@ -1,0 +1,1799 @@
+{
+  "round": "FC1-FINAL",
+  "mode": "before",
+  "base_ref": "2af8d156",
+  "takenAt": "2026-10-22T06:20:04.506Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "data": "FIXTURE (FixtureCo / US / Amazon), served by this runner only; no history source is connected",
+  "sources": {
+    "index.html": "17cb60cffe8780dd",
+    "assets/js/pages/fc-summary.js": "9df1fb30252d0c58",
+    "assets/html/pages/fc-summary.html": "30f661f3eac1a98a",
+    "assets/css/pages/fc-overview.css": "005066e466fa357a",
+    "assets/tests/_fc1-final-runner.js": "f9874064fcd26b1a"
+  },
+  "steps": [
+    {
+      "name": "1440 growth preview",
+      "data": {
+        "shown": true,
+        "table": true,
+        "save": true,
+        "help": "",
+        "heads": [
+          "SKU",
+          "Category / Series",
+          "Current Forecast (Oct 2027)",
+          "New Forecast",
+          "Change"
+        ],
+        "headTitle": null,
+        "rows": [
+          {
+            "cells": 5,
+            "text": null,
+            "state": null,
+            "period": null,
+            "title": null,
+            "idx": -1,
+            "inputs": 0
+          }
+        ],
+        "html": 305
+      }
+    },
+    {
+      "name": "1440 modal fit",
+      "data": {
+        "modalW": 960,
+        "viewW": 1440,
+        "modalInside": true,
+        "tableW": 910,
+        "boxW": 910,
+        "boxScrollW": 910,
+        "boxOverflowX": "auto",
+        "headInBox": null,
+        "headWraps": null,
+        "saveReachable": true,
+        "cancelReachable": true,
+        "clipped": []
+      }
+    },
+    {
+      "name": "1440 prevMonth preview",
+      "data": {
+        "shown": true,
+        "table": true,
+        "save": true,
+        "help": "",
+        "heads": [
+          "SKU",
+          "Category / Series",
+          "Current Forecast (Oct 2027)",
+          "New Forecast",
+          "Change"
+        ],
+        "headTitle": null,
+        "rows": [
+          {
+            "cells": 5,
+            "text": null,
+            "state": null,
+            "period": null,
+            "title": null,
+            "idx": -1,
+            "inputs": 0
+          }
+        ],
+        "html": 306
+      }
+    },
+    {
+      "name": "1440 prevMonth Jan 2028",
+      "data": {
+        "shown": true,
+        "table": true,
+        "save": true,
+        "help": "",
+        "heads": [
+          "SKU",
+          "Category / Series",
+          "Current Forecast (Jan 2028)",
+          "New Forecast",
+          "Change"
+        ],
+        "headTitle": null,
+        "rows": [
+          {
+            "cells": 5,
+            "text": null,
+            "state": null,
+            "period": null,
+            "title": null,
+            "idx": -1,
+            "inputs": 0
+          }
+        ],
+        "html": 304
+      }
+    },
+    {
+      "name": "1440 manual preview",
+      "data": {
+        "shown": true,
+        "table": true,
+        "save": true,
+        "help": "",
+        "heads": [
+          "SKU",
+          "Category / Series",
+          "Current Forecast (Oct 2027)",
+          "New Forecast",
+          "Change"
+        ],
+        "headTitle": null,
+        "rows": [
+          {
+            "cells": 5,
+            "text": null,
+            "state": null,
+            "period": null,
+            "title": null,
+            "idx": -1,
+            "inputs": 1
+          }
+        ],
+        "html": 496
+      }
+    },
+    {
+      "name": "1440 lastYearActual",
+      "data": {
+        "shown": false,
+        "table": false,
+        "save": false,
+        "help": "This method needs historical sales, which are connected in phase 2 (FC_HISTORY_METHOD_NOT_AVAILABLE). Nothing was previewed and nothing will be saved."
+      }
+    },
+    {
+      "name": "1440 event table",
+      "data": {
+        "labels": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "Event Period",
+          "FC Qty"
+        ],
+        "shownHeads": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "Event Period",
+          "FC Qty"
+        ],
+        "rows": 3,
+        "cellsRow0": 9,
+        "newCells": [],
+        "align": [
+          {
+            "label": "Year",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Company",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Marketplace",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Country",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Category",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Series",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event Period",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "FC Qty",
+            "dx": 0,
+            "dw": 0
+          }
+        ],
+        "inputsPerRow": [
+          0,
+          0,
+          0
+        ],
+        "headTitles": [
+          "",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "1440 event table scrolled to the end",
+      "data": {
+        "sc": {
+          "scrolled": "scroll-col",
+          "left": 44,
+          "sw": 1060,
+          "cw": 1016
+        },
+        "align": [
+          {
+            "label": "Year",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Company",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Marketplace",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Country",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Category",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Series",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event Period",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "FC Qty",
+            "dx": 0,
+            "dw": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "1440 columns menu",
+      "data": [
+        {
+          "key": "year",
+          "on": true
+        },
+        {
+          "key": "company",
+          "on": true
+        },
+        {
+          "key": "marketplace",
+          "on": true
+        },
+        {
+          "key": "country",
+          "on": true
+        },
+        {
+          "key": "category",
+          "on": true
+        },
+        {
+          "key": "series",
+          "on": true
+        },
+        {
+          "key": "event",
+          "on": true
+        },
+        {
+          "key": "event-period",
+          "on": true
+        },
+        {
+          "key": "fc-qty",
+          "on": true
+        }
+      ]
+    },
+    {
+      "name": "1440 edit mode",
+      "data": {
+        "inputsPerRow": [
+          1,
+          1,
+          1
+        ],
+        "newCells": []
+      }
+    },
+    {
+      "name": "820 growth preview",
+      "data": {
+        "shown": true,
+        "table": true,
+        "save": true,
+        "help": "",
+        "heads": [
+          "SKU",
+          "Category / Series",
+          "Current Forecast (Oct 2027)",
+          "New Forecast",
+          "Change"
+        ],
+        "headTitle": null,
+        "rows": [
+          {
+            "cells": 5,
+            "text": null,
+            "state": null,
+            "period": null,
+            "title": null,
+            "idx": -1,
+            "inputs": 0
+          }
+        ],
+        "html": 305
+      }
+    },
+    {
+      "name": "820 modal fit",
+      "data": {
+        "modalW": 787,
+        "viewW": 820,
+        "modalInside": true,
+        "tableW": 737,
+        "boxW": 737,
+        "boxScrollW": 737,
+        "boxOverflowX": "auto",
+        "headInBox": null,
+        "headWraps": null,
+        "saveReachable": true,
+        "cancelReachable": true,
+        "clipped": []
+      }
+    },
+    {
+      "name": "820 prevMonth preview",
+      "data": {
+        "shown": true,
+        "table": true,
+        "save": true,
+        "help": "",
+        "heads": [
+          "SKU",
+          "Category / Series",
+          "Current Forecast (Oct 2027)",
+          "New Forecast",
+          "Change"
+        ],
+        "headTitle": null,
+        "rows": [
+          {
+            "cells": 5,
+            "text": null,
+            "state": null,
+            "period": null,
+            "title": null,
+            "idx": -1,
+            "inputs": 0
+          }
+        ],
+        "html": 306
+      }
+    },
+    {
+      "name": "820 prevMonth Jan 2028",
+      "data": {
+        "shown": true,
+        "table": true,
+        "save": true,
+        "help": "",
+        "heads": [
+          "SKU",
+          "Category / Series",
+          "Current Forecast (Jan 2028)",
+          "New Forecast",
+          "Change"
+        ],
+        "headTitle": null,
+        "rows": [
+          {
+            "cells": 5,
+            "text": null,
+            "state": null,
+            "period": null,
+            "title": null,
+            "idx": -1,
+            "inputs": 0
+          }
+        ],
+        "html": 304
+      }
+    },
+    {
+      "name": "820 manual preview",
+      "data": {
+        "shown": true,
+        "table": true,
+        "save": true,
+        "help": "",
+        "heads": [
+          "SKU",
+          "Category / Series",
+          "Current Forecast (Oct 2027)",
+          "New Forecast",
+          "Change"
+        ],
+        "headTitle": null,
+        "rows": [
+          {
+            "cells": 5,
+            "text": null,
+            "state": null,
+            "period": null,
+            "title": null,
+            "idx": -1,
+            "inputs": 1
+          }
+        ],
+        "html": 496
+      }
+    },
+    {
+      "name": "820 lastYearActual",
+      "data": {
+        "shown": false,
+        "table": false,
+        "save": false,
+        "help": "This method needs historical sales, which are connected in phase 2 (FC_HISTORY_METHOD_NOT_AVAILABLE). Nothing was previewed and nothing will be saved."
+      }
+    },
+    {
+      "name": "820 event table",
+      "data": {
+        "labels": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "Event Period",
+          "FC Qty"
+        ],
+        "shownHeads": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "Event Period",
+          "FC Qty"
+        ],
+        "rows": 3,
+        "cellsRow0": 9,
+        "newCells": [],
+        "align": [
+          {
+            "label": "Year",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Company",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Marketplace",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Country",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Category",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Series",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event Period",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "FC Qty",
+            "dx": 0,
+            "dw": 0
+          }
+        ],
+        "inputsPerRow": [
+          0,
+          0,
+          0
+        ],
+        "headTitles": [
+          "",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "820 event table scrolled to the end",
+      "data": {
+        "sc": {
+          "scrolled": "scroll-col",
+          "left": 392,
+          "sw": 1060,
+          "cw": 668
+        },
+        "align": [
+          {
+            "label": "Year",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Company",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Marketplace",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Country",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Category",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Series",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event Period",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "FC Qty",
+            "dx": 0,
+            "dw": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "820 columns menu",
+      "data": [
+        {
+          "key": "year",
+          "on": true
+        },
+        {
+          "key": "company",
+          "on": true
+        },
+        {
+          "key": "marketplace",
+          "on": true
+        },
+        {
+          "key": "country",
+          "on": true
+        },
+        {
+          "key": "category",
+          "on": true
+        },
+        {
+          "key": "series",
+          "on": true
+        },
+        {
+          "key": "event",
+          "on": true
+        },
+        {
+          "key": "event-period",
+          "on": true
+        },
+        {
+          "key": "fc-qty",
+          "on": true
+        }
+      ]
+    },
+    {
+      "name": "820 edit mode",
+      "data": {
+        "inputsPerRow": [
+          1,
+          1,
+          1
+        ],
+        "newCells": []
+      }
+    },
+    {
+      "name": "old preference",
+      "data": {
+        "shownHeads": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "FC Qty"
+        ],
+        "pref": "{\"v\":1,\"hidden\":{\"fc-event\":[\"event-period\"],\"fc-regular\":[\"sep\"]}}"
+      }
+    },
+    {
+      "name": "wire",
+      "data": [
+        "getClientCapabilities",
+        "fcSummary.workspace.get",
+        "fcSummary.workspace.get",
+        "getTable",
+        "getTable",
+        "getClientCapabilities",
+        "fcSummary.workspace.get",
+        "fcSummary.workspace.get",
+        "getTable",
+        "getTable",
+        "getClientCapabilities",
+        "fcSummary.workspace.get",
+        "fcSummary.workspace.get"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "P 1440: the builder opened by the operator's route (+ New FC Update -> Regular -> Next)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "P 1440 Apply Growth Rate: the column is \"Actual Sales (Oct 2026)\", between Category / Series and Current Forecast",
+      "ok": false,
+      "got": [
+        "SKU",
+        "Category / Series",
+        "Current Forecast (Oct 2027)",
+        "New Forecast",
+        "Change"
+      ]
+    },
+    {
+      "name": "P 1440 Apply Growth Rate: every cell is a dash, never 0",
+      "ok": false,
+      "got": [
+        {
+          "cells": 5,
+          "text": null,
+          "state": null,
+          "period": null,
+          "title": null,
+          "idx": -1,
+          "inputs": 0
+        }
+      ]
+    },
+    {
+      "name": "P 1440 Apply Growth Rate: each cell names its state (not connected) and period (2026-10)",
+      "ok": false,
+      "got": {
+        "cells": 5,
+        "text": null,
+        "state": null,
+        "period": null,
+        "title": null,
+        "idx": -1,
+        "inputs": 0
+      }
+    },
+    {
+      "name": "P 1440 Apply Growth Rate: the heading's tooltip says it is reference only and not connected",
+      "ok": false,
+      "got": null
+    },
+    {
+      "name": "P 1440 Apply Growth Rate: the empty column blocks nothing — Save is enabled",
+      "ok": true,
+      "got": true
+    },
+    {
+      "name": "P 1440: the modal stays inside the window, Save and Cancel reachable",
+      "ok": true,
+      "got": {
+        "modalW": 960,
+        "viewW": 1440,
+        "modalInside": true,
+        "tableW": 910,
+        "boxW": 910,
+        "boxScrollW": 910,
+        "boxOverflowX": "auto",
+        "headInBox": null,
+        "headWraps": null,
+        "saveReachable": true,
+        "cancelReachable": true,
+        "clipped": []
+      }
+    },
+    {
+      "name": "P 1440: the table fits its box or scrolls inside it; no nowrap cell is cut",
+      "ok": true,
+      "got": {
+        "modalW": 960,
+        "viewW": 1440,
+        "modalInside": true,
+        "tableW": 910,
+        "boxW": 910,
+        "boxScrollW": 910,
+        "boxOverflowX": "auto",
+        "headInBox": null,
+        "headWraps": null,
+        "saveReachable": true,
+        "cancelReachable": true,
+        "clipped": []
+      }
+    },
+    {
+      "name": "P 1440: switching the method withdraws the old Preview",
+      "ok": true,
+      "got": {
+        "shown": false,
+        "table": false,
+        "save": false,
+        "help": ""
+      }
+    },
+    {
+      "name": "P 1440 Previous Month: the same column, \"Actual Sales (Oct 2026)\", a dash in every row",
+      "ok": false,
+      "got": [
+        "SKU",
+        "Category / Series",
+        "Current Forecast (Oct 2027)",
+        "New Forecast",
+        "Change"
+      ]
+    },
+    {
+      "name": "P 1440: changing the Target withdraws the old Preview",
+      "ok": true,
+      "got": {
+        "shown": false,
+        "table": false,
+        "save": false,
+        "help": ""
+      }
+    },
+    {
+      "name": "P 1440: Target Jan 2028 reads \"Actual Sales (Jan 2027)\" and nothing of Oct 2026 is left",
+      "ok": false,
+      "got": [
+        "SKU",
+        "Category / Series",
+        "Current Forecast (Jan 2028)",
+        "New Forecast",
+        "Change"
+      ]
+    },
+    {
+      "name": "P 1440 Manual: the same column, a dash, and the New Forecast inputs still there",
+      "ok": false,
+      "got": [
+        {
+          "cells": 5,
+          "text": null,
+          "state": null,
+          "period": null,
+          "title": null,
+          "idx": -1,
+          "inputs": 1
+        }
+      ]
+    },
+    {
+      "name": "P 1440 Last Year Same Month Actual: Preview refused by name, no table, Save disabled",
+      "ok": true,
+      "got": {
+        "shown": false,
+        "table": false,
+        "save": false,
+        "help": "This method needs historical sales, which are connected in phase 2 (FC_HISTORY_METHOD_NOT_AVAILABLE). Nothing was previewed and nothing will be saved."
+      }
+    },
+    {
+      "name": "E 1440: FC Qty, then Actual Qty, then Achievement %",
+      "ok": false,
+      "got": [
+        "Year",
+        "Company",
+        "Marketplace",
+        "Country",
+        "Category",
+        "Series",
+        "Event",
+        "Event Period",
+        "FC Qty"
+      ]
+    },
+    {
+      "name": "E 1440: every row renders the two new cells, each a dash with the not-connected reason",
+      "ok": false,
+      "got": []
+    },
+    {
+      "name": "E 1440: the headers explain both columns",
+      "ok": false,
+      "got": [
+        "",
+        ""
+      ]
+    },
+    {
+      "name": "E 1440: header and body columns are aligned",
+      "ok": false,
+      "got": [
+        {
+          "label": "Year",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Company",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Marketplace",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Country",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Category",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Series",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Event",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Event Period",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "FC Qty",
+          "dx": 0,
+          "dw": 0
+        }
+      ]
+    },
+    {
+      "name": "E 1440: scrolled to the far right, header and body still aligned",
+      "ok": false,
+      "got": {
+        "sc": {
+          "scrolled": "scroll-col",
+          "left": 44,
+          "sw": 1060,
+          "cw": 1016
+        },
+        "align": [
+          {
+            "label": "Year",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Company",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Marketplace",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Country",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Category",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Series",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event Period",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "FC Qty",
+            "dx": 0,
+            "dw": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "E 1440: the Columns menu offers Actual Qty and Achievement %, both on",
+      "ok": false,
+      "got": [
+        {
+          "key": "year",
+          "on": true
+        },
+        {
+          "key": "company",
+          "on": true
+        },
+        {
+          "key": "marketplace",
+          "on": true
+        },
+        {
+          "key": "country",
+          "on": true
+        },
+        {
+          "key": "category",
+          "on": true
+        },
+        {
+          "key": "series",
+          "on": true
+        },
+        {
+          "key": "event",
+          "on": true
+        },
+        {
+          "key": "event-period",
+          "on": true
+        },
+        {
+          "key": "fc-qty",
+          "on": true
+        }
+      ]
+    },
+    {
+      "name": "E 1440: hiding Actual Qty hides its header and its cells, and nothing else",
+      "ok": false,
+      "got": [
+        "Year",
+        "Company",
+        "Marketplace",
+        "Country",
+        "Category",
+        "Series",
+        "Event",
+        "Event Period",
+        "FC Qty"
+      ]
+    },
+    {
+      "name": "E 1440: and re-showing it brings both back, aligned",
+      "ok": false,
+      "got": [
+        "Year",
+        "Company",
+        "Marketplace",
+        "Country",
+        "Category",
+        "Series",
+        "Event",
+        "Event Period",
+        "FC Qty"
+      ]
+    },
+    {
+      "name": "E 1440 Edit Event FC: exactly one input per row (FC Qty); the two new cells read-only, a dash",
+      "ok": false,
+      "got": {
+        "labels": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "Event Period",
+          "FC Qty"
+        ],
+        "shownHeads": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "Event Period",
+          "FC Qty"
+        ],
+        "rows": 3,
+        "cellsRow0": 9,
+        "newCells": [],
+        "align": [
+          {
+            "label": "Year",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Company",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Marketplace",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Country",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Category",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Series",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event Period",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "FC Qty",
+            "dx": 0,
+            "dw": 0
+          }
+        ],
+        "inputsPerRow": [
+          1,
+          1,
+          1
+        ],
+        "headTitles": [
+          "",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "E 1440 Edit Event FC: header and body still aligned",
+      "ok": false,
+      "got": [
+        {
+          "label": "Year",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Company",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Marketplace",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Country",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Category",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Series",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Event",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Event Period",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "FC Qty",
+          "dx": 0,
+          "dw": 0
+        }
+      ]
+    },
+    {
+      "name": "E 1440: Cancel leaves edit mode",
+      "ok": true,
+      "got": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "P 820: the builder opened by the operator's route (+ New FC Update -> Regular -> Next)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "P 820 Apply Growth Rate: the column is \"Actual Sales (Oct 2026)\", between Category / Series and Current Forecast",
+      "ok": false,
+      "got": [
+        "SKU",
+        "Category / Series",
+        "Current Forecast (Oct 2027)",
+        "New Forecast",
+        "Change"
+      ]
+    },
+    {
+      "name": "P 820 Apply Growth Rate: every cell is a dash, never 0",
+      "ok": false,
+      "got": [
+        {
+          "cells": 5,
+          "text": null,
+          "state": null,
+          "period": null,
+          "title": null,
+          "idx": -1,
+          "inputs": 0
+        }
+      ]
+    },
+    {
+      "name": "P 820 Apply Growth Rate: each cell names its state (not connected) and period (2026-10)",
+      "ok": false,
+      "got": {
+        "cells": 5,
+        "text": null,
+        "state": null,
+        "period": null,
+        "title": null,
+        "idx": -1,
+        "inputs": 0
+      }
+    },
+    {
+      "name": "P 820 Apply Growth Rate: the heading's tooltip says it is reference only and not connected",
+      "ok": false,
+      "got": null
+    },
+    {
+      "name": "P 820 Apply Growth Rate: the empty column blocks nothing — Save is enabled",
+      "ok": true,
+      "got": true
+    },
+    {
+      "name": "P 820: the modal stays inside the window, Save and Cancel reachable",
+      "ok": true,
+      "got": {
+        "modalW": 787,
+        "viewW": 820,
+        "modalInside": true,
+        "tableW": 737,
+        "boxW": 737,
+        "boxScrollW": 737,
+        "boxOverflowX": "auto",
+        "headInBox": null,
+        "headWraps": null,
+        "saveReachable": true,
+        "cancelReachable": true,
+        "clipped": []
+      }
+    },
+    {
+      "name": "P 820: the table fits its box or scrolls inside it; no nowrap cell is cut",
+      "ok": true,
+      "got": {
+        "modalW": 787,
+        "viewW": 820,
+        "modalInside": true,
+        "tableW": 737,
+        "boxW": 737,
+        "boxScrollW": 737,
+        "boxOverflowX": "auto",
+        "headInBox": null,
+        "headWraps": null,
+        "saveReachable": true,
+        "cancelReachable": true,
+        "clipped": []
+      }
+    },
+    {
+      "name": "P 820: switching the method withdraws the old Preview",
+      "ok": true,
+      "got": {
+        "shown": false,
+        "table": false,
+        "save": false,
+        "help": ""
+      }
+    },
+    {
+      "name": "P 820 Previous Month: the same column, \"Actual Sales (Oct 2026)\", a dash in every row",
+      "ok": false,
+      "got": [
+        "SKU",
+        "Category / Series",
+        "Current Forecast (Oct 2027)",
+        "New Forecast",
+        "Change"
+      ]
+    },
+    {
+      "name": "P 820: changing the Target withdraws the old Preview",
+      "ok": true,
+      "got": {
+        "shown": false,
+        "table": false,
+        "save": false,
+        "help": ""
+      }
+    },
+    {
+      "name": "P 820: Target Jan 2028 reads \"Actual Sales (Jan 2027)\" and nothing of Oct 2026 is left",
+      "ok": false,
+      "got": [
+        "SKU",
+        "Category / Series",
+        "Current Forecast (Jan 2028)",
+        "New Forecast",
+        "Change"
+      ]
+    },
+    {
+      "name": "P 820 Manual: the same column, a dash, and the New Forecast inputs still there",
+      "ok": false,
+      "got": [
+        {
+          "cells": 5,
+          "text": null,
+          "state": null,
+          "period": null,
+          "title": null,
+          "idx": -1,
+          "inputs": 1
+        }
+      ]
+    },
+    {
+      "name": "P 820 Last Year Same Month Actual: Preview refused by name, no table, Save disabled",
+      "ok": true,
+      "got": {
+        "shown": false,
+        "table": false,
+        "save": false,
+        "help": "This method needs historical sales, which are connected in phase 2 (FC_HISTORY_METHOD_NOT_AVAILABLE). Nothing was previewed and nothing will be saved."
+      }
+    },
+    {
+      "name": "E 820: FC Qty, then Actual Qty, then Achievement %",
+      "ok": false,
+      "got": [
+        "Year",
+        "Company",
+        "Marketplace",
+        "Country",
+        "Category",
+        "Series",
+        "Event",
+        "Event Period",
+        "FC Qty"
+      ]
+    },
+    {
+      "name": "E 820: every row renders the two new cells, each a dash with the not-connected reason",
+      "ok": false,
+      "got": []
+    },
+    {
+      "name": "E 820: the headers explain both columns",
+      "ok": false,
+      "got": [
+        "",
+        ""
+      ]
+    },
+    {
+      "name": "E 820: header and body columns are aligned",
+      "ok": false,
+      "got": [
+        {
+          "label": "Year",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Company",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Marketplace",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Country",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Category",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Series",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Event",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Event Period",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "FC Qty",
+          "dx": 0,
+          "dw": 0
+        }
+      ]
+    },
+    {
+      "name": "E 820: scrolled to the far right, header and body still aligned",
+      "ok": false,
+      "got": {
+        "sc": {
+          "scrolled": "scroll-col",
+          "left": 392,
+          "sw": 1060,
+          "cw": 668
+        },
+        "align": [
+          {
+            "label": "Year",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Company",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Marketplace",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Country",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Category",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Series",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event Period",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "FC Qty",
+            "dx": 0,
+            "dw": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "E 820: the Columns menu offers Actual Qty and Achievement %, both on",
+      "ok": false,
+      "got": [
+        {
+          "key": "year",
+          "on": true
+        },
+        {
+          "key": "company",
+          "on": true
+        },
+        {
+          "key": "marketplace",
+          "on": true
+        },
+        {
+          "key": "country",
+          "on": true
+        },
+        {
+          "key": "category",
+          "on": true
+        },
+        {
+          "key": "series",
+          "on": true
+        },
+        {
+          "key": "event",
+          "on": true
+        },
+        {
+          "key": "event-period",
+          "on": true
+        },
+        {
+          "key": "fc-qty",
+          "on": true
+        }
+      ]
+    },
+    {
+      "name": "E 820: hiding Actual Qty hides its header and its cells, and nothing else",
+      "ok": false,
+      "got": [
+        "Year",
+        "Company",
+        "Marketplace",
+        "Country",
+        "Category",
+        "Series",
+        "Event",
+        "Event Period",
+        "FC Qty"
+      ]
+    },
+    {
+      "name": "E 820: and re-showing it brings both back, aligned",
+      "ok": false,
+      "got": [
+        "Year",
+        "Company",
+        "Marketplace",
+        "Country",
+        "Category",
+        "Series",
+        "Event",
+        "Event Period",
+        "FC Qty"
+      ]
+    },
+    {
+      "name": "E 820 Edit Event FC: exactly one input per row (FC Qty); the two new cells read-only, a dash",
+      "ok": false,
+      "got": {
+        "labels": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "Event Period",
+          "FC Qty"
+        ],
+        "shownHeads": [
+          "Year",
+          "Company",
+          "Marketplace",
+          "Country",
+          "Category",
+          "Series",
+          "Event",
+          "Event Period",
+          "FC Qty"
+        ],
+        "rows": 3,
+        "cellsRow0": 9,
+        "newCells": [],
+        "align": [
+          {
+            "label": "Year",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Company",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Marketplace",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Country",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Category",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Series",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "Event Period",
+            "dx": 0,
+            "dw": 0
+          },
+          {
+            "label": "FC Qty",
+            "dx": 0,
+            "dw": 0
+          }
+        ],
+        "inputsPerRow": [
+          1,
+          1,
+          1
+        ],
+        "headTitles": [
+          "",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "E 820 Edit Event FC: header and body still aligned",
+      "ok": false,
+      "got": [
+        {
+          "label": "Year",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Company",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Marketplace",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Country",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Category",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Series",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Event",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "Event Period",
+          "dx": 0,
+          "dw": 0
+        },
+        {
+          "label": "FC Qty",
+          "dx": 0,
+          "dw": 0
+        }
+      ]
+    },
+    {
+      "name": "E 820: Cancel leaves edit mode",
+      "ok": true,
+      "got": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "E an old preference: its choice (Event Period hidden) is kept",
+      "ok": true,
+      "got": [
+        "Year",
+        "Company",
+        "Marketplace",
+        "Country",
+        "Category",
+        "Series",
+        "Event",
+        "FC Qty"
+      ]
+    },
+    {
+      "name": "E an old preference: Actual Qty and Achievement % are shown, not silently hidden",
+      "ok": false,
+      "got": [
+        "Year",
+        "Company",
+        "Marketplace",
+        "Country",
+        "Category",
+        "Series",
+        "Event",
+        "FC Qty"
+      ]
+    },
+    {
+      "name": "E an old preference: nothing else in it was cleared (Regular Sep still hidden)",
+      "ok": true,
+      "got": "{\"v\":1,\"hidden\":{\"fc-event\":[\"event-period\"],\"fc-regular\":[\"sep\"]}}"
+    },
+    {
+      "name": "W zero writes: every request the page made is a read",
+      "ok": true,
+      "got": []
+    }
+  ],
+  "summary": {
+    "checks": 54,
+    "failed": 35
+  }
+}

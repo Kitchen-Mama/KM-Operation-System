@@ -1,10 +1,10 @@
 {
   "round": "PSB-DEMO-R2",
-  "takenAt": "2026-10-22T03:51:07.178Z",
+  "takenAt": "2026-10-22T06:19:32.109Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "assets/js/product-strategy/psb-board-ui.js": "7a70219e4a0b726a",
-    "assets/js/product-strategy/psb-selectors.js": "ef879f6d6a09a21d",
+    "assets/js/product-strategy/psb-board-ui.js": "051501b36fe2990a",
+    "assets/js/product-strategy/psb-selectors.js": "46655156982b0b70",
     "assets/css/product-strategy-board.css": "6ae82cf04cea161e",
     "assets/tests/_psb-demo-capture.js": "9b6e97efe3c3e87a",
     "assets/tests/_psb-demo-r2-capture.js": "2fa319c94ccd4b49",

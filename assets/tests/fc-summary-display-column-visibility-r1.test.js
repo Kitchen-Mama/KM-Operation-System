@@ -735,7 +735,8 @@ var eventLabels = j2.document.getElementById('fc-display-panel').querySelectorAl
   .map(function (e) { return e.textContent.trim(); });
 ok(eventLabels.indexOf('Event Period') > -1 && eventLabels.indexOf('Total FC') === -1,
   'J5 §7 the Event panel offers Event Period and not the Regular table\'s Total FC', eventLabels);
-eq(eventLabels.length, 9, 'J6 §7 nine columns, which is what the Event table renders');
+// FC1-FINAL — eleven: Actual Qty and Achievement % joined after FC Qty, and the panel offers them too.
+eq(eventLabels.length, 11, 'J6 §7 eleven columns, which is what the Event table renders');
 // A label is written into markup, so it is escaped. None of today's labels needs it; that is the point.
 eq(j1._fcColEsc_('A & B <x>"'), 'A &amp; B &lt;x&gt;&quot;', 'J7 column labels are escaped on the way into the panel');
 

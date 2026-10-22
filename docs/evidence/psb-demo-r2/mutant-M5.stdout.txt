@@ -22,7 +22,7 @@ ok   every demo control id is still unique with forms and chips on screen
 ok   a completed drag commits one simulation (the lifecycle it always had)
 ok   mid-drag: a drag is under way before leaving
 FAIL left mid-drag: no drag is left behind (state, attribute, readout)  got {"dragging":true,"attr":0,"readouts":0}
-FAIL left mid-drag: the document keydown listeners are back to their count before the press  got {"before":{"document":{"keydown":5,"keydownCapture":1,"pointer":0,"keydownWho":["capture script 3:0 ","bubble script 28:694 ","bubble script 22:1652 ","bubble script 21:6084 ","bubble script 21:6100 "]},"window":{"keydown":1,"keydownCapture":0,"pointer":0,"keydownWho":["bubble script 3:0 "]}},"after":{"document":{"keydown":6,"keydownCapture":2,"pointer":0,"keydownWho":["capture script 3:0 ","captu
+FAIL left mid-drag: the document keydown listeners are back to their count before the press  got {"before":{"document":{"keydown":5,"keydownCapture":1,"pointer":0,"keydownWho":["capture script 3:0 ","bubble script 28:694 ","bubble script 22:1652 ","bubble script 21:6083 ","bubble script 21:6099 "]},"window":{"keydown":1,"keydownCapture":0,"pointer":0,"keydownWho":["bubble script 3:0 "]}},"after":{"document":{"keydown":6,"keydownCapture":2,"pointer":0,"keydownWho":["capture script 3:0 ","captu
 FAIL left mid-drag: the next Escape reaches the page and nothing prevents it  got []
 ok   left mid-drag: another component’s document capture listener still fires
 ok   returned: the release while away committed nothing, and the completed simulation is still there
@@ -52,4 +52,4 @@ ok   nothing was written to browser storage or the URL
 ok   after a reload: no simulation, no competitor, both axes as first drawn
 
 49 passed, 3 failed, complete true
-wrote C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\wt-product-strategy-board-p0\docs\evidence\psb-demo-r2\demo-r2.json
+wrote C:\Users\viczh\AppData\Local\Temp\claude\c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System\caa8d9f9-c437-407c-96f4-6782665dcde2\scratchpad\fc1\mut\M5\demo-r2.json

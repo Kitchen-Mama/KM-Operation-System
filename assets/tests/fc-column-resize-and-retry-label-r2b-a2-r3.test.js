@@ -324,7 +324,9 @@ ok(REGULAR_LABELS[19].indexOf('Annual') > -1 && REGULAR_LABELS[20].indexOf('Annu
 // one event's fc_qty by that event's total across marketplaces, which is a share of SPECIAL EVENT
 // demand; no allocator consumes that, and Special Event FC is explicitly never folded into the
 // Regular-FC weight basis. Beside a Regular share under one heading it read as the same thing.
-eq(EVENT_LABELS.length, 9, 'A2 Special Event ships 9 scroll columns');
+// FC1-FINAL — Actual Qty and Achievement % follow FC Qty, as columns 10 and 11; columns 1-9 do not move.
+eq(EVENT_LABELS.length, 11, 'A2 Special Event ships 11 scroll columns');
+eq(EVENT_LABELS.slice(8), ['FC Qty', 'Actual Qty', 'Achievement %'], 'A2c ... FC Qty, then Actual Qty, then Achievement %');
 ok(EVENT_LABELS.indexOf('FC占比') === -1 && EVENT_LABELS.indexOf('Site FC Share') === -1,
   'A2b ... and the Event table offers no forecast-share column at all');
 eq(TARGET_LABELS.length, 19, 'A3 Target % & Rules ships 19 scroll columns');   // R2B-A2-R5 added Country

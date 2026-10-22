@@ -365,6 +365,203 @@ function _fcRegularMonthCellsHtml_(item, view) {
   return out;
 }
 
+/* FC1-FINAL — TWO READ-ONLY REFERENCES ON THE CONTRACT ABOVE, AND STILL NO SOURCE.
+   (1) the builder Preview's "Actual Sales (same month last year)" column, and (2) the Special Events
+   table's Actual Qty and Achievement % columns. Both are phase-1 columns: they show the period and the
+   rule, and every cell answers NOT_CONNECTED by name. Nothing here reads, fetches or derives a number,
+   and nothing here is part of any formula, rounding rule, base guard or Save payload. The cells are
+   computed at RENDER time from the row in hand; no preview row and no event row carries them, so a
+   write built from those rows cannot carry them either. */
+
+// ---- (1) The Preview reference: Actual Sales for Target Year - 1, the SAME Target Month ----------------
+// The period is the TARGET's, never the Base period and never the clock: Target Oct 2027 -> Oct 2026.
+function _fcPreviewRefPeriod_(targetYear, targetMonth) {
+  var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var y = Number(targetYear), m = Number(targetMonth);
+  if (!isFinite(y) || Math.floor(y) !== y || !isFinite(m) || Math.floor(m) !== m || m < 0 || m > 11) return null;
+  return { year: y - 1, month: m, label: MON[m] + ' ' + (y - 1) };
+}
+function _fcPreviewLastYearHeader_(targetYear, targetMonth) {
+  var p = _fcPreviewRefPeriod_(targetYear, targetMonth);
+  return p ? 'Actual Sales (' + p.label + ')' : 'Actual Sales (choose a Target first)';
+}
+/* One preview row's cell. The record is looked up by the FC1-R1 monthly key — the row's OWN company /
+   country / marketplace / SKU and the reference month — so another site, another SKU or a forecast
+   cannot answer for it. The source is asked first: unconnected, `recordFor` is never called at all. */
+function _fcPreviewLastYearCell_(row, targetYear, targetMonth, source, recordFor) {
+  var p = _fcPreviewRefPeriod_(targetYear, targetMonth);
+  row = row || {};
+  var key = p ? _fcHistoryKey_(row.company, row.country, row.marketplace, row.sku, p.year, p.month) : null;
+  var connected = !!(source && source.connected === true);
+  var record = (connected && key && typeof recordFor === 'function') ? recordFor(key) : null;
+  var cell = _fcHistoryActualCell_(source, record);
+  var why = 'Actual Sales for ' + (p ? p.label : 'the month a year before the Target')
+    + ' (the Target month one year earlier), for this company, country, marketplace and SKU.'
+    + ' Reference only: it is not used by New Forecast, Change or Save.';
+  return { key: key, period: p, state: cell.state, value: cell.value,
+    text: _fcHistoryCellText_(cell, 'units'),
+    title: why + (cell.state === FC_HISTORY_STATE_.VALUE ? '' : ' ' + (FC_HISTORY_STATE_TEXT_[cell.state] || '')) };
+}
+
+// ---- (2) Special Events: Actual Qty and Achievement % -------------------------------------------------
+/* THE PHASE-2 CONTRACT, WRITTEN DOWN NOW AND CONNECTED TO NOTHING.
+   Actual Qty is the units sold for the event's company / country / marketplace / SKU on every day from
+   the event's start day to its end day, both included. The event is the row in hand, identified by its
+   campaign (event_fc_id / campaign_id) and carrying its own period; it is never found by its name.
+     - Days are the site's activity-calendar days as the records hold them (YYYY-MM-DD), compared as
+       days. Nothing is converted through UTC.
+     - A month the period covers only in part is summed from DAILY sales. A MONTHLY figure stands in only
+       for a whole calendar month inside the period, and only when it is marked complete; a monthly
+       figure is never shared out by day count.
+     - Every day is counted. The Avg Sales rule that leaves event days out does not apply here: these are
+       the event's days.
+     - An explicit, complete zero is 0. An unconnected source, a missing day, a duplicated day, an
+       incomplete month and an event with no completed day are each a named state, never 0.
+     - Before the end day has passed the sum is PROVISIONAL and says so; it is not the final result.
+     - NOT DECIDED HERE (Owner, phase 2): which event owns a day two events of one SKU share, and whether
+       returns are netted. A caller that knows of an overlap passes `overlapping`, and the answer is
+       FC_EVENT_OVERLAP_UNRESOLVED rather than a number counted twice.
+   Achievement % is Actual Qty / FC Qty x 100, one decimal, uncapped: 0 actual on a positive FC is 0.0%;
+   a missing actual, a missing FC or an FC of 0 is a named state, never Infinity. */
+var FC_EVENT_HISTORY_SOURCE_ = Object.freeze({ daily: null, monthly: null, connected: false, phase: 2 });
+var FC_EVENT_HISTORY_STATE_ = Object.freeze({
+  IDENTITY_MISSING: 'FC_EVENT_IDENTITY_MISSING',
+  PERIOD_INVALID: 'FC_EVENT_PERIOD_INVALID',
+  AS_OF_MISSING: 'FC_EVENT_AS_OF_MISSING',
+  NOT_STARTED: 'FC_EVENT_NOT_STARTED',
+  OVERLAP_UNRESOLVED: 'FC_EVENT_OVERLAP_UNRESOLVED',
+  DUPLICATE_DAY: 'FC_EVENT_ACTUAL_DUPLICATE_DAY',
+  INCOMPLETE: 'FC_EVENT_ACTUAL_INCOMPLETE',
+  PROVISIONAL: 'FC_EVENT_ACTUAL_PROVISIONAL'
+});
+var FC_EVENT_HISTORY_STATE_TEXT_ = {
+  FC_EVENT_IDENTITY_MISSING: 'This event row has no campaign identity, so its sales cannot be matched to it.',
+  FC_EVENT_PERIOD_INVALID: 'This event has no readable start and end day.',
+  FC_EVENT_AS_OF_MISSING: 'No site calendar day was given to tell whether the event has ended.',
+  FC_EVENT_NOT_STARTED: 'The event has no completed day yet, so there is nothing to count. Not started is not zero.',
+  FC_EVENT_OVERLAP_UNRESOLVED: 'Another event of this SKU shares these days, and which event owns them is not decided yet.',
+  FC_EVENT_ACTUAL_DUPLICATE_DAY: 'A day in the event period has more than one sales record.',
+  FC_EVENT_ACTUAL_INCOMPLETE: 'Sales for part of the event period are missing. Missing is not zero.',
+  FC_EVENT_ACTUAL_PROVISIONAL: 'The event has not ended: this is the running total so far, not the final result.'
+};
+
+function _fcEventDay_(v) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v == null ? '' : v).trim());
+  if (!m) return null;
+  var y = +m[1], mo = +m[2], d = +m[3];
+  var dim = [31, (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (mo < 1 || mo > 12 || d < 1 || d > dim[mo - 1]) return null;
+  return { y: y, mo: mo, d: d, dim: dim[mo - 1], s: m[0] };
+}
+function _fcEventDayStr_(y, mo, d) { return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d; }
+/* The day before an ISO day, by calendar arithmetic (no Date, no clock, no time zone). */
+function _fcEventPrevDay_(p) {
+  if (p.d > 1) return _fcEventDayStr_(p.y, p.mo, p.d - 1);
+  var y = p.mo === 1 ? p.y - 1 : p.y, mo = p.mo === 1 ? 12 : p.mo - 1;
+  return _fcEventDayStr_(y, mo, _fcEventDay_(_fcEventDayStr_(y, mo, 1)).dim);
+}
+
+/**
+ * Actual Qty for one event row. `sales` = { daily: [{company,country,marketplace,sku,date,units}],
+ * monthly: [{company,country,marketplace,sku,month:'YYYY-MM',units,complete}] }; `asOfDay` is the site's
+ * calendar day TODAY, supplied by the caller (this function has no clock); `opts.overlapping` = true when
+ * another event of the same SKU shares a day.
+ */
+function _fcEventActualCell_(source, ev, sales, asOfDay, opts) {
+  var S = FC_EVENT_HISTORY_STATE_;
+  if (!source || source.connected !== true) return { state: FC_HISTORY_STATE_.NOT_CONNECTED, value: null };
+  ev = ev || {};
+  var raw = ev.raw || {};
+  if (!String(ev.campaignId || raw.campaign_id || '').trim()) return { state: S.IDENTITY_MISSING, value: null };
+  var st = _fcEventDay_(ev.startDate || raw.event_start_date), en = _fcEventDay_(ev.endDate || raw.event_end_date);
+  if (!st || !en || st.s > en.s) return { state: S.PERIOD_INVALID, value: null };
+  var asOf = _fcEventDay_(asOfDay);
+  if (!asOf) return { state: S.AS_OF_MISSING, value: null };
+  // asOfDay is still running, so the last COMPLETED day is the one before it.
+  if (asOf.s <= st.s) return { state: S.NOT_STARTED, value: null };
+  if (opts && opts.overlapping === true) return { state: S.OVERLAP_UNRESOLVED, value: null };
+  var lastPrev = _fcEventPrevDay_(asOf);
+  var last = lastPrev < en.s ? lastPrev : en.s;
+  function up(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+  function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  function mine(r) {
+    return r && up(r.company) === up(ev.company) && up(r.country) === up(ev.country)
+      && lo(r.marketplace) === lo(ev.marketplace) && up(r.sku) === up(ev.sku);
+  }
+  var byDay = {}, dup = false;
+  ((sales && sales.daily) || []).forEach(function (r) {
+    if (!mine(r)) return;
+    var d = _fcEventDay_(r.date);
+    if (!d || d.s < st.s || d.s > last) return;
+    if (Object.prototype.hasOwnProperty.call(byDay, d.s)) dup = true;
+    byDay[d.s] = _fcHistoryExplicitNumber_(r.units);
+  });
+  if (dup) return { state: S.DUPLICATE_DAY, value: null };
+  var byMonth = {};
+  ((sales && sales.monthly) || []).forEach(function (r) {
+    if (mine(r) && /^\d{4}-\d{2}$/.test(String(r.month || ''))) byMonth[r.month] = r;
+  });
+  // Walk the counted days a month at a time: [segment start, segment end] never crosses a month.
+  var total = 0, y = st.y, mo = st.mo, d0 = st.d;
+  var lastP = _fcEventDay_(last);
+  while (true) {
+    var dim = _fcEventDay_(_fcEventDayStr_(y, mo, 1)).dim;
+    var isLastMonth = (y === lastP.y && mo === lastP.mo);
+    var d1 = isLastMonth ? lastP.d : dim;
+    var seg = 0, complete = true;
+    for (var d = d0; d <= d1; d++) {
+      var v = byDay[_fcEventDayStr_(y, mo, d)];
+      if (v == null) { complete = false; break; }
+      seg += v;
+    }
+    if (!complete) {
+      // A whole calendar month, every day of it inside the counted span, may come from a COMPLETE monthly
+      // figure. A part month never does.
+      var mk = y + '-' + (mo < 10 ? '0' : '') + mo, mr = byMonth[mk];
+      var mv = mr ? _fcHistoryExplicitNumber_(mr.units) : null;
+      if (d0 === 1 && d1 === dim && mr && mr.complete === true && mv != null) seg = mv;
+      else return { state: S.INCOMPLETE, value: null };
+    }
+    total += seg;
+    if (isLastMonth) break;
+    d0 = 1; mo++; if (mo > 12) { mo = 1; y++; }
+  }
+  return { state: last === en.s ? FC_HISTORY_STATE_.VALUE : S.PROVISIONAL, value: total };
+}
+
+function _fcEventAchievementCell_(fcRaw, actualCell) {
+  var a = actualCell || { state: FC_HISTORY_STATE_.ACTUAL_MISSING };
+  if (a.state !== FC_HISTORY_STATE_.VALUE && a.state !== FC_EVENT_HISTORY_STATE_.PROVISIONAL) return { state: a.state, value: null };
+  var f = _fcHistoryExplicitNumber_(fcRaw);
+  if (f == null) return { state: FC_HISTORY_STATE_.FORECAST_MISSING, value: null };
+  if (f === 0) return { state: FC_HISTORY_STATE_.FORECAST_ZERO, value: null };
+  return { state: a.state, value: Math.round(a.value / f * 1000) / 10 };
+}
+
+function _fcEventHistoryText_(cell, kind) {
+  if (!cell || cell.value == null) return _FC_SHARE_DASH_;
+  var t = kind === 'pct' ? cell.value.toFixed(1) + '%' : cell.value.toLocaleString();
+  return cell.state === FC_EVENT_HISTORY_STATE_.PROVISIONAL ? t + ' (provisional)' : t;
+}
+
+/* The two cells one Special Event row renders, in the read-only table AND in Edit Event FC mode, where
+   they stay plain text: never an input, never part of the dirty map or the write rows. The FC compared
+   against is the STORED fc_qty, explicit or missing — not the display value, which maps a blank to 0. */
+function _fcEventHistoryCellsHtml_(item, cls) {
+  var raw = (item && item.raw) || {};
+  var fcRaw = Object.prototype.hasOwnProperty.call(raw, 'fc_qty') ? raw.fc_qty : (item ? item.fcQty : null);
+  var actual = _fcEventActualCell_(FC_EVENT_HISTORY_SOURCE_, item, null, null);
+  var ach = _fcEventAchievementCell_(fcRaw, actual);
+  function cell(c, kind, name) {
+    var title = c.state === FC_HISTORY_STATE_.VALUE ? ''
+      : (FC_HISTORY_STATE_TEXT_[c.state] || FC_EVENT_HISTORY_STATE_TEXT_[c.state] || '');
+    return '<div class="scroll-cell cell-qty fc-evt-history' + (cls ? ' ' + cls : '') + '" data-fc-evt-col="' + name + '"'
+      + ' data-fc-history-state="' + c.state + '"' + (title ? ' title="' + _fcColEsc_(title) + '"' : '') + '>'
+      + _fcEventHistoryText_(c, kind) + '</div>';
+  }
+  return cell(actual, 'units', 'actual-qty') + cell(ach, 'pct', 'achievement-pct');
+}
+
 /* The view switch. A view choice, not an edit: refused while Base FC is being edited, because the
    editable grid is a Forecast grid and an Actual-coloured table under it would misdescribe it. */
 function fcSetRegularMonthView(view) {
@@ -540,6 +737,7 @@ function renderFcEventTable() {
         <div class="scroll-cell">${item.event}</div>
         <div class="scroll-cell">${item.eventPeriod}</div>
         <div class="scroll-cell cell-qty">${item.fcQty.toLocaleString()}</div>
+        ${_fcEventHistoryCellsHtml_(item, '')}
       </div>
     `;
   }).join('');
@@ -1325,6 +1523,7 @@ function renderFcEventTableEditable() {
                  title="${noId ? 'This legacy event is missing event_fc_id / campaign_id — editing it will fail closed until it is backfilled.' : ''}"
                  oninput="updateEventFcQty(this)">
         </div>
+        ${_fcEventHistoryCellsHtml_(item, 'fc-cell-readonly')}
       </div>
     `;
   }).join('');
@@ -3401,10 +3600,20 @@ function _regularRenderPreview() {
       newCell = (r.newQty == null ? '—' : r.newQty.toLocaleString());
       diffCell = '<span style="color:' + color + '">' + sign + diff.toLocaleString() + '</span>';
     }
+    // FC1-FINAL — the read-only reference. Computed here from the row in hand; never stored on the row.
+    var ly = _fcPreviewLastYearCell_(r, _regularPreview.targetYear, _regularPreview.targetMonth,
+      FC_HISTORY_SOURCE_, _fcHistoryRecordFor_);
     return '<tr><td>' + _fmvEscapeHtml(r.sku) + '</td><td>' + _fmvEscapeHtml((r.category || '—') + ' / ' + (r.series || '—')) +
+      '</td><td class="fc-prev-ly" data-fc-history-state="' + ly.state + '" data-fc-ref-period="' +
+      (ly.period ? ly.period.year + '-' + (ly.period.month < 9 ? '0' : '') + (ly.period.month + 1) : '') +
+      '" title="' + _fcColEsc_(ly.title) + '">' + ly.text +
       '</td><td>' + oldDisp + '</td><td>' + newCell + '</td><td>' + diffCell + '</td></tr>';
   }).join('');
+  var lyHead = _fcPreviewLastYearHeader_(_regularPreview.targetYear, _regularPreview.targetMonth);
   box.innerHTML = '<table class="fc-assist-preview-table"><thead><tr><th>SKU</th><th>Category / Series</th>' +
+    '<th class="fc-prev-ly" title="' + _fcColEsc_(lyHead + ': the Target month one year earlier, same company, country, marketplace and SKU. ' +
+      'Reference only, not used by New Forecast, Change or Save. ' + (FC_HISTORY_SOURCE_.connected === true ? '' :
+      FC_HISTORY_STATE_TEXT_[FC_HISTORY_STATE_.NOT_CONNECTED])) + '">' + _fmvEscapeHtml(lyHead) + '</th>' +
     '<th>Current Forecast (' + monthLbl + ' ' + _regularPreview.targetYear + ')</th><th>New Forecast</th><th>Change</th></tr></thead><tbody>' +
     body + '</tbody></table>';
   box.style.display = '';
@@ -8482,7 +8691,12 @@ var FC_RESIZE_TABLES_ = [
            // Event Period was previously caught by the Regular table's month rule and rendered at 70px,
            // which cannot show 2026-11-19~2026-11-30. It is not a month cell and is no longer treated as one.
            _fcResizeCols_(190, 'Event Period'),
-           _fcResizeCols_(90, 'FC Qty', 'summary')] },
+           _fcResizeCols_(90, 'FC Qty', 'summary'),
+           // FC1-FINAL — two read-only reference columns AFTER FC Qty, so no existing position (and no
+           // stored width, keyed by position) moves. Visibility keys are slugged labels: actual-qty and
+           // achievement-pct, absent from any older stored preference and therefore shown.
+           _fcResizeCols_(100, 'Actual Qty', 'summary'),
+           _fcResizeCols_(120, 'Achievement %', 'summary')] },
 
   { group: 'fc-target', panel: 'fc-panel-target',
     header: 'fc-target-scroll-header', body: 'fc-target-scroll-body',

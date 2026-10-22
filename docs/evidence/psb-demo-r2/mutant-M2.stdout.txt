@@ -52,4 +52,4 @@ ok   nothing was written to browser storage or the URL
 ok   after a reload: no simulation, no competitor, both axes as first drawn
 
 49 passed, 3 failed, complete true
-wrote C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\wt-product-strategy-board-p0\docs\evidence\psb-demo-r2\demo-r2.json
+wrote C:\Users\viczh\AppData\Local\Temp\claude\c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System\caa8d9f9-c437-407c-96f4-6782665dcde2\scratchpad\fc1\mut\M2\demo-r2.json

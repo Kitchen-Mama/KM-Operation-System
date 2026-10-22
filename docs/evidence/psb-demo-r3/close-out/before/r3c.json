@@ -1,0 +1,1466 @@
+{
+  "round": "PSB-DEMO-R3 close-out (F-2, F-1)",
+  "mode": "before",
+  "base_ref": "2af8d156",
+  "takenAt": "2026-10-22T06:01:06.811Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "data": "production 2026-10-22 read-only bodies (docs/evidence/psb-demo-r3/production-read)",
+  "sources": {
+    "assets/js/product-strategy/psb-board-ui.js": "051501b36fe2990a",
+    "assets/js/product-strategy/psb-selectors.js": "46655156982b0b70",
+    "assets/js/product-strategy/psb-chart-layout.js": "560cc3a11fbc5b6c",
+    "assets/css/product-strategy-board.css": "6ae82cf04cea161e",
+    "assets/tests/_psb-demo-r3-capture.js": "37442b01a9e62638",
+    "assets/tests/_psb-demo-r3-prod-data.js": "0abe7495934a0274",
+    "assets/tests/_psb-demo-r3c-runner.js": "b7fac15dc2aa099d"
+  },
+  "steps": [
+    {
+      "name": "1920 BFCM layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "spacious",
+            "scale": 0.999,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.98,
+              "xlabel": 15.98,
+              "deal": 14.48,
+              "disc": 13.48,
+              "head": null
+            },
+            "head": [],
+            "labels": 57,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1920 BFCM right-most deal label",
+      "data": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 1799,
+        "discR": 1799,
+        "svgR": 1867,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "1920 BFCM + competitor layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "normal",
+            "scale": 0.999,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.48,
+              "xlabel": 14.98,
+              "deal": 13.98,
+              "disc": 12.98,
+              "head": 12.98
+            },
+            "head": [
+              "Competitors · entered this session · not saved"
+            ],
+            "labels": 51,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1920 BFCM + competitor right-most deal label",
+      "data": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 1753,
+        "discR": 1763,
+        "svgR": 1867,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "1920 everyday + competitor layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "normal",
+            "scale": 0.999,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.48,
+              "xlabel": 14.98,
+              "deal": null,
+              "disc": null,
+              "head": 12.98
+            },
+            "head": [
+              "Competitors · entered this session · not saved"
+            ],
+            "labels": 26,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1440 BFCM layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "spacious",
+            "scale": 0.998,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.97,
+              "xlabel": 15.97,
+              "deal": 14.47,
+              "disc": 13.48,
+              "head": null
+            },
+            "head": [],
+            "labels": 57,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1440 BFCM right-most deal label",
+      "data": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 1339,
+        "discR": 1339,
+        "svgR": 1387,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "1440 BFCM + competitor layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "normal",
+            "scale": 0.998,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.47,
+              "xlabel": 14.97,
+              "deal": 13.97,
+              "disc": 12.98,
+              "head": 12.98
+            },
+            "head": [
+              "Competitors · entered this session · not saved"
+            ],
+            "labels": 51,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1440 BFCM + competitor right-most deal label",
+      "data": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 1254,
+        "discR": 1264,
+        "svgR": 1313,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "1440 everyday + competitor layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "normal",
+            "scale": 0.998,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.47,
+              "xlabel": 14.97,
+              "deal": null,
+              "disc": null,
+              "head": 12.98
+            },
+            "head": [
+              "Competitors · entered this session · not saved"
+            ],
+            "labels": 26,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "820 BFCM layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "compact",
+            "scale": 1.003,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.04,
+              "xlabel": 14.54,
+              "deal": 13.54,
+              "disc": 12.53,
+              "head": null
+            },
+            "head": [],
+            "labels": 42,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "820 BFCM right-most deal label",
+      "data": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 741,
+        "discR": 742,
+        "svgR": 783,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "820 BFCM + competitor layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "compact",
+            "scale": 1.003,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.04,
+              "xlabel": 14.54,
+              "deal": 13.54,
+              "disc": 12.53,
+              "head": 12.53
+            },
+            "head": [
+              "Competitors · entered this session · not saved"
+            ],
+            "labels": 45,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "820 BFCM + competitor right-most deal label",
+      "data": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 721,
+        "discR": 731,
+        "svgR": 746,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "820 everyday + competitor layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "USD",
+            "density": "compact",
+            "scale": 1.003,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.04,
+              "xlabel": 14.54,
+              "deal": null,
+              "disc": null,
+              "head": 12.53
+            },
+            "head": [
+              "Competitors · entered this session · not saved"
+            ],
+            "labels": 20,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "synth 1920 activity layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "spacious",
+            "scale": 0.999,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.98,
+              "xlabel": 15.98,
+              "deal": 14.48,
+              "disc": 13.48,
+              "head": null
+            },
+            "head": [],
+            "labels": 49,
+            "overlaps": [],
+            "clipped": []
+          },
+          {
+            "currency": "EUR",
+            "density": "spacious",
+            "scale": 0.999,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.98,
+              "xlabel": 15.98,
+              "deal": 14.48,
+              "disc": 13.48,
+              "head": null
+            },
+            "head": [],
+            "labels": 49,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 2
+      }
+    },
+    {
+      "name": "synth 1440 activity layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "spacious",
+            "scale": 0.998,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.97,
+              "xlabel": 15.97,
+              "deal": 14.47,
+              "disc": 13.48,
+              "head": null
+            },
+            "head": [],
+            "labels": 49,
+            "overlaps": [],
+            "clipped": []
+          },
+          {
+            "currency": "EUR",
+            "density": "spacious",
+            "scale": 0.998,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.97,
+              "xlabel": 15.97,
+              "deal": 14.47,
+              "disc": 13.48,
+              "head": null
+            },
+            "head": [],
+            "labels": 49,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 2
+      }
+    },
+    {
+      "name": "synth 820 activity layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "normal",
+            "scale": 1.003,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.54,
+              "xlabel": 15.04,
+              "deal": 14.04,
+              "disc": 13.03,
+              "head": null
+            },
+            "head": [],
+            "labels": 41,
+            "overlaps": [],
+            "clipped": []
+          },
+          {
+            "currency": "EUR",
+            "density": "normal",
+            "scale": 1.003,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.54,
+              "xlabel": 15.04,
+              "deal": 14.04,
+              "disc": 13.03,
+              "head": null
+            },
+            "head": [],
+            "labels": 41,
+            "overlaps": [],
+            "clipped": []
+          }
+        ],
+        "panels": 2
+      }
+    },
+    {
+      "name": "F-1 activity menu",
+      "data": [
+        {
+          "v": "",
+          "t": "Choose an activity…"
+        },
+        {
+          "v": "CMP-347D5C3A-8",
+          "t": "BFCM 2026  ·  Thu Nov 19 2026 00:00:00 GMT+0800 (台北標準時間) to Mon Nov 30 2026 00:00:00 GMT+0800 (台北標準時間)  ·  recorded status: active"
+        },
+        {
+          "v": "CMP-BEEB2104-9",
+          "t": "Fall Prime 2026  ·  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  ·  recorded status: active"
+        }
+      ]
+    },
+    {
+      "name": "F-1 tooltip CO1150",
+      "data": "Auto Electric Can Opener 2.0 (Marble White)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 variants)\nDiscount 20% off  (original 47.99 CAD, the activity line’s own snapshot)\nIn this activity: CO1150-XR, CO1150-ZW\nNot priced in this activity: CO1150-BM, CO1150-EM, CO1150-OM\n5 variants\nPhotograph: CO1150-XR (a variant in this activity, verified database mapping)\nCurrent selling price is not shown, and neither is margin: no source of record."
+    },
+    {
+      "name": "wire (last page)",
+      "data": [
+        "getClientCapabilities",
+        "productPricing.siteUniverse.get",
+        "productPricing.workspace.get",
+        "productPricing.workspace.get"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "the production page mounted with no boot error (1920)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "F-2 1920 BFCM chart 1 (USD, spacious, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1920 BFCM chart 1 (USD, spacious, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1920 BFCM chart 1 (USD, spacious, scale 0.999): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "deal": 14.48,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM chart 1 (USD, spacious, scale 0.999): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "deal": 14.48,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM: the right-most column has a deal label",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 1799,
+        "discR": 1799,
+        "svgR": 1867,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM: its deal label prints the full price the table prints (CO5600 at 55.99)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "table": "44.79 USD 20% off CO5600-Q (1 of 1)"
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM: and the full recorded price (4479 cents)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM: its deal label and discount line end inside the drawing",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 1799,
+        "discR": 1799,
+        "svgR": 1867,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM: its discount line is printed",
+      "ok": true,
+      "got": "20% off"
+    },
+    {
+      "name": "F-2 1920: the competitor header is printed",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 1920: the competitor header reads in full",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor chart 1 (USD, normal, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor chart 1 (USD, normal, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor chart 1 (USD, normal, scale 0.999): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.48,
+        "xlabel": 14.98,
+        "deal": 13.98,
+        "disc": 12.98,
+        "head": 12.98
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor chart 1 (USD, normal, scale 0.999): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.48,
+        "xlabel": 14.98,
+        "deal": 13.98,
+        "disc": 12.98,
+        "head": 12.98
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor chart 1 (USD, normal, scale 0.999): the competitor header stays >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.48,
+        "xlabel": 14.98,
+        "deal": 13.98,
+        "disc": 12.98,
+        "head": 12.98
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor: the right-most column has a deal label",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 1753,
+        "discR": 1763,
+        "svgR": 1867,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor: its deal label prints the full price the table prints (CO5600 at 55.99)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "table": "44.79 USD 20% off CO5600-Q (1 of 1)"
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor: and the full recorded price (4479 cents)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor: its deal label and discount line end inside the drawing",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 1753,
+        "discR": 1763,
+        "svgR": 1867,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1920 BFCM + competitor: its discount line is printed",
+      "ok": true,
+      "got": "20% off"
+    },
+    {
+      "name": "F-2 1920 everyday: the competitor header reads in full",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 1920 everyday + competitor chart 1 (USD, normal, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1920 everyday + competitor chart 1 (USD, normal, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1920 everyday + competitor chart 1 (USD, normal, scale 0.999): the competitor header stays >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.48,
+        "xlabel": 14.98,
+        "deal": null,
+        "disc": null,
+        "head": 12.98
+      }
+    },
+    {
+      "name": "the production page mounted with no boot error (1440)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "F-2 1440 BFCM chart 1 (USD, spacious, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1440 BFCM chart 1 (USD, spacious, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1440 BFCM chart 1 (USD, spacious, scale 0.998): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "deal": 14.47,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM chart 1 (USD, spacious, scale 0.998): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "deal": 14.47,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM: the right-most column has a deal label",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 1339,
+        "discR": 1339,
+        "svgR": 1387,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM: its deal label prints the full price the table prints (CO5600 at 55.99)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "table": "44.79 USD 20% off CO5600-Q (1 of 1)"
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM: and the full recorded price (4479 cents)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM: its deal label and discount line end inside the drawing",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 1339,
+        "discR": 1339,
+        "svgR": 1387,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM: its discount line is printed",
+      "ok": true,
+      "got": "20% off"
+    },
+    {
+      "name": "F-2 1440: the competitor header is printed",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 1440: the competitor header reads in full",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor chart 1 (USD, normal, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor chart 1 (USD, normal, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor chart 1 (USD, normal, scale 0.998): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.47,
+        "xlabel": 14.97,
+        "deal": 13.97,
+        "disc": 12.98,
+        "head": 12.98
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor chart 1 (USD, normal, scale 0.998): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.47,
+        "xlabel": 14.97,
+        "deal": 13.97,
+        "disc": 12.98,
+        "head": 12.98
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor chart 1 (USD, normal, scale 0.998): the competitor header stays >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.47,
+        "xlabel": 14.97,
+        "deal": 13.97,
+        "disc": 12.98,
+        "head": 12.98
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor: the right-most column has a deal label",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 1254,
+        "discR": 1264,
+        "svgR": 1313,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor: its deal label prints the full price the table prints (CO5600 at 55.99)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "table": "44.79 USD 20% off CO5600-Q (1 of 1)"
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor: and the full recorded price (4479 cents)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor: its deal label and discount line end inside the drawing",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 1254,
+        "discR": 1264,
+        "svgR": 1313,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 1440 BFCM + competitor: its discount line is printed",
+      "ok": true,
+      "got": "20% off"
+    },
+    {
+      "name": "F-2 1440 everyday: the competitor header reads in full",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 1440 everyday + competitor chart 1 (USD, normal, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1440 everyday + competitor chart 1 (USD, normal, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 1440 everyday + competitor chart 1 (USD, normal, scale 0.998): the competitor header stays >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.47,
+        "xlabel": 14.97,
+        "deal": null,
+        "disc": null,
+        "head": 12.98
+      }
+    },
+    {
+      "name": "the production page mounted with no boot error (820)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "F-2 820 BFCM chart 1 (USD, compact, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 820 BFCM chart 1 (USD, compact, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 820 BFCM chart 1 (USD, compact, scale 1.003): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.04,
+        "xlabel": 14.54,
+        "deal": 13.54,
+        "disc": 12.53,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 820 BFCM chart 1 (USD, compact, scale 1.003): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.04,
+        "xlabel": 14.54,
+        "deal": 13.54,
+        "disc": 12.53,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 820 BFCM: the right-most column has a deal label",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 741,
+        "discR": 742,
+        "svgR": 783,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 820 BFCM: its deal label prints the full price the table prints (CO5600 at 55.99)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "table": "44.79 USD 20% off CO5600-Q (1 of 1)"
+      }
+    },
+    {
+      "name": "F-2 820 BFCM: and the full recorded price (4479 cents)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 820 BFCM: its deal label and discount line end inside the drawing",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "true",
+        "labelR": 741,
+        "discR": 742,
+        "svgR": 783,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 820 BFCM: its discount line is printed",
+      "ok": true,
+      "got": "20% off"
+    },
+    {
+      "name": "F-2 820: the competitor header is printed",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 820: the competitor header reads in full",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 820 BFCM + competitor chart 1 (USD, compact, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 820 BFCM + competitor chart 1 (USD, compact, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 820 BFCM + competitor chart 1 (USD, compact, scale 1.003): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.04,
+        "xlabel": 14.54,
+        "deal": 13.54,
+        "disc": 12.53,
+        "head": 12.53
+      }
+    },
+    {
+      "name": "F-2 820 BFCM + competitor chart 1 (USD, compact, scale 1.003): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.04,
+        "xlabel": 14.54,
+        "deal": 13.54,
+        "disc": 12.53,
+        "head": 12.53
+      }
+    },
+    {
+      "name": "F-2 820 BFCM + competitor chart 1 (USD, compact, scale 1.003): the competitor header stays >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.04,
+        "xlabel": 14.54,
+        "deal": 13.54,
+        "disc": 12.53,
+        "head": 12.53
+      }
+    },
+    {
+      "name": "F-2 820 BFCM + competitor: the right-most column has a deal label",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 721,
+        "discR": 731,
+        "svgR": 746,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 820 BFCM + competitor: its deal label prints the full price the table prints (CO5600 at 55.99)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "table": "44.79 USD 20% off CO5600-Q (1 of 1)"
+      }
+    },
+    {
+      "name": "F-2 820 BFCM + competitor: and the full recorded price (4479 cents)",
+      "ok": true,
+      "got": {
+        "chart": "44.79",
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 820 BFCM + competitor: its deal label and discount line end inside the drawing",
+      "ok": true,
+      "got": {
+        "label": "CO5600",
+        "reg": "5599",
+        "text": "44.79",
+        "disc": "20% off",
+        "flipped": "false",
+        "labelR": 721,
+        "discR": 731,
+        "svgR": 746,
+        "recordedC": "4479"
+      }
+    },
+    {
+      "name": "F-2 820 BFCM + competitor: its discount line is printed",
+      "ok": true,
+      "got": "20% off"
+    },
+    {
+      "name": "F-2 820 everyday: the competitor header reads in full",
+      "ok": true,
+      "got": [
+        "Competitors · entered this session · not saved"
+      ]
+    },
+    {
+      "name": "F-2 820 everyday + competitor chart 1 (USD, compact, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 820 everyday + competitor chart 1 (USD, compact, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 820 everyday + competitor chart 1 (USD, compact, scale 1.003): the competitor header stays >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.04,
+        "xlabel": 14.54,
+        "deal": null,
+        "disc": null,
+        "head": 12.53
+      }
+    },
+    {
+      "name": "the production page mounted with no boot error (1920)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "SYNTH 1920: two currency panels are drawn",
+      "ok": true,
+      "got": 2
+    },
+    {
+      "name": "F-2 synth 1920 activity chart 1 (CAD, spacious, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 1920 activity chart 1 (CAD, spacious, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 1920 activity chart 1 (CAD, spacious, scale 0.999): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "deal": 14.48,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 1920 activity chart 1 (CAD, spacious, scale 0.999): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "deal": 14.48,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 1920 activity chart 2 (EUR, spacious, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 1920 activity chart 2 (EUR, spacious, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 1920 activity chart 2 (EUR, spacious, scale 0.999): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "deal": 14.48,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 1920 activity chart 2 (EUR, spacious, scale 0.999): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "deal": 14.48,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "the production page mounted with no boot error (1440)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "SYNTH 1440: two currency panels are drawn",
+      "ok": true,
+      "got": 2
+    },
+    {
+      "name": "F-2 synth 1440 activity chart 1 (CAD, spacious, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 1440 activity chart 1 (CAD, spacious, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 1440 activity chart 1 (CAD, spacious, scale 0.998): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "deal": 14.47,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 1440 activity chart 1 (CAD, spacious, scale 0.998): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "deal": 14.47,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 1440 activity chart 2 (EUR, spacious, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 1440 activity chart 2 (EUR, spacious, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 1440 activity chart 2 (EUR, spacious, scale 0.998): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "deal": 14.47,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 1440 activity chart 2 (EUR, spacious, scale 0.998): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "deal": 14.47,
+        "disc": 13.48,
+        "head": null
+      }
+    },
+    {
+      "name": "the production page mounted with no boot error (820)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "SYNTH 820: two currency panels are drawn",
+      "ok": true,
+      "got": 2
+    },
+    {
+      "name": "F-2 synth 820 activity chart 1 (CAD, normal, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 820 activity chart 1 (CAD, normal, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 820 activity chart 1 (CAD, normal, scale 1.003): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "deal": 14.04,
+        "disc": 13.03,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 820 activity chart 1 (CAD, normal, scale 1.003): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "deal": 14.04,
+        "disc": 13.03,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 820 activity chart 2 (EUR, normal, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 820 activity chart 2 (EUR, normal, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "F-2 synth 820 activity chart 2 (EUR, normal, scale 1.003): deal prices stay >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "deal": 14.04,
+        "disc": 13.03,
+        "head": null
+      }
+    },
+    {
+      "name": "F-2 synth 820 activity chart 2 (EUR, normal, scale 1.003): discount lines stay >= 12px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "deal": 14.04,
+        "disc": 13.03,
+        "head": null
+      }
+    },
+    {
+      "name": "the production page mounted with no boot error (1440)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "F-1 menu: no option prints a raw date string",
+      "ok": false,
+      "got": [
+        {
+          "v": "CMP-347D5C3A-8",
+          "t": "BFCM 2026  ·  Thu Nov 19 2026 00:00:00 GMT+0800 (台北標準時間) to Mon Nov 30 2026 00:00:00 GMT+0800 (台北標準時間)  ·  recorded status: active"
+        },
+        {
+          "v": "CMP-BEEB2104-9",
+          "t": "Fall Prime 2026  ·  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  ·  recorded status: active"
+        }
+      ]
+    },
+    {
+      "name": "F-1 menu: Fall Prime 2026 reads 2026-10-06 to 2026-10-07",
+      "ok": false,
+      "got": {
+        "v": "CMP-BEEB2104-9",
+        "t": "Fall Prime 2026  ·  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  ·  recorded status: active"
+      }
+    },
+    {
+      "name": "F-1 menu: BFCM 2026 reads 2026-11-19 to 2026-11-30",
+      "ok": false,
+      "got": {
+        "v": "CMP-347D5C3A-8",
+        "t": "BFCM 2026  ·  Thu Nov 19 2026 00:00:00 GMT+0800 (台北標準時間) to Mon Nov 30 2026 00:00:00 GMT+0800 (台北標準時間)  ·  recorded status: active"
+      }
+    },
+    {
+      "name": "F-1 menu: in date order (Fall Prime, October, before BFCM, November)",
+      "ok": false,
+      "got": [
+        "BFCM 2026  ·  Thu Nov 19 2026 00:00:00 GMT+0800 (台北標準時間) to Mon Nov 30 2026 00:00:00 GMT+0800 (台北標準時間)  ·  recorded status: active",
+        "Fall Prime 2026  ·  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  ·  recorded status: active"
+      ]
+    },
+    {
+      "name": "F-1 tooltip: the activity line reads Fall Prime 2026 2026-10-06 to 2026-10-07",
+      "ok": false,
+      "got": "Activity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)"
+    },
+    {
+      "name": "F-1 tooltip: no raw date string",
+      "ok": false,
+      "got": "Auto Electric Can Opener 2.0 (Marble White)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 variants)\nDiscount 20% off  (original 47.99 CAD, the activity line’s own snapshot)\nIn this activity: CO1150-XR, CO1150-ZW\nNot priced in this activity: CO1150-BM, CO1150-EM, CO1150-OM\n5 variants\nPhotograph: CO1150-XR (a variant in this activity, verified database mapping)\nCurrent selling price is not shown, and neither is margin: no source of record."
+    },
+    {
+      "name": "F-1 page: no raw date string anywhere on the board",
+      "ok": false,
+      "got": [
+        "BFCM 2026 · Thu Nov 19 2026 00:00:00 GMT+0800 (台北標準時間) to Mon Nov 30 2026 00:00:"
+      ]
+    },
+    {
+      "name": "W zero writes: every request the page made is a read",
+      "ok": true,
+      "got": [
+        "getClientCapabilities",
+        "productPricing.siteUniverse.get",
+        "productPricing.workspace.get",
+        "productPricing.workspace.get"
+      ]
+    }
+  ],
+  "summary": {
+    "checks": 117,
+    "failed": 7
+  }
+}

@@ -1,10 +1,10 @@
 {
   "round": "PSB-DEMO-R2",
-  "takenAt": "2026-10-22T03:51:37.196Z",
+  "takenAt": "2026-10-22T06:18:18.177Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "assets/js/product-strategy/psb-board-ui.js": "7a70219e4a0b726a",
-    "assets/js/product-strategy/psb-selectors.js": "ef879f6d6a09a21d",
+    "assets/js/product-strategy/psb-board-ui.js": "051501b36fe2990a",
+    "assets/js/product-strategy/psb-selectors.js": "46655156982b0b70",
     "assets/css/product-strategy-board.css": "6ae82cf04cea161e",
     "assets/tests/_psb-demo-capture.js": "9b6e97efe3c3e87a",
     "assets/tests/_psb-demo-r2-capture.js": "2fa319c94ccd4b49",
@@ -82,8 +82,8 @@
             "capture script 3:0 ",
             "bubble script 28:694 ",
             "bubble script 22:1652 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 "
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 "
           ]
         },
         "window": {
@@ -105,11 +105,11 @@
           "pointer": 0,
           "keydownWho": [
             "capture script 3:0 ",
-            "capture script 21:1263 ",
+            "capture script 21:1262 ",
             "bubble script 28:694 ",
             "bubble script 22:1652 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 "
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 "
           ]
         },
         "window": {
@@ -131,10 +131,10 @@
           "capture script 3:0 ",
           "bubble script 28:694 ",
           "bubble script 22:1652 ",
-          "bubble script 21:6084 ",
-          "bubble script 21:6100 ",
-          "bubble script 21:6084 ",
-          "bubble script 21:6100 "
+          "bubble script 21:6083 ",
+          "bubble script 21:6099 ",
+          "bubble script 21:6083 ",
+          "bubble script 21:6099 "
         ]
       }
     },
@@ -405,8 +405,8 @@
               "capture script 3:0 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -427,8 +427,8 @@
               "capture script 3:0 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -489,8 +489,8 @@
             "capture script 3:0 ",
             "bubble script 28:694 ",
             "bubble script 22:1652 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 "
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 "
           ]
         },
         "after": {
@@ -501,10 +501,10 @@
             "capture script 3:0 ",
             "bubble script 28:694 ",
             "bubble script 22:1652 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 "
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 ",
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 "
           ]
         }
       }
@@ -540,10 +540,10 @@
               "capture script 3:0 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -564,10 +564,10 @@
               "capture script 3:0 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -603,10 +603,10 @@
               "capture script 3:0 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -627,10 +627,10 @@
               "capture script 3:0 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -724,10 +724,10 @@
               "capture script 3:0 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -748,10 +748,10 @@
               "capture script 3:0 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -915,7 +915,7 @@
   ],
   "mutant": "M2",
   "mutantWhy": "the open form is shown in every panel",
-  "mutantSourceSha": "eea36ee8a3db5339",
+  "mutantSourceSha": "a5107a6678248b9c",
   "complete": true,
   "passed": 49,
   "failed": 3

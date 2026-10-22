@@ -295,7 +295,11 @@ var MUTANTS = [
   ['M2  the source switched on', "table: 'fc_achievement_monthly', connected: false", "table: 'fc_achievement_monthly', connected: true"],
   ['M3  a blank coerced to zero', "  if (typeof v === 'string' && /^\\s*-?\\d+(\\.\\d+)?\\s*$/.test(v)) return Number(v);",
    "  if (typeof v === 'string') return Number(v) || 0;"],
-  ['M4  zero forecast divided anyway', "  if (f === 0) return { state: FC_HISTORY_STATE_.FORECAST_ZERO, value: null };\n", '']
+  // FC1-FINAL — _fcEventAchievementCell_ states the same two guard lines, so the anchor now starts at the
+  // line only _fcAchievementCell_ has. The mutant is unchanged: the zero-forecast guard removed.
+  ['M4  zero forecast divided anyway',
+   "  var f = _fcHistoryExplicitNumber_(forecastRaw);\n  if (f == null) return { state: FC_HISTORY_STATE_.FORECAST_MISSING, value: null };\n  if (f === 0) return { state: FC_HISTORY_STATE_.FORECAST_ZERO, value: null };\n",
+   "  var f = _fcHistoryExplicitNumber_(forecastRaw);\n  if (f == null) return { state: FC_HISTORY_STATE_.FORECAST_MISSING, value: null };\n"]
 ];
 MUTANTS.forEach(function (mu) {
   var n = FCS.split(mu[1]).length - 1;

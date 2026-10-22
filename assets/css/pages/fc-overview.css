@@ -1736,7 +1736,7 @@
     justify-content: flex-end;
 }
 
-/* --- Special Event: 9 scroll columns (Event Period is NOT a month cell) --- */
+/* --- Special Event: 11 scroll columns (Event Period is NOT a month cell) --- */
 #fc-event-scroll-header > .header-cell:nth-child(1),
 #fc-event-scroll-body .scroll-row > .scroll-cell:nth-child(1),
 #fc-event-scroll-header > .header-cell:nth-child(4),
@@ -1769,6 +1769,22 @@
 #fc-event-scroll-body .scroll-row > .scroll-cell:nth-child(9) {
     width: 90px;
     min-width: 90px;
+    justify-content: flex-end;
+}
+
+/* FC1-FINAL — Actual Qty (10) and Achievement % (11), right of FC Qty and right-aligned like it. Read-only
+   reference columns; positions 1-9 do not move, so no stored width or visibility key moves. */
+#fc-event-scroll-header > .header-cell:nth-child(10),
+#fc-event-scroll-body .scroll-row > .scroll-cell:nth-child(10) {
+    width: 100px;
+    min-width: 100px;
+    justify-content: flex-end;
+}
+
+#fc-event-scroll-header > .header-cell:nth-child(11),
+#fc-event-scroll-body .scroll-row > .scroll-cell:nth-child(11) {
+    width: 120px;
+    min-width: 120px;
     justify-content: flex-end;
 }
 
@@ -2120,3 +2136,15 @@
 #fc-summary-section .fc-mo-reset:hover { color: var(--text-primary, #2D3748); }
 #fc-summary-section .km-action-menu__item[hidden],
 #fc-summary-section .km-action-menu__divider[hidden] { display: none; }
+
+/* FC1-FINAL — the two read-only reference columns, quietened. Phase 1 prints a dash in every cell until a
+   history source is connected. Their widths sit with the other Special Event columns above.
+   · Special Events: Actual Qty and Achievement %.
+   · Builder Preview: "Actual Sales (Mon YYYY)", between Category / Series and Current Forecast. */
+#fc-summary-section .fc-evt-history { color: var(--text-secondary, #64748b); }
+
+#fc-summary-section .fc-assist-preview-table .fc-prev-ly {
+    text-align: right;
+    white-space: nowrap;
+    color: var(--text-secondary, #64748b);
+}

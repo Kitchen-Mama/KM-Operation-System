@@ -117,6 +117,8 @@ global._fcShareUnavailableTitle_ = function () { return ''; };
 // FC1-R1 — the month cells are painted by their own helper now; stubbed for the same reason as the rest.
 global._fcRegularMonthView_ = 'forecast';
 global._fcRegularMonthCellsHtml_ = function () { return ''; };
+// FC1-FINAL — and so are the Special Event row's two reference cells.
+global._fcEventHistoryCellsHtml_ = function () { return ''; };
 global.syncFcScroll = function () {};
 global._seFingerprint_ = function () { return 'FP'; };   // called by _getDbFcEventData per row
 

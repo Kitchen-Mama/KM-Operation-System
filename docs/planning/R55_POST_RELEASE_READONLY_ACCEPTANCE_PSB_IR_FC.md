@@ -91,8 +91,8 @@ it a data fact, not a defect. It cannot test a return, so Walmart was used.
 
 | # | result | evidence | what was observed |
 |---|---|---|---|
-| I1 | **PASS** — finding **F-3** | `I1-siteA-loaded.png`, `snapshots/i1-siteA.json` | All 100 rows have Avg / Days of Supply / Suggested, with none PENDING. Example: CO1100-R 142.9 / 158.2 / 0. The answer is `SERVER READY REQ-C000004`, `calculationDate 2026-08-19`, cache `STORED`, source epoch `planning 0 / exposure 0`. The Avg title on 83 READY rows names the anchor 2026-08-19 and says the Gap date differs. That is D-S8-B3-186, **not a failure**. **F-3:** that Gap date prints as `2026-10-20T16:00:00.000Z` |
-| I2 | **PASS** | `I2-siteB-walmart.png`, `I2-backA.png`, `I2-returned.png`, `snapshots/i2-*.json` | Steps: B, then back to A, then leave (PSB), then return. **Back to A:** cache `HIT` and the answer `SESSION_CACHE READY REQ-C000004`, the same request as I1. All 100 rows' Avg / DoS / Suggested are identical to I1. None is PENDING or blank. **After leave and return:** the same, again identical to I1 |
+| I1 | **PASS** — finding **F-3** | `I1-siteA-loaded.png`, `snapshots/i1-siteA.json` | *(Corrected 2026-10-22, see §8.)* All 100 rows rendered, none PENDING. **83** rows carry Avg / Days of Supply / Suggested. **17** show Avg `--` *unavailable* and DoS `--`; 5 of those still carry a Suggested Qty and 12 show `—`. Example: CO1100-R 142.9 / 158.2 / 0. The answer is `SERVER READY REQ-C000004`, `calculationDate 2026-08-19`, cache `STORED`, source epoch `planning 0 / exposure 0`. The Avg title on 83 READY rows names the anchor 2026-08-19 and says the Gap date differs. That is D-S8-B3-186, **not a failure**. **F-3:** that Gap date prints as `2026-10-20T16:00:00.000Z` |
+| I2 | **PASS** | `I2-siteB-walmart.png`, `I2-backA.png`, `I2-returned.png`, `snapshots/i2-*.json` | Steps: B, then back to A, then leave (PSB), then return. **Back to A:** cache `HIT` and the answer `SESSION_CACHE READY REQ-C000004`, the same request as I1. *(Corrected, see §8.)* All 100 rows' Avg / DoS / Suggested are identical to I1, **including the 17 unavailable rows**, which are still the same 17 and still unavailable. None is PENDING. **After leave and return:** the same, again identical to I1 |
 | I3 | **PASS** | `net.json` seq 60–63, `snapshots/i2-return.json` | **Back to A:** no request at all. **Return:** only the main `inventoryReplenishment.workspace.get` was re-sent. `recommendation.workspace.get` was **not** re-sent: cache HIT, reason `SERVED_REVISION_INCOMPLETE`. The gap read was **not** re-sent: `_irMatReadDiag_` gives `REUSE`, with 4 reader calls and 3 network reads |
 
 **I3 — SUPERSEDED, by cause:**
@@ -159,6 +159,33 @@ None was waived. None changed a result above.
 | PSB P1–P8 | 7 | **1 (P3, F-2)** | sub-items only: P2 three data-dependent marks; P6 two-currency panel |
 | IR I1–I3 | 3 | 0 | 0 |
 | FC F1–F4 | 4 | 0 | 0 |
+| **Total: 18 items** | **17** | **1 (P3)** | no whole item; the sub-items above stay **NOT RUN** |
 
 **Every read was a contract read, and nothing was written.** The one failure is visual (F-2). The values
 behind it are correct in the DOM, the tooltip and the table.
+
+## 8. Correction (2026-10-22, recorded in the FC1-FINAL round)
+
+The Owner corrected this record. Only the wording changes. No result, evidence file or screenshot was
+touched or re-taken.
+
+- **Totals.** The acceptance has **18 items: 17 PASS and 1 FAIL**. The FAIL is P3 (F-2). The sub-items
+  listed as NOT RUN (P2's three data-dependent marks, P6's two-currency panel) **stay NOT RUN**. They
+  were not exercised and are not counted as passes.
+- **IR I1 / I2.** I1 said *"All 100 rows have Avg / Days of Supply / Suggested"*. That was wrong. The
+  saved snapshots (`snapshots/i1-siteA.json`, `i2-backA.json`, `i2-return.json`, field `digest`) show:
+  - 100 rows, none PENDING;
+  - **83** with Avg, DoS and Suggested;
+  - **17** with Avg *unavailable* and DoS `--`. Five of the 17 still carry a Suggested Qty.
+
+  The 17 are CO2100-P, CO2100-R1, CO2100-T, GA0450-M, GM3000-M1, GM3000-R1, GM3000-W1, GM3000-Y1,
+  GM3060-WM, GM3060-WR, GM3061-WT, GM3061-WW, GM3061-WY, GM3061-YY, MF1000-T1, SP3210-B and SP3210-Y.
+
+  The three snapshots are **identical, all 100 rows**: before the site switch, after returning to A,
+  and after leaving the page and coming back. So I2's *identical to I1* holds. The 17 were unavailable
+  from the first read, not after a return. I1 and I2 stay PASS. The 83 matches the 83 READY rows whose
+  Avg title names the anchor date.
+- **Production P3 stays FAIL.** F-2 is repaired in the unreleased candidate. The PSB-DEMO-R3 close-out
+  verified that in `docs/evidence/psb-demo-r3/close-out/`. This record, however, is about what
+  production served. P3 can be changed only after that release is approved and deployed, **and**
+  production is accepted again.

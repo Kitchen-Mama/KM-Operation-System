@@ -1,10 +1,10 @@
 {
   "round": "PSB-DEMO-R2",
-  "takenAt": "2026-10-22T03:52:07.250Z",
+  "takenAt": "2026-10-22T06:18:47.948Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "assets/js/product-strategy/psb-board-ui.js": "7a70219e4a0b726a",
-    "assets/js/product-strategy/psb-selectors.js": "ef879f6d6a09a21d",
+    "assets/js/product-strategy/psb-board-ui.js": "051501b36fe2990a",
+    "assets/js/product-strategy/psb-selectors.js": "46655156982b0b70",
     "assets/css/product-strategy-board.css": "6ae82cf04cea161e",
     "assets/tests/_psb-demo-capture.js": "9b6e97efe3c3e87a",
     "assets/tests/_psb-demo-r2-capture.js": "2fa319c94ccd4b49",
@@ -80,11 +80,11 @@
           "pointer": 0,
           "keydownWho": [
             "capture script 3:0 ",
-            "capture script 21:1263 ",
+            "capture script 21:1262 ",
             "bubble script 28:694 ",
             "bubble script 22:1652 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 "
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 "
           ]
         },
         "window": {
@@ -106,12 +106,12 @@
           "pointer": 0,
           "keydownWho": [
             "capture script 3:0 ",
-            "capture script 21:1263 ",
-            "capture script 21:1263 ",
+            "capture script 21:1262 ",
+            "capture script 21:1262 ",
             "bubble script 28:694 ",
             "bubble script 22:1652 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 "
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 "
           ]
         },
         "window": {
@@ -131,14 +131,14 @@
         "after": 9,
         "who": [
           "capture script 3:0 ",
-          "capture script 21:1263 ",
-          "capture script 21:1263 ",
+          "capture script 21:1262 ",
+          "capture script 21:1262 ",
           "bubble script 28:694 ",
           "bubble script 22:1652 ",
-          "bubble script 21:6084 ",
-          "bubble script 21:6100 ",
-          "bubble script 21:6084 ",
-          "bubble script 21:6100 "
+          "bubble script 21:6083 ",
+          "bubble script 21:6099 ",
+          "bubble script 21:6083 ",
+          "bubble script 21:6099 "
         ]
       }
     },
@@ -407,11 +407,11 @@
             "pointer": 0,
             "keydownWho": [
               "capture script 3:0 ",
-              "capture script 21:1263 ",
+              "capture script 21:1262 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -430,12 +430,12 @@
             "pointer": 0,
             "keydownWho": [
               "capture script 3:0 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -494,11 +494,11 @@
           "pointer": 0,
           "keydownWho": [
             "capture script 3:0 ",
-            "capture script 21:1263 ",
+            "capture script 21:1262 ",
             "bubble script 28:694 ",
             "bubble script 22:1652 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 "
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 "
           ]
         },
         "after": {
@@ -507,14 +507,14 @@
           "pointer": 0,
           "keydownWho": [
             "capture script 3:0 ",
-            "capture script 21:1263 ",
-            "capture script 21:1263 ",
+            "capture script 21:1262 ",
+            "capture script 21:1262 ",
             "bubble script 28:694 ",
             "bubble script 22:1652 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 ",
-            "bubble script 21:6084 ",
-            "bubble script 21:6100 "
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 ",
+            "bubble script 21:6083 ",
+            "bubble script 21:6099 "
           ]
         }
       }
@@ -548,14 +548,14 @@
             "pointer": 0,
             "keydownWho": [
               "capture script 3:0 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -574,15 +574,15 @@
             "pointer": 0,
             "keydownWho": [
               "capture script 3:0 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -616,14 +616,14 @@
             "pointer": 0,
             "keydownWho": [
               "capture script 3:0 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -642,16 +642,16 @@
             "pointer": 0,
             "keydownWho": [
               "capture script 3:0 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -743,14 +743,14 @@
             "pointer": 0,
             "keydownWho": [
               "capture script 3:0 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -769,18 +769,18 @@
             "pointer": 0,
             "keydownWho": [
               "capture script 3:0 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
-              "capture script 21:1263 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
+              "capture script 21:1262 ",
               "bubble script 28:694 ",
               "bubble script 22:1652 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 ",
-              "bubble script 21:6084 ",
-              "bubble script 21:6100 "
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 ",
+              "bubble script 21:6083 ",
+              "bubble script 21:6099 "
             ]
           },
           "window": {
@@ -944,7 +944,7 @@
   ],
   "mutant": "M4",
   "mutantWhy": "the cancel forgets to remove the drag keydown listener",
-  "mutantSourceSha": "b4988d2b4ef3c906",
+  "mutantSourceSha": "ca7088147fb5faee",
   "complete": true,
   "passed": 47,
   "failed": 5

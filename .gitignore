@@ -27,3 +27,7 @@ assets/tests/_psb-r2-mutant-ui.js
 assets/tests/_psb-demo-r3-page.html
 assets/tests/_psb-demo-r3-page-synth.html
 assets/tests/_psb-r3-before-*
+assets/tests/_psb-r3c-page.html
+assets/tests/_psb-r3c-page-synth.html
+assets/tests/_psb-r3c-before-*
+assets/tests/_fc1-final-before-*

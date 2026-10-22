@@ -818,8 +818,7 @@
   }
   function demoActivityLabel(a) {
     if (!a) return '';
-    var period = (a.start_date || '?') + ' to ' + (a.end_date || '?');
-    return (a.campaign_name || a.campaign_id) + '  ·  ' + period
+    return (a.campaign_name || a.campaign_id) + '  ·  ' + SEL.campaignPeriodText(a)
       + '  ·  recorded status: ' + (a.status || 'not recorded');
   }
 
@@ -2374,8 +2373,8 @@
     var pt = demoPointFor(n);
     if (pt.act) {
       var a = demoActivity();
-      L.push({ t: 'Activity: ' + (a ? (a.campaign_name || a.campaign_id) + '  ' + (a.start_date || '?') + ' to '
-        + (a.end_date || '?') + '  (recorded status: ' + (a.status || 'not recorded') + ')' : DEMO.activityId) });
+      L.push({ t: 'Activity: ' + (a ? (a.campaign_name || a.campaign_id) + '  ' + SEL.campaignPeriodText(a)
+        + '  (recorded status: ' + (a.status || 'not recorded') + ')' : DEMO.activityId) });
       if (pt.act.deal_c !== null) {
         L.push({ t: 'Deal price on record ' + money(pt.act.deal_c, n.currency)
           + (pt.act.state === 'PRICED_PARTIAL' ? '  (' + pt.act.members_priced + ' of ' + pt.act.members_total + ' variants)' : '') });

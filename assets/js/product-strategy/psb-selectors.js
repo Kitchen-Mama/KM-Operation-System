@@ -1097,6 +1097,45 @@
      ------------------------------------------------------------------------------------------------ */
   S.CAMPAIGN_LINE_DEAD_STATUSES = ['cancelled', 'canceled', 'removed', 'deleted', 'inactive', 'ended'];
 
+  /* PSB-DEMO-R3 CLOSE-OUT (R55 F-1) — THE PERIOD AS THE CALENDAR DAYS THE RECORD HOLDS.
+     Production serialises the sheet's Date with toString(), so a period arrives as
+     "Thu Nov 19 2026 00:00:00 GMT+0800 (台北標準時間)" and was printed exactly so. The DAY in that string
+     is the one the record holds: the wall-clock date in the offset it names. It is read LITERALLY from
+     the text. Nothing is parsed into a Date and nothing passes through UTC, so the day cannot move: a
+     Taipei midnight read through UTC would print the day before, which is R55 F-3's defect on IR.
+     DISPLAY ONLY. The value carried, the adapter's isoDay contract and every comparison are unchanged.
+     Anything that is neither an ISO day nor that form is NOT_RECOGNISED and shown as recorded, never
+     guessed. */
+  S.CAMPAIGN_DAY_STATE = { ISO_DAY: 'ISO_DAY', DATE_STRING_DAY: 'DATE_STRING_DAY',
+    NOT_RECOGNISED: 'NOT_RECOGNISED', MISSING: 'MISSING' };
+  var MONTH_OF_ = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+  function realDay_(y, m, d) {
+    var dim = [31, (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return m >= 1 && m <= 12 && d >= 1 && d <= dim[m - 1];
+  }
+  function pad2_(n) { return (n < 10 ? '0' : '') + n; }
+  S.campaignDayOf = function (v) {
+    var s = str(v);
+    if (s === '') return { day: null, state: S.CAMPAIGN_DAY_STATE.MISSING, raw: null };
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m && realDay_(+m[1], +m[2], +m[3])) return { day: s, state: S.CAMPAIGN_DAY_STATE.ISO_DAY, raw: s };
+    m = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{2}) (\d{4}) \d{2}:\d{2}:\d{2} GMT[+-]\d{4}\b/.exec(s);
+    if (m && realDay_(+m[3], MONTH_OF_[m[1]], +m[2])) {
+      return { day: m[3] + '-' + pad2_(MONTH_OF_[m[1]]) + '-' + m[2], state: S.CAMPAIGN_DAY_STATE.DATE_STRING_DAY, raw: s };
+    }
+    return { day: null, state: S.CAMPAIGN_DAY_STATE.NOT_RECOGNISED, raw: s };
+  };
+  function dayText_(v, missing) {
+    var d = S.campaignDayOf(v);
+    if (d.day) return d.day;
+    return d.state === S.CAMPAIGN_DAY_STATE.MISSING ? missing : 'unreadable date "' + d.raw + '"';
+  }
+  /** "2026-11-19 to 2026-11-30", from an activity of campaignCatalogue. */
+  S.campaignPeriodText = function (a) {
+    if (!a) return '';
+    return dayText_(a.start_date, 'start not recorded') + ' to ' + dayText_(a.end_date, 'end not recorded');
+  };
+
   /** The activities the rows carry, one entry per campaign_id, ordered by start date then name. */
   S.campaignCatalogue = function (rows) {
     var by = {}, order = [], unidentified = 0;
@@ -1126,8 +1165,9 @@
         sku_count: Object.keys(e.sku_ids).length, price_units: Object.keys(e.price_units).sort(),
         name_conflict: Object.keys(e.name_variants).length > 1 };
     });
+    /* By the start DAY. The raw text sorted "Thu Nov 19 …" before "Tue Oct 06 …" (R55 F-1). */
     list.sort(function (a, b) {
-      var sa = a.start_date || '9999', sb = b.start_date || '9999';
+      var sa = S.campaignDayOf(a.start_date).day || '9999', sb = S.campaignDayOf(b.start_date).day || '9999';
       if (sa !== sb) return sa < sb ? -1 : 1;
       return String(a.campaign_name || a.campaign_id) < String(b.campaign_name || b.campaign_id) ? -1 : 1;
     });
