@@ -1,0 +1,1 @@
+{"ok":true,"outDir":"C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/caa8d9f9-c437-407c-96f4-6782665dcde2/scratchpad/map2","scenes":["desktop","mobile"],"renderer":"ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A6) Direct3D11 vs_5_0 ps_5_0, D3D11)","contextLost":false}

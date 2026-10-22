@@ -1,0 +1,1 @@
+gl=ANGLE (Intel, Intel(R) Iris(R) Xe Graphics ( held | desktop-a desktop-b desktop-c mobile-a mobile-b mobile-c 

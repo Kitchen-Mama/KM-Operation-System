@@ -1,5 +1,36 @@
 # Map canvas acceptance — the desktop cold run loses its globe (found by the PSB-DEMO-R3 sweep; NOT fixed)
 
+> **CORRECTION (2026-10-22, R64 release-candidate close-out). The conclusion below is withdrawn. It was
+> the wrong capture entry, not a product defect.** The original text and all three attempts are kept
+> unchanged below.
+>
+> - **What the three attempts actually ran:** `node assets/tests/_cp2m-r2-map-runner.js <dir>`. That is
+>   the OLD runner. It hard-codes `--use-gl=swiftshader --enable-unsafe-swiftshader`. The suite's own
+>   header says not to use it: *"Re-capture with: node assets/tests/_cp2o-r2-map-capture.js
+>   docs/evidence/cp2m-r2-map"*, after `_cp2o-r2-gl-probe.js`. The three `map.json` files carry no
+>   `glEnvironment` field, which is the old runner's format.
+> - **The probe** (`docs/evidence/r64-map-recapture/gl-probe/`):
+>   - forced SwiftShader: **CONTEXT LOST at 2702 ms, 1 frame**. That is why the globe "appeared, then
+>     0 canvases";
+>   - no GL override, Chrome's real adapter (Intel Iris Xe, ANGLE / D3D11): **HELD 10068 ms, 537 frames,
+>     contextLost false**;
+>   - `--use-angle=d3d11`, `--use-angle=gl` and the forced-GPU configuration also HELD.
+> - **The correct entry**, `_cp2o-r2-map-capture.js`, on the same sources, first and cold, with no warm-up
+>   and no retry of a failed render:
+>   - **desktop and mobile both captured**;
+>   - context held;
+>   - A vs B noise floor **0** changed pixels;
+>   - real drag A vs C changed **45.2%** (desktop) and **72.9%** (mobile) of the canvas;
+>   - the globe fills 99.8% of the canvas, centroid offset 0.063 / 0.046;
+>   - the unchanged suite: **75 / 75**.
+> - **One environment fact found on the way.** Given the RELATIVE output folder from this worktree's
+>   non-ASCII path, Chrome's `--screenshot=` wrote no file. The render itself was fine: the canvas was
+>   present and laid out on the first desktop run. Attempt 1 is kept as `attempt-1-relative-outdir`.
+>   Attempt 2 passed an absolute ASCII folder. Its files were copied byte-for-byte into
+>   `docs/evidence/cp2m-r2-map/`; `map.json` says where they were taken (`shotsDir`).
+> - **So:** no product defect was shown, the map and the shared loader were not changed, and the earlier
+>   sentence "it is neither the token nor PSB code" stands but proves nothing about the product.
+
 **What happened.** The full sweep at `ef735466` reported `map-canvas-acceptance-s8-b3-r3-cp2m-r2` NOT CLEAN.
 Its capture (`docs/evidence/cp2m-r2-map/map.json`, taken at `331acdb6`) pins `index.html` and `app.js`, and
 the r64 token rotation moved both. So the capture had to be re-taken, as the other twelve were.

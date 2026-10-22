@@ -1,0 +1,127 @@
+{
+ "ok": true,
+ "browser": "chrome.exe",
+ "capturedAt": "2026-10-22",
+ "holdMs": 9000,
+ "node": "v24.14.0",
+ "usableConfigs": [
+  "angle-default",
+  "angle-d3d11",
+  "angle-gl",
+  "angle-d3d11-gpu-forced"
+ ],
+ "anyUsable": true,
+ "results": [
+  {
+   "config": "swiftshader-baseline",
+   "note": "exactly what the capture runner forces today",
+   "flags": [
+    "--use-gl=swiftshader",
+    "--enable-unsafe-swiftshader"
+   ],
+   "chromeExit": "EXIT",
+   "reported": {
+    "id": "swiftshader-baseline",
+    "created": true,
+    "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "vendor": "Google Inc. (Google)",
+    "contextLost": true,
+    "lostAtMs": 2702,
+    "frames": 1,
+    "lastFrameMs": 2694,
+    "error": null,
+    "heldForMs": 11702
+   },
+   "screenshotBytes": 1947,
+   "verdict": "CONTEXT_LOST_AT_2702MS"
+  },
+  {
+   "config": "angle-default",
+   "note": "no GL override: headless picks the real adapter if it can",
+   "flags": [],
+   "chromeExit": "EXIT",
+   "reported": {
+    "id": "angle-default",
+    "created": true,
+    "renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A6) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (Intel)",
+    "contextLost": false,
+    "lostAtMs": null,
+    "frames": 537,
+    "lastFrameMs": 10056,
+    "error": null,
+    "heldForMs": 10068
+   },
+   "screenshotBytes": 2022,
+   "verdict": "HELD_10068MS"
+  },
+  {
+   "config": "angle-d3d11",
+   "note": "real GPU through D3D11",
+   "flags": [
+    "--use-angle=d3d11"
+   ],
+   "chromeExit": "EXIT",
+   "reported": {
+    "id": "angle-d3d11",
+    "created": true,
+    "renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A6) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (Intel)",
+    "contextLost": false,
+    "lostAtMs": null,
+    "frames": 537,
+    "lastFrameMs": 10831,
+    "error": null,
+    "heldForMs": 10839
+   },
+   "screenshotBytes": 2021,
+   "verdict": "HELD_10839MS"
+  },
+  {
+   "config": "angle-gl",
+   "note": "real GPU through desktop GL",
+   "flags": [
+    "--use-angle=gl"
+   ],
+   "chromeExit": "EXIT",
+   "reported": {
+    "id": "angle-gl",
+    "created": true,
+    "renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics, OpenGL 4.5.0)",
+    "vendor": "Google Inc. (Intel)",
+    "contextLost": false,
+    "lostAtMs": null,
+    "frames": 295,
+    "lastFrameMs": 10681,
+    "error": null,
+    "heldForMs": 10710
+   },
+   "screenshotBytes": 2339,
+   "verdict": "HELD_10710MS"
+  },
+  {
+   "config": "angle-d3d11-gpu-forced",
+   "note": "real GPU, blocklist ignored",
+   "flags": [
+    "--use-angle=d3d11",
+    "--enable-gpu",
+    "--ignore-gpu-blocklist"
+   ],
+   "chromeExit": "EXIT",
+   "reported": {
+    "id": "angle-d3d11-gpu-forced",
+    "created": true,
+    "renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A6) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (Intel)",
+    "contextLost": false,
+    "lostAtMs": null,
+    "frames": 537,
+    "lastFrameMs": 10263,
+    "error": null,
+    "heldForMs": 10264
+   },
+   "screenshotBytes": 2022,
+   "verdict": "HELD_10264MS"
+  }
+ ]
+}

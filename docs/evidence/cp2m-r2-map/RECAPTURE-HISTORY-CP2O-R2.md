@@ -142,3 +142,33 @@ not proven to draw, and this is still one headless machine with one GPU rather t
 operator hardware. One disclaimer is RESOLVED: "why the software rasteriser degraded" is no longer
 UNVERIFIED-and-outside-this-repository. It degrades the way the header says it does, and the only thing
 that was unverified was whether anybody read the header before running the other tool.
+
+## R64 release-candidate close-out (2026-10-22) — re-taken after the r64 token rotation
+
+**Why.** The r64 rotation moved `index.html` and `app.js`, which this capture pins (`A2`). PSB-DEMO-R3
+tried to re-take it three times with `_cp2m-r2-map-runner.js`. That is the forced-SwiftShader runner this
+file already warns about, and it failed 3 of 3 for that reason. See
+`docs/evidence/psb-demo-r3/MAP-DESKTOP-COLD-RUN-FINDING.md` (corrected).
+
+**How**, following this file's own procedure:
+
+```
+node assets/tests/_cp2o-r2-gl-probe.js docs/evidence/r64-map-recapture/gl-probe
+node assets/tests/_cp2o-r2-map-capture.js <absolute ASCII scratch folder>
+```
+
+**Probe:**
+- `--use-gl=swiftshader`: CONTEXT LOST at 2702 ms, 1 frame.
+- No override: HELD 10068 ms, 537 frames, Intel Iris Xe D3D11.
+- d3d11, gl and forced-GPU: all HELD.
+
+**Capture:**
+- desktop A/B identical (noise floor 0); C after a real drag changed 45.2%;
+- mobile A/B identical; C changed 72.9%;
+- context held; suite 75 / 75.
+
+**The output folder is absolute on purpose.** From this worktree's non-ASCII path, a RELATIVE folder
+made Chrome's `--screenshot=` write nothing, although the canvas had rendered
+(`r64-map-recapture/attempt-1-relative-outdir`). One run, not repeated for a better result. No hash
+was edited and no threshold moved. The six PNGs and `map.json` here are that run's files, byte for
+byte.

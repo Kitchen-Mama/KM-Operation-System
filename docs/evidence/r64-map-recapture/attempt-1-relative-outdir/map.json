@@ -1,0 +1,225 @@
+{
+ "ok": true,
+ "browser": "chrome.exe",
+ "capturedAt": "2026-10-22",
+ "design": "A and B are identical runs (the noise floor); C performs a real pointer drag (the effect).",
+ "glEnvironment": {
+  "flags": [
+   "--enable-unsafe-swiftshader"
+  ],
+  "entry": "assets/tests/_cp2o-r2-map-capture.js",
+  "probe": {
+   "created": true,
+   "renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A6) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "vendor": "Google Inc. (Intel)",
+   "glVersion": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
+   "contextLost": false,
+   "lostAtMs": null,
+   "frames": 359,
+   "heldForMs": 7916
+  },
+  "note": "The forced --use-gl=swiftshader of the original entry point is NOT passed here; see the file header and docs/evidence/cp2o-r2-gl/gl-probe.json."
+ },
+ "sources": {
+  "index.html": "17cb60cffe8780dd",
+  "assets/js/lib/km-globe.js": "f65e109bc3b91584",
+  "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
+  "assets/js/app.js": "97eb398258498655",
+  "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c",
+  "assets/tests/_cp2o-r2-map-capture.js": "d41703314dccd624",
+  "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
+ },
+ "shotsDir": "docs/evidence/r64-map-recapture/capture",
+ "scenes": [
+  {
+   "scene": "desktop",
+   "viewport": {
+    "w": 1280,
+    "h": 800
+   },
+   "canvas": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 603,
+     "y": 113,
+     "w": 615,
+     "h": 638
+    },
+    "canvasBackingSize": {
+     "w": 615,
+     "h": 638
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 1661,
+    "canvasAppeared": true
+   },
+   "canvasB": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 603,
+     "y": 113,
+     "w": 615,
+     "h": 638
+    },
+    "canvasBackingSize": {
+     "w": 615,
+     "h": 638
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 942,
+    "canvasAppeared": true
+   },
+   "dragReport": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 603,
+     "y": 113,
+     "w": 615,
+     "h": 638
+    },
+    "canvasBackingSize": {
+     "w": 615,
+     "h": 638
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": true,
+    "canvasWaitMs": 989,
+    "canvasAppeared": true,
+    "dragPath": {
+     "from": [
+      911,
+      432
+     ],
+     "to": [
+      1023,
+      448
+     ]
+    }
+   },
+   "pngBytes": {
+    "a": 0,
+    "b": 0,
+    "c": 0
+   },
+   "error": "MISSING_SCREENSHOT"
+  },
+  {
+   "scene": "mobile",
+   "viewport": {
+    "w": 390,
+    "h": 844
+   },
+   "canvas": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 31,
+     "y": 200,
+     "w": 313,
+     "h": 606
+    },
+    "canvasBackingSize": {
+     "w": 313,
+     "h": 606
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 914,
+    "canvasAppeared": true
+   },
+   "canvasB": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 31,
+     "y": 200,
+     "w": 313,
+     "h": 606
+    },
+    "canvasBackingSize": {
+     "w": 313,
+     "h": 606
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 927,
+    "canvasAppeared": true
+   },
+   "dragReport": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 31,
+     "y": 200,
+     "w": 313,
+     "h": 606
+    },
+    "canvasBackingSize": {
+     "w": 313,
+     "h": 606
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": true,
+    "canvasWaitMs": 937,
+    "canvasAppeared": true,
+    "dragPath": {
+     "from": [
+      188,
+      502
+     ],
+     "to": [
+      300,
+      518
+     ]
+    }
+   },
+   "pngBytes": {
+    "a": 0,
+    "b": 0,
+    "c": 0
+   },
+   "error": "MISSING_SCREENSHOT"
+  }
+ ]
+}
