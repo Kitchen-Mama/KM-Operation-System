@@ -240,8 +240,13 @@ readable on the Web.* **What may not:** *FX editable on the Web*. The Web still 
 Nor *prices repriced*: no reconcile was run, and no `pricing_list` row was touched. Imports and SKU
 creation from now on read this book.
 
-**Still open — NOT claimed done:**
-- **Removing the temporary files from the production Apps Script project** (`TEMP_FxRateBookEditorSave`,
-  and `TEMP_CheckFxIdentity` if it is still there). **Waiting for the Owner's confirmation.** Until both
-  are confirmed gone, no deployment version may be created (FX-AUTH-R2 §5).
+**Temporary files — CLOSED by Owner confirmation (2026-10-22).** The Owner confirmed that both
+`TEMP_FxRateBookEditorSave` and `TEMP_CheckFxIdentity` are deleted from the production Apps Script
+project. Two consequences:
+- no redeployment is needed;
+- the initialisation is **not** to be run again.
+
+That is the Owner's statement; the agent cannot see the project.
+
+**Still not received:**
 - The active deployment version and its creation time were never received.

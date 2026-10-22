@@ -7,7 +7,7 @@ was initialised, nothing was repriced, and nothing was pushed or deployed.
 
 | item | status |
 |---|---|
-| Phase 1 outcome (FX-INIT-R1) | **saved and read back (Owner, 2026-10-22):** one commit through `handleFxRateBookSave_`, `doc_version 0 -> 1`, the five approved rates; Web readback `doc_version 1`, `may_edit: false`. Evidence `docs/evidence/fx-init-r1/`. **Temp-file removal awaits Owner confirmation** |
+| Phase 1 outcome (FX-INIT-R1) | **saved and read back (Owner, 2026-10-22):** one commit through `handleFxRateBookSave_`, `doc_version 0 -> 1`, the five approved rates; Web readback `doc_version 1`, `may_edit: false`. Evidence `docs/evidence/fx-init-r1/`. Both temporary files deleted (Owner-confirmed, 2026-10-22); no redeploy; not to be re-initialised |
 | Production `fxRateBook.get` | **received (Owner):** answered by the R55 handler; `may_edit: false`, `authority_reason: FX_AUTHORITY_UNVERIFIABLE`; `doc_version 0`, 0 rates |
 | Owner's Editor diagnostic (`TEMP_CheckFxIdentity` log line) | **received (Owner, FX-INIT-R1):** `active_email=vic.zhou@shopkitchenmama.com`, `active_error=null`, `editors_property_present=true`, `caller_on_editor_list=true`. That is §3 row 1: phase 1 is viable. The tool is frozen at `b6ef4008`; the draft payload is in `docs/planning/fx-init-r1/` |
 | The deployment version now serving `/exec`, and whether it was created after the four-scope manifest was saved | **not received** |
