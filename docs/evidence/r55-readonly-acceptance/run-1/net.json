@@ -1,0 +1,1062 @@
+[
+  {
+    "seq": 1,
+    "t": "2026-10-22T02:14:28.754Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=getClientCapabilities&km_via=get&km_tc=1&km_rid=REQ-G000001&km_body=%7B%22action%22%3A%22getClientCapabilities%22%2C%22requestId%22%3A%22REQ-G000001%22%7D",
+    "action": "getClientCapabilities",
+    "contract": "doGet branch",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 2,
+    "t": "2026-10-22T02:14:28.759Z",
+    "stage": "network",
+    "requestId": "56488.193",
+    "method": "GET",
+    "action": "getClientCapabilities",
+    "contract": "doGet branch",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0002-getClientCapabilities.json",
+    "bytes": 231,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 3,
+    "t": "2026-10-22T02:14:55.087Z",
+    "stage": "MARK",
+    "label": "HEALTH: KM.DB.checkDeploymentContract()"
+  },
+  {
+    "seq": 4,
+    "t": "2026-10-22T02:14:55.258Z",
+    "stage": "network",
+    "requestId": "56488.195",
+    "method": "GET",
+    "action": "system.health",
+    "contract": "doGet branch",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0004-system.health.json",
+    "bytes": 36254,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 5,
+    "t": "2026-10-22T02:14:55.258Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=system.health&km_via=get&km_tc=1&km_rid=REQ-G000002&km_body=%7B%22action%22%3A%22system.health%22%2C%22probe_actions%22%3A%5B%22requestOrder.sendWorkset.get%22%2C%22requestOrder.se",
+    "action": "system.health",
+    "contract": "doGet branch",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 6,
+    "t": "2026-10-22T02:16:03.679Z",
+    "stage": "MARK",
+    "label": "PSB: open Category Analysis"
+  },
+  {
+    "seq": 7,
+    "t": "2026-10-22T02:16:04.242Z",
+    "stage": "network",
+    "requestId": "56488.204",
+    "method": "GET",
+    "action": "productPricing.siteUniverse.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0007-productPricing.siteUniverse.get.json",
+    "bytes": 5449,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 8,
+    "t": "2026-10-22T02:16:04.242Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=productPricing.siteUniverse.get&km_via=get&km_tc=1&km_rid=REQ-C000001&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22productPricing.siteUniverse.get%22%2C%22requestId%22",
+    "action": "productPricing.siteUniverse.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 9,
+    "t": "2026-10-22T02:16:58.668Z",
+    "stage": "MARK",
+    "label": "PSB: choose ResUS / US / Amazon"
+  },
+  {
+    "seq": 10,
+    "t": "2026-10-22T02:17:01.728Z",
+    "stage": "network",
+    "requestId": "56488.205",
+    "method": "GET",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0010-productPricing.workspace.get.json",
+    "bytes": 309441,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 11,
+    "t": "2026-10-22T02:17:01.729Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=productPricing.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000002&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22productPricing.workspace.get%22%2C%22requestId%22%3A%22",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 12,
+    "t": "2026-10-22T02:17:58.650Z",
+    "stage": "MARK",
+    "label": "PSB: Open Category Analysis - Electric Can Opener"
+  },
+  {
+    "seq": 13,
+    "t": "2026-10-22T02:18:24.546Z",
+    "stage": "MARK",
+    "label": "PSB P2: Activity price"
+  },
+  {
+    "seq": 14,
+    "t": "2026-10-22T02:18:49.060Z",
+    "stage": "MARK",
+    "label": "PSB P3: choose BFCM 2026"
+  },
+  {
+    "seq": 15,
+    "t": "2026-10-22T02:20:52.599Z",
+    "stage": "MARK",
+    "label": "PSB P2: category Grinders, then Fall Prime 2026"
+  },
+  {
+    "seq": 16,
+    "t": "2026-10-22T02:21:51.329Z",
+    "stage": "MARK",
+    "label": "PSB P4: Electric Can Opener, Everyday price, single-point simulation"
+  },
+  {
+    "seq": 17,
+    "t": "2026-10-22T02:23:20.894Z",
+    "stage": "MARK",
+    "label": "PSB P5: Undo / Reset this product / Reset all"
+  },
+  {
+    "seq": 18,
+    "t": "2026-10-22T02:23:52.303Z",
+    "stage": "MARK",
+    "label": "PSB P6: competitors"
+  },
+  {
+    "seq": 19,
+    "t": "2026-10-22T02:25:19.134Z",
+    "stage": "MARK",
+    "label": "PSB P7a: Esc during a drag"
+  },
+  {
+    "seq": 20,
+    "t": "2026-10-22T02:26:09.432Z",
+    "stage": "MARK",
+    "label": "PSB P7b: leave mid-drag via the Site Inventory menu handler showSection(ops), return via the Category Analysis menu"
+  },
+  {
+    "seq": 21,
+    "t": "2026-10-22T02:26:11.604Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=inventoryScope.registry.get&km_via=get&km_tc=1&km_rid=REQ-G000003&km_body=%7B%22action%22%3A%22inventoryScope.registry.get%22%2C%22requestId%22%3A%22REQ-G000003%22%7D",
+    "action": "inventoryScope.registry.get",
+    "contract": "doGet branch",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 22,
+    "t": "2026-10-22T02:26:11.616Z",
+    "stage": "network",
+    "requestId": "56488.807",
+    "method": "GET",
+    "action": "inventoryScope.registry.get",
+    "contract": "doGet branch",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0022-inventoryScope.registry.get.json",
+    "bytes": 3203,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 23,
+    "t": "2026-10-22T02:26:46.468Z",
+    "stage": "MARK",
+    "label": "PSB P7b: return via Category Analysis menu"
+  },
+  {
+    "seq": 24,
+    "t": "2026-10-22T02:27:20.763Z",
+    "stage": "MARK",
+    "label": "PSB P7c: context switch Everyday -> Activity BFCM -> Fall Prime -> Everyday"
+  },
+  {
+    "seq": 25,
+    "t": "2026-10-22T02:27:42.515Z",
+    "stage": "MARK",
+    "label": "PSB P7d: change site to ResUS/US/Walmart and back to Amazon"
+  },
+  {
+    "seq": 26,
+    "t": "2026-10-22T02:27:42.679Z",
+    "stage": "network",
+    "requestId": "56488.1000",
+    "method": "GET",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0026-productPricing.workspace.get.json",
+    "bytes": 41076,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 27,
+    "t": "2026-10-22T02:27:42.680Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=productPricing.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000003&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22productPricing.workspace.get%22%2C%22requestId%22%3A%22",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 28,
+    "t": "2026-10-22T02:27:56.202Z",
+    "stage": "network",
+    "requestId": "56488.1004",
+    "method": "GET",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0028-productPricing.workspace.get.json",
+    "bytes": 309440,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 29,
+    "t": "2026-10-22T02:27:56.203Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=productPricing.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000004&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22productPricing.workspace.get%22%2C%22requestId%22%3A%22",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 30,
+    "t": "2026-10-22T02:28:40.980Z",
+    "stage": "MARK",
+    "label": "PSB P8: simulate + competitor, then reload"
+  },
+  {
+    "seq": 31,
+    "t": "2026-10-22T02:28:45.133Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=getClientCapabilities&km_via=get&km_tc=1&km_rid=REQ-G000001&km_body=%7B%22action%22%3A%22getClientCapabilities%22%2C%22requestId%22%3A%22REQ-G000001%22%7D",
+    "action": "getClientCapabilities",
+    "contract": "doGet branch",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 32,
+    "t": "2026-10-22T02:28:45.134Z",
+    "stage": "network",
+    "requestId": "56488.1375",
+    "method": "GET",
+    "action": "getClientCapabilities",
+    "contract": "doGet branch",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0032-getClientCapabilities.json",
+    "bytes": 231,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 33,
+    "t": "2026-10-22T02:29:01.611Z",
+    "stage": "network",
+    "requestId": "56488.1385",
+    "method": "GET",
+    "action": "productPricing.siteUniverse.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0033-productPricing.siteUniverse.get.json",
+    "bytes": 5449,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 34,
+    "t": "2026-10-22T02:29:01.611Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=productPricing.siteUniverse.get&km_via=get&km_tc=1&km_rid=REQ-C000001&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22productPricing.siteUniverse.get%22%2C%22requestId%22",
+    "action": "productPricing.siteUniverse.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 35,
+    "t": "2026-10-22T02:29:10.507Z",
+    "stage": "network",
+    "requestId": "56488.1386",
+    "method": "GET",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0035-productPricing.workspace.get.json",
+    "bytes": 309440,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 36,
+    "t": "2026-10-22T02:29:10.507Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=productPricing.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000002&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22productPricing.workspace.get%22%2C%22requestId%22%3A%22",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 37,
+    "t": "2026-10-22T02:30:12.870Z",
+    "stage": "MARK",
+    "label": "IR I1: open Site Inventory"
+  },
+  {
+    "seq": 38,
+    "t": "2026-10-22T02:30:13.550Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=inventoryScope.registry.get&km_via=get&km_tc=1&km_rid=REQ-G000002&km_body=%7B%22action%22%3A%22inventoryScope.registry.get%22%2C%22requestId%22%3A%22REQ-G000002%22%7D",
+    "action": "inventoryScope.registry.get",
+    "contract": "doGet branch",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 39,
+    "t": "2026-10-22T02:30:13.554Z",
+    "stage": "network",
+    "requestId": "56488.1424",
+    "method": "GET",
+    "action": "inventoryScope.registry.get",
+    "contract": "doGet branch",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0039-inventoryScope.registry.get.json",
+    "bytes": 3204,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 40,
+    "t": "2026-10-22T02:30:45.906Z",
+    "stage": "MARK",
+    "label": "IR I1: site A = ResUS/US/Amazon, Search"
+  },
+  {
+    "seq": 41,
+    "t": "2026-10-22T02:31:14.280Z",
+    "stage": "MARK",
+    "label": "IR I1: press Search (site A)"
+  },
+  {
+    "seq": 42,
+    "t": "2026-10-22T02:31:14.468Z",
+    "stage": "network",
+    "requestId": "56488.1425",
+    "method": "GET",
+    "action": "inventoryReplenishment.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0042-inventoryReplenishment.workspace.get.json",
+    "bytes": 7050760,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 43,
+    "t": "2026-10-22T02:31:14.468Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=inventoryReplenishment.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000003&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22inventoryReplenishment.workspace.get%22%2C%22re",
+    "action": "inventoryReplenishment.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 44,
+    "t": "2026-10-22T02:31:23.932Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=inventoryReplenishmentGap.get&km_via=get&km_tc=1&km_rid=REQ-G000003&km_body=%7B%22action%22%3A%22inventoryReplenishmentGap.get%22%2C%22payload%22%3A%7B%22scope%22%3A%7B%22company%2",
+    "action": "inventoryReplenishmentGap.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 45,
+    "t": "2026-10-22T02:31:23.937Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=recommendation.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000004&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22recommendation.workspace.get%22%2C%22requestId%22%3A%22",
+    "action": "recommendation.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 46,
+    "t": "2026-10-22T02:31:23.937Z",
+    "stage": "network",
+    "requestId": "56488.1426",
+    "method": "GET",
+    "action": "inventoryReplenishmentGap.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0046-inventoryReplenishmentGap.get.json",
+    "bytes": 43703,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 47,
+    "t": "2026-10-22T02:31:23.938Z",
+    "stage": "network",
+    "requestId": "56488.1427",
+    "method": "GET",
+    "action": "recommendation.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0047-recommendation.workspace.get.json",
+    "bytes": 345923,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 48,
+    "t": "2026-10-22T02:31:23.938Z",
+    "stage": "network",
+    "requestId": "56488.1428",
+    "method": "GET",
+    "action": "inventoryReplenishment.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0048-inventoryReplenishment.workspace.get.json",
+    "bytes": 324750,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 49,
+    "t": "2026-10-22T02:31:23.939Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=inventoryReplenishment.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000005&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22inventoryReplenishment.workspace.get%22%2C%22re",
+    "action": "inventoryReplenishment.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 50,
+    "t": "2026-10-22T02:33:09.055Z",
+    "stage": "MARK",
+    "label": "IR I2: site B = KM/US/KM Amazon, Search"
+  },
+  {
+    "seq": 51,
+    "t": "2026-10-22T02:33:10.496Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=inventoryReplenishmentGap.get&km_via=get&km_tc=1&km_rid=REQ-G000004&km_body=%7B%22action%22%3A%22inventoryReplenishmentGap.get%22%2C%22payload%22%3A%7B%22scope%22%3A%7B%22company%2",
+    "action": "inventoryReplenishmentGap.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 52,
+    "t": "2026-10-22T02:33:10.497Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=recommendation.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000006&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22recommendation.workspace.get%22%2C%22requestId%22%3A%22",
+    "action": "recommendation.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 53,
+    "t": "2026-10-22T02:33:10.498Z",
+    "stage": "network",
+    "requestId": "56488.1429",
+    "method": "GET",
+    "action": "inventoryReplenishmentGap.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0053-inventoryReplenishmentGap.get.json",
+    "bytes": 228,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 54,
+    "t": "2026-10-22T02:33:10.498Z",
+    "stage": "network",
+    "requestId": "56488.1430",
+    "method": "GET",
+    "action": "recommendation.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0054-recommendation.workspace.get.json",
+    "bytes": 665,
+    "success": false,
+    "error": {
+      "code": "MISSING_SKU_MAPPING",
+      "message": "no marketplace_skus row for the scope (company/country/marketplace)",
+      "details": null
+    }
+  },
+  {
+    "seq": 55,
+    "t": "2026-10-22T02:33:50.157Z",
+    "stage": "MARK",
+    "label": "IR I2: site B = ResUS/US/Walmart, Search"
+  },
+  {
+    "seq": 56,
+    "t": "2026-10-22T02:33:51.650Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=inventoryReplenishmentGap.get&km_via=get&km_tc=1&km_rid=REQ-G000005&km_body=%7B%22action%22%3A%22inventoryReplenishmentGap.get%22%2C%22payload%22%3A%7B%22scope%22%3A%7B%22company%2",
+    "action": "inventoryReplenishmentGap.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 57,
+    "t": "2026-10-22T02:33:51.651Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=recommendation.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000007&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22recommendation.workspace.get%22%2C%22requestId%22%3A%22",
+    "action": "recommendation.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 58,
+    "t": "2026-10-22T02:33:51.657Z",
+    "stage": "network",
+    "requestId": "56488.1431",
+    "method": "GET",
+    "action": "inventoryReplenishmentGap.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0058-inventoryReplenishmentGap.get.json",
+    "bytes": 8080,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 59,
+    "t": "2026-10-22T02:33:51.657Z",
+    "stage": "network",
+    "requestId": "56488.1432",
+    "method": "GET",
+    "action": "recommendation.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0059-recommendation.workspace.get.json",
+    "bytes": 48907,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 60,
+    "t": "2026-10-22T02:34:25.176Z",
+    "stage": "MARK",
+    "label": "IR I2: back to site A = ResUS/US/Amazon, Search"
+  },
+  {
+    "seq": 61,
+    "t": "2026-10-22T02:34:52.608Z",
+    "stage": "MARK",
+    "label": "IR I2: leave Site Inventory (menu Category Analysis), then return (menu Site Inventory)"
+  },
+  {
+    "seq": 62,
+    "t": "2026-10-22T02:35:09.612Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=inventoryReplenishment.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000008&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22inventoryReplenishment.workspace.get%22%2C%22re",
+    "action": "inventoryReplenishment.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 63,
+    "t": "2026-10-22T02:35:09.617Z",
+    "stage": "network",
+    "requestId": "56488.1457",
+    "method": "GET",
+    "action": "inventoryReplenishment.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0063-inventoryReplenishment.workspace.get.json",
+    "bytes": 7050760,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 64,
+    "t": "2026-10-22T02:35:54.134Z",
+    "stage": "MARK",
+    "label": "FC F1: open Forecast Overview"
+  },
+  {
+    "seq": 65,
+    "t": "2026-10-22T02:36:16.777Z",
+    "stage": "network",
+    "requestId": "56488.1459",
+    "method": "GET",
+    "action": "fcSummary.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0065-fcSummary.workspace.get.json",
+    "bytes": 8176,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 66,
+    "t": "2026-10-22T02:36:16.777Z",
+    "stage": "network",
+    "requestId": "56488.1460",
+    "method": "GET",
+    "action": "fcSummary.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0066-fcSummary.workspace.get.json",
+    "bytes": 405718,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 67,
+    "t": "2026-10-22T02:36:16.777Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=fcSummary.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000009&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22fcSummary.workspace.get%22%2C%22requestId%22%3A%22REQ-C00000",
+    "action": "fcSummary.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 68,
+    "t": "2026-10-22T02:36:16.777Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=fcSummary.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000010&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22fcSummary.workspace.get%22%2C%22requestId%22%3A%22REQ-C00001",
+    "action": "fcSummary.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 69,
+    "t": "2026-10-22T02:36:50.090Z",
+    "stage": "MARK",
+    "label": "FC F1: year 2026, Forecast view"
+  },
+  {
+    "seq": 70,
+    "t": "2026-10-22T02:37:36.411Z",
+    "stage": "MARK",
+    "label": "FC F3: Months view Actual, then Achievement %, then back to Forecast"
+  },
+  {
+    "seq": 71,
+    "t": "2026-10-22T02:38:05.443Z",
+    "stage": "MARK",
+    "label": "FC F2: + New FC Update (builder), Preview, Cancel"
+  },
+  {
+    "seq": 72,
+    "t": "2026-10-22T02:38:19.696Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=getTable&table=sku_details&_ts=1792636699694",
+    "action": "getTable",
+    "contract": "doGet branch",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 73,
+    "t": "2026-10-22T02:38:19.696Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=getTable&table=marketplace_skus&_ts=1792636699695",
+    "action": "getTable",
+    "contract": "doGet branch",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 74,
+    "t": "2026-10-22T02:38:19.697Z",
+    "stage": "network",
+    "requestId": "56488.1461",
+    "method": "GET",
+    "action": "getTable",
+    "contract": "doGet branch",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0074-getTable.json",
+    "bytes": 191673,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 75,
+    "t": "2026-10-22T02:38:19.697Z",
+    "stage": "network",
+    "requestId": "56488.1462",
+    "method": "GET",
+    "action": "getTable",
+    "contract": "doGet branch",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0075-getTable.json",
+    "bytes": 215366,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 76,
+    "t": "2026-10-22T02:39:21.782Z",
+    "stage": "MARK",
+    "label": "FC F2: Preview Apply Growth Rate, CO1100-R, base 2026-Oct, +10%, target 2027-Oct"
+  },
+  {
+    "seq": 77,
+    "t": "2026-10-22T02:39:44.393Z",
+    "stage": "MARK",
+    "label": "FC F2: Cancel"
+  },
+  {
+    "seq": 78,
+    "t": "2026-10-22T02:40:21.215Z",
+    "stage": "MARK",
+    "label": "FC F4: missing base - Apply Growth Rate, base 2025-Oct (no 2025 rows)"
+  },
+  {
+    "seq": 79,
+    "t": "2026-10-22T02:40:52.661Z",
+    "stage": "MARK",
+    "label": "FC F3 (builder): history methods lastYearActual / intervalAverage, Preview"
+  },
+  {
+    "seq": 80,
+    "t": "2026-10-22T02:41:11.166Z",
+    "stage": "MARK",
+    "label": "FC: Cancel builder; final state"
+  }
+]

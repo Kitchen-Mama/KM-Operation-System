@@ -1,0 +1,106 @@
+{
+ "value": {
+  "n": 18,
+  "pendingAvg": 0,
+  "pendingSug": 0,
+  "windowNotes": {},
+  "digest": "CO1100-R=--unavailable/--/—;CO1100-S=--unavailable/--/—;CO1100-T=--unavailable/--/—;CO1100-W=--unavailable/--/—;CO1200-B=--unavailable/--/—;CO1205-B=--unavailable/--/—;CO1205-R=--unavailable/--/—;CO2300-R=--unavailable/--/—;CO2300-W=--unavailable/--/—;CO2300-Y=--unavailable/--/—;CO2600-W=--unavailable/--/—;GM1100-P=--unavailable/--/—;GM1100-R=--unavailable/--/—;GM1100-T=--unavailable/--/—;MG0110-E=--unavailable/--/—;SP0650-RM=--unavailable/--/—;SP5120-M=--unavailable/--/—;SP5120-R=--unavailable/--/—",
+  "sample": [
+   {
+    "sku": "CO1100-R",
+    "avg": "--unavailable",
+    "dos": "--",
+    "sug": "—",
+    "title": "No usable daily or weekly sales history for this site."
+   },
+   {
+    "sku": "CO1100-S",
+    "avg": "--unavailable",
+    "dos": "--",
+    "sug": "—",
+    "title": "No usable daily or weekly sales history for this site."
+   },
+   {
+    "sku": "CO1100-T",
+    "avg": "--unavailable",
+    "dos": "--",
+    "sug": "—",
+    "title": "No usable daily or weekly sales history for this site."
+   },
+   {
+    "sku": "CO1100-W",
+    "avg": "--unavailable",
+    "dos": "--",
+    "sug": "—",
+    "title": "No usable daily or weekly sales history for this site."
+   },
+   {
+    "sku": "CO1200-B",
+    "avg": "--unavailable",
+    "dos": "--",
+    "sug": "—",
+    "title": "No usable daily or weekly sales history for this site."
+   }
+  ],
+  "diag": {
+   "cache": {
+    "outcome": "STORED",
+    "reason": null
+   },
+   "timing": {
+    "searchToDispatchMs": 43.900000005960464,
+    "responseMs": 12680.20000000298,
+    "domWorkMs": 60.79999999701977,
+    "paintOpportunityMs": 65.20000000298023,
+    "forSeq": 3
+   },
+   "server": {
+    "serverDurationMs": 7885,
+    "requestId": "REQ-C000007",
+    "canonicalRead": {
+     "mode": "BATCH",
+     "remoteCalls": 2,
+     "perSheetReads": 8,
+     "tables": 20,
+     "readMs": 6433,
+     "normalizeMs": 89,
+     "afterReadMs": 1452,
+     "fallback": null,
+     "notBatchedReason": null
+    }
+   },
+   "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+  },
+  "src": {
+   "source": "SERVER",
+   "status": "READY",
+   "requestId": "REQ-C000007",
+   "calculationMonth": "2026-08",
+   "calculationDate": "2026-08-19",
+   "planningCycle": "RECO-2026-08",
+   "sourceDataAsOf": null,
+   "shape": "horizonBasis.v2",
+   "handlerVersion": "fm5-r4ui-r5e",
+   "handlerAccepted": true,
+   "handlersAccepted": [
+    "fm5-r4ui-r5e"
+   ],
+   "revision": {
+    "calculationDate": "2026-08-19",
+    "calculationMonth": "2026-08",
+    "planningCycle": "RECO-2026-08",
+    "formulaVersion": null,
+    "sourceDataAsOf": null
+   },
+   "revisionComplete": false
+  },
+  "epoch": {
+   "planning": 0,
+   "exposure": 0,
+   "last": null
+  },
+  "supersededText": [],
+  "unknownText": [],
+  "scope": "US/MKT-RESUS-US-WALMART"
+ }
+}

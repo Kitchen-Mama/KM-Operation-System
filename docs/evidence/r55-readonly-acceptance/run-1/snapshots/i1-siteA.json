@@ -1,0 +1,108 @@
+{
+ "value": {
+  "n": 100,
+  "pendingAvg": 0,
+  "pendingSug": 0,
+  "windowNotes": {
+   "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-08-19 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-10-20T16:00:00.000Z - a different date, set by the gap calculation run.": 83
+  },
+  "digest": "CO1100-R=142.9/158.2/0;CO1100-S=71.5/161.4/0;CO1100-T=73.1/128.4/0;CO1100-W=69.8/178.9/0;CO1150-AG=4.0/49.3/160;CO1150-BM=1.8/59.8/280;CO1150-EM=1.8/103.8/200;CO1150-MB=5.2/97.8/0;CO1150-N=15.9/38.4/880;CO1150-OM=2.8/68.4/600;CO1150-R=5.9/89.7/40;CO1150-XR=5.3/83.4/120;CO1150-ZW=7.7/45.6/480;CO1200-B=3.4/93.3/0;CO1200-O=3.6/11.6/320;CO1200-WR=2.9/73.8/0;CO2100-P=--unavailable/--/—;CO2100-R1=--unavailable/--/—;CO2100-T=--unavailable/--/—;CO2102-FA=2.6/57.7/760;CO2102-P=3.3/14.9/200;CO2102-R=2.0/84.4/0;CO2102-T=2.4/125/0;CO2300-R=1.6/413.6/0;CO2300-W=2.8/178.3/0;CO2300-Y=1.5/114.9/0;CO2600-M=3.5/95.2/600;CO2600-R=11.5/57.1/240;CO2600-T=8.6/112.9/320;CO2600-W=6.7/76.8/0;CO5600-Q=7.7/54.4/150;CO5600-R=4.0/66.6/240;CO5600-RB=1.5/26/330;CO5600-RE=2.3/66.4/330;CO5600-W=2.0/169/0;CO5600-Z=4.0/53.2/120;GA0150-M=1.5/63.3/310;GA0150-R=1.6/64.2/310;GA0150-T=1.7/32.3/230;GA0450-M=--unavailable/--/280;GA0450-R=1.0/17/260;GA0450-T=1.3!/16.5/200;GA3120-M=1.0!/37/150;GA3120-R=1.0/63/120;GM3000-M1=--unavailable/--/—;GM3000-R1=--unavailable/--/75;GM3000-T1=0.3!/63/100;GM3000-W1=--unavailable/--/100;GM3000-Y1=--unavailable/--/125;GM3060-WM=--unavailable/--/—;GM3060-WR=--unavailable/--/—;GM3061-WT=--unavailable/--/—;GM3061-WW=--unavailable/--/—;GM3061-WY=--unavailable/--/—;GM3061-YY=--unavailable/--/—;MF0023=1.2!/0/200;MF1000-M1=1.0!/48/100;MF1000-R1=0.1!/133/100;MF1000-T1=--unavailable/--/100;MG0110-E=2.5/116/0;MO5600-B=2.2/132.7/0;MO5600-M=1.7/6.5/300;MO5600-R=6.6/20.6/600;MO5600-T=3.0/65.3/200;MO5600-W=1.7/6.9/300;SP0650-RM=8.1/79.4/50;SP0750-M=1.0!/70/75;SP0750-R=1.2!/31.7/125;SP0750-T=1.0!/65/75;SP3120-B=4.5/88.5/0;SP3120-M=4.4/248.2/0;SP3120-R=7.0/134.2/0;SP3120-T=4.4/130.6/0;SP3120-Y=2.3/135.1/300;SP3210-B=--unavailable/--/—;SP3210-M=1.1/133/0;SP3210-R=1.1/121.5/0;SP3210-T=1.1/53.3/100;SP3210-Y=--unavailable/--/—;SP3320-B=1.2/72.8/50;SP3320-M=1.2!/41.7/100;SP3320-R=1.1/108.5/0;SP3320-T=1.6/31.5/100;SP3320-Y=1.0!/58/50;SP3410-B=1.6/7/180;SP3410-M=4.5/105.1/0;SP3410-R=2.5/115.4/0;SP3410-T=1.8/142.2/0;SP3410-Y=1.9/106.1/0;SP5020-B=1.3/87.8/0;SP5020-M=2.9/62.1/90;SP5020-R=3.4/122.2/0;SP5020-T=1.5/42/90;SP5020-Y=1.7/43.3/150;SP5023-M=1.5/50.3/270;SP5023-R=1.5!/59.3/120;SP5023-T=1.3/33.4/180;SP5051-US=1.1/39.1/150;SP5120-M=3.6/0.6/320;SP5120-R=2.3/87.7/0",
+  "sample": [
+   {
+    "sku": "CO1100-R",
+    "avg": "142.9",
+    "dos": "158.2",
+    "sug": "0",
+    "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-08-19 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-10-20T16:00:00.000Z - a different date, set by the gap calculation run."
+   },
+   {
+    "sku": "CO1100-S",
+    "avg": "71.5",
+    "dos": "161.4",
+    "sug": "0",
+    "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-08-19 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-10-20T16:00:00.000Z - a different date, set by the gap calculation run."
+   },
+   {
+    "sku": "CO1100-T",
+    "avg": "73.1",
+    "dos": "128.4",
+    "sug": "0",
+    "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-08-19 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-10-20T16:00:00.000Z - a different date, set by the gap calculation run."
+   },
+   {
+    "sku": "CO1100-W",
+    "avg": "69.8",
+    "dos": "178.9",
+    "sug": "0",
+    "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-08-19 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-10-20T16:00:00.000Z - a different date, set by the gap calculation run."
+   },
+   {
+    "sku": "CO1150-AG",
+    "avg": "4.0",
+    "dos": "49.3",
+    "sug": "160",
+    "title": "Avg Sales/day: up to 30 normal sales days in the 90 completed days before 2026-08-19 (the recommendation calculation date). Gap and Suggested Qty are calculated as of 2026-10-20T16:00:00.000Z - a different date, set by the gap calculation run."
+   }
+  ],
+  "diag": {
+   "cache": {
+    "outcome": "STORED",
+    "reason": null
+   },
+   "timing": {
+    "searchToDispatchMs": 9471.79999999702,
+    "responseMs": 14201.89999999106,
+    "domWorkMs": 210.70000000298023,
+    "paintOpportunityMs": 238.1000000089407,
+    "forSeq": 1
+   },
+   "server": {
+    "serverDurationMs": 8503,
+    "requestId": "REQ-C000004",
+    "canonicalRead": {
+     "mode": "BATCH",
+     "remoteCalls": 2,
+     "perSheetReads": 8,
+     "tables": 20,
+     "readMs": 6947,
+     "normalizeMs": 123,
+     "afterReadMs": 1556,
+     "fallback": null,
+     "notBatchedReason": null
+    }
+   },
+   "note": "searchToDispatchMs starts at the SEARCH CLICK, before the main table read. responseMs is server AND network, never server time - server.serverDurationMs is the server half and server.canonicalRead splits it further. domWorkMs is SYNCHRONOUS DOM WORK ONLY and is NOT a paint. paintOpportunityMs is taken after two animation frames: it is an APPROXIMATION of the earliest moment the browser COULD have painted, never an observation that anything was shown - the page cannot see the operator screen, and no figure here may be quoted as a visible instant. It is bound to the request that scheduled it (timing.forSeq); null means no frame ran for THAT request, not that nothing rendered."
+  },
+  "src": {
+   "source": "SERVER",
+   "status": "READY",
+   "requestId": "REQ-C000004",
+   "calculationMonth": "2026-08",
+   "calculationDate": "2026-08-19",
+   "planningCycle": "RECO-2026-08",
+   "sourceDataAsOf": null,
+   "shape": "horizonBasis.v2",
+   "handlerVersion": "fm5-r4ui-r5e",
+   "handlerAccepted": true,
+   "handlersAccepted": [
+    "fm5-r4ui-r5e"
+   ],
+   "revision": {
+    "calculationDate": "2026-08-19",
+    "calculationMonth": "2026-08",
+    "planningCycle": "RECO-2026-08",
+    "formulaVersion": null,
+    "sourceDataAsOf": null
+   },
+   "revisionComplete": false
+  },
+  "epoch": {
+   "planning": 0,
+   "exposure": 0,
+   "last": null
+  },
+  "supersededText": [],
+  "unknownText": [],
+  "scope": "US/MKT-RESUS-US-AMAZON"
+ }
+}

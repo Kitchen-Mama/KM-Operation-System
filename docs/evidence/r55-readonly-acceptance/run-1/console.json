@@ -1,0 +1,452 @@
+[
+  {
+    "t": "2026-10-22T02:14:28.506Z",
+    "type": "log",
+    "text": "[KM] Namespace initialized"
+  },
+  {
+    "t": "2026-10-22T02:14:28.524Z",
+    "type": "log",
+    "text": "[KM] Lifecycle manager initialized"
+  },
+  {
+    "t": "2026-10-22T02:14:28.525Z",
+    "type": "log",
+    "text": "[KM] State management initialized"
+  },
+  {
+    "t": "2026-10-22T02:14:28.525Z",
+    "type": "log",
+    "text": "[KM] partialLoader ready"
+  },
+  {
+    "t": "2026-10-22T02:14:28.525Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: home-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.525Z",
+    "type": "log",
+    "text": "[Home] mount"
+  },
+  {
+    "t": "2026-10-22T02:14:28.526Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: home-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.586Z",
+    "type": "log",
+    "text": "[KM] scriptLoader ready"
+  },
+  {
+    "t": "2026-10-22T02:14:28.587Z",
+    "type": "log",
+    "text": "[KM] stickyHeader helper ready"
+  },
+  {
+    "t": "2026-10-22T02:14:28.611Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: factory-stock-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.612Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: overseas-inbound-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.612Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: overseas-outbound-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.728Z",
+    "type": "log",
+    "text": "FC Summary Debug Tools Available: window.fcDebug"
+  },
+  {
+    "t": "2026-10-22T02:14:28.728Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: fc-summary-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.728Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: forecast-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.732Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: request-order-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.734Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: sku-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.736Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: shippingplan-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.737Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: shippinghistory-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.737Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: shipment-draft-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.738Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: supplychain-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.739Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: sku-handbook-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.740Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: campaign-risk-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.743Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: request-order-draft-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.744Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: purchase-order-overview-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.745Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: purchase-order-list-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.748Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: sku-regional-details-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.749Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: automation-schedule-section"
+  },
+  {
+    "t": "2026-10-22T02:14:28.749Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: fx-rate-book-section"
+  },
+  {
+    "t": "2026-10-22T02:16:04.235Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:16:04.236Z",
+    "type": "log",
+    "text": "[Home] unmount"
+  },
+  {
+    "t": "2026-10-22T02:16:04.236Z",
+    "type": "log",
+    "text": "[Lifecycle] Unmounted: home-section"
+  },
+  {
+    "t": "2026-10-22T02:16:04.236Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:26:11.549Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: ops-section"
+  },
+  {
+    "t": "2026-10-22T02:26:11.552Z",
+    "type": "log",
+    "text": "[Lifecycle] Unmounted: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:26:11.552Z",
+    "type": "log",
+    "text": "[Replenishment] mount"
+  },
+  {
+    "t": "2026-10-22T02:26:11.552Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: ops-section"
+  },
+  {
+    "t": "2026-10-22T02:26:11.616Z",
+    "type": "log",
+    "text": "[GapJob] RESUME_SKIPPED_NO_KNOWN_JOB INVENTORY 0/?"
+  },
+  {
+    "t": "2026-10-22T02:26:46.639Z",
+    "type": "log",
+    "text": "[Replenishment] unmount"
+  },
+  {
+    "t": "2026-10-22T02:26:46.640Z",
+    "type": "log",
+    "text": "[Lifecycle] Unmounted: ops-section"
+  },
+  {
+    "t": "2026-10-22T02:26:46.640Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:28:44.907Z",
+    "type": "log",
+    "text": "[KM] Namespace initialized"
+  },
+  {
+    "t": "2026-10-22T02:28:44.941Z",
+    "type": "log",
+    "text": "[KM] Lifecycle manager initialized"
+  },
+  {
+    "t": "2026-10-22T02:28:44.941Z",
+    "type": "log",
+    "text": "[KM] State management initialized"
+  },
+  {
+    "t": "2026-10-22T02:28:44.942Z",
+    "type": "log",
+    "text": "[KM] partialLoader ready"
+  },
+  {
+    "t": "2026-10-22T02:28:44.948Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: home-section"
+  },
+  {
+    "t": "2026-10-22T02:28:44.948Z",
+    "type": "log",
+    "text": "[Home] mount"
+  },
+  {
+    "t": "2026-10-22T02:28:44.949Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: home-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.070Z",
+    "type": "log",
+    "text": "[KM] scriptLoader ready"
+  },
+  {
+    "t": "2026-10-22T02:28:45.070Z",
+    "type": "log",
+    "text": "[KM] stickyHeader helper ready"
+  },
+  {
+    "t": "2026-10-22T02:28:45.089Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: factory-stock-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.090Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: overseas-inbound-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.090Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: overseas-outbound-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.097Z",
+    "type": "log",
+    "text": "FC Summary Debug Tools Available: window.fcDebug"
+  },
+  {
+    "t": "2026-10-22T02:28:45.097Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: fc-summary-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.099Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: forecast-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.105Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: request-order-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.108Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: sku-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.109Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: shippingplan-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.111Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: shippinghistory-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.111Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: shipment-draft-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.112Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: supplychain-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.113Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: sku-handbook-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.115Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: campaign-risk-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.119Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: request-order-draft-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.122Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: purchase-order-overview-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.122Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: purchase-order-list-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.127Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: sku-regional-details-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.128Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: automation-schedule-section"
+  },
+  {
+    "t": "2026-10-22T02:28:45.129Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: fx-rate-book-section"
+  },
+  {
+    "t": "2026-10-22T02:29:01.607Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:29:01.607Z",
+    "type": "log",
+    "text": "[Home] unmount"
+  },
+  {
+    "t": "2026-10-22T02:29:01.607Z",
+    "type": "log",
+    "text": "[Lifecycle] Unmounted: home-section"
+  },
+  {
+    "t": "2026-10-22T02:29:01.608Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:30:13.540Z",
+    "type": "log",
+    "text": "[Lifecycle] Registered: ops-section"
+  },
+  {
+    "t": "2026-10-22T02:30:13.541Z",
+    "type": "log",
+    "text": "[Lifecycle] Unmounted: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:30:13.541Z",
+    "type": "log",
+    "text": "[Replenishment] mount"
+  },
+  {
+    "t": "2026-10-22T02:30:13.541Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: ops-section"
+  },
+  {
+    "t": "2026-10-22T02:30:13.555Z",
+    "type": "log",
+    "text": "[GapJob] RESUME_SKIPPED_NO_KNOWN_JOB INVENTORY 0/?"
+  },
+  {
+    "t": "2026-10-22T02:35:01.288Z",
+    "type": "log",
+    "text": "[Replenishment] unmount"
+  },
+  {
+    "t": "2026-10-22T02:35:01.288Z",
+    "type": "log",
+    "text": "[Lifecycle] Unmounted: ops-section"
+  },
+  {
+    "t": "2026-10-22T02:35:01.288Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:35:09.046Z",
+    "type": "log",
+    "text": "[Lifecycle] Unmounted: product-strategy-board-section"
+  },
+  {
+    "t": "2026-10-22T02:35:09.047Z",
+    "type": "log",
+    "text": "[Replenishment] mount"
+  },
+  {
+    "t": "2026-10-22T02:35:09.047Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: ops-section"
+  },
+  {
+    "t": "2026-10-22T02:35:09.611Z",
+    "type": "log",
+    "text": "[GapJob] RESUME_SKIPPED_NO_KNOWN_JOB INVENTORY 0/?"
+  },
+  {
+    "t": "2026-10-22T02:36:16.382Z",
+    "type": "log",
+    "text": "[Replenishment] unmount"
+  },
+  {
+    "t": "2026-10-22T02:36:16.382Z",
+    "type": "log",
+    "text": "[Lifecycle] Unmounted: ops-section"
+  },
+  {
+    "t": "2026-10-22T02:36:16.382Z",
+    "type": "log",
+    "text": "[FCSummary] mount"
+  },
+  {
+    "t": "2026-10-22T02:36:16.383Z",
+    "type": "log",
+    "text": "[Lifecycle] Mounted: fc-summary-section"
+  }
+]

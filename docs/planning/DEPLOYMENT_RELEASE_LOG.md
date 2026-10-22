@@ -7036,3 +7036,35 @@ After the commit, delete the file and do one read-only `get`. Plan:
 `docs/planning/R55_POST_RELEASE_READONLY_ACCEPTANCE_PSB_IR_FC.md`. Every row is PENDING Owner evidence.
 
 **No runtime file changed, and no full sweep was run. NOT PUSHED. NOT DEPLOYED.**
+
+### R55 POST-RELEASE READ-ONLY ACCEPTANCE — PSB / IR / FC, on the published site in a real Chrome
+
+**How it was run.** A real Chrome on `kitchen-mama.github.io/KM-Operation-System/`, against the
+production `/exec`, with production data only. Every Apps Script request was paused in the browser and
+classified by its ACTION, using the router's own read contract (the `doGet` branches plus
+`rtrGetReadHandlers_`). Anything else would have been blocked before it left.
+
+**Result: 24 requests, all contract reads, 0 blocked, 0 written.** Nothing was saved, submitted,
+recalculated, imported or repriced, and FX was not re-initialised.
+
+**Health:** R55, contract 21, list 18, 50 actions, uniform. The Owner's raw health text was not
+received; the agent's own read is saved instead.
+
+**Per item:**
+- **PSB:** P1, P2, P4, P5, P6, P7 and P8 PASS. **P3 FAIL:** a deal label is clipped at the chart edge,
+  so `44.79` shows as `44.7`. The values are right in the DOM, the tooltip and the table.
+- **IR:** I1–I3 PASS. The return is served from the session cache, identical to the first load, with no
+  SUPERSEDED.
+- **FC:** F1–F4 PASS. History cells all show `—`, the forecast is kept, Preview and Cancel make no
+  request, and a missing base is refused by name.
+
+**Findings F-1 to F-4** (not fixed):
+- F-1: PSB campaign dates print as raw Date strings;
+- F-2: the label clip behind the P3 failure;
+- F-3: the IR Gap date prints as UTC ISO;
+- F-4: a data finding, a stored `total_fc` one higher than the month sum.
+
+**Record:** `docs/planning/R55_POST_RELEASE_READONLY_ACCEPTANCE_PSB_IR_FC.md`. **Evidence:**
+`docs/evidence/r55-readonly-acceptance/run-1/`.
+
+**No runtime file changed, and no full sweep was run. NOT PUSHED. NOT DEPLOYED.**
