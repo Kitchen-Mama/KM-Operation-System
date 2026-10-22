@@ -1,6 +1,6 @@
 {
  "ok": true,
- "capturedAt": "2026-10-21",
+ "capturedAt": "2026-10-22",
  "markupDelayMs": 3000,
  "scenarios": {
   "away-home": {
@@ -19,7 +19,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "boot",
-     "t": 815,
+     "t": 817,
      "navHow": "click"
     },
     {
@@ -33,2435 +33,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-0",
-     "t": 817
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-1",
-     "t": 925
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-2",
-     "t": 1036
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-3",
-     "t": 1142
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-4",
-     "t": 1252
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-5",
-     "t": 1361
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-6",
-     "t": 1469
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-7",
-     "t": 1578
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-8",
-     "t": 1687
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-9",
-     "t": 1795
-    },
-    {
-     "navGen": 0,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [],
-     "lcEpoch": 2,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "pre-leave",
-     "t": 1796,
-     "leaveHow": "click"
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-0",
-     "t": 1797
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-1",
-     "t": 1898
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-2",
-     "t": 2014
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-3",
-     "t": 2123
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-4",
-     "t": 2233
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-5",
-     "t": 2342
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-6",
-     "t": 2452
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-0",
-     "t": 2452
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-1",
-     "t": 2561
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-2",
-     "t": 2669
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-3",
-     "t": 2780
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-4",
-     "t": 2887
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-5",
-     "t": 2997
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-6",
-     "t": 3104
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-7",
-     "t": 3211
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-8",
-     "t": 3319
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-9",
-     "t": 3428
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-10",
-     "t": 3537
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-11",
-     "t": 3646
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-12",
-     "t": 3756
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-13",
-     "t": 3865
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-14",
-     "t": 3974
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-15",
-     "t": 4085
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-16",
-     "t": 4193
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-17",
-     "t": 4302
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-18",
-     "t": 4411
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-19",
-     "t": 4518
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-20",
-     "t": 4627
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-21",
-     "t": 4734
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-22",
-     "t": 4845
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-23",
-     "t": 4952
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-24",
-     "t": 5060
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-25",
-     "t": 5169
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-26",
-     "t": 5276
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-27",
-     "t": 5385
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-28",
-     "t": 5495
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-29",
-     "t": 5605
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-30",
-     "t": 5714
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-31",
-     "t": 5823
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "settle-32",
-     "t": 5933
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 3,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "final",
-     "t": 5933
-    }
-   ],
-   "marks": [
-    {
-     "name": "nav-map",
-     "t": 815
-    },
-    {
-     "name": "leave",
-     "t": 1796
-    }
-   ],
-   "requestLog": [
-    {
-     "kind": "static",
-     "path": "/assets/css/base.css",
-     "t": 1792555480819
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/components.css",
-     "t": 1792555480820
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/layout.css",
-     "t": 1792555480821
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/responsive-foundation.css",
-     "t": 1792555480821
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/core/km-sticky-header.css",
-     "t": 1792555480822
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/home.css",
-     "t": 1792555480822
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/inventory-replenishment.css",
-     "t": 1792555480823
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/factory-stock.css",
-     "t": 1792555480824
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/overseas-ops.css",
-     "t": 1792555480825
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/overseas-stock.css",
-     "t": 1792555480825
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/fc-overview.css",
-     "t": 1792555480825
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/request-order.css",
-     "t": 1792555480825
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/sku-details.css",
-     "t": 1792555480826
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/shipping-plan.css",
-     "t": 1792555480827
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/shipping-history.css",
-     "t": 1792555480827
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/supply-chain-canvas.css",
-     "t": 1792555480827
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/sku-handbook.css",
-     "t": 1792555480828
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/campaign-risk.css",
-     "t": 1792555480829
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/procurement.css",
-     "t": 1792555480830
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/carrier-rate-card.css",
-     "t": 1792555480830
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/sku-regional-details.css",
-     "t": 1792555480830
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/global-logistics-map.css",
-     "t": 1792555480830
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/automation-schedule.css",
-     "t": 1792555480830
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/fx-rate-book.css",
-     "t": 1792555480831
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/pages/site-priority.css",
-     "t": 1792555480831
-    },
-    {
-     "kind": "static",
-     "path": "/assets/css/product-strategy-board.css",
-     "t": 1792555480832
-    },
-    {
-     "kind": "static",
-     "path": "/assets/img/logo_1024_1024-removebg_2.png",
-     "t": 1792555480832
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/namespace.js",
-     "t": 1792555480832
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/lifecycle.js",
-     "t": 1792555480843
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/state.js",
-     "t": 1792555480843
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/partial-loader.js",
-     "t": 1792555480848
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/home.js",
-     "t": 1792555480849
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/script-loader.js",
-     "t": 1792555480849
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/deferred-read.js",
-     "t": 1792555480849
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/sticky-header.js",
-     "t": 1792555480849
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/forecast-engine.js",
-     "t": 1792555480850
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/i18n.js",
-     "t": 1792555480851
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/km-repo-asset-manifest.js",
-     "t": 1792555480851
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/km-image-reference-policy.js",
-     "t": 1792555480852
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/sku-overrides.js",
-     "t": 1792555480852
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/data.js",
-     "t": 1792555480852
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/scroll-sync.js",
-     "t": 1792555480852
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/template-export.js",
-     "t": 1792555480853
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/resizable-columns.js",
-     "t": 1792555480854
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/dual-layer-resize.js",
-     "t": 1792555480855
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/tab-rail.js",
-     "t": 1792555480855
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/multi-select-filter.js",
-     "t": 1792555480855
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/inventory-compat.js",
-     "t": 1792555480855
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/gap-recalc-transport.js",
-     "t": 1792555480855
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/scope-registry.js",
-     "t": 1792555480855
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/boot-read-arbiter.js",
-     "t": 1792555480858
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/method-registry.js",
-     "t": 1792555480858
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/supply-planning-active-route-classification.js",
-     "t": 1792555480858
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/utils/scope-select-modal.js",
-     "t": 1792555480858
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/supply-planning-factory-site-allocation.js",
-     "t": 1792555480858
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/supply-planning-forecast-share.js",
-     "t": 1792555480859
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/supply-planning-calculations.js",
-     "t": 1792555480860
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/supply-planning-planning-demand.js",
-     "t": 1792555480860
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/supply-planning-recommendation-audit.js",
-     "t": 1792555480861
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/supply-recommendation.js",
-     "t": 1792555480861
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/supply-execution-handoff.js",
-     "t": 1792555480862
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/api/km-transport.js",
-     "t": 1792555480862
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/api/km-data-access.js",
-     "t": 1792555480863
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/api/operation-system-db-api.js",
-     "t": 1792555480863
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/api/km-loading-state.js",
-     "t": 1792555480863
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/api/km-api-foundation.js",
-     "t": 1792555480864
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/api/km-product-pricing-workspace.js",
-     "t": 1792555480864
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/api/km-product-pricing-adapter.js",
-     "t": 1792555480864
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/data/replenishment-mock-data.js",
-     "t": 1792555480865
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/factory-stock.js",
-     "t": 1792555480867
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/overseas-ops-preview.js",
-     "t": 1792555480867
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/overseas-inbound.js",
-     "t": 1792555480867
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/overseas-outbound.js",
-     "t": 1792555480867
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/fc-summary.js",
-     "t": 1792555480868
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/forecast.js",
-     "t": 1792555480868
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/request-order.js",
-     "t": 1792555480869
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/sku-details.js",
-     "t": 1792555480870
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/shipping-plan.js",
-     "t": 1792555480870
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/shipping-history.js",
-     "t": 1792555480870
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/supplychain.js",
-     "t": 1792555480871
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/sku-handbook.js",
-     "t": 1792555480871
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/i18n/sku-handbook.js",
-     "t": 1792555480873
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/campaign-risk.js",
-     "t": 1792555480873
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/request-order-draft.js",
-     "t": 1792555480873
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/purchase-order-overview.js",
-     "t": 1792555480873
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/purchase-order-list.js",
-     "t": 1792555480873
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/product-strategy/psb-views.js",
-     "t": 1792555480874
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/sku-regional-pricing.js",
-     "t": 1792555480876
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/sku-regional-details.js",
-     "t": 1792555480876
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/data/world-land-110m.js",
-     "t": 1792555480877
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/automation-schedule.js",
-     "t": 1792555480877
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/fx-rate-book.js",
-     "t": 1792555480877
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/app.js",
-     "t": 1792555480877
-    },
-    {
-     "kind": "static",
-     "path": "/assets/html/pages/home.html",
-     "t": 1792555480907
-    },
-    {
-     "kind": "api",
-     "action": "getClientCapabilities",
-     "table": "",
-     "t": 1792555480927
-    },
-    {
-     "kind": "static",
-     "path": "/assets/html/pages/global-logistics-map.html",
-     "t": 1792555481616
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/data/world-countries-110m.js",
-     "t": 1792555481617
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/data/geo-names-zh-hant.js",
-     "t": 1792555481617
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/data/geo-display-aliases-zh-tw.js",
-     "t": 1792555481617
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/data/geo-admin1-display-names-zh-tw.js",
-     "t": 1792555481617
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/core/geo-name-resolver.js",
-     "t": 1792555481619
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/lib/km-geo-topology.js",
-     "t": 1792555481619
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/lib/km-globe.js",
-     "t": 1792555481619
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/global-logistics-map.js",
-     "t": 1792555481619
-    },
-    {
-     "kind": "static",
-     "path": "/favicon.ico",
-     "t": 1792555486739
-    }
-   ],
-   "summary": {
-    "samples": 53,
-    "markupArrivedAt": 3865,
-    "leftAt": 1796,
-    "markupArrivedAfterLeaving": true,
-    "boots": 0,
-    "renders": 0,
-    "attaches": 0,
-    "globeCreates": 0,
-    "globeDestroys": 0,
-    "staleMountsBlocked": 1,
-    "staleRendersBlocked": 0,
-    "txRequests": 1,
-    "txCoalesced": 0,
-    "finalSection": "home-section",
-    "finalActiveIds": [],
-    "workspaceReads": 0,
-    "mapPartialRequests": 1
-   }
-  },
-  "away-lazy": {
-   "ok": true,
-   "fatal": null,
-   "scenario": "away-lazy",
-   "timeline": [
-    {
-     "noDiag": true,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 1,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "boot",
-     "t": 819,
-     "navHow": "click"
-    },
-    {
-     "noDiag": true,
-     "lcCurrent": "home-section",
-     "lcActive": [],
-     "lcEpoch": 1,
-     "txRequests": 1,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "mount-wait-0",
-     "t": 821
+     "t": 819
     },
     {
      "navGen": 0,
@@ -2641,7 +213,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-5",
-     "t": 1359
+     "t": 1360
     },
     {
      "navGen": 0,
@@ -2677,7 +249,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-6",
-     "t": 1467
+     "t": 1471
     },
     {
      "navGen": 0,
@@ -2713,7 +285,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-7",
-     "t": 1577
+     "t": 1579
     },
     {
      "navGen": 0,
@@ -2749,7 +321,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-8",
-     "t": 1685
+     "t": 1687
     },
     {
      "navGen": 0,
@@ -2785,7 +357,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-9",
-     "t": 1795
+     "t": 1796
     },
     {
      "navGen": 0,
@@ -2821,7 +393,2471 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "pre-leave",
-     "t": 1795,
+     "t": 1796,
+     "leaveHow": "click"
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "away-0",
+     "t": 1797
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "away-1",
+     "t": 1898
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "away-2",
+     "t": 1999
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "away-3",
+     "t": 2106
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "away-4",
+     "t": 2215
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "away-5",
+     "t": 2326
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "away-6",
+     "t": 2435
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "away-7",
+     "t": 2544
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-0",
+     "t": 2544
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-1",
+     "t": 2652
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-2",
+     "t": 2761
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-3",
+     "t": 2871
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-4",
+     "t": 2978
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-5",
+     "t": 3086
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-6",
+     "t": 3196
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-7",
+     "t": 3306
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-8",
+     "t": 3417
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-9",
+     "t": 3525
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-10",
+     "t": 3635
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-11",
+     "t": 3742
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-12",
+     "t": 3849
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-13",
+     "t": 3957
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-14",
+     "t": 4064
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-15",
+     "t": 4172
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-16",
+     "t": 4281
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-17",
+     "t": 4388
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-18",
+     "t": 4495
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-19",
+     "t": 4604
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-20",
+     "t": 4711
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-21",
+     "t": 4818
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-22",
+     "t": 4926
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-23",
+     "t": 5035
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-24",
+     "t": 5141
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-25",
+     "t": 5249
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-26",
+     "t": 5357
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-27",
+     "t": 5466
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-28",
+     "t": 5575
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-29",
+     "t": 5684
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-30",
+     "t": 5791
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-31",
+     "t": 5899
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "settle-32",
+     "t": 6007
+    },
+    {
+     "navGen": 1,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 3,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "final",
+     "t": 6007
+    }
+   ],
+   "marks": [
+    {
+     "name": "nav-map",
+     "t": 817
+    },
+    {
+     "name": "leave",
+     "t": 1796
+    }
+   ],
+   "requestLog": [
+    {
+     "kind": "static",
+     "path": "/assets/css/base.css",
+     "t": 1792644714813
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/components.css",
+     "t": 1792644714814
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/layout.css",
+     "t": 1792644714815
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/responsive-foundation.css",
+     "t": 1792644714815
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/core/km-sticky-header.css",
+     "t": 1792644714817
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/home.css",
+     "t": 1792644714817
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/inventory-replenishment.css",
+     "t": 1792644714818
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/factory-stock.css",
+     "t": 1792644714818
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/overseas-ops.css",
+     "t": 1792644714821
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/overseas-stock.css",
+     "t": 1792644714821
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/fc-overview.css",
+     "t": 1792644714821
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/request-order.css",
+     "t": 1792644714821
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/sku-details.css",
+     "t": 1792644714822
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/shipping-plan.css",
+     "t": 1792644714822
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/shipping-history.css",
+     "t": 1792644714823
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/supply-chain-canvas.css",
+     "t": 1792644714824
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/sku-handbook.css",
+     "t": 1792644714824
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/campaign-risk.css",
+     "t": 1792644714825
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/procurement.css",
+     "t": 1792644714825
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/carrier-rate-card.css",
+     "t": 1792644714825
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/sku-regional-details.css",
+     "t": 1792644714825
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/global-logistics-map.css",
+     "t": 1792644714826
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/automation-schedule.css",
+     "t": 1792644714826
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/fx-rate-book.css",
+     "t": 1792644714827
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/pages/site-priority.css",
+     "t": 1792644714827
+    },
+    {
+     "kind": "static",
+     "path": "/assets/css/product-strategy-board.css",
+     "t": 1792644714828
+    },
+    {
+     "kind": "static",
+     "path": "/assets/img/logo_1024_1024-removebg_2.png",
+     "t": 1792644714830
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/namespace.js",
+     "t": 1792644714830
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/lifecycle.js",
+     "t": 1792644714842
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/state.js",
+     "t": 1792644714842
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/partial-loader.js",
+     "t": 1792644714847
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/home.js",
+     "t": 1792644714847
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/script-loader.js",
+     "t": 1792644714848
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/deferred-read.js",
+     "t": 1792644714848
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/sticky-header.js",
+     "t": 1792644714848
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/forecast-engine.js",
+     "t": 1792644714849
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/i18n.js",
+     "t": 1792644714850
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/km-repo-asset-manifest.js",
+     "t": 1792644714850
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/km-image-reference-policy.js",
+     "t": 1792644714851
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/sku-overrides.js",
+     "t": 1792644714851
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/data.js",
+     "t": 1792644714851
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/scroll-sync.js",
+     "t": 1792644714851
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/template-export.js",
+     "t": 1792644714854
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/resizable-columns.js",
+     "t": 1792644714854
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/dual-layer-resize.js",
+     "t": 1792644714854
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/tab-rail.js",
+     "t": 1792644714854
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/multi-select-filter.js",
+     "t": 1792644714854
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/inventory-compat.js",
+     "t": 1792644714854
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/gap-recalc-transport.js",
+     "t": 1792644714857
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/scope-registry.js",
+     "t": 1792644714857
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/boot-read-arbiter.js",
+     "t": 1792644714857
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/method-registry.js",
+     "t": 1792644714857
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/supply-planning-active-route-classification.js",
+     "t": 1792644714857
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/utils/scope-select-modal.js",
+     "t": 1792644714857
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/supply-planning-factory-site-allocation.js",
+     "t": 1792644714860
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/supply-planning-forecast-share.js",
+     "t": 1792644714860
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/supply-planning-calculations.js",
+     "t": 1792644714860
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/supply-planning-planning-demand.js",
+     "t": 1792644714860
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/supply-planning-recommendation-audit.js",
+     "t": 1792644714860
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/supply-recommendation.js",
+     "t": 1792644714860
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/supply-execution-handoff.js",
+     "t": 1792644714863
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/api/km-transport.js",
+     "t": 1792644714863
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/api/km-data-access.js",
+     "t": 1792644714863
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/api/operation-system-db-api.js",
+     "t": 1792644714863
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/api/km-loading-state.js",
+     "t": 1792644714863
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/api/km-api-foundation.js",
+     "t": 1792644714863
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/api/km-product-pricing-workspace.js",
+     "t": 1792644714866
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/api/km-product-pricing-adapter.js",
+     "t": 1792644714866
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/data/replenishment-mock-data.js",
+     "t": 1792644714866
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/factory-stock.js",
+     "t": 1792644714866
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/overseas-ops-preview.js",
+     "t": 1792644714866
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/overseas-inbound.js",
+     "t": 1792644714867
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/overseas-outbound.js",
+     "t": 1792644714869
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/fc-summary.js",
+     "t": 1792644714869
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/forecast.js",
+     "t": 1792644714870
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/request-order.js",
+     "t": 1792644714870
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/sku-details.js",
+     "t": 1792644714870
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/shipping-plan.js",
+     "t": 1792644714870
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/shipping-history.js",
+     "t": 1792644714871
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/supplychain.js",
+     "t": 1792644714873
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/sku-handbook.js",
+     "t": 1792644714874
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/i18n/sku-handbook.js",
+     "t": 1792644714875
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/campaign-risk.js",
+     "t": 1792644714875
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/request-order-draft.js",
+     "t": 1792644714875
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/purchase-order-overview.js",
+     "t": 1792644714875
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/purchase-order-list.js",
+     "t": 1792644714875
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/product-strategy/psb-views.js",
+     "t": 1792644714876
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/sku-regional-pricing.js",
+     "t": 1792644714876
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/sku-regional-details.js",
+     "t": 1792644714877
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/data/world-land-110m.js",
+     "t": 1792644714878
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/automation-schedule.js",
+     "t": 1792644714879
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/fx-rate-book.js",
+     "t": 1792644714879
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/app.js",
+     "t": 1792644714880
+    },
+    {
+     "kind": "static",
+     "path": "/assets/html/pages/home.html",
+     "t": 1792644714906
+    },
+    {
+     "kind": "api",
+     "action": "getClientCapabilities",
+     "table": "",
+     "t": 1792644714928
+    },
+    {
+     "kind": "static",
+     "path": "/assets/html/pages/global-logistics-map.html",
+     "t": 1792644715614
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/data/world-countries-110m.js",
+     "t": 1792644715614
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/data/geo-names-zh-hant.js",
+     "t": 1792644715614
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/data/geo-display-aliases-zh-tw.js",
+     "t": 1792644715614
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/data/geo-admin1-display-names-zh-tw.js",
+     "t": 1792644715614
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/core/geo-name-resolver.js",
+     "t": 1792644715617
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/lib/km-geo-topology.js",
+     "t": 1792644715617
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/lib/km-globe.js",
+     "t": 1792644715618
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/global-logistics-map.js",
+     "t": 1792644715618
+    },
+    {
+     "kind": "static",
+     "path": "/favicon.ico",
+     "t": 1792644720815
+    }
+   ],
+   "summary": {
+    "samples": 54,
+    "markupArrivedAt": 3849,
+    "leftAt": 1796,
+    "markupArrivedAfterLeaving": true,
+    "boots": 0,
+    "renders": 0,
+    "attaches": 0,
+    "globeCreates": 0,
+    "globeDestroys": 0,
+    "staleMountsBlocked": 1,
+    "staleRendersBlocked": 0,
+    "txRequests": 1,
+    "txCoalesced": 0,
+    "finalSection": "home-section",
+    "finalActiveIds": [],
+    "workspaceReads": 0,
+    "mapPartialRequests": 1
+   }
+  },
+  "away-lazy": {
+   "ok": true,
+   "fatal": null,
+   "scenario": "away-lazy",
+   "timeline": [
+    {
+     "noDiag": true,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 1,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "boot",
+     "t": 822,
+     "navHow": "click"
+    },
+    {
+     "noDiag": true,
+     "lcCurrent": "home-section",
+     "lcActive": [],
+     "lcEpoch": 1,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-0",
+     "t": 825
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-1",
+     "t": 928
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-2",
+     "t": 1035
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-3",
+     "t": 1144
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-4",
+     "t": 1255
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-5",
+     "t": 1364
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-6",
+     "t": 1472
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-7",
+     "t": 1580
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-8",
+     "t": 1690
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "mount-wait-9",
+     "t": 1798
+    },
+    {
+     "navGen": 0,
+     "renders": 0,
+     "boots": 0,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 0,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [],
+     "lcEpoch": 2,
+     "txRequests": 1,
+     "txCoalesced": 0,
+     "mapSectionPresent": false,
+     "mapSectionActive": false,
+     "mapBodyHtmlLen": 0,
+     "tag": "pre-leave",
+     "t": 1798,
      "leaveHow": "click"
     },
     {
@@ -2858,7 +2894,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-0",
-     "t": 1796
+     "t": 1799
     },
     {
      "navGen": 1,
@@ -2896,7 +2932,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-1",
-     "t": 1904
+     "t": 1906
     },
     {
      "navGen": 1,
@@ -2934,7 +2970,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-2",
-     "t": 2013
+     "t": 2015
     },
     {
      "navGen": 1,
@@ -2972,7 +3008,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-3",
-     "t": 2122
+     "t": 2125
     },
     {
      "navGen": 1,
@@ -3010,7 +3046,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-4",
-     "t": 2231
+     "t": 2372
     },
     {
      "navGen": 1,
@@ -3048,45 +3084,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-5",
-     "t": 2338
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "site-priority-section",
-     "lcActive": [
-      "site-priority-section"
-     ],
-     "lcEpoch": 3,
-     "txRequests": 2,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-6",
-     "t": 2448
+     "t": 2482
     },
     {
      "navGen": 1,
@@ -3124,7 +3122,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-0",
-     "t": 2448
+     "t": 2482
     },
     {
      "navGen": 1,
@@ -3162,7 +3160,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-1",
-     "t": 2551
+     "t": 2589
     },
     {
      "navGen": 1,
@@ -3200,7 +3198,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-2",
-     "t": 2664
+     "t": 2697
     },
     {
      "navGen": 1,
@@ -3238,7 +3236,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-3",
-     "t": 2773
+     "t": 2806
     },
     {
      "navGen": 1,
@@ -3276,7 +3274,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-4",
-     "t": 2880
+     "t": 2915
     },
     {
      "navGen": 1,
@@ -3314,7 +3312,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-5",
-     "t": 2989
+     "t": 3023
     },
     {
      "navGen": 1,
@@ -3352,7 +3350,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-6",
-     "t": 3096
+     "t": 3133
     },
     {
      "navGen": 1,
@@ -3390,7 +3388,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-7",
-     "t": 3205
+     "t": 3242
     },
     {
      "navGen": 1,
@@ -3428,7 +3426,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-8",
-     "t": 3316
+     "t": 3351
     },
     {
      "navGen": 1,
@@ -3466,7 +3464,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-9",
-     "t": 3421
+     "t": 3460
     },
     {
      "navGen": 1,
@@ -3504,7 +3502,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-10",
-     "t": 3530
+     "t": 3568
     },
     {
      "navGen": 1,
@@ -3542,7 +3540,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-11",
-     "t": 3638
+     "t": 3677
     },
     {
      "navGen": 1,
@@ -3580,7 +3578,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-12",
-     "t": 3747
+     "t": 3787
     },
     {
      "navGen": 1,
@@ -3592,7 +3590,7 @@
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -3614,11 +3612,11 @@
      "lcEpoch": 3,
      "txRequests": 2,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
+     "mapSectionPresent": false,
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-13",
-     "t": 3856
+     "t": 3896
     },
     {
      "navGen": 1,
@@ -3630,7 +3628,7 @@
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -3652,11 +3650,11 @@
      "lcEpoch": 3,
      "txRequests": 2,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
+     "mapSectionPresent": false,
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-14",
-     "t": 3965
+     "t": 4006
     },
     {
      "navGen": 1,
@@ -3668,7 +3666,7 @@
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -3690,11 +3688,11 @@
      "lcEpoch": 3,
      "txRequests": 2,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
+     "mapSectionPresent": false,
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-15",
-     "t": 4075
+     "t": 4115
     },
     {
      "navGen": 1,
@@ -3706,7 +3704,7 @@
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -3728,11 +3726,11 @@
      "lcEpoch": 3,
      "txRequests": 2,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
+     "mapSectionPresent": false,
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-16",
-     "t": 4184
+     "t": 4223
     },
     {
      "navGen": 1,
@@ -3744,7 +3742,7 @@
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -3766,11 +3764,11 @@
      "lcEpoch": 3,
      "txRequests": 2,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
+     "mapSectionPresent": false,
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-17",
-     "t": 4293
+     "t": 4332
     },
     {
      "navGen": 1,
@@ -3782,7 +3780,7 @@
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -3804,11 +3802,11 @@
      "lcEpoch": 3,
      "txRequests": 2,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
+     "mapSectionPresent": false,
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-18",
-     "t": 4401
+     "t": 4440
     },
     {
      "navGen": 1,
@@ -3820,7 +3818,7 @@
      "globeDestroys": 0,
      "contextLost": 0,
      "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
+     "staleMountsBlocked": 0,
      "teardownsAvoided": 0,
      "hostExists": false,
      "hostInDocument": false,
@@ -3842,11 +3840,11 @@
      "lcEpoch": 3,
      "txRequests": 2,
      "txCoalesced": 0,
-     "mapSectionPresent": true,
+     "mapSectionPresent": false,
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-19",
-     "t": 4511
+     "t": 4543
     },
     {
      "navGen": 1,
@@ -3884,7 +3882,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-20",
-     "t": 4619
+     "t": 4644
     },
     {
      "navGen": 1,
@@ -3922,7 +3920,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-21",
-     "t": 4727
+     "t": 4748
     },
     {
      "navGen": 1,
@@ -3960,7 +3958,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-22",
-     "t": 4834
+     "t": 4856
     },
     {
      "navGen": 1,
@@ -3998,7 +3996,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-23",
-     "t": 4942
+     "t": 4965
     },
     {
      "navGen": 1,
@@ -4036,7 +4034,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-24",
-     "t": 5051
+     "t": 5075
     },
     {
      "navGen": 1,
@@ -4074,7 +4072,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-25",
-     "t": 5161
+     "t": 5185
     },
     {
      "navGen": 1,
@@ -4112,7 +4110,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-26",
-     "t": 5268
+     "t": 5293
     },
     {
      "navGen": 1,
@@ -4150,7 +4148,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-27",
-     "t": 5378
+     "t": 5402
     },
     {
      "navGen": 1,
@@ -4188,7 +4186,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-28",
-     "t": 5486
+     "t": 5512
     },
     {
      "navGen": 1,
@@ -4226,7 +4224,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-29",
-     "t": 5597
+     "t": 5619
     },
     {
      "navGen": 1,
@@ -4264,7 +4262,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-30",
-     "t": 5707
+     "t": 5726
     },
     {
      "navGen": 1,
@@ -4302,7 +4300,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-31",
-     "t": 5815
+     "t": 5833
     },
     {
      "navGen": 1,
@@ -4340,7 +4338,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-32",
-     "t": 5924
+     "t": 5941
     },
     {
      "navGen": 1,
@@ -4378,572 +4376,572 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "final",
-     "t": 5924
+     "t": 5941
     }
    ],
    "marks": [
     {
      "name": "nav-map",
-     "t": 819
+     "t": 822
     },
     {
      "name": "leave",
-     "t": 1795
+     "t": 1798
     }
    ],
    "requestLog": [
     {
      "kind": "static",
      "path": "/assets/css/base.css",
-     "t": 1792555572858
+     "t": 1792644806041
     },
     {
      "kind": "static",
      "path": "/assets/css/components.css",
-     "t": 1792555572859
+     "t": 1792644806042
     },
     {
      "kind": "static",
      "path": "/assets/css/layout.css",
-     "t": 1792555572860
+     "t": 1792644806044
     },
     {
      "kind": "static",
      "path": "/assets/css/responsive-foundation.css",
-     "t": 1792555572861
+     "t": 1792644806044
     },
     {
      "kind": "static",
      "path": "/assets/css/core/km-sticky-header.css",
-     "t": 1792555572862
+     "t": 1792644806052
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/home.css",
-     "t": 1792555572862
+     "t": 1792644806052
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/inventory-replenishment.css",
-     "t": 1792555572863
+     "t": 1792644806052
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/factory-stock.css",
-     "t": 1792555572864
+     "t": 1792644806052
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-ops.css",
-     "t": 1792555572865
+     "t": 1792644806053
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-stock.css",
-     "t": 1792555572865
+     "t": 1792644806054
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fc-overview.css",
-     "t": 1792555572866
+     "t": 1792644806056
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/request-order.css",
-     "t": 1792555572867
+     "t": 1792644806057
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-details.css",
-     "t": 1792555572869
+     "t": 1792644806057
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-plan.css",
-     "t": 1792555572869
+     "t": 1792644806057
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-history.css",
-     "t": 1792555572870
+     "t": 1792644806058
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/supply-chain-canvas.css",
-     "t": 1792555572870
+     "t": 1792644806058
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-handbook.css",
-     "t": 1792555572870
+     "t": 1792644806058
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/campaign-risk.css",
-     "t": 1792555572870
+     "t": 1792644806059
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/procurement.css",
-     "t": 1792555572872
+     "t": 1792644806062
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/carrier-rate-card.css",
-     "t": 1792555572872
+     "t": 1792644806062
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-regional-details.css",
-     "t": 1792555572872
+     "t": 1792644806062
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/global-logistics-map.css",
-     "t": 1792555572873
+     "t": 1792644806062
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/automation-schedule.css",
-     "t": 1792555572873
+     "t": 1792644806062
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fx-rate-book.css",
-     "t": 1792555572873
+     "t": 1792644806063
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/site-priority.css",
-     "t": 1792555572874
+     "t": 1792644806064
     },
     {
      "kind": "static",
      "path": "/assets/css/product-strategy-board.css",
-     "t": 1792555572875
+     "t": 1792644806065
     },
     {
      "kind": "static",
      "path": "/assets/img/logo_1024_1024-removebg_2.png",
-     "t": 1792555572876
+     "t": 1792644806067
     },
     {
      "kind": "static",
      "path": "/assets/js/core/namespace.js",
-     "t": 1792555572876
+     "t": 1792644806068
     },
     {
      "kind": "static",
      "path": "/assets/js/core/lifecycle.js",
-     "t": 1792555572885
+     "t": 1792644806086
     },
     {
      "kind": "static",
      "path": "/assets/js/core/state.js",
-     "t": 1792555572885
+     "t": 1792644806087
     },
     {
      "kind": "static",
      "path": "/assets/js/core/partial-loader.js",
-     "t": 1792555572890
+     "t": 1792644806092
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/home.js",
-     "t": 1792555572890
+     "t": 1792644806092
     },
     {
      "kind": "static",
      "path": "/assets/js/core/script-loader.js",
-     "t": 1792555572890
+     "t": 1792644806093
     },
     {
      "kind": "static",
      "path": "/assets/js/core/deferred-read.js",
-     "t": 1792555572890
+     "t": 1792644806093
     },
     {
      "kind": "static",
      "path": "/assets/js/core/sticky-header.js",
-     "t": 1792555572890
+     "t": 1792644806093
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/forecast-engine.js",
-     "t": 1792555572891
+     "t": 1792644806093
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/i18n.js",
-     "t": 1792555572892
+     "t": 1792644806095
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-repo-asset-manifest.js",
-     "t": 1792555572893
+     "t": 1792644806095
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-image-reference-policy.js",
-     "t": 1792555572893
+     "t": 1792644806095
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/sku-overrides.js",
-     "t": 1792555572893
+     "t": 1792644806095
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/data.js",
-     "t": 1792555572893
+     "t": 1792644806095
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scroll-sync.js",
-     "t": 1792555572893
+     "t": 1792644806095
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/template-export.js",
-     "t": 1792555572896
+     "t": 1792644806097
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/resizable-columns.js",
-     "t": 1792555572896
+     "t": 1792644806097
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/dual-layer-resize.js",
-     "t": 1792555572896
+     "t": 1792644806097
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/tab-rail.js",
-     "t": 1792555572896
+     "t": 1792644806098
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/multi-select-filter.js",
-     "t": 1792555572896
+     "t": 1792644806098
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/inventory-compat.js",
-     "t": 1792555572897
+     "t": 1792644806098
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/gap-recalc-transport.js",
-     "t": 1792555572899
+     "t": 1792644806101
     },
     {
      "kind": "static",
      "path": "/assets/js/core/scope-registry.js",
-     "t": 1792555572899
+     "t": 1792644806101
     },
     {
      "kind": "static",
      "path": "/assets/js/core/boot-read-arbiter.js",
-     "t": 1792555572899
+     "t": 1792644806101
     },
     {
      "kind": "static",
      "path": "/assets/js/core/method-registry.js",
-     "t": 1792555572899
+     "t": 1792644806101
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-active-route-classification.js",
-     "t": 1792555572899
+     "t": 1792644806101
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scope-select-modal.js",
-     "t": 1792555572900
+     "t": 1792644806101
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-factory-site-allocation.js",
-     "t": 1792555572901
+     "t": 1792644806104
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-forecast-share.js",
-     "t": 1792555572901
+     "t": 1792644806104
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-calculations.js",
-     "t": 1792555572902
+     "t": 1792644806104
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-planning-demand.js",
-     "t": 1792555572902
+     "t": 1792644806105
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-recommendation-audit.js",
-     "t": 1792555572902
+     "t": 1792644806105
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-recommendation.js",
-     "t": 1792555572902
+     "t": 1792644806105
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-execution-handoff.js",
-     "t": 1792555572902
+     "t": 1792644806110
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-transport.js",
-     "t": 1792555572903
+     "t": 1792644806110
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-data-access.js",
-     "t": 1792555572904
+     "t": 1792644806110
     },
     {
      "kind": "static",
      "path": "/assets/js/api/operation-system-db-api.js",
-     "t": 1792555572904
+     "t": 1792644806110
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-loading-state.js",
-     "t": 1792555572904
+     "t": 1792644806110
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-api-foundation.js",
-     "t": 1792555572904
+     "t": 1792644806110
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-workspace.js",
-     "t": 1792555572905
+     "t": 1792644806114
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-adapter.js",
-     "t": 1792555572905
+     "t": 1792644806114
     },
     {
      "kind": "static",
      "path": "/assets/js/data/replenishment-mock-data.js",
-     "t": 1792555572906
+     "t": 1792644806114
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/factory-stock.js",
-     "t": 1792555572906
+     "t": 1792644806114
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-ops-preview.js",
-     "t": 1792555572906
+     "t": 1792644806114
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-inbound.js",
-     "t": 1792555572907
+     "t": 1792644806115
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-outbound.js",
-     "t": 1792555572908
+     "t": 1792644806119
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fc-summary.js",
-     "t": 1792555572908
+     "t": 1792644806119
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/forecast.js",
-     "t": 1792555572909
+     "t": 1792644806119
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order.js",
-     "t": 1792555572909
+     "t": 1792644806119
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-details.js",
-     "t": 1792555572909
+     "t": 1792644806119
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-plan.js",
-     "t": 1792555572912
+     "t": 1792644806120
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-history.js",
-     "t": 1792555572912
+     "t": 1792644806123
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/supplychain.js",
-     "t": 1792555572913
+     "t": 1792644806124
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-handbook.js",
-     "t": 1792555572913
+     "t": 1792644806124
     },
     {
      "kind": "static",
      "path": "/assets/js/i18n/sku-handbook.js",
-     "t": 1792555572914
+     "t": 1792644806125
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/campaign-risk.js",
-     "t": 1792555572915
+     "t": 1792644806125
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order-draft.js",
-     "t": 1792555572916
+     "t": 1792644806125
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-overview.js",
-     "t": 1792555572916
+     "t": 1792644806127
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-list.js",
-     "t": 1792555572916
+     "t": 1792644806128
     },
     {
      "kind": "static",
      "path": "/assets/js/product-strategy/psb-views.js",
-     "t": 1792555572917
+     "t": 1792644806128
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-pricing.js",
-     "t": 1792555572919
+     "t": 1792644806128
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-details.js",
-     "t": 1792555572919
+     "t": 1792644806129
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-land-110m.js",
-     "t": 1792555572920
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/automation-schedule.js",
-     "t": 1792555572920
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/pages/fx-rate-book.js",
-     "t": 1792555572920
-    },
-    {
-     "kind": "static",
-     "path": "/assets/js/app.js",
-     "t": 1792555572923
+     "t": 1792644806129
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/home.html",
-     "t": 1792555572950
+     "t": 1792644806129
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/automation-schedule.js",
+     "t": 1792644806133
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/pages/fx-rate-book.js",
+     "t": 1792644806133
+    },
+    {
+     "kind": "static",
+     "path": "/assets/js/app.js",
+     "t": 1792644806133
     },
     {
      "kind": "api",
      "action": "getClientCapabilities",
      "table": "",
-     "t": 1792555572970
+     "t": 1792644806158
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/global-logistics-map.html",
-     "t": 1792555573666
+     "t": 1792644806850
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-countries-110m.js",
-     "t": 1792555573666
+     "t": 1792644806851
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-names-zh-hant.js",
-     "t": 1792555573666
+     "t": 1792644806851
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-display-aliases-zh-tw.js",
-     "t": 1792555573666
+     "t": 1792644806851
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-admin1-display-names-zh-tw.js",
-     "t": 1792555573667
+     "t": 1792644806852
     },
     {
      "kind": "static",
      "path": "/assets/js/core/geo-name-resolver.js",
-     "t": 1792555573668
+     "t": 1792644806855
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-geo-topology.js",
-     "t": 1792555573669
+     "t": 1792644806855
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-globe.js",
-     "t": 1792555573669
+     "t": 1792644806855
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/global-logistics-map.js",
-     "t": 1792555573669
+     "t": 1792644806855
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/site-priority.html",
-     "t": 1792555574642
+     "t": 1792644807825
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-country-identity.js",
-     "t": 1792555574642
+     "t": 1792644807825
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/site-priority.js",
-     "t": 1792555574642
+     "t": 1792644807825
     },
     {
      "kind": "api",
      "action": "getTable",
      "table": "marketplaces",
-     "t": 1792555574647
+     "t": 1792644807831
     },
     {
      "kind": "static",
      "path": "/favicon.ico",
-     "t": 1792555578777
+     "t": 1792644811976
     }
    ],
    "summary": {
-    "samples": 53,
-    "markupArrivedAt": 3856,
-    "leftAt": 1795,
+    "samples": 52,
+    "markupArrivedAt": 4644,
+    "leftAt": 1798,
     "markupArrivedAfterLeaving": true,
     "boots": 0,
     "renders": 0,
@@ -4978,7 +4976,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "boot",
-     "t": 787,
+     "t": 808,
      "navHow": "click"
     },
     {
@@ -4992,7 +4990,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-0",
-     "t": 789
+     "t": 811
     },
     {
      "navGen": 0,
@@ -5028,7 +5026,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-1",
-     "t": 896
+     "t": 916
     },
     {
      "navGen": 0,
@@ -5064,7 +5062,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-2",
-     "t": 1004
+     "t": 1028
     },
     {
      "navGen": 0,
@@ -5100,7 +5098,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-3",
-     "t": 1110
+     "t": 1137
     },
     {
      "navGen": 0,
@@ -5136,7 +5134,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-4",
-     "t": 1219
+     "t": 1247
     },
     {
      "navGen": 0,
@@ -5172,7 +5170,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-5",
-     "t": 1327
+     "t": 1355
     },
     {
      "navGen": 0,
@@ -5208,7 +5206,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-6",
-     "t": 1436
+     "t": 1464
     },
     {
      "navGen": 0,
@@ -5244,7 +5242,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-7",
-     "t": 1544
+     "t": 1571
     },
     {
      "navGen": 0,
@@ -5280,7 +5278,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-8",
-     "t": 1653
+     "t": 1679
     },
     {
      "navGen": 0,
@@ -5316,7 +5314,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "mount-wait-9",
-     "t": 1761
+     "t": 1787
     },
     {
      "navGen": 0,
@@ -5352,7 +5350,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "pre-leave",
-     "t": 1761,
+     "t": 1787,
      "leaveHow": "click"
     },
     {
@@ -5389,7 +5387,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-0",
-     "t": 1761
+     "t": 1788
     },
     {
      "navGen": 1,
@@ -5427,7 +5425,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-1",
-     "t": 1869
+     "t": 1896
     },
     {
      "navGen": 1,
@@ -5465,7 +5463,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-2",
-     "t": 1976
+     "t": 2004
     },
     {
      "navGen": 1,
@@ -5503,7 +5501,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-3",
-     "t": 2083
+     "t": 2114
     },
     {
      "navGen": 1,
@@ -5541,7 +5539,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-4",
-     "t": 2191
+     "t": 2222
     },
     {
      "navGen": 1,
@@ -5579,7 +5577,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-5",
-     "t": 2299
+     "t": 2332
     },
     {
      "navGen": 1,
@@ -5617,45 +5615,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "away-6",
-     "t": 2406
-    },
-    {
-     "navGen": 1,
-     "renders": 0,
-     "boots": 0,
-     "attaches": 0,
-     "detaches": 0,
-     "globeCreates": 0,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 0,
-     "teardownsAvoided": 0,
-     "hostExists": false,
-     "hostInDocument": false,
-     "hostParentClass": null,
-     "canvasPresent": false,
-     "canvasW": 0,
-     "canvasH": 0,
-     "globeAlive": false,
-     "globeInstanceId": 0,
-     "globeError": "",
-     "loading": true,
-     "error": "",
-     "dataReady": false,
-     "shipments": 0,
-     "lcCurrent": "site-priority-section",
-     "lcActive": [
-      "site-priority-section"
-     ],
-     "lcEpoch": 3,
-     "txRequests": 2,
-     "txCoalesced": 0,
-     "mapSectionPresent": false,
-     "mapSectionActive": false,
-     "mapBodyHtmlLen": 0,
-     "tag": "away-7",
-     "t": 2515
+     "t": 2440
     },
     {
      "navGen": 1,
@@ -5693,7 +5653,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "pre-return",
-     "t": 2515,
+     "t": 2441,
      "returnHow": "click"
     },
     {
@@ -5730,7 +5690,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-0",
-     "t": 2516
+     "t": 2441
     },
     {
      "navGen": 1,
@@ -5766,7 +5726,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-1",
-     "t": 2616
+     "t": 2550
     },
     {
      "navGen": 1,
@@ -5802,7 +5762,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-2",
-     "t": 2731
+     "t": 2657
     },
     {
      "navGen": 1,
@@ -5838,7 +5798,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-3",
-     "t": 2832
+     "t": 2766
     },
     {
      "navGen": 1,
@@ -5874,7 +5834,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-4",
-     "t": 2934
+     "t": 2876
     },
     {
      "navGen": 1,
@@ -5910,7 +5870,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-5",
-     "t": 3042
+     "t": 2983
     },
     {
      "navGen": 1,
@@ -5946,7 +5906,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-6",
-     "t": 3150
+     "t": 3092
     },
     {
      "navGen": 1,
@@ -5982,7 +5942,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-7",
-     "t": 3257
+     "t": 3200
     },
     {
      "navGen": 1,
@@ -6018,7 +5978,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-8",
-     "t": 3364
+     "t": 3309
     },
     {
      "navGen": 1,
@@ -6054,7 +6014,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-9",
-     "t": 3473
+     "t": 3418
     },
     {
      "navGen": 1,
@@ -6090,7 +6050,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-10",
-     "t": 3583
+     "t": 3527
     },
     {
      "navGen": 1,
@@ -6126,7 +6086,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-11",
-     "t": 3691
+     "t": 3635
     },
     {
      "navGen": 1,
@@ -6162,7 +6122,7 @@
      "mapSectionActive": false,
      "mapBodyHtmlLen": 0,
      "tag": "settle-12",
-     "t": 3799
+     "t": 3743
     },
     {
      "navGen": 1,
@@ -6200,7 +6160,45 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 92,
      "tag": "settle-13",
-     "t": 3906
+     "t": 3844
+    },
+    {
+     "navGen": 1,
+     "renders": 1,
+     "boots": 1,
+     "attaches": 0,
+     "detaches": 0,
+     "globeCreates": 0,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": false,
+     "hostInDocument": false,
+     "hostParentClass": null,
+     "canvasPresent": false,
+     "canvasW": 0,
+     "canvasH": 0,
+     "globeAlive": false,
+     "globeInstanceId": 0,
+     "globeError": "",
+     "loading": true,
+     "error": "",
+     "dataReady": false,
+     "shipments": 0,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [
+      "global-logistics-map-section"
+     ],
+     "lcEpoch": 4,
+     "txRequests": 2,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": true,
+     "mapBodyHtmlLen": 92,
+     "tag": "settle-14",
+     "t": 3944
     },
     {
      "navGen": 1,
@@ -6237,46 +6235,8 @@
      "mapSectionPresent": true,
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
-     "tag": "settle-14",
-     "t": 4403
-    },
-    {
-     "navGen": 1,
-     "renders": 2,
-     "boots": 1,
-     "attaches": 1,
-     "detaches": 0,
-     "globeCreates": 1,
-     "globeDestroys": 0,
-     "contextLost": 0,
-     "staleRendersBlocked": 0,
-     "staleMountsBlocked": 1,
-     "teardownsAvoided": 0,
-     "hostExists": true,
-     "hostInDocument": true,
-     "hostParentClass": "glm-globe-slot",
-     "canvasPresent": true,
-     "canvasW": 611,
-     "canvasH": 713,
-     "globeAlive": true,
-     "globeInstanceId": 1,
-     "globeError": "",
-     "loading": false,
-     "error": "",
-     "dataReady": true,
-     "shipments": 8,
-     "lcCurrent": "global-logistics-map-section",
-     "lcActive": [
-      "global-logistics-map-section"
-     ],
-     "lcEpoch": 4,
-     "txRequests": 3,
-     "txCoalesced": 0,
-     "mapSectionPresent": true,
-     "mapSectionActive": true,
-     "mapBodyHtmlLen": 13141,
      "tag": "settle-15",
-     "t": 5218
+     "t": 4578
     },
     {
      "navGen": 1,
@@ -6314,7 +6274,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-16",
-     "t": 5321
+     "t": 5183
     },
     {
      "navGen": 1,
@@ -6352,7 +6312,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-17",
-     "t": 5429
+     "t": 5289
     },
     {
      "navGen": 1,
@@ -6390,7 +6350,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-18",
-     "t": 5537
+     "t": 5398
     },
     {
      "navGen": 1,
@@ -6428,7 +6388,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-19",
-     "t": 5645
+     "t": 5508
     },
     {
      "navGen": 1,
@@ -6466,7 +6426,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-20",
-     "t": 5756
+     "t": 5618
     },
     {
      "navGen": 1,
@@ -6504,7 +6464,7 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-21",
-     "t": 5864
+     "t": 5728
     },
     {
      "navGen": 1,
@@ -6542,7 +6502,45 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "settle-22",
-     "t": 5972
+     "t": 5836
+    },
+    {
+     "navGen": 1,
+     "renders": 2,
+     "boots": 1,
+     "attaches": 1,
+     "detaches": 0,
+     "globeCreates": 1,
+     "globeDestroys": 0,
+     "contextLost": 0,
+     "staleRendersBlocked": 0,
+     "staleMountsBlocked": 1,
+     "teardownsAvoided": 0,
+     "hostExists": true,
+     "hostInDocument": true,
+     "hostParentClass": "glm-globe-slot",
+     "canvasPresent": true,
+     "canvasW": 615,
+     "canvasH": 718,
+     "globeAlive": true,
+     "globeInstanceId": 1,
+     "globeError": "",
+     "loading": false,
+     "error": "",
+     "dataReady": true,
+     "shipments": 8,
+     "lcCurrent": "global-logistics-map-section",
+     "lcActive": [
+      "global-logistics-map-section"
+     ],
+     "lcEpoch": 4,
+     "txRequests": 3,
+     "txCoalesced": 0,
+     "mapSectionPresent": true,
+     "mapSectionActive": true,
+     "mapBodyHtmlLen": 13141,
+     "tag": "settle-23",
+     "t": 5945
     },
     {
      "navGen": 1,
@@ -6580,587 +6578,587 @@
      "mapSectionActive": true,
      "mapBodyHtmlLen": 13141,
      "tag": "final",
-     "t": 5972
+     "t": 5945
     }
    ],
    "marks": [
     {
      "name": "nav-map",
-     "t": 787
+     "t": 808
     },
     {
      "name": "leave",
-     "t": 1761
+     "t": 1787
     },
     {
      "name": "return",
-     "t": 2515
+     "t": 2441
     }
    ],
    "requestLog": [
     {
      "kind": "static",
      "path": "/assets/css/base.css",
-     "t": 1792555662657
+     "t": 1792644894851
     },
     {
      "kind": "static",
      "path": "/assets/css/components.css",
-     "t": 1792555662657
+     "t": 1792644894852
     },
     {
      "kind": "static",
      "path": "/assets/css/layout.css",
-     "t": 1792555662659
+     "t": 1792644894852
     },
     {
      "kind": "static",
      "path": "/assets/css/responsive-foundation.css",
-     "t": 1792555662659
+     "t": 1792644894855
     },
     {
      "kind": "static",
      "path": "/assets/css/core/km-sticky-header.css",
-     "t": 1792555662660
+     "t": 1792644894855
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/home.css",
-     "t": 1792555662660
+     "t": 1792644894855
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/inventory-replenishment.css",
-     "t": 1792555662662
+     "t": 1792644894856
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/factory-stock.css",
-     "t": 1792555662662
+     "t": 1792644894856
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-ops.css",
-     "t": 1792555662663
+     "t": 1792644894856
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/overseas-stock.css",
-     "t": 1792555662663
+     "t": 1792644894858
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fc-overview.css",
-     "t": 1792555662663
+     "t": 1792644894858
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/request-order.css",
-     "t": 1792555662664
+     "t": 1792644894859
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-details.css",
-     "t": 1792555662664
+     "t": 1792644894859
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-plan.css",
-     "t": 1792555662664
+     "t": 1792644894859
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/shipping-history.css",
-     "t": 1792555662665
+     "t": 1792644894859
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/supply-chain-canvas.css",
-     "t": 1792555662665
+     "t": 1792644894860
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-handbook.css",
-     "t": 1792555662666
+     "t": 1792644894861
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/campaign-risk.css",
-     "t": 1792555662666
+     "t": 1792644894861
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/procurement.css",
-     "t": 1792555662666
+     "t": 1792644894862
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/carrier-rate-card.css",
-     "t": 1792555662666
+     "t": 1792644894863
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/sku-regional-details.css",
-     "t": 1792555662667
+     "t": 1792644894863
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/global-logistics-map.css",
-     "t": 1792555662667
+     "t": 1792644894864
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/automation-schedule.css",
-     "t": 1792555662668
+     "t": 1792644894864
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/fx-rate-book.css",
-     "t": 1792555662668
+     "t": 1792644894864
     },
     {
      "kind": "static",
      "path": "/assets/css/pages/site-priority.css",
-     "t": 1792555662668
+     "t": 1792644894864
     },
     {
      "kind": "static",
      "path": "/assets/css/product-strategy-board.css",
-     "t": 1792555662668
+     "t": 1792644894865
     },
     {
      "kind": "static",
      "path": "/assets/img/logo_1024_1024-removebg_2.png",
-     "t": 1792555662668
+     "t": 1792644894866
     },
     {
      "kind": "static",
      "path": "/assets/js/core/namespace.js",
-     "t": 1792555662668
+     "t": 1792644894866
     },
     {
      "kind": "static",
      "path": "/assets/js/core/lifecycle.js",
-     "t": 1792555662679
+     "t": 1792644894876
     },
     {
      "kind": "static",
      "path": "/assets/js/core/state.js",
-     "t": 1792555662679
+     "t": 1792644894878
     },
     {
      "kind": "static",
      "path": "/assets/js/core/partial-loader.js",
-     "t": 1792555662684
+     "t": 1792644894882
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/home.js",
-     "t": 1792555662684
+     "t": 1792644894882
     },
     {
      "kind": "static",
      "path": "/assets/js/core/script-loader.js",
-     "t": 1792555662685
+     "t": 1792644894883
     },
     {
      "kind": "static",
      "path": "/assets/js/core/deferred-read.js",
-     "t": 1792555662685
+     "t": 1792644894883
     },
     {
      "kind": "static",
      "path": "/assets/js/core/sticky-header.js",
-     "t": 1792555662685
+     "t": 1792644894883
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/forecast-engine.js",
-     "t": 1792555662685
+     "t": 1792644894884
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/i18n.js",
-     "t": 1792555662686
+     "t": 1792644894885
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-repo-asset-manifest.js",
-     "t": 1792555662686
+     "t": 1792644894885
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/km-image-reference-policy.js",
-     "t": 1792555662687
+     "t": 1792644894886
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/sku-overrides.js",
-     "t": 1792555662687
+     "t": 1792644894886
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/data.js",
-     "t": 1792555662687
+     "t": 1792644894886
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scroll-sync.js",
-     "t": 1792555662687
+     "t": 1792644894887
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/template-export.js",
-     "t": 1792555662688
+     "t": 1792644894887
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/resizable-columns.js",
-     "t": 1792555662689
+     "t": 1792644894888
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/dual-layer-resize.js",
-     "t": 1792555662689
+     "t": 1792644894889
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/tab-rail.js",
-     "t": 1792555662689
+     "t": 1792644894889
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/multi-select-filter.js",
-     "t": 1792555662689
+     "t": 1792644894889
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/inventory-compat.js",
-     "t": 1792555662689
+     "t": 1792644894890
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/gap-recalc-transport.js",
-     "t": 1792555662692
+     "t": 1792644894890
     },
     {
      "kind": "static",
      "path": "/assets/js/core/scope-registry.js",
-     "t": 1792555662692
+     "t": 1792644894890
     },
     {
      "kind": "static",
      "path": "/assets/js/core/boot-read-arbiter.js",
-     "t": 1792555662692
+     "t": 1792644894891
     },
     {
      "kind": "static",
      "path": "/assets/js/core/method-registry.js",
-     "t": 1792555662692
+     "t": 1792644894893
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-active-route-classification.js",
-     "t": 1792555662693
+     "t": 1792644894893
     },
     {
      "kind": "static",
      "path": "/assets/js/utils/scope-select-modal.js",
-     "t": 1792555662693
+     "t": 1792644894893
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-factory-site-allocation.js",
-     "t": 1792555662695
+     "t": 1792644894893
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-forecast-share.js",
-     "t": 1792555662695
+     "t": 1792644894894
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-calculations.js",
-     "t": 1792555662695
+     "t": 1792644894894
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-planning-demand.js",
-     "t": 1792555662695
+     "t": 1792644894895
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-recommendation-audit.js",
-     "t": 1792555662695
+     "t": 1792644894896
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-recommendation.js",
-     "t": 1792555662695
+     "t": 1792644894896
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-execution-handoff.js",
-     "t": 1792555662697
+     "t": 1792644894896
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-transport.js",
-     "t": 1792555662697
+     "t": 1792644894896
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-data-access.js",
-     "t": 1792555662698
+     "t": 1792644894896
     },
     {
      "kind": "static",
      "path": "/assets/js/api/operation-system-db-api.js",
-     "t": 1792555662698
+     "t": 1792644894898
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-loading-state.js",
-     "t": 1792555662698
+     "t": 1792644894898
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-api-foundation.js",
-     "t": 1792555662698
+     "t": 1792644894898
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-workspace.js",
-     "t": 1792555662701
+     "t": 1792644894898
     },
     {
      "kind": "static",
      "path": "/assets/js/api/km-product-pricing-adapter.js",
-     "t": 1792555662701
+     "t": 1792644894898
     },
     {
      "kind": "static",
      "path": "/assets/js/data/replenishment-mock-data.js",
-     "t": 1792555662701
+     "t": 1792644894898
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/factory-stock.js",
-     "t": 1792555662701
+     "t": 1792644894901
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-ops-preview.js",
-     "t": 1792555662702
+     "t": 1792644894901
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-inbound.js",
-     "t": 1792555662702
+     "t": 1792644894902
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/overseas-outbound.js",
-     "t": 1792555662703
+     "t": 1792644894902
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fc-summary.js",
-     "t": 1792555662704
+     "t": 1792644894902
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/forecast.js",
-     "t": 1792555662704
+     "t": 1792644894902
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order.js",
-     "t": 1792555662704
+     "t": 1792644894904
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-details.js",
-     "t": 1792555662704
+     "t": 1792644894904
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-plan.js",
-     "t": 1792555662705
+     "t": 1792644894904
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/shipping-history.js",
-     "t": 1792555662706
+     "t": 1792644894905
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/supplychain.js",
-     "t": 1792555662708
+     "t": 1792644894905
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-handbook.js",
-     "t": 1792555662709
+     "t": 1792644894908
     },
     {
      "kind": "static",
      "path": "/assets/js/i18n/sku-handbook.js",
-     "t": 1792555662709
+     "t": 1792644894908
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/campaign-risk.js",
-     "t": 1792555662710
+     "t": 1792644894908
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/request-order-draft.js",
-     "t": 1792555662710
+     "t": 1792644894908
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-overview.js",
-     "t": 1792555662710
+     "t": 1792644894909
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/purchase-order-list.js",
-     "t": 1792555662713
+     "t": 1792644894909
     },
     {
      "kind": "static",
      "path": "/assets/js/product-strategy/psb-views.js",
-     "t": 1792555662714
+     "t": 1792644894911
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-pricing.js",
-     "t": 1792555662714
+     "t": 1792644894912
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/sku-regional-details.js",
-     "t": 1792555662715
+     "t": 1792644894912
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-land-110m.js",
-     "t": 1792555662715
+     "t": 1792644894912
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/automation-schedule.js",
-     "t": 1792555662715
+     "t": 1792644894913
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/fx-rate-book.js",
-     "t": 1792555662716
+     "t": 1792644894913
     },
     {
      "kind": "static",
      "path": "/assets/js/app.js",
-     "t": 1792555662716
+     "t": 1792644894913
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/home.html",
-     "t": 1792555662729
+     "t": 1792644894934
     },
     {
      "kind": "api",
      "action": "getClientCapabilities",
      "table": "",
-     "t": 1792555662752
+     "t": 1792644894955
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/global-logistics-map.html",
-     "t": 1792555663435
+     "t": 1792644895650
     },
     {
      "kind": "static",
      "path": "/assets/js/data/world-countries-110m.js",
-     "t": 1792555663436
+     "t": 1792644895651
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-names-zh-hant.js",
-     "t": 1792555663436
+     "t": 1792644895651
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-display-aliases-zh-tw.js",
-     "t": 1792555663436
+     "t": 1792644895652
     },
     {
      "kind": "static",
      "path": "/assets/js/data/geo-admin1-display-names-zh-tw.js",
-     "t": 1792555663436
+     "t": 1792644895652
     },
     {
      "kind": "static",
      "path": "/assets/js/core/geo-name-resolver.js",
-     "t": 1792555663438
+     "t": 1792644895653
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-geo-topology.js",
-     "t": 1792555663438
+     "t": 1792644895654
     },
     {
      "kind": "static",
      "path": "/assets/js/lib/km-globe.js",
-     "t": 1792555663438
+     "t": 1792644895654
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/global-logistics-map.js",
-     "t": 1792555663438
+     "t": 1792644895654
     },
     {
      "kind": "static",
      "path": "/assets/html/pages/site-priority.html",
-     "t": 1792555664408
+     "t": 1792644896628
     },
     {
      "kind": "static",
      "path": "/assets/js/core/supply-planning-country-identity.js",
-     "t": 1792555664409
+     "t": 1792644896628
     },
     {
      "kind": "static",
      "path": "/assets/js/pages/site-priority.js",
-     "t": 1792555664409
+     "t": 1792644896629
     },
     {
      "kind": "api",
      "action": "getTable",
      "table": "marketplaces",
-     "t": 1792555664413
+     "t": 1792644896633
     },
     {
      "kind": "api",
      "action": "shipment.workspace.get",
      "table": "",
-     "t": 1792555666453
+     "t": 1792644898667
     },
     {
      "kind": "static",
      "path": "/assets/img/earth/earth-albedo-8192.jpg",
-     "t": 1792555667014
+     "t": 1792644899357
     },
     {
      "kind": "static",
      "path": "/favicon.ico",
-     "t": 1792555668629
+     "t": 1792644900801
     }
    ],
    "summary": {
     "samples": 45,
-    "markupArrivedAt": 3906,
-    "leftAt": 1761,
+    "markupArrivedAt": 3844,
+    "leftAt": 1787,
     "markupArrivedAfterLeaving": true,
     "boots": 1,
     "renders": 2,
@@ -7184,8 +7182,8 @@
   "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
   "assets/js/core/lifecycle.js": "2dba0e3231523f09",
   "assets/js/core/partial-loader.js": "a08d727035577e37",
-  "assets/js/app.js": "bf7ce29911468672",
-  "index.html": "b295efa32fd7ad8b",
+  "assets/js/app.js": "97eb398258498655",
+  "index.html": "17cb60cffe8780dd",
   "assets/tests/_cp2m-r4r2-map-mount-runner.js": "2dcc4058fbe82efd",
   "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c"
  }

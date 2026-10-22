@@ -27,6 +27,10 @@ var GS = 'assets/specs/active/apps-script/';
 var WRAP_REL = 'docs/planning/fx-auth-r2/TEMP_FxRateBookEditorSave.gs.txt';
 var OWNER = 'vic.zhou@shopkitchenmama.com';
 var BASE_SHA = '8da211de';   // the frozen candidate this round starts from
+/* PSB-DEMO-R3 — THE CLAIM IS ABOUT THIS ROUND, SO THE INTERVAL ENDS WITH IT. `BASE_SHA..HEAD` turned "FX-AUTH-R2
+   changed no runtime file" into "no round after it may change one", and the next frontend round failed it.
+   b6ef4008 is the last FX-AUTH-R2 commit (R2-R1). */
+var ROUND_END_SHA = 'b6ef4008';
 var pass = 0, fail = 0;
 function ok(c, l, x) { if (c) { pass++; console.log('ok   ' + l); } else { fail++; console.log('FAIL ' + l + (x !== undefined ? '  ' + JSON.stringify(x).slice(0, 400) : '')); } }
 function eq(a, b, l) { ok(JSON.stringify(a) === JSON.stringify(b), l, { got: a, want: b }); }
@@ -259,9 +263,9 @@ ok(!/credentials\s*:/.test(API.split('\n').filter(function (l) { return !/^\s*(\
   'A3 no fetch anywhere in the transport sets credentials');
 var MAN = JSON.parse(read(GS + 'appsscript.json'));
 eq(MAN.webapp, { executeAs: 'USER_DEPLOYING', access: 'ANYONE_ANONYMOUS' }, 'A4 the deployment does not require sign-in, and runs as the deployer');
-eq(cp.execFileSync('git', ['diff', '--name-only', BASE_SHA, '--', GS, 'assets/js', 'assets/css', 'assets/html', 'index.html'],
+eq(cp.execFileSync('git', ['diff', '--name-only', BASE_SHA, ROUND_END_SHA, '--', GS, 'assets/js', 'assets/css', 'assets/html', 'index.html'],
   { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(), '',
-  'A5 this round changed no runtime file: no .gs, no bundle, no frontend, no manifest (since ' + BASE_SHA + ')');
+  'A5 this round changed no runtime file: no .gs, no bundle, no frontend, no manifest (' + BASE_SHA + '..' + ROUND_END_SHA + ')');
 
 console.log('\n=== B  THE EDITOR WRAPPER, EXECUTED OVER THE REAL 75_ ===');
 eq(scenarioGate(WRAP), [], 'B1 dry run lists every entry and every change (full old and new), writes nothing, takes no lock; a confirmed run writes once through 75_; every refusal writes nothing');

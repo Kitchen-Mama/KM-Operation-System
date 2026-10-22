@@ -1,0 +1,246 @@
+{
+ "ok": true,
+ "browser": "chrome.exe",
+ "capturedAt": "2026-10-22",
+ "design": "A and B are identical runs (the noise floor); C performs a real pointer drag (the effect).",
+ "sources": {
+  "index.html": "b295efa32fd7ad8b",
+  "assets/js/lib/km-globe.js": "f65e109bc3b91584",
+  "assets/js/pages/global-logistics-map.js": "ec1bf9b1a865e2af",
+  "assets/js/app.js": "bf7ce29911468672",
+  "assets/tests/_cp2m-r2-map-runner.js": "44100b6a40163e8c",
+  "assets/tests/_cp2m-r2-png.js": "ad43d2ea5f879854"
+ },
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/caa8d9f9-c437-407c-96f4-6782665dcde2/scratchpad/r3/retake/map-r63",
+ "scenes": [
+  {
+   "scene": "desktop",
+   "viewport": {
+    "w": 1280,
+    "h": 800
+   },
+   "canvas": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 0,
+    "canvasPresent": false,
+    "canvasCssBox": null,
+    "canvasBackingSize": null,
+    "canvasAriaLabel": null,
+    "reportAttempts": 41,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 806,
+    "canvasAppeared": true
+   },
+   "canvasB": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 603,
+     "y": 113,
+     "w": 615,
+     "h": 638
+    },
+    "canvasBackingSize": {
+     "w": 615,
+     "h": 638
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 522,
+    "canvasAppeared": true
+   },
+   "dragReport": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 603,
+     "y": 113,
+     "w": 615,
+     "h": 638
+    },
+    "canvasBackingSize": {
+     "w": 615,
+     "h": 638
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": true,
+    "canvasWaitMs": 541,
+    "canvasAppeared": true,
+    "dragPath": {
+     "from": [
+      911,
+      432
+     ],
+     "to": [
+      1023,
+      448
+     ]
+    }
+   },
+   "pngBytes": {
+    "a": 274236,
+    "b": 438001,
+    "c": 457155
+   },
+   "error": "NO_CANVAS_BOX"
+  },
+  {
+   "scene": "mobile",
+   "viewport": {
+    "w": 390,
+    "h": 844
+   },
+   "canvas": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 31,
+     "y": 200,
+     "w": 313,
+     "h": 606
+    },
+    "canvasBackingSize": {
+     "w": 313,
+     "h": 606
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 464,
+    "canvasAppeared": true
+   },
+   "canvasB": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 31,
+     "y": 200,
+     "w": 313,
+     "h": 606
+    },
+    "canvasBackingSize": {
+     "w": 313,
+     "h": 606
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": false,
+    "canvasWaitMs": 463,
+    "canvasAppeared": true
+   },
+   "dragReport": {
+    "sectionPresent": true,
+    "sectionActive": true,
+    "canvasCount": 2,
+    "canvasPresent": true,
+    "canvasCssBox": {
+     "x": 31,
+     "y": 200,
+     "w": 313,
+     "h": 606
+    },
+    "canvasBackingSize": {
+     "w": 313,
+     "h": 606
+    },
+    "canvasAriaLabel": "3D Earth globe. Use the zoom buttons and the shipment list for keyboard access.",
+    "reportAttempts": 1,
+    "devicePixelRatio": 1,
+    "webglSupported": true,
+    "diagnostics": null,
+    "dragged": true,
+    "canvasWaitMs": 475,
+    "canvasAppeared": true,
+    "dragPath": {
+     "from": [
+      188,
+      502
+     ],
+     "to": [
+      300,
+      518
+     ]
+    }
+   },
+   "pngBytes": {
+    "a": 299494,
+    "b": 299494,
+    "c": 298896
+   },
+   "image": {
+    "w": 560,
+    "h": 844
+   },
+   "content": {
+    "region": {
+     "x": 31,
+     "y": 200,
+     "w": 313,
+     "h": 606
+    },
+    "sampled": 47571,
+    "distinctColours": 828,
+    "backgroundColour": "0,1,2",
+    "nonBackgroundFraction": 0.8851,
+    "contentBox": {
+     "x": 31,
+     "y": 200,
+     "w": 312,
+     "h": 604
+    },
+    "centroid": {
+     "x": 187,
+     "y": 489
+    },
+    "centroidOffset": 0.04
+   },
+   "noiseFloor": {
+    "sampled": 47571,
+    "changedFraction": 0,
+    "maxChannelDelta": 0,
+    "tolerance": 8
+   },
+   "dragEffect": {
+    "sampled": 47571,
+    "changedFraction": 0.7291,
+    "maxChannelDelta": 212,
+    "tolerance": 8
+   },
+   "framing": {
+    "fillWidthRatio": 0.997,
+    "fillHeightRatio": 0.997,
+    "centroidOffset": 0.04,
+    "touchesLeftEdge": true,
+    "touchesRightEdge": true,
+    "touchesTopEdge": true,
+    "touchesBottomEdge": false
+   }
+  }
+ ]
+}

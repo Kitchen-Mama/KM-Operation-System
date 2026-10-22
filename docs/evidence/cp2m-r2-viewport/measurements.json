@@ -1,12 +1,12 @@
 {
  "ok": true,
  "browser": "chrome.exe",
- "capturedAt": "2026-10-21",
+ "capturedAt": "2026-10-22",
  "fixtureRows": 7,
  "shellIsReal": true,
  "testCssOverrides": 0,
  "sources": {
-  "index.html": "b295efa32fd7ad8b",
+  "index.html": "17cb60cffe8780dd",
   "assets/css/layout.css": "69f17688580a60f2",
   "assets/css/base.css": "225902e388ea3260",
   "assets/css/components.css": "8ae2cb34a3dcdb21",
@@ -14,10 +14,10 @@
   "assets/css/pages/site-priority.css": "d3e193b0d29a6643",
   "assets/js/pages/site-priority.js": "6aa99fcbaf8672c5",
   "assets/html/pages/site-priority.html": "343c543b5e734d4c",
-  "assets/js/app.js": "bf7ce29911468672",
+  "assets/js/app.js": "97eb398258498655",
   "assets/tests/_cp2m-r2-viewport-runner.js": "5fac8da9ae1faa93"
  },
- "shotsDir": "docs/evidence/cp2m-r2-viewport",
+ "shotsDir": "C:/Users/viczh/AppData/Local/Temp/claude/c--Users-viczh-Desktop-KM------Vibe-Coding-Operation-System-Operation-System/caa8d9f9-c437-407c-96f4-6782665dcde2/scratchpad/r3/retake/viewport",
  "results": [
   {
    "id": "360",

@@ -1,61 +1,61 @@
 {
   "round": "S8-B3-R3-CP2T P1",
   "what": "FC Regular builder, prevMonth: derived Based period, non-editability, preview revocation, growth base still editable",
-  "takenAt": "2026-10-21T05:58:08.448Z",
+  "takenAt": "2026-10-22T04:42:35.234Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "index.html": "b295efa32fd7ad8b",
+    "index.html": "17cb60cffe8780dd",
     "assets/js/pages/fc-summary.js": "aa830a738dc1ca21",
     "assets/html/pages/fc-summary.html": "63c2b5769a164b6e"
   },
   "actionLog": [
     {
       "action": "getClientCapabilities",
-      "t": 2355
+      "t": 1784
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 2561
+      "t": 2057
     },
     {
       "action": "fcSummary.workspace.get",
-      "t": 2562
+      "t": 2058
     },
     {
       "action": "getTable",
-      "t": 3604
+      "t": 3090
     },
     {
       "action": "getTable",
-      "t": 3605
+      "t": 3091
     }
   ],
   "result": {
-    "capId": "fcprev-1792562108335",
+    "capId": "fcprev-1792643975169",
     "steps": [
       {
         "step": "fc-section",
-        "t": 570.5,
-        "v": 30.5
+        "t": 1448.4,
+        "v": 30.8
       },
       {
         "step": "mode-select",
-        "t": 1489.8,
-        "v": 4.1
+        "t": 2362.2,
+        "v": 4.4
       },
       {
         "step": "builder",
-        "t": 1690,
-        "v": 33.4
+        "t": 2565.1,
+        "v": 35.6
       },
       {
         "step": "method",
-        "t": 2415.5,
+        "t": 3286.3,
         "v": "prevMonth"
       },
       {
         "step": "derived",
-        "t": 2926.3,
+        "t": 3809.4,
         "v": {
           "basedYear": "2026",
           "basedMonth": "11",
@@ -64,7 +64,7 @@
       },
       {
         "step": "done",
-        "t": 6573.3,
+        "t": 7460.9,
         "v": {
           "addButtonFound": true,
           "modeSelectVisible": true,
