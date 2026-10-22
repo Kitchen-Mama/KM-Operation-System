@@ -7015,3 +7015,24 @@ After the commit, delete the file and do one read-only `get`. Plan:
   changed.
 
 **NOT PUSHED. NOT DEPLOYED. No save, no Property initialised, no repricing.**
+
+### FX-INIT-R1 CLOSE-OUT — the five rates are saved and read back on the Web (evidence and docs only)
+
+**Owner acceptance passed.**
+- One Editor commit through `handleFxRateBookSave_`, handler `…-R55`, `doc_version 0 -> 1`.
+- The confirm string equals the draft's predicted SHA-256 (`7308aad6…`).
+- The production Web `fxRateBook.get` returns `doc_version 1` and five rates identical to the draft, with
+  `may_edit: false` / `FX_AUTHORITY_UNVERIFIABLE`. That is phase 1 as designed.
+- Both Owner returns are saved verbatim in `docs/evidence/fx-init-r1/`. They were checked field by field:
+  12 of 12 match.
+
+**No repricing, and no reconcile.**
+
+**Not claimed done:**
+- removing the temporary files from the production project, which waits for the Owner's confirmation;
+- the deployment version and its time, still not received.
+
+**PSB / IR / FC read-only acceptance:** the record is
+`docs/planning/R55_POST_RELEASE_READONLY_ACCEPTANCE_PSB_IR_FC.md`. Every row is PENDING Owner evidence.
+
+**No runtime file changed, and no full sweep was run. NOT PUSHED. NOT DEPLOYED.**

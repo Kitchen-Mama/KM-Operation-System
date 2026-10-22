@@ -198,3 +198,50 @@ first.
 **Approval B** confirms this exact payload and its `changes`. **Approval C** is one commit with that
 confirm string. Both are separate and come later; then FX-AUTH-R2 §6 steps 4–5 apply. Repricing is not
 part of this plan.
+
+---
+
+## 6. CLOSE-OUT (2026-10-22) — saved by the Owner, read back on the Web
+
+**Owner acceptance:** the FX initialisation and the production Web readback **passed**.
+- `doc_version` is 1.
+- The five rows equal the approved draft.
+- The Web page stays read-only, as phase 1 intends.
+
+The two returns the Owner provided are saved verbatim:
+
+| file | what | sha256 |
+|---|---|---|
+| `docs/evidence/fx-init-r1/owner-commit-execution-log.txt` | the Editor execution log of the ONE commit run (09:37:40–09:37:43) | `71eb146d…2e22443` |
+| `docs/evidence/fx-init-r1/owner-web-readback-fxRateBook-get.json` | the production Web `fxRateBook.get` afterwards | `83f120d8…81ce2d4` |
+
+**Checked against this draft, field by field (offline; 12 of 12 match):**
+- The commit log reports:
+  - `handler F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55`;
+  - `mode COMMIT`;
+  - authority `ok`, user = the Owner;
+  - stored and expected `doc_version` both 0;
+  - `valid`, with no errors.
+- Its `payload_entries` equal §3, entry by entry.
+- Its `changes` are five `ADDED`. Each has `old: null`, and `new` equal to the same §3 row.
+- Its confirm string equals the one predicted in §3, `… sha256 7308aad6…c030de8b`.
+- Its `result` is `success`, `doc_version 1`, no errors, and 5 log entries.
+- The Web readback reports `success`, `doc_version 1`, `rate_count 5`. Its `rates` are identical to the
+  draft's: same values, same key order.
+- `may_edit: false` and `authority_reason: FX_AUTHORITY_UNVERIFIABLE`, `error: null`. That is the
+  expected phase-1 state (FX-AUTH-R2 §2), **not** a defect.
+
+**What the saved evidence does not include.** The dry-run log line that approval B was given on is not
+among the two returns. What the saved commit line shows is the confirm string that was run. It equals
+this draft's SHA-256 at `doc_version 0`, so the payload committed is byte-for-byte this draft.
+
+**What may now be claimed:** *the production FX rate book holds the five approved rates at doc_version 1,
+readable on the Web.* **What may not:** *FX editable on the Web*. The Web still cannot identify a caller.
+Nor *prices repriced*: no reconcile was run, and no `pricing_list` row was touched. Imports and SKU
+creation from now on read this book.
+
+**Still open — NOT claimed done:**
+- **Removing the temporary files from the production Apps Script project** (`TEMP_FxRateBookEditorSave`,
+  and `TEMP_CheckFxIdentity` if it is still there). **Waiting for the Owner's confirmation.** Until both
+  are confirmed gone, no deployment version may be created (FX-AUTH-R2 §5).
+- The active deployment version and its creation time were never received.

@@ -1,0 +1,65 @@
+{
+  "success": true,
+  "doc_version": 1,
+  "rate_count": 5,
+  "rates": [
+    {
+      "base_currency": "USD",
+      "quote_currency": "AUD",
+      "rate": 1.421666,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 1.5971 / 1.1234)",
+      "as_of": "2026-10-21",
+      "effective_from": "2026-10-22",
+      "effective_to": "",
+      "status": "active",
+      "version": 1
+    },
+    {
+      "base_currency": "USD",
+      "quote_currency": "CAD",
+      "rate": 1.404575,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 1.5779 / 1.1234)",
+      "as_of": "2026-10-21",
+      "effective_from": "2026-10-22",
+      "effective_to": "",
+      "status": "active",
+      "version": 1
+    },
+    {
+      "base_currency": "USD",
+      "quote_currency": "EUR",
+      "rate": 0.890155,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 1 / 1.1234)",
+      "as_of": "2026-10-21",
+      "effective_from": "2026-10-22",
+      "effective_to": "",
+      "status": "active",
+      "version": 1
+    },
+    {
+      "base_currency": "USD",
+      "quote_currency": "GBP",
+      "rate": 0.746172,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 0.83825 / 1.1234)",
+      "as_of": "2026-10-21",
+      "effective_from": "2026-10-22",
+      "effective_to": "",
+      "status": "active",
+      "version": 1
+    },
+    {
+      "base_currency": "USD",
+      "quote_currency": "JPY",
+      "rate": 157.877871,
+      "source": "ECB eurofxref-daily 2026-10-21 (derived: 177.36 / 1.1234)",
+      "as_of": "2026-10-21",
+      "effective_from": "2026-10-22",
+      "effective_to": "",
+      "status": "active",
+      "version": 1
+    }
+  ],
+  "may_edit": false,
+  "authority_reason": "FX_AUTHORITY_UNVERIFIABLE",
+  "error": null
+}
