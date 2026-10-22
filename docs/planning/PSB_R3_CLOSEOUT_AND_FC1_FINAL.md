@@ -206,3 +206,21 @@ or evidence did.
 - `map-canvas-acceptance`'s desktop cold run is still open.
 - Production P3 stays FAIL until it is accepted again.
 - Phase 2 needs the event sales source, and the Owner's decisions on overlap and returns.
+
+## 6. Final full regression (one run, on the frozen candidate `0d0c5387`, kept raw)
+
+`docs/evidence/fc1-final/sweep-at-0d0c5387.*`: **699 / 701 clean**, worktree INTACT, stderr 0,
+complete.
+
+The two suites that were not clean:
+- **`navigation-performance-observation` (G2 / G4).** This was a pin, not a fault. The boot census
+  counts boot-script bytes from disk, and `fc-summary.js` grew by exactly 13,976 bytes
+  (549,369 → 563,345, CRLF on disk). No script entered or left the boot set.
+  - **Fix:** the census was re-measured from disk, as every earlier round did: boot 3,881,051 →
+    3,895,027 and page 2,265,712 → 2,279,688, with the account in its note.
+  - **Re-run of the suite alone:** 465 / 465.
+  - The full regression was **not** run again.
+- **`map-canvas-acceptance`.** The same open finding as R3: its capture is pinned to the pre-r64
+  `index.html` / `app.js`, and the desktop cold run cannot be re-taken
+  (`docs/evidence/psb-demo-r3/MAP-DESKTOP-COLD-RUN-FINDING.md`). It is not re-pinned, and it is
+  outside this round.

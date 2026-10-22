@@ -7170,3 +7170,10 @@ sorted on that text, so BFCM came before Fall Prime.
 Plan: `docs/planning/PSB_R3_CLOSEOUT_AND_FC1_FINAL.md`.
 
 **NOT PUSHED. NOT DEPLOYED.**
+
+**PSB-DEMO-R3 close-out + FC1-FINAL regression.**
+- One final full run, at `0d0c5387`: **699 / 701 clean**, worktree INTACT, stderr 0. Kept raw in `docs/evidence/fc1-final/`.
+- **`navigation-performance-observation`:** a census pin. `fc-summary.js` is +13,976 bytes on disk. The census was re-measured from disk (3,881,051 → 3,895,027), and the suite then passes 465 / 465.
+- **`map-canvas-acceptance`:** the known open finding from R3, not re-pinned.
+
+**NOT PUSHED. NOT DEPLOYED.**
