@@ -216,3 +216,12 @@ assertions, 15 of 15 mutants caught.**
   - `docs/prototypes/product-strategy-board/preview-fixture.js`: one row’s status;
   - three PSB suites (`p1-b2`, `p1-b2a`, `p1-b2b`);
   - the new R3 suite, runner, capture and production data.
+
+## Full regression
+
+**At `ef735466` (the fix commit): 685 / 699 clean, kept raw.** Every not-clean suite was a pin, not a logic failure:
+- 12 browser captures pinned `index.html` / `app.js`, which the r64 rotation moved. They were re-taken with their own runners and recorded parameters, and all pass. The boot census was re-measured from disk: -39 bytes.
+- `fx-auth-r2-editor-save-path` A5 compared `8da211de..HEAD`. That turned a claim about FX-AUTH-R2 into a claim about every later round. It is now pinned to that round, `8da211de..b6ef4008`.
+- `map-canvas-acceptance` **could not be re-taken cleanly.** The first desktop run loses its globe 3 of 3 times: at HEAD twice, and once with the r63 `index.html` / `app.js` staged and restored. So it is neither the token nor PSB code. The old capture is kept, **not re-pinned**. See `docs/evidence/psb-demo-r3/MAP-DESKTOP-COLD-RUN-FINDING.md`.
+
+**At `b3a2a9be` (re-takes committed): 698 / 699 clean, worktree INTACT, stderr 0, kept raw.** The one is `map-canvas-acceptance`, for the reason above. It needs its own round and is outside this one.

@@ -7108,3 +7108,12 @@ flips instead of clipping.
 Plan: `docs/planning/PSB_DEMO_R3_READABILITY_DISCOUNT_PARTICIPANTS_PHASING.md`.
 
 **NOT PUSHED. NOT DEPLOYED.**
+
+**PSB-DEMO-R3 regression.**
+- At `ef735466`: 685 / 699.
+  - 12 captures pinned to the token were re-taken.
+  - The fx-auth-r2 A5 interval was re-pinned to its own round.
+- At `b3a2a9be`: **698 / 699 clean**, worktree INTACT, stderr 0.
+- The one not clean is `map-canvas-acceptance`. The first desktop cold run loses the globe 3 of 3, and it also fails with the r63 files staged, so it is not this round. The old capture is kept and not re-pinned: `docs/evidence/psb-demo-r3/MAP-DESKTOP-COLD-RUN-FINDING.md`. It is open for its own round.
+
+**NOT PUSHED. NOT DEPLOYED.**
