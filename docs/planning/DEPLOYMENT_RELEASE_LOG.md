@@ -7177,3 +7177,16 @@ Plan: `docs/planning/PSB_R3_CLOSEOUT_AND_FC1_FINAL.md`.
 - **`map-canvas-acceptance`:** the known open finding from R3, not re-pinned.
 
 **NOT PUSHED. NOT DEPLOYED.**
+
+**R64 release-candidate close-out.**
+- **Map capture:** re-taken through its documented entry (`_cp2o-r2-gl-probe.js`, then `_cp2o-r2-map-capture.js`, on the real adapter), 75 / 75.
+  - The PSB-DEMO-R3 "desktop cold run" finding came from the forced-SwiftShader runner and is withdrawn.
+  - Evidence: `docs/evidence/r64-map-recapture/`.
+- **Final full regression at `f203c00c`: 701 / 701 clean**, worktree INTACT, stderr 0. The 699 / 701 record at `0d0c5387` is kept.
+- **r64 frontend list:**
+  - `index.html`, `app.js`;
+  - the three PSB scripts and `product-strategy-board.css`;
+  - `fc-summary.js`, `fc-summary.html` and `fc-overview.css`.
+- No Apps Script, manifest or Property change. Production P3 stays FAIL until re-accepted after deployment.
+
+**NOT PUSHED. NOT DEPLOYED.**

@@ -224,3 +224,40 @@ The two suites that were not clean:
   `index.html` / `app.js`, and the desktop cold run cannot be re-taken
   (`docs/evidence/psb-demo-r3/MAP-DESKTOP-COLD-RUN-FINDING.md`). It is not re-pinned, and it is
   outside this round.
+
+## 7. R64 release-candidate close-out: the map capture, and the final regression
+
+**The map capture was re-taken through its documented entry.**
+- PSB-DEMO-R3's three attempts ran `_cp2m-r2-map-runner.js`. That runner forces `--use-gl=swiftshader`,
+  which the probe now measures as losing its context at 2702 ms after 1 frame.
+- The suite names `_cp2o-r2-gl-probe.js`, then `_cp2o-r2-map-capture.js`. On Chrome's real adapter
+  (Intel Iris Xe, ANGLE / D3D11) the context held for 10 s.
+- **The capture**, taken cold, with no warm-up and no retry of a failed render:
+  - desktop and mobile both captured;
+  - A/B noise floor 0;
+  - a real drag changed 45.2% / 72.9% of the canvas;
+  - the globe fills 99.8% of the canvas;
+  - the unchanged suite: **75 / 75**.
+- The PNGs are byte-identical to the 2026-10-21 capture.
+- **One environment fact.** From this non-ASCII worktree path, a relative output folder makes Chrome's
+  `--screenshot=` write nothing. That attempt is kept; the passing one used an absolute ASCII folder.
+- `MAP-DESKTOP-COLD-RUN-FINDING.md` is corrected: no product defect was shown. Its original text and
+  attempts are kept.
+- No map, globe or loader code changed.
+- Evidence: `docs/evidence/r64-map-recapture/`.
+- **Targeted suites:** map 75 / 75, navigation 465 / 465.
+
+**Final full regression, on the frozen candidate `f203c00c`: 701 / 701 clean**, worktree INTACT,
+stderr 0, complete. It is kept raw in `docs/evidence/r64-map-recapture/sweep-at-f203c00c.*`. The
+earlier 699 / 701 record at `0d0c5387` (§6) is kept as it was.
+
+**r64 release list** (frontend only), changed since `origin/main` `8da211de`:
+- `index.html`, `assets/js/app.js` (token r64);
+- `assets/js/product-strategy/psb-selectors.js`, `psb-chart-layout.js`, `psb-board-ui.js`;
+- `assets/css/product-strategy-board.css`;
+- `assets/js/pages/fc-summary.js`, `assets/html/pages/fc-summary.html`, `assets/css/pages/fc-overview.css`.
+
+`.gitignore` changed as well; it is repository-only and is not deployed.
+
+No `.gs`, no Apps Script manifest, no Property, no bundle. Production P3 stays FAIL until r64 is deployed
+and production is accepted again.
