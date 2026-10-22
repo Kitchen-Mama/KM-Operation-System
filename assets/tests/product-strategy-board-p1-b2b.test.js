@@ -383,7 +383,12 @@ console.log('\n=== SECTION E  THE LABEL LANE ===');
   ok(stride >= 1, 'E12a the engine thinned the labels rather than shrinking them to stumps',
     stride);
   var cut = wLabs.filter(function (n) { return n.getAttribute('data-truncated') === 'true'; });
-  ok(cut.length > 0, 'E13 the long ones were shortened', cut.length);
+  /* PSB-DEMO-R3 §A — the labels are 14px now and the engine thins to one in three before it would cut one;
+     every label in this crowd then fits in full. "Some were shortened" was the old consequence of 11.5px
+     type in two-column room, not the rule; the rule is E12 (nothing wider than its room) and this: the
+     thinning did the work, and anything still cut keeps its whole text (E14 below). */
+  ok(stride >= 3 && cut.length === 0, 'E13 the crowd is thinned to one label in three, and nothing had to be cut',
+    { stride: stride, cut: cut.length });
   var lostText = cut.filter(function (n) {
     return !n.getAttribute('data-full') || n.querySelectorAll('title').length !== 1;
   });

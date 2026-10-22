@@ -7068,3 +7068,43 @@ received; the agent's own read is saved instead.
 `docs/evidence/r55-readonly-acceptance/run-1/`.
 
 **No runtime file changed, and no full sweep was run. NOT PUSHED. NOT DEPLOYED.**
+
+### PSB-DEMO-R3 — readable axes, the activity discount, the real activity participants, no Phasing Out (frontend; token r64)
+
+**C — root cause.** An activity node reused its everyday group's representative. ResTW CA CO1150 at
+47.99 is five colours, two of them in Fall Prime / BFCM (XR and ZW, 38.39), yet the board named and
+pictured Burgundy Mist (CO1150-BM). `campaignPriceFor` now returns the participants and a
+participant-only representative; with no photographed participant, the marker is neutral. The tooltip
+and the table list who is in the activity and who is not.
+
+**B.** `(1 - shown / regular_price_snapshot) x 100`, using each participant's own line snapshot.
+- A missing or differing basis shows "—".
+- The percentage follows a drag, a typed price, the keyboard, Undo and Reset.
+- The percentage is display only.
+
+**D.** Phasing Out (`marketplace_sku_status` phasing_out or `sku_details.lifecycle` Phasing Out) is
+excluded at the universe, before grouping.
+- Production marks it on the lifecycle only.
+- ResUS Amazon 100 → 97: CO2100 loses its 3 Phasing Out colours and its Phasing Out photograph.
+- ResUS Walmart 18 → 15: GM1100, and with it Grinders, is gone.
+- An unreadable lifecycle is kept and reported.
+
+**A.** The type is 14–16px on screen; it was 10.5–12.5, and a stylesheet `font-size` had overridden the
+engine. The margin, lanes and columns grow with it, labels thin rather than overlap, and an edge label
+flips instead of clipping.
+
+**Tests and evidence:**
+- R3 suite: 23 assertions, 15 of 15 mutants caught.
+- R3 real Chrome on production's own responses: 104 / 104. The pre-round UI scores 41 / 104.
+- All 34 PSB suites and all 130 token suites pass.
+- R1 (48 / 48) and R2 (52 / 52, mutants caught) evidence re-taken.
+
+**Release:**
+- Changed: `psb-selectors.js`, `psb-chart-layout.js`, `psb-board-ui.js`, `product-strategy-board.css`.
+- Token r63 → r64 across `index.html` (56) and `app.js` (13). r63 is spent: commit `7ea0a07a` is on
+  origin/main `8da211de`.
+- No Apps Script sync, no bundle, no Property.
+
+Plan: `docs/planning/PSB_DEMO_R3_READABILITY_DISCOUNT_PARTICIPANTS_PHASING.md`.
+
+**NOT PUSHED. NOT DEPLOYED.**

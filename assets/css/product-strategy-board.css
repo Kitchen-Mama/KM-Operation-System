@@ -414,7 +414,7 @@
 .psb-page .grid.is-major { stroke: #dfe3ea; }
 .psb-page .axisline { stroke: #cfd5e0; stroke-width: 1; }
 /* .ytick, .xlabel and .xsub are sized once, in the P1-B2A readability block further down. */
-.psb-page .axtitle { font: 600 11px var(--sans); fill: var(--ink-3); letter-spacing: .05em; }
+.psb-page .axtitle { font-family: var(--sans); font-weight: 600; fill: var(--ink-2); letter-spacing: .04em; }
 .psb-page .band { stroke: #c9d3e2; stroke-width: 9; stroke-linecap: round; opacity: .55; }
 .psb-page .cap { stroke: #93a1b6; stroke-width: 1.5; }
 .psb-page .mk-deal { fill: #b3392f; stroke: #fff; stroke-width: 1.5; }
@@ -1095,9 +1095,13 @@ body.is-fullscreen .psb-page .view > .reco { display: none; }
    `font-size` is set per element from the density the engine chose, because a stylesheet that also
    declared a size would be a second opinion about how big the type is, and one of the two would be
    wrong at every viewport but one. */
-.psb-page .xlabel { font-family: var(--sans); font-weight: 600; font-size: 12.5px; fill: var(--ink-1); }
-.psb-page .xsub { font-family: var(--mono); font-weight: 500; font-size: 11.5px; fill: var(--ink-3); }
-.psb-page .ytick { font-family: var(--mono); font-weight: 500; font-size: 11.5px; fill: var(--ink-3); }
+/* PSB-DEMO-R3 §A — NO font-size HERE ANY MORE. These three rules used to declare one, and a stylesheet rule
+   outranks an SVG presentation attribute, so the engine's per-density size never reached the screen and
+   every chart was 12.5 / 11.5px whatever it negotiated. The size is now set on the element, inline.
+   The axis numbers and sub-labels also move from --ink-3 (about 3.9:1 on white) to --ink-2. */
+.psb-page .xlabel { font-family: var(--sans); font-weight: 600; fill: var(--ink-1); }
+.psb-page .xsub { font-family: var(--mono); font-weight: 500; fill: var(--ink-2); }
+.psb-page .ytick { font-family: var(--mono); font-weight: 600; fill: var(--ink-2); }
 /* The scale is pinned while the plot scrolls, so it needs something opaque behind it. */
 .psb-page .axis-backing { fill: var(--paper); }
 /* The datum: a crosshair BEHIND the plate, visible only where it reaches past it. */
@@ -2021,22 +2025,28 @@ body.is-fullscreen .psb-page .scn-drawer { display: none; }
 .psb-page .mk-activity.is-simulated { fill: var(--scn-mark); }
 .psb-page .mk-activity-hit { fill: transparent; }
 .psb-page .mk-activity-group { cursor: ns-resize; }
-.psb-page .mk-activity-label { font-size: 11px; font-weight: 600; fill: #9a3412; paint-order: stroke;
+.psb-page .mk-activity-label { font-weight: 700; fill: #9a3412; paint-order: stroke;
   stroke: #fff; stroke-width: 3px; }
+/* PSB-DEMO-R3 §B — the discount under the deal price: the same colour family, one weight lighter. */
+.psb-page .mk-activity-disc { font-weight: 600; fill: #9a3412; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
+.psb-page .mk-activity-disc[data-discount-state]:not([data-discount-state="OK"]) { fill: #6b7280; }
+.psb-page .tdisc { font-size: 12.5px; font-weight: 600; color: #9a3412; }
+.psb-page .tdisc[data-discount-state]:not([data-discount-state="OK"]) { color: #6b7280; }
+.psb-page .tpart { font-size: 12px; color: var(--ink-2); font-family: var(--mono); white-space: normal; }
 .psb-page .mk-activity-missing { font-size: 10.5px; fill: #92400e; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
 .psb-page .demo-ghost { fill: none; stroke: var(--scn-mark); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .psb-page .demo-sim-link { stroke: var(--scn-mark); stroke-width: 1.25; stroke-dasharray: 3 3; }
 .psb-page .demo-ghost-label { font-size: 10px; fill: var(--scn-mark); paint-order: stroke; stroke: #fff; stroke-width: 3px; }
 .psb-page .col.is-simulated .mk-img-plate { stroke: var(--scn-mark); stroke-width: 2; }
 .psb-page .col[data-selected="true"] .xlabel { fill: var(--scn-mark); font-weight: 700; }
-.psb-page .demo-readout { font-size: 12px; font-weight: 700; fill: var(--scn-mark); paint-order: stroke;
+.psb-page .demo-readout { font-weight: 700; fill: var(--scn-mark); paint-order: stroke;
   stroke: #fff; stroke-width: 4px; pointer-events: none; }
 .psb-page .mk-comp { fill: #fff; stroke: #475569; stroke-width: 1.75; stroke-dasharray: 3 2; }
 .psb-page .mk-comp-text { font-size: 10px; font-weight: 700; fill: #475569; pointer-events: none; }
 .psb-page .comp-band { stroke: #64748b; stroke-width: 2; stroke-dasharray: 4 3; }
 .psb-page .comp-cap { stroke: #64748b; stroke-width: 1.5; }
 .psb-page .demo-comp-sep { stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 2 4; }
-.psb-page .demo-comp-head { font-size: 10.5px; fill: #475569; }
+.psb-page .demo-comp-head { fill: #475569; }
 .psb-page .xlabel-comp, .psb-page .xsub-comp { fill: #475569; font-style: italic; }
 .psb-page .sw-activity { background: #c2410c; transform: rotate(45deg); border-radius: 2px; }
 .psb-page .sw-sim { background: #fff; border: 1.5px dashed var(--scn-mark); }

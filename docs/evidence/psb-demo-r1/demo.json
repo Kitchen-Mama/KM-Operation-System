@@ -1,11 +1,11 @@
 {
   "round": "PSB-DEMO-R1",
-  "takenAt": "2026-10-21T13:36:44.283Z",
+  "takenAt": "2026-10-22T03:50:29.329Z",
   "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "sources": {
-    "assets/js/product-strategy/psb-board-ui.js": "e627a21001e2242e",
-    "assets/js/product-strategy/psb-selectors.js": "791d72ef74223641",
-    "assets/css/product-strategy-board.css": "e4e2f59cf16b8ca4",
+    "assets/js/product-strategy/psb-board-ui.js": "7a70219e4a0b726a",
+    "assets/js/product-strategy/psb-selectors.js": "ef879f6d6a09a21d",
+    "assets/css/product-strategy-board.css": "6ae82cf04cea161e",
     "assets/tests/_psb-demo-capture.js": "9b6e97efe3c3e87a",
     "assets/tests/_psb-demo-runner.js": "1ddae2e8d976749b"
   },
@@ -19,7 +19,7 @@
           "lo": "1500",
           "hi": "6000",
           "step": "500",
-          "ticks": "1500@496,2000@448,2500@400,3000@352,3500@304,4000@256,4500@208,5000@160,5500@112,6000@64"
+          "ticks": "1500@497.25,2000@449.25,2500@401.25,3000@353.25,3500@305.25,4000@257.25,4500@209.25,5000@161.25,5500@113.25,6000@65.25"
         },
         "wire": [
           "getClientCapabilities",
@@ -231,7 +231,7 @@
       "ok": true,
       "got": {
         "chart": "2931",
-        "table": "29.31 USD",
+        "table": "29.31 USD20% offB0100020  (1 of 1)",
         "label": "Can Opener Mini"
       }
     },
@@ -284,7 +284,7 @@
           "lo": "1500",
           "hi": "6000",
           "step": "500",
-          "ticks": "1500@496,2000@448,2500@400,3000@352,3500@304,4000@256,4500@208,5000@160,5500@112,6000@64"
+          "ticks": "1500@497.25,2000@449.25,2500@401.25,3000@353.25,3500@305.25,4000@257.25,4500@209.25,5000@161.25,5500@113.25,6000@65.25"
         },
         "during": 8
       }

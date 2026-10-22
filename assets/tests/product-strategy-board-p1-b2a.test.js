@@ -218,12 +218,20 @@ console.log('\n=== SECTION C  READABILITY AND ZOOM ===');
     { leftGap: leftGap, rightGap: rightGap, colW: colW });
 
   // C6 TEXT IS BIGGER, measured on the stylesheet rather than asserted in prose.
-  var xl = /\.xlabel\s*\{[^}]*?([0-9.]+)px/.exec(SRC.css);
-  var xs2 = /\.xsub\s*\{[^}]*?([0-9.]+)px/.exec(SRC.css);
-  var yt = /\.ytick\s*\{[^}]*?([0-9.]+)px/.exec(SRC.css);
-  ok(xl && Number(xl[1]) >= 12, 'C6 the product label is at least 12px', xl && xl[1]);
-  ok(xs2 && Number(xs2[1]) >= 11, 'C7 the price sub-label is at least 11px', xs2 && xs2[1]);
-  ok(yt && Number(yt[1]) >= 11, 'C8 and the axis ticks are too', yt && yt[1]);
+  /* PSB-DEMO-R3 §A — measured on what the page DREW. The size left the stylesheet (a CSS rule outranks the
+     SVG attribute, so the engine's per-density size never showed) and rose to >= 14px; the stylesheet must
+     now declare no competing size at all. */
+  function drawnPx(cls) {
+    var e = q(PG, '.' + cls)[0];
+    var m = e && /font-size:\s*([0-9.]+)px/.exec(e.getAttribute('style') || '');
+    return m ? Number(m[1]) : null;
+  }
+  var xl = drawnPx('xlabel'), xs2 = drawnPx('xsub'), yt = drawnPx('ytick');
+  ok(xl !== null && xl >= 14, 'C6 the product label is drawn at least 14px', xl);
+  ok(xs2 !== null && xs2 >= 12, 'C7 the price sub-label is drawn at least 12px', xs2);
+  ok(yt !== null && yt >= 14, 'C8 and the axis ticks at least 14px', yt);
+  ok(!/\.xlabel\s*\{[^}]*font-size/.test(SRC.css) && !/\.ytick\s*\{[^}]*font-size/.test(SRC.css),
+    'C8b and the stylesheet no longer overrides the size the engine chose');
   /* P1-B2C MOVED THE SIZE ONTO THE ELEMENT, because the density decides it. The stylesheet values
      above are the spacious defaults; these are what the page actually drew at this viewport. */
   var drawnLabel = Number(q(PG, '.xlabel')[0].getAttribute('font-size'));
@@ -831,8 +839,17 @@ console.log('\n=== SECTION H  DENSITY ===');
   var rows44 = q(p, '.xlabel').map(function (n) { return n.getAttribute('y'); });
   eq(rows44.filter(function (v, i2) { return rows44.indexOf(v) !== i2; }).length,
     rows44.length - 1, 'H30a every one of the 44 labels shares a single baseline');
-  ok(q(p, '.xlabel[data-truncated="true"]').length > 0,
-    'H30b and the narrow ones are truncated rather than overlapped');
+  /* PSB-DEMO-R3 §A — at 14px the engine THINS before it truncates: forty-four 26px columns print one label
+     in three, and each printed label has three columns of room, so none needs cutting. This used to assert
+     that some label WAS truncated; what must hold is that no printed label overlaps, i.e. none is wider
+     than the room it was given, and that the room came from thinning. */
+  var stride44 = Number(q(p, '.chart')[0].getAttribute('data-label-stride'));
+  var printed44 = q(p, '.xlabel').filter(function (n) { return n.getAttribute('data-printed') === 'true'; });
+  var room44 = colW * stride44 - 6;
+  ok(stride44 >= 2 && printed44.every(function (n) {
+    return String(n.getAttribute('data-shown')).length * 0.5565 * Number(n.getAttribute('font-size')) <= room44 + 0.5; }),
+    'H30b and the narrow ones are thinned, never overlapped: every printed label fits the columns it stands for',
+    { stride: stride44, room: room44 });
   eq(q(p, '.mk-img-plate').length, 44, 'H31 every product still has its marker');
 }());
 
@@ -1171,9 +1188,10 @@ mut('N12 the plot stops being centred, so the slack collects on the right', func
      P1-B2A review objected to; the rule is the same one, it just lives in a pure function now. */
   var m = bootPage(function (kind, src) {
     if (kind !== 'layout') return src;
-    var a = "    var offset = plotW < c.availWidth ? L.PAD_L + (c.availWidth - plotW) / 2 : L.PAD_L;";
+    // PSB-DEMO-R3 §A: the margin is the engine's padL now, so the mutant names it.
+    var a = "    var offset = plotW < c.availWidth ? padL + (c.availWidth - plotW) / 2 : padL;";
     if (src.split(a).length - 1 !== 1) throw new Error('mutant anchor in chart-layout.js');
-    return src.replace(a, '    var offset = L.PAD_L;');
+    return src.replace(a, '    var offset = padL;');
   });
   function balance(pg) {
     if (pg.thrown) return 'THREW: ' + pg.thrown.message;

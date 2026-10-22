@@ -185,6 +185,34 @@
     return permitted.indexOf(raw) >= 0 ? 'PERMITTED' : 'EXCLUDED_BY_STATUS';
   };
 
+  /**
+   * PSB-DEMO-R3 §D — PHASING OUT IS NOT ON THE BOARD. Owner decision: Product Strategy does not show a SKU
+   * that is marked Phasing Out, wherever the mark is held. There are TWO authorities and they are kept
+   * apart, because they describe different things:
+   *
+   *   site     marketplace_skus.marketplace_sku_status  `phasing_out`   (00_config VALID_MARKETPLACE_SKU_STATUSES_)
+   *   master   sku_details.lifecycle                    `Phasing Out`   (00_config VALID_LIFECYCLES_)
+   *
+   * The production read of 2026-10-22 marks Phasing Out ONLY on the master lifecycle (every site status
+   * is `active`). The match is EXACT after a trim — the same normalisation as every other value here —
+   * so a misspelt or blank lifecycle is a data-quality question, never a quiet exclusion.
+   */
+  S.LIFECYCLES = ['Upcoming SKU', 'Running in the Market', 'Phasing Out', 'Closure', 'Other'];
+  S.PHASING_OUT_SITE_STATUS = 'phasing_out';
+  S.PHASING_OUT_LIFECYCLE = 'Phasing Out';
+  S.lifecycleStateOf = function (row) {
+    var v = str(row && row.lifecycle_status);
+    if (v === '') return 'LIFECYCLE_MISSING';
+    if (S.LIFECYCLES.indexOf(v) < 0) return 'LIFECYCLE_NOT_RECOGNISED';
+    return v === S.PHASING_OUT_LIFECYCLE ? 'PHASING_OUT' : 'PRESENT';
+  };
+  /** Which authority marks this row Phasing Out, or null. */
+  S.phasingOutBy = function (row) {
+    if (str(row && row[S.STATUS_FIELD]).toLowerCase() === S.PHASING_OUT_SITE_STATUS) return 'marketplace_sku_status';
+    if (S.lifecycleStateOf(row) === 'PHASING_OUT') return 'sku_details.lifecycle';
+    return null;
+  };
+
   S.regionalStateOf = function (row) {
     if (row.regional === null || row.regional === undefined) return 'REGIONAL_DETAILS_MISSING';
     return 'PRESENT';
@@ -225,9 +253,10 @@
       category_source_missing: [],
       status_missing_or_unrecognised: [],
       price_source_missing: [],
-      master_record_missing: []
+      master_record_missing: [],
+      lifecycle_missing_or_unrecognised: []
     };
-    var afterSite = 0, afterStatus = 0;
+    var afterSite = 0, afterStatus = 0, phasingOut = 0;
     var flags = {};
 
     rows.forEach(function (row) {
@@ -253,7 +282,25 @@
         dq.status_missing_or_unrecognised.push(id);
         return;
       }
+      /* PSB-DEMO-R3 §D — BEFORE GROUPING AND BEFORE ANY FIGURE. Every view reads `rows`, so a Phasing Out
+         SKU removed here is removed from the chart, the table, the KPIs, the findings, the activity
+         catalogue and the photograph choice at once — and a group that loses some members is rebuilt
+         from the ones that stay, never from the one that left. */
+      var po = S.phasingOutBy(row);
+      if (po) {
+        phasingOut++;
+        excluded.push({ identity: id, reason: 'EXCLUDED_PHASING_OUT', authority: po,
+          status: str(row.marketplace_sku_status), lifecycle: str(row.lifecycle_status) });
+        return;
+      }
       afterStatus++;
+      /* NOT EXCLUDED, AND NOT HIDDEN: an unreadable lifecycle stays on the board and is reported. A row
+         whose master record is missing already says so, so it is not counted twice. */
+      var ls = S.lifecycleStateOf(row);
+      if ((ls === 'LIFECYCLE_MISSING' || ls === 'LIFECYCLE_NOT_RECOGNISED')
+        && (row.missing_reasons || []).indexOf('MASTER_SKU_RECORD_MISSING') < 0) {
+        dq.lifecycle_missing_or_unrecognised.push(id);
+      }
 
       var regional = S.regionalStateOf(row);
       var categoryMissing = str(row.category) === '';
@@ -291,7 +338,7 @@
 
     dq.total = dq.regional_details_missing.length + dq.category_source_missing.length
       + dq.status_missing_or_unrecognised.length + dq.price_source_missing.length
-      + dq.master_record_missing.length;
+      + dq.master_record_missing.length + dq.lifecycle_missing_or_unrecognised.length;
 
     return {
       state: 'ELIGIBLE_UNIVERSE',
@@ -311,8 +358,10 @@
         after_status: afterStatus,
         eligible: eligible.length,
         chartable: chartable.length,
-        excluded: excluded.length
+        excluded: excluded.length,
+        excluded_phasing_out: phasingOut
       },
+      phasing_out_excluded: true,
       /* Stated so no view has to infer it: regional presence never removed a row from `rows`. */
       regional_detail_decides_membership: false,
       currency_decides_membership: false,
@@ -1116,14 +1165,16 @@
     var refusals = {};
     members.forEach(function (m) {
       var lines = (m.campaigns || []).filter(function (c) { return str(c && c.campaign_id) === id; });
-      var ms = { identity: m.identity, master_sku: m.master_sku, state: null, deal_c: null,
-        line_count: lines.length };
+      var ms = { identity: m.identity, master_sku: m.master_sku, site_sku: m.site_sku || null,
+        product_name: m.product_name || null, state: null, deal_c: null, snapshot_c: null,
+        image: m._image || null, line_count: lines.length };
       if (!lines.length) { ms.state = 'NOT_IN_ACTIVITY'; out.member_states.push(ms); return; }
       out.members_in_activity++;
       lines.forEach(function (c) {
         out.lines.push({ identity: m.identity, master_sku: m.master_sku,
           campaign_sku_line_id: c.campaign_sku_line_id || null, promo_price: c.promo_price,
-          price_units: c.price_units || null, line_status: c.line_status || null });
+          price_units: c.price_units || null, line_status: c.line_status || null,
+          regular_price_snapshot: c.regular_price_snapshot === undefined ? null : c.regular_price_snapshot });
       });
       if (lines.length > 1) {
         ms.state = 'DUPLICATE_CAMPAIGN_LINE';
@@ -1137,11 +1188,27 @@
         else if (cur !== '' && units !== cur) ms.state = 'PROMOTION_CURRENCY_MISMATCH';
         else if (S.CAMPAIGN_LINE_DEAD_STATUSES.indexOf(str(c.line_status).toLowerCase()) !== -1) ms.state = 'LINE_NOT_ACTIVE';
         else if (c_c === null) ms.state = 'DEAL_PRICE_MISSING';
-        else { ms.state = 'PRICED'; ms.deal_c = c_c; prices[c_c] = true; out.members_priced++; }
+        else {
+          ms.state = 'PRICED'; ms.deal_c = c_c; prices[c_c] = true; out.members_priced++;
+          var snap = S.cents(c.regular_price_snapshot);
+          ms.snapshot_c = (snap !== null && snap > 0) ? snap : null;
+        }
       }
       if (ms.state !== 'PRICED') refusals[ms.state] = true;
       out.member_states.push(ms);
     });
+    /* PSB-DEMO-R3 §C — WHO IS ACTUALLY IN THE ACTIVITY. A node groups variants by everyday price, so its
+       everyday representative may be a colour that is NOT in this activity (production, ResTW CA
+       CO1150 47.99: five colours, two priced — XR and ZW — and the board showed Burgundy Mist). The
+       participants are the members whose own line is PRICED, and the activity's photograph may only
+       come from one of them: the first participant with a verified image, else none at all. */
+    out.participants = out.member_states.filter(function (x) { return x.state === 'PRICED'; });
+    out.representative = null;
+    for (var pi = 0; pi < out.participants.length; pi++) {
+      if (out.participants[pi].image) { out.representative = out.participants[pi]; break; }
+    }
+    out.representative_state = !out.participants.length ? 'NO_PARTICIPANT'
+      : (out.representative ? 'PARTICIPANT_PHOTOGRAPH' : 'NO_PARTICIPANT_PHOTOGRAPH');
     if (!out.members_in_activity) return out;
     var distinct = Object.keys(prices);
     if (distinct.length > 1) { out.state = 'DEAL_PRICE_CONFLICT'; return out; }
@@ -1156,6 +1223,56 @@
     }
     out.state = 'DEAL_PRICE_MISSING';
     return out;
+  };
+
+  /**
+   * PSB-DEMO-R3 §B — THE DISCOUNT, DERIVED FOR DISPLAY AND NOTHING ELSE.
+   *
+   *   pct = (1 - shown deal price / regular_price_snapshot) x 100
+   *
+   * The basis is each participant's OWN line snapshot (same site, currency, activity and SKU — the line
+   * already carries all four). It never comes from MSRP, the everyday price, another colour or the
+   * line's `discount_percent`, and it does not move when the deal price is simulated: only `shownC`
+   * does. A node has one percentage only when every participant shares one valid basis; otherwise the
+   * answer is "—" with the reason, so two colours at one deal price over two originals are not passed
+   * off as one discount. Nothing here is written anywhere.
+   */
+  S.DISCOUNT_TEXT = {
+    OK: null,
+    NO_DEAL_PRICE: 'No deal price on record, so there is no discount to show',
+    BASIS_MISSING: 'An original-price snapshot is missing on the activity line, so no discount is derived',
+    BASIS_DIFFERS: 'The participating variants carry different original-price snapshots, so no single discount is shown'
+  };
+  S.campaignDiscountFor = function (act, shownC) {
+    var out = { state: 'NO_DEAL_PRICE', pct: null, basis_c: null, shown_c: null, text: '—', per_member: [] };
+    if (!act || act.deal_c === null || act.deal_c === undefined) return out;
+    var shown = (shownC === null || shownC === undefined) ? act.deal_c : shownC;
+    out.shown_c = shown;
+    var parts = act.participants || [];
+    out.per_member = parts.map(function (p) {
+      return { master_sku: p.master_sku, site_sku: p.site_sku, basis_c: p.snapshot_c,
+        pct: p.snapshot_c ? S.discountPct(shown, p.snapshot_c) : null };
+    });
+    if (!parts.length || parts.some(function (p) { return !p.snapshot_c; })) { out.state = 'BASIS_MISSING'; return out; }
+    var bases = {};
+    parts.forEach(function (p) { bases[p.snapshot_c] = true; });
+    if (Object.keys(bases).length > 1) { out.state = 'BASIS_DIFFERS'; return out; }
+    out.basis_c = parts[0].snapshot_c;
+    out.pct = S.discountPct(shown, out.basis_c);
+    out.state = 'OK';
+    out.text = S.discountLabel(out.pct);
+    return out;
+  };
+  /** One decimal, from integer cents: 3839 over 4799 is 20.0. */
+  S.discountPct = function (shownC, basisC) {
+    return Math.round(((basisC - shownC) * 1000) / basisC) / 10;
+  };
+  S.discountLabel = function (pct) {
+    if (pct === null || pct === undefined || !isFinite(pct)) return '—';
+    var a = Math.abs(pct);
+    var t = (Math.round(a * 10) % 10 === 0) ? String(Math.round(a)) : a.toFixed(1);
+    if (pct < 0) return t + '% above original';
+    return t + '% off';
   };
 
   /**

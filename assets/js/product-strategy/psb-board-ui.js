@@ -828,8 +828,52 @@
     var act = demoActivityOn() ? SEL.campaignPriceFor(n, DEMO.activityId) : null;
     var base = act ? act.deal_c : n._regular_c;
     var sim = demoSimMap()[n.key] || null;
-    return { act: act, base_c: base, sim: sim, shown_c: sim ? sim.to_c : base,
+    var shown = sim ? sim.to_c : base;
+    /* PSB-DEMO-R3 §B — ONE DERIVATION. The label, the drag readout, the tooltip and the table all read
+       this, and it is recomputed from the SHOWN price every time, against a basis that never moves. */
+    var disc = act ? SEL.campaignDiscountFor(act, shown) : null;
+    return { act: act, base_c: base, sim: sim, shown_c: shown, disc: disc,
       draggable: base !== null && base !== undefined };
+  }
+  /* PSB-DEMO-R3 §C — WHAT A NODE SHOWS IN AN ACTIVITY. Its everyday representative may be a colour that is
+     not in the activity at all, so in the activity view the name, the representative SKU and the
+     photograph come from a PARTICIPANT (campaignPriceFor's representative) — and when no participant has
+     a verified photograph, from nobody: the marker falls back to the neutral plate. A node with no
+     participant keeps its everyday picture, and every surface says that picture is not a participant. */
+  function demoActivityView(n, pt) {
+    pt = pt || demoPointFor(n);
+    if (!pt.act) return n;
+    var a = pt.act, rep = a.representative || null, parts = a.participants || [];
+    var v = {};
+    Object.keys(n).forEach(function (k) { v[k] = n[k]; });
+    if (parts.length) {
+      var who = rep || parts[0];
+      v.product_name = who.product_name || n.product_name;
+      v.representative_sku = who.master_sku;
+      v.image = rep ? rep.image : null;
+      v.representative_image_sku = rep ? rep.master_sku : null;
+      v.image_state = rep ? 'VERIFIED_DB_MAPPING' : 'IMAGE_SOURCE_MISSING';
+      v.activity_image_basis = rep ? 'ACTIVITY_PARTICIPANT' : 'NO_PARTICIPANT_PHOTOGRAPH';
+    } else {
+      v.activity_image_basis = 'EVERYDAY_GROUP_NOT_IN_ACTIVITY';
+    }
+    return v;
+  }
+  function demoSkuOf(m) { return m.site_sku || m.master_sku || m.identity; }
+  function demoDiscountLine(pt, cur) {
+    var d = pt && pt.disc;
+    if (!d) return null;
+    if (d.state === 'OK') {
+      return { t: 'Discount ' + d.text + '  (original ' + money(d.basis_c, cur)
+        + ', the activity line’s own snapshot)' };
+    }
+    var t = 'Discount —  ' + (SEL.DISCOUNT_TEXT[d.state] || d.state);
+    if (d.state === 'BASIS_DIFFERS') {
+      t += ': ' + d.per_member.map(function (x) {
+        return (x.site_sku || x.master_sku) + ' ' + SEL.discountLabel(x.pct) + ' of ' + plain(x.basis_c);
+      }).join(' · ');
+    }
+    return { t: t, miss: true };
   }
 
   function demoSetSim(key, toC) {
@@ -1208,10 +1252,11 @@
       hideTip();
       try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
       var ro = svgText({ x: geo.cx + geo.half + 10, y: geo.y(pt.shown_c) + 4, 'class': 'demo-readout',
-        'text-anchor': 'start' }, '');
+        style: geo.px ? 'font-size:' + geo.px + 'px' : '', 'text-anchor': 'start' }, '');
       s.appendChild(ro);
       var mine = { key: n.key, pointerId: ev.pointerId, start_c: pt.shown_c, now_c: pt.shown_c,
-        base_c: pt.base_c, y0: y0, moved: false, readout: ro, onKey: null, handle: handle, ctx: demoSimCtx() };
+        base_c: pt.base_c, y0: y0, moved: false, readout: ro, onKey: null, handle: handle, ctx: demoSimCtx(),
+        act: pt.act };
       DEMO.drag = mine;
       /* Escape abandons the drag: the point goes back and nothing is recorded. It is consumed only while
          THIS drag is the one under way; the listener is removed with the drag, so the page gets every
@@ -1242,8 +1287,17 @@
       handle.setAttribute('transform', 'translate(0,' + (geo.y(next) - geo.y(d.start_c)) + ')');
       d.readout.setAttribute('y', String(geo.y(next) + 4));
       while (d.readout.firstChild) d.readout.removeChild(d.readout.firstChild);
-      d.readout.appendChild(document.createTextNode('Simulated ' + plain(next) + '  (original '
-        + plain(d.base_c) + ')'));
+      /* PSB-DEMO-R3 §B — THE PERCENTAGE MOVES WITH THE POINT. The label inside the dragged handle is
+         rewritten too: it travels with the translate, so without this it would carry the old price and
+         the old discount to a new position. The basis is the line snapshot and does not move. */
+      var dd = d.act ? SEL.campaignDiscountFor(d.act, next) : null;
+      d.readout.appendChild(document.createTextNode('Simulated ' + plain(next)
+        + (dd ? '  ·  ' + dd.text : '') + '  (original ' + plain(d.base_c) + ')'));
+      if (dd) {
+        var lp = handle.querySelector('.mk-activity-label'), ld = handle.querySelector('.mk-activity-disc');
+        if (lp) { lp.textContent = plain(next) + (d.act.state === 'PRICED_PARTIAL' ? ' *' : ''); }
+        if (ld) { ld.textContent = dd.text; ld.setAttribute('data-discount-state', dd.state); }
+      }
     });
     handle.addEventListener('pointerup', function (ev) {
       var d = DEMO.drag;
@@ -1319,6 +1373,12 @@
     var LANE_TOP = lay.laneTop;
     var W = lay.viewBoxW;
     var H = lay.viewBoxH;
+    /* PSB-DEMO-R3 §A — the margin the engine sized for these tick labels, not the module floor. */
+    var PAD_L = lay.padL || LAYOUT.PAD_L;
+    /* THE TYPE SIZE IS AN INLINE STYLE, because a stylesheet rule outranks an SVG presentation attribute:
+       the attribute alone is what the stylesheet used to silently override. */
+    function pxStyle(px) { return 'font-size:' + px + 'px'; }
+    function textW(str, px) { return String(str).length * LAYOUT.CHAR_EM * px * 1.12; }
     wrap.setAttribute('data-mode', lay.mode);
     wrap.setAttribute('data-density', lay.density);
     wrap.setAttribute('data-overflow', lay.overflow);
@@ -1402,14 +1462,14 @@
     gAxis.appendChild(svg('rect', { x: 0, y: 0, width: PAD_L - 6, height: H,
       'class': 'axis-backing' }));
     t.ticks.forEach(function (v) {
-      gAxis.appendChild(svgText({ x: PAD_L - 12, y: y(v) + 4, 'class': 'ytick',
-        'font-size': lay.tickPx, 'data-tick-c': v, 'text-anchor': 'end' }, fromCents(v)));
+      gAxis.appendChild(svgText({ x: PAD_L - 12, y: y(v) + lay.tickPx * 0.35, 'class': 'ytick',
+        'font-size': lay.tickPx, style: pxStyle(lay.tickPx), 'data-tick-c': v, 'text-anchor': 'end' }, fromCents(v)));
     });
     gAxis.appendChild(svg('line', { x1: PAD_L - 8, y1: PLOT_TOP, x2: PAD_L - 8, y2: PLOT_BOT,
       'class': 'axisline' }));
-    gAxis.appendChild(svgText({ x: 16, y: PLOT_TOP + PLOT_H / 2, 'class': 'axtitle',
-      'font-size': Math.max(9.5, lay.tickPx - 1),
-      transform: 'rotate(-90 16 ' + (PLOT_TOP + PLOT_H / 2) + ')', 'text-anchor': 'middle' },
+    gAxis.appendChild(svgText({ x: 18, y: PLOT_TOP + PLOT_H / 2, 'class': 'axtitle',
+      'font-size': lay.axTitlePx, style: pxStyle(lay.axTitlePx),
+      transform: 'rotate(-90 18 ' + (PLOT_TOP + PLOT_H / 2) + ')', 'text-anchor': 'middle' },
       'Price (' + panel.currency + ')  ·  ' + plain(t.step) + ' ' + panel.currency
         + ' per gridline'));
     s.appendChild(gAxis);
@@ -1574,7 +1634,7 @@
       g.setAttribute('data-node-key', n.key);
       var dpt = demoPointFor(n);
       var geo = { lo: t.lo, hi: t.hi, bottom: PLOT_BOT, h: PLOT_H, y: y, cx: cx,
-        half: (lay.imageSize || 50) / 2 };
+        half: (lay.imageSize || 50) / 2, px: lay.dealPx };
       if (dpt.sim) {
         g.setAttribute('data-sim-c', dpt.sim.to_c);
         g.setAttribute('data-sim-from-c', dpt.sim.from_c);
@@ -1583,8 +1643,13 @@
       if (DEMO.selected === n.key) g.setAttribute('data-selected', 'true');
       var everydayC = (!dpt.act && dpt.sim) ? dpt.sim.to_c : n._regular_c;
       if (!dpt.act && dpt.sim) demoGhost(g, cx, y(dpt.sim.from_c), y(dpt.sim.to_c), geo.half, 'plate');
-      var mk = everydayMarker(g, cx, y(everydayC), n,
+      /* PSB-DEMO-R3 §C — in an activity the plate shows a PARTICIPANT's photograph, or the neutral plate. */
+      var mk = everydayMarker(g, cx, y(everydayC), dpt.act ? demoActivityView(n, dpt) : n,
         { imageSize: lay.imageSize, frac: frac(n._regular_c) });
+      if (dpt.act) {
+        g.setAttribute('data-activity-image-basis', demoActivityView(n, dpt).activity_image_basis || '');
+        g.setAttribute('data-activity-participants', (dpt.act.participants || []).map(demoSkuOf).join(','));
+      }
       if (!dpt.act) {
         demoAttachDrag(s, mk, n, geo);
       } else {
@@ -1601,8 +1666,21 @@
             'class': 'mk-activity-hit' }));
           ag.appendChild(svg('polygon', { points: diamond(ax, y(dealShown), dia * 1.5),
             'class': 'mk-activity' + (dpt.sim ? ' is-simulated' : ''), 'data-price-c': dealShown }));
-          ag.appendChild(svgText({ x: ax + dia * 1.5 + 4, y: y(dealShown) + 4, 'class': 'mk-activity-label',
-            'text-anchor': 'start' }, plain(dealShown) + (dpt.act.state === 'PRICED_PARTIAL' ? ' *' : '')));
+          /* PSB-DEMO-R3 §A/§B — THE PRICE AND ITS DISCOUNT, TWO SHORT LINES. On the right of the diamond,
+             unless that would run past the drawing's edge (the right-most column used to print "44.7"
+             for 44.79): then on its left, anchored to the end. */
+          var dLine1 = plain(dealShown) + (dpt.act.state === 'PRICED_PARTIAL' ? ' *' : '');
+          var dLine2 = dpt.disc ? dpt.disc.text : '—';
+          var dRight = ax + dia * 1.5 + 4;
+          var dFlip = dRight + Math.max(textW(dLine1, lay.dealPx), textW(dLine2, lay.dealPx - 1)) > W - 4;
+          var dX = dFlip ? ax - dia * 1.5 - 4 : dRight;
+          var dAnchor = dFlip ? 'end' : 'start';
+          ag.appendChild(svgText({ x: dX, y: y(dealShown) - 2, 'class': 'mk-activity-label',
+            style: pxStyle(lay.dealPx), 'data-flipped': String(dFlip), 'text-anchor': dAnchor }, dLine1));
+          ag.appendChild(svgText({ x: dX, y: y(dealShown) - 2 + lay.dealPx * 1.25, 'class': 'mk-activity-disc',
+            style: pxStyle(lay.dealPx - 1), 'data-discount-state': dpt.disc ? dpt.disc.state : '',
+            'data-discount-pct': dpt.disc && dpt.disc.pct !== null ? dpt.disc.pct : '',
+            'text-anchor': dAnchor }, dLine2));
           g.appendChild(ag);
           demoAttachDrag(s, ag, n, geo);
         } else if (dpt.act.state !== 'NOT_IN_ACTIVITY') {
@@ -1634,7 +1712,7 @@
         ? full.slice(0, lay.labelChars - 1) + '\u2026' : full;
       if (!labelled) shown = '';
       var lab = svgText({ x: cx, y: LANE_TOP + lay.laneRow1, 'class': 'xlabel',
-        'font-size': lay.labelPx,
+        'font-size': lay.labelPx, style: pxStyle(lay.labelPx),
         'data-row': 'a', 'data-full': full, 'data-shown': shown,
         'data-truncated': String(labelled && shown !== full),
         'data-printed': String(labelled),
@@ -1678,7 +1756,7 @@
           ? (fromCents(n._regular_c) + (variantText === '' ? '' : '  ·  ' + variantText))
           : variantText);
       g.appendChild(svgText({ x: cx, y: LANE_TOP + lay.laneRow2, 'class': 'xsub',
-        'font-size': lay.subPx,
+        'font-size': lay.subPx, style: pxStyle(lay.subPx),
         'data-row': 'b', 'data-printed': String(labelled),
         'text-anchor': 'middle' }, subText));
 
@@ -1716,8 +1794,10 @@
       var sepX = x(ns.length) - lay.colW / 2;
       s.appendChild(svg('line', { x1: sepX, y1: PLOT_TOP - 10, x2: sepX, y2: LANE_TOP + lay.laneRow2,
         'class': 'demo-comp-sep' }));
-      s.appendChild(svgText({ x: sepX + 6, y: PLOT_TOP - 14, 'class': 'demo-comp-head',
-        'text-anchor': 'start' }, 'Competitors · entered this session · not saved'));
+      var compHead = 'Competitors · entered this session · not saved';
+      var headFits = sepX + 6 + textW(compHead, lay.subPx) <= W - 4;
+      s.appendChild(svgText({ x: headFits ? sepX + 6 : W - 4, y: PLOT_TOP - 14, 'class': 'demo-comp-head',
+        style: pxStyle(lay.subPx), 'text-anchor': headFits ? 'start' : 'end' }, compHead));
     }
     demoComps.forEach(function (c, j) {
       var cxc = x(ns.length + j);
@@ -1740,9 +1820,9 @@
       var fullC = String(c.name);
       var shownC = fullC.length > lay.labelChars ? fullC.slice(0, lay.labelChars - 1) + '…' : fullC;
       cg.appendChild(svgText({ x: cxc, y: LANE_TOP + lay.laneRow1, 'class': 'xlabel xlabel-comp',
-        'font-size': lay.labelPx, 'data-full': fullC, 'text-anchor': 'middle' }, shownC));
+        'font-size': lay.labelPx, style: pxStyle(lay.labelPx), 'data-full': fullC, 'text-anchor': 'middle' }, shownC));
       cg.appendChild(svgText({ x: cxc, y: LANE_TOP + lay.laneRow2, 'class': 'xsub xsub-comp',
-        'font-size': lay.subPx, 'text-anchor': 'middle' }, plain(c.price_c) + ' · temp'));
+        'font-size': lay.subPx, style: pxStyle(lay.subPx), 'text-anchor': 'middle' }, plain(c.price_c) + ' · temp'));
       function compTip() {
         var L = [{ t: c.name + '  (competitor)', head: true },
           { t: 'Price ' + money(c.price_c, panel.currency) }];
@@ -2256,7 +2336,9 @@
 
   function tipLines(n) {
     var L = [];
-    L.push({ t: n.product_name + '  (' + n.label + ')', head: true });
+    var tpt = demoPointFor(n);
+    var tv = demoActivityView(n, tpt);
+    L.push({ t: tv.product_name + '  (' + n.label + ')', head: true });
     L.push({ t: 'List price ' + money(n._msrp_c, n.currency) });
     L.push({ t: 'Everyday ' + money(n._regular_c, n.currency) });
     if (n._deal_live) {
@@ -2271,7 +2353,14 @@
     demoTipLines(n).forEach(function (l) { L.push(l); });
     L.push({ t: n.variant_count + (n.variant_count === 1 ? ' variant' : ' variants')
       + (n.variant_names.length ? ': ' + n.variant_names.join(', ') : '') });
-    if (n.image) {
+    /* PSB-DEMO-R3 §C — IN AN ACTIVITY THE PHOTOGRAPH SAYS WHOSE IT IS. */
+    if (tv.activity_image_basis === 'ACTIVITY_PARTICIPANT') {
+      L.push({ t: 'Photograph: ' + tv.representative_image_sku + ' (a variant in this activity, verified database mapping)' });
+    } else if (tv.activity_image_basis === 'NO_PARTICIPANT_PHOTOGRAPH') {
+      L.push({ t: 'No verified photograph of a variant in this activity - neutral marker shown', miss: true });
+    } else if (tv.activity_image_basis === 'EVERYDAY_GROUP_NOT_IN_ACTIVITY' && n.image) {
+      L.push({ t: 'Photograph: ' + n.representative_image_sku + ' (everyday group representative - not a participant in this activity)', miss: true });
+    } else if (n.image) {
       L.push({ t: 'Photograph: ' + n.representative_image_sku + ' (verified database mapping)' });
     } else {
       L.push({ t: 'IMAGE SOURCE MISSING — no verified mapping for this product', miss: true });
@@ -2290,13 +2379,22 @@
       if (pt.act.deal_c !== null) {
         L.push({ t: 'Deal price on record ' + money(pt.act.deal_c, n.currency)
           + (pt.act.state === 'PRICED_PARTIAL' ? '  (' + pt.act.members_priced + ' of ' + pt.act.members_total + ' variants)' : '') });
+        var dl = demoDiscountLine(pt, n.currency);
+        if (dl) L.push(dl);
+        /* PSB-DEMO-R3 §C — THE VARIANTS THAT ARE ACTUALLY IN IT, BY SKU, and the ones that are not. */
+        L.push({ t: 'In this activity: ' + (pt.act.participants || []).map(demoSkuOf).join(', ') });
+        var outM = (pt.act.member_states || []).filter(function (x) { return x.state !== 'PRICED'; });
+        if (outM.length) {
+          L.push({ t: 'Not priced in this activity: ' + outM.map(demoSkuOf).join(', '), miss: true });
+        }
       } else {
         L.push({ t: SEL.CAMPAIGN_PRICE_TEXT[pt.act.state] || pt.act.state, miss: pt.act.state !== 'NOT_IN_ACTIVITY' });
       }
     }
     if (pt.sim) {
-      L.push({ t: 'Simulated ' + money(pt.sim.to_c, n.currency) + '  (original ' + money(pt.sim.from_c, n.currency)
-        + ') - this session only, not saved' });
+      L.push({ t: 'Simulated ' + money(pt.sim.to_c, n.currency)
+        + (pt.disc ? '  ·  ' + pt.disc.text : '')
+        + '  (original ' + money(pt.sim.from_c, n.currency) + ') - this session only, not saved' });
     }
     return L;
   }
@@ -2550,7 +2648,11 @@
     tb.appendChild(thead);
     var tbody = el('tbody');
     m.panels.forEach(function (p) {
-      p.plotted.concat(p.notPlotted).forEach(function (n) {
+      p.plotted.concat(p.notPlotted).forEach(function (n0) {
+        var dpr = demoPointFor(n0);
+        /* PSB-DEMO-R3 §C — in an activity the row's photograph, name and representative SKU are a
+           participant's, or no one's; every price on the row is still the node's own. */
+        var n = demoActivityView(n0, dpr);
         var r = el('tr');
         r.setAttribute('data-category', n.category);
         r.setAttribute('data-label', n.label);
@@ -2609,13 +2711,21 @@
         }
         r.appendChild(tdP);
 
-        var dpr = demoPointFor(n);
         if (demoActivityOn()) {
           var tdA = el('td', 'num');
           tdA.setAttribute('data-activity-state', dpr.act ? dpr.act.state : '');
           if (dpr.act && dpr.act.deal_c !== null) {
             tdA.appendChild(document.createTextNode(money(dpr.act.deal_c, n.currency)));
+            var recD = SEL.campaignDiscountFor(dpr.act, dpr.act.deal_c);
+            var dEl = el('div', 'tdisc', recD.text);
+            dEl.setAttribute('data-discount-state', recD.state);
+            if (recD.state !== 'OK') dEl.setAttribute('title', SEL.DISCOUNT_TEXT[recD.state] || recD.state);
+            tdA.appendChild(dEl);
             if (dpr.act.state === 'PRICED_PARTIAL') tdA.appendChild(el('div', 'pill is-warn', 'some variants'));
+            var pEl = el('div', 'tpart', (dpr.act.participants || []).map(demoSkuOf).join(', ')
+              + '  (' + dpr.act.members_priced + ' of ' + dpr.act.members_total + ')');
+            pEl.setAttribute('data-participants', (dpr.act.participants || []).map(demoSkuOf).join(','));
+            tdA.appendChild(pEl);
           } else {
             tdA.appendChild(document.createTextNode('—'));
             if (dpr.act && dpr.act.state !== 'NOT_IN_ACTIVITY') tdA.appendChild(el('div', 'pill is-warn', DEMO_SHORT[dpr.act.state] || dpr.act.state));
@@ -2626,6 +2736,11 @@
           var tdS = el('td', 'num');
           if (dpr.sim) {
             tdS.appendChild(document.createTextNode(money(dpr.sim.to_c, n.currency)));
+            if (dpr.disc) {
+              var sD = el('div', 'tdisc', dpr.disc.text);
+              sD.setAttribute('data-discount-state', dpr.disc.state);
+              tdS.appendChild(sD);
+            }
             tdS.appendChild(el('div', 'pill', 'simulated · was ' + plain(dpr.sim.from_c)));
           } else { tdS.appendChild(document.createTextNode('—')); }
           r.appendChild(tdS);
@@ -2934,7 +3049,12 @@
       ['status_missing_or_unrecognised', u.dataQuality.status_missing_or_unrecognised,
         'the site status is blank or outside the shipped vocabulary, so it was NOT read as sellable.'],
       ['master_record_missing', u.dataQuality.master_record_missing,
-        'a site listing whose master sku_details row could not be joined.']
+        'a site listing whose master sku_details row could not be joined.'],
+      /* PSB-DEMO-R3 §D — a lifecycle the board cannot read is KEPT and named here. It is never taken to
+         mean Phasing Out: only the exact value excludes a SKU. */
+      ['lifecycle_missing_or_unrecognised', u.dataQuality.lifecycle_missing_or_unrecognised || [],
+        'sku_details.lifecycle is blank or outside the shipped vocabulary. KEPT on the board — an unreadable'
+          + ' lifecycle is not read as Phasing Out.']
     ];
     var dq = el('div', 'dqlist');
     dq.id = 'dqBuckets';
@@ -2952,6 +3072,14 @@
     card.appendChild(dq);
     card.appendChild(el('p', 'card-note', 'Total Data Quality items on this site: '
       + u.dataQuality.total + '. A count of zero here is a measurement, not an absence of checking.'));
+    /* PSB-DEMO-R3 §D — the exclusion is stated, so a smaller universe is never mistaken for missing data. */
+    var po = el('p', 'card-note', 'Phasing Out SKUs excluded from Product Strategy on this site: '
+      + ((u.counts && u.counts.excluded_phasing_out) || 0)
+      + ' (marketplace_sku_status phasing_out or sku_details.lifecycle Phasing Out). They are not deleted'
+      + ' and their status is unchanged; this board simply does not show them.');
+    po.id = 'dqPhasingOut';
+    po.setAttribute('data-count', String((u.counts && u.counts.excluded_phasing_out) || 0));
+    card.appendChild(po);
     host.appendChild(card0);
   }
 

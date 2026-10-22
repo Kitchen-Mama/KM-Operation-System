@@ -1,0 +1,1339 @@
+{
+  "round": "PSB-DEMO-R3",
+  "mode": "after",
+  "base_ref": "70778e82",
+  "takenAt": "2026-10-22T03:53:03.794Z",
+  "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "data": "production 2026-10-22 read-only bodies (docs/evidence/psb-demo-r3/production-read)",
+  "sources": {
+    "assets/js/product-strategy/psb-board-ui.js": "7a70219e4a0b726a",
+    "assets/js/product-strategy/psb-selectors.js": "ef879f6d6a09a21d",
+    "assets/js/product-strategy/psb-chart-layout.js": "560cc3a11fbc5b6c",
+    "assets/css/product-strategy-board.css": "6ae82cf04cea161e",
+    "assets/tests/_psb-demo-r3-capture.js": "37442b01a9e62638",
+    "assets/tests/_psb-demo-r3-prod-data.js": "0abe7495934a0274",
+    "assets/tests/_psb-demo-r3-runner.js": "3e8348a9be9202f6"
+  },
+  "steps": [
+    {
+      "name": "1920 category",
+      "data": "menu"
+    },
+    {
+      "name": "1920 everyday layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "spacious",
+            "scale": 0.999,
+            "vbW": 1576,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.98,
+              "xlabel": 15.98,
+              "xsub": 13.48,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 33,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1920 activity layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "spacious",
+            "scale": 0.999,
+            "vbW": 1576,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.98,
+              "xlabel": 15.98,
+              "xsub": 13.48,
+              "deal": 14.48,
+              "disc": 13.48
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 49,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1920 CO1150 47.99 in Fall Prime",
+      "data": {
+        "key": "G|Electric Can Opener|CAD|CO1150|4799/3799/5699/",
+        "state": "PRICED_PARTIAL",
+        "basis": "ACTIVITY_PARTICIPANT",
+        "participants": "CO1150-XR,CO1150-ZW",
+        "image": "assets/img/products/CO1150-XR.jpg",
+        "label": "38.39 *",
+        "disc": "20% off",
+        "discState": "OK",
+        "sim": null,
+        "handle": {
+          "x": 1329.7613525390625,
+          "y": 693.358154296875
+        }
+      }
+    },
+    {
+      "name": "1440 category",
+      "data": "menu"
+    },
+    {
+      "name": "1440 everyday layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "spacious",
+            "scale": 0.998,
+            "vbW": 1096,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.97,
+              "xlabel": 15.97,
+              "xsub": 13.48,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 33,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1440 activity layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "spacious",
+            "scale": 0.998,
+            "vbW": 1096,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.97,
+              "xlabel": 15.97,
+              "xsub": 13.48,
+              "deal": 14.47,
+              "disc": 13.48
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 49,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "1440 CO1150 47.99 in Fall Prime",
+      "data": {
+        "key": "G|Electric Can Opener|CAD|CO1150|4799/3799/5699/",
+        "state": "PRICED_PARTIAL",
+        "basis": "ACTIVITY_PARTICIPANT",
+        "participants": "CO1150-XR,CO1150-ZW",
+        "image": "assets/img/products/CO1150-XR.jpg",
+        "label": "38.39 *",
+        "disc": "20% off",
+        "discState": "OK",
+        "sim": null,
+        "handle": {
+          "x": 1036.3511352539062,
+          "y": 693.1169738769531
+        }
+      }
+    },
+    {
+      "name": "820 category",
+      "data": "menu"
+    },
+    {
+      "name": "820 everyday layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "normal",
+            "scale": 1.003,
+            "vbW": 744,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.54,
+              "xlabel": 15.04,
+              "xsub": null,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 25,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "820 activity layout",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "normal",
+            "scale": 1.003,
+            "vbW": 744,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.54,
+              "xlabel": 15.04,
+              "xsub": null,
+              "deal": 14.04,
+              "disc": 13.03
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 41,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 1
+      }
+    },
+    {
+      "name": "820 CO1150 47.99 in Fall Prime",
+      "data": {
+        "key": "G|Electric Can Opener|CAD|CO1150|4799/3799/5699/",
+        "state": "PRICED_PARTIAL",
+        "basis": "ACTIVITY_PARTICIPANT",
+        "participants": "CO1150-XR,CO1150-ZW",
+        "image": "assets/img/products/CO1150-XR.jpg",
+        "label": "38.39 *",
+        "disc": "20% off",
+        "discState": "OK",
+        "sim": null,
+        "handle": {
+          "x": 564.2859802246094,
+          "y": 693.193115234375
+        }
+      }
+    },
+    {
+      "name": "tooltip CO1150 47.99",
+      "data": "Auto Electric Can Opener 2.0 (Marble White)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 variants)\nDiscount 20% off  (original 47.99 CAD, the activity line’s own snapshot)\nIn this activity: CO1150-XR, CO1150-ZW\nNot priced in this activity: CO1150-BM, CO1150-EM, CO1150-OM\n5 variants\nPhotograph: CO1150-XR (a variant in this activity, verified database mapping)\nCurrent selling price is not shown, and neither is margin: no source of record."
+    },
+    {
+      "name": "table rows (Fall Prime)",
+      "data": [
+        {
+          "label": "CO1200",
+          "text": " Mini Electric Can Opener (Blue) CO1200 CO1200-B 3 CO1200 27.99 CAD 34.99 CAD 42.99 CAD — — 27.99 CAD 20% off CO1200-B, CO1200-O, CO1200-WR (3 of 3) Running in the Market COMPLETE",
+          "image": "assets/img/products/CO1200-B.jpg",
+          "participants": "CO1200-B,CO1200-O,CO1200-WR",
+          "disc": "20% off",
+          "act": "PRICED"
+        },
+        {
+          "label": "CO2100",
+          "text": " One Touch Electric Can Opener (Purple) CO2100 CO2102-P 3 CO2100 29.00 CAD 34.99 CAD 40.00 CAD — — — Running in the Market COMPLETE",
+          "image": "assets/img/products/CO2102-P.jpg",
+          "participants": null,
+          "disc": null,
+          "act": "NOT_IN_ACTIVITY"
+        },
+        {
+          "label": "CO1100",
+          "text": " Auto Electric Can Opener 1.0 (Red) CO1100 CO1100-R 4 CO1100 29.99 CAD 39.99 CAD 49.99 CAD — — 31.99 CAD 20% off CO1100-R, CO1100-S, CO1100-T, CO1100-W (4 of 4) Running in the Market COMPLETE",
+          "image": "assets/img/products/CO1100-R.jpg",
+          "participants": "CO1100-R,CO1100-S,CO1100-T,CO1100-W",
+          "disc": "20% off",
+          "act": "PRICED"
+        },
+        {
+          "label": "CO1150",
+          "text": " Auto Electric Can Opener 2.0 (Morandi Blue) CO1150 CO1150-MB 3 CO1150 33.99 CAD 44.99 CAD 56.99 CAD — — 35.99 CAD 20% off CO1150-MB, CO1150-N, CO1150-R (3 of 3) Running in the Market COMPLETE",
+          "image": "assets/img/products/CO1150-MB.jpg",
+          "participants": "CO1150-MB,CO1150-N,CO1150-R",
+          "disc": "20% off",
+          "act": "PRICED"
+        },
+        {
+          "label": "CO2300",
+          "text": " One-To-Go Electric Can Opener (Red) CO2300 CO2300-R 2 CO2300 43.99 CAD 46.99 CAD 63.99 CAD — — 37.59 CAD 20% off CO2300-R, CO2300-W (2 of 2) Running in the Market COMPLETE",
+          "image": "assets/img/products/CO2300-R.jpg",
+          "participants": "CO2300-R,CO2300-W",
+          "disc": "20% off",
+          "act": "PRICED"
+        },
+        {
+          "label": "CO1150",
+          "text": " Auto Electric Can Opener 2.0 (Marble White) CO1150 CO1150-XR 5 CO1150 37.99 CAD 47.99 CAD 56.99 CAD — — 38.39 CAD 20% off SOME VARIANTS CO1150-XR, CO1150-ZW (2 of 5) Running in the Market COMPLETE",
+          "image": "assets/img/products/CO1150-XR.jpg",
+          "participants": "CO1150-XR,CO1150-ZW",
+          "disc": "20% off",
+          "act": "PRICED_PARTIAL"
+        },
+        {
+          "label": "CO2600",
+          "text": " Mini Plus Rechargeable Electric Can Opener (Red) CO2600 CO2600-R 3 CO2600 41.99 CAD 54.99 CAD 70.99 CAD — — 43.99 CAD 20% off CO2600-R, CO2600-T, CO2600-W (3 of 3) Running in the Market COMPLETE",
+          "image": "assets/img/products/CO2600-R.jpg",
+          "participants": "CO2600-R,CO2600-T,CO2600-W",
+          "disc": "20% off",
+          "act": "PRICED"
+        },
+        {
+          "label": "CO5600",
+          "text": " Orbit One Rechargeable Can Opener (Red) CO5600 CO5600-R 3 CO5600 56.99 CAD 79.99 CAD 84.99 CAD — — 63.99 CAD 20% off CO5600-R, CO5600-W, CO5600-Z (3 of 3) Running in the Market COMPLETE",
+          "image": "assets/img/products/CO5600-R.jpg",
+          "participants": "CO5600-R,CO5600-W,CO5600-Z",
+          "disc": "20% off",
+          "act": "PRICED"
+        },
+        {
+          "label": "CO5600",
+          "text": " Orbit One Rechargeable Can Opener (Stainless Steel) CO5600 CO5600-Q 1 CO5600 64.99 CAD 89.99 CAD 91.99 CAD — — 71.99 CAD 20% off CO5600-Q (1 of 1) Running in the Market COMPLETE",
+          "image": "assets/img/products/CO5600-Q.jpg",
+          "participants": "CO5600-Q",
+          "disc": "20% off",
+          "act": "PRICED"
+        }
+      ]
+    },
+    {
+      "name": "mid-drag",
+      "data": {
+        "label": "32.39 *",
+        "disc": "32.5% off",
+        "readout": "Simulated 32.39  ·  32.5% off  (original 38.39)"
+      }
+    },
+    {
+      "name": "after drag",
+      "data": {
+        "key": "G|Electric Can Opener|CAD|CO1150|4799/3799/5699/",
+        "state": "PRICED_PARTIAL",
+        "basis": "ACTIVITY_PARTICIPANT",
+        "participants": "CO1150-XR,CO1150-ZW",
+        "image": "assets/img/products/CO1150-XR.jpg",
+        "label": "32.39 *",
+        "disc": "32.5% off",
+        "discState": "OK",
+        "sim": "3239",
+        "handle": {
+          "x": 1041.3331909179688,
+          "y": 750.6113586425781
+        }
+      }
+    },
+    {
+      "name": "D ResUS Amazon",
+      "data": {
+        "listings": 97,
+        "plotted": 97,
+        "co2100": [
+          {
+            "reg": "3499",
+            "img": "assets/img/products/CO2102-P.jpg",
+            "aria": "CO2100, everyday 34.99 USD, list 40.00 USD, floor 29.00 USD, 3 colours"
+          },
+          {
+            "reg": "3699",
+            "img": "assets/img/products/CO2102-FA.jpg",
+            "aria": "CO2100, everyday 36.99 USD, list 46.00 USD, floor 29.00 USD"
+          }
+        ],
+        "pageHasPhasingSku": false
+      }
+    },
+    {
+      "name": "D CO2100 34.99 row",
+      "data": {
+        "label": "CO2100",
+        "text": " One Touch Electric Can Opener (Purple) CO2100 CO2102-P 3 CO2100 29.00 USD 34.99 USD 40.00 USD — — Running in the Market COMPLETE",
+        "image": "assets/img/products/CO2102-P.jpg",
+        "participants": null,
+        "disc": null,
+        "act": null
+      }
+    },
+    {
+      "name": "D CO2100 in BFCM",
+      "data": {
+        "label": "CO2100",
+        "text": " One Touch Electric Can Opener (Purple) CO2100 CO2102-P 3 CO2100 29.00 USD 34.99 USD 40.00 USD — — 27.99 USD 20% off CO2102-P, CO2102-R, CO2102-T (3 of 3) Running in the Market COMPLETE",
+        "image": "assets/img/products/CO2102-P.jpg",
+        "participants": "CO2102-P,CO2102-R,CO2102-T",
+        "disc": "20% off",
+        "act": "PRICED"
+      }
+    },
+    {
+      "name": "D ResUS Walmart",
+      "data": {
+        "listings": 15,
+        "cats": [
+          "All categories (0)"
+        ],
+        "gm1100": false,
+        "grinders": false
+      }
+    },
+    {
+      "name": "D Data Quality (ResUS Walmart)",
+      "data": {
+        "note": "Phasing Out SKUs excluded from Product Strategy on this site: 3 (marketplace_sku_status phasing_out or sku_details.lifecycle Phasing Out). They are not deleted and their status is unchanged; this board simply does not show them.",
+        "count": "3",
+        "bucket": "0"
+      }
+    },
+    {
+      "name": "synth 1920",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "spacious",
+            "scale": 0.999,
+            "vbW": 1576,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.98,
+              "xlabel": 15.98,
+              "xsub": 13.48,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 33,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          },
+          {
+            "currency": "EUR",
+            "density": "spacious",
+            "scale": 0.999,
+            "vbW": 1576,
+            "renderW": 1574,
+            "minPx": {
+              "ytick": 14.98,
+              "xlabel": 15.98,
+              "xsub": 13.48,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 33,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 2
+      }
+    },
+    {
+      "name": "synth 1440",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "spacious",
+            "scale": 0.998,
+            "vbW": 1096,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.97,
+              "xlabel": 15.97,
+              "xsub": 13.48,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 33,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          },
+          {
+            "currency": "EUR",
+            "density": "spacious",
+            "scale": 0.998,
+            "vbW": 1096,
+            "renderW": 1094,
+            "minPx": {
+              "ytick": 14.97,
+              "xlabel": 15.97,
+              "xsub": 13.48,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 33,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 2
+      }
+    },
+    {
+      "name": "synth 820",
+      "data": {
+        "charts": [
+          {
+            "currency": "CAD",
+            "density": "normal",
+            "scale": 1.003,
+            "vbW": 744,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.54,
+              "xlabel": 15.04,
+              "xsub": null,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 25,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          },
+          {
+            "currency": "EUR",
+            "density": "normal",
+            "scale": 1.003,
+            "vbW": 744,
+            "renderW": 746,
+            "minPx": {
+              "ytick": 14.54,
+              "xlabel": 15.04,
+              "xsub": null,
+              "deal": null,
+              "disc": null
+            },
+            "ytickFill": "rgb(68, 77, 92)",
+            "labels": 25,
+            "overlaps": [],
+            "clipped": [],
+            "printedX": 9
+          }
+        ],
+        "panels": 2
+      }
+    },
+    {
+      "name": "wire (last page)",
+      "data": [
+        "getClientCapabilities",
+        "productPricing.siteUniverse.get",
+        "productPricing.workspace.get",
+        "productPricing.workspace.get"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "the production page mounted with no boot error (1920)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "A 1920 everyday chart 1 (CAD, spacious, scale 0.999): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A 1920 everyday chart 1 (CAD, spacious, scale 0.999): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A 1920 everyday chart 1 (CAD, spacious, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 1920 everyday chart 1 (CAD, spacious, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 1920 everyday: a 40px drag commits the price under the pointer (no coordinate offset)",
+      "ok": true,
+      "got": {
+        "expectDeltaC": 400,
+        "gotDeltaC": 400
+      }
+    },
+    {
+      "name": "A 1920 activity chart 1 (CAD, spacious, scale 0.999): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": 14.48,
+        "disc": 13.48
+      }
+    },
+    {
+      "name": "A 1920 activity chart 1 (CAD, spacious, scale 0.999): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": 14.48,
+        "disc": 13.48
+      }
+    },
+    {
+      "name": "A 1920 activity chart 1 (CAD, spacious, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 1920 activity chart 1 (CAD, spacious, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 1920 activity chart 1 (CAD, spacious, scale 0.999): activity prices are >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": 14.48,
+        "disc": 13.48
+      }
+    },
+    {
+      "name": "C 1920: CO1150 at 47.99 is partly in Fall Prime",
+      "ok": true,
+      "got": "PRICED_PARTIAL"
+    },
+    {
+      "name": "C 1920: its participants are exactly CO1150-XR and CO1150-ZW",
+      "ok": true,
+      "got": "CO1150-XR,CO1150-ZW"
+    },
+    {
+      "name": "C 1920: its photograph is a participant’s (CO1150-XR), not Burgundy Mist",
+      "ok": true,
+      "got": "assets/img/products/CO1150-XR.jpg"
+    },
+    {
+      "name": "B 1920: its label reads 38.39 * over \"20% off\"",
+      "ok": true,
+      "got": [
+        "38.39 *",
+        "20% off"
+      ]
+    },
+    {
+      "name": "the production page mounted with no boot error (1440)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "A 1440 everyday chart 1 (CAD, spacious, scale 0.998): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A 1440 everyday chart 1 (CAD, spacious, scale 0.998): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A 1440 everyday chart 1 (CAD, spacious, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 1440 everyday chart 1 (CAD, spacious, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 1440 everyday: a 40px drag commits the price under the pointer (no coordinate offset)",
+      "ok": true,
+      "got": {
+        "expectDeltaC": 400,
+        "gotDeltaC": 400
+      }
+    },
+    {
+      "name": "A 1440 activity chart 1 (CAD, spacious, scale 0.998): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": 14.47,
+        "disc": 13.48
+      }
+    },
+    {
+      "name": "A 1440 activity chart 1 (CAD, spacious, scale 0.998): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": 14.47,
+        "disc": 13.48
+      }
+    },
+    {
+      "name": "A 1440 activity chart 1 (CAD, spacious, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 1440 activity chart 1 (CAD, spacious, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 1440 activity chart 1 (CAD, spacious, scale 0.998): activity prices are >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": 14.47,
+        "disc": 13.48
+      }
+    },
+    {
+      "name": "C 1440: CO1150 at 47.99 is partly in Fall Prime",
+      "ok": true,
+      "got": "PRICED_PARTIAL"
+    },
+    {
+      "name": "C 1440: its participants are exactly CO1150-XR and CO1150-ZW",
+      "ok": true,
+      "got": "CO1150-XR,CO1150-ZW"
+    },
+    {
+      "name": "C 1440: its photograph is a participant’s (CO1150-XR), not Burgundy Mist",
+      "ok": true,
+      "got": "assets/img/products/CO1150-XR.jpg"
+    },
+    {
+      "name": "B 1440: its label reads 38.39 * over \"20% off\"",
+      "ok": true,
+      "got": [
+        "38.39 *",
+        "20% off"
+      ]
+    },
+    {
+      "name": "the production page mounted with no boot error (820)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "A 820 everyday chart 1 (CAD, normal, scale 1.003): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A 820 everyday chart 1 (CAD, normal, scale 1.003): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A 820 everyday chart 1 (CAD, normal, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 820 everyday chart 1 (CAD, normal, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 820 everyday: a 40px drag commits the price under the pointer (no coordinate offset)",
+      "ok": true,
+      "got": {
+        "expectDeltaC": 400,
+        "gotDeltaC": 400
+      }
+    },
+    {
+      "name": "A 820 activity chart 1 (CAD, normal, scale 1.003): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": 14.04,
+        "disc": 13.03
+      }
+    },
+    {
+      "name": "A 820 activity chart 1 (CAD, normal, scale 1.003): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": 14.04,
+        "disc": 13.03
+      }
+    },
+    {
+      "name": "A 820 activity chart 1 (CAD, normal, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 820 activity chart 1 (CAD, normal, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A 820 activity chart 1 (CAD, normal, scale 1.003): activity prices are >= 13px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": 14.04,
+        "disc": 13.03
+      }
+    },
+    {
+      "name": "C 820: CO1150 at 47.99 is partly in Fall Prime",
+      "ok": true,
+      "got": "PRICED_PARTIAL"
+    },
+    {
+      "name": "C 820: its participants are exactly CO1150-XR and CO1150-ZW",
+      "ok": true,
+      "got": "CO1150-XR,CO1150-ZW"
+    },
+    {
+      "name": "C 820: its photograph is a participant’s (CO1150-XR), not Burgundy Mist",
+      "ok": true,
+      "got": "assets/img/products/CO1150-XR.jpg"
+    },
+    {
+      "name": "B 820: its label reads 38.39 * over \"20% off\"",
+      "ok": true,
+      "got": [
+        "38.39 *",
+        "20% off"
+      ]
+    },
+    {
+      "name": "the production page mounted with no boot error (1440)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "C tooltip: lists the participants by SKU",
+      "ok": true,
+      "got": "Auto Electric Can Opener 2.0 (Marble White)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 variants)\nDiscount 20% off  (original 47.99 CAD, the activity line’s own snapshot)\nIn this activity: CO1150-XR, CO1150-ZW\nNot priced in this activity: CO1150-BM, CO1150-EM, CO1150-OM\n5 variants\nPhotograph: CO1150-XR (a variant in this activity, verified database mapping)\nCurrent selling price is not shown, and neither is margin: no source of record."
+    },
+    {
+      "name": "C tooltip: lists the colours not priced in it, BM among them",
+      "ok": true,
+      "got": "Auto Electric Can Opener 2.0 (Marble White)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 variants)\nDiscount 20% off  (original 47.99 CAD, the activity line’s own snapshot)\nIn this activity: CO1150-XR, CO1150-ZW\nNot priced in this activity: CO1150-BM, CO1150-EM, CO1150-OM\n5 variants\nPhotograph: CO1150-XR (a variant in this activity, verified database mapping)\nCurrent selling price is not shown, and neither is margin: no source of record."
+    },
+    {
+      "name": "C tooltip: the photograph line names a participant",
+      "ok": true,
+      "got": "Auto Electric Can Opener 2.0 (Marble White)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 variants)\nDiscount 20% off  (original 47.99 CAD, the activity line’s own snapshot)\nIn this activity: CO1150-XR, CO1150-ZW\nNot priced in this activity: CO1150-BM, CO1150-EM, CO1150-OM\n5 variants\nPhotograph: CO1150-XR (a variant in this activity, verified database mapping)\nCurrent selling price is not shown, and neither is margin: no source of record."
+    },
+    {
+      "name": "C tooltip: the head is a participant, not Burgendy Mist",
+      "ok": true,
+      "got": "Auto Electric Can Opener 2.0 (Marble White)  (CO1150)"
+    },
+    {
+      "name": "B tooltip: \"Discount 20% off (original 47.99 CAD …snapshot)\"",
+      "ok": true,
+      "got": "Auto Electric Can Opener 2.0 (Marble White)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 variants)\nDiscount 20% off  (original 47.99 CAD, the activity line’s own snapshot)\nIn this activity: CO1150-XR, CO1150-ZW\nNot priced in this activity: CO1150-BM, CO1150-EM, CO1150-OM\n5 variants\nPhotograph: CO1150-XR (a variant in this activity, verified database mapping)\nCurrent selling price is not shown, and neither is margin: no source of record."
+    },
+    {
+      "name": "C table: the CO1150 47.99 row lists XR and ZW as participants",
+      "ok": true,
+      "got": [
+        "CO1200-B,CO1200-O,CO1200-WR",
+        null,
+        "CO1100-R,CO1100-S,CO1100-T,CO1100-W",
+        "CO1150-MB,CO1150-N,CO1150-R",
+        "CO2300-R,CO2300-W",
+        "CO1150-XR,CO1150-ZW",
+        "CO2600-R,CO2600-T,CO2600-W",
+        "CO5600-R,CO5600-W,CO5600-Z",
+        "CO5600-Q"
+      ]
+    },
+    {
+      "name": "C table: that row’s photograph and representative are a participant’s",
+      "ok": true,
+      "got": {
+        "label": "CO1150",
+        "text": " Auto Electric Can Opener 2.0 (Marble White) CO1150 CO1150-XR 5 CO1150 37.99 CAD 47.99 CAD 56.99 CAD — — 38.39 CAD 20% off SOME VARIANTS CO1150-XR, CO1150-ZW (2 of 5) Running in the Market COMPLETE",
+        "image": "assets/img/products/CO1150-XR.jpg",
+        "participants": "CO1150-XR,CO1150-ZW",
+        "disc": "20% off",
+        "act": "PRICED_PARTIAL"
+      }
+    },
+    {
+      "name": "B table: that row reads 20% off",
+      "ok": true,
+      "got": "20% off"
+    },
+    {
+      "name": "B during the drag the label shows the new price, below 38.39",
+      "ok": true,
+      "got": {
+        "label": "32.39 *",
+        "disc": "32.5% off",
+        "readout": "Simulated 32.39  ·  32.5% off  (original 38.39)"
+      }
+    },
+    {
+      "name": "B during the drag the percentage is recomputed on the 47.99 snapshot",
+      "ok": true,
+      "got": {
+        "mid": {
+          "label": "32.39 *",
+          "disc": "32.5% off",
+          "readout": "Simulated 32.39  ·  32.5% off  (original 38.39)"
+        },
+        "want": 32.5
+      }
+    },
+    {
+      "name": "B the drag readout carries the same percentage",
+      "ok": true,
+      "got": "Simulated 32.39  ·  32.5% off  (original 38.39)"
+    },
+    {
+      "name": "B after the drag the simulated price and its percentage agree",
+      "ok": true,
+      "got": {
+        "sim": 3239,
+        "disc": "32.5% off"
+      }
+    },
+    {
+      "name": "B the table’s recorded column still reads 20% off (the record did not change)",
+      "ok": true,
+      "got": "20% off"
+    },
+    {
+      "name": "B the table’s simulated column shows the simulated percentage",
+      "ok": true,
+      "got": " Auto Electric Can Opener 2.0 (Marble White) CO1150 CO1150-XR 5 CO1150 37.99 CAD 47.99 CAD 56.99 CAD — — 38.39 CAD 20% off SOME VARIANTS CO1150-XR, CO1150-ZW (2 of 5) 32.39 CAD 32.5% off SIMULATED · WAS 38.39 Running in the Market COMPLETE"
+    },
+    {
+      "name": "B the editor opens for the selected product",
+      "ok": true,
+      "got": true
+    },
+    {
+      "name": "B typed 35.99: label 35.99 *, 25% off on the 47.99 snapshot",
+      "ok": true,
+      "got": [
+        "35.99 *",
+        "25% off"
+      ]
+    },
+    {
+      "name": "B keyboard down one unit: 34.99 *, 27.1% off",
+      "ok": true,
+      "got": [
+        "34.99 *",
+        "27.1% off"
+      ]
+    },
+    {
+      "name": "B Undo: back to 35.99 *, 25% off",
+      "ok": true,
+      "got": [
+        "35.99 *",
+        "25% off"
+      ]
+    },
+    {
+      "name": "B Reset all: back to the record, 38.39 *, 20% off",
+      "ok": true,
+      "got": [
+        "38.39 *",
+        "20% off",
+        null
+      ]
+    },
+    {
+      "name": "D ResUS Amazon: 97 listings (100 less the three Phasing Out)",
+      "ok": true,
+      "got": 97
+    },
+    {
+      "name": "D no Phasing Out SKU is named anywhere on the page",
+      "ok": true,
+      "got": false
+    },
+    {
+      "name": "D CO2100 at 34.99: 3 colours, represented by the selling CO2102-P (it was the Phasing Out CO2100-P)",
+      "ok": true,
+      "got": " One Touch Electric Can Opener (Purple) CO2100 CO2102-P 3 CO2100 29.00 USD 34.99 USD 40.00 USD — — Running in the Market COMPLETE"
+    },
+    {
+      "name": "D BFCM: CO2100 is complete (no \"some variants\") once the Phasing Out colours are gone",
+      "ok": true,
+      "got": {
+        "label": "CO2100",
+        "text": " One Touch Electric Can Opener (Purple) CO2100 CO2102-P 3 CO2100 29.00 USD 34.99 USD 40.00 USD — — 27.99 USD 20% off CO2102-P, CO2102-R, CO2102-T (3 of 3) Running in the Market COMPLETE",
+        "image": "assets/img/products/CO2102-P.jpg",
+        "participants": "CO2102-P,CO2102-R,CO2102-T",
+        "disc": "20% off",
+        "act": "PRICED"
+      }
+    },
+    {
+      "name": "D ResUS Walmart: 15 listings (18 less GM1100’s three colours)",
+      "ok": true,
+      "got": 15
+    },
+    {
+      "name": "D GM1100 is nowhere on the page, and neither is the Grinders category it alone made up",
+      "ok": true,
+      "got": {
+        "listings": 15,
+        "cats": [
+          "All categories (0)"
+        ],
+        "gm1100": false,
+        "grinders": false
+      }
+    },
+    {
+      "name": "D Data Quality states 3 Phasing Out SKUs excluded on ResUS Walmart",
+      "ok": true,
+      "got": {
+        "note": "Phasing Out SKUs excluded from Product Strategy on this site: 3 (marketplace_sku_status phasing_out or sku_details.lifecycle Phasing Out). They are not deleted and their status is unchanged; this board simply does not show them.",
+        "count": "3",
+        "bucket": "0"
+      }
+    },
+    {
+      "name": "D Data Quality has a named lifecycle row (0 here: every production lifecycle is readable)",
+      "ok": true,
+      "got": {
+        "note": "Phasing Out SKUs excluded from Product Strategy on this site: 3 (marketplace_sku_status phasing_out or sku_details.lifecycle Phasing Out). They are not deleted and their status is unchanged; this board simply does not show them.",
+        "count": "3",
+        "bucket": "0"
+      }
+    },
+    {
+      "name": "the production page mounted with no boot error (1920)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "SYNTH 1920: two currency panels are drawn",
+      "ok": true,
+      "got": 2
+    },
+    {
+      "name": "A synth 1920 chart 1 (CAD, spacious, scale 0.999): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 1920 chart 1 (CAD, spacious, scale 0.999): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 1920 chart 1 (CAD, spacious, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 1920 chart 1 (CAD, spacious, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 1920 chart 2 (EUR, spacious, scale 0.999): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 1920 chart 2 (EUR, spacious, scale 0.999): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.98,
+        "xlabel": 15.98,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 1920 chart 2 (EUR, spacious, scale 0.999): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 1920 chart 2 (EUR, spacious, scale 0.999): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "the production page mounted with no boot error (1440)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "SYNTH 1440: two currency panels are drawn",
+      "ok": true,
+      "got": 2
+    },
+    {
+      "name": "A synth 1440 chart 1 (CAD, spacious, scale 0.998): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 1440 chart 1 (CAD, spacious, scale 0.998): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 1440 chart 1 (CAD, spacious, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 1440 chart 1 (CAD, spacious, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 1440 chart 2 (EUR, spacious, scale 0.998): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 1440 chart 2 (EUR, spacious, scale 0.998): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.97,
+        "xlabel": 15.97,
+        "xsub": 13.48,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 1440 chart 2 (EUR, spacious, scale 0.998): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 1440 chart 2 (EUR, spacious, scale 0.998): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "the production page mounted with no boot error (820)",
+      "ok": true,
+      "got": null
+    },
+    {
+      "name": "SYNTH 820: two currency panels are drawn",
+      "ok": true,
+      "got": 2
+    },
+    {
+      "name": "A synth 820 chart 1 (CAD, normal, scale 1.003): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 820 chart 1 (CAD, normal, scale 1.003): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 820 chart 1 (CAD, normal, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 820 chart 1 (CAD, normal, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 820 chart 2 (EUR, normal, scale 1.003): Y axis numbers are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 820 chart 2 (EUR, normal, scale 1.003): product labels are >= 14px on screen",
+      "ok": true,
+      "got": {
+        "ytick": 14.54,
+        "xlabel": 15.04,
+        "xsub": null,
+        "deal": null,
+        "disc": null
+      }
+    },
+    {
+      "name": "A synth 820 chart 2 (EUR, normal, scale 1.003): no two labels overlap",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "A synth 820 chart 2 (EUR, normal, scale 1.003): no label leaves the drawing",
+      "ok": true,
+      "got": []
+    },
+    {
+      "name": "zero writes: every request the page made is a read",
+      "ok": true,
+      "got": [
+        "getClientCapabilities",
+        "productPricing.siteUniverse.get",
+        "productPricing.workspace.get",
+        "productPricing.workspace.get"
+      ]
+    }
+  ],
+  "summary": {
+    "checks": 104,
+    "failed": 0
+  }
+}

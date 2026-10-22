@@ -1,0 +1,64 @@
+PSB-DEMO-R3 [before] 41/104 checks
+  FAIL A 1920 everyday chart 1 (CAD, spacious, scale 0.999): Y axis numbers are >= 14px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":null,"disc":null}
+  FAIL A 1920 everyday chart 1 (CAD, spacious, scale 0.999): product labels are >= 14px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":null,"disc":null}
+  FAIL A 1920 activity chart 1 (CAD, spacious, scale 0.999): Y axis numbers are >= 14px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":10.99,"disc":null}
+  FAIL A 1920 activity chart 1 (CAD, spacious, scale 0.999): product labels are >= 14px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":10.99,"disc":null}
+  FAIL A 1920 activity chart 1 (CAD, spacious, scale 0.999): activity prices are >= 13px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":10.99,"disc":null}
+  FAIL C 1920: its participants are exactly CO1150-XR and CO1150-ZW  null
+  FAIL C 1920: its photograph is a participant’s (CO1150-XR), not Burgundy Mist  "assets/img/products/CO1150-BM.jpg"
+  FAIL B 1920: its label reads 38.39 * over "20% off"  ["38.39 *",null]
+  FAIL A 1440 everyday chart 1 (CAD, spacious, scale 0.998): Y axis numbers are >= 14px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":null,"disc":null}
+  FAIL A 1440 everyday chart 1 (CAD, spacious, scale 0.998): product labels are >= 14px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":null,"disc":null}
+  FAIL A 1440 activity chart 1 (CAD, spacious, scale 0.998): Y axis numbers are >= 14px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":10.98,"disc":null}
+  FAIL A 1440 activity chart 1 (CAD, spacious, scale 0.998): product labels are >= 14px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":10.98,"disc":null}
+  FAIL A 1440 activity chart 1 (CAD, spacious, scale 0.998): activity prices are >= 13px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":10.98,"disc":null}
+  FAIL C 1440: its participants are exactly CO1150-XR and CO1150-ZW  null
+  FAIL C 1440: its photograph is a participant’s (CO1150-XR), not Burgundy Mist  "assets/img/products/CO1150-BM.jpg"
+  FAIL B 1440: its label reads 38.39 * over "20% off"  ["38.39 *",null]
+  FAIL A 820 everyday chart 1 (CAD, normal, scale 1.003): Y axis numbers are >= 14px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":null,"disc":null}
+  FAIL A 820 everyday chart 1 (CAD, normal, scale 1.003): product labels are >= 14px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":null,"disc":null}
+  FAIL A 820 activity chart 1 (CAD, normal, scale 1.003): Y axis numbers are >= 14px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":11.03,"disc":null}
+  FAIL A 820 activity chart 1 (CAD, normal, scale 1.003): product labels are >= 14px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":11.03,"disc":null}
+  FAIL A 820 activity chart 1 (CAD, normal, scale 1.003): no label leaves the drawing  ["mk-activity-label:71.99 r=791 svgR=783"]
+  FAIL A 820 activity chart 1 (CAD, normal, scale 1.003): activity prices are >= 13px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":11.03,"disc":null}
+  FAIL C 820: its participants are exactly CO1150-XR and CO1150-ZW  null
+  FAIL C 820: its photograph is a participant’s (CO1150-XR), not Burgundy Mist  "assets/img/products/CO1150-BM.jpg"
+  FAIL B 820: its label reads 38.39 * over "20% off"  ["38.39 *",null]
+  FAIL C tooltip: lists the participants by SKU  "Auto Electric Can Opener 2.0 (Burgendy Mist)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 
+  FAIL C tooltip: lists the colours not priced in it, BM among them  "Auto Electric Can Opener 2.0 (Burgendy Mist)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 
+  FAIL C tooltip: the photograph line names a participant  "Auto Electric Can Opener 2.0 (Burgendy Mist)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 
+  FAIL C tooltip: the head is a participant, not Burgendy Mist  "Auto Electric Can Opener 2.0 (Burgendy Mist)  (CO1150)"
+  FAIL B tooltip: "Discount 20% off (original 47.99 CAD …snapshot)"  "Auto Electric Can Opener 2.0 (Burgendy Mist)  (CO1150)\nList price 56.99 CAD\nEveryday 47.99 CAD\nFloor 37.99 CAD\nActivity: Fall Prime 2026  Tue Oct 06 2026 00:00:00 GMT+0800 (台北標準時間) to Wed Oct 07 2026 00:00:00 GMT+0800 (台北標準時間)  (recorded status: active)\nDeal price on record 38.39 CAD  (2 of 5 
+  FAIL C table: the CO1150 47.99 row lists XR and ZW as participants  [null,null,null,null,null,null,null,null,null]
+  FAIL C table: that row’s photograph and representative are a participant’s  null
+  FAIL B table: that row reads 20% off  null
+  FAIL B during the drag the label shows the new price, below 38.39  {"label":"38.39 *","disc":null,"readout":"Simulated 32.39  (original 38.39)"}
+  FAIL B during the drag the percentage is recomputed on the 47.99 snapshot  {"mid":{"label":"38.39 *","disc":null,"readout":"Simulated 32.39  (original 38.39)"},"want":20}
+  FAIL B the drag readout carries the same percentage  "Simulated 32.39  (original 38.39)"
+  FAIL B after the drag the simulated price and its percentage agree  {"sim":3239,"disc":null}
+  FAIL B the table’s recorded column still reads 20% off (the record did not change)  null
+  FAIL B the table’s simulated column shows the simulated percentage  null
+  FAIL B typed 35.99: label 35.99 *, 25% off on the 47.99 snapshot  ["35.99 *",null]
+  FAIL B keyboard down one unit: 34.99 *, 27.1% off  ["34.99 *",null]
+  FAIL B Undo: back to 35.99 *, 25% off  ["35.99 *",null]
+  FAIL B Reset all: back to the record, 38.39 *, 20% off  ["38.39 *",null,null]
+  FAIL D ResUS Amazon: 97 listings (100 less the three Phasing Out)  100
+  FAIL D no Phasing Out SKU is named anywhere on the page  true
+  FAIL D CO2100 at 34.99: 3 colours, represented by the selling CO2102-P (it was the Phasing Out CO2100-P)  " One Touch Electric Can Opener (Purple) CO2100 CO2100-P 6 CO2100 29.00 USD 34.99 USD 40.00 USD — — Phasing Out COMPLETE"
+  FAIL D BFCM: CO2100 is complete (no "some variants") once the Phasing Out colours are gone  {"label":"CO2100","text":" One Touch Electric Can Opener (Purple) CO2100 CO2100-P 6 CO2100 29.00 USD 34.99 USD 40.00 USD — — 27.99 USDSOME VARIANTS Phasing Out COMPLETE","image":"assets/img/products/CO2102-P.jpg","participants":null,"disc":null,"act":"PRICED_PARTIAL"}
+  FAIL D ResUS Walmart: 15 listings (18 less GM1100’s three colours)  18
+  FAIL D GM1100 is nowhere on the page, and neither is the Grinders category it alone made up  {"listings":18,"cats":["All categories (0)"],"gm1100":true,"grinders":true}
+  FAIL D Data Quality states 3 Phasing Out SKUs excluded on ResUS Walmart  {"note":null,"count":null,"bucket":null}
+  FAIL D Data Quality has a named lifecycle row (0 here: every production lifecycle is readable)  {"note":null,"count":null,"bucket":null}
+  FAIL A synth 1920 chart 1 (CAD, spacious, scale 0.999): Y axis numbers are >= 14px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":null,"disc":null}
+  FAIL A synth 1920 chart 1 (CAD, spacious, scale 0.999): product labels are >= 14px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":null,"disc":null}
+  FAIL A synth 1920 chart 2 (EUR, spacious, scale 0.999): Y axis numbers are >= 14px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":null,"disc":null}
+  FAIL A synth 1920 chart 2 (EUR, spacious, scale 0.999): product labels are >= 14px on screen  {"ytick":11.49,"xlabel":12.48,"xsub":11.49,"deal":null,"disc":null}
+  FAIL A synth 1440 chart 1 (CAD, spacious, scale 0.998): Y axis numbers are >= 14px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":null,"disc":null}
+  FAIL A synth 1440 chart 1 (CAD, spacious, scale 0.998): product labels are >= 14px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":null,"disc":null}
+  FAIL A synth 1440 chart 2 (EUR, spacious, scale 0.998): Y axis numbers are >= 14px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":null,"disc":null}
+  FAIL A synth 1440 chart 2 (EUR, spacious, scale 0.998): product labels are >= 14px on screen  {"ytick":11.48,"xlabel":12.48,"xsub":11.48,"deal":null,"disc":null}
+  FAIL A synth 820 chart 1 (CAD, normal, scale 1.003): Y axis numbers are >= 14px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":null,"disc":null}
+  FAIL A synth 820 chart 1 (CAD, normal, scale 1.003): product labels are >= 14px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":null,"disc":null}
+  FAIL A synth 820 chart 2 (EUR, normal, scale 1.003): Y axis numbers are >= 14px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":null,"disc":null}
+  FAIL A synth 820 chart 2 (EUR, normal, scale 1.003): product labels are >= 14px on screen  {"ytick":11.53,"xlabel":12.53,"xsub":null,"deal":null,"disc":null}

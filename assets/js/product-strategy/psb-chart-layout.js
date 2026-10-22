@@ -54,15 +54,21 @@ var PSB_CHART_LAYOUT = (function () {
 
      The brief's bands: spacious 50 · normal 42-46 · compact 32-38 · overview a small thumbnail.
      ------------------------------------------------------------------------------------------------ */
+  /* PSB-DEMO-R3 §A — THE TYPE IS SIZED FOR A ROOM, NOT FOR A SCREENSHOT. The axis numbers and the
+     product labels start at 14-16px in every profile (they were 10.5-12.5), and the lane, the column
+     minimum and the left margin grow with them, so the larger type has the room it needs rather than
+     being drawn over its neighbours. `dealPx` is the activity-price label; `axTitlePx` the axis title.
+     These are the ONLY sizes: the stylesheet no longer declares a competing one (it used to, and CSS
+     outranks an SVG attribute, so the per-density sizes here were never what a reader saw). */
   L.DENSITY = {
-    spacious: { id: 'spacious', image: 50, laneH: 52, row1: 20, row2: 38,
-      labelPx: 12.5, subPx: 11.5, tickPx: 11.5, colMin: 74, showSub: true },
-    normal: { id: 'normal', image: 44, laneH: 48, row1: 19, row2: 36,
-      labelPx: 12, subPx: 11, tickPx: 11, colMin: 58, showSub: true },
-    compact: { id: 'compact', image: 34, laneH: 44, row1: 18, row2: 34,
-      labelPx: 11.5, subPx: 10.5, tickPx: 10.5, colMin: 44, showSub: true },
-    overview: { id: 'overview', image: 24, laneH: 40, row1: 17, row2: 32,
-      labelPx: 10.5, subPx: 10, tickPx: 10.5, colMin: 26, showSub: true }
+    spacious: { id: 'spacious', image: 50, laneH: 64, row1: 24, row2: 47,
+      labelPx: 16, subPx: 13.5, tickPx: 15, dealPx: 14.5, axTitlePx: 13.5, colMin: 78, showSub: true },
+    normal: { id: 'normal', image: 44, laneH: 60, row1: 23, row2: 45,
+      labelPx: 15, subPx: 13, tickPx: 14.5, dealPx: 14, axTitlePx: 13, colMin: 60, showSub: true },
+    compact: { id: 'compact', image: 34, laneH: 56, row1: 22, row2: 43,
+      labelPx: 14.5, subPx: 12.5, tickPx: 14, dealPx: 13.5, axTitlePx: 13, colMin: 44, showSub: true },
+    overview: { id: 'overview', image: 24, laneH: 52, row1: 21, row2: 40,
+      labelPx: 14, subPx: 12, tickPx: 14, dealPx: 13, axTitlePx: 12.5, colMin: 26, showSub: true }
   };
   L.DENSITY_ORDER = ['spacious', 'normal', 'compact', 'overview'];
 
@@ -84,13 +90,28 @@ var PSB_CHART_LAYOUT = (function () {
   L.MIN_PLOT_H = 140;          // a two-tick chart must still be a chart
   L.MAX_PLOT_H = 960;
   L.COL_MAX = 208;
-  L.PAD_L = 78;
+  L.PAD_L = 78;                // the FLOOR; padLFor widens it to the longest tick label at its size
   L.PAD_R = 30;
   L.PAD_T = 30;
   L.GUTTER_EXTRA = 5;          // gutter = half an image + this, so a marker on an end tick clears
   L.STEP_LADDER_C = [500, 1000, 2000, 2500, 5000, 10000, 25000, 50000];
-  L.MIN_LABEL_W = 46;          // narrower than this and a lane label is printed every Nth column
+  L.MIN_LABEL_W = 46;          // at 12.5px; scaled with the label size by minLabelW
   L.CHAR_W_AT_11_5 = 6.4;      // one monospace character, measured once
+  L.CHAR_EM = L.CHAR_W_AT_11_5 / 11.5;   // the same measurement, per pixel of type
+
+  /** PSB-DEMO-R3 §A — the left margin THESE tick labels need: the longest one ("1250.00" is seven
+      characters, "40.00" five) at the largest tick size any profile uses, plus the rotated axis title and
+      the gap to the rule. It is computed for each candidate axis the walk tries, so a narrow domain is not
+      charged for a four-digit price it will never print; the floor is the old fixed margin. */
+  L.TITLE_ROOM = 40;
+  L.padLForAxis = function (ax) {
+    var maxAbs = Math.max(Math.abs(Number(ax && ax.lo) || 0), Math.abs(Number(ax && ax.hi) || 0));
+    var chars = (Math.floor(maxAbs / 100)).toString().length + 3 + ((Number(ax && ax.lo) || 0) < 0 ? 1 : 0);
+    return Math.max(L.PAD_L, Math.ceil(chars * L.CHAR_EM * L.DENSITY.spacious.tickPx + L.TITLE_ROOM));
+  };
+  /* A lane label needs ~46px at the old 11.5px type; at the size it is printed now it needs proportionally
+     more, so a column too narrow for it prints every Nth label rather than a row of truncated stumps. */
+  L.minLabelW = function (d) { return Math.round(L.MIN_LABEL_W * (d.labelPx / 11.5)); };
 
   /* THE FALLBACKS ARE DECLARED, NOT GUESSED AT RENDER TIME. When nothing has been measured yet — the
      first paint, a print, a test with no browser — the engine uses the Operation System card's own
@@ -140,7 +161,7 @@ var PSB_CHART_LAYOUT = (function () {
     var hiC = Number(input.domainHighC);
     if (!isFinite(loC) || !isFinite(hiC)) { loC = 0; hiC = L.STEP_LADDER_C[0]; }
 
-    var availWidth = Math.max(120, containerWidth - L.PAD_L - L.PAD_R);
+    function availFor(ax) { return Math.max(120, containerWidth - L.padLForAxis(ax) - L.PAD_R); }
     var startDensity = L.densityForCount(count);
     var startIndex = L.DENSITY_ORDER.indexOf(startDensity);
     var reasons = [];
@@ -154,7 +175,7 @@ var PSB_CHART_LAYOUT = (function () {
       var caxis = L.pickStep(loC, hiC, L.PREFERRED_PITCH, L.MAX_PLOT_H);
       return L.assemble({
         mode: mode, density: cd, axis: caxis, pitch: L.PREFERRED_PITCH,
-        count: count, containerWidth: containerWidth, availWidth: availWidth,
+        count: count, containerWidth: containerWidth, availWidth: availFor(caxis), padL: L.padLForAxis(caxis),
         availableHeight: availableHeight,
         reasons: ['comfortable: the preferred pitch and the full image are kept, and the container'
           + ' scrolls for whatever does not fit'],
@@ -176,11 +197,12 @@ var PSB_CHART_LAYOUT = (function () {
         var spans = Math.max(1, ax.ticks.length - 1);
         var pitch = budget / spans;
         var heightOK = pitch >= L.MIN_PITCH_AUTO;
+        var availWidth = availFor(ax);
         var colW = count > 0
           ? clamp(availWidth / count, d.colMin, L.COL_MAX) : L.COL_MAX;
         var widthOK = count === 0 || colW * count <= availWidth + 0.5;
         var cand = { density: d, axis: ax, pitch: Math.min(L.PREFERRED_PITCH, pitch),
-          heightOK: heightOK, widthOK: widthOK,
+          heightOK: heightOK, widthOK: widthOK, availWidth: availWidth, padL: L.padLForAxis(ax),
           overflowX: Math.max(0, Math.round(colW * count - availWidth)) };
         if (!best) best = cand;
         if (heightOK && widthOK) { best = cand; di = L.DENSITY_ORDER.length; break; }
@@ -208,7 +230,7 @@ var PSB_CHART_LAYOUT = (function () {
     }
     return L.assemble({
       mode: mode, density: best.density, axis: best.axis, pitch: best.pitch,
-      count: count, containerWidth: containerWidth, availWidth: availWidth,
+      count: count, containerWidth: containerWidth, availWidth: best.availWidth, padL: best.padL,
       availableHeight: availableHeight, reasons: reasons, negotiated: true,
       heightOK: best.heightOK, widthOK: best.widthOK
     });
@@ -249,15 +271,19 @@ var PSB_CHART_LAYOUT = (function () {
     var colW = c.count > 0
       ? clamp(c.availWidth / c.count, d.colMin, L.COL_MAX) : L.COL_MAX;
     var plotW = colW * c.count;
-    var viewBoxW = Math.max(c.containerWidth, Math.round(L.PAD_L + plotW + L.PAD_R));
-    var offset = plotW < c.availWidth ? L.PAD_L + (c.availWidth - plotW) / 2 : L.PAD_L;
+    var padL = c.padL || L.PAD_L;
+    var viewBoxW = Math.max(c.containerWidth, Math.round(padL + plotW + L.PAD_R));
+    var offset = plotW < c.availWidth ? padL + (c.availWidth - plotW) / 2 : padL;
 
     /* LABEL DENSITY GIVES WAY BEFORE THE IMAGE DOES, and before anything else at all. A lane label
        needs about 46px to say anything; below that the honest move is to print one every Nth column
        rather than a row of four-character stumps. Every product keeps its marker, its hover panel
        and its aria-label — only the printed text thins out. */
-    var stride = colW >= L.MIN_LABEL_W ? 1 : Math.ceil(L.MIN_LABEL_W / Math.max(1, colW));
-    var chars = Math.max(3, Math.floor((colW * stride - 6) / L.CHAR_W_AT_11_5));
+    /* PSB-DEMO-R3 §A — measured AT THE SIZE THE LABEL IS PRINTED. Both numbers used to assume 11.5px type,
+       so a larger label would have been given room for more characters than it can hold. */
+    var minW = L.minLabelW(d);
+    var stride = colW >= minW ? 1 : Math.ceil(minW / Math.max(1, colW));
+    var chars = Math.max(3, Math.floor((colW * stride - 6) / (L.CHAR_EM * d.labelPx)));
 
     return {
       mode: c.mode,
@@ -270,7 +296,7 @@ var PSB_CHART_LAYOUT = (function () {
       axisLoC: c.axis.lo, axisHiC: c.axis.hi, tickStepC: c.axis.step, ticks: c.axis.ticks,
       pxPerTick: Math.round(pitch * 100) / 100,
 
-      padL: L.PAD_L, padR: L.PAD_R, padT: L.PAD_T,
+      padL: padL, padR: L.PAD_R, padT: L.PAD_T,
       gutter: gutter, plotH: plotH, plotTop: plotTop, plotBottom: plotBottom,
       laneTop: laneTop, laneH: d.laneH, laneRow1: d.row1, laneRow2: d.row2,
       showSub: d.showSub,
@@ -282,7 +308,7 @@ var PSB_CHART_LAYOUT = (function () {
       offset: Math.round(offset * 100) / 100,
 
       labelStride: stride, labelChars: chars,
-      labelPx: d.labelPx, subPx: d.subPx, tickPx: d.tickPx,
+      labelPx: d.labelPx, subPx: d.subPx, tickPx: d.tickPx, dealPx: d.dealPx, axTitlePx: d.axTitlePx,
 
       /* THE OVERFLOW POLICY IS PART OF THE ANSWER, NOT AN AFTERTHOUGHT. A layout that does not fit
          has to say which way it does not fit, because "scroll the container" and "shrink further"

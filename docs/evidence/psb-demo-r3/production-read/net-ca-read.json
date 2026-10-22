@@ -1,0 +1,110 @@
+[
+  {
+    "seq": 1,
+    "t": "2026-10-22T02:45:36.838Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=getClientCapabilities&km_via=get&km_tc=1&km_rid=REQ-G000001&km_body=%7B%22action%22%3A%22getClientCapabilities%22%2C%22requestId%22%3A%22REQ-G000001%22%7D",
+    "action": "getClientCapabilities",
+    "contract": "doGet branch",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 2,
+    "t": "2026-10-22T02:45:36.841Z",
+    "stage": "network",
+    "requestId": "54988.193",
+    "method": "GET",
+    "action": "getClientCapabilities",
+    "contract": "doGet branch",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0002-getClientCapabilities.json",
+    "bytes": 231,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 3,
+    "t": "2026-10-22T02:45:49.598Z",
+    "stage": "network",
+    "requestId": "54988.203",
+    "method": "GET",
+    "action": "productPricing.siteUniverse.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0003-productPricing.siteUniverse.get.json",
+    "bytes": 5449,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 4,
+    "t": "2026-10-22T02:45:49.598Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=productPricing.siteUniverse.get&km_via=get&km_tc=1&km_rid=REQ-C000001&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22productPricing.siteUniverse.get%22%2C%22requestId%22",
+    "action": "productPricing.siteUniverse.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  },
+  {
+    "seq": 5,
+    "t": "2026-10-22T02:46:08.219Z",
+    "stage": "network",
+    "requestId": "54988.204",
+    "method": "GET",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "hops": [
+      {
+        "method": "GET",
+        "host": "script.google.com",
+        "redirectStatus": null
+      },
+      {
+        "method": "GET",
+        "host": "script.googleusercontent.com",
+        "redirectStatus": 302
+      }
+    ],
+    "status": 200,
+    "body": "bodies/0005-productPricing.workspace.get.json",
+    "bytes": 153131,
+    "success": true,
+    "error": null
+  },
+  {
+    "seq": 6,
+    "t": "2026-10-22T02:46:08.220Z",
+    "stage": "guard",
+    "method": "GET",
+    "url": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec?action=productPricing.workspace.get&km_via=get&km_tc=1&km_rid=REQ-C000002&km_body=%7B%22apiVersion%22%3A%221%22%2C%22action%22%3A%22productPricing.workspace.get%22%2C%22requestId%22%3A%22",
+    "action": "productPricing.workspace.get",
+    "contract": "rtrGetReadHandlers_",
+    "decision": "ALLOWED_READ"
+  }
+]

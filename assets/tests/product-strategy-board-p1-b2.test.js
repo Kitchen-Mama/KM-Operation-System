@@ -180,8 +180,16 @@ eq(S.getEligibleProductUniverse({ rows: [], site: site('US', 'Amazon') }).order,
   ok(withAll.counts.eligible > byDefault.counts.eligible,
     'B14 include_inactive returns it rather than the gate having deleted it',
     { d: byDefault.counts.eligible, a: withAll.counts.eligible });
-  var phasing = byDefault.rows.filter(function (r) { return r.source_status === 'phasing_out'; });
-  ok(phasing.length > 0, 'B15 and phasing_out is still on sale, so it is present by default');
+  /* PSB-DEMO-R3 §D (Owner decision, 2026-10-22): Product Strategy shows NO Phasing Out SKU. This used to
+     assert the opposite ("phasing_out is still on sale, so it is present by default"). A priced row is
+     re-marked phasing_out and must be excluded by name, while the status itself stays a RECOGNISED one. */
+  var poRow = JSON.parse(JSON.stringify(CANON.filter(function (r) {
+    return r.company === 'Kitchen Mama' && r.country === 'US' && r.marketplace === 'Amazon' && r.regular_price !== null; })[0]));
+  poRow.source_status = 'phasing_out'; poRow.marketplace_sku_status = 'phasing_out'; poRow.identity = poRow.identity + '-PO';
+  var withPo = S.getEligibleProductUniverse({ rows: CANON.concat([poRow]), site: site('US', 'Amazon') });
+  ok(withPo.rows.every(function (r) { return r.source_status !== 'phasing_out'; })
+    && withPo.excluded.some(function (e) { return e.identity === poRow.identity && e.reason === 'EXCLUDED_PHASING_OUT'; }),
+    'B15 phasing_out is excluded by default, by name (PSB-DEMO-R3 §D, Owner)');
   eq(byDefault.permitted_statuses, ['active', 'phasing_out'], 'B16 the permitted set is those two');
 }());
 

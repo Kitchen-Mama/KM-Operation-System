@@ -37,7 +37,7 @@ ok   context switched mid-drag: another component’s document capture listener 
 ok   context switched: the release committed nothing in either context
 ok   context switched: back in everyday, an ordinary drag works and commits
 FAIL chart rebuilt mid-drag: no drag is left behind (state, attribute, readout)  got {"dragging":true,"attr":0,"readouts":0}
-FAIL chart rebuilt mid-drag: the document keydown listeners are back to their count before the press  got {"before":{"document":{"keydown":7,"keydownCapture":1,"pointer":0,"keydownWho":["capture script 3:0 ","bubble script 28:694 ","bubble script 22:1652 ","bubble script 21:5956 ","bubble script 21:5972 ","bubble script 21:5956 ","bubble script 21:5972 "]},"window":{"keydown":1,"keydownCapture":0,"pointer":0,"keydownWho":["bubble script 3:0 "]}},"after":{"document":{"keydown":8,"keydownCapture":2,"poi
+FAIL chart rebuilt mid-drag: the document keydown listeners are back to their count before the press  got {"before":{"document":{"keydown":7,"keydownCapture":1,"pointer":0,"keydownWho":["capture script 3:0 ","bubble script 28:694 ","bubble script 22:1652 ","bubble script 21:6084 ","bubble script 21:6100 ","bubble script 21:6084 ","bubble script 21:6100 "]},"window":{"keydown":1,"keydownCapture":0,"pointer":0,"keydownWho":["bubble script 3:0 "]}},"after":{"document":{"keydown":8,"keydownCapture":2,"poi
 FAIL chart rebuilt mid-drag: the next Escape reaches the page and nothing prevents it  got []
 ok   chart rebuilt mid-drag: another component’s document capture listener still fires
 ok   rebuilt: the release committed nothing

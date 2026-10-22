@@ -113,9 +113,11 @@
       regular: '74.99', min: '59.99', msrp: '84.99' },
 
     /* NO PRICE ROW AT ALL. Listed, never plotted, never back-filled. */
-    /* PHASING OUT, AND THEREFORE STILL ON SALE. Present by default. It also still has no price row,
-       so it remains listed and unplotted for that separate reason. */
-    { cat: 'Electric Can Opener', series: 'Can Opener', status: 'phasing_out',
+    /* PSB-DEMO-R3 §D — THIS ROW WAS `phasing_out`, demonstrating "still on sale, present by default". The
+       Owner has since decided Product Strategy shows no Phasing Out SKU, so a phasing_out row is now
+       excluded at the universe and could no longer demonstrate the missing price. It is `active`: its job
+       here is the no-price case, and the exclusion has its own counter-examples in the R3 suite. */
+    { cat: 'Electric Can Opener', series: 'Can Opener', status: 'active',
       group: 'CO0560', name: 'Classic Can Opener', image_sku: null,
       colours: [['CO0560', null]],
       regular: null, min: '15.99', msrp: '22.99' },

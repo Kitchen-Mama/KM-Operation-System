@@ -1221,7 +1221,24 @@ var ROUND_TOKENS = [
   // FC1-R2 RIDES ON r63, and that was verified rather than assumed: git ls-remote still reported
   // origin/main at 7376bee8 when FC1-R2 changed fc-summary.js and operation-system-db-api.js, so no
   // browser has been served r63 and a token nobody has fetched may still describe new bytes.
-  'r63-fchistphase1-20261021'];
+  'r63-fchistphase1-20261021',
+
+  // PSB-DEMO-R3 - r64. THE PREVIOUS TOKEN IS SPENT, AND THAT WAS VERIFIED RATHER THAN ASSUMED.
+  //
+  // git ls-remote reported origin/main at 8da211de on 2026-10-22, and merge-base --is-ancestor confirms the
+  // r63 commit (7ea0a07a) is on it, so r63 has been served and can never be reused.
+  //
+  // WHAT CHANGED, and why a browser holding r63 must not keep it: psb-selectors.js excludes Phasing Out
+  // SKUs and names the participants of an activity; psb-chart-layout.js prints the axis at 14px and more;
+  // psb-board-ui.js draws the discount and the participant photograph; product-strategy-board.css drops
+  // the font sizes that overrode the engine. A browser left on r63 for any one of them draws a board whose
+  // selectors, layout and styles disagree.
+  //
+  // THE WHOLE CO-DEPLOYED SET MOVES: 56 entries in index.html (11 stylesheets, 44 scripts, the icon) and 13 in
+  // app.js. A stylesheet changed this round, so the stylesheets on the shared token move with it.
+  //
+  // NO APOSTROPHE MAY APPEAR IN THIS BLOCK, for the reason the block above records.
+  'r64-psbdemor3-20261022'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
