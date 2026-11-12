@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="km-environment" content="KM_PRODUCTION">
-<script src="production-config.js?v=prod-iu3-20261112"></script>
+<script src="production-config.js?v=prod-iu4n1-20261112"></script>
 <link rel="stylesheet" href="assets/css/core/password-access.css">
 <script src="assets/js/core/password-access.js?v=prod1-20261112"></script>
 <script src="production-guard.js?v=prod-iu3-20261112"></script>
@@ -153,19 +153,14 @@
             
             <div class="menu-children"
                  data-parent="forecast">
-                <div class="menu-item"
-                     onclick="showSection('forecast')" title="Forecast">
-                    <span class="menu-label">Forecast</span>
-                </div>
-
-                <div class="menu-item"
-                     onclick="showSection('request-order')" title="Order Planning">
-                    <span class="menu-label">Order Planning</span>
+                <div class="menu-item menu-item--disabled" aria-disabled="true"
+                     title="Sales Performance (Coming soon)">
+                    <span class="menu-label">Sales Performance</span>
                 </div>
                 
                 <div class="menu-item"
-                     onclick="showSection('fc-summary')" title="FC Summary">
-                    <span class="menu-label">FC Summary</span>
+                     onclick="showSection('fc-summary')" title="Forecast Management">
+                    <span class="menu-label">Forecast Management</span>
                 </div>
 
                 <!-- TARGET-SALES-R2 (candidate): Sales Outlook - estimated sales from the forecast at current prices.
@@ -183,17 +178,17 @@
                 <span class="menu-icon">🚢</span><span class="menu-label">Shipment Center</span>
             </div>
             <div class="menu-children" data-parent="shipment">
-                <div class="menu-item" onclick="showSection('shippingplan')" title="Weekly Shipping Plan">
-                    <span class="menu-label">Weekly Shipping Plan</span>
+                <div class="menu-item" onclick="showSection('shippingplan')" title="Shipping Plan Review">
+                    <span class="menu-label">Shipping Plan Review</span>
                 </div>
-                <div class="menu-item" onclick="showShipmentDraft()" title="Shipment Draft">
-                    <span class="menu-label">Shipment Draft</span>
+                <div class="menu-item" onclick="showShipmentDraft()" title="Shipment Workspace">
+                    <span class="menu-label">Shipment Workspace</span>
                 </div>
                 <div class="menu-item" onclick="showShipmentOverview()" title="Shipment Overview">
                     <span class="menu-label">Shipment Overview</span>
                 </div>
-                <div class="menu-item" onclick="showSection('global-logistics-map')" title="On-the-Way Shipment Map — shipments in transit on the world map (Global Logistics reference underneath)">
-                    <span class="menu-label">On-the-Way Map</span>
+                <div class="menu-item" onclick="showSection('global-logistics-map')" title="Global Shipment Tracking">
+                    <span class="menu-label">Global Shipment Tracking</span>
                 </div>
             </div>
             <!-- Procurement Center 父子選單 (下單系統) — Procurement Layer Phase 1 -->
@@ -203,6 +198,9 @@
                 <span class="menu-icon">🧾</span><span class="menu-label">Procurement Center</span>
             </div>
             <div class="menu-children" data-parent="procurement">
+                <div class="menu-item" onclick="showSection('request-order')" title="Order Planning">
+                    <span class="menu-label">Order Planning</span>
+                </div>
                 <div class="menu-item" onclick="showSection('request-order-draft')" title="Request Order Draft">
                     <span class="menu-label">Request Order Draft</span>
                 </div>
@@ -623,7 +621,7 @@
          first opened. See KM_ROUTE_ASSETS_ in app.js. Its shared demo fixture stays at boot because
          Weekly Shipping Plan reads it. -->
     <script src="assets/js/data/replenishment-mock-data.js?v=r65-dc2r2-20261022" defer></script>
-    <script src="assets/js/pages/factory-stock.js?v=r65-dc2r2-20261022" defer></script>
+    <script src="assets/js/pages/factory-stock.js?v=iu4-20261112" defer></script>
     <!-- S8-B3-R3-CP2M-R3 — overseas-stock.js is now ROUTE-OWNED (KM_ROUTE_ASSETS_['overseas-stock']).
          108 KB that every session paid for before Home could paint, for a page most sessions never open. -->
     <script src="assets/js/pages/overseas-ops-preview.js?v=donenotice-20260811" defer></script>
@@ -634,7 +632,7 @@
     <script src="assets/js/pages/request-order.js?v=r65-dc2r2-20261022" defer></script>
     <script src="assets/js/pages/sku-details.js?v=r65-dc2r2-20261022" defer></script>
     <script src="assets/js/pages/shipping-plan.js?v=r65-dc2r2-20261022" defer></script>
-    <script src="assets/js/pages/shipping-history.js?v=prod1-20261112" defer></script>
+    <script src="assets/js/pages/shipping-history.js?v=iu4-20261112" defer></script>
     <script src="assets/js/pages/supplychain.js?v=r65-dc2r2-20261022" defer></script>
     <script src="assets/js/pages/sku-handbook.js?v=r65-dc2r2-20261022" defer></script>
     <script src="assets/js/i18n/sku-handbook.js?v=donenotice-20260811" defer></script>
@@ -642,7 +640,7 @@
     <!-- Procurement Layer (Phase 1) -->
     <script src="assets/js/pages/request-order-draft.js?v=r65-dc2r2-20261022" defer></script>
     <script src="assets/js/pages/purchase-order-overview.js?v=r65-dc2r2-20261022" defer></script>
-    <script src="assets/js/pages/purchase-order-list.js?v=r65-dc2r2-20261022" defer></script>
+    <script src="assets/js/pages/purchase-order-list.js?v=iu4-20261112" defer></script>
     <!-- Carrier / Route master (Carrier Rate Card v1) — S8-B3-R3-CP2M-R3: ROUTE-OWNED
          (KM_ROUTE_ASSETS_['carrier-rate-card']). 98 KB off the boot path. -->
     <!-- SKU Regional Details (SKU Domain v2.0) -->
@@ -676,7 +674,7 @@
     <script src="assets/js/pages/fx-rate-book.js?v=r65-dc2r2-20261022" defer></script>
 
     <!-- App (Global) -->
-    <script src="assets/js/app.js?v=iu3-20261112" defer></script>
+    <script src="assets/js/app.js?v=iu4n1-20261112" defer></script>
     
     <!-- Shared Date Picker Modal -->
     <div class="fr-date-backdrop" id="frDateBackdrop"></div>

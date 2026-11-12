@@ -89,9 +89,9 @@
         }
         return v;
     }
-    function parseWorkbook(buf, template) {
-        var wb = new window.ExcelJS.Workbook();
-        return wb.xlsx.load(buf).then(function () {
+    function parseWorkbook(buf, template, loadedWorkbook) {
+        var wb = loadedWorkbook || new window.ExcelJS.Workbook();
+        return (loadedWorkbook ? Promise.resolve() : wb.xlsx.load(buf)).then(function () {
             var out = { sheets: {}, problems: [] };
             (template.sheets || []).forEach(function (ts) {
                 var ws = wb.getWorksheet(ts.name);
@@ -124,6 +124,26 @@
             });
             return out;
         });
+    }
+
+    function fileMode(wb) {
+        var ws = wb.getWorksheet('_SYSTEM'), data = {};
+        if (!ws) return null;
+        ws.eachRow(function (row) {
+            var key = String(cellValue(row.getCell(1))).trim();
+            if (!key) return;
+            if (Object.prototype.hasOwnProperty.call(data, key)) throw new Error('Duplicate template metadata. Download a new template.');
+            data[key] = cellValue(row.getCell(2));
+        });
+        var a = state.adapter;
+        if (data.module !== a.domain || data.template_id !== 'KM_IMPORT_' + a.domain.toUpperCase()) throw new Error('This file belongs to another import page.');
+        if (!a.modes.some(function (m) { return m.value === data.mode; })) throw new Error('The file has an unsupported import mode.');
+        if (state.mode && state.mode !== data.mode) throw new Error('This file is for ' + data.mode + ', not the selected mode. Choose the matching mode.');
+        var savedScope;
+        try { savedScope = JSON.parse(data.scope || '{}'); } catch (e) { throw new Error('Invalid template scope.'); }
+        var wh = savedScope && savedScope.warehouse_id, selected = scope().warehouse_id;
+        if (wh && selected && wh !== selected) throw new Error('This file belongs to another warehouse. Select its warehouse first.');
+        return data;
     }
 
     // ---- template spec from the server's template answer ----
@@ -172,7 +192,10 @@
     function impactsHtml(p) { var im = p && p.impacts; if (!im) return ''; return '<p class="km-imb-note"><strong>Impact:</strong><br>' + Object.keys(im).map(function (k) { return '<strong>' + esc(k) + '</strong>: ' + esc(flat(im[k])); }).join('<br>') + '</p>'; }
     function validationHtml(v) {
         var p = v.preview || {}, c = p.counts || {};
-        if (state.adapter.domain !== 'overseas_inventory') return counts(c) + impactsHtml(p) + issuesHtml(v.issues) + previewHtml(p);
+        if (state.adapter.domain !== 'overseas_inventory') {
+            var warnings = (p.warnings || []).map(function (w) { return '<p class="km-imb-status km-imb-status--warn">' + esc(w.sku || '') + ': ' + esc(w.message || w.code) + '</p>'; }).join('');
+            return counts(c) + warnings + issuesHtml(v.issues) + previewHtml(p) + '<details class="km-imb-note"><summary>Technical details</summary>' + impactsHtml(p) + '</details>';
+        }
         var labels = { create: 'New SKUs', update: 'Updated SKUs', unchanged: 'Unchanged', reject: 'Needs attention', skipped: 'Skipped SKUs' };
         var h = '<div class="km-imb-counts">' + Object.keys(labels).map(function (k) { return '<span class="km-imb-badge km-imb-badge--' + k + '">' + labels[k] + ': ' + esc(c[k] || 0) + '</span>'; }).join('') + '</div>';
         var problems = v.issues || [];
@@ -221,14 +244,14 @@
         else {
             if (a.combinedWorkflowButtons) {
                 body += '<div class="km-imb-workflows">' + a.modes.map(function (md, i) {
-                    return '<button type="button" id="km-imb-workflow-' + i + '" data-workflow="' + esc(md.value) + '" aria-pressed="' + (m === md.value) + '"' + (scopeReady() && !state.committed && !state.uncertain ? '' : ' disabled') + '><i data-lucide="download" aria-hidden="true"></i><strong>' + esc(md.label) + '</strong>' + (md.help ? '<small>' + esc(md.help) + '</small>' : '') + '</button>';
-                }).join('') + '</div>';
+                    return '<button type="button" id="km-imb-workflow-' + i + '" data-workflow="' + esc(md.value) + '" aria-pressed="' + (m === md.value) + '"' + (!state.committed && !state.uncertain ? '' : ' disabled') + '><strong>' + esc(md.label) + '</strong>' + (md.help ? '<small>' + esc(md.help) + '</small>' : '') + '</button>';
+                }).join('') + '</div><div class="km-imb-row"><button type="button" class="btn btn-secondary" id="km-imb-download" title="Download the template for the selected mode" aria-label="Download the template for the selected mode"' + (ready() && !state.committed ? '' : ' disabled') + '><i data-lucide="download" aria-hidden="true"></i>Download</button></div>';
             } else body += '<div class="km-imb-modes" role="radiogroup" aria-label="Import mode">' + a.modes.map(function (md) {
                 return '<label class="km-imb-mode' + (m === md.value ? ' is-on' : '') + '"><input type="radio" name="km-imb-mode" value="' + esc(md.value) + '"' + (m === md.value ? ' checked' : '') + (state.committed ? ' disabled' : '') + '><strong>' + esc(md.label) + '</strong><small>' + esc(md.help || '') + '</small></label>';
             }).join('') + '</div>' +
             '<div class="km-imb-row"><button type="button" class="btn btn-secondary" id="km-imb-dl-blank"' + (ready() ? '' : ' disabled') + '>Download blank template</button>' +
             '<button type="button" class="btn btn-secondary" id="km-imb-dl-update"' + (ready() ? '' : ' disabled') + '>Export current data (update file)</button></div>';
-            body += '<div class="km-imb-row"><label for="km-imb-file" style="font-weight:600">File (.xlsx)</label><input type="file" id="km-imb-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"' + (ready() && !state.committed ? '' : ' disabled') + '>' +
+            body += '<div class="km-imb-row"><label for="km-imb-file" style="font-weight:600">File (.xlsx)</label><input type="file" id="km-imb-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"' + (!state.committed && !state.uncertain ? '' : ' disabled') + '>' +
             '<button type="button" class="btn btn-secondary" id="km-imb-validate" disabled>Validate</button></div>' +
             '<p class="km-imb-note" id="km-imb-batch">' + (state.batchId ? 'Batch ' + esc(state.batchId) + (state.fileName ? ' · ' + esc(state.fileName) : '') : 'Choose a mode, then a file.') + '</p>' +
             '<div id="km-imb-status" class="km-imb-status" hidden></div><div id="km-imb-preview"></div>' +
@@ -279,16 +302,14 @@
         el('km-imb-tab-import').onclick = function () { if (state.busy) return; state.tab = 'import'; render(); };
         el('km-imb-tab-history').onclick = function () { if (state.busy) return; state.tab = 'history'; render(); };
         if (state.tab !== 'import') return;
-        scopeFields().forEach(function (f) { var sel = el('km-imb-scope-' + f.key); if (sel) sel.onchange = function () { if (state.busy || state.uncertain || state.committed) return; state.scopeVals[f.key] = sel.value; resetFile(); render(); }; });   // select or date
-        Array.prototype.forEach.call(document.querySelectorAll('input[name="km-imb-mode"]'), function (r) { r.onchange = function () { if (state.busy || state.uncertain || state.committed) return; state.mode = r.value; resetFile(); render(); }; });
+        scopeFields().forEach(function (f) { var sel = el('km-imb-scope-' + f.key); if (sel) sel.onchange = function () { if (state.busy || state.uncertain || state.committed) return; state.scopeVals[f.key] = sel.value; resumeFile(); }; });
+        Array.prototype.forEach.call(document.querySelectorAll('input[name="km-imb-mode"]'), function (r) { r.onchange = function () { selectMode(r.value); }; });
         if (el('km-imb-dl-blank')) el('km-imb-dl-blank').onclick = function () { download(false); };
         if (el('km-imb-dl-update')) el('km-imb-dl-update').onclick = function () { download(true); };
+        if (el('km-imb-download')) el('km-imb-download').onclick = function () { var md = state.adapter.modes.filter(function (v) { return v.value === state.mode; })[0]; if (md) download(!!md.withData); };
         Array.prototype.forEach.call(document.querySelectorAll('[data-workflow]'), function (button) {
             button.onclick = function () {
-                if (state.busy || state.uncertain || state.committed || !scopeReady()) return;
-                state.mode = button.dataset.workflow; resetFile(); render();
-                var md = state.adapter.modes.filter(function (v) { return v.value === state.mode; })[0];
-                download(!!md.withData);
+                selectMode(button.dataset.workflow);
             };
         });
         el('km-imb-file').onchange = function () { chooseFile(this.files && this.files[0]); };
@@ -297,6 +318,8 @@
         var cb = el('km-imb-confirm'); if (cb) cb.onchange = function () { state.canApply = !!(!state.busy && !state.uncertain && cb.checked && state.validated && state.validated.valid && !state.committed); el('km-imb-apply').disabled = !state.canApply; };
     }
     function resetFile() { state.parsed = null; state.batchId = ''; state.fileName = ''; state.validated = null; state.canApply = false; state.lastView = null; }
+    function resumeFile() { var f = state.sourceFile; resetFile(); render(); if (f) chooseFile(f); }
+    function selectMode(mode) { if (state.busy || state.uncertain || state.committed) return; state.mode = mode; resumeFile(); }
 
     function templateFor(withData) {
         var a = state.adapter;
@@ -320,26 +343,40 @@
         }).catch(function (e) { setBusy(false); view('bad', 'Could not prepare the file: ' + esc(e && e.message || e) + '. Nothing was changed.'); });
     }
     function chooseFile(f) {
-        if (state.busy || state.uncertain) return;
+        if (state.busy || state.uncertain || state.committed) return;
         resetFile();
+        state.sourceFile = f || null;
         if (!f) { render(); return; }
         if (!/\.xlsx$/i.test(f.name)) { view('bad', 'Only .xlsx files exported from this page can be imported.'); return; }
         if (f.size > MAX_FILE_BYTES) { view('bad', 'The file is larger than ' + Math.round(MAX_FILE_BYTES / 1048576) + ' MB — split it. It was not read.'); return; }
         state.batchId = newBatchId(state.adapter.domain); state.fileName = f.name;
         var owner = state;
         setBusy(true, 'Reading ' + f.name + '…');
-        Promise.all([f.arrayBuffer(), templateFor(false)]).then(function (r) { state.template = r[1]; return parseWorkbook(r[0], r[1]); }).then(function (p) {
+        var wb = new window.ExcelJS.Workbook();
+        f.arrayBuffer().then(function (buf) { return wb.xlsx.load(buf); }).then(function () {
+            if (state !== owner) return null;
+            var meta = fileMode(wb);
+            if (meta) state.mode = meta.mode;
+            if (!ready()) { setBusy(false); render(); view('warn', 'File selected. Choose its import mode and warehouse to continue. Nothing was written.'); return null; }
+            return templateFor(false).then(function (t) {
+                if (state !== owner) return null;
+                if (meta && String(meta.template_version) !== String(t.schema_version)) throw new Error('This template version is no longer supported. Download a current template.');
+                state.template = t;
+                return parseWorkbook(null, t, wb);
+            });
+        }).then(function (p) {
             if (state !== owner) return;
+            if (!p) return;
             if (p.problems.length) { setBusy(false); view('bad', p.problems.map(esc).join('<br>')); return; }
             return Promise.resolve(state.adapter.batchId ? state.adapter.batchId(p, state.template) : state.batchId).then(function (id) {
             if (state !== owner) return;
             setBusy(false);
             state.batchId = id; state.parsed = p;
             var n = Object.keys(p.sheets).reduce(function (s, k) { return s + p.sheets[k].length; }, 0);
-            render(); view('info', esc(n) + ' data rows read (' + Object.keys(p.sheets).map(function (k) { return esc(k) + ' ' + p.sheets[k].length; }).join(', ') + '). Validate to see the preview — nothing is written yet.');
+            render(); view('info', esc(state.mode) + ': ' + esc(n) + ' data rows read (' + Object.keys(p.sheets).map(function (k) { return esc(k) + ' ' + p.sheets[k].length; }).join(', ') + '). Validate to see the preview — nothing is written yet.');
             el('km-imb-validate').disabled = false;
             });
-        }).catch(function (e) { if (state !== owner) return; setBusy(false); view('bad', 'The file could not be read: ' + esc(e && e.message || e)); });
+        }).catch(function (e) { if (state !== owner) return; setBusy(false); render(); view('bad', 'The file could not be read: ' + esc(e && e.message || e)); });
     }
     function payload() {
         var a = state.adapter;

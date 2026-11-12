@@ -8,8 +8,8 @@ const menuConfig = [
         icon: "📈",
         type: "parent",
         children: [
-            { id: "forecast-review", label: "Forecast 管理", section: "forecast" },
-            { id: "fc-summary", label: "FC Summary", section: "fc-summary" }
+            { id: "forecast-review", label: "Sales Performance", section: "forecast", disabled: true },
+            { id: "fc-summary", label: "Forecast Management", section: "fc-summary" }
         ]
     }
 ];
@@ -154,7 +154,7 @@ var KM_ROUTE_ASSETS_ = {
         ],
         partial: { key: 'global-logistics-map', url: 'assets/html/pages/global-logistics-map.html',
             target: '#global-logistics-map-mount' },
-        label: 'On the Way'
+        label: 'Global Shipment Tracking'
     },
     // S8-B2-R1 — SITE PRIORITY. A ROUTE asset, not a boot script: the page is reachable only from its own
     // menu entry, and the boot census is a bounded set this round has no reason to grow. It carries the
@@ -199,7 +199,7 @@ var KM_ROUTE_ASSETS_ = {
     'overseas-stock': {
         sectionId: 'overseas-stock-section',
         scripts: [
-            'assets/js/pages/overseas-stock.js?v=iu3-20261112'
+            'assets/js/pages/overseas-stock.js?v=iu4-20261112'
         ],
         partial: { key: 'overseas-stock', url: 'assets/html/pages/overseas-stock.html',
             target: '#overseas-stock-mount' },

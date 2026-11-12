@@ -59,7 +59,7 @@
     }
     function open(options) {
         if (window.KM.importBatch) return window.KM.importBatch.open(adapter(options));
-        return window.KM.scriptLoader.load('assets/js/utils/import-batch.js?v=iu3-20261112').then(function (ok) {
+        return window.KM.scriptLoader.load('assets/js/utils/import-batch.js?v=iu4-20261112').then(function (ok) {
             if (!ok || !window.KM.importBatch) throw new Error('Import module unavailable');
             return window.KM.importBatch.open(adapter(options));
         });
