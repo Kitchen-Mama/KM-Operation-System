@@ -1,5 +1,5 @@
 (function () { 'use strict'; var c = {
-  "profile_id": "KM-PRODUCTION-PHASE1-20261112-R2-AV1",
+  "profile_id": "KM-PRODUCTION-PHASE1-20261112-R2-AV1-IU3",
   "environment": "KM_PRODUCTION",
   "endpoint": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec",
   "endpoint_sha256": "11ba59bcde9a7cc2fe5ddb5934b0780dfa3a518ab1e220368ae9b319cd42f290",
@@ -178,9 +178,21 @@
   "import_domain": "po_factory_stock",
   "import_modes": [
     "NEW_RECEIPT",
-    "OPENING_PO_FOR_EXISTING_STOCK"
+    "OPENING_PO_FOR_EXISTING_STOCK",
+    "UPDATE_REMAINING"
   ],
   "administration_enabled": false,
   "ai_plan_enabled": false,
-  "policy_sha256": "3537c65b388c44e0164b6f3516e2c652740c6b136b7fbcd1225cb511bf210a87"
+  "import_scopes": {
+    "po_factory_stock": [
+      "NEW_RECEIPT",
+      "OPENING_PO_FOR_EXISTING_STOCK",
+      "UPDATE_REMAINING"
+    ],
+    "overseas_inventory": [
+      "SET",
+      "ADD"
+    ]
+  },
+  "policy_sha256": "26e06ced0b556597ec00b0409ef9da356d7d31248ade992994260a1f3099f96e"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

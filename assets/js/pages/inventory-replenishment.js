@@ -3460,7 +3460,7 @@ function toggleReplenRow(sku) {
                 <!-- Analysis area (insight column): Sales Trend + Monthly Achievement Rate directly below it (§11.5). -->
                 <div class="ir-panel-column ir-panel-column--insight">
                     <article class="ir-panel replen-card replen-card--sales-trend">
-                        <h4 class="replen-card__title">Sales Trend (Past Week)</h4>
+                        <h4 class="replen-card__title">Sales Trend (Latest 7 Days) <span class="replen-card__title-note" data-sales-through></span></h4>
                         <canvas id="sales-trend-chart-${sku}" style="max-height: 100px;"></canvas>
                     </article>
                     <article class="ir-panel replen-card replen-card--achievement">
@@ -9153,6 +9153,8 @@ function initSalesTrendChart(sku, skuData) {
     const data = [];
 
     const realTrend = skuData && Array.isArray(skuData.salesTrend7d) ? skuData.salesTrend7d : null;
+    const through = canvas.parentNode && canvas.parentNode.querySelector('[data-sales-through]');
+    if (through) through.textContent = realTrend && realTrend.length ? 'Through ' + realTrend[realTrend.length - 1].date : '';
     if (realTrend && realTrend.length) {
         // Cloud mapping: SEVEN calendar dates ending on the latest DB date (#2). Every date is shown on
         // the x-axis; a day with no row has units === null → rendered as a GAP (never a fabricated 0).
@@ -10614,6 +10616,7 @@ function _irBootstrapScope_() {
         return Promise.resolve(remembered);
     }
     rec.restoreReason = restorable.reason;
+    rec.resumeApplied = restorable.reason === 'RESULT_EXPIRED' && _irSameScope_(_irSearch.applied, remembered);
 
     // ==========================================================================================================
     // S8-R4D-F1B §A — THE PRELOAD STAYS. THE COMMIT GOES. (OPTION_C, operator-frozen.)
@@ -10652,7 +10655,7 @@ function _irBootstrapScope_() {
     rec.registryRequests = 1;
     rec.workspaceRequests = 1;
     var mySeq = ++_irSearch.seq;
-    _irSearch.status = 'PRE_SEARCH';
+    _irSearch.status = rec.resumeApplied ? 'LOADING' : 'PRE_SEARCH';
     _irSearch.error = null;
     // S3-R2 §11 — THE REGION NO LONGER PAINTS HERE, AND THAT IS THE WHOLE FIX: this body had TWO render
     // owners. The line below used to call rg.beginLoad(false), which paints "Loading Inventory
@@ -10682,6 +10685,7 @@ function _irBootstrapScope_() {
         .then(function (m) { return { ok: true, model: m }; },
         function (err) { return { ok: false, error: err }; });
     return Promise.all([regP, wsP]).then(function (r) {
+        if (rec !== _irBootstrap || rec.mountGen !== _irMountGen) { rec.revalidateSuperseded = 'MOUNT_SUPERSEDED'; _irBootstrapStray++; return null; }
         if (mySeq !== _irSearch.seq) return null;                    // a real Search superseded the bootstrap
         var model = _irRegistry.model;
         var valid = _irScopeIsValid_(model, remembered);
@@ -10728,6 +10732,13 @@ function _irBootstrapScope_() {
         // the operator has not asked for. `applied` is untouched here, so §B.5 is now true by construction in
         // a stronger sense than before — the bootstrap does not merely apply through the single assignment
         // point, it does not apply AT ALL.
+        if (rec.resumeApplied && _irSameScope_(_irSearch.applied, remembered)) {
+            _irSetSelectors_(remembered);
+            _irApplySearch_(remembered, mySeq);
+            rec.committed = true;
+            rec.reason = 'expired result for an already-searched scope refreshed on return';
+            return remembered;
+        }
         _irSetSelectors_(remembered);
         rec.preloaded = !!_irReadModel;
         rec.committed = false;

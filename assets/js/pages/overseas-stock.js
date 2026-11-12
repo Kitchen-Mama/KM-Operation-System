@@ -886,9 +886,9 @@ var _ovsImportScope = { company: '', country: '', warehouseId: '' };
 
 // F1-7N-UX-INVENTORY-IMPORT-WAREHOUSE-SCOPE-GUARDS-R1 — execution/platform warehouse types NEVER offered as an Overseas
 // import target (canonical warehouse_type, never a name heuristic). Mirrors the server predicate overseasImportWarehouseIssue_.
-function _ovsEligibleWarehouses() {
+function _ovsEligibleWarehouses(rows) {
     var excludedTypes = { FBA: 1, RETURN: 1, FACTORY: 1 };   // execution/platform/factory FCs — never Overseas/self planning inventory
-    return (_osGet('warehouses') || [])
+    return (rows || _osGet('warehouses') || [])
         .filter(function (w) {
             if (!w || !w.warehouseId) return false;
             if (w.isFactoryWarehouse === true) return false;
@@ -1696,16 +1696,37 @@ window.openOverseasInfo = openOverseasInfo;
 window.closeOverseasModals = closeOverseasModals;
 // R3-IMPORT (2026-10-29, local candidate) - Import Inventory opens the shared batch import (KM.importBatch, lazy-loaded). One file = one
 // overseas warehouse (key warehouse_id + sku), chosen from the same eligible list; company / country travel with it as a check.
+var _ovsImportMaster = null, _ovsImportFlight = null;
+function _ovsImportWarehouseOptions() {
+  var db = window.KM.DB, env = db.envId ? String(db.envId() || '') : '';
+  function options(rows) {
+    return _ovsEligibleWarehouses(rows).map(function (w) { return { value: w.warehouseId, label: (w.warehouseName || w.warehouseCode || w.warehouseId) + ' - ' + _ovsWhCompany(w) + ' / ' + _ovsWhCountry(w) }; });
+  }
+  if (env && _ovsImportMaster && _ovsImportMaster.env === env && Date.now() < _ovsImportMaster.expires) return Promise.resolve(options(_ovsImportMaster.rows));
+  if (env && _ovsImportFlight && _ovsImportFlight.env === env) return _ovsImportFlight.promise.then(options);
+  var flight = { env: env };
+  flight.promise = Promise.resolve().then(function () {
+    if (!db.loadScopedTables) throw new Error('Warehouse reader unavailable');
+    return db.loadScopedTables(['warehouses']);
+  }).then(function (model) {
+    if ((db.envId ? String(db.envId() || '') : '') !== env) throw new Error('Environment changed. Reopen the import.');
+    if (!model || !Array.isArray(model.warehouses)) throw new Error('Warehouse list unavailable');
+    if (env) _ovsImportMaster = { env: env, expires: Date.now() + 300000, rows: model.warehouses.map(function (w) { return Object.assign({}, w); }) };
+    return model.warehouses;
+  }).finally(function () { if (_ovsImportFlight === flight) _ovsImportFlight = null; });
+  if (env) _ovsImportFlight = flight;
+  return flight.promise.then(options);
+}
 function _ovsOpenBatchImport() {
-  var whs = _ovsEligibleWarehouses();
   function go() {
     window.KM.importBatch.open({
       domain: 'overseas_inventory', title: 'Import Overseas Inventory',
+      combinedWorkflowButtons: true,
       modes: [
-        { value: 'SET', label: 'Set snapshot (overwrite)', help: 'GROSS available from the warehouse report: stored available = file - reserved (refused below reserved); damaged / on the way / ETA as given. SKUs not in the file are untouched.' },
-        { value: 'ADD', label: 'Add to available (Add New)', help: 'The file quantity is added to available: 100 + 30 = 130, one +30 movement; the same batch sent again stays 130. Reserved, damaged and on the way are not touched. Never prefilled.' }
+        { value: 'SET', label: 'Overwrite', withData: true, help: 'Set warehouse units before reserved stock; omitted SKUs stay unchanged.' },
+        { value: 'ADD', label: 'Add to available', withData: false, help: 'Add units to available stock; reserved stock stays unchanged.' }
       ],
-      scopeFields: [{ key: 'warehouse_id', label: 'Warehouse', required: true, options: whs.map(function (w) { return { value: w.warehouseId, label: (w.warehouseName || w.warehouseCode || w.warehouseId) + ' — ' + _ovsWhCompany(w) + ' / ' + _ovsWhCountry(w) }; }) }],
+      scopeFields: [{ key: 'warehouse_id', label: 'Warehouse', required: true, options: _ovsImportWarehouseOptions }],
       scope: function () { return {}; },
       scopeLabel: function (v) { var w = v && v.warehouse_id ? _ovsWhById(v.warehouse_id) : null; return w ? 'One file = one warehouse: ' + w.warehouseId + ' (' + _ovsWhCompany(w) + ' / ' + _ovsWhCountry(w) + '). The export holds ALL its snapshot rows.' : 'Choose the warehouse first.'; },
       actor: function () { return (window.KM && window.KM.currentUser && window.KM.currentUser.email) || ''; },
@@ -1718,7 +1739,7 @@ function _ovsOpenBatchImport() {
   if (window.KM && window.KM.importBatch) return go();
   var L = window.KM && window.KM.scriptLoader;
   if (!L) { alert('The import module could not be loaded.'); return; }
-  return L.load('assets/js/utils/import-batch.js').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+  return L.load('assets/js/utils/import-batch.js?v=iu3-20261112').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 window._ovsOpenBatchImport = _ovsOpenBatchImport;
 window.openOverseasImportModal = openOverseasImportModal;

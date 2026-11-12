@@ -7,9 +7,9 @@
     function endpoint(url) { return url.origin + url.pathname === C.endpoint; }
     function control(action, body) {
         if (!C || C.allowed.indexOf(action) < 0) throw new Error('PRODUCTION_ACTION_NOT_ENABLED');
-        if (/^import\./.test(action) && (!body || body.domain !== 'po_factory_stock' ||
+        if (/^import\./.test(action) && (!body || !C.import_scopes || !Object.prototype.hasOwnProperty.call(C.import_scopes, body.domain) ||
             (['import.template.get', 'import.validate', 'import.commit'].indexOf(action) >= 0 ?
-                ['NEW_RECEIPT', 'OPENING_PO_FOR_EXISTING_STOCK'].indexOf(body.mode) < 0 :
+                C.import_scopes[body.domain].indexOf(body.mode) < 0 :
                 ['import.receipt.get', 'import.history.list'].indexOf(action) < 0))) throw new Error('PRODUCTION_IMPORT_SCOPE_REFUSED');
     }
     function identity() {

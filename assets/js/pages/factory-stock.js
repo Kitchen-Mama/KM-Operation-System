@@ -2121,12 +2121,12 @@ function _fiiOpenLegacyBatchImport() {
   if (window.KM && window.KM.importBatch) return go();
   var L = window.KM && window.KM.scriptLoader;
   if (!L) { alert('The import module could not be loaded.'); return; }
-  return L.load('assets/js/utils/import-batch.js').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+  return L.load('assets/js/utils/import-batch.js?v=iu3-20261112').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 function _fiiOpenBatchImport() {
   function go() { return window.KM.poFactoryImport.open({ onCommitted: _fiiAdoptCombinedReadback }); }
   if (window.KM && window.KM.poFactoryImport) return go();
-  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js').then(function (ok) {
+  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=iu3-20261112').then(function (ok) {
     if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
     return go();
   }).catch(function (e) { alert(String(e.message || e)); });

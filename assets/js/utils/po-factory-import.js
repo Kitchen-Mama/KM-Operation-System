@@ -1,6 +1,24 @@
 (function () {
     'use strict';
     window.KM = window.KM || {};
+    var factoryCache = null, factoryFlight = null, FACTORY_TTL = 5 * 60 * 1000;
+    function environment() { return window.KM.DB.envId ? String(window.KM.DB.envId() || '') : ''; }
+    function copyOptions(rows) { return rows.map(function (r) { return { value: r.value, label: r.label }; }); }
+    function factoryOptions() {
+        var env = environment();
+        if (env && factoryCache && factoryCache.env === env && Date.now() < factoryCache.expires) return Promise.resolve(copyOptions(factoryCache.rows));
+        if (env && factoryFlight && factoryFlight.env === env) return factoryFlight.promise.then(copyOptions);
+        var flight = { env: env };
+        flight.promise = window.KM.DB.importTemplateGet({ domain: 'po_factory_stock', mode: 'NEW_RECEIPT', scope: {} }).then(function (t) {
+            if (environment() !== env) throw new Error('Environment changed. Reopen the import.');
+            if (!t || !t.success) throw new Error(t && (t.error || t.code) || 'Factory list unavailable');
+            var rows = ((t.lists && t.lists.factories) || []).filter(function (f) { return f.status === 'active'; }).map(function (f) { return { value: f.value, label: f.label || f.value }; });
+            if (env) factoryCache = { env: env, expires: Date.now() + FACTORY_TTL, rows: copyOptions(rows) };
+            return rows;
+        }).finally(function () { if (factoryFlight === flight) factoryFlight = null; });
+        if (env) factoryFlight = flight;
+        return flight.promise.then(copyOptions);
+    }
     function batchId(parsed, template) {
         var rows = (parsed.sheets && parsed.sheets.StockPO || []).filter(function (r) { return String(r.row_type || '').trim() !== 'example'; });
         var id = rows.length && String(rows[0].transaction_id || '').trim();
@@ -21,18 +39,14 @@
     function adapter(options) {
         return {
             domain: 'po_factory_stock', title: 'Import PO and Factory Stock', batchId: batchId,
+            combinedWorkflowButtons: true,
             modes: [
-                { value: 'NEW_RECEIPT', label: 'New receipt', help: 'Add the received quantity to PO completed/remaining and physical stock together. For existing POs, export first and keep the line ID and version.' },
-                { value: 'OPENING_PO_FOR_EXISTING_STOCK', label: 'Opening PO for existing stock', help: 'Create PO coverage for stock already present. Stock does not increase. The file must exactly cover the unassigned stock for each listed SKU.' }
+                { value: 'NEW_RECEIPT', label: 'New receipt', help: 'Add received units to PO and factory stock.', withData: false },
+                { value: 'UPDATE_REMAINING', label: 'Update current data', help: 'Set remaining units; shipped quantities stay unchanged.', withData: true }
             ],
             scopeFields: [
-                { key: 'warehouse_id', label: 'Factory', required: true, options: function () {
-                    return window.KM.DB.importTemplateGet({ domain: 'po_factory_stock', mode: 'NEW_RECEIPT', scope: {} }).then(function (t) {
-                        if (!t || !t.success) throw new Error(t && (t.error || t.code) || 'Factory list unavailable');
-                        return ((t.lists && t.lists.factories) || []).filter(function (f) { return f.status === 'active'; }).map(function (f) { return { value: f.value, label: f.label || f.value }; });
-                    });
-                } },
-                { key: 'as_of_date', label: 'Receipt / opening date', type: 'date', required: false }
+                { key: 'warehouse_id', label: 'Factory', required: true, options: factoryOptions },
+                { key: 'as_of_date', label: 'Posting date', type: 'date', required: false }
             ],
             actor: function () { return window.KM.currentUser && window.KM.currentUser.email || ''; },
             onCommitted: function (result) {
@@ -45,7 +59,7 @@
     }
     function open(options) {
         if (window.KM.importBatch) return window.KM.importBatch.open(adapter(options));
-        return window.KM.scriptLoader.load('assets/js/utils/import-batch.js').then(function (ok) {
+        return window.KM.scriptLoader.load('assets/js/utils/import-batch.js?v=iu3-20261112').then(function (ok) {
             if (!ok || !window.KM.importBatch) throw new Error('Import module unavailable');
             return window.KM.importBatch.open(adapter(options));
         });

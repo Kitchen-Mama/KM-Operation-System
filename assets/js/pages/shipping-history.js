@@ -3241,7 +3241,7 @@ scopeFields: [{ key: 'company', label: 'Company', required: true, options: (func
     }); }
     if (window.KM && window.KM.importBatch) return go();
     var L = window.KM && window.KM.scriptLoader; if (!L) { alert('The import module could not be loaded.'); return; }
-    return L.load('assets/js/utils/import-batch.js').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+    return L.load('assets/js/utils/import-batch.js?v=iu3-20261112').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 window.shToggleActionsMenu = shToggleActionsMenu; window.shRunAction = shRunAction;
 

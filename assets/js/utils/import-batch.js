@@ -36,7 +36,8 @@
         var st = document.createElement('style'); st.id = 'km-imb-style';
         st.textContent = [
             '.km-imb-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:2000}',
-            '.km-imb-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2010;width:min(980px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:10px;box-shadow:0 12px 40px rgba(15,23,42,.25);padding:20px 22px;box-sizing:border-box;font-size:13px;color:#1f2937}',
+            '.km-imb-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2010;width:min(980px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(15,23,42,.25);padding:20px 22px;box-sizing:border-box;font-size:13px;color:#1f2937}',
+            '.km-imb-workflows{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:12px}.km-imb-workflows button{min-height:68px;text-align:left;color:#334155;background:#fff;border:1px solid #CBD5E1;border-radius:6px;padding:8px 12px;cursor:pointer;white-space:normal}.km-imb-workflows button[aria-pressed="true"]{border-color:#0080bb;background:#eaf6fc;color:#075985}.km-imb-workflows svg{width:16px;height:16px;vertical-align:middle;margin-right:6px}.km-imb-workflows small{display:block;font-size:12px;line-height:1.4;color:#475569;margin-top:4px}',
             '.km-imb-modal h3{margin:0 0 6px;font-size:16px}',
             '.km-imb-scope{font-size:12px;color:#475569;margin:0 0 12px;line-height:1.5;word-break:break-word}',
             '.km-imb-tabs{display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap}',
@@ -96,7 +97,7 @@
                 var ws = wb.getWorksheet(ts.name);
                 if (!ws) { out.problems.push('The file has no sheet "' + ts.name + '" - download a new template.'); return; }
                 var byHeader = {}, lists = {}, dateKey = {};
-                (ts.columns || []).forEach(function (c) { byHeader[String(c.header || c.key).trim()] = c.key; byHeader[c.key] = c.key; if (c.list && template.lists && template.lists[c.list]) lists[c.key] = template.lists[c.list]; if (c.type === 'date') dateKey[c.key] = 1; });
+                (ts.columns || []).forEach(function (c) { byHeader[String(c.header || c.key).trim()] = c.key; byHeader[c.key] = c.key; (c.aliases || []).forEach(function (h) { byHeader[h] = c.key; }); if (c.list && template.lists && template.lists[c.list]) lists[c.key] = template.lists[c.list]; if (c.type === 'date') dateKey[c.key] = 1; });
                 var headerRow = 0, keys = {};
                 for (var r = 1; r <= Math.min(5, ws.rowCount); r++) {
                     var hits = 0, k = {};
@@ -145,7 +146,7 @@
     }
 
     // ---- rendering ----
-    function counts(c) { c = c || {}; return '<div class="km-imb-counts">' + ['create', 'update', 'unchanged', 'reject'].map(function (k) { return '<span class="km-imb-badge km-imb-badge--' + k + '">' + k + ': ' + (c[k] || 0) + '</span>'; }).join('') + '</div>'; }
+    function counts(c) { c = c || {}; return '<div class="km-imb-counts">' + ['create', 'update', 'unchanged', 'reject', 'skipped'].filter(function (k) { return k !== 'skipped' || Object.prototype.hasOwnProperty.call(c,k); }).map(function (k) { return '<span class="km-imb-badge km-imb-badge--' + k + '">' + k + ': ' + (c[k] || 0) + '</span>'; }).join('') + '</div>'; }
     function issuesHtml(list) {
         if (!list || !list.length) return '';
         return '<div class="km-imb-wrap"><table class="km-imb-table"><thead><tr><th>Sheet</th><th>Row</th><th>Column</th><th>Problem</th><th>Value</th></tr></thead><tbody>' +
@@ -169,6 +170,40 @@
             }).join('') + '</tbody></table></div>' + (rows.length > 500 ? '<p class="km-imb-note">' + (rows.length - 500) + ' more rows not shown.</p>' : '');
     }
     function impactsHtml(p) { var im = p && p.impacts; if (!im) return ''; return '<p class="km-imb-note"><strong>Impact:</strong><br>' + Object.keys(im).map(function (k) { return '<strong>' + esc(k) + '</strong>: ' + esc(flat(im[k])); }).join('<br>') + '</p>'; }
+    function validationHtml(v) {
+        var p = v.preview || {}, c = p.counts || {};
+        if (state.adapter.domain !== 'overseas_inventory') return counts(c) + impactsHtml(p) + issuesHtml(v.issues) + previewHtml(p);
+        var labels = { create: 'New SKUs', update: 'Updated SKUs', unchanged: 'Unchanged', reject: 'Needs attention', skipped: 'Skipped SKUs' };
+        var h = '<div class="km-imb-counts">' + Object.keys(labels).map(function (k) { return '<span class="km-imb-badge km-imb-badge--' + k + '">' + labels[k] + ': ' + esc(c[k] || 0) + '</span>'; }).join('') + '</div>';
+        var problems = v.issues || [];
+        if (problems.length) {
+            h += '<h4>Fix these rows before applying</h4><div class="km-imb-wrap"><table class="km-imb-table"><thead><tr><th>File row</th><th>SKU / value</th><th>What to fix</th></tr></thead><tbody>';
+            h += problems.slice(0, 100).map(function (i) {
+                var message = i.code === 'SKU_NOT_FOUND' ? 'SKU is not in the product list. Leave this row out of this import; its existing stock will not change.' : (i.message || i.code || 'Check this value.');
+                return '<tr class="st-reject"><td>' + esc(i.row || '') + '</td><td>' + esc(i.value == null ? '' : i.value) + '</td><td>' + esc(message) + '</td></tr>';
+            }).join('') + '</tbody></table></div>';
+            if (problems.length > 100) h += '<p class="km-imb-note">Showing 100 of ' + esc(problems.length) + ' problems. See technical details for more.</p>';
+        }
+        var skippedRows = p.skipped && p.skipped.rows || [];
+        if (skippedRows.length) {
+            h += '<p class="km-imb-note">' + esc(skippedRows.length) + ' rows skipped: SKU is not in the product list. Their existing stock stays unchanged.</p>';
+            h += '<details class="km-imb-note"><summary>View skipped SKUs</summary><div class="km-imb-wrap"><table class="km-imb-table"><thead><tr><th>File row</th><th>SKU</th></tr></thead><tbody>' + skippedRows.slice(0,500).map(function (r) { return '<tr><td>' + esc(r.row) + '</td><td>' + esc(r.sku) + '</td></tr>'; }).join('') + '</tbody></table></div>' + (skippedRows.length > 500 ? '<p>Showing 500 of ' + esc(skippedRows.length) + ' skipped rows.</p>' : '') + '</details>';
+        }
+        var changes = (p.rows || []).filter(function (r) { return ['UPDATE','CREATE'].indexOf(String(r.status || r.action || '').toUpperCase()) >= 0; });
+        if (changes.length) {
+            h += '<h4>' + (v.valid ? 'Changes to apply' : 'Proposed changes (not applied)') + '</h4><div class="km-imb-wrap"><table class="km-imb-table"><thead><tr><th>SKU</th><th>Available units</th><th>Other changes</th></tr></thead><tbody>';
+            h += changes.slice(0, 100).map(function (r) {
+                var before = r.before || {}, after = r.after || {}, other = [];
+                [['damaged','Damaged'],['on_the_way','On the way'],['eta','ETA'],['note','Note']].forEach(function (f) {
+                    if (Object.prototype.hasOwnProperty.call(after, f[0]) && before[f[0]] !== after[f[0]]) other.push(esc(f[1]) + ': ' + esc(flat(before[f[0]])) + ' &rarr; ' + esc(flat(after[f[0]])));
+                });
+                return '<tr class="st-update"><td>' + esc(r.sku || '') + '</td><td>' + esc(before.available == null ? 'New' : before.available) + ' &rarr; ' + esc(after.available == null ? 'Unchanged' : after.available) + '</td><td>' + (other.join('<br>') || '-') + '</td></tr>';
+            }).join('') + '</tbody></table></div>';
+            if (changes.length > 100) h += '<p class="km-imb-note">Showing 100 of ' + esc(changes.length) + ' changes. See technical details for more.</p>';
+        }
+        h += '<p class="km-imb-note">Reserved stock stays unchanged. Rows left out of the file stay unchanged.</p>';
+        return h + '<details class="km-imb-note"><summary>Technical details and batch reference</summary><p>' + esc(v.import_batch_id || '') + '</p>' + impactsHtml(p) + issuesHtml(v.issues) + previewHtml(p) + '</details>';
+    }
     function setStatus(tone, html) { var s = el('km-imb-status'); if (!s) return; s.className = 'km-imb-status km-imb-status--' + tone; s.innerHTML = html; s.hidden = !html; }
     function setBusy(b, label, actionId, busyText) { state.busy = !!b;
         var controls = document.querySelectorAll('#km-imb-modal button,#km-imb-modal input,#km-imb-modal select');
@@ -184,12 +219,16 @@
             '<div class="km-imb-tabs" role="tablist"><button type="button" class="km-imb-tab" role="tab" id="km-imb-tab-import" aria-selected="' + (state.tab === 'import') + '">Import</button><button type="button" class="km-imb-tab" role="tab" id="km-imb-tab-history" aria-selected="' + (state.tab === 'history') + '">History</button></div>';
         if (state.tab === 'history') body += '<div id="km-imb-history"><p class="km-imb-note">Loading…</p></div>';
         else {
-            body += '<div class="km-imb-modes" role="radiogroup" aria-label="Import mode">' + a.modes.map(function (md) {
+            if (a.combinedWorkflowButtons) {
+                body += '<div class="km-imb-workflows">' + a.modes.map(function (md, i) {
+                    return '<button type="button" id="km-imb-workflow-' + i + '" data-workflow="' + esc(md.value) + '" aria-pressed="' + (m === md.value) + '"' + (scopeReady() && !state.committed && !state.uncertain ? '' : ' disabled') + '><i data-lucide="download" aria-hidden="true"></i><strong>' + esc(md.label) + '</strong>' + (md.help ? '<small>' + esc(md.help) + '</small>' : '') + '</button>';
+                }).join('') + '</div>';
+            } else body += '<div class="km-imb-modes" role="radiogroup" aria-label="Import mode">' + a.modes.map(function (md) {
                 return '<label class="km-imb-mode' + (m === md.value ? ' is-on' : '') + '"><input type="radio" name="km-imb-mode" value="' + esc(md.value) + '"' + (m === md.value ? ' checked' : '') + (state.committed ? ' disabled' : '') + '><strong>' + esc(md.label) + '</strong><small>' + esc(md.help || '') + '</small></label>';
             }).join('') + '</div>' +
             '<div class="km-imb-row"><button type="button" class="btn btn-secondary" id="km-imb-dl-blank"' + (ready() ? '' : ' disabled') + '>Download blank template</button>' +
-            '<button type="button" class="btn btn-secondary" id="km-imb-dl-update"' + (ready() ? '' : ' disabled') + '>Export current data (update file)</button></div>' +
-            '<div class="km-imb-row"><label for="km-imb-file" style="font-weight:600">File (.xlsx)</label><input type="file" id="km-imb-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"' + (ready() && !state.committed ? '' : ' disabled') + '>' +
+            '<button type="button" class="btn btn-secondary" id="km-imb-dl-update"' + (ready() ? '' : ' disabled') + '>Export current data (update file)</button></div>';
+            body += '<div class="km-imb-row"><label for="km-imb-file" style="font-weight:600">File (.xlsx)</label><input type="file" id="km-imb-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"' + (ready() && !state.committed ? '' : ' disabled') + '>' +
             '<button type="button" class="btn btn-secondary" id="km-imb-validate" disabled>Validate</button></div>' +
             '<p class="km-imb-note" id="km-imb-batch">' + (state.batchId ? 'Batch ' + esc(state.batchId) + (state.fileName ? ' · ' + esc(state.fileName) : '') : 'Choose a mode, then a file.') + '</p>' +
             '<div id="km-imb-status" class="km-imb-status" hidden></div><div id="km-imb-preview"></div>' +
@@ -198,6 +237,7 @@
         body += '<div class="km-imb-actions"><button type="button" class="btn btn-secondary" id="km-imb-close">' + (state.committed ? 'Done' : 'Close') + '</button>' +
             (state.tab === 'import' ? '<button type="button" class="btn btn-primary" id="km-imb-apply" disabled>Apply</button>' : '') + '</div>';
         el('km-imb-modal').innerHTML = body;
+        if (window.lucide && window.lucide.createIcons) window.lucide.createIcons({ root: el('km-imb-modal') });
         wire();
         if (state.tab === 'history') loadHistory();
         else if (state.lastView) { setStatus(state.lastView.tone, state.lastView.html); el('km-imb-preview').innerHTML = state.lastView.preview || ''; if (state.lastView.confirm) el('km-imb-confirm-wrap').hidden = false; }
@@ -206,7 +246,8 @@
     }
     // a scope field: { key, label, type: 'select' (default) | 'date', options: [..] | function -> Promise<[..]>, required, modes: [..] (only then) }
     function scopeFields() { return (state.adapter.scopeFields || []).filter(function (f) { return !f.modes || f.modes.indexOf(state.mode) >= 0; }); }
-    function ready() { return !!state.mode && !state.optionsLoading && scopeFields().every(function (f) { return !f.required || !!state.scopeVals[f.key]; }); }
+    function scopeReady() { return !state.optionsLoading && scopeFields().every(function (f) { return !f.required || !!state.scopeVals[f.key]; }); }
+    function ready() { return !!state.mode && scopeReady(); }
     function scope() {   // only the fields of the chosen mode are sent (a server's scope keys are a whitelist)
         var o = Object.assign({}, state.adapter.scope ? state.adapter.scope() : {});
         scopeFields().forEach(function (f) { if (state.scopeVals[f.key]) o[f.key] = state.scopeVals[f.key]; });
@@ -240,8 +281,16 @@
         if (state.tab !== 'import') return;
         scopeFields().forEach(function (f) { var sel = el('km-imb-scope-' + f.key); if (sel) sel.onchange = function () { if (state.busy || state.uncertain || state.committed) return; state.scopeVals[f.key] = sel.value; resetFile(); render(); }; });   // select or date
         Array.prototype.forEach.call(document.querySelectorAll('input[name="km-imb-mode"]'), function (r) { r.onchange = function () { if (state.busy || state.uncertain || state.committed) return; state.mode = r.value; resetFile(); render(); }; });
-        el('km-imb-dl-blank').onclick = function () { download(false); };
-        el('km-imb-dl-update').onclick = function () { download(true); };
+        if (el('km-imb-dl-blank')) el('km-imb-dl-blank').onclick = function () { download(false); };
+        if (el('km-imb-dl-update')) el('km-imb-dl-update').onclick = function () { download(true); };
+        Array.prototype.forEach.call(document.querySelectorAll('[data-workflow]'), function (button) {
+            button.onclick = function () {
+                if (state.busy || state.uncertain || state.committed || !scopeReady()) return;
+                state.mode = button.dataset.workflow; resetFile(); render();
+                var md = state.adapter.modes.filter(function (v) { return v.value === state.mode; })[0];
+                download(!!md.withData);
+            };
+        });
         el('km-imb-file').onchange = function () { chooseFile(this.files && this.files[0]); };
         el('km-imb-validate').onclick = validate;
         el('km-imb-apply').onclick = apply;
@@ -263,7 +312,9 @@
             var spec = exportSpec(t, state.adapter, state.mode, withData);
             return window.KM.templateExport.buildAndDownload(spec).then(function (res) {
                 setBusy(false);
-                view(res.droppedDropdowns ? 'warn' : 'ok', (withData ? 'Exported ' + esc(JSON.stringify(t.row_counts || {})) + ' rows of ' + esc(t.scope_label || 'this scope') + ' at ' + esc(t.exported_at || '') + ' — the complete scope, not the visible page.' : 'Template downloaded.') +
+                var warnings = t.export_warnings || [];
+                view(res.droppedDropdowns || warnings.length ? 'warn' : 'ok', (withData ? 'Exported ' + esc(JSON.stringify(t.row_counts || {})) + ' rows of ' + esc(t.scope_label || 'this scope') + ' at ' + esc(t.exported_at || '') + ' — the complete scope, not the visible page.' : 'Template downloaded.') +
+                    (warnings.length ? ' ' + warnings.length + ' rows have unknown company; they remain in the file with a blocked note and cannot be updated. Other valid rows can be imported separately.' : '') +
                     (res.droppedDropdowns ? ' Dropdown not added: ' + esc(res.droppedDropdowns.join(', ')) + '.' : ''));
             });
         }).catch(function (e) { setBusy(false); view('bad', 'Could not prepare the file: ' + esc(e && e.message || e) + '. Nothing was changed.'); });
@@ -305,10 +356,11 @@
                 state.uncertain = true;
                 return checkReceipt(true);
             }
-            var head = (v.valid ? 'The file is valid. ' : 'The file has problems — fix them and upload again. ') + 'Batch ' + esc(v.import_batch_id) + '.' +
+            var overseas = state.adapter.domain === 'overseas_inventory';
+            var head = (overseas ? (v.valid ? 'Ready to apply. ' : 'Import blocked: fix the rows below. No inventory was changed. ') : (v.valid ? 'The file is valid. ' : 'The file has problems — fix them and upload again. ') + 'Batch ' + esc(v.import_batch_id) + '.') +
                 (receipt ? (receipt.same_content ? ' This exact batch already has a receipt (' + esc(receipt.status) + ').' : ' This batch id was used with another file — choose the file again to start a new batch.') : '') +
                 (v.schema_ready === false ? ' The import receipt tables are not provisioned in this deployment: applying will be refused.' : '');
-            view(v.valid ? 'ok' : 'bad', head, counts(c) + impactsHtml(v.preview) + issuesHtml(v.issues) + previewHtml(v.preview), v.valid && !(receipt && !receipt.same_content));
+            view(v.valid ? 'ok' : 'bad', head, validationHtml(v), v.valid && !(receipt && !receipt.same_content));
         }).catch(function (e) { setBusy(false); view('bad', 'The server could not be reached (' + esc(e && e.message || e) + '). Nothing was written — validate again.'); });
     }
     function apply() {
