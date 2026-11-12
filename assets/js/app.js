@@ -899,6 +899,7 @@ function showSection(section) {
             'sku-regional-details': 'sku-regional-details-section',
             'global-logistics-map': 'global-logistics-map-section',
             'automation': 'automation-schedule-section',
+            'password-management': 'password-management-section',
             'site-priority': 'site-priority-section',
             'shipment-grouping': 'shipment-grouping-section',
             // FX1-R4 — the lifecycle half. Without this entry the section below would be given
@@ -943,6 +944,7 @@ function showSection(section) {
         'carrier-rate-card': 'carrier-rate-card-section',
         'sku-regional-details': 'sku-regional-details-section',
         'automation': 'automation-schedule-section',
+        'password-management': 'password-management-section',
         'site-priority': 'site-priority-section',
             'shipment-grouping': 'shipment-grouping-section',
         // FX1-R4 — the display half. BOTH maps, for the reason recorded below: one decides what

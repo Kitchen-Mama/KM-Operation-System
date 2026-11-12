@@ -2,10 +2,10 @@
 <html>
 <head>
 <meta name="km-environment" content="KM_PRODUCTION">
-<script src="production-config.js?v=prod1-20261112"></script>
+<script src="production-config.js?v=prod-av1-20261112"></script>
 <link rel="stylesheet" href="assets/css/core/password-access.css">
 <script src="assets/js/core/password-access.js?v=prod1-20261112"></script>
-<script src="production-guard.js?v=prod1-20261112"></script>
+<script src="production-guard.js?v=prod-password-entry-20261112"></script>
     <title>Kitchen Mama Operation System</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -63,6 +63,7 @@
     <link rel="stylesheet" href="assets/css/pages/global-logistics-map.css?v=map-labelmode-r9-20260831">
     <link rel="stylesheet" href="assets/css/pages/automation-schedule.css?v=r65-dc2r2-20261022">
     <link rel="stylesheet" href="assets/css/pages/fx-rate-book.css?v=r65-dc2r2-20261022">
+    <link rel="stylesheet" href="assets/css/pages/password-management.css?v=owner-entry-20261112">
     <link rel="stylesheet" href="assets/css/pages/site-priority.css?v=r65-dc2r2-20261022">
     <!-- PRODUCT STRATEGY BOARD (PRODUCT-STRATEGY-P1-B7) — INSTALLED, NOT ACTIVATED.
          Loaded last so its component rules sit above the shell owners, and scoped to `.psb-page`
@@ -289,6 +290,10 @@
             </div>
             <div class="menu-children"
                  data-parent="administration">
+                <div class="menu-item" data-owner-password-entry
+                     onclick="showSection('password-management')" title="Password Management">
+                    <span class="menu-label">Password Management</span>
+                </div>
                 <div class="menu-item"
                      onclick="showSection('automation')" title="Automation Schedule">
                     <span class="menu-label">Automation Schedule</span>
@@ -463,6 +468,18 @@
             <!-- Automation Schedule (ADMIN-AUTOMATION-R1) — Administration / System Management.
                  KM.partialLoader injects #automation-schedule-section into this mount point on lifecycle mount. -->
             <div id="automation-schedule-mount"></div>
+            <section id="password-management-section" class="module-section password-management">
+                <h1>Password Management</h1>
+                <dl class="password-management__details">
+                    <div><dt>Environment</dt><dd>Production</dd></div>
+                    <div><dt>Managed By</dt><dd>Google Apps Script project owner</dd></div>
+                    <div><dt>Password Changes</dt><dd>Owner confirmation required</dd></div>
+                </dl>
+                <p>Password updates are completed in Apps Script, not on this website. A completed update requires everyone to sign in again.</p>
+                <a class="password-management__open" target="_blank" rel="noopener noreferrer"
+                   href="https://script.google.com/u/0/home/projects/14NtN0lGeW0SLqq2dWQTLG0CyqMu-RbgiW0d7O-f_tNUAaeWcSwtMiAhO/edit"
+                   title="Open the owner-only Apps Script editor">Open Apps Script</a>
+            </section>
 
             <!-- Site Priority (S8-B2-R1) — Administration / Master Data.
                  KM.partialLoader injects #site-priority-section into this mount point on lifecycle mount. -->
@@ -659,7 +676,7 @@
     <script src="assets/js/pages/fx-rate-book.js?v=r65-dc2r2-20261022" defer></script>
 
     <!-- App (Global) -->
-    <script src="assets/js/app.js?v=r65-dc2r2-20261022" defer></script>
+    <script src="assets/js/app.js?v=owner-password-entry-20261112" defer></script>
     
     <!-- Shared Date Picker Modal -->
     <div class="fr-date-backdrop" id="frDateBackdrop"></div>

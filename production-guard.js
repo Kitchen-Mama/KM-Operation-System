@@ -51,7 +51,8 @@
     }
     if (navigator.sendBeacon) { var beacon = navigator.sendBeacon.bind(navigator); navigator.sendBeacon = function (url, data) { if (/^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+\.)?script\.googleusercontent\.com|script\.googleapis\.com)\//.test(String(url))) return false; return beacon(url, data); }; }
     function restrictUi() {
-        document.querySelectorAll('[data-menu-id="administration"],[data-parent="administration"],#replen-ai-plan-btn,#ro-ai-plan-btn').forEach(function (el) { el.hidden = true; el.style.display = 'none'; });
+        // Only the owner-tool entry is exposed; business administration stays gated.
+        document.querySelectorAll('[data-parent="administration"] .menu-item:not([data-owner-password-entry]),#replen-ai-plan-btn,#ro-ai-plan-btn').forEach(function (el) { el.hidden = true; el.style.display = 'none'; });
     }
     function mount() {
         restrictUi();

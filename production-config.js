@@ -1,5 +1,5 @@
 (function () { 'use strict'; var c = {
-  "profile_id": "KM-PRODUCTION-PHASE1-20261112-R2",
+  "profile_id": "KM-PRODUCTION-PHASE1-20261112-R2-AV1",
   "environment": "KM_PRODUCTION",
   "endpoint": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec",
   "endpoint_sha256": "11ba59bcde9a7cc2fe5ddb5934b0780dfa3a518ab1e220368ae9b319cd42f290",
@@ -182,5 +182,5 @@
   ],
   "administration_enabled": false,
   "ai_plan_enabled": false,
-  "policy_sha256": "8deaf392b9183fa2cc17815a30108a2dead164f2e7dbed388a57766a61f3a7e1"
+  "policy_sha256": "3537c65b388c44e0164b6f3516e2c652740c6b136b7fbcd1225cb511bf210a87"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();
