@@ -1214,7 +1214,7 @@ function saveReplenSku() {
     };
     window.KM.DB.importMarketplaceSkusBatch([oneRow], {
       priceStatusDefault: 'draft',
-      forecastStatusDefault: 'draft'
+      forecastStatusDefault: 'active'
     }).then(function(result) {
       if (!result || result.success === false) {
         alert('Could not add SKU. ' + (result && result.error ? result.error : 'Please check the API connection and try again.'));
@@ -2004,7 +2004,7 @@ function _irHeaderLeafSpan_() {
 }
 // A REAL zero and an unavailable figure are different statements, and the cell says which it is.
 var _IR_FACTORY_STATE_TITLE_ = {
-    OK: 'Allocated share of the physical factory pool (frozen rolling 4-month FC share).',
+    OK: 'Reference share after reservations. Draft and plan commitments are shown separately below.',
     NO_FACTORY_STOCK: 'Zero: there is no factory_stock row for this SKU.',
     NOT_ELIGIBLE: 'Zero: this site is not an eligible receiver of this factory source.',
     NO_FORECAST_DENOMINATOR: 'Zero: the rolling 4-month Regular FC of the whole eligible receiver set is 0, so no share can be computed. Nothing was allocated.',
@@ -2015,10 +2015,18 @@ function _irFactoryCellTitle_(item) {
     var t = Object.prototype.hasOwnProperty.call(_IR_FACTORY_STATE_TITLE_, s) ? _IR_FACTORY_STATE_TITLE_[s] : '';
     return escapeReplenHtml(t ? (s + ' — ' + t) : s);
 }
-function _irFactoryCellHtml_(v, item) {
+function _irFactoryCellHtml_(v, item, country) {
     // null = the projection could not run; 0 = a real, computed zero. `|| 0` would collapse the two.
-    return '<div class="scroll-cell" data-factory-state="' + escapeReplenHtml(String((item && item.factoryAllocState) || '')) +
-        '" title="' + _irFactoryCellTitle_(item) + '">' + (v == null ? '--' : v) + '</div>';
+    // FE-SI1: the number is a link-style button that opens THIS SKU's CN / TW factory detail. data-no-row-toggle + the button tag
+    // keep the row toggle out (_irIsInteractiveTarget); the click handler also stops propagation. The number itself is unchanged.
+    return '<div class="scroll-cell" data-factory-country="' + escapeReplenHtml(country || '') + '" data-factory-state="' + escapeReplenHtml(String((item && item.factoryAllocState) || '')) +
+        '" title="' + _irFactoryCellTitle_(item) + '">' + _irFactoryShareBtnHtml_(v, item, country) + '</div>';
+}
+function _irFactoryShareBtnHtml_(v, item, country) {
+    var sku = String((item && item.sku) || ''), c = String(country || '');
+    return '<button type="button" class="ir-factory-share-link" data-no-row-toggle data-factory-share="' + escapeReplenHtml(c) + '" aria-haspopup="dialog"' +
+        ' aria-label="' + escapeReplenHtml(c + ' factory detail for ' + sku) + '" onclick="_irOpenFactoryDetail_(event, \'' + _irSkuArg(sku) + '\', \'' + _irSkuArg(c) + '\')"' +
+        ' style="background:none;border:0;padding:0;margin:0;font:inherit;color:#2563eb;text-decoration:underline;cursor:pointer;min-height:24px">' + (v == null ? '--' : v) + '</button>';
 }
 function _irFixedRowHtml_(item) {
     const arg = _irSkuArg(item.sku);
@@ -2128,7 +2136,20 @@ function _irAvgSalesWindowNote_() {
     if (ms && ms.loadedOk && Array.isArray(ms.rows)
         && (typeof _irAppliedScopeKey_ !== 'function' || ms.appliedScopeKey === _irAppliedScopeKey_())) {
         for (var i = 0; i < ms.rows.length; i++) {
-            if (ms.rows[i] && ms.rows[i].calculation_date) { gapDate = String(ms.rows[i].calculation_date); break; }
+            if (!(ms.rows[i] && ms.rows[i].calculation_date)) continue;
+            // DC2-R1 F-3 - READ THE STORED DAY BACK AS A DAY. The gap job writes its Asia/Taipei day as
+            // 'YYYY-MM-DD'; Sheets stores that as a Date at Taipei midnight, and the JSON answer carries it as
+            // the UTC instant of that midnight - '2026-10-20T16:00:00.000Z' for a Gap computed on 2026-10-21.
+            // Printed raw it named the day BEFORE, and compared raw with the anchor it never equalled it, so two
+            // identical dates were called "different". Taipei is UTC+8 with no DST (43_ gapCalcTaipeiYmd_), so
+            // shifting the instant by eight hours and reading its UTC date IS the Taipei day. Any other shape is
+            // not a date: it prints nothing rather than a guessed day. The Gap and its date authority are untouched.
+            var _cd = String(ms.rows[i].calculation_date).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(_cd)) gapDate = _cd;
+            else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(_cd) && isFinite(Date.parse(_cd))) {
+                gapDate = new Date(Date.parse(_cd) + 480 * 60000).toISOString().slice(0, 10);
+            }
+            break;
         }
     }
     if (gapDate && gapDate !== anchor) {
@@ -2149,7 +2170,7 @@ function _irAvgSalesTitleText_(item) {
     return parts.join(' ');
 }
 function _irAvgSalesTitleAttr_(item) {
-    var note = _irAvgSalesTitleText_(item);
+    var note = _irScopeTitle16_(item, _irAvgSalesTitleText_(item));
     return note ? ' title="' + escapeReplenHtml(note) + '"' : '';
 }
 // The visible mark. A quality error means no number exists, so it is named; a warning sits beside a real
@@ -2172,6 +2193,7 @@ function _irAvgSalesFlagHtml_(item) {
     return '';
 }
 function _irDosCellClass_(item) {
+    if (item && item.srcUnknown13) return '';   // R71-FE-14 (M-1): no red light from a site number
     return (window.IRMap ? window.IRMap.dosColorClass(item.daysOfSupply) : '') + (item.needsAlert ? ' alert-red' : '');
 }
 function _irScrollRowHtml_(item) {
@@ -2179,16 +2201,16 @@ function _irScrollRowHtml_(item) {
         '<div class="scroll-cell">' + _replenPlanningModelLabel(item.replenishmentModel) + '</div>' +
         '<div class="scroll-cell">' + item.company + '</div>' +
         '<div class="scroll-cell">' + _replenMarketplaceLabel(item.marketplace, item.company, item.country) + '</div>' +
-        '<div class="scroll-cell replen-cell--current-stock">' + item.currentInventory + '</div>' +
+        '<div class="scroll-cell replen-cell--current-stock">' + (item.currentStockDisplay != null ? item.currentStockDisplay : item.currentInventory) + '</div>' +   // R71-FE-13
         '<div class="scroll-cell" title="' + String(item.thirdPartyTitle || '').replace(/"/g, '&quot;') + '">' + item.thirdPartyStock + '</div>' +
         '<div class="scroll-cell">' + item.onTheWay + '</div>' +
         '<div class="scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item) + '"' + _irAvgSalesTitleAttr_(item) + '>' + item.avgDailySales + _irAvgSalesFlagHtml_(item) + '</div>' +
         '<div class="scroll-cell">' + item.forecast60d + '</div>' +
         '<div class="scroll-cell">' + (item.upcomingEventQty !== null ? item.upcomingEventQty : '-') + '</div>' +
-        '<div class="scroll-cell replen-dos-cell ' + _irDosCellClass_(item) + '">' + item.daysOfSupply + '</div>' +
+        '<div class="scroll-cell replen-dos-cell ' + _irDosCellClass_(item) + '"' + _irDosTitleAttr16_(item) + '>' + item.daysOfSupply + '</div>' +
         '<div class="scroll-cell replen-suggested-cell">' + _irSuggestedCellHtml(item) + '</div>' +
-        _irFactoryCellHtml_(item.cnStock, item) +
-        _irFactoryCellHtml_(item.twStock, item) +
+        _irFactoryCellHtml_(item.cnStock, item, 'CN') +
+        _irFactoryCellHtml_(item.twStock, item, 'TW') +
         '<div class="scroll-cell ai-action-cell" role="button" data-no-row-toggle onclick="openAISuggestion(event, \'' + _irSkuArg(item.sku) + '\')" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">' +
         '<span class="ai-action-cell__text">View Recommendation</span>' +
         '</div>' +
@@ -2464,6 +2486,7 @@ function _irSuggestedQtyNumber_(item) {
   return isFinite(n) ? n : 0;
 }
 function _irSuggestedCellHtml(item) {
+  if (item && item.srcUnknown13) return _irSugDash15_(item);   // R71-FE-14 (M-1) / R71-FE-15: no recommendation from an unattributable or missing site reading
   // F1-4B-FM5-R4UI-R5 §5 — the top-table Suggested Qty is the MATERIALIZED actionable total from
   // inventory_replenishment_gap. D18/D30/D45/D90 are CUMULATIVE checkpoints, so summing them double-counts need;
   // the ONE actionable replenishment recommendation is the FURTHEST configured horizon's stored suggested qty
@@ -2785,6 +2808,7 @@ function _irRevealBegin_(sku) {
     if (typeof _irLoadCarrierPlanning_ === 'function') {
         try { _irLoadCarrierPlanning_().then(function () { _irRevealPumpExec_(); })['catch'](function () { _irRevealPumpExec_(); }); } catch (e) {}
     }
+    if (window.KM && window.KM.factoryAvailability) window.KM.factoryAvailability.ensure(false);
     _irRevealPumpReco_();
     _irRevealPumpExec_();
     return { recommendation: rg.snapshot(), execution: eg.snapshot() };
@@ -3225,6 +3249,7 @@ function _irRevealSyncActionAvailability_() {
         || !!document.querySelector('#ops-section [data-ir-reveal="execution"][data-reveal-state="retrying"]');
     var btns = document.querySelectorAll('#ops-section [onclick="submitReplenishmentPlans()"]');
     Array.prototype.forEach.call(btns, function (b) { b.disabled = blocked; if (blocked) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled'); });
+    if (typeof _irSubmitPhase_ !== 'undefined' && _irSubmitPhase_) Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });   // R71-FE-6
 }
 window._irRevealSyncActionAvailability_ = _irRevealSyncActionAvailability_;
 
@@ -3255,6 +3280,7 @@ function _irSaveBusySync_() {
         }
     });
     try { if (typeof _irRevealSyncActionAvailability_ === 'function' && !busy) _irRevealSyncActionAvailability_(); } catch (e) {}
+    try { if (typeof _irSubmitPhase_ !== 'undefined' && _irSubmitPhase_) { var _sb = document.querySelectorAll('#ops-section [onclick="submitReplenishmentPlans()"]'); Array.prototype.forEach.call(_sb, function (b) { b.disabled = true; }); } } catch (e2) {}   // R71-FE-6
 }
 window._irSaveBusySync_ = _irSaveBusySync_;
 // §G.2 — the per-route state the operator reads. One route's outcome never describes another's.
@@ -3390,22 +3416,22 @@ function toggleReplenRow(sku) {
     
     const expandScrollHTML = `
         <div class="replen-expand-panel replen-expand-panel--scroll" id="${_irPanelId(sku)}">
-            <div class="replen-expand-scroll">
+            <div class="replen-expand-scroll">${_irSrcBanner14_(skuData)}
                 <div class="ir-panel ir-panel--inventory-group ir-fulfillment--${skuData?.fulfillmentModel || 'unset'}" data-fulfillment="${skuData?.fulfillmentModel || ''}">
                     <section class="replen-expand-section--inventory">
                         <div class="replen-card-grid">
                             <article class="replen-card replen-card--stock">
                                 <h4 class="replen-card__title">Stock${skuData?.fulfillmentModel ? ` <span class="ir-ff-badge">${skuData.fulfillmentModel}</span>` : ''}</h4>
-                                <div class="replen-card__row"><span class="replen-card__label">Available</span><span class="replen-card__value">${skuData?.available || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">FC Transfer</span><span class="replen-card__value">${skuData?.fcTransfer || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">FC Processing</span><span class="replen-card__value">${skuData?.fcProcessing || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">Customer Orders</span><span class="replen-card__value">${skuData?.customerOrders || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">Unsellable</span><span class="replen-card__value">${skuData?.unsellable || 0}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Available</span><span class="replen-card__value">${_irSiteVal14_(skuData, 'available')}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">FC Transfer</span><span class="replen-card__value">${_irSiteVal14_(skuData, 'fcTransfer')}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">FC Processing</span><span class="replen-card__value">${_irSiteVal14_(skuData, 'fcProcessing')}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Customer Orders</span><span class="replen-card__value">${_irSiteVal14_(skuData, 'customerOrders')}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Unsellable</span><span class="replen-card__value">${_irSiteVal14_(skuData, 'unsellable')}</span></div>
                             </article>
                             <article class="replen-card replen-card--lts">
                                 <h4 class="replen-card__title">Long Term Storage</h4>
-                                <div class="replen-card__row"><span class="replen-card__label">Over 90+</span><span class="replen-card__value">${skuData?.over90 || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">Over 180+</span><span class="replen-card__value">${skuData?.over180 || 0}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Over 90+</span><span class="replen-card__value">${_irSiteVal14_(skuData, 'over90')}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Over 180+</span><span class="replen-card__value">${_irSiteVal14_(skuData, 'over180')}</span></div>
                             </article>
                             <article class="replen-card replen-card--shipping" id="ir-ship-card-${sku}" data-ir-exposure="${_irExposureStateOf_(skuData)}">
                                 ${_irShipCardInnerHtml_(sku, skuData)}
@@ -3512,6 +3538,9 @@ function createPlan(sku) {
 }
 
 async function submitReplenishmentPlans() {
+    if (typeof _irSubmitPhase_ !== 'undefined' && _irSubmitPhase_) return;   // R71-FE-6: one Submit at a time (a double click sends once)
+    if (typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_('CHECKING');
+    try {   // R71-FE-6: CHECKING is cleared on every return that did not hand over to SUBMITTING (finally below)
     const data = getReplenishmentData();
     // Country + marketplace NAME are derived from the selected scope (the Marketplace dropdown value is a
     // marketplace_id in Cloud mode), so the payload carries the marketplace NAME — not the raw id.
@@ -3583,6 +3612,7 @@ async function submitReplenishmentPlans() {
         shippingPlans[method].forEach(function(item) {
             var sd = item.skuData || {};
             var mock = (typeof replenishmentMockData !== 'undefined') ? replenishmentMockData.find(function(m){ return m.sku === item.sku; }) : null;
+            var _irDemoOn_ = !!(window.KM && window.KM.DemoData && typeof window.KM.DemoData.isEnabled === 'function' && window.KM.DemoData.isEnabled());   // R71-FE-3 (D2)
             var lineCompany = (sd.company && sd.company !== '--') ? sd.company : '';   // backend resolves if blank
             planLines.push({
                 company: lineCompany,
@@ -3597,11 +3627,12 @@ async function submitReplenishmentPlans() {
                 shipping_method: method,
                 sku: item.sku,
                 requested_qty: item.qty,
-                units_per_carton: (mock && mock.unitsPerCarton) || sd.unitsPerCarton || '',
+                // R71-FE-3 (first-launch D2): production mode uses ONLY the DB carton size (as _replenUnitsPerCarton's line check); the demo data only in Demo mode
+                units_per_carton: (_irDemoOn_ ? ((mock && mock.unitsPerCarton) || sd.unitsPerCarton) : sd.unitsPerCarton) || '',
                 source_page: 'inventory_replenishment',
                 source_reason: item.sourceReason || 'manual_submit',
                 inventory_snapshot_date: '',
-                snapshot_current_stock: sd.currentInventory != null ? sd.currentInventory : '',
+                snapshot_current_stock: (sd.srcUnknown13 ? '' : (sd.currentInventory != null ? sd.currentInventory : '')),   // R71-FE-13
                 snapshot_avg_sales_per_day: sd.avgDailySales != null ? sd.avgDailySales : '',
                 snapshot_days_of_supply: sd.daysOfSupply != null ? sd.daysOfSupply : '',
                 snapshot_suggested_qty: sd.suggestedQty != null ? sd.suggestedQty : '',
@@ -3800,6 +3831,7 @@ async function submitReplenishmentPlans() {
     alert('[DEV LOCAL MODE] Nothing was saved to the database.\n\nThis is a local browser-only record for development navigation.\nTotal SKUs: ' + totalSkus + '\nMethods: ' + Object.keys(shippingPlans).length);
     showSection('shippingplan');
     setTimeout(function() { renderShippingPlan(); }, 100);
+    } finally { if (typeof _irSubmitPhase_ !== 'undefined' && _irSubmitPhase_ === 'CHECKING' && typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_(''); }   // R71-FE-6
 }
 
 window.renderReplenishment = renderReplenishment;
@@ -3896,6 +3928,48 @@ function _persistAllocationDraft() {
 //   • retry reuses the SAME idempotency identity (the deterministic allocation_draft_id / line id the
 //     handler assigns), so a retry updates the same row instead of inserting a duplicate.
 var _irUnsavedRoutes = {};   // sku -> { code, message, table, requestId, retryable, nextAction, at }
+// R71-FE-7 — HISTORICAL drafts, from SERVER answers only (a confirmed Submit; a hydrate read with a terminal status), and line -> draft
+// from the hydrate's line rows. Nothing here is inferred from the screen.
+var _irTerminalDraftIds_ = {}, _irLineDraftOf_ = {};
+function _irIsHistoricalDraft_(id) { id = String(id == null ? '' : id).trim(); return !!(id && _irTerminalDraftIds_[id]); }
+// a line:/draft: marker leaves ONLY when the server state proves its draft is historical - it is then not part of the active route
+function _irPurgeHistoricalMarkers_() {
+    var n = 0;
+    Object.keys(_irUnsavedRoutes).forEach(function (k) {
+        var ml = /^line:(.+)$/.exec(k), mh = /^draft:(.+)$/.exec(k); if (!ml && !mh) return;
+        var did = ml ? String((_irUnsavedRoutes[k] && _irUnsavedRoutes[k].draftId) || _irLineDraftOf_[ml[1]] || '') : mh[1];
+        if (did && _irIsHistoricalDraft_(did)) { delete _irUnsavedRoutes[k]; n++; }
+    });
+    if (n) { try { _persistAllocationDraft(); } catch (e1) {} try { _irRenderUnsavedBanner_(); } catch (e2) {} }
+    return n;
+}
+// H2 — the route rows of historical drafts leave the screen (the model and the recovery cache already did)
+function _irDropHistoricalRouteRows_() {
+    var skus = {};
+    try {
+        Array.prototype.forEach.call(document.querySelectorAll('.exec-route-row[data-draft-id]'), function (el) {
+            if (!_irIsHistoricalDraft_(el.getAttribute('data-draft-id'))) return;
+            var host = el.closest ? el.closest('[id^="shipping-methods-"]') : null;
+            if (host) skus[String(host.id).slice('shipping-methods-'.length)] = 1;
+            if (el.parentNode) el.parentNode.removeChild(el);
+        });
+    } catch (e) {}
+    Object.keys(skus).forEach(function (s) { try { _execSyncEmptyState_(s); } catch (e1) {} try { updateShippingAllocationTotal(s); } catch (e2) {} });
+    return Object.keys(skus);
+}
+// H2 — and from the model / recovery cache: a route bound to a historical draft is not part of the plan being edited
+function _irDropHistoricalModelRows_() {
+    var n = 0;
+    try {
+        var by = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+        Object.keys(by).forEach(function (s) {
+            var keep = (by[s] || []).filter(function (r) { var h = _irIsHistoricalDraft_(r && r.allocation_draft_id); if (h) n++; return !h; });
+            if (keep.length) by[s] = keep; else delete by[s];
+        });
+        if (n) { try { _persistAllocationDraft(); } catch (e1) {} }
+    } catch (e) {}
+    return n;
+}
 function _irMarkRouteUnsaved_(sku, err) {
     var s = (err && err.structured) || {};
     _irUnsavedRoutes[String(sku)] = {
@@ -4152,7 +4226,7 @@ function _irAdoptPersistedLineIds_(sku, draftId, persistedLines, wantGroupKey) {
     });
     var adopted = 0;
     rows.forEach(function (r) {
-        var canonical = byKey[k(r)];
+        var canonical = byKey[k({ sku: (r.sku != null && String(r.sku).trim() !== '') ? r.sku : sku, site_sku: r.site_sku, window_code: r.window_code })];   // R71-FE-6: a collected row has no sku field
         if (!canonical) return;
         var previous = String(r.allocation_draft_line_id || '');
         if (previous === canonical) return;
@@ -4348,8 +4422,25 @@ window._irVerifyPersistedRouteQuantities_ = _irVerifyPersistedRouteQuantities_;
 var NL2 = String.fromCharCode(10) + String.fromCharCode(10);   // paragraph break inside an alert()
 var _replenSubmitInFlight = {};   // execKey -> Promise (the single in-flight mutation)
 function _replenSetSubmitButtonDisabled(disabled) {
-    try { var b = document.querySelector('[onclick*="submitReplenishmentPlans"]') || document.getElementById('replen-submit-plan-btn'); if (b) b.disabled = !!disabled; } catch (e) {}
+    try { var b = document.querySelector('[onclick*="submitReplenishmentPlans"]') || document.getElementById('replen-submit-plan-btn'); if (b) b.disabled = !!disabled || (typeof _irSubmitPhase_ !== 'undefined' && !!_irSubmitPhase_); } catch (e) {}
 }
+// R71-FE-6 — ONE SUBMIT AT A TIME. '' = idle; CHECKING = the preconditions are being read (nothing sent); SUBMITTING = the request is
+// out; UNKNOWN = the outcome was not determined (held: no auto-resend, the execution key is kept; reload and check).
+var _irSubmitPhase_ = '';
+var _IR_SUBMIT_PHASE_LABEL_ = { CHECKING: 'Checking\u2026', SUBMITTING: 'Submitting\u2026', UNKNOWN: 'Outcome unknown \u2014 reload to check' };
+function _irSetSubmitPhase_(phase) {
+    _irSubmitPhase_ = phase || '';
+    try {
+        var bs = document.querySelectorAll('[onclick*="submitReplenishmentPlans"]');
+        Array.prototype.forEach.call(bs, function (b) {
+            if (!b.hasAttribute('data-ir-submit-label')) b.setAttribute('data-ir-submit-label', b.textContent);
+            if (_irSubmitPhase_) { b.textContent = _IR_SUBMIT_PHASE_LABEL_[_irSubmitPhase_] || b.getAttribute('data-ir-submit-label'); b.disabled = true; b.setAttribute('aria-busy', 'true'); b.setAttribute('data-ir-submit-phase', _irSubmitPhase_); }
+            else { b.textContent = b.getAttribute('data-ir-submit-label'); b.removeAttribute('aria-busy'); b.removeAttribute('data-ir-submit-phase'); b.disabled = false; }
+        });
+        if (!_irSubmitPhase_) { if (typeof _irSaveBusySync_ === 'function') _irSaveBusySync_(); if (typeof _irRevealSyncActionAvailability_ === 'function' && !(typeof _irAnySaveInFlight_ === 'function' && _irAnySaveInFlight_())) _irRevealSyncActionAvailability_(); }
+    } catch (e) {}
+}
+window._irSubmitPhase = function () { return _irSubmitPhase_; };
 // ================================================================================================================
 // F1-7N-FB-4G-A2 - SUBMIT PLAN PREFLIGHT. ONE STATE SNAPSHOT, ONE VERDICT, ONE CONFIRMATION.
 //
@@ -4518,11 +4609,20 @@ function _irAlertSubmitBlocked_(pf) {
     var by = {};
     (pf.blocking.reasons || []).forEach(function (r) { (by[r.reason] = by[r.reason] || []).push(r.sku); });
     function list(n) {
-        return (pf.blocking.reasons || []).slice(0, 8).map(function (r) { return '  \u00b7 ' + r.sku + ' \u2014 ' + r.reason; }).join(String.fromCharCode(10));
+        return (pf.blocking.reasons || []).slice(0, 8).map(_irBlockLine_).join(String.fromCharCode(10));
     }
+    // R71-FE-7 (U1): a line:/draft: entry is a refused CANCEL OPERATION (its own code), never a route of its own
+    function _irBlockLine_(r) {
+        var k = String((r && r.sku) || ''), m = (typeof _irUnsavedRoutes !== 'undefined' && _irUnsavedRoutes[k]) || {};
+        if (k.indexOf('line:') === 0) return '  \u00b7 Cancel operation failed for saved line ' + k.slice(5) + (m.draftId ? (' (ticket ' + m.draftId + ')') : '') + ' \u2014 ' + (m.code || r.reason) + '. The line is still active in the database.';
+        if (k.indexOf('draft:') === 0) return '  \u00b7 Cancel operation failed for draft ticket ' + k.slice(6) + ' \u2014 ' + (m.code || r.reason) + '. The ticket is still active in the database.';
+        return '  \u00b7 ' + r.sku + ' \u2014 ' + r.reason;
+    }
+    var _irRouteCount_ = (pf.blocking.skus || []).filter(function (k) { return String(k).indexOf('line:') !== 0 && String(k).indexOf('draft:') !== 0; }).length;
+    var _irOpCount_ = (pf.blocking.skus || []).length - _irRouteCount_;
     if (pf.code === C.UNSAVED_EXECUTION_PLAN_CHANGES) {
         alert('Cannot Submit Plan \u2014 UNSAVED_EXECUTION_PLAN_CHANGES.' + NL2 +
-            pf.blocking.skus.length + ' Execution Plan route(s) differ from what the database holds:' + NL2 + list() + NL2 +
+            _irRouteCount_ + ' Execution Plan route(s)' + (_irOpCount_ ? (' and ' + _irOpCount_ + ' cancel operation(s)') : '') + ' differ from what the database holds:' + NL2 + list() + NL2 +
             'Nothing was submitted and NOTHING was written. Submit only ever commits persisted rows, so an ' +
             'unsaved change would be silently missing from the plan \u2014 and it never submits the routes beside ' +
             'it on their own, because half a plan that looks whole is worse than no plan.' + NL2 +
@@ -4540,6 +4640,8 @@ function _irAlertSubmitBlocked_(pf) {
     }
     if (pf.code === C.EXECUTION_PLAN_SAVE_FAILED) {
         alert('Cannot Submit Plan \u2014 EXECUTION_PLAN_SAVE_FAILED.' + NL2 + list() + NL2 +
+            (_irOpCount_ ? ('A CANCEL was refused by the server, so what it tried to remove is still active in the database and would be part of this ' +
+                'Submit. Removing a saved route is not available in this build (an Owner decision). Reload the page to see the stored routes.' + NL2) : '') +
             'A route could not be saved, so the database does not hold it. Nothing was submitted and nothing ' +
             'was written. WAITING WILL NOT FIX THIS: re-enter the route so it saves, or remove it, then Submit ' +
             'again. Submit will not retry the save for you.');
@@ -4649,6 +4751,8 @@ window._irConfirmSubmit_ = _irConfirmSubmit_;
 
 function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
     if (_replenSubmitInFlight[execKey]) return _replenSubmitInFlight[execKey];   // share the in-flight Promise (no 2nd mutation)
+    if (typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_('SUBMITTING');   // R71-FE-6
+    var _irUnknown = false;
     _replenSetSubmitButtonDisabled(true);
     // F1-7N-FB-3B §G — declare the APPLIED station so the server can revalidate it. The server refuses a
     // mixed-station payload even without this field; declaring it additionally catches a STALE SELECTOR, which
@@ -4662,6 +4766,7 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
         result = result || {};
         if (result.success) {
             var d = result.data || {};
+            try { (draftIds || []).forEach(function (x) { var t = String(x == null ? '' : x).trim(); if (t) _irTerminalDraftIds_[t] = 'submitted'; }); _irDropHistoricalRouteRows_(); _irPurgeHistoricalMarkers_(); } catch (_eHS) {}   // R71-FE-7 (H1/H2/H5): the server just submitted them
             _clearAllocationDraft();   // confirmed terminal (CREATED or REUSED) → drop the Working Draft + execution key
             // F1-7N-FB-3C §I — report the server's EXACT output verification rather than only "created".
             // The plan writer returning success is not proof that the committed lines carry the operator's
@@ -4678,10 +4783,16 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
             return result;
         }
         var code = result.code || '';
-        if (code === 'IN_PROGRESS_SAME_EXECUTION_KEY') {
+        if (!code && result.error && typeof result.error === 'object' && result.error.code) code = String(result.error.code);   // R71-FE-6: the transport's error shape
+        if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR' || code === 'IN_PROGRESS_SAME_EXECUTION_KEY') _irUnknown = true;
+        if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR') {
+            alert('Submit outcome UNKNOWN (' + code + ').' + NL2 + 'The request may or may not have been applied. It was NOT sent again and the same execution key is kept.' + NL2 +
+                'Reload the page and check the Weekly Shipping Plan before doing anything else. Submitting again later reuses the same key, so it cannot create a second plan.');
+        } else if (code === 'IN_PROGRESS_SAME_EXECUTION_KEY') {
             alert('Submit is already processing for this plan. Reading back the result…');   // NOT a blind retry
             try { if (typeof _refreshAllocationDraftWorkspace === 'function') _refreshAllocationDraftWorkspace(); } catch (e) {}
         } else if (code === 'SHIPPING_PLAN_OUTPUT_VERIFICATION_FAILED') {
+            try { if (((result.data || {}).plans || []).length) { (draftIds || []).forEach(function (x) { var t = String(x == null ? '' : x).trim(); if (t) _irTerminalDraftIds_[t] = 'submitted'; }); _irDropHistoricalRouteRows_(); _irDropHistoricalModelRows_(); _irPurgeHistoricalMarkers_(); } } catch (_eVF) {}   // R71-FE-7 (S1): committed + submitted per the server
             // F1-7N-FB-3C §I — the plan WAS committed and the drafts ARE submitted; what failed is the
             // field-by-field match against the frozen route quantities. Nothing is rolled back, because
             // reversing a durable plan on the strength of a verification read would be a second mutation.
@@ -4711,10 +4822,13 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
         }
         return result;
     }).catch(function (err) {
-        alert('Error creating Weekly Shipping Plan: ' + (err && err.message ? err.message : err) + '\nThe draft is kept so you can retry.');
+        _irUnknown = true;   // R71-FE-6: a thrown request has no determined outcome
+        alert('Error creating Weekly Shipping Plan: ' + (err && err.message ? err.message : err) + '\nThe draft is kept so you can retry.' + '\nThe outcome is UNKNOWN: nothing is re-sent and the execution key is kept. Reload the page and check before submitting again.');
         return { success: false, error: String(err && err.message ? err.message : err) };
     }).then(function (r) {
-        delete _replenSubmitInFlight[execKey]; _replenSetSubmitButtonDisabled(false);   // terminal → restore UI
+        delete _replenSubmitInFlight[execKey];
+        if (typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_(_irUnknown ? 'UNKNOWN' : '');   // R71-FE-6: restored only on a definite terminal state
+        _replenSetSubmitButtonDisabled(_irUnknown);
         return r;
     });
     _replenSubmitInFlight[execKey] = p;
@@ -4949,8 +5063,9 @@ function _irDispatchLineCancels_(sku, cancels, complete) {
 function _cancelAllocationDraftHeader(explicitDraftId) {
     try {
         var draftId = String(explicitDraftId == null ? '' : explicitDraftId).trim() || replenAllocationDraft.allocationDraftId;
-        if (!draftId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraft && window.IRDraft)) { if (!explicitDraftId) replenAllocationDraft.allocationDraftId = ''; return; }
+        if (!draftId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraftAtomic && window.IRDraft)) { if (!explicitDraftId) replenAllocationDraft.allocationDraftId = ''; return; }   // R71-FE-11
         if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) { if (!explicitDraftId) replenAllocationDraft.allocationDraftId = ''; return; }
+        if (_irIsHistoricalDraft_(draftId)) { try { console.warn('[replen] HISTORICAL_DRAFT_NOT_MODIFIED - header ' + draftId + ' is submitted/cancelled; no cancel was sent'); } catch (_eW3) {} if (String(replenAllocationDraft.allocationDraftId || '') === draftId) replenAllocationDraft.allocationDraftId = ''; return Promise.resolve({ success: false, zero_write: true, skipped: 'HISTORICAL_DRAFT_NOT_MODIFIED' }); }   // R71-FE-7 (H4)
         var ctx = _replenCtx();
         var header = window.IRDraft.buildDraftHeaderPayload({ allocation_draft_id: draftId, company: ctx.company, country: ctx.country, marketplace: ctx.marketplace, status: 'cancelled' });
         if (String(replenAllocationDraft.allocationDraftId || '') === draftId) replenAllocationDraft.allocationDraftId = '';
@@ -4958,10 +5073,17 @@ function _cancelAllocationDraftHeader(explicitDraftId) {
         // header), so a FAILED cancel would otherwise be invisible: the draft stays active in the DB while the
         // page has forgotten it, and the next save resolves to a second active draft — a BLOCKED_CONFLICT with
         // no explanation. Record the failure as UNSAVED so it is visible and Submit is blocked.
-        return Promise.resolve(window.KM.DB.upsertShippingAllocationDraft(header))
+        // R71-FE-11: after the line cancel of the same draft (if one is running): the last line's cancel already cancels the header
+        var _lastLine11 = null, _hv11 = _irCancelVer11_(draftId);
+        return Promise.resolve(_irLineCancelInFlight_[draftId] || null).then(function (lr) { _lastLine11 = lr; }, function () {}).then(function () {
+            var lr = _lastLine11;
+            if (lr && lr.success && lr.data && (lr.data.header_cancelled === true || lr.data.header_status === 'cancelled')) return lr;   // the last line's cancel already closed the header
+            return _irCancelChain11_(draftId, function () { return window.KM.DB.upsertShippingAllocationDraftAtomic({ intent: 'CANCEL_ROUTE_LINES', allocation_draft_id: draftId, expected_draft_version: (_irMaxVer11_(_hv11, _irCancelVer11_(draftId)) || undefined), line_ids: [], cancel_header_if_empty: true, actor: 'inventory-replenishment' }); });
+        })
             .then(function (res) {
                 if (!res || res.success === false) {
                     _irMarkRouteUnsaved_('draft:' + draftId, _irMakeDraftSaveError_(res && res.error, 'shipping_allocation_drafts', 'draft header cancel failed'));
+                    try { _irUnsavedRoutes['draft:' + draftId].op = 'CANCEL_HEADER'; _irUnsavedRoutes['draft:' + draftId].draftId = draftId; _persistAllocationDraft(); } catch (_eOp2) {}   // R71-FE-7
                 }
                 return res;
             })['catch'](function (e2) {
@@ -4999,18 +5121,51 @@ function _irRouteLabel_(g) {
 // could not help, because the retry re-sent the same stale number; only a Search reload cleared it. The server
 // returns the version it wrote, so the row adopts it, and the OPTIMISTIC TOKEN stays meaningful: it still
 // refuses a write over a change made in another tab, because that version came from somewhere else.
-function _irStampRouteGroupIds_(sku, g, draftId, draftVersion) {
+function _irStampRouteGroupIds_(sku, g, draftId, draftVersion, ctx) {
     var rows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
     var ver = String(draftVersion == null ? '' : draftVersion).trim();
     (g.routes || []).forEach(function (r) {
         r.allocation_draft_id = draftId;
         r.route_group_key = g.groupKey;
-        if (ver) r.draft_version = ver;
+        if (ver) { r.draft_version = ver; try { _irDraftVer11_[String(draftId)] = _irMaxVer11_(_irDraftVer11_[String(draftId)] || '', ver); } catch (e11) {} }   // R71-FE-11
         // F1-7N-FB-4F-B6 §F — the adoption has happened; the stored row now HAS a destination. Clearing the
         // state here is what stops the confirmation from being asked again on every later edit of the same
         // route, and it is cleared only on the path that runs after a header was actually persisted.
         r.destination_state = '';
     });
+    // R71-FE-6 — BIND THE CURRENT MODEL ROWS OF THE SAME ROUTE INSTANCE, NOT ONLY THE OBJECTS THAT WENT OUT.
+    // A collect while this request was in flight rebuilt bySku[sku] with new objects, so stamping g.routes alone left the rows Submit
+    // judges without their header id (DB saved, badge Saved, Submit ROUTE_NOT_SAVED). A current row is bound only when it is the SAME
+    // route instance (the stable request key), still carries the SAME line identity that was sent, is not bound to another header,
+    // A newer edit may have a different group key: adopt only the acknowledged identity, never its old values.
+    // That edit must UPDATE this same entity, not replay its CREATE. Never bind by SKU alone.
+    if (!ctx) { try { ctx = (typeof _replenCtx === 'function') ? _replenCtx() : null; } catch (_eC) { ctx = null; } }   // the flush's own station context source
+    var _sent = {}, _gk = String((g && g.groupKey) || '');
+    (g.routes || []).forEach(function (r) { var k = String((r && r.client_route_instance_id) || '').trim(); if (k) _sent[k] = String((r && r.allocation_draft_line_id) || '').trim(); });
+    var _boundInst = {};
+    rows.forEach(function (r) {
+        if (!r || (g.routes || []).indexOf(r) !== -1) return;
+        var k = String(r.client_route_instance_id || '').trim();
+        if (!k || !Object.prototype.hasOwnProperty.call(_sent, k)) return;
+        if (String(r.allocation_draft_line_id || '').trim() !== _sent[k]) return;
+        var cur = String(r.allocation_draft_id || '').trim(); if (cur && cur !== String(draftId)) return;
+        r.allocation_draft_id = draftId;
+        r.route_group_key = _gk;
+        if (ver) { r.draft_version = ver; try { _irDraftVer11_[String(draftId)] = _irMaxVer11_(_irDraftVer11_[String(draftId)] || '', ver); } catch (e11) {} }   // R71-FE-11
+        r.destination_state = '';
+        _boundInst[k] = 1;
+    });
+    try {
+        var _host = document.getElementById('shipping-methods-' + sku);
+        var _els = _host ? _host.querySelectorAll('[data-route-instance]') : [];
+        for (var _i = 0; _i < _els.length; _i++) {
+            var _k = String(_els[_i].getAttribute('data-route-instance') || '').trim();
+            if (!_boundInst[_k] || String(_els[_i].getAttribute('data-line-id') || '').trim() !== _sent[_k]) continue;
+            _els[_i].setAttribute('data-draft-id', draftId); _els[_i].setAttribute('data-group-key', _gk);
+            if (ver) _els[_i].setAttribute('data-draft-version', ver);
+            _els[_i].removeAttribute('data-dest-state');
+        }
+    } catch (_eB) {}
     // re-stamp the DOM rows that belong to this group so a later collect carries the header binding
     try {
         var host = document.getElementById('shipping-methods-' + sku);
@@ -5304,13 +5459,16 @@ function _irAdoptReconciledRoute_(sku, o, hit) {
     rows.forEach(function (r) {
         if (!want[String(r.client_route_instance_id || '')]) return;
         r.allocation_draft_id = did;
-        if (ver) r.draft_version = ver;
-        if (!String(r.allocation_draft_line_id || '').trim()) {
+        if (ver) { r.draft_version = ver; try { _irDraftVer11_[did] = _irMaxVer11_(_irDraftVer11_[did] || '', ver); } catch (e11) {} }   // R71-FE-11
+        var _curLine = String(r.allocation_draft_line_id || '').trim();
+        if (!_curLine || _curLine.indexOf('SADL-LOCAL-') === 0) {   // R71-FE-6: a blank or a local placeholder only - never a stored id
             for (var i = 0; i < lines.length; i++) {
-                if (String(lines[i].sku || '') === String(r.sku || '') &&
+                if (String(lines[i].sku || '') === String(r.sku || sku || '') &&
                     String(lines[i].site_sku || '') === String(r.site_sku || '') &&
                     String(lines[i].window_code || '') === String(r.window_code || '')) {
-                    r.allocation_draft_line_id = String(lines[i].allocation_draft_line_id || ''); break;
+                    r.allocation_draft_line_id = String(lines[i].allocation_draft_line_id || '');
+                    try { var _rh = document.getElementById('shipping-methods-' + sku), _re = _rh ? _rh.querySelectorAll('[data-route-instance]') : []; for (var _j = 0; _j < _re.length; _j++) { if (String(_re[_j].getAttribute('data-route-instance') || '') === String(r.client_route_instance_id || '')) { _re[_j].setAttribute('data-line-id', r.allocation_draft_line_id); _re[_j].setAttribute('data-draft-id', did); if (ver) _re[_j].setAttribute('data-draft-version', ver); } } } catch (_eRD) {}   // R71-FE-6
+                    break;
                 }
             }
         }
@@ -5361,7 +5519,7 @@ function _irPersistOneRouteGroup_(sku, ctx, g, allowLegacyAdoption) {
         destination_warehouse_id: h.recommended_destination_warehouse_id,   // '' for an Amazon logical destination
         destination_warehouse_code: h.destination_warehouse_code,
         shipping_method: h.recommended_shipping_method,
-        last_mile_delivery: h.recommended_last_mile_delivery || undefined,
+        last_mile_delivery: h.recommended_last_mile_delivery == null ? '' : h.recommended_last_mile_delivery,
         destination_marketplace: h.destination_marketplace || undefined,
         // F1-7N-FB-4F-B6 §G — the operator's EXPLICIT adoption authority, and only when it was actually given.
         // The server re-checks every condition (exactly one unclassifiable candidate, every K2 dimension equal, a
@@ -5797,6 +5955,9 @@ function _flushDraftDbPersist(sku) {
         _irDispatchLineCancels_(sku, cancels, complete);
 
         _draftDbInFlight[sku] = true;
+        // A successful older request must not acknowledge edits collected while it was in flight.
+        var _sentSignatures = {};
+        complete.forEach(function (r) { _sentSignatures[String(r.client_route_instance_id || '')] = _irRouteSignature_(r); });
         // §G.1/§G.2 — the batch has begun: hold the write actions and mark every route it covers as Saving.
         try { _irSaveBusySync_(); } catch (eB) {}
         try {
@@ -5824,10 +5985,18 @@ function _flushDraftDbPersist(sku) {
             return _irReconcileIndeterminate_(sku, outcomes);
         }).then(function () {
             _draftDbInFlight[sku] = false;
+            var _newerEdits = false;
+            var _currentRows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
             outcomes.forEach(function (o) {
                 if (!o) return;
-                _irSetRouteSaveState_(sku, o.instanceIds,
-                    o.status === 'persisted' ? 'SAVED' : (o.status === 'indeterminate' ? 'OUTCOME_UNKNOWN' : 'NOT_SAVED'));
+                (o.instanceIds || []).forEach(function (k) {
+                    var current = _currentRows.filter(function (r) { return String(r.client_route_instance_id || '') === k; })[0];
+                    var newer = o.status === 'persisted' && current && _irRouteSignature_(current) !== _sentSignatures[k];
+                    if (newer) { _newerEdits = true; _irMarkRouteTouched_(sku, k); }
+                    else if (o.status === 'persisted' && _draftDbTouched[sku]) delete _draftDbTouched[sku][k];
+                    _irSetRouteSaveState_(sku, [k], newer ? 'SAVING' :
+                        (o.status === 'persisted' ? 'SAVED' : (o.status === 'indeterminate' ? 'OUTCOME_UNKNOWN' : 'NOT_SAVED')));
+                });
                 // R6-R6 §7 — the hold goes on for exactly the routes the read-back could NOT classify, and
                 // comes off for every route it could, in either direction. A route proven unsaved is a known
                 // zero-write and stays freely retryable; only ambiguity stops the line.
@@ -5840,17 +6009,11 @@ function _flushDraftDbPersist(sku) {
             // F1-7N-FB-4G-A2-R2 §3 - a route leaves the touched set only when its OWN write is persisted. A
             // route that failed or whose outcome is unknown stays touched, so it is retried on the next flush
             // and never quietly dropped - and it is still the ONLY route that will be sent.
-            outcomes.forEach(function (o) {
-                if (o.status !== 'persisted') return;
-                (o.instanceIds || []).forEach(function (k) {
-                    if (_draftDbTouched[sku]) delete _draftDbTouched[sku][k];
-                });
-            });
             var bad = outcomes.filter(function (o) { return o.status !== 'persisted'; });
-            if (!bad.length) {
+            if (!bad.length && !_newerEdits) {
                 _irClearRouteUnsaved_(sku);
                 if (typeof _irHideDraftSaveError === 'function') _irHideDraftSaveError(sku);
-            } else {
+            } else if (bad.length) {
                 var env = _irMultiRouteOutcomeEnvelope_(sku, outcomes);
                 _irMarkRouteUnsaved_(sku, env);
                 if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, env);
@@ -5862,9 +6025,10 @@ function _flushDraftDbPersist(sku) {
             // to re-enter the flush, where an empty touched set falls back to EVERY route on screen and
             // re-sends routes the operator never edited. That is the A2-R2 whole-SKU re-send, reached through
             // the back door.
-            if (_draftDbDirty[sku]) {
+            if (_draftDbDirty[sku] || _newerEdits) {
                 _draftDbDirty[sku] = false;
-                if (_irTouchedInstances_(sku).length) _flushDraftDbPersist(sku);
+                // Only a positively acknowledged batch can continue with a newer edit. Never replay a failure/UNKNOWN.
+                if (!bad.length && _irTouchedInstances_(sku).length) return _flushDraftDbPersist(sku);
             }
         })['catch'](function (err) {
             _draftDbInFlight[sku] = false;
@@ -6512,22 +6676,52 @@ function _irHideDraftSaveError(sku) {
 }
 window._irHideDraftSaveError = _irHideDraftSaveError;
 // Soft-cancel ONE persisted draft line (Decision E §16) — never hard delete. line_status='cancelled'.
+// R71-FE-11: the lifecycle cancels go through the atomic, allow-listed CANCEL_ROUTE_LINES intent (16_ SAD-R71-SBX1F).
+var _irLineCancelInFlight_ = {};   // draft id -> the tail of that draft's cancel chain (the empty-header sweep waits for it)
+var _irDraftVer11_ = {};           // draft id -> the highest draft_version this page saw the server return (saves + cancels)
+function _irMaxVer11_(a, b) { var x = Number(a), y = Number(b); if (!(String(a || '') !== '' && isFinite(x))) return String(b || ''); if (!(String(b || '') !== '' && isFinite(y))) return String(a || ''); return String(Math.max(x, y)); }
+function _irCancelVer11_(draftId) {
+    var v = _irMaxVer11_(_irStoredDraftVersion_(draftId), _irDraftVer11_[draftId] || '');
+    try { var ds = (typeof _irWsGet === 'function') ? _irWsGet('getShippingAllocationDrafts') : null; (ds || []).forEach(function (d) { var r0 = (d && d.raw) || d || {}; if (String(r0.allocation_draft_id || (d && d.allocationDraftId) || '').trim() === draftId) v = _irMaxVer11_(v, String(r0.draft_version || (d && d.draftVersion) || '').trim()); }); } catch (e) {}
+    return v;
+}
+function _irAdoptCancelVer11_(draftId, res) {
+    var v = res && res.success && res.data && String(res.data.draft_version || '').trim(); if (!v) return;
+    _irDraftVer11_[draftId] = _irMaxVer11_(_irDraftVer11_[draftId] || '', v);
+    try { var b = (replenAllocationDraft && replenAllocationDraft.bySku) || {}; Object.keys(b).forEach(function (k) { (b[k] || []).forEach(function (r) { if (r && String(r.allocation_draft_id || '').trim() === draftId) r.draft_version = v; }); }); } catch (e) {}
+}
+function _irCancelChain11_(draftId, send) {
+    var prev = _irLineCancelInFlight_[draftId] || Promise.resolve(null);
+    var p = prev.then(function () {}, function () {}).then(send).then(function (res) { _irAdoptCancelVer11_(draftId, res); return res; });
+    _irLineCancelInFlight_[draftId] = p;
+    p.then(function () { if (_irLineCancelInFlight_[draftId] === p) delete _irLineCancelInFlight_[draftId]; }, function () { if (_irLineCancelInFlight_[draftId] === p) delete _irLineCancelInFlight_[draftId]; });
+    return p;
+}
 function _cancelAllocationDraftLine(lineId, explicitDraftId) {
     try {
-        if (!lineId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraftLines && window.IRDraft)) return;
+        if (!lineId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraftAtomic && window.IRDraft)) return;   // R71-FE-11: the atomic CANCEL_ROUTE_LINES intent
         if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) return;
         // Under multi-route the header MUST come from the line itself; there is no single "current" draft to
         // fall back on without risking a soft-cancel against the wrong shipment group.
         var draftId = String(explicitDraftId == null ? '' : explicitDraftId).trim() || replenAllocationDraft.allocationDraftId;
         if (!draftId) return;
+        // R71-FE-7 (H4): a historical draft is never modified, and a line is never cancelled under a draft it does not belong to. NOT a
+        // success: nothing was written and nothing is claimed; the row simply is not part of the active plan.
+        var _ownDraft = String(_irLineDraftOf_[String(lineId)] || '').trim();
+        if (_irIsHistoricalDraft_(draftId) || _irIsHistoricalDraft_(_ownDraft)) { try { console.warn('[replen] HISTORICAL_DRAFT_NOT_MODIFIED - line ' + lineId + ' belongs to a submitted/cancelled draft; no cancel was sent'); } catch (_eW) {} return Promise.resolve({ success: false, zero_write: true, skipped: 'HISTORICAL_DRAFT_NOT_MODIFIED' }); }
+        if (_ownDraft && _ownDraft !== draftId) { try { console.warn('[replen] LINE_BELONGS_TO_ANOTHER_DRAFT - line ' + lineId + ' is under ' + _ownDraft + ', not ' + draftId + '; no cancel was sent'); } catch (_eW2) {} return Promise.resolve({ success: false, zero_write: true, skipped: 'LINE_BELONGS_TO_ANOTHER_DRAFT' }); }
         // F1-7N-FB-2A §D — a soft-cancel is a business WRITE. If it fails, the line still exists in the DB
         // while the UI shows it removed, which is the same false-persistence class as a failed save. Record it
         // as UNSAVED so Submit is blocked and the failure is visible rather than swallowed by a console warn.
-        return Promise.resolve(window.KM.DB.upsertShippingAllocationDraftLines(window.IRDraft.buildCancelLinePayload(draftId, lineId)))
+        // R71-FE-11: cancels of one draft run ONE AT A TIME (each bumps draft_version; the next one carries the adopted version)
+        var _v11 = _irCancelVer11_(draftId);   // captured synchronously: the row may be gone from the model when the chain sends
+        var _p11 = _irCancelChain11_(draftId, function () { return window.KM.DB.upsertShippingAllocationDraftAtomic({ intent: 'CANCEL_ROUTE_LINES', allocation_draft_id: draftId, expected_draft_version: (_irMaxVer11_(_v11, _irCancelVer11_(draftId)) || undefined), line_ids: [lineId], actor: 'inventory-replenishment' }); });
+        return _p11
             .then(function (res) {
                 if (!res || res.success === false) {
                     var err = _irMakeDraftSaveError_(res && res.error, 'shipping_allocation_draft_lines', 'draft line cancel failed');
                     _irMarkRouteUnsaved_('line:' + lineId, err);
+                    try { _irUnsavedRoutes['line:' + lineId].op = 'CANCEL_LINE'; _irUnsavedRoutes['line:' + lineId].draftId = draftId; _persistAllocationDraft(); } catch (_eOp) {}   // R71-FE-7
                 }
                 return res;
             })['catch'](function (e2) {
@@ -6578,6 +6772,7 @@ function _hydrateAllocationDraftFromDb(ctx, opts) {
         var lines = _irWsGet('getShippingAllocationDraftLines');
         if (drafts === null || lines === null) return false;
         drafts = drafts || []; lines = lines || [];
+        try { lines.forEach(function (l) { var r0 = (l && l.raw) || l || {}; var lid = String(r0.allocation_draft_line_id || '').trim(), did = String((l && l.allocationDraftId) || r0.allocation_draft_id || '').trim(); if (lid && did) _irLineDraftOf_[lid] = did; }); } catch (_eLD) {}   // R71-FE-7
         function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
         // F1-7N-FB-4B-ADDENDUM §F.9 — HYDRATE EVERY ACTIVE HEADER FOR THE STATION, NOT JUST THE NEWEST.
         // This used to sort by updated_at and take [0]. Under the frozen K2 contract one station legitimately holds
@@ -6635,6 +6830,7 @@ function _hydrateAllocationDraftFromDb(ctx, opts) {
             // The DTO carries camelCase; KMARC reads either spelling, and the raw sheet row is preferred when
             // present so the classification sees exactly what is stored.
             var row = (d && d.raw) ? d.raw : d;
+            try { var _tst = String((row && row.status != null && row.status !== '') ? row.status : ((d && d.status) || '')).trim().toLowerCase(), _tid = String((d && d.allocationDraftId) || (row && row.allocation_draft_id) || '').trim(); if (_tid && (_tst === 'submitted' || _tst === 'cancelled' || _tst === 'expired')) _irTerminalDraftIds_[_tid] = _tst; } catch (_eTS) {}   // R71-FE-7
             var c = _arc ? _arc.classifyHeader({
                 allocation_draft_id: d.allocationDraftId || (row && row.allocation_draft_id),
                 status: (row && row.status != null && row.status !== '') ? row.status : d.status,
@@ -6653,6 +6849,7 @@ function _hydrateAllocationDraftFromDb(ctx, opts) {
             }
             _classified.push(d);
         });
+        try { _irPurgeHistoricalMarkers_(); } catch (_ePH) {}   // R71-FE-7 (H5)
         var activeDrafts = _classified.sort(function (a, b) { return String(a.allocationDraftId || '') < String(b.allocationDraftId || '') ? -1 : 1; });
         // Published so a diagnostic (and §2's provenance report) can state WHY a row on the sheet is not on the
         // screen, instead of leaving an operator to compare two counts that disagree.
@@ -7093,6 +7290,7 @@ async function _restoreAllocationDraftFromSession() {
             // failed write into canonical state: the routes come back visibly labelled and Submit stays blocked
             // until each one is actually persisted.
             _irUnsavedRoutes = (parsed._unsavedRoutes && typeof parsed._unsavedRoutes === 'object') ? parsed._unsavedRoutes : {};
+            try { _irDropHistoricalModelRows_(); _irPurgeHistoricalMarkers_(); } catch (_eRH) {}   // R71-FE-7 (R1): a cached route of a submitted/cancelled draft is history
             _irRenderUnsavedBanner_();
         }
     } catch (e) {}
@@ -7211,6 +7409,10 @@ function _saveAllocationDraftFromDom(sku) {
         var priorDestState = rowEl.getAttribute('data-dest-state') || '';
         var boundDraftId = rowEl.getAttribute('data-draft-id') ||
             String((_priorRow && _priorRow.allocation_draft_id) || '');   // the header this route is persisted under
+        if (boundDraftId && typeof _irIsHistoricalDraft_ === 'function' && _irIsHistoricalDraft_(boundDraftId)) {   // R71-FE-7 (H3): a submitted/cancelled draft is history, not part of this plan
+            try { if (rowEl.parentNode) rowEl.parentNode.removeChild(rowEl); } catch (_eHR) {}
+            return;
+        }
         var boundGroupKey = rowEl.getAttribute('data-group-key') ||
             String((_priorRow && _priorRow.route_group_key) || '');       // the route group it was persisted as
         // F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2 — THE HEADER VERSION THIS ROUTE WAS READ AT, and the reason it
@@ -7502,15 +7704,7 @@ function updateShippingAllocationTotal(sku) {
         // 獲取工廠庫存 (CN + TW)
         const data = getReplenishmentData();
         const skuData = data.find(item => item.sku === sku);
-        const factoryStock = (skuData?.cnStock || 0) + (skuData?.twStock || 0);
-        
-        if (total > factoryStock) {
-            hintDiv.style.color = '#991B1B';
-            hintDiv.textContent = `Insufficient Stock (Factory: ${factoryStock}, Need: ${total})`;
-        } else {
-            hintDiv.style.color = 'var(--text-muted)';
-            hintDiv.textContent = `Factory Stock Available: ${factoryStock} units`;
-        }
+        _irFactoryHint_(hintDiv, skuData, total);
     }
 }
 
@@ -7649,29 +7843,15 @@ function _irLastMileChoices_(methods, selectedMethod, selectedLastMile, eta) {
     }
     var sel = String(selectedLastMile == null ? '' : selectedLastMile).trim();
     var selLow = sel.toLowerCase();
-    var stillEligible = false;
-    opts.forEach(function (o) { if (String(o).toLowerCase() === selLow) stillEligible = true; });
-    // INVALIDATION, in the one place that can do it consistently (§2: reset when Method / From / To change
-    // incompatibly). A stored value the method no longer runs is NOT kept — keeping it produced
-    // LAST_MILE_NOT_ON_THIS_METHOD and an arrival that read as missing data. But when the lane knows NO
-    // profiles at all, the stored value is kept verbatim: nothing has contradicted it, and silently blanking a
-    // persisted K4 identity axis because a reference table is thin would be a data change nobody asked for.
     var value;
-    if (!opts.length) value = sel;
-    else if (opts.length === 1) value = opts[0];
-    else value = stillEligible ? sel : '';
-    // F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R2 §4 — DERIVED, AND IT SAYS SO.
-    //
-    // Two of these three branches can return a value the ROW never held: a lane with exactly one eligible
-    // last mile fills it in, and an ineligible stored value is blanked. Both are right for what the operator
-    // SEES — a single-option lane has nothing to ask, and an invalidated value must not be shown as still
-    // chosen. Neither is an operator's decision, and on 2026-09-06 the difference was invisible: the derived
-    // value went into the same DOM field the collector reads as intent, so a route nobody had touched
-    // compared as edited and was written. The value is unchanged; what is added is the fact that the row is
-    // not its author.
+    // Planning intent is not a rate-card commitment. Final selection validates the lane.
+    ['parcel', 'truck'].forEach(function (v) { if (!opts.some(function (o) { return String(o).toLowerCase() === v; })) opts.push(v); });
+    if (sel && !opts.some(function (o) { return String(o).toLowerCase() === selLow; })) opts.push(sel);
+    value = sel;
+    // Pure catalogue hydration neither authors a value nor clears an existing preference.
     var derived = String(value).toLowerCase() !== selLow;
     return { options: opts, ambiguous: opts.length > 1, value: value, derived: derived,
-        invalidated: !!(sel && opts.length && !stillEligible), method_matched: !!m };
+        invalidated: false, method_matched: !!m };
 }
 window._irLastMileChoices_ = _irLastMileChoices_;
 
@@ -7814,7 +7994,9 @@ function _execMethodOptionsHtml(resolution, selected) {
             ' data-last-mile-options="' + _execEsc(lmList) + '"' +
             ' data-method-source="' + _execEsc(m.source || 'CARRIER_RATE_CARDS') + '"' +
             ' data-carrier-selection="' + _execEsc(m.carrierSelection || '') + '"' +
-            '>' + _execEsc(m.label) + '</option>';
+            // R15C-EU: an option of a planning-set route (EU) states its real member countries; it is not priced before Shipment picks a warehouse
+            (m.destinationCountries ? ' data-destination-countries="' + _execEsc(m.destinationCountries.join(',')) + '"' : '') +
+            '>' + _execEsc(m.label) + (m.destinationCountries && m.destinationCountries.length ? ' \u2192 ' + _execEsc(m.destinationCountries.join('/')) + ' (priced at the warehouse)' : '') + '</option>';
     });
     return html;
 }
@@ -8960,6 +9142,10 @@ window.updateShippingAllocationTotal = updateShippingAllocationTotal;
 function initSalesTrendChart(sku, skuData) {
     const canvas = document.getElementById(`sales-trend-chart-${sku}`);
     if (!canvas) return;
+    if (skuData && skuData.srcUnknown13 && skuData.srcKind15 !== 'NO_ROW') {   // R71-FE-14 (M-1): the site's daily sales are not this company's - not drawn (R71-FE-15: F1 alone does not hide it)
+        var n14 = document.createElement('div'); n14.className = 'replen-src-unknown replen-trend-src-unknown'; n14.style.cssText = 'color:#94A3B8;font-size:12px;padding:8px 0;';
+        n14.textContent = '\u2014 Sales trend: source unknown (report row not attributable to this company)'; if (canvas.parentNode) canvas.parentNode.replaceChild(n14, canvas); return;
+    }
     
     const ctx = canvas.getContext('2d');
     const today = new Date();
@@ -9776,6 +9962,7 @@ function _irEnsureExposureLoaded_(opts) {
     if (typeof _irEffectiveWorkspace === 'function' && !_irEffectiveWorkspace()) return Promise.resolve(null);
     var key = _irExposureScopeKey_();
     if (!key) return Promise.resolve(null);
+    if (typeof _irRevProbe_ !== 'undefined' && _irRevProbe_) return _irRevProbe_.then(function () { return _irEnsureExposureLoaded_(opts); });   // DC2-R2: a pending revision decision first
     var e = _irExposureByScope[key];
     if (e) {
         if (e.state === IR_EXPOSURE_STATES_.READY) return Promise.resolve(e);
@@ -9824,6 +10011,7 @@ function _irEnsureExposureLoaded_(opts) {
                 throw (env && env.errors && env.errors[0]) ||
                     { code: 'IR_EXPOSURE_READ_FAILED', message: 'The shipment / allocation detail could not be read.' };
             }
+            if (typeof _irStampEcho_ === 'function') _irStampEcho_(entry.source, env && env.meta);   // DC2-R2 D-S8-B3-187
             entry.model = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
             entry.indexes = _irBuildExposureIndexes_(entry.model);
             entry.state = IR_EXPOSURE_STATES_.READY;
@@ -10371,7 +10559,10 @@ function _irBootstrapScope_() {
         // DC1-R1 - a held exposure read before a shipment / plan / draft write made elsewhere is retired
         // BEFORE the repaint, so nothing paints from it; the next expand reads it as a first visit does. It
         // is kept, and the decision recorded, while any manual route has not reached the database.
-        rec.exposureSourceCheck = _irExposureRetireIfSourceMoved_('RESTORED_MOUNT');
+        rec.exposureSourceCheck = 'REVISION_CHECK';   // DC2-R2 D-S8-B3-187: decided after the probe; an expand waits for it
+        if (typeof _irAfterRevisionProbe_ === 'function') _irAfterRevisionProbe_(function () { rec.exposureSourceCheck = _irExposureRetireIfSourceMoved_('RESTORED_MOUNT'); });
+        else rec.exposureSourceCheck = _irExposureRetireIfSourceMoved_('RESTORED_MOUNT');
+        if (window.KM && window.KM.factoryAvailability) { window.KM.factoryAvailability.ensure(false); }
         if (typeof renderReplenishment === 'function') renderReplenishment();
         // CP2X-R4-R1 §B — THE SALES BASIS IS RESTORED TOO, OR IT IS RE-READ ONCE.
         //
@@ -10382,7 +10573,7 @@ function _irBootstrapScope_() {
         // Search was pressed for a scope that had never changed. This costs ZERO when a settled result or
         // a session-cached envelope is in hand, and exactly one request when neither is.
         rec.recoRecovery = (typeof _irRecoEnsureForRestoredScope_ === 'function')
-            ? _irRecoEnsureForRestoredScope_() : 'NO_HELPER';
+            ? _irRecoEnsureForRestoredScope_(function (d) { rec.recoRecoveryProbed = true; rec.recoRecovery = d; }) : 'NO_HELPER';
         // QUIET revalidation. It never touches `status`, so it cannot turn a painted table back into a loading
         // one, and a failure leaves the restored result exactly where it is -- the data on screen was valid when
         // it was read and a failed revalidation does not make it invalid.
@@ -10571,6 +10762,7 @@ window._irBootstrapDiagnostic_ = function () {
         // ALREADY_SETTLED and FROM_CACHE cost no request; REREAD_ISSUED is the one re-read that a read
         // abandoned in flight leaves owing.
         reco_recovery: _irBootstrap.recoRecovery || null,
+        reco_recovery_probed: !!_irBootstrap.recoRecoveryProbed,
         // CP2X-R4-R1 §C — WHICH MOUNT THIS RECORD BELONGS TO, and whether that is still the mount on
         // screen. mount_generation advances on every mount and unmount; a record whose own generation
         // no longer matches describes a round that is over. stray_callbacks counts the late callbacks
@@ -11394,6 +11586,7 @@ function _irWorkspaceRefresh_(opts) {
                     at: _irNowMs_() };
             } catch (e) { _irLastReadMeta = null; }
             _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
+            if (typeof _irStampEcho_ === 'function') _irStampEcho_(_srcAtIssue, env && env.meta);   // DC2-R2 D-S8-B3-187
             _irReadModelSource = _srcAtIssue;
             // ==========================================================================================
             // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §3 — THE CATALOGUE WAS SETTLED EMPTY, AND THAT IS WHY THE
@@ -11485,6 +11678,45 @@ function _irAfterWrite(cb) {
 //   • The pending filters become APPLIED only on SUCCESS — atomically, together — so a failed Search leaves
 //     the previous confirmed result and its filters untouched.
 //   • Failure shows an actionable error with a Retry, never an empty result.
+// ---- FE-SI2 Search helpers ----
+function _irSearchUnsavedGuard_(pending) {
+    var p = (typeof _irLocalPlanPending_ === 'function') ? _irLocalPlanPending_() : [];
+    if (!p.length) { _irSearchBlockedNotice_(null); return false; }
+    _irSearch.lastRefusal = { code: 'UNSAVED_ROUTES_PROTECTED', at: _irNowMs_(), pending: false, skus: p.slice(0, 50),
+        selectedCountry: pending.country, marketplaceId: pending.marketplaceId };
+    var a15 = _irSearch.applied;
+    if (a15) { var c15 = document.getElementById('replenCountry'), m15 = document.getElementById('replenMarketplace');
+        if (c15) c15.value = a15.country; if (m15) m15.value = a15.marketplaceId; _irSearch.stale = false; }
+    _irSearchBlockedNotice_(p);
+    return true;
+}
+function _irSearchBlockedNotice_(skus) {
+    var host = (typeof _irStateHost_ === 'function') ? _irStateHost_() : null; if (!host || !host.querySelector) return;
+    var old = host.querySelector('.replen-search-blocked'); if (old && old.parentNode) old.parentNode.removeChild(old);
+    if (skus && skus.length) {
+        var el = document.createElement('div'); el.className = 'replen-search-blocked'; el.setAttribute('role', 'alert');
+        el.setAttribute('style', 'background:#FFFBEB;border-left:3px solid #F59E0B;color:#92400E;padding:8px 10px;margin:6px 0;font-size:13px;');
+        el.innerHTML = '<strong>Search not run - ' + skus.length + ' route(s) are not saved yet.</strong> Wait for Saving to finish, or fix the routes marked Not saved, then press Search again. Nothing was discarded.' +
+            '<details style="margin-top:4px;font-size:12px;"><summary>SKUs</summary>' + skus.map(function (k) { return _irEsc_(k); }).join(', ') + '</details>';
+        host.insertBefore(el, host.firstChild);
+    }
+    if (typeof _irStateHostSync_ === 'function') { try { _irStateHostSync_(host); } catch (e) {} }
+}
+function _irSearchShowPending_(pending) {
+    var a = _irSearch.applied;
+    if (a && a.country === pending.country && a.marketplaceId === pending.marketplaceId) return false;   // same site: nothing on screen is wrong
+    _irSearch.pendingScope = { country: pending.country, marketplaceId: pending.marketplaceId, at: _irNowMs_() };
+    _irSearch.status = 'LOADING'; _irSearch.error = null;
+    _irRenderSearchGate_();
+    return true;
+}
+function _irTakeQueuedSearch_(pending) { var q = _irSearch.queued; _irSearch.queued = null; return q || pending; }
+function _irSearchRestoreAfterRefusal_() {
+    if (!_irSearch.pendingScope || _irSearch.inFlight || _irSearch.status !== 'LOADING') return;
+    _irSearch.pendingScope = null;
+    if (_irSearch.applied) { _irSearch.status = 'READY'; renderReplenishment(); } else { _irSearch.status = 'PRE_SEARCH'; _irRenderSearchGate_(); }
+}
+window._irSearchUnsavedGuard_ = _irSearchUnsavedGuard_;
 function searchReplenishment() {
     // A new search (incl. Country / Marketplace change then Search) resets the Category tab to All.
     replenCategoryTab = 'All';
@@ -11500,6 +11732,17 @@ function searchReplenishment() {
     if (!pending.country && !pending.marketplaceId) { alert('Please select Country and Marketplace before searching.'); return; }
     if (!pending.country) { alert('Please select a Country.'); return; }
     if (!pending.marketplaceId) { alert('Please select a Marketplace.'); return; }
+
+    // FE-SI2 (a): A SEARCH NEVER SILENTLY DISCARDS UNSAVED ROUTES. A Search ends in _irHydrateDraftForAppliedScope_, which
+    // replaces the Execution Plan with the persisted drafts and clears the unsaved marks (and the recovery copy has ONE
+    // key for every site). So while any route is unsaved, being written, waiting to be written, dirty or pending a cancel,
+    // the Search is refused: no request, nothing applied, the table and the typed routes stay as they are, and the
+    // operator is told which SKUs and what to do.
+    if (_irSearchUnsavedGuard_(pending)) return;
+    // FE-SI2 (b): THE CLICK IS VISIBLE AT ONCE. A different site than the one on screen replaces the table with the
+    // Searching state immediately, before any wait (scope verification, revision probe, read), so the previous site's
+    // rows never stand under the new site's selectors. A refused Search restores the applied site's view.
+    _irSearchShowPending_(pending);
 
     // CP2X-R4 — AND THE PAIR MUST BE CONSISTENT, not merely present. A refusal here issues NO request,
     // does NOT move `applied`, and publishes nothing: the table keeps showing the last result it was
@@ -11585,6 +11828,7 @@ function searchReplenishment() {
                     selectedCountry: vrec.pending.country, marketplaceId: vrec.pending.marketplaceId,
                     marketplaceCountry: null, marketplaceStatus: null,
                     authoritySource: (again && again.authoritySource) || null };
+                _irSearchRestoreAfterRefusal_();   // FE-SI2 (b)
                 if (typeof _irMarkSearchStale_ === 'function') _irMarkSearchStale_();
                 return;
             }
@@ -11607,6 +11851,7 @@ function searchReplenishment() {
                 marketplaceStatus: (again && again.marketplaceStatus) || null,
                 authoritySource: (again && again.authoritySource) || null };
             if (typeof refreshReplenMarketplaceOptions === 'function') refreshReplenMarketplaceOptions();
+            _irSearchRestoreAfterRefusal_();   // FE-SI2 (b)
             alert(_irScopeRefusalMessage_(_irSearch.lastRefusal.code));
         };
         Promise.resolve(_irEnsureRegistryLoaded_()).then(function () {
@@ -11628,6 +11873,7 @@ function searchReplenishment() {
         // Re-offer the LEGAL options for the country on screen. This never picks one - it rebuilds the
         // list and drops an id that does not belong to it, so the operator chooses from what is real.
         if (typeof refreshReplenMarketplaceOptions === 'function') refreshReplenMarketplaceOptions();
+        _irSearchRestoreAfterRefusal_();   // FE-SI2 (b)
         alert(_irScopeRefusalMessage_(_scopeCheck.code));
         return;
     }
@@ -11643,7 +11889,16 @@ function searchReplenishment() {
 function _irRunVerifiedSearch_(pending) {
     _irSearch.lastRefusal = null;
 
-    if (_irSearch.inFlight) return;   // single-flight — repeated rapid clicks share the in-flight read
+    // FE-SI2 (c): single-flight is kept, but a click for ANOTHER site while the read is in flight is no longer dropped.
+    // The workspace read is scope-independent, so the in-flight read is applied to the LATEST site asked for, and the
+    // site that was asked for first can never be painted under the newer selectors.
+    if (_irSearch.inFlight) { _irSearch.queued = { country: pending.country, marketplaceId: pending.marketplaceId }; return; }
+    // DC2-R2 D-S8-B3-187 - a held read model is reused only after the server says no source moved.
+    // (its continuation runs with the probe fresh, so it neither probes nor re-marks the Search start)
+    var _resumed = _irReadModel && typeof _irRevFresh_ !== 'undefined' && _irRevFresh_;
+    var _gate = _irReadModel && typeof _irNeedsProbe_ === 'function' && _irNeedsProbe_();
+    if (_gate && typeof _irRecoMarkSearch_ === 'function') _irRecoMarkSearch_();
+    if (_gate) return _irAfterRevisionProbe_(function () { _irRunVerifiedSearch_(pending); });
 
     // CP2X-R1 §C — THE SEARCH LEG STARTS HERE, AT THE USER ACTION AND BEFORE THE MAIN TABLE READ.
     //
@@ -11652,7 +11907,7 @@ function _irRunVerifiedSearch_(pending) {
     // between clicking Search and seeing a number was therefore OUTSIDE the measurement, which is the
     // half that matters. This is the first instant at which the click is known to cause work: the
     // selectors have validated and the single-flight gate has let it through.
-    if (typeof _irRecoMarkSearch_ === 'function') _irRecoMarkSearch_();
+    if (!_resumed && typeof _irRecoMarkSearch_ === 'function') _irRecoMarkSearch_();
 
     // Canonical: scoped inventoryReplenishment workspace (NO broad Operation DB for the primary render). The
     // read model is scope-INDEPENDENT, so once it is loaded a Search is pure client-side filtering and costs
@@ -11691,10 +11946,11 @@ function _irRunVerifiedSearch_(pending) {
             reason: 'a person pressed Search, which always performs a fresh read' }).then(function () {
             _irSearch.inFlight = false;
             if (mySeq !== _irSearch.seq) return;   // a newer Search superseded this response
-            _irApplySearch_(pending, mySeq);
+            _irApplySearch_(_irTakeQueuedSearch_(pending), mySeq);
         })['catch'](function (err) {
             _irSearch.inFlight = false;
             if (mySeq !== _irSearch.seq) return;   // stale failure — never overwrite a newer Search
+            _irSearch.queued = null; _irSearch.pendingScope = null;   // FE-SI2: the failure is shown; a queued click is not silently retried
             _irSearch.status = 'ERROR';
             _irSearch.error = { code: (err && err.code) || 'INVENTORY_REPLENISHMENT_READ_FAILED',
                 message: (err && err.message) || 'Inventory Replenishment read failed' };
@@ -11715,7 +11971,7 @@ function _irRunVerifiedSearch_(pending) {
             loader({ force: true }).then(function() {
                 _irSearch.inFlight = false;
                 if (lSeq !== _irSearch.seq) return;
-                _irApplySearch_(pending, lSeq);
+                _irApplySearch_(_irTakeQueuedSearch_(pending), lSeq);
             })['catch'](function(err) {
                 _irSearch.inFlight = false;
                 if (lSeq !== _irSearch.seq) return;
@@ -11747,6 +12003,7 @@ function _irApplySearch_(pending, mySeq) {
         }
     } catch (_eGen) {}
     _irSearch.applied = { country: pending.country, marketplaceId: pending.marketplaceId };
+    _irSearch.pendingScope = null; _irSearchBlockedNotice_(null);   // FE-SI2
     // F1-7N-FB-4E-R3 §B.4 — remember the scope of a SUCCESSFUL Search, and only here. This is already the one
     // place `applied` is assigned, so it is the only place a scope is known to be valid AND to have produced a
     // real result. Remembering a merely SELECTED scope would persist something that was never proven to work.
@@ -11768,6 +12025,7 @@ function _irApplySearch_(pending, mySeq) {
     // The notice is rendered from state at the single commit point, so the flag and the node cannot disagree.
     if (typeof _irRenderStaleNotice_ === 'function') _irRenderStaleNotice_();
     _irSearch.error = null;
+    if (window.KM && window.KM.factoryAvailability) { window.KM.factoryAvailability.ensure(false); }
     _irSearch.status = 'READY';                           // renderReplenishment downgrades to EMPTY on 0 rows
     renderReplenishment();
     // F1-4B-B / FM5-R1: the SCOPE-dependent reads (materialized gap, at most one live
@@ -11876,7 +12134,7 @@ function handleRecalcAllInventoryGap(scopeSpec) {
       // F1-SMALL-GAP-JOB-DONE-NOTICE-R1: this MANUAL runJob done() fires only on terminal DONE, AFTER refresh() — so the
       // notice is truthful and never precedes fresh data. Keyed to _irActiveRunId (one notice per manual run). The
       // resume-on-mount done() below deliberately does NOT announce, so scheduled/resumed jobs stay silent.
-      done: function (finalState) { _irShowCancel_(false); setBtn('Completed', true); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState)); } catch (e) {} _irAiSupportNotice_('ok', _recalcTitle, 'Recalculation completed and the materialized replenishment gap was refreshed.'); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      done: function (finalState) { _irShowCancel_(false); setBtn('Completed', true); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState)); } catch (e) {} var _oc = (gr && typeof gr.doneOutcome === 'function') ? gr.doneOutcome('Inventory', scopeSpec, finalState) : { tone: 'ok' }; _irAiSupportNotice_(_oc.tone, _recalcTitle, _oc.tone === 'ok' ? 'Recalculation completed and the materialized replenishment gap was refreshed.' : _oc.text + ' The gap was refreshed.'); /* R66 AI notice: the actual outcome */ if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       cancelled: function () { _irShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} _irAiSupportNotice_('warn', _recalcTitle, 'Recalculation was cancelled. The latest completed results are preserved.'); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       failed: function (st) { _irAiSupportNotice_('bad', _recalcTitle, _irGapJobFailMsg_('Inventory', st)); alert(_irGapJobFailMsg_('Inventory', st)); restore(); }
     }
@@ -13110,6 +13368,7 @@ function _getCloudReplenishmentData() {
     // so KM/US/Amazon and ResUS/US/Amazon never merge — the company bleed is impossible). Legacy rows
     // without a marketplace_id fall back to the master's derived company+country+marketplace.
     var filtered = mpSkus.filter(function (mp) {
+        if (/^(inactive|discontinued)$/i.test(String(mp.marketplaceSkuStatus || '').trim())) return false;
         if (mp.marketplaceId) return String(mp.marketplaceId) === String(marketplaceId);
         return eqv(mp.company, company) && eqv(mp.country, mktCountry) && eqv(mp.marketplace, marketplace);
     });
@@ -13153,7 +13412,9 @@ function _getCloudReplenishmentData() {
     // and the whole-SKU projection is computed ONCE per SKU rather than once per marketplace row.
     var _irFactoryCalcMonth = (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); })();
     var _irFactoryAllocCache = {};
+    if (window.KM && window.KM.factoryAvailability) factory = window.KM.factoryAvailability.rows();
     function _irFactoryAllocFor_(sku, siteScope, factoryRows, whRows, siteRows, fcRowsIn) {
+        if (factoryRows === null) return { cn: null, tw: null, state: 'UNAVAILABLE', projection: null };
         var k = String(sku == null ? '' : sku).toUpperCase();
         if (!Object.prototype.hasOwnProperty.call(_irFactoryAllocCache, k)) {
             _irFactoryAllocCache[k] = IR.factorySiteAllocation({
@@ -13202,12 +13463,13 @@ function _getCloudReplenishmentData() {
                 || { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0 })
             : null;
 
-        var inv = IR.latestSnapshot(invSnaps, scope);
-        var health = IR.latestSnapshot(healthSnaps, scope);
+        var inv = IR.latestSnapshot(_irNoBlankMk16_(invSnaps), scope);   // R71-FE-16 (A-1): blank-marketplace rows excluded
+        var _blank16 = !inv && !!IR.latestSnapshot(invSnaps, scope);       // ... and they were the only rows for this SKU
+        var health = IR.latestSnapshot(_irNoBlankMk16_(healthSnaps), scope);
         var stock = IR.stockCard(inv);
         var lts = IR.longTermStorage(health);
-        var trend = IR.salesTrend7d(dailyRows, scope);
-        var avg = IR.avgSalesPerDay(weeklyRows, scope);
+        var trend = IR.salesTrend7d(_irNoBlankMk16_(dailyRows), scope);
+        var avg = IR.avgSalesPerDay(_irNoBlankMk16_(weeklyRows), scope);
         var fc60 = IR.forecast60d(fcRows, targetRules, scope, events);   // R7 §F: 3-month Base FC + scoped Special Events (once)
         var eventQty = IR.upcomingEventQty(events, scope);
         // 3rd Party Stock = Site Planning Available (18-day virtual planning allocation of the shared
@@ -13245,6 +13507,15 @@ function _getCloudReplenishmentData() {
         var need = IR.needBuckets();
 
         var currentStock = stock.available + stock.fcTransfer + stock.fcProcessing;
+        // R71-FE-13 (N8, fail closed): more than one company lists this country + marketplace + SKU and the snapshot row names no company ->
+        // the site number belongs to the marketplace account, not to this company. Shown as "—" + the reason; the maths are unchanged.
+        // R71-FE-15 (N8 = 16_ gate-1j): the Owner-confirmed source scope (original Amazon account only) + the marketplaces master relation -
+        // exactly ONE marketplaces row for this country + marketplace and its company is this one; marketplace_skus listings no longer decide.
+        // F1: no snapshot row -> "—" + the exact reason, never 0 (a row that exists with 0 still shows 0).
+        var _why15 = _irSiteSourceWhy15_(scope, marketplacesReg) || (_blank16 ? _IR_MK_BLANK16_ : '');   // R71-FE-16 (A-1)
+        var _kind15 = _why15 ? 'SOURCE' : (!inv ? 'NO_ROW' : '');
+        if (_kind15 === 'NO_ROW') _why15 = _IR_NO_ROW15_;
+        var _src13 = !!_kind15;
         var dos = IR.daysOfSupply(currentStock, avg);
         // F1-4B-FM5-R4J-LIVE9 — align the Sales-Driven Avg Sales/day + Days of Supply to the CANONICAL horizon
         // sales-rate (horizonBasis.avgSalesPerDay = the SAME KMCALC normalized rate D18/D30/D45/D90 uses), closing
@@ -13341,6 +13612,9 @@ function _getCloudReplenishmentData() {
             category: scope.category || '',        // Category tab filter (sku_details.category)
             // First Layer Summary
             currentInventory: currentStock,
+            srcUnknown13: _src13,   // R71-FE-13
+            srcKind15: _kind15, srcWhy15: _why15, ltsNoRow15: !health,   // R71-FE-15
+            currentStockDisplay: _src13 ? _irSrcDash15_(_kind15, _why15) : _irScopeVal15_(currentStock),
             onTheWay: 0,                       // Shipping Shipment — pending mapping (spec §9)
             _recDraftLines: recDraftLines,               // persisted snapshot (raw draft lines), [] when loaded-empty, NULL when not loaded
             // S8-R4B-2B — the second layer's state travels WITH the row, so every consumer answers from the
@@ -13350,7 +13624,7 @@ function _getCloudReplenishmentData() {
             thirdPartyPlan: thirdPartyPlan,              // full allocation detail (tooltip/expand)
             thirdPartyDetailHtml: _irRenderThirdPartyDetail(thirdPartyPlan),
             thirdPartyTitle: _irThirdPartyTitle(thirdPartyPlan),
-            avgDailySales: _avgDisplay,        // S8-R2: the canonical §22 rate for BOTH demand modes, or '--'
+            avgDailySales: (_kind15 === 'SOURCE') ? _irSrcDash15_(_kind15, _why15) : _avgDisplay,   // R71-FE-13 / R71-FE-15 (F1 keeps the sales rate: it is not a stock reading)        // S8-R2: the canonical §22 rate for BOTH demand modes, or '--'
             // CP2U-R1 - WHY there is no rate, when there is none. Carried, never computed here.
             avgSalesCellState: _avgCellState,         // 'READY' | 'PENDING' | 'READ_FAILED' | 'REFUSED' | 'NONE' | 'DISABLED'
             avgSalesCellReason: _avgCellReason,       // the specific condition inside that state
@@ -13364,7 +13638,7 @@ function _getCloudReplenishmentData() {
             avgSalesExcludedDates: _avgExcluded,     // the campaign/event dates removed from the sample
             forecast60d: fc60,
             upcomingEventQty: eventQty > 0 ? eventQty : null,
-            daysOfSupply: _dosDisplay,
+            daysOfSupply: _src13 ? '\u2014' : _dosDisplay,   // R71-FE-13
             needsAlert: false,                 // color now driven by IRMap.dosColorClass
             suggestedQty: need.suggestedQty,
             cnStock: cnStock,
@@ -13520,6 +13794,8 @@ window.renderReplenishment = renderReplenishment;
 var _editSkuTarget = null;
 
 function openEditSkuModal() {
+    if (window.KM && window.KM.siteSkuEditor) return window.KM.siteSkuEditor.open();
+    alert('Edit SKU is not available. Reload the page before editing.'); return;
     // Find selected SKU from current table (use first expanded or prompt user)
     var fixedRows = document.querySelectorAll('#ops-section .dual-layer-table:not(.ir-overview-table) .fixed-row');
     var selectedSku = null;
@@ -13675,6 +13951,7 @@ function _replenImportSetResolvedText(message, color) {
 }
 
 function openReplenImportModal() {
+    if (!_replenImportUi_().reset()) return;
     var modal = document.getElementById('replen-import-sku-modal');
     var overlay = document.getElementById('replen-modal-overlay');
     if (!modal || !overlay) return;
@@ -13704,6 +13981,7 @@ function openReplenImportModal() {
 }
 
 function closeReplenImportModal() {
+    if (_replenImportUi_().active()) return;
     var modal = document.getElementById('replen-import-sku-modal');
     var overlay = document.getElementById('replen-modal-overlay');
     if (modal) modal.classList.remove('is-open');
@@ -13834,7 +14112,15 @@ function renderReplenImportResult(data) {
     box.innerHTML = html;
 }
 
+function _replenImportUi_() {
+    if (!(window.KM && window.KM.importFeedback)) throw new Error('Import feedback is not loaded. Reload this page.');
+    return window.KM.importFeedback.controller('site', {"roots":["replen-import-sku-modal"],"buttons":"#replen-import-run-btn"});
+}
+
 function runReplenImport() {
+    var ui = _replenImportUi_();
+    if (ui.done()) { closeReplenImportModal(); return; }
+    if (ui.blocked()) return;
     var res = _resolveReplenImportMarketplace();
     if (!_replenImportResolved) { renderReplenImportError((res && res.error) ? res.error : 'Select Country and Marketplace first.'); return; }
 
@@ -13845,8 +14131,10 @@ function runReplenImport() {
 
     var meta = _replenImportResolved;
     var file = fileInput.files[0];
+    if (!ui.begin()) return;
     var reader = new FileReader();
     reader.onload = function(e) {
+      try {
         var cells;
         try { cells = parseReplenCsv(e.target.result); } catch (err) { renderReplenImportError('Failed to parse CSV: ' + (err && err.message ? err.message : err)); return; }
         if (!cells || cells.length < 2) { renderReplenImportError('No data rows found (need a header row + at least one data row).'); return; }
@@ -13910,9 +14198,11 @@ function runReplenImport() {
         }
 
         if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Importing...'; }
-        window.KM.DB.importMarketplaceSkusBatch(rows, { priceStatusDefault: 'draft', forecastStatusDefault: 'draft' })
+        ui.writing();
+        Promise.resolve().then(function () { return window.KM.DB.importMarketplaceSkusBatch(rows, { priceStatusDefault: 'draft', forecastStatusDefault: 'active' }); })
             .then(function(result) {
-                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                ui.finish(result);
+                if (runBtn && !ui.blocked() && !ui.done()) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
                 if (!result || result.success === false) {
                     renderReplenImportError(result && result.error ? result.error : 'Import failed. API may not be configured.');
                     return;
@@ -13934,12 +14224,16 @@ function runReplenImport() {
                 _irAfterWrite(function () { if (typeof renderReplenishment === 'function') renderReplenishment(); });
             })
             .catch(function(err) {
-                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                ui.fail(err);
+                if (runBtn && !ui.blocked() && !ui.done()) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
                 renderReplenImportError(err && err.message ? err.message : 'Import request failed.');
             });
+      } catch (err) { ui.fail(err); renderReplenImportError(err.message || String(err)); }
+      finally { ui.endRead(); }
     };
-    reader.onerror = function() { renderReplenImportError('Could not read the selected file.'); };
-    reader.readAsText(file);
+    reader.onerror = function() { ui.endRead(); renderReplenImportError('Could not read the selected file.'); };
+    reader.onabort = reader.onerror;
+    try { reader.readAsText(file); } catch (err) { ui.endRead(); renderReplenImportError(err.message); }
 }
 
 function downloadReplenImportTemplate() {
@@ -14650,7 +14944,8 @@ var _IR_RECO_CACHE_SUPERSEDED_KEYS = ['km_ir_reco_cache_v1'];
 // NOT ADDED: a second cache, another store, a longer retention, a TTL, polling, an automatic retry, or any
 // change to WHAT is cached (a success, including a valid zero and a named quality error), to the key's
 // scope, to the F1A stale-RESPONSE guard, or to any read policy, formula, loader, transport or timeout.
-var _IR_RECO_CACHE_HANDLERS = ['fm5-r4ui-r5e'];            // computation versions this build will cache
+// DC2-R2: dc2-r2-f7 changed the day horizons (F7); an r5e answer is not cached or served from the store.
+var _IR_RECO_CACHE_HANDLERS = ['dc2-r2-f7'];               // computation versions this build will cache
 function _irRecoHandlerOk_(v) { return !!v && _IR_RECO_CACHE_HANDLERS.indexOf(v) !== -1; }
 function _irRecoEnvHandler_(env) {
   var m = (env && env.meta) || {};
@@ -14797,21 +15092,53 @@ function _irRecoRevisionVerdict_(a, b) {
 function _irTaipeiDay_(ms) {
   return new Date(ms + 480 * 60000).toISOString().slice(0, 10);
 }
+// DC2-R2 D-S8-B3-187 - AND THE SERVER'S SOURCE REVISION, which sees what the tab epoch cannot: another tab, another
+// user, a scheduled import or a server job. It is asked for (KM.DB.probeSourceRevision, one GET, no sheet) right
+// before a decision, and it is valid ONLY for the decision that runs in that probe's continuation: outside it the
+// current revision is unknown, so no held answer is SAME on a revision the page merely remembers. A read issued in
+// that continuation is stamped with the probed revision; a read with no probe behind it takes the revision the
+// server echoes for the moment the read STARTED, so an answer that crossed a write is never stamped newer.
+// A page with NO revision channel at all (no KM.DB.probeSourceRevision: a harness, or a db-api older than this page)
+// keeps the epoch + day rule. With the channel, an unknown revision is UNKNOWN, never SAME. An IN-FLIGHT read is
+// deduped on the tab's own epoch only: its answer arrives stamped, and is checked when it is held.
+var _irRevProbe_ = null, _irRevNow_ = null, _irRevFresh_ = false;
+function _irRevChannel_() { var DB = (typeof window !== 'undefined' && window.KM && window.KM.DB) || null; return !!(DB && typeof DB.probeSourceRevision === 'function'); }
+function _irNeedsProbe_() { return !_irRevFresh_ && _irRevChannel_(); }
+function _irAfterRevisionProbe_(fn) {
+  var DB = (typeof window !== 'undefined' && window.KM && window.KM.DB) || null;
+  if (!_irNeedsProbe_()) return fn();
+  if (!_irRevProbe_) _irRevProbe_ = Promise.resolve().then(function () { return DB.probeSourceRevision(); })
+    .then(null, function () { return null; }).then(function (v) { _irRevProbe_ = null; return v; });
+  _irRevProbe_.then(function (v) {
+    _irRevNow_ = (typeof v === 'string' && v) ? v : null; _irRevFresh_ = true;
+    try { fn(); } finally { _irRevFresh_ = false; _irRevNow_ = null; }
+  });
+  return null;
+}
+// A read's echoed start revision fills a stamp that has none; it never replaces a probed one.
+function _irStampEcho_(stamp, meta) {
+  if (stamp && !stamp.server && meta && typeof meta.sourceRevision === 'string' && meta.sourceRevision) stamp.server = meta.sourceRevision;
+}
 function _irSourceStamp_() {
   var f = (typeof window !== 'undefined' && window.KM && window.KM.DB) ? window.KM.DB.sourceWriteEpoch : null;
   if (typeof f !== 'function') return null;
   var e = null;
   try { e = f(); } catch (x) { return null; }
   if (!e || typeof e.planning !== 'number' || typeof e.exposure !== 'number') return null;
-  return { planning: e.planning, exposure: e.exposure, day: _irTaipeiDay_(Date.now()) };
+  return { planning: e.planning, exposure: e.exposure, day: _irTaipeiDay_(Date.now()),
+    server: (typeof _irRevFresh_ !== 'undefined' && _irRevFresh_) ? _irRevNow_ : null };
 }
 // { verdict: 'SAME' | 'SUPERSEDED' | 'UNKNOWN', reason } for one family ('planning' | 'exposure').
-function _irSourceVerdict_(stamp, family) {
+function _irSourceVerdict_(stamp, family, localOnly) {
   var cur = _irSourceStamp_();
   if (!cur) return { verdict: 'UNKNOWN', reason: 'SOURCE_EPOCH_UNAVAILABLE' };
   if (!stamp || typeof stamp[family] !== 'number' || !stamp.day) return { verdict: 'UNKNOWN', reason: 'SOURCE_EPOCH_UNKNOWN' };
   if (stamp[family] !== cur[family]) return { verdict: 'SUPERSEDED', reason: 'SOURCE_WRITTEN_SINCE' };
   if (stamp.day !== cur.day) return { verdict: 'SUPERSEDED', reason: 'SOURCE_CYCLE_CHANGED' };
+  if (localOnly || typeof _irRevChannel_ !== 'function' || !_irRevChannel_()) return { verdict: 'SAME', reason: null };
+  if (!cur.server) return { verdict: 'UNKNOWN', reason: 'SOURCE_REVISION_UNAVAILABLE' };
+  if (!stamp.server) return { verdict: 'UNKNOWN', reason: 'SOURCE_REVISION_UNKNOWN' };
+  if (stamp.server !== cur.server) return { verdict: 'SUPERSEDED', reason: 'SOURCE_REVISION_CHANGED' };
   return { verdict: 'SAME', reason: null };
 }
 var _irRecoCacheMem = null;                                // lazy in-memory mirror of the session store
@@ -14867,7 +15194,7 @@ function _irRecoCacheGet(scopeReq) {
   // because the absence is a property of this page, not of the record.
   var _sv = _irSourceVerdict_(e.source, 'planning');
   if (_sv.verdict !== 'SAME') {
-    if (_sv.reason !== 'SOURCE_EPOCH_UNAVAILABLE') { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); }
+    if (_sv.reason !== 'SOURCE_EPOCH_UNAVAILABLE' && _sv.reason !== 'SOURCE_REVISION_UNAVAILABLE') { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); }
     _irRecoCacheDecision_('MISS', _sv.reason);
     return null;
   }
@@ -14902,7 +15229,8 @@ function _irRecoCacheSet(scopeReq, env, issueStamp) {
     },
     revision: _irRecoRevisionFromEnv_(env),
     // DC1-R1 - the source epoch and Taipei day the READ WAS ISSUED under (null = unknown, never served).
-    source: issueStamp ? { planning: issueStamp.planning, exposure: issueStamp.exposure, day: issueStamp.day } : null,
+    // DC2-R2 D-S8-B3-187 - and the server revision it was read under: without it the record is UNKNOWN on every lookup.
+    source: issueStamp ? { planning: issueStamp.planning, exposure: issueStamp.exposure, day: issueStamp.day, server: issueStamp.server || null } : null,
     cachedAt: (typeof Date !== 'undefined' && Date.now) ? Date.now() : null
   };
   _irRecoCacheMem = c; _irRecoCachePersist();
@@ -15285,8 +15613,14 @@ function _irRecoCancelInFlight_(status) {
 // IT ASKS _irResultMatchesAppliedScope_, NOT WHETHER A RESULT EXISTS. A loaded result for a DIFFERENT
 // site must not count as "already settled" - that is the cross-scope guard, and reusing it here means
 // the recovery cannot be the thing that publishes another site's basis.
-function _irRecoEnsureForRestoredScope_() {
+// DC2-R2 - onDecided receives the decision taken AFTER the revision probe, so a caller that records it records
+// what the restore actually cost, not the interim REVISION_CHECK.
+function _irRecoEnsureForRestoredScope_(onDecided) {
   if (typeof _irRecommendationWorkspaceEnabled !== 'function' || !_irRecommendationWorkspaceEnabled()) return 'DISABLED';
+  if ((_irRecoState || {}).loadedOk && _irNeedsProbe_()) {   // DC2-R2 D-S8-B3-187
+    _irAfterRevisionProbe_(function () { var d = _irRecoEnsureForRestoredScope_(); if (typeof onDecided === 'function') onDecided(d); });
+    return 'REVISION_CHECK';
+  }
   var st = _irRecoState || {};
   // DC1-R1 - "settled" also means "settled under the sources that exist now". An answer read before a
   // write made on another page, or on an earlier Taipei day, is not the operator's answer any more; the
@@ -15295,7 +15629,7 @@ function _irRecoEnsureForRestoredScope_() {
   if (_cur && st.loadedOk && typeof _irResultMatchesAppliedScope_ === 'function' && _irResultMatchesAppliedScope_(st)) {
     return 'ALREADY_SETTLED';
   }
-  if (_cur && st.status === 'LOADING') return 'ALREADY_LOADING';
+  if (st.status === 'LOADING' && _irSourceVerdict_(st.source, 'planning', true).verdict === 'SAME') return 'ALREADY_LOADING';
   if (typeof loadRecommendationWorkspace_ !== 'function') return 'NO_LOADER';
   try { loadRecommendationWorkspace_(); } catch (e) { return 'THREW'; }
   return (_irRecoState && _irRecoState.fromCache) ? 'FROM_CACHE' : 'REREAD_ISSUED';
@@ -15309,6 +15643,10 @@ function loadRecommendationWorkspace_() {
   var scopeReq = _irRecoScopeRequest();
   if (!scopeReq) { _irRecoInvalidate('CONTEXT_NOT_READY'); _irRecoRerenderSummaries(); return null; }
   var ctxKey = JSON.stringify(scopeReq);
+  // DC2-R2 D-S8-B3-187 - a HELD answer (this state or the session store) is decided after a revision probe.
+  var _ck = _irRecoCacheKey(scopeReq);
+  if (_irNeedsProbe_() && ((_irRecoState.contextKey === ctxKey && _irRecoState.loadedOk) || (_ck && _irRecoCacheLoad()[_ck])))
+    return _irAfterRevisionProbe_(loadRecommendationWorkspace_);
   // DC1-R1 - the source epoch and Taipei day THIS request is issued under. Read once, here, so the state,
   // the store entry and the dedupe below all describe the same instant.
   var issueStamp = _irSourceStamp_();
@@ -15316,7 +15654,7 @@ function loadRecommendationWorkspace_() {
   // DC1-R1 - but only while no source has been written since that read was issued: an in-flight or settled
   // answer that predates a write is not a duplicate of the question being asked now.
   if (_irRecoState.contextKey === ctxKey && (_irRecoState.status === 'LOADING' || _irRecoState.loadedOk)
-    && _irSourceVerdict_(_irRecoState.source, 'planning').verdict === 'SAME') return null;
+    && _irSourceVerdict_(_irRecoState.source, 'planning', _irRecoState.status === 'LOADING').verdict === 'SAME') return null;
   // F1-4B-FM3a SESSION CACHE HIT: a previously-successful canonical result for this exact scope → restore it
   // with ZERO HTTP (survives navigate-away/back + re-expand within the browser session). Abort any in-flight
   // request for a superseded scope and bump the sequence so a late response can't clobber the cached state.
@@ -15377,6 +15715,7 @@ function loadRecommendationWorkspace_() {
     _irRecoApplyEnvelope(env, ctxKey, scopeReq);
     // DC1-R1 - stamped with the ISSUE instant, not this one: a write that started while this read was in
     // the air makes the answer older than the sources, and the next lookup must see that.
+    _irStampEcho_(issueStamp, env && env.meta);   // DC2-R2 D-S8-B3-187
     _irRecoState.source = issueStamp;
     _irRecoCacheSet(scopeReq, env, issueStamp);   // FM3a: cache ONLY a successful canonical envelope (guarded inside)
     _irRecoRerenderSummaries();
@@ -15642,6 +15981,9 @@ function _irRecoWorkspaceBody(skuData) {
 // The card body: MATERIALIZED read (FM5-R1) is the primary surface once a materialized load has occurred for the
 // scope; else the live Workspace presentation (diagnostic/fallback); else the unchanged legacy table.
 function _irRecoSummaryCardBody(skuData) {
+  return _irRecoLabel15_(skuData) + _irRecoSummaryCardBody14_(skuData);   // R71-FE-14 (M-1) / R71-FE-15: source unknown, no snapshot row, or the m-b source-scope label
+}
+function _irRecoSummaryCardBody14_(skuData) {
   if (_irUseMaterializedGapRead() && _irMatState.status !== 'IDLE') return _irMatOutlookBody(skuData);
   if (!_irRecommendationWorkspaceEnabled()) return _legacyRecSummaryTableHtml(skuData);
   return _irRecoWorkspaceBody(skuData);
@@ -15833,6 +16175,12 @@ function loadInventoryGap_(force) {
   var appliedKey = _irAppliedScopeKey_();
   _IR_MAT_DIAG_.readerCalls++;
   // ALREADY LOADED for this exact scope - repaint, no read. Unchanged behaviour.
+  // DC2-R2 D-S8-B3-187 - a held gap answer is reused only while no source moved (a recalculation by anyone moves it).
+  var _held = !force && ((_irMatState.scopeKey === key && _irMatState.loadedOk) || Object.prototype.hasOwnProperty.call(_irMatByScope, key));
+  if (_held && typeof _irNeedsProbe_ === 'function' && _irNeedsProbe_()) return _irAfterRevisionProbe_(function () { loadInventoryGap_(force); });
+  if (_held && typeof _irRevChannel_ === 'function' && _irRevChannel_() && _irSourceVerdict_(_irMatState.scopeKey === key && _irMatState.loadedOk ? _irMatState.source : (_irMatByScope[key] || {}).source, 'planning').verdict !== 'SAME') {
+    delete _irMatByScope[key]; force = true;
+  }
   if (!force && _irMatState.scopeKey === key && _irMatState.appliedScopeKey === appliedKey && _irMatState.loadedOk) {
     _irMatSupersedeInFlight_(key);   // CP2X-R2 §A1
     _irMatDecision_('REPAINT', 'ALREADY_LOADED');
@@ -15854,7 +16202,7 @@ function loadInventoryGap_(force) {
       _irMatSupersedeInFlight_(key);   // CP2X-R2 §A1 - the read for the scope being left is now dead
       _irMatState = { status: hit.status, scopeKey: key, appliedScopeKey: appliedKey, bySku: hit.bySku,
         rows: hit.rows, loadedOk: true, error: null, handlerVersion: hit.handlerVersion,
-        revision: hit.revision, scope: hit.scope, appliedAt: hit.appliedAt, fromReuse: true };
+        revision: hit.revision, scope: hit.scope, appliedAt: hit.appliedAt, fromReuse: true, source: hit.source };
       _irMatDecision_('REUSE', _irMatRevisionComplete_(hit.revision) ? null : 'REUSED_REVISION_INCOMPLETE');
       // BOTH consumers are repainted from the ONE restored result - the Suggested Qty cells and the
       // Recommendation Summary read the same `_irMatState`, so they cannot disagree about it.
@@ -15866,7 +16214,7 @@ function loadInventoryGap_(force) {
     _irMatState = { status: 'READ_ERROR', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: { code: 'READER_UNAVAILABLE', message: 'materialized gap reader unavailable' } };
     _irRecoRerenderSummaries(); return null;
   }
-  var my = ++_irMatSeq;
+  var my = ++_irMatSeq, matStamp = (typeof _irSourceStamp_ === 'function') ? _irSourceStamp_() : null;   // DC2-R2 D-S8-B3-187: the sources this read is issued under
   _irMatInFlight = { key: key, appliedScopeKey: appliedKey, seq: my };   // CP2X-R2 §A1
   _irMatState = { status: 'LOADING', scopeKey: key, appliedScopeKey: appliedKey, bySku: {}, rows: [], loadedOk: false, error: null };
   _irRecoRerenderSummaries();
@@ -15888,7 +16236,7 @@ function loadInventoryGap_(force) {
     var bySku = {}; rows.forEach(function (r) { if (r && r.sku != null) bySku[String(r.sku)] = r; });
     // CP2U-R1 - 43_ stamps gapMaterializationHandlerVersion on its own envelopes. It is captured here and
     // reported SEPARATELY from the 42_ recommendation handler, and it is deliberately NOT checked against
-    // the recommendation accept list. The two markers currently read fm5-r4ui-r5c and fm5-r4ui-r5e, which
+    // the recommendation accept list. The two markers currently read dc2-r2-d4 and dc2-r2-f7, which
     // look like one series and are two: they version different handlers that ship and move independently,
     // and treating the gap read's marker as a recommendation version would make a matching string mean
     // something it does not.
@@ -15905,11 +16253,12 @@ function loadInventoryGap_(force) {
       scope: scopeReq, appliedAt: ((typeof Date !== 'undefined' && Date.now) ? Date.now() : null) };
     // CP2X-R1 §A - the SOURCE revision, derived from what the batch wrote, never from appliedAt.
     _irMatState.revision = _irMatRevisionOf_(_irMatState.handlerVersion, rows);
+    if (typeof _irStampEcho_ === 'function') _irStampEcho_(matStamp, res.envelope && res.envelope.meta); _irMatState.source = matStamp;   // DC2-R2 D-S8-B3-187
     // Kept for reuse. READY and EMPTY only - the error branches above return before reaching this point,
     // so a failed read is never stored and can never be replayed as an answer.
     _irMatByScope[key] = { status: _irMatState.status, appliedScopeKey: appliedKey, bySku: bySku, rows: rows,
       handlerVersion: _irMatState.handlerVersion, revision: _irMatState.revision, scope: scopeReq,
-      appliedAt: _irMatState.appliedAt };
+      appliedAt: _irMatState.appliedAt, source: matStamp };
     _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells();
   }).catch(function (err) {
     if (my !== _irMatSeq) return;
@@ -16184,7 +16533,7 @@ function _irRecoUpdateVelocityCells_() {
     var avg = row.querySelector('.replen-avg-cell');
     if (avg) {
       avg.className = 'scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item);
-      var note = _irAvgSalesTitleText_(item);   // DC1-R1 - the one title helper (quality note + window note)
+      var note = _irScopeTitle16_(item, _irAvgSalesTitleText_(item));   // DC1-R1 - the one title helper (quality note + window note)
       // REMOVED rather than set to '', so a cell that recovers does not keep an empty tooltip box.
       if (note) avg.setAttribute('title', note); else avg.removeAttribute('title');
       avg.innerHTML = item.avgDailySales + _irAvgSalesFlagHtml_(item);
@@ -16193,6 +16542,7 @@ function _irRecoUpdateVelocityCells_() {
     if (dos) {
       dos.className = 'scroll-cell replen-dos-cell ' + _irDosCellClass_(item);
       dos.textContent = item.daysOfSupply;   // textContent: this cell is a number, never markup
+      var t16 = _irScopeTitle16_(item, ''); if (t16) dos.setAttribute('title', t16); else dos.removeAttribute('title');   // R71-FE-16 (m-1)
     }
   });
 }
@@ -16265,7 +16615,7 @@ function _irRecoPaintReadStateCells_() {
     var avg = row.querySelector('.replen-avg-cell');
     if (avg) {
       avg.className = 'scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item);
-      var note = _irAvgSalesTitleText_(item);   // DC1-R1 - the one title helper (quality note + window note)
+      var note = _irScopeTitle16_(item, _irAvgSalesTitleText_(item));   // DC1-R1 - the one title helper (quality note + window note)
       // REMOVED rather than blanked, so a cell that recovers does not keep an empty tooltip box.
       if (note) avg.setAttribute('title', note); else avg.removeAttribute('title');
       avg.innerHTML = mark + _irAvgSalesFlagHtml_(item);
@@ -16783,3 +17133,233 @@ if (window.KM && window.KM.lifecycle) {
         }
     });
 }
+
+var _IR_SRC_UNK13_ = '<span class="replen-src-unknown" title="source unknown (site snapshot not company-specific): more than one company lists this site + SKU and the snapshot carries no company">\u2014 <small style="color:#94A3B8;">source unknown</small></span>';   // R71-FE-13
+
+// R71-FE-14 (review M-1 / m-1)
+var _IR_SRC_UNK14_DASH_ = '<span class="replen-src-unknown" title="source unknown (report row not attributable to this company): no recommendation is shown for this company from the site number">\u2014</span>';
+var _IR_SRC_RECO14_ = '<div class="replen-src-unknown replen-reco-src-unknown" style="color:#B45309;font-size:12px;margin:4px 0;">Based on the site snapshot - source unknown (report row not attributable to this company). Not a recommendation for this company.</div>';
+function _irSiteVal14_(skuData, f) {   // R71-FE-15: the reason travels with the dash; a reading of 0 stays 0
+    var lts = (f === 'over90' || f === 'over180');
+    if (skuData && skuData.srcUnknown13 && (skuData.srcKind15 !== 'NO_ROW' || !lts)) return _irSrcDash15_(skuData.srcKind15, skuData.srcWhy15);
+    if (lts && skuData && skuData.ltsNoRow15) return _irSrcDash15_('NO_ROW', _IR_NO_HEALTH_ROW15_);
+    return (skuData && skuData[f]) || 0;
+}
+function _irSrcBanner14_(skuData) {   // R71-FE-15: delegates (the fe-14 text below is no longer reached)
+    return _irSrcBanner15_(skuData);
+    if (!(skuData && skuData.srcUnknown13)) return '';
+    return '<div class="replen-src-unknown replen-src-banner" style="margin:6px 0 8px;padding:6px 8px;border:1px dashed #F59E0B;border-radius:4px;color:#92400E;font-size:12px;">' +
+        'The Amazon report for this country + platform + SKU names no company, and marketplace_skus does not resolve it to this company alone (more than one company, or a listing with no company, lists this SKU). Stock, Long Term Storage, Sales trend, Suggested Qty and the Recommendation are therefore shown as "\u2014 source unknown" - never as this company\'s.</div>';
+}
+
+// R71-FE-15 (N8 = 16_ gate-1j; F1; m-b)
+var _IR_SRC_SCOPE15_NOTE_ = 'Original Amazon account reports; all countries confirmed by Owner 2026-11-06. KM Amazon excluded.';   // R71-FE-16 (A-3): the scope is named
+// R71-FE-16 (A-3): the SANDBOX ACCEPTANCE source scope - the same values as 16_ SAD_SANDBOX_ACCEPTANCE_SOURCE_SCOPE_1K_ (fe16-consistency C7)
+var _IR_SANDBOX_ACCEPTANCE_SCOPE16_ = { marketplace: 'amazon' };
+var _IR_MK_BLANK16_ = 'SITE_SOURCE_MARKETPLACE_BLANK: the only amazon_inventory_snapshot rows for this SKU have a blank marketplace; no source rule says blank means Amazon, so they are excluded (' + _IR_SRC_SCOPE15_NOTE_ + ')';
+// R71-FE-16 (A-1): rows whose RAW marketplace is blank (the shared normalizer defaults them to 'Amazon'; that default is not changed here)
+function _irNoBlankMk16_(rows) { if (!rows || !rows.length) return rows; if (rows.__nb16 && rows.__nb16.n === rows.length) return rows.__nb16.v; var v = rows.filter(function (r) { var raw = r && r.raw; return !(raw && typeof raw === 'object' && String(raw.marketplace == null ? '' : raw.marketplace).trim() === ''); }); try { Object.defineProperty(rows, '__nb16', { value: { n: rows.length, v: v }, enumerable: false, configurable: true }); } catch (e) {} return v; }
+// R71-FE-16 (m-b / m-1): the source-scope title on a shown number
+function _irScopeTitle16_(item, note) { return note; }
+function _irDosTitleAttr16_(item) { var t = _irScopeTitle16_(item, ''); return t ? ' title="' + _irEsc15_(t) + '"' : ''; }
+var _IR_NO_ROW15_ = 'SITE_STOCK_ROW_NOT_FOUND: no amazon_inventory_snapshot row for this country + marketplace + SKU - unknown, not 0';
+var _IR_NO_HEALTH_ROW15_ = 'no amazon_inventory_health_snapshot row for this country + marketplace + SKU - unknown, not 0';
+function _irEsc15_(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+// the same rule, the same reason strings as 16_ sadSiteSourceUnknown13_ (gate-1j)
+function _irSiteSourceWhy15_(scope, reg) {
+    var lo = function (v) { return String(v == null ? '' : v).trim().toLowerCase(); }, cc = function (v) { var x = lo(v); return x === 'gb' ? 'uk' : x; };
+    var why = ' (' + _IR_SRC_SCOPE15_NOTE_ + ')';
+    var sc16 = _IR_SANDBOX_ACCEPTANCE_SCOPE16_;   // R71-FE-16 (A-3)
+    if (lo(scope && scope.marketplace) !== 'amazon') return 'SITE_SOURCE_NOT_CONFIRMED: no confirmed Amazon feed for this marketplace account';
+    var rows = [], distinct = [], me = lo(scope.company);
+    (reg || []).forEach(function (m) { if (!m || !lo(m.marketplace) || cc(m.country) !== cc(scope.country) || lo(m.marketplace) !== lo(scope.marketplace)) return; rows.push(lo(m.company) || '(blank company)'); });
+    rows.forEach(function (x) { if (distinct.indexOf(x) < 0) distinct.push(x); });
+    if (!rows.length) return 'SITE_SOURCE_NO_MARKETPLACE_ROW: no marketplaces row for this country + marketplace' + why;
+    if (rows.indexOf('(blank company)') >= 0) return 'SITE_SOURCE_COMPANY_UNKNOWN: a marketplaces row for this country + marketplace has no company' + why;
+    if (distinct.indexOf(me) < 0) return 'SITE_SOURCE_COMPANY_NOT_LISTED: the marketplaces master gives this country + marketplace to another company, not this one' + why;
+    if (distinct.length > 1) return 'SITE_SOURCE_COMPANY_UNKNOWN: ' + distinct.length + ' companies hold this country + marketplace in marketplaces, so the report row cannot be attributed to one of them' + why;
+    if (rows.length > 1) return 'SITE_SOURCE_COMPANY_UNKNOWN: ' + rows.length + ' marketplaces rows for this country + marketplace (duplicate rows), so the relation is not exactly one' + why;
+    return '';
+}
+function _irSrcDash15_(kind, why) {
+    var lbl = (kind === 'NO_ROW') ? 'no snapshot row' : (/^SITE_SOURCE_NOT_CONFIRMED/.test(String(why || '')) ? 'source not confirmed' : 'source unknown');
+    return '<span class="replen-src-unknown" title="' + _irEsc15_(why) + '">\u2014 <small style="color:#94A3B8;">' + lbl + '</small></span>';
+}
+function _irScopeVal15_(n) { return '<span class="replen-src-scope15" title="Amazon report">' + _irEsc15_(n) + '</span>'; }
+function _irSugDash15_(item) { return '<span class="replen-src-unknown" title="' + _irEsc15_((item && item.srcWhy15) || '') + ': no recommendation is shown from this site reading">\u2014</span>'; }
+function _irScopeLabel15_() { return ''; }
+function _irRecoLabel15_(skuData) {
+    if (!(skuData && skuData.srcUnknown13)) return _irScopeLabel15_();   // m-b: a number is shown -> its source limitation is named
+    if (skuData.srcKind15 === 'NO_ROW') return '<div class="replen-src-unknown replen-reco-src-unknown" style="color:#B45309;font-size:12px;margin:4px 0;">No site snapshot row for this SKU - Current Stock is unknown (not 0). Not a recommendation for this company.</div>';
+    if (/^SITE_SOURCE_NOT_CONFIRMED/.test(String(skuData.srcWhy15 || ''))) return '<div class="replen-src-unknown replen-reco-src-unknown" style="color:#B45309;font-size:12px;margin:4px 0;">Based on the site snapshot - source not confirmed for this marketplace (source unknown). Not a recommendation for this company.</div>';
+    return _IR_SRC_RECO14_;
+}
+function _irSrcBanner15_(skuData) {
+    if (!(skuData && skuData.srcUnknown13)) return _irScopeLabel15_();
+    var t = skuData.srcKind15 === 'NO_ROW' ? 'No inventory snapshot for this site / SKU.' : 'Source not linked to this account.';
+    return '<div class="replen-src-unknown replen-src-banner" title="' + _irEsc15_(skuData.srcWhy15) + '" style="margin:6px 0 8px;padding:6px 8px;border:1px dashed #F59E0B;border-radius:4px;color:#92400E;font-size:12px;">' + t + '</div>';
+}
+
+// R12: repaint stock surfaces only; never rebuild or hydrate the operator's route inputs.
+// FE-SI1: the inline "Factory availability" block of the SKU second level is removed; the same factory shared-pool detail
+// (KM.factoryAvailability: the validated factoryStockGuardGet display snapshot, its pools and their fields - unchanged) now
+// opens from the CN / TW share number of the first level, filtered to THIS SKU and THAT factory country.
+var _irFactoryDetail_ = null;   // { sku, country, rowKey, opener } while the popup is open
+function _irFactoryDetailRows_(snapshot, sku, country, warehouses) {
+    // PURE: the pools of this SKU whose factory warehouse is in this country (warehouses.country, as KMFSA reads the source country)
+    var wh = {}; (warehouses || []).forEach(function (w) { if (w && w.warehouseId) wh[String(w.warehouseId)] = w; });
+    var mine = [], unknownCountry = 0, want = String(country || '').trim().toUpperCase(), skuU = String(sku || '').trim().toUpperCase();
+    ((snapshot && snapshot.pools) || []).forEach(function (p) {
+        if (String(p.sku || '').trim().toUpperCase() !== skuU) return;
+        var w = wh[String(p.warehouse_id || '')], c = w ? String(w.country || '').trim().toUpperCase() : '';
+        if (!c) { unknownCountry++; return; }
+        if (c === want) mine.push({ pool: p, name: String(w.warehouseName || w.warehouseCode || 'Factory') });
+    });
+    return { rows: mine, unknownCountry: unknownCountry };
+}
+// FE-SI2: the derived per-popup rows are cached by SITE (row key) + SKU + factory country + snapshot VERSION (the module's revision).
+// A new revision drops the whole cache; a missing revision is never cached. Read-only display: every write still goes
+// through the server's own live guard (71_ fsgGatePlanTransition_ under its lock) - this cache authorises nothing.
+var _irFactoryDetailCache_ = { rev: '', map: {}, hits: 0, misses: 0 };
+function _irFactoryDetailRowsCached_(snapshot, sku, country, warehouses, siteKey) {
+    var rev = String((snapshot && snapshot.revision) || '');
+    if (!rev) { _irFactoryDetailCache_.misses++; return _irFactoryDetailRows_(snapshot, sku, country, warehouses); }
+    if (_irFactoryDetailCache_.rev !== rev) _irFactoryDetailCache_ = { rev: rev, map: {}, hits: _irFactoryDetailCache_.hits, misses: _irFactoryDetailCache_.misses };
+    var k = [String(siteKey || ''), String(sku || '').trim().toUpperCase(), String(country || '').trim().toUpperCase()].join('|');
+    if (Object.prototype.hasOwnProperty.call(_irFactoryDetailCache_.map, k)) { _irFactoryDetailCache_.hits++; return _irFactoryDetailCache_.map[k]; }
+    _irFactoryDetailCache_.misses++; return (_irFactoryDetailCache_.map[k] = _irFactoryDetailRows_(snapshot, sku, country, warehouses));
+}
+function _irFactoryDetailItem_(sku, rowKey) {
+    var data = getReplenishmentData() || [], hit = null;
+    for (var i = 0; i < data.length; i++) { if (String(data[i].sku) === String(sku) && (!rowKey || _irRowKey(data[i]) === rowKey)) { hit = data[i]; break; } }
+    return hit;
+}
+function _irFactoryDetailHtml_(sku, country, item, status, snapshot, warehouses, err, siteKey) {
+    // PURE. Unknown / failed is "—", never 0; a real 0 is shown as 0 and its detail stays visible.
+    var DASH = '—', esc = escapeReplenHtml, share = item ? item[country === 'CN' ? 'cnStock' : 'twStock'] : null;
+    var shareTxt = share == null ? DASH : String(share), st = String((item && item.factoryAllocState) || '');
+    var h = '<div class="ir-fd-section" data-fd-part="quota"><div style="font-size:12px;color:#64748B">Site reference quota (this site\'s share of the ' + esc(country) + ' factory pool)</div>' +
+        '<div style="font-size:20px;font-weight:600" data-fd-share>' + esc(shareTxt) + '</div>' +
+        (st ? '<div style="font-size:12px;color:#64748B" data-fd-share-state>' + esc(st) + '</div>' : '') + '</div>';
+    h += '<div class="ir-fd-section" data-fd-part="pool" style="margin-top:12px"><div style="font-size:12px;color:#64748B">Factory shared pool (all sites) - ' + esc(country) + ' factories for ' + esc(sku) + '</div>';
+    var cols = [['factory_current_stock', 'On hand'], ['factory_reserved_stock', 'Reserved'], ['active_allocation_draft_qty', 'Draft occupancy'], ['active_shipping_plan_qty', 'Plan occupancy'], ['available_to_allocate', 'Plannable']];
+    var head = '<thead><tr><th style="padding:6px;text-align:left;white-space:nowrap">Factory</th>' + cols.map(function (c) { return '<th style="padding:6px;text-align:right;white-space:nowrap">' + c[1] + '</th>'; }).join('') + '</tr></thead>';
+    if (status !== 'READY' || !snapshot) {
+        var msg = status === 'FAILED' ? 'Factory stock could not be read. Refresh to try again.' : 'Factory stock updating...';
+        // FE-SI2: the short reason stays on screen; WHY goes in a collapsed details block (a short code, never server text)
+        if (status === 'FAILED' && err && err.message) msg += '<details style="margin-top:4px;font-size:12px;color:#64748B" data-fd-why><summary>Details</summary>' + esc(String(err.message).slice(0, 120)) + '</details>';
+        h += '<p role="status" data-fd-status="' + esc(status || 'UNKNOWN') + '" style="margin:6px 0">' + msg + '</p><div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">' + head +
+            '<tbody><tr><td style="padding:6px">' + DASH + '</td>' + cols.map(function () { return '<td style="padding:6px;text-align:right">' + DASH + '</td>'; }).join('') + '</tr></tbody></table></div></div>';
+        return h;
+    }
+    var r = _irFactoryDetailRowsCached_(snapshot, sku, country, warehouses, siteKey);
+    if (!r.rows.length) h += '<p data-fd-status="NO_RECORD" style="margin:6px 0">No ' + esc(country) + ' factory stock record for this SKU.</p>';
+    else h += '<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">' + head + '<tbody>' + r.rows.map(function (x) {
+        return '<tr data-fd-warehouse="' + esc(x.pool.warehouse_id) + '"><td style="padding:6px">' + esc(x.name) + '</td>' + cols.map(function (c) { var v = x.pool[c[0]];
+            return '<td style="padding:6px;text-align:right;white-space:nowrap;' + (c[0] === 'available_to_allocate' && v < 0 ? 'color:#b91c1c;' : '') + '">' + (v == null ? DASH : esc(v)) + (c[0] === 'factory_current_stock' && x.pool.factory_stock_row === false ? ' (no stock row)' : '') + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
+    if (r.unknownCountry) h += '<p style="font-size:12px;color:#B45309;margin:6px 0" data-fd-unknown-country>' + r.unknownCountry + ' factory pool(s) of this SKU have no known country and are not shown.</p>';
+    return h + '<small style="color:#64748B">Shared pool - all sites. The site reference quota above is this site\'s proportional share; it is not this table.</small></div>';
+}
+function _irFactoryDetailEls_() {
+    var host = document.getElementById('ops-section'), m = document.getElementById('replen-factory-detail-modal');
+    if (!m && host) {
+        m = document.createElement('div'); m.className = 'fc-modal'; m.id = 'replen-factory-detail-modal';
+        m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-labelledby', 'replen-factory-detail-title');
+        m.innerHTML = '<div class="fc-modal-content"><h3 id="replen-factory-detail-title"></h3><div class="fc-modal-body" id="replen-factory-detail-body"></div>' +
+            '<div class="fc-modal-actions"><button type="button" class="fc-btn fc-btn--cancel" id="replen-factory-detail-refresh" onclick="_irFactoryDetailRefresh_(event)">Refresh</button>' +
+            '<button type="button" class="fc-btn fc-btn--primary" id="replen-factory-detail-close" onclick="_irCloseFactoryDetail_()">Close</button></div></div>';
+        host.appendChild(m);
+    }
+    return { modal: m, overlay: document.getElementById('replen-modal-overlay') };
+}
+function _irFactoryDetailRepaint_() {
+    var d = _irFactoryDetail_, e = _irFactoryDetailEls_(); if (!d || !e.modal) return;
+    var a = window.KM && window.KM.factoryAvailability, status = a ? a.status() : 'UNAVAILABLE';
+    var title = document.getElementById('replen-factory-detail-title'), body = document.getElementById('replen-factory-detail-body'), rb = document.getElementById('replen-factory-detail-refresh');
+    if (title) title.textContent = d.sku + ' - ' + d.country + ' factory';
+    var item = _irFactoryDetailItem_(d.sku, d.rowKey), ws = _irWsGet('getWarehouses') || [];
+    if (rb) rb.disabled = !a || status === 'LOADING';
+    if (status === 'READY' && a) {
+        // READY: the module answers from its cached snapshot (no request); a stale snapshot goes through its own read path
+        var my = d;
+        Promise.resolve(a.ensure(false)).then(function (snap) { if (_irFactoryDetail_ !== my || !body) return; body.innerHTML = _irFactoryDetailHtml_(d.sku, d.country, _irFactoryDetailItem_(d.sku, d.rowKey), snap ? 'READY' : a.status(), snap, _irWsGet('getWarehouses') || [], a.lastError ? a.lastError() : null, d.rowKey); });
+        return;
+    }
+    if (body) body.innerHTML = _irFactoryDetailHtml_(d.sku, d.country, item, status, null, ws, a && a.lastError ? a.lastError() : null, d.rowKey);
+}
+function _irFactoryDetailKey_(ev) {
+    var e = _irFactoryDetailEls_(); if (!_irFactoryDetail_ || !e.modal) return;
+    if (ev.key === 'Escape' || ev.keyCode === 27) { ev.preventDefault(); _irCloseFactoryDetail_(); return; }
+    if (ev.key === 'Tab') {   // keep keyboard focus inside the dialog
+        var f = Array.prototype.slice.call(e.modal.querySelectorAll('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'));
+        if (!f.length) return; var first = f[0], last = f[f.length - 1];
+        if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+    }
+}
+function _irFactoryDetailBackdrop_(ev) { var e = _irFactoryDetailEls_(); if (ev.target === e.overlay) _irCloseFactoryDetail_(); }
+function _irOpenFactoryDetail_(event, sku, country) {
+    if (event) { try { event.stopPropagation(); event.preventDefault(); } catch (_e) {} }   // never toggles the row, never reaches a route input
+    var opener = event && event.currentTarget ? event.currentTarget : null, row = opener && opener.closest ? opener.closest('.scroll-row') : null;
+    var e = _irFactoryDetailEls_(); if (!e.modal) return;
+    _irFactoryDetail_ = { sku: String(sku), country: String(country).toUpperCase(), rowKey: row ? String(row.getAttribute('data-rowkey') || '') : '', opener: opener };
+    e.modal.classList.add('is-open'); if (e.overlay) { e.overlay.classList.add('is-open'); e.overlay.addEventListener('click', _irFactoryDetailBackdrop_); }
+    document.addEventListener('keydown', _irFactoryDetailKey_);
+    var a = window.KM && window.KM.factoryAvailability;
+    _irFactoryDetailRepaint_();
+    // the valid cache / the single flight first; only a stale or unread snapshot triggers the module's own read-only path
+    if (a && a.status() !== 'READY') { var my = _irFactoryDetail_; Promise.resolve(a.ensure(false)).then(function () { if (_irFactoryDetail_ === my) _irFactoryDetailRepaint_(); }); }
+    var c = document.getElementById('replen-factory-detail-close'); if (c) { try { c.focus(); } catch (_f) {} }
+}
+function _irCloseFactoryDetail_() {
+    var d = _irFactoryDetail_, e = _irFactoryDetailEls_(); _irFactoryDetail_ = null;
+    if (e.modal) e.modal.classList.remove('is-open');
+    if (e.overlay) { e.overlay.removeEventListener('click', _irFactoryDetailBackdrop_); var other = document.querySelector('#ops-section .fc-modal.is-open'); if (!other) e.overlay.classList.remove('is-open'); }
+    document.removeEventListener('keydown', _irFactoryDetailKey_);
+    if (d) {   // focus returns to the number that opened it (re-found if the row was repainted)
+        var o = d.opener && document.contains(d.opener) ? d.opener : null;
+        if (!o) { var rows = document.querySelectorAll('#ops-section .scroll-row[data-sku]'); for (var i = 0; i < rows.length && !o; i++) { if (rows[i].getAttribute('data-sku') === d.sku && (!d.rowKey || rows[i].getAttribute('data-rowkey') === d.rowKey)) o = rows[i].querySelector('[data-factory-share="' + d.country + '"]'); } }
+        if (o) { try { o.focus(); } catch (_g) {} }
+    }
+}
+function _irFactoryDetailRefresh_(event) {
+    if (event) { try { event.stopPropagation(); } catch (_e) {} }
+    var a = window.KM && window.KM.factoryAvailability; if (!a) return;
+    a.ensure(true);   // the original read-only Refresh path (the removed block's button); repaint arrives via subscribe
+    _irFactoryDetailRepaint_();
+}
+window._irOpenFactoryDetail_ = _irOpenFactoryDetail_; window._irCloseFactoryDetail_ = _irCloseFactoryDetail_; window._irFactoryDetailRefresh_ = _irFactoryDetailRefresh_;
+function _irFactoryHint_(el, item, total) {
+    if (!el) return;
+    if (!item || item.cnStock == null || item.twStock == null) { el.textContent = 'Factory stock updating...'; el.style.color = '#b45309'; return; }
+    var share = Number(item.cnStock) + Number(item.twStock);
+    el.style.color = total > share ? '#b45309' : 'var(--text-muted)';
+    el.textContent = 'Reference share: ' + share + ' · Planned: ' + total + (total > share ? ' · Above reference share' : '');
+}
+function _irPaintFactoryFeedback_() {
+    var held = window.KM && window.KM.factoryAvailability;
+    if (held && typeof held.displayAt === 'function' && held.displayAt() && held.status() !== 'READY') {
+        // Keep existing reference numbers on an idle page; no stale values enter the allocation authority.
+        document.querySelectorAll('#ops-section [data-factory-country]').forEach(function (cell) {
+            cell.title = 'Last checked ' + new Date(held.displayAt()).toLocaleTimeString() + '. Refresh before planning.';
+        });
+        var detailBody = document.getElementById('replen-factory-detail-body');
+        if (detailBody) {
+            var ageLabel = detailBody.querySelector('[data-factory-freshness]');
+            if (!ageLabel) { ageLabel = document.createElement('p'); ageLabel.setAttribute('data-factory-freshness', '1'); detailBody.appendChild(ageLabel); }
+            ageLabel.textContent = 'Last checked ' + new Date(held.displayAt()).toLocaleTimeString() + '. Refresh before planning.';
+        }
+        return;
+    }
+    var data = getReplenishmentData(), bySku = {};
+    (data || []).forEach(function (r) { bySku[String(r.sku)] = r; });
+    document.querySelectorAll('#ops-section .scroll-row[data-sku]').forEach(function (row) {
+        var item = bySku[row.getAttribute('data-sku')];
+        row.querySelectorAll('[data-factory-country]').forEach(function (cell) { var n = item && item[cell.getAttribute('data-factory-country') === 'CN' ? 'cnStock' : 'twStock'], b = cell.querySelector('.ir-factory-share-link'); (b || cell).textContent = n == null ? '--' : String(n); cell.title = n == null ? 'Stock awaiting a fresh read' : 'Reference share after reservations; open it for the factory detail'; });
+    });
+    _irFactoryDetailRepaint_();   // FE-SI1: an open factory detail follows the same repaint (refresh updates the popup)
+    document.querySelectorAll('[id^="allocation-hint-"]').forEach(function (el) { var sku = el.id.slice('allocation-hint-'.length), total = document.getElementById('allocation-total-' + sku); var qty = total ? Number(total.textContent) : NaN; if (Number.isFinite(qty)) _irFactoryHint_(el, bySku[sku], qty); else if (!window.KM.factoryAvailability.rows()) { el.textContent = 'Factory stock updating...'; } });
+}
+if (window.KM && window.KM.factoryAvailability) window.KM.factoryAvailability.subscribe(_irPaintFactoryFeedback_);
+
+// R15G-EU-IR (sbx-r15g-eu): patched

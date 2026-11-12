@@ -7,7 +7,7 @@
  * KM (Kitchen Mama) 全域命名空間
  * 所有頁面邏輯、工具函式、狀態管理都統一在此命名空間下
  */
-window.KM = {
+window.KM = Object.assign(window.KM || {}, {
     /**
      * F1-7N-FA-3C-R6C — CENTRALIZED RELEASE SIGNATURE (asset cache/version authority). Before R6C the frontend had NO
      * central release id: every `?v=` cache-bust token was hand-typed per file in index.html, so a corrected asset could
@@ -41,7 +41,7 @@ window.KM = {
      * 頁面的掛載、卸載管理（預留給 Phase 1 後續）
      */
     lifecycle: {}
-};
+});
 
 // 向下相容：保留 DataRepo 的全域存取
 // 確保現有程式碼不受影響

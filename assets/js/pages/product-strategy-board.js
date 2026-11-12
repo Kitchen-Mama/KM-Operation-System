@@ -98,7 +98,16 @@
         + ' marketplace\u2019s prices under a heading nobody selected.',
       'Changing the company clears the country and the marketplace below it, because those values'
         + ' belong to the company they were chosen under. Category and Series come from the site'
-        + ' that is loaded and are re-derived whenever the site changes.'
+        + ' that is loaded and are re-derived whenever the site changes.',
+      /* PSB-UX-R1 - the chart toolbar keeps the controls; what they mean is said here, once. */
+      'Prices: Everyday or Activity. An activity shows the deal prices recorded for it, as recorded - its period'
+        + ' and status are the record\u2019s, and the chart does not say it is running today. The everyday price'
+        + ' stays on the chart for comparison.',
+      'Simulation: drag a product\u2019s price point, or select it and type a price. A simulated price lives on'
+        + ' this screen only: it is not saved and is gone on reload. Undo steps back one change in that panel;'
+        + ' \u201cThis product\u201d and \u201cAll\u201d return to the recorded prices.',
+      'Competitors: entered for this discussion only - not saved, not one of this site\u2019s products, and not'
+        + ' part of any finding, count or data-quality figure.'
     ]
   };
 

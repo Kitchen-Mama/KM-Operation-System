@@ -1618,7 +1618,7 @@ function _renderSkuTaxList() {
                         '<td style="padding:3px 6px;">' + _taxDash(c.componentCode) + '</td>' +
                         '<td style="padding:3px 6px;">' + _taxDash(c.componentType) + '</td>' +
                         '<td style="padding:3px 6px;">' + _taxDash(c.rateType) + '</td>' +
-                        '<td style="padding:3px 6px;">' + _taxDash(c.rateValue) + '</td>' +
+                        '<td style="padding:3px 6px;">' + (c.rateType === 'percentage' ? _taxPercent10_(c.rateValue) : _taxDash(c.rateValue)) + '</td>' +
                         '<td style="padding:3px 6px;">' + (c.amountPerUnit === '' || c.amountPerUnit == null ? '--' : _taxEsc(c.amountPerUnit + ' ' + (c.amountCurrency || '') + '/' + (c.quantityUnit || ''))) + '</td>' +
                         '<td style="padding:3px 6px;">' + _taxDash(c.effectiveFrom) + '→' + (String(c.effectiveTo||'').trim()===''?'∞':_taxEsc(c.effectiveTo)) + '</td>' +
                     '</tr>';
@@ -1633,7 +1633,7 @@ function _renderSkuTaxList() {
                     '<div style="font-weight:600;font-size:13px;color:#1E293B;">' + formatTaxCountryRoute(r.countryOfOrigin, r.dutyCountry) +
                         '<span style="font-size:11px;color:#64748B;font-weight:400;margin-left:8px;">HS ' + _taxDash(r.hscode) + '</span></div>' +
                     '<div style="font-size:11px;color:#64748B;margin-top:3px;">' + rid + '</div>' +
-                    '<div style="font-size:11px;color:#475569;margin-top:4px;">Duty ' + _taxDash(r.dutyRate) + '% · VAT ' + _taxDash(r.vatRate) + '% · Port ' + _taxDash(r.portTaxRate) + '% · Referral ' + _taxDash(r.referralFeeRate) + '% · Declared ' + _taxDash(r.declaredValue) + ' ' + _taxDash(r.declaredCurrency) + '</div>' +
+                    '<div style="font-size:11px;color:#475569;margin-top:4px;">Duty ' + _taxPercent10_(r.dutyRate) + ' · VAT ' + _taxPercent10_(r.vatRate) + ' · Port ' + _taxPercent10_(r.portTaxRate) + ' · Referral ' + _taxPercent10_(r.referralFeeRate) + ' · Declared ' + _taxDash(r.declaredValue) + ' ' + _taxDash(r.declaredCurrency) + '</div>' +
                     '<div style="font-size:11px;color:#475569;margin-top:2px;">VAT No ' + _taxDash(r.vatNo) + ' · EORI ' + _taxDash(r.eoriNo) + '</div>' +
                     '<div style="font-size:11px;color:#475569;margin-top:2px;">Effective: ' + period + '</div>' +
                 '</div>' +
@@ -1669,7 +1669,7 @@ function openSkuTaxForm(mode, taxRateId) {
     }
 
     var fieldsHtml = TAX_RATE_FORM_FIELDS_.map(function(f) {
-        var v = val(f.key);
+        var v = val(f.key); if (/_rate$/.test(f.key) && v !== '' && v != null) v = Number((Number(v) * 100).toFixed(10));
         var id = 'sku-tax-f-' + f.key;
         var t = (f.type === 'number') ? 'number' : (f.type === 'date' ? 'date' : 'text');
         return '<div style="display:flex;flex-direction:column;gap:3px;">' +
@@ -1724,6 +1724,7 @@ function saveSkuTaxRate() {
         var el = document.getElementById('sku-tax-f-' + f.key);
         if (!el) return;
         payload[f.key] = (el.value == null ? '' : String(el.value)).trim();
+        if (/_rate$/.test(f.key) && payload[f.key] !== '') payload[f.key] = String(Number(payload[f.key]) / 100);
     });
     // Required business-key fields for a new row (correction/edit reuses the stored key).
     if (mode !== 'edit') {
@@ -2446,3 +2447,7 @@ window.debugSkuTemplateTools = function() {
     console.log('=== End ===');
 };
 window.showImportPreview = showImportPreview;
+
+function _taxPercent10_(v) { return v === '' || v == null || !isFinite(Number(v)) ? '--' : _taxEsc(Number((Number(v) * 100).toFixed(8))) + '%'; }
+
+// CODEX-TAX-SPLIT-1: local candidate, Owner fractional rates and separate currencies.

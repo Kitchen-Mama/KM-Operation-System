@@ -3,7 +3,8 @@
 // Google Sheet read-only integration
 // ========================================
 
-const OP_DB_API_BASE_URL = 'https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec';
+// SANDBOX COPY (R71): the base is the sandbox guard's verdict - the Owner's private pin, or EMPTY. Never the published one.
+const OP_DB_API_BASE_URL = window.KM_PRODUCTION_CONFIG_ ? String(window.KM_PRODUCTION_CONFIG_.endpoint || '') : '';
 
 // ========================================
 // Configuration Check
@@ -1036,6 +1037,7 @@ function normalizeShippingPlanRecord(raw) {
         importDutyTreatment: String(r.import_duty_treatment || '').trim(),
         estimatedFreightCost: (r.estimated_freight_cost === '' || r.estimated_freight_cost == null) ? '' : (parseFloat(r.estimated_freight_cost) || 0),
         estimatedDuty: (r.estimated_duty === '' || r.estimated_duty == null) ? '' : (parseFloat(r.estimated_duty) || 0),
+        estimatedDutyCurrency: String(r.estimated_duty_currency || '').trim().toUpperCase(),
         estimatedCustomsFee: (r.estimated_customs_fee === '' || r.estimated_customs_fee == null) ? '' : (parseFloat(r.estimated_customs_fee) || 0),
         estimatedTotalCost: (r.estimated_total_cost === '' || r.estimated_total_cost == null) ? '' : (parseFloat(r.estimated_total_cost) || 0),
         currency: String(r.currency || '').trim(),
@@ -1218,6 +1220,7 @@ function normalizeShipmentRecord(raw) {
         destination: String(r.destination || '').trim(),
         carrierId: String(r.carrier_id || '').trim(),
         rateCardId: String(r.rate_card_id || '').trim(),
+        rateCardVersion: String(r.rate_card_version || '').trim(),   // FIX7-NEXT-1030 (K1, candidate): the selection receipt
         importDutyTreatment: String(r.import_duty_treatment || '').trim(),
         masterTrackingNumber: String(r.master_tracking_number || '').trim(),
         isCrossDock: String(r.is_cross_dock || '').trim(),
@@ -1264,6 +1267,7 @@ function normalizeShipmentRecord(raw) {
         // Phase-1 Estimated Cost (exact on the shipment; blank = Not Applied / Rate Review — never 0).
         estimatedFreightCost: (r.estimated_freight_cost === '' || r.estimated_freight_cost == null) ? '' : (parseFloat(r.estimated_freight_cost) || 0),
         estimatedDuty: (r.estimated_duty === '' || r.estimated_duty == null) ? '' : (parseFloat(r.estimated_duty) || 0),
+        estimatedDutyCurrency: String(r.estimated_duty_currency || '').trim().toUpperCase(),
         estimatedCustomsFee: (r.estimated_customs_fee === '' || r.estimated_customs_fee == null) ? '' : (parseFloat(r.estimated_customs_fee) || 0),
         estimatedTotalCost: (r.estimated_total_cost === '' || r.estimated_total_cost == null) ? '' : (parseFloat(r.estimated_total_cost) || 0),
         estimatedUnitCost: (r.estimated_unit_cost === '' || r.estimated_unit_cost == null) ? '' : (parseFloat(r.estimated_unit_cost) || 0),
@@ -1276,7 +1280,8 @@ function normalizeShipmentRecord(raw) {
         shippedBy: String(r.shipped_by || '').trim(),
         hiddenFromDraftAt: String(r.hidden_from_draft_at || '').trim(),
         hiddenFromDraftBy: String(r.hidden_from_draft_by || '').trim(),
-        note: String(r.note || '').trim(),
+        sourceCompanies: Array.isArray(r.consolidation_companies) ? r.consolidation_companies.slice() : [],
+        note: _kmScNote13_(r.note),
         createdBy: String(r.created_by || '').trim(),
         createdAt: String(r.created_at || '').trim(),
         updatedBy: String(r.updated_by || '').trim(),
@@ -1323,7 +1328,8 @@ function normalizeShipmentLineRecord(raw) {
         purchaseOrderLineId: String(r.purchase_order_line_id || '').trim(),
         // R6 — FROZEN receiver lineage (blank on historical rows → merged stays fail-closed/MULTI).
         shippingPlanLineId: String(r.shipping_plan_line_id || '').trim(),
-        note: String(r.note || '').trim(),
+        sourceCompany: _kmScSource13_(r).company || '', sourceMarketplace: _kmScSource13_(r).marketplace || '',
+        note: _kmScNote13_(r.note),
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
         // Execution Snapshot (copied from the Decision Snapshot; immutable)
@@ -4093,18 +4099,21 @@ window.KM.DB.confirmShipmentAndDispatch = async function(payload) {
     }
     var json;
     try {
-        var resp = await fetch(OP_DB_API_BASE_URL, {
+        // R71-FE-2: bounded (the write time limit); a timeout is answered below as stage 'network' = the page re-reads, never resends blindly
+        var resp = await _kmFetchBounded_(OP_DB_API_BASE_URL, {
             method: 'POST',
             cache: 'no-store',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(Object.assign({ action: 'confirmShipmentAndDispatch' }, payload))
-        });
+        }, 'write', 'confirmShipmentAndDispatch');
         if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, stage: 'network' };
         json = await resp.json();
     } catch (e) {
         return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' };
     }
-    if (json && json.success) { await _kmWriterPostWrite_(); }   // refresh cache so On-the-Way sees it
+    if (json && json.success) {
+        try { await _kmWriterPostWrite_(); } catch (refreshError) { json.refresh_pending = true; }
+    }   // A committed dispatch remains successful even if its display refresh fails.
     return json;
 };
 
@@ -4174,6 +4183,75 @@ window.KM.DB.openGeneratedDocument = function(res) {
     return false;
 };
 
+// O1-C7 (2026-11-02, local): ported unchanged from owner-rules-r1/office-download/patched (R7-x / K1) - the rate-card choice
+// REVIEW-FIX7-MS-NEXT (R7-x, candidate) — the rate cards the engine accepts for a Shipment Draft's lane today, and the user's
+// choice of ONE card at the version shown (the backend re-checks everything; nothing here decides)
+// R15d (SH-8B2637CC-5): READ ONLY - the pre-dispatch document value gate for ONE shipment (01_ / 39_ shipment.documentValues.check). Never a source writer.
+window.KM.DB.checkShipmentDocumentValues = function(shipmentId) { return _kmDocumentAction('shipment.documentValues.check', { shipment_id: String(shipmentId || '').trim() }); };
+window.KM.DB.getShipmentRateCardOptions = function(shipmentId, opts) { var b = { shipment_id: String(shipmentId || '').trim() }; if (opts && opts.all_methods === true) b.all_methods = true; return _kmDocumentAction('shipment.rateCardOptions', b); };   // R71-FE-11: all_methods = carrier -> method
+// R71-FE-11: the Weekly plan's carrier -> method -> server price (SANDBOX-GATE-1f)
+window.KM.DB.getShippingPlanRateCardOptions = function(planId, customsType) {   // WK1 r2: + an optional read-only customs preview (a READ: never a source writer)
+    var b = { shipping_plan_id: String(planId || '').trim() }; if (customsType != null && String(customsType).trim() !== '') b.customs_type = String(customsType).trim();
+    return _kmDocumentAction('shippingPlan.rateCardOptions', b);
+};
+var _kmPlanRcInFlight_ = {};
+window.KM.DB.selectShippingPlanRateCard = function(planId, option, expectedCarrier, expectedUpdatedAt) {
+    var pid = String(planId || '').trim(), id = String((option && option.rate_card_id) || '').trim(), v = String((option && option.rate_card_version) || '').trim();
+    if (!pid || !id || !v) return Promise.resolve({ success: false, error: 'RATE_CARD_SELECTION_INCOMPLETE', code: 'RATE_CARD_SELECTION_INCOMPLETE' });
+    if (_kmPlanRcInFlight_[pid]) return _kmPlanRcInFlight_[pid];   // a second click joins the save already running
+    var body = { shipping_plan_id: pid, rate_card_id: id, rate_card_version: v, expected_current_carrier_id: String(expectedCarrier || ''), actor: 'operation-system' };
+    if (expectedUpdatedAt) body.expected_updated_at = expectedUpdatedAt;
+    var p = _kmDocumentAction('shippingPlan.selectRateCard', body)
+        .then(function (r) { delete _kmPlanRcInFlight_[pid]; if (r && r.success !== true && !r.code && r.stage === 'network') return { success: false, error: 'NETWORK', code: 'HTTP_TRANSPORT_ERROR', message: String(r.error || '') }; return r || { success: false, error: 'NO_RESPONSE', code: 'NO_RESULT' }; }, function (e) { delete _kmPlanRcInFlight_[pid]; return { success: false, error: 'NETWORK', code: 'HTTP_TRANSPORT_ERROR', message: String((e && e.message) || e) }; });
+    return (_kmPlanRcInFlight_[pid] = p);
+};
+// WK1 r2 (review M-1): the Weekly unified Save - the rate card AND the customs in ONE server call (11_ WK1, one lock). A registered source
+// writer (planning / exposure), wrapped below by _kmWrapSourceWriters_; it shares _kmPlanRcInFlight_ with selectShippingPlanRateCard.
+window.KM.DB.selectShippingPlanRateCardWithCustoms = function(planId, option, expectedCarrier, expectedUpdatedAt, customsType) {
+    var pid = String(planId || '').trim(), id = String((option && option.rate_card_id) || '').trim(), v = String((option && option.rate_card_version) || '').trim();
+    var serviceOnly = option && option.service_only === true;
+    if (!pid || (!serviceOnly && (!id || !v))) return Promise.resolve({ success: false, error: 'RATE_CARD_SELECTION_INCOMPLETE', code: 'RATE_CARD_SELECTION_INCOMPLETE' });
+    if (_kmPlanRcInFlight_[pid]) return _kmPlanRcInFlight_[pid];   // a second click joins the save already running
+    var body = { shipping_plan_id: pid, rate_card_id: id, rate_card_version: v, expected_current_carrier_id: String(expectedCarrier || ''), actor: 'operation-system' };
+    if (serviceOnly) { delete body.rate_card_id; delete body.rate_card_version; body.service_only = true; body.carrier_id = option.carrier_id; body.shipping_method = option.shipping_method; body.last_mile_delivery = option.last_mile_delivery; }
+    var cx = String(customsType == null ? '' : customsType).trim(); if (cx) body.customs_type = cx;
+    if (expectedUpdatedAt) body.expected_updated_at = expectedUpdatedAt;
+    var p = _kmDocumentAction('shippingPlan.selectRateCard', body)
+        .then(function (r) { delete _kmPlanRcInFlight_[pid]; if (r && r.success !== true && !r.code && r.stage === 'network') return { success: false, error: 'NETWORK', code: 'HTTP_TRANSPORT_ERROR', message: String(r.error || '') }; return r || { success: false, error: 'NO_RESPONSE', code: 'NO_RESULT' }; }, function (e) { delete _kmPlanRcInFlight_[pid]; return { success: false, error: 'NETWORK', code: 'HTTP_TRANSPORT_ERROR', message: String((e && e.message) || e) }; });
+    return (_kmPlanRcInFlight_[pid] = p);
+};
+// WK1 r3 (Owner): a customs-only change of a Weekly plan - ONE server call (11_ customs_only: re-validated and re-priced in one lock, or
+// saved explicitly UNPRICED). A registered source writer (planning / exposure); shares _kmPlanRcInFlight_ (one Weekly Save per plan at a time).
+window.KM.DB.saveShippingPlanCustoms = function(planId, customsType, expectedCarrier, expectedUpdatedAt) {
+    var pid = String(planId || '').trim(), cx = String(customsType == null ? '' : customsType).trim();
+    if (!pid || !cx) return Promise.resolve({ success: false, error: 'CUSTOMS_SAVE_INCOMPLETE', code: 'CUSTOMS_SAVE_INCOMPLETE' });
+    if (_kmPlanRcInFlight_[pid]) return _kmPlanRcInFlight_[pid];   // a second click joins the save already running
+    var body = { shipping_plan_id: pid, customs_only: true, customs_type: cx, expected_current_carrier_id: String(expectedCarrier || ''), actor: 'operation-system' };
+    if (expectedUpdatedAt) body.expected_updated_at = expectedUpdatedAt;
+    var p = _kmDocumentAction('shippingPlan.selectRateCard', body)
+        .then(function (r) { delete _kmPlanRcInFlight_[pid]; if (r && r.success !== true && !r.code && r.stage === 'network') return { success: false, error: 'NETWORK', code: 'HTTP_TRANSPORT_ERROR', message: String(r.error || '') }; return r || { success: false, error: 'NO_RESPONSE', code: 'NO_RESULT' }; }, function (e) { delete _kmPlanRcInFlight_[pid]; return { success: false, error: 'NETWORK', code: 'HTTP_TRANSPORT_ERROR', message: String((e && e.message) || e) }; });
+    return (_kmPlanRcInFlight_[pid] = p);
+};
+var _kmRcInFlight_ = {};
+window.KM.DB.approveShipmentUnpriced = function(payload) {
+    var sid = String(payload && payload.shipment_id || '').trim();
+    if (!sid || payload.acknowledge_unpriced !== true) return Promise.resolve({ success: false, code: 'UNPRICED_ACKNOWLEDGEMENT_REQUIRED' });
+    if (_kmRcInFlight_[sid]) return _kmRcInFlight_[sid];
+    var body = { shipment_id: sid, unpriced_release: true, acknowledge_unpriced: true, reason: payload.reason, actor: payload.actor, carrier_id: payload.carrier_id,
+        recover_unpriced: payload.recover_unpriced === true, expected_updated_at: payload.expected_updated_at, expected_rate_card_version: payload.expected_rate_card_version, expected_current_rate_card_id: payload.expected_current_rate_card_id };
+    if (payload.unpriced_mode === 'card_not_applied') { body.unpriced_mode = 'card_not_applied'; body.acknowledge_card_not_applied = payload.acknowledge_card_not_applied === true; body.listed_card_ids = Array.isArray(payload.listed_card_ids) ? payload.listed_card_ids.map(String) : []; }   // R15e (4)
+    return (_kmRcInFlight_[sid] = _kmDocumentAction('shipment.selectRateCard', body).then(function(r) {
+        delete _kmRcInFlight_[sid]; return r || { success: false, code: 'NO_RESULT' };
+    }, function() { delete _kmRcInFlight_[sid]; return { success: false, code: 'HTTP_TRANSPORT_ERROR' }; }));
+};
+window.KM.DB.selectShipmentRateCard = function(shipmentId, option, expectedCurrent, opts) {   // R71-FE-11: opts.allow_method_change
+    var sid = String(shipmentId || '').trim(), id = String((option && option.rate_card_id) || '').trim(), v = String((option && option.rate_card_version) || '').trim();
+    if (!sid || !id || !v) return Promise.resolve({ success: false, error: 'RATE_CARD_SELECTION_INCOMPLETE' });
+    if (_kmRcInFlight_[sid]) return _kmRcInFlight_[sid];   // a second click joins the choice already running
+    var p = _kmDocumentAction('shipment.selectRateCard', Object.assign({ shipment_id: sid, rate_card_id: id, rate_card_version: v, expected_current_rate_card_id: String(expectedCurrent || '') }, (opts && opts.allow_method_change === true) ? { allow_method_change: true } : {}))
+        .then(function (r) { delete _kmRcInFlight_[sid]; if (r && r.success !== true && !r.code && r.stage === 'network') return { success: false, error: 'NETWORK', code: 'HTTP_TRANSPORT_ERROR', message: String(r.error || '') }; return r || { success: false, error: 'NO_RESPONSE' }; }, function (e) { delete _kmRcInFlight_[sid]; return { success: false, error: 'NETWORK', message: String((e && e.message) || e) }; });
+    return (_kmRcInFlight_[sid] = p);
+};
 // F1-5B-SHIP-R3C — reconcile canonical DRAFT PO→FIFO allocations for a shipment. Thin adapter to the SINGLE R3A
 // backend authority (action: generateShipmentLineAllocations); the frontend performs NO FIFO / capacity / shipped
 // math. One shipment-scoped call reconciles all lines (no per-SKU fan-out). Refreshes the cache on success so the
@@ -4213,12 +4291,13 @@ window.KM.DB.updateShipmentReceipt = async function(payload) {
     }
     var json;
     try {
-        var resp = await fetch(OP_DB_API_BASE_URL, {
+        // R71-FE-2 (review m-6): bounded (the write time limit); a timeout is answered below as code 'network' = unanswered (the lines stay held)
+        var resp = await _kmFetchBounded_(OP_DB_API_BASE_URL, {
             method: 'POST',
             cache: 'no-store',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(Object.assign({ action: 'shipment.receipt.update' }, payload))
-        });
+        }, 'write', 'shipment.receipt.update');
         if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, code: 'network' };
         json = await resp.json();
     } catch (e) {
@@ -4406,7 +4485,8 @@ var KM_WRITE_TIMEOUT_MS_ = 90000;   // a locked DB write; Apps Script cold start
 // sent. `_kmTimeoutError_` below is untouched.
 // ============================================================================================================
 var KM_ACTION_WRITE_TIMEOUT_MS_ = {
-    'weeklyAiPlan.generate': 180000
+    'weeklyAiPlan.generate': 180000,
+    'confirmShipmentAndDispatch': 300000
 };
 // ============================================================================================================
 // F1-7N-FB-4E §A/§C — CAPTURE THE EVIDENCE, THEN CLASSIFY. ONE PLACE.
@@ -4602,6 +4682,11 @@ function _kmTimeoutMs_(kind, action) {
 // a typed error the runners classify. `AbortController` is assumed present in every supported browser; when it
 // is genuinely absent we still bound the WAIT via a rejecting race, so the caller is released either way.
 async function _kmFetchBounded_(url, init, kind, action) {
+    var access = window.KM && window.KM.passwordAccess;
+    if (access && !access.isSignedIn()) {
+        if (kind === 'write') { var authFailure = new Error('Sign in required. Nothing was sent.'); authFailure.apiCode = 'AUTH_REQUIRED'; authFailure.zero_write = true; throw authFailure; }
+        await access.whenSignedIn(init && init.signal);
+    }
     var ms = _kmTimeoutMs_(kind, action);
     var timedOut = false;
     var ctl = null;
@@ -4788,7 +4873,9 @@ function _kmWriterError_(json, fallbackMessage) {
 // stored coefficients. Against a v20 deployment the page can neither read nor save a rate, so the pin
 // moves with the contract rather than trailing it. The runtime check stays `deployed < expected`, a
 // MINIMUM, which is what keeps backend-first deployment safe: the backend may lead, the frontend may not.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 21;      // the minimum deployed_action_contract_version this build needs
+// DC2-R2 (R56): 21 -> 22. The deployment gained system.sourceRevision and this build CALLS it (Site Inventory,
+// before it reuses a held answer). Against a v21 deployment every such check is UNKNOWN and the page re-reads.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 22;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -4876,7 +4963,9 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     // upsertMarketplace is probed too, and not merely for completeness: from R52 it carries a REFUSAL this
     // frontend depends on. A deployment serving a pre-R52 copy would silently accept allocation_priority
     // through the unguarded path, which is worse than not serving it.
-    'marketplace.allocationPriority.set', 'upsertMarketplace'
+    'marketplace.allocationPriority.set', 'upsertMarketplace',
+    // DC2-R2 (R56) - the server source revision Site Inventory asks before reusing a held answer (D-S8-B3-187).
+    'system.sourceRevision'
 ];
 // F1-7N-FB-4C-R1 §D — the actions each PAGE needs, so a mismatch can name the page rather than only the action.
 // The probe is still one request; this is the mapping used to phrase the message.
@@ -4891,7 +4980,7 @@ var KM_PAGE_REQUIRED_ACTIONS_ = {
     // page-scoped verdict: the four actions its Execution Plan -> Submit chain cannot work without.
     'site-inventory': ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines',
         'upsertShippingAllocationDraftAtomic',
-        'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans'],
+        'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans', 'system.sourceRevision'],
     // F1-7N-FC-1A §J.1 -- the Weekly Shipping Plan page. Approve is the transition that commits a human
     // decision AND attempts the Execution Commit, and createShipmentFromPlan is now the recovery path for the
     // half of that which can fail. A deployment that cannot serve either must disable both buttons rather than
@@ -5544,6 +5633,7 @@ async function _kmWeeklyCommand_(command, payload) {
         // F1-7N-FB-2A §E — also carry the handler's own `stage` and the PROVEN zero-write fact, so the page can
         // state "nothing was written" only when the server's own reason establishes it.
         var _det = (_structured && _structured.details) || ((json.data && typeof json.data === 'object') ? json.data : null) || {};
+        if (command === 'updateShippingPlanLineQty' && payload && payload.line_edits && Array.isArray(json.issues)) _det.issues = json.issues;
         if (json.stage != null && _det.stage == null) _det.stage = String(json.stage);
         if (_det.zero_write == null && _kmZeroWriteProven_(_emsg)) _det.zero_write = true;
         // F1-7N-FB-4G-A2-R3-R1 §D — the evidence a failure has to be diagnosable from. None of this was kept,
@@ -5665,6 +5755,8 @@ var _KM_GET_READ_ACTIONS_ = {
     'system.requestOrderSendReconcile': 1,
     'system.allocationDraftIdentityDiagnostic': 1,
     'automationSchedule.get': 1,
+    // DC2-R2 D-S8-B3-187 - the server source revision: one Script Property, no spreadsheet.
+    'system.sourceRevision': 1,
     // S3-R10 §6 — the read-only "did my pricing write commit?" lookup. Its POST twin (pricing.update)
     // is deliberately NOT here: this table is reads, and a lost response is not a licence to write again.
     'pricing.write.status': 1,
@@ -6319,7 +6411,8 @@ window.KM.DB.updateShipment = async function(payload) {
     });
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Update shipment failed');
+    // R71-FE-1: the server's own code and data (EDIT_CONFLICT: fields_differing / current) reach the page; the message is unchanged
+    if (!json.success) { var usErr = new Error(json.error || 'Update shipment failed'); usErr.kmServerAnswered = true; usErr.code = json.code || null; usErr.data = json.data || null; usErr.zero_write = json.zero_write === true; throw usErr; }
     await _kmWriterPostWrite_();
     return json.data;
 };
@@ -6728,7 +6821,8 @@ window.KM.DB.updatePurchaseOrderStatus = async function(payload) {
     var json = await resp.json();
     // F1-7N-FB-3A §I — throw WITH the envelope so the page can render the document-gate cause it already knows
     // how to render, instead of only the generic sentence.
-    if (!json.success) throw _kmWriterError_(json, 'Update purchase order status failed');
+    // R71-FE-3: the server's own code + data ride along (PO_RECEIPT_HEADER_PENDING names the receipt key); e.code keeps its stage meaning
+    if (!json.success) { var posE = _kmWriterError_(json, 'Update purchase order status failed'); posE.serverCode = json.code || null; posE.data = json.data || null; posE.kmServerAnswered = true; throw posE; }
     await _kmWriterPostWrite_();
     return json.data;
 };
@@ -6770,7 +6864,7 @@ window.KM.DB.updatePurchaseOrderHeader = async function(payload) {
     });
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Update purchase order header failed');
+    if (!json.success) { var pohE = new Error(json.error || 'Update purchase order header failed'); pohE.serverCode = json.code || null; pohE.data = json.data || null; pohE.kmServerAnswered = true; throw pohE; }   // R71-FE-3
     await _kmWriterPostWrite_();
     return json.data;
 };
@@ -6785,17 +6879,20 @@ window.KM.DB.receivePurchaseOrderLines = async function(payload) {
         console.warn('[KM.DB] API not configured, receivePurchaseOrderLines skipped');
         return { success: false, error: 'API not configured' };
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
+    // R71-FE-2 (review m-6): bounded (the write time limit). A timeout throws WITHOUT kmServerAnswered: the page keeps the same key and lines.
+    var resp = await _kmFetchBounded_(OP_DB_API_BASE_URL, {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(Object.assign({ action: 'receivePurchaseOrderLines' }, payload))
-    });
+    }, 'write', 'receivePurchaseOrderLines');
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Receive purchase order lines failed');
+    // DC2-R2 D3: a refusal is the server's answer (every one is zero-write); the page settles a pending receipt on it.
+    if (!json.success) { var rcvErr = new Error(json.error || 'Receive purchase order lines failed'); rcvErr.kmServerAnswered = true; rcvErr.code = json.code || null; rcvErr.data = json.data || null; rcvErr.stage = json.stage || null; throw rcvErr; }   // R71-FE-4: + data / stage (zero_write, gate)
     await _kmWriterPostWrite_();
-    return json.data;
+    var rcvOut = (json.data && typeof json.data === 'object') ? json.data : {}; if (json.code) rcvOut.server_code = json.code;   // R71-FE-3: e.g. PO_RECEIPT_HEADER_COMPLETED
+    return rcvOut;
 };
 
 // ==========================================================================================================
@@ -7054,7 +7151,7 @@ window.KM.DB.importFcRegularForecastBatch = async function(rows, options) {
         console.warn('[KM.DB] API not configured, importFcRegularForecastBatch skipped');
         return { success: false, error: 'API not configured' };
     }
-    var opts = Object.assign({ forecastStatusDefault: 'draft', sourceDefault: 'import' }, options || {});
+    var opts = Object.assign({ forecastStatusDefault: 'active', sourceDefault: 'import' }, options || {});
     var json = await _kmCanonicalWrite_('importFcRegularForecastBatch', { rows: rows || [], options: opts });
     if (json && json.success) { await _kmWriterPostWrite_(); }
     return json;
@@ -7191,6 +7288,47 @@ window.KM.DB.factoryInventoryImportCommit = async function(payload) {
     return await resp.json();
 };
 
+// R3-IMPORT (2026-10-29, local candidate) — the shared XLSX batch import (78_). One POST per call, no automatic retry, no
+// cache reload: template / validate / receipt / history are reads; commit's ACK is returned verbatim and the page does its
+// own targeted readback (KM.importBatch). A lost commit response is resolved by importReceiptGet, never by a blind resend.
+function _kmImportPost_(action, payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, ' + action + ' skipped');
+        return Promise.resolve({ success: false, error: 'API not configured' });
+    }
+    return fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({}, payload || {}, { action: action }))
+    }).then(function (resp) {
+        if (!resp.ok) throw new Error('API returned ' + resp.status);
+        return resp.json();
+    });
+}
+window.KM.DB.importTemplateGet = function (payload) { return _kmImportPost_('import.template.get', payload); };
+window.KM.DB.importValidate = function (payload) { return _kmImportPost_('import.validate', payload); };
+window.KM.DB.importCommit = function (payload) { return _kmImportPost_('import.commit', payload); };
+window.KM.DB.importReceiptGet = function (payload) { return _kmImportPost_('import.receipt.get', payload); };
+window.KM.DB.importHistoryList = function (payload) { return _kmImportPost_('import.history.list', payload); };
+
+window.KM.DB.refreshPoFactoryTables = async function () {
+    if (!isOperationDbApiConfigured()) throw new Error('API not configured');
+    var env = window.KM.DB.envId(), epoch = JSON.stringify(window.KM.DB.sourceWriteEpoch());
+    if (!env || env === 'env:0:0') throw new Error('Environment unknown');
+    var po = await getOperationDbTableFromSheet('purchase_orders');
+    var lines = await getOperationDbTableFromSheet('purchase_order_lines');
+    var stock = await getOperationDbTableFromSheet('factory_stock');
+    var moves = await getOperationDbTableFromSheet('factory_stock_movements');
+    var next = {
+        purchaseOrders: po.map(normalizePurchaseOrderRecord), purchaseOrderLines: lines.map(normalizePurchaseOrderLineRecord),
+        factoryStock: stock.map(normalizeFactoryStockRecord), factoryStockMovements: moves.map(normalizeFactoryStockMovementRecord)
+    };
+    if (env !== window.KM.DB.envId() || epoch !== JSON.stringify(window.KM.DB.sourceWriteEpoch())) throw new Error('Readback scope changed; reload, do not import again');
+    window._opDbCache = Object.assign({}, window._opDbCache || {}, next, { _sourceMode: 'google-sheet' });
+    return { success: true };
+};
+
 // TARGETED readback (§16) — re-GET ONLY factory_stock + factory_stock_movements and patch the in-memory
 // cache in place. Never loadOperationDb({force:true}) (no whole-DB reload). Throws on fetch failure so the
 // caller can show "Import committed. Reconfirming Factory Inventory…" without resending the commit.
@@ -7259,6 +7397,7 @@ var _KM_SOURCE_WRITE_FAMILIES_ = {
     // inventory
     importOverseasInventorySnapshotBatch: ['planning'], adjustOverseasInventory: ['planning'],
     adjustFactoryInventory: ['planning'], factoryInventoryImportCommit: ['planning'],
+    importCommit: ['planning', 'exposure'],
     // request orders and purchase orders (request_order_line_sources, purchase_order_lines)
     createRequestOrderDraft: ['planning'], submitRequestOrderAllocationDrafts: ['planning'],
     updateRequestOrderStatus: ['planning'], updateRequestOrderLineQty: ['planning'],
@@ -7273,6 +7412,7 @@ var _KM_SOURCE_WRITE_FAMILIES_ = {
     selectShippingPlanCarrier: ['planning', 'exposure'], combineShippingPlans: ['planning', 'exposure'],
     uncombineShippingPlans: ['planning', 'exposure'], createShipmentFromPlan: ['planning', 'exposure'],
     cancelShipmentDraft: ['planning', 'exposure'], updateShipment: ['planning', 'exposure'],
+    approveShipmentUnpriced: ['planning', 'exposure'], selectShipmentRateCard: ['planning', 'exposure'], selectShippingPlanRateCard: ['planning', 'exposure'], selectShippingPlanRateCardWithCustoms: ['planning', 'exposure'], saveShippingPlanCustoms: ['planning', 'exposure'],   // WK1 r2/r3: the Weekly unified Save + customs-only Save   // R71-FE-11: the plan's carrier, method and estimated cost   // O1-C7: the rate-card choice writes the shipment's carrier and estimated cost, as updateShipment does
     confirmShipmentAndDispatch: ['planning', 'exposure'], generateShipmentLineAllocations: ['planning', 'exposure'],
     updateShipmentReceipt: ['planning', 'exposure'], advanceShipmentRoutePoint: ['planning', 'exposure'],
     updateShipmentEta: ['planning', 'exposure'], reconcileShipmentEta: ['planning', 'exposure'],
@@ -7347,10 +7487,21 @@ function _kmNoteSourceWrite_(writer, families, phase) {
         }
     } catch (e2) { /* the in-memory counters already moved; a reader in this page still sees the write */ }
 }
+// [R15F-F19] envId via db-api: an opaque id of the endpoint this page talks to (length + 32-bit hash; never the value), for the
+// shipment page's environment gate (R15C-B3B). Pages ask for this instead of naming the endpoint (wk1 F19 bypass scan).
+window.KM.DB.envId = function () { var g = window.KM_PRODUCTION_GUARD_; return g ? g.environmentKey() : ''; };
 // The counters, read-only. `last` names the most recent writer and phase — diagnostic only, never compared.
 window.KM.DB.sourceWriteEpoch = function () {
     var e = _kmSourceEpochRead_();
     return { planning: e.planning, exposure: e.exposure, last: e.last ? JSON.parse(JSON.stringify(e.last)) : null };
+};
+// DC2-R2 D-S8-B3-187 - THE SERVER'S SOURCE REVISION, which sees what this tab's epoch cannot: another tab, another
+// user, a scheduled import. One GET; the answer is the token, or null when it could not be read (UNKNOWN - never the
+// previous value). The page asks right before it decides whether a held answer is still current.
+window.KM.DB.probeSourceRevision = function () {
+    return Promise.resolve(_kmGapRead_('system.sourceRevision', {})).then(function (r) {
+        return (r && r.success && r.data && typeof r.data.source_revision === 'string' && r.data.source_revision) ? r.data.source_revision : null;
+    }, function () { return null; });
 };
 window.KM.DB.sourceWriteFamilies = function (name) {
     var f = _KM_SOURCE_WRITE_FAMILIES_[String(name)];
@@ -7722,3 +7873,13 @@ window.debugLegacySkuOverrides = function() {
     }
     console.log('=== End ===');
 };
+
+window.KM.DB.getShipmentConsolidationPolicy = function () { return _kmDocumentAction('shipment.consolidationPolicy.get', {}); };
+window.KM.DB.saveShipmentConsolidationPolicy = function (body) { return _kmDocumentAction('shipment.consolidationPolicy.save', body); };
+// WK1 r2 (review M-2): the Weekly Save route is retired - the server refuses save_lane too. Fails closed here; nothing is sent.
+window.KM.DB.saveShippingPlanLane = function () { return Promise.resolve({ success: false, code: 'PLAN_SAVE_ROUTE_RETIRED', error: 'PLAN_SAVE_ROUTE_RETIRED', zero_write: true }); };
+
+function _kmScNote13_(note) { return String(note || '').replace(/(?:^|\n)\[SC13_(?:SOURCE|PENDING|DONE):[^\]\r\n]*\]/g, '').trim(); }
+function _kmScSource13_(r) { var m = String(r.note || '').match(/(?:^|\n)\[SC13_SOURCE:([^\]]+)\]/); if (!m) return {}; try { var s = JSON.parse(decodeURIComponent(m[1])); return s.sku === String(r.sku || '').trim() && s.plan_line_id === String(r.shipping_plan_line_id || '').trim() && s.qty === Number(r.shipment_qty) ? s : {}; } catch(e) { return {}; } }
+
+// CODEX-TAX-SPLIT-1: local candidate, Owner fractional rates and separate currencies.

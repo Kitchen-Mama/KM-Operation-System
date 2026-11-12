@@ -143,7 +143,8 @@
       var destWh = whById[destWarehouseId];
       if (!destWh) return blocked('DESTINATION_UNKNOWN');
       if (!whActive(destWh)) return blocked('DESTINATION_INACTIVE');
-      destCountry = destCountry || s(destWh.country); destWhCode = s(destWh.warehouse_code);
+      var whC15e = s(destWh.country).toUpperCase(), kmra15e = getKMRA(), set15e = (destCountry && kmra15e && typeof kmra15e.planningSetMembers === 'function') ? kmra15e.planningSetMembers(destCountry) : null;   // R15C-EU
+      destCountry = (set15e && whC15e && set15e.indexOf(whC15e) !== -1) ? whC15e : (destCountry || s(destWh.country)); destWhCode = s(destWh.warehouse_code);   // R15C-EU: a member warehouse prices by its own country
       destKind = 'WAREHOUSE';
     } else if (low(dest.kind) === 'marketplace') {
       destMarketplace = s(dest.marketplace);
@@ -161,8 +162,13 @@
     // chargeUnit); the lead-time (transit-day) join is KMRA's too, so AI-Plan ETA == Execution-Plan ETA.
     var kmra = getKMRA();
     if (!kmra || typeof kmra.laneCards !== 'function') return blocked('ROUTE_METHOD_UNRESOLVED', 'KMRA_UNAVAILABLE');
-    var routeQuery = { originCountry: originCountry, destinationCountry: destCountry, marketplace: destKind === 'MARKETPLACE' ? destMarketplace : '' };
+    // MC1 (ITEM III D-2 / D-4): the battery class of the line(s) and the destination warehouse code reach the shared KMRA
+    // predicate, so a lithium-only card or a card bound to ANOTHER warehouse never becomes a candidate.
+    var routeQuery = { originCountry: originCountry, destinationCountry: destCountry, marketplace: destKind === 'MARKETPLACE' ? destMarketplace : '',
+      destinationWarehouseCode: destKind === 'WAREHOUSE' ? destWhCode : '', batteryType: s(input.batteryType) };
+    if (low(input.batteryType) === 'unclassified') return blocked('ROUTE_METHOD_UNRESOLVED', 'RATE_CARD_BATTERY_UNCLASSIFIED');
     var lane = kmra.laneCards(routeQuery, input.rateCards, { asOfOrdinal: asOf });
+    if (typeof kmra.planningSetMembers === 'function' && kmra.planningSetMembers(destCountry)) lane = lane.map(function (dto) { return Object.assign({}, dto, { currency: '', unitRate: NaN, minCharge: NaN, chargeType: '', chargeUnit: '', priced: false }); });   // R15C-EU: no quote before a warehouse
     // ============================================================================================================
     // F1-7N-FC-1B-E3-R4-A2-R1-R5 §2/§7 — A PRICE LIST WAS DECIDING WHETHER A METHOD EXISTED.
     //
@@ -178,23 +184,32 @@
     // COMPLETE route — source, destination, method and last-mile are all present, and cost has never been a
     // header field — so nothing schema-invalid becomes writable. What changes is only that a missing price
     // list no longer erases a method that demonstrably exists.
+    // MC1 (ITEM III D-1): THE METHOD SET IS (lead-time services) UNION (applicable cards). A card decides only whether a
+    // method is PRICED, never whether it exists: a forwarder with transit data but no rate card on this lane used to
+    // vanish the moment ANY other forwarder priced the lane. The AI RANKING is unchanged: when the lane has priced cards
+    // it ranks those only (exactly as before); the unpriced services join the MANUAL options and the override check.
     var methodSource = 'RATE_CARD';
     var candidates = lane;
-    if (!lane.length) {
-      var kmmr = getKMMR();
-      var profiles = (kmmr && typeof kmmr.serviceProfiles === 'function')
-        ? kmmr.serviceProfiles(input.leadTimes, { originCountry: originCountry, destinationCountry: destCountry })
-        : [];
-      if (profiles.length) {
-        methodSource = 'LEAD_TIME_AUTHORITY';
+    var kmmr = getKMMR();
+    var profiles = (kmmr && typeof kmmr.serviceProfiles === 'function')
+      ? kmmr.serviceProfiles(input.leadTimes, { originCountry: originCountry, destinationCountry: destCountry })
+      : [];
+    var pricedKey = {}; lane.forEach(function (dto) { pricedKey[low(dto.shippingMethod) + '||' + low(dto.lastMileDelivery)] = 1; });
+    var unpriced = profiles.filter(function (p) { return !pricedKey[low(p.shipping_method) + '||' + low(p.last_mile_delivery)]; });
+    var rankSet = lane;
+    if (unpriced.length) {
+      {
+        if (!lane.length) methodSource = 'LEAD_TIME_AUTHORITY';   // unchanged meaning: who supplied the RANKED set
         // Shaped like a rate-card DTO so the ranking below is untouched, with every commercial field ABSENT
         // rather than defaulted: an unpriced candidate must never sort as if it were free.
-        candidates = profiles.map(function (p) {
+        var unpricedDtos = unpriced.map(function (p) {
           return { rateCardId: '', carrierId: '', shippingMethod: p.shipping_method,
             shippingMethodLabel: p.shipping_method, lastMileDelivery: p.last_mile_delivery,
-            currency: '', unitRate: NaN, minCharge: NaN, chargeType: '', chargeUnit: '',
+            currency: '', unitRate: NaN, minCharge: NaN, chargeType: '', chargeUnit: '', priced: false,
             originCountry: originCountry, destinationCountry: destCountry, marketplace: '' };
         });
+        candidates = lane.concat(unpricedDtos);            // what EXISTS: manual options + override validation
+        if (!lane.length) rankSet = unpricedDtos;          // what the AI may auto-pick from (unchanged rule)
       }
     }
     if (!candidates.length) {
@@ -249,11 +264,12 @@
     // manual vs a post-ranking selected result). AI ranking then operates over ROUTE PAIRS {method,last_mile}; the
     // SELECTED last_mile becomes part of the K2 key/header (distinct last_mile values are NEVER merged into one header).
     var manualSeen = {}, manualOptions = [];
-    candidates.forEach(function (dto) { var m = s(dto.shippingMethod); if (!m) return; var mk = low(m); if (manualSeen[mk]) return; manualSeen[mk] = 1; manualOptions.push({ value: m, label: s(dto.shippingMethodLabel) || m }); });
+    candidates.forEach(function (dto) { var m = s(dto.shippingMethod); if (!m) return; var mk = low(m); if (manualSeen[mk]) { if (dto.priced !== false) manualSeen[mk].priced = true; return; } manualSeen[mk] = { value: m, label: s(dto.shippingMethodLabel) || m, priced: dto.priced !== false }; manualOptions.push(manualSeen[mk]); });   // MC1: priced = at least one applicable card
     manualOptions.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
 
     // distinct candidate PAIRS (dedup by method|last_mile; first card is the cost representative).
-    var pairSeen = {}, pairs = [];
+    var pairSeen = {}, pairs = [], rankKeys = {};
+    rankSet.forEach(function (dto) { rankKeys[low(dto.shippingMethod) + '||' + low(dto.lastMileDelivery)] = 1; });   // MC1
     candidates.forEach(function (dto) {
       var m = s(dto.shippingMethod); if (!m) return;
       var lmv = s(dto.lastMileDelivery), pk = low(m) + '||' + low(lmv);
@@ -262,9 +278,10 @@
       pairs.push({ method: m, last_mile: lmv, days: days, onTime: onTime(days), cost: estCost(dto), currency: s(dto.currency), chargeType: low(dto.chargeType), chargeUnit: low(dto.chargeUnit), tuple: low(m) + '|' + low(lmv) });
     });
 
+    var allPairs = pairs; pairs = allPairs.filter(function (p) { return rankKeys[low(p.method) + '||' + low(p.last_mile)]; });   // MC1: AI ranking over rankSet only
     // manual override → validate an EXACT pair. Method-only override with >1 remaining last_mile is an authority gap.
     if (s(override.shipping_method)) {
-      var ov = pairs.filter(function (p) { return low(p.method) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(p.last_mile) === low(override.last_mile_delivery)); });
+      var ov = allPairs.filter(function (p) { return low(p.method) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(p.last_mile) === low(override.last_mile_delivery)); });
       if (!ov.length) return blocked('OVERRIDE_INVALID');
       if (s(override.last_mile_delivery) === '' && uniq(ov.map(function (p) { return low(p.last_mile); })).length > 1) return authorityRequired(manualOptions, ov.map(pairEvi));
       var ovp = ov[0];
@@ -339,8 +356,12 @@
       // §7 — which authority named this method, so a consumer never has to guess whether a null cost means
       // "free", "not yet compared" or "no rate card exists".
       method_source: methodSource,
+      // MC1 (D-1): whether THIS selection is priced by an applicable card. On a priced lane a manual override may now pick a
+      // lead-time-only service; it is reported as not priced instead of borrowing the lane's rate-card basis.
+      selected_priced: !!pricedKey[low(method) + '||' + low(lastMile)],
+      method_set_source: unpriced.length ? (lane.length ? 'RATE_CARD+LEAD_TIME_AUTHORITY' : 'LEAD_TIME_AUTHORITY') : 'RATE_CARD',
       estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency),
-      cost_basis: methodSource === 'RATE_CARD' ? 'RATE_CARD' : 'NOT_PRICED_NO_RATE_CARD_FOR_LANE' };
+      cost_basis: (methodSource === 'RATE_CARD' && !!pricedKey[low(method) + '||' + low(lastMile)]) ? 'RATE_CARD' : 'NOT_PRICED_NO_RATE_CARD_FOR_LANE' };   // MC1
     }
   }
 
@@ -714,7 +735,7 @@
   }
 
   return {
-    VERSION: 'kmwrr-r6-1',
+    VERSION: 'kmwrr-r15c-eu-1',
     buildK2GenerationPlan: buildK2GenerationPlan, planLineKey: planLineKey,
     // typed route-candidate outcomes. ROUTE_METHOD_UNRESOLVED = NO eligible method (empty lane), sub-typed by
     // method_unresolved_reason (NO_CARRIER_CARD_FOR_LANE / CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE / NO_CANONICAL_METHOD);

@@ -5,6 +5,14 @@
 <section id="purchase-order-list-section" class="module-section procurement-page">
     <div class="page-header procurement-page__header">
         <h2 class="page-title">Purchase Order Overview</h2>
+        <div class="procurement-page__header-actions">
+        <div class="km-page-actions-menu" id="polActionsMenu">
+            <button type="button" class="km-page-actions-menu__trigger" id="polActionsTrigger" aria-haspopup="menu" aria-expanded="false" aria-controls="polActionsList" onclick="polToggleActionsMenu(event)">⋯ More Options</button>
+            <div class="km-page-actions-menu__list" id="polActionsList" role="menu" aria-label="Purchase order actions" hidden>
+                <button type="button" role="menuitem" class="km-page-actions-menu__item" onclick="polRunAction('import')">Import Purchase Order</button>
+            </div>
+        </div>
+        </div>
     </div>
 
     <div class="procurement-page__note" id="pol-mode-note"></div>

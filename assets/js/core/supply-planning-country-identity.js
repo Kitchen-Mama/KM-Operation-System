@@ -54,13 +54,24 @@
     return { members: _uniq(aliasMembers(c).map(canonicalCountryCode)), aggregate: false };   // UK/GB → ['GB'] (deduped)
   }
 
+  // R15G-EU-KMCID: patched
+  // R15C-EU - the PLANNING SET -> member WAREHOUSE countries, the server's copy of the frozen frontend authority IRCountry.WAREHOUSE_REGION
+  // (assets/js/utils/inventory-compat.js, Round 4 Decision D: an Amazon EU aggregate context may draw warehouses in its member countries).
+  // Mirrored VERBATIM, exactly as EU_SALES_SOURCE_ mirrors IRCountry.SALES_AGG, and pinned to it by a parity test (eu-core.test.cjs E10);
+  // it reaches Apps Script through the generated 90_ bundle (KMCID). A planning set is NOT a country alias: membership lets a set-scoped
+  // shipment hold a member warehouse; pricing, cards and routes then use THAT warehouse's own country. Any other code -> null (not a set).
+  var PLANNING_SET_WAREHOUSE_COUNTRIES_ = { 'EU': ['EU', 'DE', 'ES', 'IT', 'FR'] };
+  function planningSetMembers(code) { var c = up(code); return Object.prototype.hasOwnProperty.call(PLANNING_SET_WAREHOUSE_COUNTRIES_, c) ? PLANNING_SET_WAREHOUSE_COUNTRIES_[c].slice() : null; }
+
   return {
+    planningSetMembers: planningSetMembers,
+    PLANNING_SET_WAREHOUSE_COUNTRIES: { 'EU': ['EU', 'DE', 'ES', 'IT', 'FR'] },
     canonicalCountryCode: canonicalCountryCode,
     countryMatches: countryMatches,
     aliasMembers: aliasMembers,
     sourceCountriesForScope: sourceCountriesForScope,
     SAME_MARKET_ALIAS: { 'UK': ['UK', 'GB'], 'GB': ['UK', 'GB'] },
     EU_SALES_SOURCE: { 'EU': ['IT', 'DE', 'ES', 'FR'] },
-    VERSION: 'kmcid-fm5r5d-eu-1'
+    VERSION: 'kmcid-r15g-eu-1'
   };
 });

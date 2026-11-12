@@ -46,6 +46,9 @@
 
   function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function lo(v) { return str(v).toLowerCase(); }
+  // R15C-EU: the planning-set definition is KMCID's (Node require / Apps Script bundle global / browser window.KM.countryIdentity).
+  function getKMCID15e() { try { if (typeof require === 'function') { var k0 = require('./supply-planning-country-identity'); if (k0 && k0.planningSetMembers) return k0; } } catch (e) {} try { if (typeof KMCID !== 'undefined' && KMCID) return KMCID; } catch (e1) {} try { if (typeof window !== 'undefined' && window.KM && window.KM.countryIdentity) return window.KM.countryIdentity; } catch (e2) {} return null; }
+  function setMembers15e(code) { var k = getKMCID15e(); try { return (k && typeof k.planningSetMembers === 'function') ? k.planningSetMembers(code) : null; } catch (e) { return null; } }
 
   // The applied station a catalogue belongs to. Two requests with the same key are the same question.
   function scopeKey(scope) {
@@ -57,9 +60,11 @@
   // `carrier_rate_cards` has NO is_active column — the only status signal is the free-text `status`, so this
   // EXCLUDES known-inactive tokens rather than allow-listing, exactly as the page has always done.
   var INACTIVE_ = { inactive: 1, disabled: 1, archived: 1, expired: 1, void: 1, deleted: 1 };
+  // MC1 (ITEM III D-5): ONE active rule for a rate card, the server's (17_ shippingRateActive_: status === 'active'; the 17_
+  // importer accepts only active / inactive). A blank or unknown status is not active. INACTIVE_ is kept for its readers.
   function rateCardUsable(rc, today) {
     if (!rc) return false;
-    if (INACTIVE_[lo(rc.status)]) return false;
+    if (lo(rc.status) !== 'active') return false;
     var t = today ? new Date(today) : new Date();
     t.setHours(0, 0, 0, 0);
     function parseD(s) { var d = new Date(str(s)); return isNaN(d.getTime()) ? null : d; }
@@ -79,13 +84,23 @@
     { key: 'marketplace', from: function (r) { return r.marketplace; }, label: 'marketplace' },
     { key: 'destinationWarehouseCode', from: function (r) { return r.destinationWarehouseCode; }, label: 'destination_warehouse_code' }
   ];
+  // MC1 (ITEM III D-2): the battery axis, the SAME rule as 17_ shippingRateMatch_ (:596 / :602-604) and KMRA batteryOk: a lithium
+  // SKU uses only lithium_battery cards, any other SKU never uses one; 'unclassified' is refused before any card (see resolve).
+  // A route that names no battery class is read as 17_ reads it - not lithium.
+  function batteryRejection(rc, route) {
+    var want = lo(route && route.batteryType), card = lo(rc && rc.batteryType);
+    var ok = want === 'lithium_battery' ? card === 'lithium_battery' : card !== 'lithium_battery';
+    return ok ? null : { gate: 'battery_type', expected: want || 'non_lithium', found: card || '(blank)' };
+  }
   function axisRejection(rc, route) {
+    var bat = batteryRejection(rc, route); if (bat) return bat;
     for (var i = 0; i < AXES_.length; i++) {
       var a = AXES_[i];
       var cardVal = lo(rc[a.key]);
       var routeVal = lo(a.from(route || {}));
       if (!cardVal) continue;                       // wildcard on the card
       if (!routeVal) continue;                      // the route does not constrain this axis
+      if (a.key === 'destinationCountry' && setMembers15e(routeVal)) { if (setMembers15e(routeVal).indexOf(cardVal.toUpperCase()) === -1) return { gate: a.label, expected: routeVal + ' (' + setMembers15e(routeVal).join('/') + ')', found: cardVal }; continue; }   // R15C-EU: a planning set admits its members
       if (cardVal !== routeVal) return { gate: a.label, expected: routeVal, found: cardVal };
     }
     return null;
@@ -100,10 +115,10 @@
       if (axisRejection(rc, route)) return;
       var value = str(rc.shippingMethod);
       if (!value) return;
-      var k = value.toLowerCase();
-      if (seen[k]) return;
-      seen[k] = 1;
-      out.push({ value: value, label: str(rc.shippingMethodLabel) || value, carrierId: str(rc.carrierId) });
+      var k = value.toLowerCase(), cid = str(rc.carrierId);
+      if (seen[k]) { if (cid && seen[k].pricedCarrierIds.indexOf(cid) === -1) seen[k].pricedCarrierIds.push(cid); return; }
+      seen[k] = { value: value, label: str(rc.shippingMethodLabel) || value, carrierId: cid, pricedCarrierIds: cid ? [cid] : [] };   // MC1: every pricing carrier
+      out.push(seen[k]);
     });
     out.sort(function (a, b) { return a.label.localeCompare(b.label) || a.value.localeCompare(b.value); });
     return out;
@@ -150,13 +165,14 @@
     var ro = lo(lt.originCountry), rd = lo(lt.destinationCountry);
     var qo = lo(route.originCountry), qd = lo(route.destinationCountry);
     if (ro && qo && ro !== qo) return false;
+    if (setMembers15e(qd)) { if (rd && setMembers15e(qd).indexOf(rd.toUpperCase()) === -1) return false; } else   // R15C-EU: a set route admits its members; the exact rule below is unchanged
     if (rd && qd && rd !== qd) return false;
     return !!str(lt.shippingMethod);
   }
 
   // Distinct service profiles for one lane, conservatively folded. Sorted deterministically — never row order.
   function serviceProfilesForRoute(leadTimes, route) {
-    var byKey = {}, order = [];
+    var byKey = {}, order = [], set15e = setMembers15e(route && route.destinationCountry);   // R15C-EU
     (leadTimes || []).forEach(function (lt) {
       if (!lt || !leadTimeOnLane(lt, route)) return;
       var method = str(lt.shippingMethod);
@@ -177,8 +193,11 @@
       if (mn !== null) p.minDays = (p.minDays === null) ? mn : Math.min(p.minDays, mn);
       var cid = str(lt.carrierId);
       if (cid && p.carrierIds.indexOf(cid) === -1) p.carrierIds.push(cid);
+      if (set15e) { var dc15e = str(lt.destinationCountry).toUpperCase() || '*'; p.destinationCountries = p.destinationCountries || []; if (p.destinationCountries.indexOf(dc15e) === -1) p.destinationCountries.push(dc15e);   // R15C-EU: per country only
+        var b15e = (p.transitByCountry = p.transitByCountry || {}), e15e = b15e[dc15e] || (b15e[dc15e] = { minDays: null, avgDays: null, maxDays: null });
+        if (mx !== null) e15e.maxDays = e15e.maxDays === null ? mx : Math.max(e15e.maxDays, mx); if (av !== null) e15e.avgDays = e15e.avgDays === null ? av : Math.max(e15e.avgDays, av); if (mn !== null) e15e.minDays = e15e.minDays === null ? mn : Math.min(e15e.minDays, mn); }
     });
-    var out = order.map(function (k) { var p = byKey[k]; p.carrierIds.sort(); return p; });
+    var out = order.map(function (k) { var p = byKey[k]; p.carrierIds.sort(); if (set15e) { p.destinationCountries.sort(); p.minDays = null; p.avgDays = null; p.maxDays = null; p.transitUndetermined = 'REGION_DESTINATION_NOT_CHOSEN'; } return p; });   // R15C-EU: no set-wide transit
     out.sort(function (a, b) { return a.label.localeCompare(b.label) || a.profileKey.localeCompare(b.profileKey); });
     return out;
   }
@@ -409,7 +428,23 @@
     // The question the picker actually asks: "what may this route offer, right now?"
     // `route.scope` is the APPLIED station; if a catalogue is held for a DIFFERENT station the answer is
     // STALE_SCOPE rather than a confidently wrong list.
+    // R15C-EU: a planning-set route (EU) lists every member country's options, each stating its real countries; NONE is priced before Shipment
+    // picks the warehouse, whose own country then prices it. A non-set route is answered by resolve0_ exactly as before.
     function resolve(scope, route, today) {
+      var r = resolve0_(scope, route, today), set = setMembers15e(route && route.destinationCountry);
+      if (!set || !r || !r.methods || !r.methods.length) return r;
+      var entry = cache[scopeKey(scope)] || { cards: [], leadTimes: [] }, profs = serviceProfilesForRoute(entry.leadTimes || [], route);
+      r.methods.forEach(function (m) {
+        var cs = {};
+        (entry.cards || []).forEach(function (rc) { if (rateCardUsable(rc, today) && !axisRejection(rc, route) && lo(rc.shippingMethod) === lo(m.value)) cs[str(rc.destinationCountry).toUpperCase() || '*'] = 1; });
+        profilesForMethod(profs, m.value).forEach(function (p) { (p.destinationCountries || []).forEach(function (c) { cs[c] = 1; }); });
+        m.destinationCountries = Object.keys(cs).sort(); m.priced = false; m.pricedCarrierIds = []; m.pricedAtWarehouse = true;   /* review m-2: no carrier is priced for a set */
+      });
+      r.destination_set = { code: str(route.destinationCountry).toUpperCase(), members: set };
+      r.pricing = { available: false, reason: 'REGION_NOT_PRICED_UNTIL_WAREHOUSE', note: 'The destination is a planning set: options are listed with their real countries; the price and the transit time come from the warehouse chosen in Shipment Draft.' };
+      return r;
+    }
+    function resolve0_(scope, route, today) {
       var key = scopeKey(scope);
       if (pending[key]) return { status: STATUS.LOADING, methods: [], scope_key: key };
       if (errors[key]) return { status: STATUS.ERROR, methods: [], error: errors[key], scope_key: key };
@@ -419,18 +454,49 @@
         if (loadedKeys.length) return { status: STATUS.STALE_SCOPE, methods: [], scope_key: key, loaded_scope_keys: loadedKeys };
         return { status: STATUS.IDLE, methods: [], scope_key: key };
       }
+      // MC1 (ITEM III D-2): an unclassified battery class refuses every card, as 17_ does (:596).
+      if (lo(route && route.batteryType) === 'unclassified') {
+        return { status: STATUS.EMPTY_CONFIGURATION, methods: [], scope_key: key,
+          configuration: { code: 'RATE_CARD_BATTERY_UNCLASSIFIED', reason: 'RATE_CARD_BATTERY_UNCLASSIFIED', missing_table: 'sku_details',
+            next_action: 'Classify the battery type of this SKU; no method is offered for an unclassified battery class.' } };
+      }
       var methods = methodsForRoute(entry.cards, route, today);
+      // MC1 (ITEM III D-1): THE METHOD SET IS (lead-time services) UNION (applicable cards). A card decides only whether a
+      // method is PRICED, never whether it exists, so a forwarder with transit data but no card on this lane no longer
+      // disappears because another forwarder priced it. Every option carries the same facts on BOTH branches: priced,
+      // pricedCarrierIds, carrierIds (pricing + transit), carrierSelection, and the transit last-mile facts.
+      if (methods.length) {
+        var viaTransitAll = methodsFromLeadTimes(entry.leadTimes, route), priced = {};
+        methods.forEach(function (m) { priced[lo(m.value)] = m; });
+        var extra = viaTransitAll.filter(function (t) { return !priced[lo(t.value)]; });
+        methods = withTransitLastMile(methods, entry.leadTimes, route).map(function (m) {
+          var t = viaTransitAll.filter(function (x) { return lo(x.value) === lo(m.value); })[0];
+          var all = (m.pricedCarrierIds || []).slice(); ((t && t.carrierIds) || []).forEach(function (c) { if (all.indexOf(c) === -1) all.push(c); });
+          m.priced = true; m.carrierIds = all.sort(); m.carrierSelection = DEFERRED_; m.source = 'CARRIER_RATE_CARDS';
+          return m;
+        });
+        extra.forEach(function (t) { t.priced = false; t.pricedCarrierIds = []; });
+        if (extra.length) {
+          var merged = methods.concat(extra).sort(function (a, b) { return a.label.localeCompare(b.label) || a.value.localeCompare(b.value); });
+          return { status: STATUS.READY, methods: merged, method_source: 'CARRIER_RATE_CARDS+CARRIER_LEAD_TIMES',
+            last_mile_source: 'CARRIER_LEAD_TIMES', carrier_selection: DEFERRED_,
+            pricing: { available: true, partial: true, unpriced_methods: extra.map(function (t) { return t.value; }),
+              note: 'Methods marked priced:false have transit data but no applicable rate card on this lane; carrier and price are chosen in the Weekly Shipping Plan.' },
+            scope_key: key };
+        }
+      }
       if (methods.length) {
         // R6-R4 §2 — the METHOD SET is still the price list's answer, byte for byte. What is added is the
         // transit authority's last-mile knowledge, so a priced lane's option is the same SHAPE as an
         // unpriced lane's and the row can render the same control from either.
-        return { status: STATUS.READY, methods: withTransitLastMile(methods, entry.leadTimes, route),
+        return { status: STATUS.READY, methods: methods,   // MC1: enriched above (withTransitLastMile + priced facts)
           method_source: 'CARRIER_RATE_CARDS', last_mile_source: 'CARRIER_LEAD_TIMES', scope_key: key };
       }
       // §4 — NO RATE CARD IS NOT NO METHOD. The price list is silent about this lane; the transit authority
       // may not be, and it is the one that decides whether a service exists. Consulted only as a FALLBACK, so
       // a lane that does have rate cards keeps its existing answer byte-for-byte.
       var viaTransit = methodsFromLeadTimes(entry.leadTimes, route);
+      viaTransit.forEach(function (t) { t.priced = false; t.pricedCarrierIds = []; });   // MC1: the same facts as the priced branch
       if (viaTransit.length) {
         return { status: STATUS.READY, methods: viaTransit, method_source: 'CARRIER_LEAD_TIMES',
           last_mile_source: 'CARRIER_LEAD_TIMES',
@@ -503,7 +569,7 @@
 
   var API = {
     STATUS: STATUS, create: create, scopeKey: scopeKey, rateCardUsable: rateCardUsable,
-    methodsForRoute: methodsForRoute, configurationDiagnosis: configurationDiagnosis, axisRejection: axisRejection,
+    methodsForRoute: methodsForRoute, configurationDiagnosis: configurationDiagnosis, axisRejection: axisRejection, batteryRejection: batteryRejection,
     serviceProfilesForRoute: serviceProfilesForRoute, methodsFromLeadTimes: methodsFromLeadTimes,
     profilesForMethod: profilesForMethod, lastMileFacts: lastMileFacts, withTransitLastMile: withTransitLastMile,
     DEFERRED_CARRIER_SELECTION: DEFERRED_

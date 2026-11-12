@@ -305,3 +305,56 @@
 .page-shipping-history .sh-sku-table__row:last-child .sh-sku-table__td {
     border-bottom: none;
 }
+
+/* R3-IMPORT (2026-10-29): the page's More Options menu - the Factory / Overseas pattern (grey trigger, white panel), scoped here */
+#shippinghistory-section .km-page-actions-menu { position: relative; }
+#shippinghistory-section .km-page-actions-menu__trigger { display: inline-flex; align-items: center; gap: 6px; height: var(--btn-height, 34px); background: #f1f5f9; color: #334155; border: 1px solid var(--border-light, #e2e8f0); padding: 0 var(--btn-padding-inline, 12px); border-radius: var(--btn-radius, 6px); font-size: var(--btn-font-size, 13px); white-space: nowrap; cursor: pointer; }
+#shippinghistory-section .km-page-actions-menu__trigger:hover, #shippinghistory-section .km-page-actions-menu__trigger[aria-expanded="true"] { background: #e2e8f0; }
+#shippinghistory-section .km-page-actions-menu__list { position: absolute; top: calc(100% + 6px); right: 0; min-width: 220px; width: max-content; max-width: min(340px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--border-light, #e2e8f0); border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,0.14); padding: 4px; z-index: 140; display: flex; flex-direction: column; gap: 2px; }
+#shippinghistory-section .km-page-actions-menu__list[hidden] { display: none; }
+#shippinghistory-section .km-page-actions-menu__item { display: flex; align-items: center; width: 100%; text-align: left; background: none; border: none; padding: 9px 10px; border-radius: 6px; font-size: 14px; color: #1e293b; cursor: pointer; }
+#shippinghistory-section .km-page-actions-menu__item:hover, #shippinghistory-section .km-page-actions-menu__item:focus { background: #f1f5f9; outline: none; }
+#shippinghistory-section .page-shipping-history > .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+/* Keep the action outside the wrapping shipment information in both views. */
+.history-card-header.sh-card-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 88px;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    cursor: pointer;
+}
+.sh-card-heading__info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 24px;
+    min-width: 0;
+}
+.sh-card-heading__identity {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    flex: 1 1 280px;
+    gap: 8px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.sh-card-heading__facts {
+    display: flex;
+    flex: 999 1 720px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    min-width: 0;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+.sh-card-heading__facts > span { min-width: 0; max-width: 100%; }
+.sh-card-heading > .history-expand-btn {
+    width: 88px;
+    min-height: 32px;
+    box-sizing: border-box;
+    white-space: nowrap;
+    justify-self: end;
+}

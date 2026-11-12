@@ -1772,6 +1772,7 @@ function _fiiParseError(msg) {
 }
 
 function openFactoryImportModal() {
+  if (!_fiiImportUi_().reset()) return;
   var overlay = _fiiEl('factory-import-overlay'), modal = _fiiEl('factory-import-modal');
   if (!modal || !overlay) return;
   _fiiRows = null; _fiiValidated = null; _fiiBatchId = null; _fiiSubmitting = false; _fiiCompleted = false;
@@ -1788,7 +1789,7 @@ function openFactoryImportModal() {
     _fiiKeyBound = true;
   }
 }
-function closeFactoryImportModal() { var o = _fiiEl('factory-import-overlay'), m = _fiiEl('factory-import-modal'); if (o) o.classList.remove('is-open'); if (m) m.classList.remove('is-open'); }
+function closeFactoryImportModal() { if (_fiiImportUi_().active()) return; var o = _fiiEl('factory-import-overlay'), m = _fiiEl('factory-import-modal'); if (o) o.classList.remove('is-open'); if (m) m.classList.remove('is-open'); }
 
 function _fiiSanitizeFilePart_(s) { return String(s || '').trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'NA'; }
 // F1-7N-UX-FACTORY-IMPORT-TEMPLATE-SCOPE-AND-DONE-FIX-R1 — the template is SCOPED to the CURRENTLY selected factory
@@ -2028,17 +2029,27 @@ function _fiiDone() {
   _fiiHide('factory-import-result'); _fiiHide('factory-import-summary'); _fiiHide('factory-import-preview-wrap');
   closeFactoryImportModal();                                      // clears the overlay + modal is-open state (no invisible backdrop)
 }
+function _fiiImportUi_() {
+    if (!(window.KM && window.KM.importFeedback)) throw new Error('Import feedback is not loaded. Reload this page.');
+    return window.KM.importFeedback.controller('factory-legacy', {"roots":["factory-import-modal"],"buttons":"#factory-import-confirm-btn"});
+}
+
 function confirmFactoryImport() {
+  var ui = _fiiImportUi_();
+  if (ui.blocked()) return;
   if (_fiiCompleted) { _fiiDone(); return; }                     // the button is now "Done" → close, do NOT re-import
   if (_fiiSubmitting) return;                                     // double-click → ONE commit
   if (!_fiiValidated || !_fiiBatchId) return;
   if ((_fiiValidated.summary && _fiiValidated.summary.invalidRows) > 0) return;   // never commit a blocking batch
+  if (!ui.begin()) return;
   _fiiSubmitting = true;
   var btn = _fiiEl('factory-import-confirm-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
-  Promise.resolve(window.KM.DB.factoryInventoryImportCommit({ rows: _fiiRows, importBatchId: _fiiBatchId, created_by: 'operation-system', scope: { warehouse_id: _fiiFactory.warehouseId, warehouse_code: _fiiFactory.warehouseCode } }))
+  ui.writing();
+  Promise.resolve().then(function () { return window.KM.DB.factoryInventoryImportCommit({ rows: _fiiRows, importBatchId: _fiiBatchId, created_by: 'operation-system', scope: { warehouse_id: _fiiFactory.warehouseId, warehouse_code: _fiiFactory.warehouseCode } }); })
     .then(function (resp) {
+      ui.finish(resp);
       if (!resp || resp.success === false) {
-        _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
+        _fiiSubmitting = false; if (btn && !ui.blocked() && !ui.done()) { btn.disabled = false; btn.textContent = 'Import'; }
         _fiiRenderResult(resp, true); return;
       }
       _fiiRenderResult(resp, false);
@@ -2048,8 +2059,9 @@ function confirmFactoryImport() {
       return _fiiRefreshAfterCommit();                            // decoupled targeted readback (never whole-DB reload) — runs exactly once here
     })
     .catch(function (err) {
+      ui.fail(err);
       // Commit ACK unknown (transport error) — reassure, do NOT resend automatically.
-      _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
+      _fiiSubmitting = false; if (btn && !ui.blocked() && !ui.done()) { btn.disabled = false; btn.textContent = 'Import'; }
       _fiiRenderResult({ error: (err && err.message) ? err.message : String(err) }, true);
     });
 }
@@ -2088,6 +2100,53 @@ function _fiiRefreshAfterCommit() {
 }
 // __FIIPAGE_END__ (test extraction marker — do not remove)
 
+// R3-IMPORT (2026-10-29, local candidate) - Import Inventory opens the shared batch import (KM.importBatch, lazy-loaded) with the two
+// Owner-decided modes. One file = one factory, chosen in the modal from the same eligible list the old modal used. After a commit
+// the page re-reads factory_stock + movements through the same targeted readback (_fiiRefreshAfterCommit).
+function _fiiOpenLegacyBatchImport() {
+  var facs = _fiiEligibleFactories();
+  function go() {
+    window.KM.importBatch.open({
+      domain: 'factory_inventory', title: 'Import Factory Inventory',
+      modes: [
+        { value: 'SET', label: 'Set current stock (overwrite)', help: 'Each listed factory + SKU gets the file quantity as its current stock; the movement records the difference. Not below reserved. SKUs not in the file are untouched.' },
+        { value: 'ADD', label: 'Add to current stock (Add New)', help: 'The file quantity is added: 100 + 30 = 130, one +30 movement. Sending the same batch again stays 130. A new SKU starts from 0. The add column is never prefilled.' }
+      ],
+      scopeFields: [{ key: 'warehouse_id', label: 'Factory', required: true, options: facs.map(function (w) { return { value: w.warehouseId, label: (w.warehouseName || w.warehouseCode || w.warehouseId) + (w.warehouseCode ? ' (' + w.warehouseCode + ')' : '') }; }) }],
+      scopeLabel: function (v) { return v && v.warehouse_id ? 'One file = one factory: ' + v.warehouse_id + '. The export holds ALL its stock rows, not the visible page.' : 'Choose the factory first.'; },
+      actor: function () { return (window.KM && window.KM.currentUser && window.KM.currentUser.email) || ''; },
+      onCommitted: function () { return _fiiRefreshAfterCommit(); }
+    });
+  }
+  if (window.KM && window.KM.importBatch) return go();
+  var L = window.KM && window.KM.scriptLoader;
+  if (!L) { alert('The import module could not be loaded.'); return; }
+  return L.load('assets/js/utils/import-batch.js').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+}
+function _fiiOpenBatchImport() {
+  function go() { return window.KM.poFactoryImport.open({ onCommitted: _fiiAdoptCombinedReadback }); }
+  if (window.KM && window.KM.poFactoryImport) return go();
+  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js').then(function (ok) {
+    if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
+    return go();
+  }).catch(function (e) { alert(String(e.message || e)); });
+}
+function _fiiAdoptCombinedReadback() {
+  // The shared importer has already read and verified both books. Adopt that
+  // snapshot instead of re-rendering the page's older scoped model.
+  if (_fsScopedActive()) {
+    if (!_fsReadModel) throw new Error('Factory view not ready. Reload the page; do not import again.');
+    ++_fsReadGen_;
+    _fsReadModel = Object.assign({}, _fsReadModel, {
+      factoryStock: window.KM.DB.getFactoryStock(),
+      factoryStockMovements: window.KM.DB.getFactoryStockMovements()
+    });
+    _fsLoad = { status: 'READY', error: null, requests: _fsLoad.requests };
+    if (window.KM.deferredRead) window.KM.deferredRead.invalidate(FS_MOVEMENTS);
+  }
+  initFactoryStockPage();
+}
+window._fiiOpenBatchImport = _fiiOpenBatchImport;
 window.openFactoryImportModal = openFactoryImportModal;
 window.closeFactoryImportModal = closeFactoryImportModal;
 window.downloadFactoryImportTemplate = downloadFactoryImportTemplate;
@@ -2207,7 +2266,7 @@ function toggleFactoryActionsMenu(ev) {
 // Run one action = reuse the EXISTING handler verbatim, then close the menu (one item → one handler call).
 function runFactoryAction(kind) {
     _factoryActionsClose(false);
-    if (kind === 'import' && typeof openFactoryImportModal === 'function') return openFactoryImportModal();
+    if (kind === 'import') return _fiiOpenBatchImport();   // R3-IMPORT: the shared import (SET / ADD); the old one-mode modal stays in the code as the rollback path
     if (kind === 'adjust' && typeof openFactoryInventoryAdjustModal === 'function') return openFactoryInventoryAdjustModal();
     if (kind === 'twSettings' && typeof openTwFactorySettingsModal === 'function') return openTwFactorySettingsModal();
 }

@@ -600,7 +600,7 @@
         }
         var t = tax.row;
         var route = (t.countryOfOrigin ? esc(t.countryOfOrigin) : '—') + ' → ' + (t.dutyCountry ? esc(t.dutyCountry) : '—');
-        var pct = function (v) { return (v === '' || v == null) ? '' : (v + '%'); };
+        var pct = function (v) { return (v === '' || v == null) ? '' : (Number((Number(v) * 100).toFixed(8)) + '%'); };
         var declared = (t.declaredValue === '' || t.declaredValue == null) ? '' : (t.declaredValue + (t.declaredCurrency ? ' ' + t.declaredCurrency : ''));
         var body = fieldRow('Country Route (origin → duty)', route) + fieldRow('HS Code', t.hscode) +
             fieldRow('Duty Rate', pct(t.dutyRate)) + fieldRow('Port Tax Rate', pct(t.portTaxRate)) +
@@ -615,7 +615,7 @@
                 comps.map(function (c) {
                     var name = c.componentName || c.componentCode || c.componentType || '—';
                     var typ = c.componentType && c.componentName ? ' (' + esc(c.componentType) + ')' : '';
-                    var rate = c.rateType === 'percentage' ? (c.rateValue + '%') : (c.amountPerUnit !== '' && c.amountPerUnit != null ? (c.amountPerUnit + ' ' + (c.amountCurrency || '') + '/' + (c.quantityUnit || '')) : (c.rateValue !== '' ? c.rateValue : '—'));
+                    var rate = c.rateType === 'percentage' ? (Number((Number(c.rateValue) * 100).toFixed(8)) + '%') : (c.amountPerUnit !== '' && c.amountPerUnit != null ? (c.amountPerUnit + ' ' + (c.amountCurrency || '') + '/' + (c.quantityUnit || '')) : (c.rateValue !== '' ? c.rateValue : '—'));
                     return '<tr><td>' + esc(name) + typ + '</td><td>' + esc(rate) + '</td><td>' + (String(c.effectiveTo || '').trim() ? esc(c.effectiveTo) : '∞') + '</td></tr>';
                 }).join('') + '</tbody></table>';
         }
@@ -1859,3 +1859,5 @@
         });
     }
 })();
+
+// CODEX-TAX-SPLIT-1: local candidate, Owner fractional rates and separate currencies.

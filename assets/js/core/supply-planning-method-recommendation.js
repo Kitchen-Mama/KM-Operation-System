@@ -77,10 +77,12 @@
     lane = lane || {};
     var out = [], byKey = {};
     var ok = (KMRA && typeof KMRA.normalizeLeadTime === 'function' && typeof KMRA.axisOk === 'function');
+    var set15e = (ok && typeof KMRA.planningSetMembers === 'function') ? KMRA.planningSetMembers(lane.destinationCountry) : null;   // R15C-EU
     if (!ok) return out;
     (leadTimes || []).forEach(function (raw) {
       var lt = KMRA.normalizeLeadTime(raw);
       if (!KMRA.axisOk(lt.originCountry, lane.originCountry)) return;
+      if (set15e) { if (!KMRA.destinationOk(lt.destinationCountry, lane.destinationCountry)) return; } else   // R15C-EU: a set lane admits its members; the exact rule below is unchanged
       if (!KMRA.axisOk(lt.destinationCountry, lane.destinationCountry)) return;
       // An unmapped method token has no canonical key, so it cannot be joined to anything downstream and is
       // not a recommendable service. It is counted, never guessed at.
@@ -102,6 +104,9 @@
         out.push(p);
       }
       p.row_count++;
+      if (set15e) { var dc15e = s(lt.destinationCountry).toUpperCase() || '*'; p.destination_countries = p.destination_countries || []; if (p.destination_countries.indexOf(dc15e) === -1) p.destination_countries.push(dc15e);   // R15C-EU: each member's own transit, folded per country only
+        var bc15e = (p.transit_by_country = p.transit_by_country || {}), e15e = bc15e[dc15e] || (bc15e[dc15e] = { min_days: null, avg_days: null, max_days: null });
+        if (isFinite(lt.maxDays)) e15e.max_days = e15e.max_days == null ? lt.maxDays : Math.max(e15e.max_days, lt.maxDays); if (isFinite(lt.avgDays)) e15e.avg_days = e15e.avg_days == null ? lt.avgDays : Math.max(e15e.avg_days, lt.avgDays); if (isFinite(lt.minDays)) e15e.min_days = e15e.min_days == null ? lt.minDays : Math.min(e15e.min_days, lt.minDays); }
       var cid = s(lt.carrierId);
       if (cid && p.carrier_ids.indexOf(cid) === -1) p.carrier_ids.push(cid);
       // CONSERVATIVE FOLD across carriers. max and avg take the SLOWEST value on offer, so adding a fast
@@ -111,7 +116,7 @@
       if (isFinite(lt.avgDays)) p.avg_days = (p.avg_days == null) ? lt.avgDays : Math.max(p.avg_days, lt.avgDays);
       if (isFinite(lt.minDays)) p.min_days = (p.min_days == null) ? lt.minDays : Math.min(p.min_days, lt.minDays);
     });
-    out.forEach(function (p) { p.carrier_ids.sort(); });
+    out.forEach(function (p) { p.carrier_ids.sort(); if (set15e) { p.destination_countries.sort(); p.min_days = null; p.avg_days = null; p.max_days = null; p.transit_undetermined = 'REGION_DESTINATION_NOT_CHOSEN'; } });   // R15C-EU: no set-wide transit
     out.sort(function (a, b) { return a.profile_key < b.profile_key ? -1 : (a.profile_key > b.profile_key ? 1 : 0); });
     return out;
   }
@@ -275,7 +280,7 @@
   }
 
   return {
-    VERSION: 'kmmr-r6-1',
+    VERSION: 'kmmr-r15c-eu-1',
     METHOD_STATUS: METHOD_STATUS,
     METHOD_REVIEW_REASONS: METHOD_REVIEW_REASONS,
     RISK: RISK,

@@ -1,0 +1,35 @@
+<section id="shipment-grouping-section" class="module-section" aria-labelledby="shipment-grouping-title">
+  <style>
+    #shipment-grouping-section {padding:24px;max-width:900px}
+    #shipment-grouping-section h1 {font-size:22px;margin:0 0 20px}
+    #shipment-grouping-section fieldset {border:0;border-bottom:1px solid #d3d8df;padding:12px 0;margin:0 0 18px}
+    #shipment-grouping-section legend {font-weight:600;margin-bottom:10px}
+    #shipment-grouping-section .sg-modes {display:flex;gap:20px;flex-wrap:wrap}
+    #shipment-grouping-section .sg-modes label {display:flex;align-items:center;gap:8px;min-height:36px}
+    #shipment-grouping-section .sg-field {display:block;margin:12px 0;max-width:560px}
+    #shipment-grouping-section input[type=text] {display:block;width:100%;height:36px;border:1px solid #97a4b4;border-radius:4px;box-sizing:border-box;padding:6px 8px}
+    #shipment-grouping-section button {height:36px;min-width:104px;border:1px solid #2563eb;border-radius:4px;padding:6px 14px;background:#2563eb;color:#fff;cursor:pointer;font-weight:600}
+    #shipment-grouping-section button[data-refresh] {background:#fff;color:#1d4ed8;margin-left:8px}
+    #shipment-grouping-section button:disabled {opacity:.6;cursor:wait}
+    #shipment-grouping-section [role=status] {margin-top:14px;line-height:1.5;overflow-wrap:anywhere}
+    #shipment-grouping-section [data-version] {color:#596578;font-size:12px;margin:14px 0}
+    @media(max-width:500px) {#shipment-grouping-section {padding:16px}#shipment-grouping-section .sg-modes {display:grid;gap:6px}}
+  </style>
+  <h1 id="shipment-grouping-title">Shipment Grouping</h1>
+  <form data-form>
+    <fieldset disabled data-settings>
+      <legend>Grouping Policy</legend>
+      <div class="sg-modes">
+        <label><input type="radio" name="shipmentGrouping" value="SEPARATE">Separate</label>
+        <label><input type="radio" name="shipmentGrouping" value="SAME_COMPANY">Same Company</label>
+        <label><input type="radio" name="shipmentGrouping" value="CROSS_COMPANY">Cross Company</label>
+      </div>
+      <label class="sg-field">Changed By<input type="text" name="actor" maxlength="100" required autocomplete="off"></label>
+      <label class="sg-field">Reason<input type="text" name="reason" maxlength="500" required autocomplete="off"></label>
+    </fieldset>
+    <div data-version></div>
+    <button type="submit" data-save disabled>Save</button>
+    <button type="button" data-refresh>Refresh</button>
+    <div role="status" aria-live="polite" data-status></div>
+  </form>
+</section>

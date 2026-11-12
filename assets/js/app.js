@@ -133,8 +133,8 @@ var KM_ROUTE_ASSETS_ = {
             // lookup resolves `UK` against the ISO `GB` through it (D-S8-C1-2). KMCID is the same owner
             // KMMSA / 43_ / 71_ use, and is itself a declared mirror of this page's frozen IRCountry alias
             // table, so this borrows one authority rather than introducing a second.
-            'assets/js/core/supply-planning-country-identity.js?v=r64-psbdemor3-20261022',
-            'assets/js/pages/inventory-replenishment.js?v=r64-psbdemor3-20261022'
+            'assets/js/core/supply-planning-country-identity.js?v=r65-dc2r2-20261022',
+            'assets/js/pages/inventory-replenishment.js?v=r65-dc2r2-20261022'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -160,11 +160,12 @@ var KM_ROUTE_ASSETS_ = {
     // menu entry, and the boot census is a bounded set this round has no reason to grow. It carries the
     // canonical country owner with it, because the page BORROWS KMCID's single UK ≡ GB alias rather than
     // restating a table that would then drift from the runtime's.
+    'shipment-grouping': { sectionId: 'shipment-grouping-section', scripts: ['assets/js/pages/shipment-grouping.js?v=r13'], partial: { key: 'shipment-grouping', url: 'assets/html/pages/shipment-grouping.html', target: '#shipment-grouping-mount' }, label: 'Shipment Grouping' },
     'site-priority': {
         sectionId: 'site-priority-section',
         scripts: [
-            'assets/js/core/supply-planning-country-identity.js?v=r64-psbdemor3-20261022',
-            'assets/js/pages/site-priority.js?v=r64-psbdemor3-20261022'
+            'assets/js/core/supply-planning-country-identity.js?v=r65-dc2r2-20261022',
+            'assets/js/pages/site-priority.js?v=r65-dc2r2-20261022'
         ],
         partial: { key: 'site-priority', url: 'assets/html/pages/site-priority.html',
             target: '#site-priority-mount' },
@@ -189,7 +190,7 @@ var KM_ROUTE_ASSETS_ = {
     'carrier-rate-card': {
         sectionId: 'carrier-rate-card-section',
         scripts: [
-            'assets/js/pages/carrier-rate-card.js?v=r64-psbdemor3-20261022'
+            'assets/js/pages/carrier-rate-card.js?v=r65-dc2r2-20261022'
         ],
         partial: { key: 'carrier-rate-card', url: 'assets/html/pages/carrier-rate-card.html',
             target: '#carrier-rate-card-mount' },
@@ -198,7 +199,7 @@ var KM_ROUTE_ASSETS_ = {
     'overseas-stock': {
         sectionId: 'overseas-stock-section',
         scripts: [
-            'assets/js/pages/overseas-stock.js?v=r64-psbdemor3-20261022'
+            'assets/js/pages/overseas-stock.js?v=r65-dc2r2-20261022'
         ],
         partial: { key: 'overseas-stock', url: 'assets/html/pages/overseas-stock.html',
             target: '#overseas-stock-mount' },
@@ -207,17 +208,32 @@ var KM_ROUTE_ASSETS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=r64-psbdemor3-20261022',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r64-psbdemor3-20261022',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r64-psbdemor3-20261022',
-            'assets/js/product-strategy/psb-selectors.js?v=r64-psbdemor3-20261022',
-            'assets/js/product-strategy/psb-chart-layout.js?v=r64-psbdemor3-20261022',
-            'assets/js/product-strategy/psb-board-ui.js?v=r64-psbdemor3-20261022',
-            'assets/js/pages/product-strategy-board.js?v=r64-psbdemor3-20261022'
+            'assets/js/product-strategy/psb-data-contract.js?v=r65-dc2r2-20261022',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=r65-dc2r2-20261022',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=r65-dc2r2-20261022',
+            'assets/js/product-strategy/psb-selectors.js?v=r65-dc2r2-20261022',
+            'assets/js/product-strategy/psb-chart-layout.js?v=r65-dc2r2-20261022',
+            'assets/js/product-strategy/psb-board-ui.js?v=r65-dc2r2-20261022',
+            'assets/js/pages/product-strategy-board.js?v=r65-dc2r2-20261022'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },
         label: 'Product Strategy Board'
+    },
+    /* TARGET-SALES-R2 (candidate) — SALES OUTLOOK, Forecast Overview › Sales Outlook. A ROUTE asset like the
+       others above: its calculator, its provider and its page load only when the route is opened, so no
+       other page's boot grows. It reads through the shared workspace client and the product-pricing client,
+       both already loaded at boot, and the canonical Target resolver (KMPD, at boot). */
+    'sales-outlook': {
+        sectionId: 'sales-outlook-section',
+        scripts: [
+            'assets/js/core/sales-outlook-calc.js?v=target-sales-r2-fix1',
+            'assets/js/api/sales-outlook-provider.js?v=target-sales-r2-fix1',
+            'assets/js/pages/sales-outlook.js?v=target-sales-r2-fix1'
+        ],
+        partial: { key: 'sales-outlook', url: 'assets/html/pages/sales-outlook.html',
+            target: '#sales-outlook-mount' },
+        label: 'Sales Outlook'
     }
 };
 if (window.KM) { window.KM.routeAssets = KM_ROUTE_ASSETS_; }
@@ -884,6 +900,7 @@ function showSection(section) {
             'global-logistics-map': 'global-logistics-map-section',
             'automation': 'automation-schedule-section',
             'site-priority': 'site-priority-section',
+            'shipment-grouping': 'shipment-grouping-section',
             // FX1-R4 — the lifecycle half. Without this entry the section below would be given
             // `.active` and stay empty, because the partial is loaded by the page's own mount.
             'fx-rate-book': 'fx-rate-book-section',
@@ -927,6 +944,7 @@ function showSection(section) {
         'sku-regional-details': 'sku-regional-details-section',
         'automation': 'automation-schedule-section',
         'site-priority': 'site-priority-section',
+            'shipment-grouping': 'shipment-grouping-section',
         // FX1-R4 — the display half. BOTH maps, for the reason recorded below: one decides what
         // MOUNTS and the other what is VISIBLE, and a section in only one of them either mounts into
         // a hidden shell or is revealed with nothing in it.
@@ -1143,7 +1161,8 @@ if (typeof initFcSkuDecisionSection === 'function') {
 
 
 // 初始化時載入紀錄和世界時間
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+    if (window.KM && window.KM.passwordAccess) await window.KM.passwordAccess.whenSignedIn();
     // F1-7L: NO whole Operation DB startup prime. Startup no longer fetches/normalizes the entire Operation DB into
     // window._opDbCache. Each page/workspace loads its OWN bounded/scoped data on mount (canonical); the remaining
     // secondary surfaces (RO 2nd-layer expand, FC builder/import modals) + the IR allocation-draft hydrate load

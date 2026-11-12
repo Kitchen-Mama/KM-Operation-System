@@ -1,0 +1,138 @@
+<!-- Sales Outlook (TARGET-SALES-R2 + R3, a LOCAL CANDIDATE) — injected into #sales-outlook-mount by KM.partialLoader. Forecast Overview › Sales Outlook.
+     Estimated sales = forecast quantity × current price; not revenue. The comparison with last year is FC Units only (Owner, phase 1).
+     Every id and class below is this page's own (so-*); the date picker reuses the shared .fr-date-* LOOK only, with its own ids and
+     its own preset / navigation classes, so neither Forecast Review nor this page can bind the other's controls. -->
+<link rel="stylesheet" href="assets/css/pages/sales-outlook.css?v=target-sales-r2-fix1">
+<section id="sales-outlook-section" class="module-section page-sales-outlook">
+    <div class="page-header so-header">
+        <h2 class="page-title">Sales Outlook</h2>
+        <p class="so-subtitle">Estimated sales value from the forecast at current prices — not revenue, not net of fees, tax, refunds or freight; never converted between currencies.</p>
+    </div>
+
+    <!-- page filters: they apply to the overview and to both sections below -->
+    <div class="so-filters km-filter-bar" id="soFilterBar">
+        <div class="filter-group so-filter--date">
+            <label>Months</label>
+            <button type="button" class="forecast-date-trigger so-date-trigger" id="soDateTrigger" aria-haspopup="dialog" aria-controls="soDateModal">
+                <span class="forecast-date-trigger-text" id="soDateTriggerText">—</span>
+                <span class="forecast-date-trigger-icon">▼</span>
+            </button>
+        </div>
+        <div class="filter-group filter-group--dropdown"><label>Company</label><div id="so-f-company-mount"></div></div>
+        <div class="filter-group filter-group--dropdown"><label>Country</label><div id="so-f-country-mount"></div></div>
+        <div class="filter-group filter-group--dropdown"><label>Marketplace</label><div id="so-f-site-mount"></div></div>
+        <div class="filter-group filter-group--dropdown"><label>Category</label><div id="so-f-category-mount"></div></div>
+        <div class="filter-group filter-group--dropdown"><label>Series</label><div id="so-f-series-mount"></div></div>
+        <div class="filter-group filter-group--dropdown"><label>Currency</label><div id="so-f-currency-mount"></div></div>
+        <div class="filter-group so-filter--actions">
+            <button type="button" class="so-btn" id="soRefresh" title="Read the sources again">Refresh</button>
+        </div>
+    </div>
+
+    <div class="so-tabs" role="tablist" aria-label="Forecast basis">
+        <button type="button" class="so-tab so-tab--active" role="tab" aria-selected="true" data-so-tab="raw" id="soTabRaw">Original FC</button>
+        <button type="button" class="so-tab" role="tab" aria-selected="false" data-so-tab="target" id="soTabTarget">With Target %</button>
+        <span class="so-tab-note" id="soTabNote"></span>
+    </div>
+
+    <div class="so-status" id="soStatus" role="status" aria-live="polite"></div>
+
+    <!-- OVERVIEW -->
+    <div class="so-block" id="soBlockOverview">
+        <div class="so-block-head"><h3 id="soOverviewTitle">Overview</h3><span class="so-block-note" id="soOverviewNote"></span></div>
+        <div class="km-table-scroll"><table class="so-table" id="soOverviewTable"></table></div>
+        <div class="so-trend" id="soTrend"></div>
+        <div class="so-event-presence" id="soEventPresence"></div>
+    </div>
+
+    <!-- REGULAR FORECAST -->
+    <div class="so-section" id="soSectionRegular">
+        <div class="so-section-head"><h3><span class="so-dot so-dot--reg"></span>Regular Forecast</h3><span class="so-block-note" id="soRegularNote"></span></div>
+        <div class="so-block">
+            <div class="so-block-head"><h4>By Series</h4><span class="so-block-note" id="soSeriesNote"></span></div>
+            <div class="km-table-scroll"><table class="so-table" id="soSeriesTable"></table></div>
+        </div>
+        <div class="so-block">
+            <div class="so-block-head"><h4>By Category</h4><span class="so-block-note" id="soCategoryNote"></span></div>
+            <div class="km-table-scroll"><table class="so-table" id="soCategoryTable"></table></div>
+        </div>
+        <div class="so-block">
+            <div class="so-block-head"><h4>SKU detail</h4>
+                <input type="search" class="so-sku-search" id="soSkuSearch" placeholder="Search SKU (this table only)" autocomplete="off">
+                <span class="so-block-note" id="soSkuNote"></span></div>
+            <div class="km-table-scroll"><table class="so-table so-table--sku" id="soSkuTable"></table></div>
+            <div class="so-pager" id="soSkuPager"></div>
+        </div>
+    </div>
+
+    <!-- SPECIAL EVENT: shown only when an eligible event overlaps the selected months -->
+    <div class="so-section" id="soSectionEvent" hidden>
+        <div class="so-section-head"><h3><span class="so-dot so-dot--evt"></span>Special Event</h3><span class="so-block-note" id="soEventNote"></span></div>
+        <div class="so-block">
+            <div class="so-block-head"><h4>Events in this period</h4><span class="so-block-note" id="soEventListNote"></span></div>
+            <div class="km-table-scroll"><table class="so-table" id="soEventTable"></table></div>
+        </div>
+        <div class="so-block">
+            <div class="so-block-head"><h4>Same period last year</h4>
+                <span class="so-seg" role="group" aria-label="Compare by">
+                    <button type="button" class="so-seg-btn so-seg-btn--on" data-so-evdim="series">Series</button><button type="button" class="so-seg-btn" data-so-evdim="category">Category</button><button type="button" class="so-seg-btn" data-so-evdim="sku">SKU</button>
+                </span>
+                <span class="so-block-note" id="soEventCmpNote"></span></div>
+            <div class="km-table-scroll"><table class="so-table" id="soEventCmpTable"></table></div>
+        </div>
+    </div>
+
+    <!-- data completeness: what could not be counted, and why -->
+    <div class="so-block" id="soBlockIssues">
+        <div class="so-block-head"><h3>Data completeness</h3><span class="so-block-note" id="soIssuesNote"></span></div>
+        <div class="km-table-scroll"><table class="so-table so-table--issues" id="soIssuesTable"></table></div>
+    </div>
+
+    <!-- the month picker: Forecast Review's date picker look and interaction, this page's own state -->
+    <div class="fr-date-backdrop" id="soDateBackdrop"></div>
+    <div class="fr-date-modal so-date-modal" id="soDateModal" role="dialog" aria-modal="true" aria-label="Choose months">
+        <div class="fr-date-modal-body">
+            <div class="fr-date-sidebar">
+                <div class="so-preset-item" data-so-preset="this-month" tabindex="0">This month</div>
+                <div class="so-preset-item" data-so-preset="next-month" tabindex="0">Next month</div>
+                <div class="fr-preset-divider"></div>
+                <div class="so-preset-item" data-so-preset="next-3-months" tabindex="0">Next 3 months</div>
+                <div class="so-preset-item" data-so-preset="next-6-months" tabindex="0">Next 6 months</div>
+                <div class="so-preset-item" data-so-preset="next-12-months" tabindex="0">Next 12 months</div>
+                <div class="fr-preset-divider"></div>
+                <div class="so-preset-item" data-so-preset="rest-of-year" tabindex="0">Rest of this year</div>
+                <div class="so-preset-item" data-so-preset="next-year" tabindex="0">Next year</div>
+            </div>
+            <div class="fr-date-content">
+                <p class="so-date-hint">Whole months: the month of the first day picked to the month of the last day picked.</p>
+                <div class="fr-date-inputs">
+                    <div class="fr-date-input-group"><label>From</label><input type="text" class="fr-date-input" id="soStartDisplay" readonly></div>
+                    <div class="fr-date-input-group"><label>To</label><input type="text" class="fr-date-input" id="soEndDisplay" readonly></div>
+                </div>
+                <div class="fr-calendars">
+                    <div class="fr-calendar" id="soCalendarStart">
+                        <div class="fr-calendar-header">
+                            <button type="button" class="so-calendar-nav" data-so-nav="prev-start" aria-label="Previous month">‹</button>
+                            <span class="fr-calendar-title" id="soCalendarStartTitle"></span>
+                            <button type="button" class="so-calendar-nav" data-so-nav="next-start" aria-label="Next month">›</button>
+                        </div>
+                        <div class="fr-calendar-body" id="soCalendarStartBody"></div>
+                    </div>
+                    <div class="fr-calendar" id="soCalendarEnd">
+                        <div class="fr-calendar-header">
+                            <button type="button" class="so-calendar-nav" data-so-nav="prev-end" aria-label="Previous month">‹</button>
+                            <span class="fr-calendar-title" id="soCalendarEndTitle"></span>
+                            <button type="button" class="so-calendar-nav" data-so-nav="next-end" aria-label="Next month">›</button>
+                        </div>
+                        <div class="fr-calendar-body" id="soCalendarEndBody"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="fr-date-modal-footer">
+            <span class="so-date-summary" id="soDateSummary"></span>
+            <button type="button" class="fr-date-btn fr-date-btn--cancel" id="soDateCancel">Cancel</button>
+            <button type="button" class="fr-date-btn fr-date-btn--apply" id="soDateApply">Apply</button>
+        </div>
+    </div>
+</section>

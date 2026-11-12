@@ -512,6 +512,12 @@ function markAsDone(planId, method) {
 
 function filterByStatus() {
     const sel = document.getElementById('spStatusFilter');
+    // Completed planning tasks belong to Shipment views, not this operational workspace.
+    if (sel) {
+        if (sel.value === 'completed') sel.value = 'all';
+        var completedOption = sel.querySelector('option[value="completed"]');
+        if (completedOption && completedOption.parentNode) completedOption.parentNode.removeChild(completedOption);
+    }
     const statusFilter = sel ? sel.value : 'all';
     const allCards = document.querySelectorAll('.sp-card');
     // section key (matches card data-status tokens) → { title element id, cards container id }
@@ -577,17 +583,25 @@ function _spLatestMap(rows) {
     var byScope = {}, bySku = {};
     (rows || []).forEach(function(r) {
         var d = String(r.snapshotDate || '');
-        var k = _spKey(r.country, r.marketplace, r.sku);
+        // R71-FE-10: the reading's OWN company is part of the key ('' when the source row carries none)
+        var _co10 = String((r.company != null && r.company !== '') ? r.company : ((r.raw && r.raw.company) || '')).trim().toLowerCase();
+        var k = _co10 + '##' + _spKey(r.country, r.marketplace, r.sku);
         if (!byScope[k] || d >= String(byScope[k].snapshotDate || '')) byScope[k] = r;
         var sk = String(r.sku || '').trim().toLowerCase();
         if (!bySku[sk] || d >= String(bySku[sk].snapshotDate || '')) bySku[sk] = r;
     });
     return { byScope: byScope, bySku: bySku };
 }
-function _spLookup(map, country, marketplace, sku) {
+function _spLookup(map, country, marketplace, sku, company, siteCompanies) {
     if (!map) return null;
-    return map.byScope[_spKey(country, marketplace, sku)] ||
-           map.bySku[String(sku || '').trim().toLowerCase()] || null;
+    // R71-FE-9 (W5): the site's OWN row only. R71-FE-10: the site is company + country + marketplace - a reading of another company is
+    // never used; a reading with no company is used only when the master names at most one company for this country + marketplace.
+    var base = _spKey(country, marketplace, sku), co = String(company || '').trim().toLowerCase();
+    if (co && map.byScope[co + '##' + base]) return map.byScope[co + '##' + base];
+    var nc = map.byScope['##' + base];
+    if (!nc) return null;
+    if ((siteCompanies || []).length > 1) return { __ambiguousCompany: true };
+    return nc;
 }
 
 // plan_id → true when a shipment exists for it (rebuilt each render). Lets the Done button appear
@@ -662,7 +676,7 @@ function _spGateAttrs_() {
 
 // Has the Decision Layer been marked Completed (Done pressed)? → leaves the Active view.
 function _spCompleted(p) {
-    return !!(p.completedAt && String(p.completedAt).trim());
+    return !!String(p.completedAt || (p.raw && p.raw.completed_at) || '').trim();
 }
 
 // ---- API-3A page read-source boundary ---------------------------------------------------------------
@@ -690,11 +704,15 @@ function _spWorkspacePlanRecord(p) {
         company: p.company, country: p.country, marketplace: p.marketplace,
         status: p.status, planVersion: _spNum(p.planVersion) || 1,
         shippingMethod: p.shippingMethod, lastMileDelivery: p.lastMileDelivery, customsType: p.customsType,
+        // WK1: the saved To (Site Inventory -> Plan) travels in the raw row; the Workspace record dropped it, so the header read '--'
+        destination: String(raw.destination == null ? '' : raw.destination).trim(), destinationType: String(raw.destination_type == null ? '' : raw.destination_type).trim(),
+        destinationWarehouseId: String(raw.destination_warehouse_id == null ? '' : raw.destination_warehouse_id).trim(),
         // S7-R2A1 — 40_ joins the master and serves carrier { id, name }; the name was dropped here.
         carrierId: (p.carrier && p.carrier.id) || '',
         carrierName: (p.carrier && p.carrier.name) || '',
         estimatedTotalCost: (raw.estimated_total_cost == null ? '' : raw.estimated_total_cost),
         estimatedFreightCost: (raw.estimated_freight_cost == null ? '' : raw.estimated_freight_cost),
+        estimatedDutyCurrency: String(raw.estimated_duty_currency || ''),
         estimatedDuty: (raw.estimated_duty == null ? '' : raw.estimated_duty),
         currency: p.currency || '',
         createdAt: String(raw.created_at || ''), note: String(raw.note || ''),
@@ -738,14 +756,23 @@ function _spBuildLegacyLiveMaps_() {
     ((window.KM.DB.getShipments && window.KM.DB.getShipments()) || []).forEach(function(sh) {
         if (sh.shippingPlanId) shipmentMap[sh.shippingPlanId] = true;
     });
-    var invMap = _spLatestMap((window.KM.DB.getAmazonInventorySnapshot && window.KM.DB.getAmazonInventorySnapshot()) || []);
-    var weeklyMap = _spLatestMap((window.KM.DB.getAmazonWeeklySalesSnapshot && window.KM.DB.getAmazonWeeklySalesSnapshot()) || []);
-    var mpCompany = {};
+    var nb16 = function (r) { var raw = r && r.raw; return !(raw && typeof raw === 'object' && String(raw.marketplace == null ? '' : raw.marketplace).trim() === ''); };   // R71-FE-16 (A-1): a blank RAW marketplace is excluded
+    var invMap = _spLatestMap(((window.KM.DB.getAmazonInventorySnapshot && window.KM.DB.getAmazonInventorySnapshot()) || []).filter(nb16));
+    var weeklyMap = _spLatestMap(((window.KM.DB.getAmazonWeeklySalesSnapshot && window.KM.DB.getAmazonWeeklySalesSnapshot()) || []).filter(nb16));
+    var mpCompany = {}, mpCompanies = {}, mpSkuCompanies = {};   // R71-FE-14: + per country + marketplace + SKU (marketplace_skus)
+    ((window.KM.DB.getMarketplaceSkus && window.KM.DB.getMarketplaceSkus()) || []).forEach(function (m) {
+        var c0 = String(m.country || '').trim().toLowerCase(); if (c0 === 'gb') c0 = 'uk';
+        var k = c0 + '||' + String(m.marketplace || '').trim().toLowerCase() + '||' + String(m.sku || '').trim().toLowerCase(), co = String(m.company || '').trim() || '(blank company)';
+        var l = mpSkuCompanies[k] || (mpSkuCompanies[k] = []); if (l.indexOf(co) < 0) l.push(co);
+    });
     ((window.KM.DB.getMarketplaces && window.KM.DB.getMarketplaces()) || []).forEach(function(m) {
         var k = String(m.country || '').trim().toLowerCase() + '||' + String(m.marketplace || '').trim().toLowerCase();
         if (m.company && !mpCompany[k]) mpCompany[k] = m.company;
+        if (m.company) { var _l10 = mpCompanies[k] || (mpCompanies[k] = []); if (_l10.indexOf(String(m.company).trim()) < 0) _l10.push(String(m.company).trim()); }   // R71-FE-10
     });
-    return { shipmentMap: shipmentMap, live: { inv: invMap, weekly: weeklyMap, mpCompany: mpCompany } };
+    var mpRows15 = {};   // R71-FE-15: one entry per marketplaces ROW for country + marketplace (blank company kept as unknown)
+    ((window.KM.DB.getMarketplaces && window.KM.DB.getMarketplaces()) || []).forEach(function (m) { var c0 = String(m.country || '').trim().toLowerCase(); if (c0 === 'gb') c0 = 'uk'; var mk = String(m.marketplace || '').trim().toLowerCase(); if (!mk) return; (mpRows15[c0 + '||' + mk] || (mpRows15[c0 + '||' + mk] = [])).push(String(m.company || '').trim() || '(blank company)'); });
+    return { shipmentMap: shipmentMap, live: { inv: invMap, weekly: weeklyMap, mpCompany: mpCompany, mpCompanies: mpCompanies, mpSkuCompanies: mpSkuCompanies, mpRows15: mpRows15 } };
 }
 function loadWeeklyShippingReadModel_() {
     if (_spEffectiveWorkspace()) {
@@ -859,12 +886,16 @@ function renderShippingPlanFromDb() {
         if (!v || v.ok !== false) return;        // nothing about the view depends on a passing verdict
         if (_spLastModel) _spRenderReadModel_(_spLastModel);
     });
-    Promise.resolve(loadWeeklyShippingReadModel_()).then(function(model) {
-        if (mySeq !== _spReadSeq) return;   // a newer load superseded this one → ignore stale response
+    return Promise.resolve(loadWeeklyShippingReadModel_()).then(function(model) {
+        if (mySeq !== _spReadSeq) return false;
         _spRenderReadModel_(model);
+        _spReadbackBlocked_ = !model || model.source === 'error' || !!model.error;
+        return !_spReadbackBlocked_;
     }).catch(function(err) {
-        if (mySeq !== _spReadSeq) return;
+        if (mySeq !== _spReadSeq) return false;
         _spRenderReadModel_({ source: 'error', error: { code: 'PAGE_READ_FAILED', message: String(err && err.message || err) } });
+        _spReadbackBlocked_ = true;
+        return false;
     });
 }
 
@@ -892,13 +923,14 @@ function _spRenderReadModel_(model) {
 
     var countryFilter = (document.getElementById('spCountryFilter') || {}).value || '';
     var inScope = plans.filter(function(p) {
+        if (_spCompleted(p)) return false;
         if (countryFilter && p.country !== countryFilter) return false;
         return true;
     });
 
     // Decision Layer Completion: a plan is "Completed" once Done is pressed (completed_at set).
-    // Completed plans leave the Active view entirely (preserved in DB; viewable via the Completed
-    // filter). An Approved plan that has been transferred to a Shipment Draft STAYS in Approved with
+    // Completed plans leave this workspace entirely (preserved in DB and Shipment views).
+    // An Approved plan that has been transferred to a Shipment Draft STAYS in Approved with
     // a Done button until the user marks it Completed (supersedes the v1.8 auto-hide-on-transfer rule).
     var draft = inScope.filter(function(p) { return p.status === 'draft' && !_spCompleted(p); });
     var pending = inScope.filter(function(p) { return p.status === 'pending_approval' && !_spCompleted(p); });
@@ -913,6 +945,7 @@ function _spRenderReadModel_(model) {
     _spSetSectionCount('completedSectionCount', completed.length);
     _spSetSectionCount('cancelledSectionCount', cancelled.length);
 
+    var _keep15c = _spCaptureCardState_();   // R15C-UI: expand / typed qty / note / focus / place on screen, by internal plan id
     _spRenderDbSection('shippingPlanCards', draft, 'draft', linesByPlan, 'No shipping plans available.', live);
     _spRenderDbSection('pendingApprovalCards', pending, 'pending_approval', linesByPlan, 'No pending approvals.', live);
     _spRenderDbSection('approvedCards', approved, 'approved', linesByPlan, 'No approved plans.', live);
@@ -921,37 +954,128 @@ function _spRenderReadModel_(model) {
 
     // Apply the current Status filter so cancelled stays hidden under "All Active".
     if (typeof filterByStatus === 'function') filterByStatus();
+    _spRestoreCardState_(_keep15c);
+}
+
+// R15C-UI (Owner R15 P1 "Expand collapses by itself"): every Weekly re-render rebuilds the cards with container.innerHTML (a readback after any
+// plan's command, the deployment-verdict repaint, a remount), and the new cards were all collapsed - and a qty typed but not saved was
+// replaced by the server value without a word. The state is now captured by the internal plan id before the sections are rebuilt and put
+// back after: expanded cards (their options panel is refreshed through the options cache), the open factory summary (_spFgOpen_), the
+// note being written, the focused input and the card's place on screen. A typed qty is kept only while the server still holds the value it
+// was typed over; if the server value moved, or the line / card is gone, it is NOT applied silently - the operator is told which ones.
+var SP_CARD_CONTAINERS_ = ['shippingPlanCards', 'pendingApprovalCards', 'approvedCards', 'completedCards', 'cancelledCards'];
+function _spCaptureCardState_() {
+    var st = { expanded: {}, qty: {}, notes: {}, focus: null, anchor: null };
+    if (typeof document === 'undefined') return st;
+    var act = document.activeElement, anchorCard = null;
+    SP_CARD_CONTAINERS_.forEach(function (cid) {
+        var c = document.getElementById(cid); if (!c || !c.querySelectorAll) return;
+        Array.prototype.forEach.call(c.querySelectorAll('.sp-card[data-plan-id]'), function (card) {
+            var pid = card.getAttribute('data-plan-id'); if (!pid) return;
+            if (card.classList.contains('is-expanded')) { st.expanded[pid] = true; if (!anchorCard) anchorCard = card; }
+            Array.prototype.forEach.call(card.querySelectorAll('input[data-line-id]'), function (inp) {
+                if (inp.value !== inp.defaultValue) (st.qty[pid] = st.qty[pid] || {})[inp.getAttribute('data-line-id')] = { value: inp.value, base: inp.defaultValue, sku: inp.getAttribute('data-sku') || '' };
+            });
+            var ni = document.getElementById('sp-note-input-' + pid), nt = document.getElementById('sp-note-text-' + pid);
+            if (ni && (ni.style.display !== 'none' || (nt && nt.value))) st.notes[pid] = { open: ni.style.display !== 'none', text: nt ? nt.value : '' };
+            if (act && card.contains(act)) {
+                anchorCard = card;
+                st.focus = { id: act.id || '', line: (act.getAttribute && act.getAttribute('data-line-id')) || '', plan: pid, s: (typeof act.selectionStart === 'number' ? act.selectionStart : null), e: (typeof act.selectionEnd === 'number' ? act.selectionEnd : null) };
+            }
+        });
+    });
+    if (anchorCard && anchorCard.getBoundingClientRect) st.anchor = { id: anchorCard.id, top: anchorCard.getBoundingClientRect().top };
+    return st;
+}
+function _spLineInput_(card, lineId) { var list = card ? card.querySelectorAll('input[data-line-id]') : []; for (var i = 0; i < list.length; i++) if (list[i].getAttribute('data-line-id') === lineId) return list[i]; return null; }
+function _spRestoreCardState_(st) {
+    if (!st || typeof document === 'undefined') return;
+    var lost = [];
+    Object.keys(st.expanded).forEach(function (pid) {
+        var card = document.getElementById('sp-card-' + pid); if (!card) return;   // the plan left this page (e.g. Done) - nothing typed is lost by that
+        card.classList.add('is-expanded'); var b = card.querySelector('.sp-btn-expand'); if (b) b.textContent = 'Collapse';
+        if (document.getElementById('sp-rc-' + pid)) { try { spRcRefresh(pid); } catch (eRc) {} }   // through the options cache
+    });
+    Object.keys(st.qty).forEach(function (pid) {
+        var card = document.getElementById('sp-card-' + pid), touched = null;
+        Object.keys(st.qty[pid]).forEach(function (lid) {
+            var q = st.qty[pid][lid], inp = _spLineInput_(card, lid);
+            if (!inp) { lost.push(q.sku + ': typed ' + q.value + ' (this plan can no longer be edited here)'); return; }
+            if (inp.defaultValue === q.value) return;   // the server now holds what was typed (e.g. this very Save)
+            if (inp.defaultValue !== q.base) { lost.push(q.sku + ': typed ' + q.value + ', the server now has ' + inp.defaultValue); return; }
+            inp.value = q.value; touched = inp;
+        });
+        if (touched) spDbOnQtyInput(touched, pid);
+    });
+    Object.keys(st.notes).forEach(function (pid) {
+        var n = st.notes[pid], ni = document.getElementById('sp-note-input-' + pid), nt = document.getElementById('sp-note-text-' + pid);
+        if (!ni || !nt) { if (n.text) lost.push('the unsent note on a plan that is no longer on this page'); return; }
+        if (n.open) ni.style.display = 'block'; nt.value = n.text;
+    });
+    if (st.focus) {
+        var card = document.getElementById('sp-card-' + st.focus.plan), el = st.focus.id ? document.getElementById(st.focus.id) : (st.focus.line ? _spLineInput_(card, st.focus.line) : null);
+        if (el && el.focus) { try { el.focus({ preventScroll: true }); if (st.focus.s != null && el.setSelectionRange) el.setSelectionRange(st.focus.s, st.focus.e); } catch (eF) {} }
+    }
+    if (st.anchor) { var a = document.getElementById(st.anchor.id); if (a && a.getBoundingClientRect && typeof window.scrollBy === 'function') { var d = a.getBoundingClientRect().top - st.anchor.top; if (d) window.scrollBy(0, d); } }
+    try { _spReholdBusy_(); } catch (eRh) {}   // R15C-UI batch 2
+    if (lost.length) _spNotify_('Some unsaved values were not put back because the plan changed on the server: ' + lost.join('; ') + '. Nothing was sent - check the plan and type them again if they are still wanted.');
 }
 
 // Resolve the three SKU-detail display values per spec §7 priority (snapshot → live → 0 / --).
+// R71-FE-15 (N8 = 16_ gate-1j): the Legacy fallback uses the Owner-confirmed source scope + the marketplaces master, as 16_ does
 function _spLineDisplay(line, plan, live) {
     // Current Stock: snapshot → available_qty + fc_transfer_qty + fc_processing_qty → 0
-    var currentStock;
+    // R71-FE-13 (N8, fail closed): the server stored no site value because it cannot be attributed to this company - say so, never fall back
+    var _w13 = String((line && line.raw && line.raw.snapshot_avg_sales_warning) || '');
+    if (/^SITE_SOURCE_(COMPANY_UNKNOWN|COMPANY_NOT_LISTED|NO_MARKETPLACE_SKU|NO_MARKETPLACE_ROW|NOT_CONFIRMED|MARKETPLACE_BLANK|SCOPE_UNDECIDED)/.test(_w13)) {   // R71-FE-15 / R71-FE-16: + the gate-1j / 1k reasons
+        var _why13 = /^SITE_SOURCE_COMPANY_UNKNOWN/.test(_w13) ? 'source unknown (report row cannot be attributed to this company)'
+            : /^SITE_SOURCE_NOT_CONFIRMED/.test(_w13) ? 'source not confirmed for this account'
+            : /^SITE_SOURCE_SCOPE_UNDECIDED/.test(_w13) ? 'source not confirmed (no source scope decided for this environment)'
+            : /^SITE_SOURCE_MARKETPLACE_BLANK/.test(_w13) ? 'source unknown (the snapshot rows have a blank marketplace)'
+            : /^SITE_SOURCE_NO_MARKETPLACE_ROW/.test(_w13) ? 'source unknown (no marketplaces row for this site)'
+            : /^SITE_SOURCE_COMPANY_NOT_LISTED/.test(_w13) ? 'source unknown (the marketplaces master gives this site to another company)' : 'source unknown (no marketplace listing for this site + SKU)';
+        var _u13 = '<span class="sp-src-unknown" title="' + _spEsc(_why13 + ' - ' + _w13) + '">\u2014 <small style="color:#94A3B8;">' + _spEsc(_why13) + '</small></span>';
+        return { currentStock: _u13, avgSales: _u13, daysOfSupply: '\u2014' };
+    }
+    var currentStock, _amb10 = false;   // R71-FE-10
+    var _site10 = (live && live.mpCompanies) ? (live.mpCompanies[String(plan.country || '').trim().toLowerCase() + '||' + String(plan.marketplace || '').trim().toLowerCase()] || []) : [];
+    // R71-FE-15 (N8 = 16_ gate-1j): the Legacy live fallback uses the same rule - "Amazon" is the only Owner-confirmed source scope, and the
+    // marketplaces master must hold exactly ONE row for this country + marketplace, the plan's company. Inline, so a reader that lifts this function alone keeps the rule
+    _site10 = (function () { var lo = function (v) { return String(v == null ? '' : v).trim().toLowerCase(); }, me = lo(plan && plan.company), c0 = lo(plan && plan.country), mk = lo(plan && plan.marketplace); if (c0 === 'gb') c0 = 'uk'; var SCOPE16 = { marketplace: 'amazon' }; if (mk !== 'amazon') return ['(not confirmed)', '(not confirmed 2)'];   /* R71-FE-16 (A-3): the Sandbox acceptance scope */ var list = ((live && live.mpRows15) || {})[c0 + '||' + mk] || []; return (list.length === 1 && lo(list[0]) === me) ? list : ['(unknown)', '(unknown 2)']; })();
     if (_spHasRaw(line, 'snapshot_current_stock')) {
         currentStock = _spNum(line.snapshotCurrentStock);
     } else {
-        var inv = live && _spLookup(live.inv, plan.country, plan.marketplace, line.sku);
-        currentStock = inv ? (_spNum(inv.availableQty) + _spNum(inv.fcTransferQty) + _spNum(inv.fcProcessingQty)) : 0;
+        var inv = live && _spLookup(live.inv, plan.country, plan.marketplace, line.sku, plan.company, _site10);
+        if (inv && inv.__ambiguousCompany) { _amb10 = true; inv = null; }
+        currentStock = inv ? (_spNum(inv.availableQty) + _spNum(inv.fcTransferQty) + _spNum(inv.fcProcessingQty)) : null;   // R71-FE-9 (W5): unknown, not 0
     }
     // Avg Sales: snapshot → sales_units_7d / 7 → 0
     var avgSales;
     if (_spHasRaw(line, 'snapshot_avg_sales_per_day')) {
         avgSales = _spNum(line.snapshotAvgSalesPerDay);
     } else {
-        var wk = live && _spLookup(live.weekly, plan.country, plan.marketplace, line.sku);
-        avgSales = wk ? (_spNum(wk.salesUnits7d) / 7) : 0;
+        var wk = live && _spLookup(live.weekly, plan.country, plan.marketplace, line.sku, plan.company, _site10);
+        if (wk && wk.__ambiguousCompany) { _amb10 = true; wk = null; }
+        avgSales = wk ? (_spNum(wk.salesUnits7d) / 7) : null;   // R71-FE-9 (W5): unknown, not 0
     }
     // Days of Supply: snapshot → currentStock / avgSales → --
     var dos;
     if (_spHasRaw(line, 'snapshot_days_of_supply')) {
         dos = line.snapshotDaysOfSupply;
-    } else if (avgSales > 0) {
+    } else if (avgSales != null && avgSales > 0 && currentStock != null) {
         dos = (currentStock / avgSales).toFixed(1);
     } else {
         dos = '--';
     }
-    var avgDisp = (avgSales > 0) ? avgSales.toFixed(1) : (_spHasRaw(line, 'snapshot_avg_sales_per_day') ? _spNum(line.snapshotAvgSalesPerDay).toFixed(1) : '0.0');
-    return { currentStock: currentStock, avgSales: avgDisp, daysOfSupply: (dos === '' || dos == null) ? '--' : dos };
+    var UNK = _amb10
+        ? '<span title="Ambiguous company: the site reading names no company and this country + marketplace belongs to more than one company - not picked">\u2014</span>'   // R71-FE-10
+        : '<span title="Not measured for this site when the plan was made (no snapshot, no site reading) - unknown, not 0">\u2014</span>';   // R71-FE-9 (W5)
+    var avgDisp = (avgSales == null) ? UNK : ((avgSales > 0) ? avgSales.toFixed(1) : (_spHasRaw(line, 'snapshot_avg_sales_per_day') ? _spNum(line.snapshotAvgSalesPerDay).toFixed(1) : '0.0'));
+    // R71-FE-15 (F1): a stored SITE_STOCK_ROW_NOT_FOUND is named; (m-b) a shown site number carries the source-scope note (rendered under the table)
+    var NOROW15 = '<span class="sp-src-unknown" title="SITE_STOCK_ROW_NOT_FOUND: no amazon_inventory_snapshot row for this site + SKU when the plan was made - unknown, not 0">\u2014 <small style="color:#94A3B8;">no snapshot row</small></span>';
+    var noRow15 = currentStock == null && /SITE_STOCK_ROW_NOT_FOUND/.test(_w13);
+    var note15 = (currentStock != null || avgSales != null) ? 'Original Amazon account reports; all countries confirmed by Owner 2026-11-06. KM Amazon excluded.' : '';   // R71-FE-16: the scope is named
+    return { currentStock: (currentStock == null ? (noRow15 ? NOROW15 : UNK) : currentStock), avgSales: avgDisp, daysOfSupply: (dos === '' || dos == null) ? '--' : dos, sourceNote: note15 };
 }
 
 function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMsg, live) {
@@ -972,13 +1096,14 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         var totalGross = planLines.reduce(function(s, l) { return s + _spNum(l.grossWeight); }, 0);
         var totalNet = planLines.reduce(function(s, l) { return s + _spNum(l.netWeight); }, 0);
         var totalCostNum = (plan.estimatedTotalCost === '' || plan.estimatedTotalCost == null) ? null : _spNum(plan.estimatedTotalCost);
-        var totalCostDisp = (totalCostNum == null) ? '--' : ('$' + totalCostNum.toFixed(2));
-        var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ('$' + (totalCostNum / totalPcs).toFixed(2));
+        var _cur11 = String(plan.currency || (plan.raw && plan.raw.currency) || '').trim();   // R71-FE-11: the server's currency
+        var totalCostDisp = (totalCostNum == null) ? '--' : ((_cur11 ? _spEsc(_cur11) + ' ' : '') + totalCostNum.toFixed(2));
+        var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ((_cur11 ? _spEsc(_cur11) + ' ' : '') + (totalCostNum / totalPcs).toFixed(4));
         var editable = (statusType === 'draft');
         var pid = plan.shippingPlanId;
         // Company: persisted snapshot first; live-join marketplaces ONLY as a legacy fallback when blank.
-        var companyDisp = plan.company ||
-            (live && live.mpCompany ? (live.mpCompany[String(plan.country || '').trim().toLowerCase() + '||' + String(plan.marketplace || '').trim().toLowerCase()] || '') : '');
+        var _cl10 = (live && live.mpCompanies) ? (live.mpCompanies[String(plan.country || '').trim().toLowerCase() + '||' + String(plan.marketplace || '').trim().toLowerCase()] || []) : [];
+        var companyDisp = plan.company || (_cl10.length === 1 ? _cl10[0] : '');   // R71-FE-10: never the first of several
         // Match the spStatusFilter dropdown tokens (draft / pendingApproval / approved) so filterByStatus works.
         var dsAttr = (statusType === 'pending_approval') ? 'pendingApproval' : statusType;
 
@@ -1004,7 +1129,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
             // §C.1 — THE RETRY THAT DID NOT EXIST. The approval is committed and kept; only the Execution
             // Commit is outstanding. Done is deliberately NOT offered here - marking the planning task
             // complete while its shipment is missing is precisely how this state used to disappear from view.
-            actions += '<button class="sp-btn sp-btn-submit"' + (recovery.canRetry ? '' : (' disabled title="' +
+            actions += '<button class="sp-btn"' /* INT-CAND9 r3 F4: not primary - outcome UNKNOWN here */ + (recovery.canRetry ? '' : (' disabled title="' +
                         _spEsc(recovery.blockedBy === 'RETRY_IN_FLIGHT'
                             ? 'A retry is already running for this plan.'
                             : _spContractMsg_()) + '"')) +
@@ -1023,20 +1148,24 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         // and the only hint had been a one-off alert pointing at a page that cannot show this state.
         var recoveryBanner = recovery.isRecoverable
             ? ('<div class="sp-recovery-banner" style="margin:6px 0; padding:8px 10px; border-left:3px solid #b45309; background:#fffbeb; color:#78350f; font-size:12px; line-height:1.5;">'
-               + '<strong>Approved — Shipment Draft not created.</strong> The approval is committed and kept. '
-               + 'The Shipment Draft has NOT been created, so nothing has been reserved and nothing will ship yet. '
-               + 'Use <em>Retry Shipment Draft</em>; retrying is safe and can never create two shipments.'
+               // PHASE1 INT-CAND9 (option A; round 3 review F4): a reload reads the plan only (workspace mode reads no shipments), so this view
+               // cannot know whether a draft or a reservation was written: the state is UNKNOWN here. It never claims 'nothing reserved' or
+               // 'retrying is safe'; the server decides.
+               + '<strong>Approved — Shipment Draft state UNKNOWN from this view.</strong> No Shipment Draft is recorded on this plan. The approval is committed and kept. '
+               + 'Whether a Shipment Draft or a stock reservation was already written is NOT confirmed from this view (it reads the plan only). '
+               + '<em>Retry Shipment Draft</em> is re-checked by the server before anything is written: an existing draft that names this plan is re-used or refused for review, a shipment linked to this plan only through a legacy plan column blocks it, and stock keys whose reservation books disagree are refused.'
                + (recovery.canRetry ? '' : ('<br><span style="color:#991b1b;">Retry is unavailable: '
                    + _spEsc(recovery.blockedBy === 'RETRY_IN_FLIGHT' ? 'a retry is already running.' : _spContractMsg_())
                    + '</span>'))
                + '</div>')
             : '';
 
+        var _spNote15 = '';   // R71-FE-15 (m-b)
         var rows = planLines.map(function(l) {
             var qtyCell = editable
                 ? '<input type="number" min="0" value="' + _spNum(l.approvedQty) + '" data-line-id="' + _spEsc(l.shippingPlanLineId) + '" data-upc="' + _spNum(l.unitsPerCarton) + '" data-sku="' + _spEsc(l.sku) + '" oninput="spDbOnQtyInput(this, \'' + pid + '\')" style="text-align:right; width:90px;">'
                 : _spNum(l.approvedQty);
-            var disp = _spLineDisplay(l, plan, live);
+            var disp = _spLineDisplay(l, plan, live); if (disp.sourceNote) _spNote15 = disp.sourceNote;
             return '<tr>' +
                 '<td>' + _spEsc(l.sku) + '</td>' +
                 '<td>' + disp.currentStock + '</td>' +
@@ -1065,27 +1194,8 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                 '<button onclick="spDbSaveNote(\'' + pid + '\')" style="background:#10B981; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px;">✓</button>' +
             '</div></div>';
 
-        // Cost Breakdown placeholder (UI only — final logic in the future Carrier Price Spec).
-        var cbTotalCost = (plan.estimatedTotalCost === '' || plan.estimatedTotalCost == null) ? '--' : ('$' + _spNum(plan.estimatedTotalCost).toFixed(2));
-        var cbFreight = _spHasRaw(plan, 'estimated_freight_cost') ? ('$' + _spNum(plan.estimatedFreightCost).toFixed(2)) : '--';
-        var cbDuty = _spHasRaw(plan, 'estimated_duty') ? ('$' + _spNum(plan.estimatedDuty).toFixed(2)) : '--';
-        // Carrier: name primary, id beside it — the Confirm-summary pair form. An id with no name is
-        // UNRESOLVED and shows the id; only a missing id may read as '--'. Legacy records carry no name.
-        var cbCarrierName = String(plan.carrierName || '').trim();
-        var cbCarrierId = String(plan.carrierId || '').trim();
-        var cbCarrier = !cbCarrierId
-            ? '--'
-            : (cbCarrierName ? (_spEsc(cbCarrierName) + '  ·  ' + _spEsc(cbCarrierId)) : _spEsc(cbCarrierId));
-        var costBreakdown =
-            '<div class="sp-section">' +
-                '<h4 class="sp-section-title">Cost Breakdown</h4>' +
-                '<div class="sp-cost-row"><span class="sp-cost-label">Carrier Name</span><span class="sp-cost-value">' + cbCarrier + '</span></div>' +
-                '<div class="sp-cost-row"><span class="sp-cost-label">Carrier Fee</span><span class="sp-cost-value">' + cbFreight + '</span></div>' +
-                '<div class="sp-cost-row"><span class="sp-cost-label">Duty / Custom</span><span class="sp-cost-value">' + cbDuty + '</span></div>' +
-                '<div class="sp-cost-row"><span class="sp-cost-label">Total Cost</span><span class="sp-cost-value">' + cbTotalCost + '</span></div>' +
-                '<div class="sp-cost-row"><span class="sp-cost-label">Unit Cost</span><span class="sp-cost-value">' + unitCostDisp + '</span></div>' +
-                '<div style="font-size:11px; color:#94A3B8; margin-top:6px;">Placeholder — carrier pricing not yet calculated.</div>' +
-            '</div>';
+        // R71-FE-11: Cost Breakdown is READ-ONLY and shows only what the server priced and stored on the plan (shippingPlan.selectRateCard)
+        var costBreakdown = _spCostBreakdownHtml_(plan, totalPcs);
 
         html += '' +
         '<div class="sp-card" id="sp-card-' + _spEsc(pid) + '" data-plan-id="' + _spEsc(pid) + '" data-status="' + dsAttr + '">' +
@@ -1096,6 +1206,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                     _spSummary('Company', _spEsc(companyDisp)) +
                     _spSummary('Country', _spEsc(plan.country || '')) +
                     _spSummary('Marketplace', _spEsc(plan.marketplace || '')) +
+                    _spSummary('Destination', '<span id="sp-dest-header14-' + _spEsc(pid) + '">' + _spEsc(_spWk1DestLabel_(plan)) + '</span>') +
                     _spSummary('Shipping Method', _spEsc(plan.shippingMethod || '')) +
                     _spSummary('Total Pcs', '<span id="sp-total-pcs-' + _spEsc(pid) + '">' + totalPcs + '</span>') +
                     _spSummary('Total Cartons', '<span id="sp-total-cartons-' + _spEsc(pid) + '">' + totalCartons + '</span>') +
@@ -1103,7 +1214,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                     // (2026-07-28 UI). They remain computed here (totalCbm/totalGross/totalNet) + shown in the
                     // Layer-2 Details table + used by Combined-plan recompute / Shipment — data is NOT removed.
                     _spSummary('Total Cost', totalCostDisp) +
-                    _spSummary('Unit Cost', '<span id="sp-unit-cost-' + _spEsc(pid) + '">' + unitCostDisp + '</span>') +
+
                 '</div>' +
                 recoveryBanner +
                 '<div class="sp-card-actions">' + actions + '</div>' +
@@ -1111,10 +1222,12 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
             '<div class="sp-card-details">' +
                 '<div class="sp-details-grid">' +
                     '<div class="sp-section">' +
-                        '<h4 class="sp-section-title">SKU Shipping Details</h4>' +
+                        '<h4 class="sp-section-title sp-sku-heading">SKU Shipping Details' +
+                            (editable ? '<button type="button" class="sp-btn" onclick="spDbEditSkus(\'' + _spEsc(pid) + '\')">Edit SKUs</button>' : '') + '</h4>' +
                         '<table class="sp-sku-table"><thead><tr>' +
                             '<th>SKU</th><th>Current Stock</th><th>Avg. Sales</th><th>Days of Supply</th><th>Shipping Qty</th><th>Cartons</th>' +
                         '</tr></thead><tbody>' + rows + '</tbody>' + footer + '</table>' +
+                        (_spNote15 ? '<details class="sp-src-scope15" style="color:#64748B;font-size:11px;margin-top:4px;"><summary>Amazon report source</summary>' + _spEsc(_spNote15) + '</details>' : '') +
                     '</div>' +
                     '<div class="sp-section">' +
                         '<h4 class="sp-section-title" style="display:flex; justify-content:space-between; align-items:center;">' +
@@ -1122,7 +1235,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                         '</h4>' +
                         '<div class="sp-rationale-text">' +
                             '<div class="sp-rationale-item"><strong>Target Days:</strong> ' + (planLines[0] ? _spNum(planLines[0].snapshotTargetDays) : '--') + '</div>' +
-                            '<div class="sp-rationale-item"><strong>Method:</strong> ' + _spEsc(plan.shippingMethod || '') + '</div>' +
+                            _spRcPanelHtml_(plan, statusType) +   // R71-FE-11: Carrier -> Method (Draft: editable, server-priced)
                             '<div class="sp-rationale-item"><strong>Plan No:</strong> ' + _spEsc(plan.shippingPlanNo || '') + '</div>' +
                             (plan.transferredShipmentId ? '<div class="sp-rationale-item"><strong>Shipment Draft:</strong> ' + _spEsc(plan.transferredShipmentId) + (plan.transferredToShipmentAt ? ' (' + _spEsc(plan.transferredToShipmentAt) + ')' : '') + '</div>' : '') +
                             (plan.completedAt ? '<div class="sp-rationale-item"><strong>Decision Completed:</strong> ' + _spEsc(plan.completedAt) + (plan.completedBy ? ' by ' + _spEsc(plan.completedBy) : '') + '</div>' : '') +
@@ -1153,6 +1266,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
             if (pid) spFactoryGuardRefresh(pid);
         });
     } catch (eFGR) { /* an indicator is never allowed to break a render */ }
+    try { Array.prototype.forEach.call(container.querySelectorAll('[id^="sp-rc-"][data-rc-editable="1"]'), function (el) { var p = el.getAttribute('data-plan-id'), card = document.getElementById('sp-card-' + p); if (p && card && card.classList.contains('is-expanded')) spRcRefresh(p); }); } catch (eRC) { /* optional read only */ }
 }
 
 function _spSummary(label, valueHtml) {
@@ -1166,6 +1280,7 @@ function toggleSpDbCard(planId) {
     var btn = card.querySelector('.sp-btn-expand');
     card.classList.toggle('is-expanded');
     if (btn) btn.textContent = card.classList.contains('is-expanded') ? 'Collapse' : 'Expand';
+    if (card.classList.contains('is-expanded')) spRcRefresh(planId);
 }
 
 // sku_details logistics lookup (rebuilt each render). Used for the live header CBM/weight totals
@@ -1232,12 +1347,72 @@ function spDbOnQtyInput(input, planId) {
     if (footCtn) footCtn.textContent = totalCartons;
 }
 
+// R71-FE-1 (edit conflict, Owner D4 - LOCAL CANDIDATE): the row tokens are taken from the model this page is SHOWING (_spLastModel),
+// and only on the Workspace read: 40_ serves each row's updated_at as read ('yyyy-MM-dd HH:mm:ss' text, or String(Date) / ISO for a Date
+// cell). The legacy whole-DB cache is never a token source (CH8-1: date-only, and never refreshed by a Workspace-mode write). A value in
+// none of the three second-precision forms the server parses is NOT sent: no token = the server's last-write-wins (the r7 behaviour).
+function _spTok_(v) {
+    var s = String(v == null ? '' : v).trim();
+    return (/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/.test(s) ||
+        /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})$/.test(s) ||
+        /[0-9]{2}:[0-9]{2}:[0-9]{2} GMT[+-][0-9]{4}/.test(s)) ? s : '';
+}
+function _spWsModel_() { return (_spLastModel && _spLastModel.source === 'workspace') ? _spLastModel : null; }
+function _spPlanRec_(planId) { var m = _spWsModel_(); return m ? ((m.plans || []).filter(function (p) { return String(p.shippingPlanId) === String(planId); })[0] || null) : null; }
+function _spLineRec_(lineId) { var m = _spWsModel_(); return m ? ((m.lines || []).filter(function (l) { return String(l.shippingPlanLineId) === String(lineId); })[0] || null) : null; }
+function _spPlanTok_(planId) { var p = _spPlanRec_(planId); return p ? _spTok_(p.updatedAt || (p.raw && p.raw.updated_at)) : ''; }
+function _spLineTok_(lineId) { var l = _spLineRec_(lineId); return l ? _spTok_(l.raw && l.raw.updated_at) : ''; }
+// The qty-save body: each line carries its own token (_spCollectQtyLines) and the plan token rides along, so a plan someone else already
+// moved on (submitted, rejected...) is refused as EDIT_CONFLICT instead of the server skipping its lines and answering success.
+function _spQtyBody_(planId, lines) { var b = { lines: lines, shipping_plan_id: planId }, t = _spPlanTok_(planId); if (t) b.expected_plan_updated_at = t; return b; }
+// After a successful qty save the server answers the lines' new token (11_ data.updated_at). It is adopted at once, so the same user's
+// next save, before the re-read lands, is not refused as a conflict with itself.
+function _spAdoptLineTok_(lines, res) {
+    var t = _spTok_(res && res.data && res.data.updated_at); if (!t) return;
+    (lines || []).forEach(function (x) { var l = _spLineRec_(x.shipping_plan_line_id); if (l) { l.raw = l.raw || {}; l.raw.updated_at = t; } });
+}
+// EDIT_CONFLICT: nothing was written. The card is NOT re-rendered (the operator's typed values stay on screen), nothing is retried with
+// the new token, and the box names what differs and offers Reload (which shows the current values and drops the typed ones).
+function _spShowEditConflict_(planId, err, sent) {
+    var card = document.getElementById('sp-card-' + planId);
+    if (!card) { _spNotify_('Not saved - ' + ((err && err.message) || 'EDIT_CONFLICT')); return; }
+    var d = (err && err.details) || {}, rows = [], mine = {}, p = _spPlanRec_(planId);
+    (sent || []).forEach(function (x) { mine[String(x.shipping_plan_line_id)] = x.approved_qty; });
+    var list_ = Array.isArray(d.conflicts) ? d.conflicts : [d];
+    list_.forEach(function (c) {
+        if (!c) return;
+        if (c.shipping_plan_line_id) {
+            var l = _spLineRec_(c.shipping_plan_line_id), y = mine[String(c.shipping_plan_line_id)];
+            rows.push('<li data-field="approved_qty" data-line="' + _spEsc(c.shipping_plan_line_id) + '">Shipping Qty' + (l && l.sku ? ' of ' + _spEsc(l.sku) : '') +
+                ': yours <strong>' + _spEsc(String(y == null ? '?' : y)) + '</strong>, now saved <strong>' + _spEsc(String(c.current_approved_qty == null ? '?' : c.current_approved_qty)) +
+                '</strong> (saved ' + _spEsc(String(c.current_updated_at || '?')) + ')</li>');
+        } else {
+            rows.push('<li data-field="status">Plan status: you saw <strong>' + _spEsc(String((p && p.status) || '?')) + '</strong>, now <strong>' + _spEsc(String(c.current_status || '?')) +
+                '</strong> (saved ' + _spEsc(String(c.current_updated_at || '?')) + ')</li>');
+        }
+    });
+    // R71-FE-2 (review m-2): every refused line already holds exactly the typed qty = most likely this user's own earlier save (an answer lost)
+    var selfOnly_ = list_.length > 0 && list_.every(function (c) { var y = c && mine[String(c.shipping_plan_line_id)]; return !!(c && c.shipping_plan_line_id) && y != null && c.current_approved_qty != null && Number(y) === Number(c.current_approved_qty); });
+    var head_ = (err && err.qtySaved) ? ['Shipping Qty saved, but Submit was NOT made - this plan was changed by someone else since you opened it.', 'Your quantities were written; the status was not changed and nothing was resent.'] :   // R71-FE-2 (m-6)
+        selfOnly_ ? ['Not saved again - your earlier save may already be written (the saved quantity equals yours).', 'Nothing was written by this press. Reload to confirm.'] :
+        ['Not saved - this plan was changed by someone else since you opened it.', 'Nothing was written. Your values are still on screen; they were not sent again.'];
+    var old = card.querySelector('.sp-edit-conflict'); if (old) old.parentNode.removeChild(old);
+    card.insertAdjacentHTML('afterbegin', '<div class="sp-edit-conflict" role="alert" data-code="EDIT_CONFLICT" style="color:#7F1D1D;background:#FEF2F2;border-left:3px solid #EF4444;padding:8px 10px;margin:6px 8px;font-size:12px;overflow-wrap:anywhere;">' +
+        '<div style="font-weight:600;">' + _spEsc(head_[0]) + '</div>' +
+        '<div>' + _spEsc(head_[1]) + '</div>' +
+        (rows.length ? '<ul style="margin:4px 0 0 16px;padding:0;">' + rows.join('') + '</ul>' : '') +
+        '<button type="button" class="sp-btn sp-edit-conflict-reload" onclick="renderShippingPlanFromDb()" style="margin-top:6px;">Reload</button> ' +
+        '<span style="font-size:11px;">Reload shows the current values; then make your change again.</span></div>');
+}
+
 function _spCollectQtyLines(planId) {
     var card = document.getElementById('sp-card-' + planId);
     if (!card) return [];
     var out = [];
     card.querySelectorAll('input[data-line-id]').forEach(function(inp) {
-        out.push({ shipping_plan_line_id: inp.getAttribute('data-line-id'), approved_qty: parseInt(inp.value) || 0 });
+        var o = { shipping_plan_line_id: inp.getAttribute('data-line-id'), approved_qty: parseInt(inp.value) || 0 }, t = _spLineTok_(o.shipping_plan_line_id);   // R71-FE-1: the line token
+        if (t) o.expected_updated_at = t;
+        out.push(o);
     });
     return out;
 }
@@ -1264,12 +1439,13 @@ function _spPatchLocalQty(savedLines) {
 
 // ---- C1 command reliability: double-click guard · single readback · committed/readback-failed handling ----
 var _spInFlight = {};
+var _spReadbackBlocked_ = false;
 function _spNotify_(msg) { try { alert(msg); } catch (e) { /* headless */ } }
 // Exactly ONE readback via the ACTIVE read path (Workspace when enabled, else Legacy loadOperationDb). If the
 // readback fails AFTER a committed write, it is flagged (readbackFailed) — the command itself already succeeded.
 function _spReadbackAfterWrite_() {
     if (_spEffectiveWorkspace()) {
-        try { renderShippingPlan(); return Promise.resolve({ readbackFailed: false }); }
+        try { return Promise.resolve(renderShippingPlanFromDb()).then(function (ok) { return { readbackFailed: ok !== true }; }); }
         catch (e) { return Promise.resolve({ readbackFailed: true }); }
     }
     if (window.KM && window.KM.DB && window.KM.DB.loadOperationDb) {
@@ -1299,29 +1475,107 @@ function _spHandleCommandResult_(res, opts) {
         // benign idempotent replay: the transition was (probably) already applied — refresh to the truth, gentle note.
         return _spReadbackAfterWrite_().then(function () { _spNotify_('狀態已是最新（先前的操作可能已成功）。'); });
     }
+    // R71-FE-1: a stale token - nothing written; the card keeps the typed values and names what differs (never resent here)
+    if (err.code === 'EDIT_CONFLICT' && opts.planId) { _spShowEditConflict_(opts.planId, err, opts.sent); return Promise.resolve(); }
     // genuine failure BEFORE/without a committed mutation → retain the current cards, show structured error, allow retry.
     _spNotify_((opts.failPrefix || '操作失敗') + ': ' + err.message + ' [' + err.code + ']');
     return Promise.resolve();
 }
 // Run one Weekly command with a per-key in-flight guard (double-click protection) + a single active-path readback.
+// R71-FE-9 (W8): one command per PLAN at a time; the plan's action buttons are held, the pressed one says what is happening
+var _SP_BUSY_LABEL_ = { saveqty: 'Saving\u2026', submit: 'Submitting\u2026', approve: 'Approving\u2026', reject: 'Updating\u2026', cancel: 'Cancelling\u2026', done: 'Updating\u2026', note: 'Saving\u2026', retryshipment: 'Updating\u2026', ratecard: 'Saving\u2026' };
+var _SP_BUSY_FN_ = { saveqty: 'spDbSaveQty', submit: 'spDbSubmit', approve: 'spDbApprove', reject: 'spDbReject', cancel: 'spDbCancel', done: 'spDbDone', note: 'spDbSaveNote', retryshipment: 'spDbRetryShipment', ratecard: 'spRcSave' };
+function _spPlanBusy_(planId) { var p = String(planId) + ':'; return Object.keys(_spInFlight).some(function (k) { return _spInFlight[k] && k.indexOf(p) === 0; }); }
+function _spHoldButtons_(planId, op) {
+    var held = [];
+    try {
+        var q = String(planId).replace(/[^A-Za-z0-9_\-]/g, '');   // a plan id is [A-Z0-9-]; anything else is never matched
+        Array.prototype.forEach.call(document.querySelectorAll('button[onclick*="' + q + '"]'), function (b) {
+            var oc = String(b.getAttribute('onclick') || ''); if (oc.indexOf('spDb') < 0 && oc.indexOf('spRcSave(') !== 0) return;   // R71-FE-11: the carrier Save is held too
+            if (oc.indexOf("'" + q + "'") < 0) return;   // R15C-UI b2 review MINOR: the plan id must be the quoted argument (P1 never matches P10)
+            held.push({ b: b, t: b.innerHTML, d: b.disabled, w: b.style.minWidth, h: b.style.minHeight });
+            var r = b.getBoundingClientRect ? b.getBoundingClientRect() : null;
+            if (r && r.width) { b.style.minWidth = Math.ceil(r.width) + 'px'; b.style.minHeight = Math.ceil(r.height) + 'px'; }
+            if (_SP_BUSY_FN_[op] && oc.indexOf(_SP_BUSY_FN_[op] + '(') === 0) b.textContent = _SP_BUSY_LABEL_[op] || 'Updating\u2026';
+            b.disabled = true; b.setAttribute('aria-busy', 'true');
+        });
+    } catch (e) {}
+    return function release() { held.forEach(function (x) { try { x.b.innerHTML = x.t; x.b.disabled = x.d; x.b.style.minWidth = x.w; x.b.style.minHeight = x.h; x.b.removeAttribute('aria-busy'); } catch (e2) {} }); _spUnholdPlan_(planId); };
+}
+// R15C-UI batch 2: A REPAINT KEEPS THE HOLD. A readback (of this or another plan) rebuilds the cards, and the new buttons of a plan whose
+// command is still running came back enabled with their normal label - the command itself was still guarded by _spInFlight / _spPlanBusy_
+// (nothing could be sent twice), but the page said otherwise. After every repaint each busy plan's buttons are held again (marked
+// data-sp-held), and the command's release frees those too, restoring the state each button was rendered with.
+function _spHeldButtonsOf_(planId) { var q = String(planId).replace(/[^A-Za-z0-9_\-]/g, ''), out = []; try { Array.prototype.forEach.call(document.querySelectorAll('button[onclick*="' + q + '"]'), function (b) { var oc = String(b.getAttribute('onclick') || ''); if (oc.indexOf('spDb') < 0 && oc.indexOf('spRcSave(') !== 0) return; if (oc.indexOf("'" + q + "'") < 0) return; out.push(b); }); } catch (e) {} return out; }   // b2 review MINOR: the plan id must be the quoted argument (P1 never matches P10)
+function _spReholdBusy_(onlyPlan) {
+    Object.keys(_spInFlight).forEach(function (k) {
+        if (!_spInFlight[k]) return; var pid = k.split(':')[0], op = k.split(':').slice(1).join(':'); if (onlyPlan && String(onlyPlan) !== pid) return;
+        _spHeldButtonsOf_(pid).forEach(function (b) {
+            if (b.getAttribute('data-sp-held') === '1') return;
+            b.setAttribute('data-sp-held', '1'); b.setAttribute('data-sp-held-text', b.innerHTML); b.setAttribute('data-sp-held-disabled', b.disabled ? '1' : '0');
+            if (_SP_BUSY_FN_[op] && String(b.getAttribute('onclick') || '').indexOf(_SP_BUSY_FN_[op] + '(') === 0) b.textContent = _SP_BUSY_LABEL_[op] || 'Updating...';
+            b.disabled = true; b.setAttribute('aria-busy', 'true');
+        });
+    });
+}
+function _spUnholdPlan_(planId) {
+    if (_spPlanBusy_(planId)) return;   // another command of this plan still runs
+    _spHeldButtonsOf_(planId).forEach(function (b) { if (b.getAttribute('data-sp-held') !== '1') return; b.innerHTML = b.getAttribute('data-sp-held-text') || b.innerHTML; b.disabled = b.getAttribute('data-sp-held-disabled') === '1'; ['data-sp-held', 'data-sp-held-text', 'data-sp-held-disabled', 'aria-busy'].forEach(function (a) { b.removeAttribute(a); }); });
+}
+var _SP_UNKNOWN_CODES_ = { HTTP_TRANSPORT_ERROR: 1, REQUEST_TIMEOUT_WRITE_INDETERMINATE: 1, NO_RESULT: 1, RATE_CARD_SELECTION_INTERRUPTED: 1, RATE_CARD_SELECTION_UNVERIFIED: 1 };   // WK1: + the two 11_ partial-write outcomes
 function _spRunCommand_(key, invokeFn, opts) {
-    if (_spInFlight[key]) return Promise.resolve({ success: false, error: { code: 'IN_FLIGHT', message: 'A command is already running.' } });
+    if (_spReadbackBlocked_) { _spNotify_('Reload the plans successfully before another change. Nothing was sent.'); return Promise.resolve({ success: false, error: { code: 'READBACK_REQUIRED' } }); }
+    var _pid9 = String(key).split(':')[0], _op9 = String(key).split(':').slice(1).join(':');
+    if (_spInFlight[key] || (typeof _spPlanBusy_ === 'function' && _spPlanBusy_(_pid9))) return Promise.resolve({ success: false, error: { code: 'IN_FLIGHT', message: 'A command is already running for this plan.' } });   // R71-FE-9 (W8)
     _spInFlight[key] = true;
+    var _release9 = (typeof _spHoldButtons_ === 'function') ? _spHoldButtons_(_pid9, _op9) : function () {};
     return Promise.resolve().then(invokeFn).then(function (res) {
         return res || { success: false, error: { code: 'NO_RESULT', message: 'No result returned' } };
     }, function (err) {
         return { success: false, error: { code: (err && err.apiCode) || 'HTTP_TRANSPORT_ERROR', message: (err && err.message) || String(err) } };
     }).then(function (res) {
-        return _spHandleCommandResult_(res, opts).then(function () { _spInFlight[key] = false; return res; });
-    }, function (e) { _spInFlight[key] = false; throw e; });
+        if (typeof _spRcForget_ === 'function') _spRcForget_(_pid9);   // R15C-UI: written, refused or UNKNOWN - the next options read asks the server
+        var _c9 = res && res.success !== true && res.error && res.error.code;
+        if (_c9 && typeof _SP_UNKNOWN_CODES_ !== 'undefined' && _SP_UNKNOWN_CODES_[_c9]) {   // R71-FE-9 (W8): an UNKNOWN outcome is read back, never offered as a retry
+            _spNotify_((opts.failPrefix || 'Command') + ': the outcome is UNKNOWN (' + _c9 + '). Nothing was resent. The plan is being re-read - check its status before doing anything else.');
+            return _spReadbackAfterWrite_().then(function () { _spInFlight[key] = false; _release9(); return res; }, function () { _spInFlight[key] = false; _release9(); return res; });   // (the release also frees re-held buttons)
+        }
+        return _spHandleCommandResult_(res, opts).then(function () { _spInFlight[key] = false; _release9(); return res; });
+    }, function (e) {   // R71-FE-10 (MINOR-1): a rejection is an UNKNOWN outcome too - read back before releasing
+        if (typeof _spRcForget_ === 'function') _spRcForget_(_pid9);   // R15C-UI
+        _spNotify_((opts.failPrefix || 'Command') + ': the outcome is UNKNOWN (' + ((e && e.message) || e) + '). Nothing was resent. The plan is being re-read - check its status before doing anything else.');
+        return Promise.resolve().then(_spReadbackAfterWrite_).then(function () { _spInFlight[key] = false; _release9(); throw e; }, function () { _spInFlight[key] = false; _release9(); throw e; });
+    });
 }
 
 function spDbSaveQty(planId) {
     var lines = _spCollectQtyLines(planId);
     if (!lines.length) { renderShippingPlan(); return; }
     _spRunCommand_(planId + ':saveqty', function () {
-        return window.KM.DB.updateShippingPlanLineQty({ lines: lines }).then(function (res) { if (res && res.success) _spPatchLocalQty(lines); return res; });
-    }, { successMsg: 'Shipping Qty saved.', failPrefix: 'Save failed' });
+        return window.KM.DB.updateShippingPlanLineQty(_spQtyBody_(planId, lines)).then(function (res) { if (res && res.success) { _spPatchLocalQty(lines); _spAdoptLineTok_(lines, res); } return res; });   // R71-FE-1: tokens
+    }, { successMsg: 'Shipping Qty saved.', failPrefix: 'Save failed', planId: planId, sent: lines });
+}
+
+function spDbEditSkus(planId) {
+    if (_spReadbackBlocked_ || _spPlanBusy_(planId)) { _spNotify_('Reload or finish the current command first.'); return Promise.resolve(); }
+    var plan = _spPlanRec_(planId), model = _spWsModel_(), token = _spPlanTok_(planId);
+    if (!plan || plan.status !== 'draft' || !token) { _spNotify_('Reload this Draft before editing SKUs.'); return Promise.resolve(); }
+    var lines = (model.lines || []).filter(function (l) { return String(l.shippingPlanId) === String(planId); });
+    var values = {}, card = document.getElementById('sp-card-' + planId);
+    if (card) card.querySelectorAll('input[data-line-id]').forEach(function (i) { values[i.getAttribute('data-line-id')] = i.value; });
+    return window.KM.scriptLoader.load('assets/js/utils/weekly-draft-editor.js').then(function (loaded) {
+        if (!loaded || !window.KM.weeklyDraftEditor) throw Error('SKU editor could not be loaded.');
+        return window.KM.weeklyDraftEditor.open({ plan: plan, token: token, lines: lines, values: values,
+            save: function (body) {
+                if (_spReadbackBlocked_ || _spPlanBusy_(planId)) return Promise.resolve({ success: false, error: { code: 'IN_FLIGHT', message: 'Finish the current command first.' } });
+                var key = planId + ':skus'; _spInFlight[key] = true;
+                var release = _spHoldButtons_(planId, 'skus');
+                return Promise.resolve().then(function () { return window.KM.DB.updateShippingPlanLineQty(body); })
+                    .finally(function () { _spInFlight[key] = false; release(); });
+            },
+            readback: _spReadbackAfterWrite_
+        });
+    }).catch(function (e) { _spNotify_(e.message || String(e)); });
 }
 
 // ==============================================================================================================
@@ -1525,50 +1779,48 @@ function _spOverageAsk(challenge) {
  * A FAILURE SAYS SO. If the guard cannot be reached the indicator prints that it is unavailable rather than
  * rendering blank or zero: a blank reads as "nothing to worry about", and that is the one thing it does not know.
  */
-function spFactoryGuardRefresh(planId) {
-    var el = document.getElementById('sp-factory-guard-' + planId);
-    if (!el) return;
-    if (!window.KM || !window.KM.DB || typeof window.KM.DB.factoryStockGuardGet !== 'function') {
-        el.innerHTML = '<div style="font-size:11px;color:#94A3B8">Factory availability: guard unavailable in this build.</div>';
-        return;
+// R15C-UI (Owner R15 P1): ONE factory-availability entry per Plan instead of one block per SKU. The numbers are the validated pools of
+// the SAME shared snapshot (KM.factoryAvailability: one single-flight read for every card), so nothing is computed here: On hand,
+// Reserved, Drafts, Plans and Free to plan are the server's, a negative Free to plan stays red and is counted as short in the summary, and
+// a pool with no stock row keeps its label. Collapsed by default; the open state of each plan survives a re-render.
+var _spFgOpen_ = {};
+function _spFgToggle_(el) { var pid = el && el.getAttribute('data-plan-id'); if (pid) _spFgOpen_[pid] = !!el.open; }
+function _spFgSkus_(planId) { var skus = ((_spLastModel && _spLastModel.lines) || []).filter(function (l) { return l.shippingPlanId === planId; }).map(function (l) { return String(l.sku); }); return skus.filter(function (v, i) { return skus.indexOf(v) === i; }); }
+function _spFactoryPlanHtml_(planId, helper) {
+    var skus = _spFgSkus_(planId), st = helper ? helper.status() : 'UNAVAILABLE', open = _spFgOpen_[planId] ? ' open' : '';
+    var btn = '<button type="button" class="btn btn-primary sp-fg-refresh" style="min-width:84px;min-height:30px" onclick="event.preventDefault(); event.stopPropagation(); KM.factoryAvailability.ensure(true)"' + (st === 'LOADING' ? ' disabled' : '') + '>Refresh</button>';
+    var head = function (extra) { return '<summary style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span><strong>Factory availability</strong> &middot; ' + skus.length + ' SKU' + (extra || '') + '</span>' + btn + '</summary>'; };
+    if (!helper) return 'Factory availability unavailable.';
+    var displayAt = typeof helper.displayAt === 'function' ? helper.displayAt() : 0;
+    if ((st !== 'READY' && !displayAt) || typeof helper.poolsFor !== 'function') {
+        var msg = st === 'FAILED' ? 'Stock update failed. Refresh before planning.' : 'Stock updating...';
+        // not a <details>: a loading / failed state has nothing to fold, and must not touch the operator's open / closed choice
+        return '<div class="sp-fg" data-plan-id="' + _spEsc(planId) + '" data-fg-state="' + _spEsc(st) + '" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span><strong>Factory availability</strong> &middot; ' + skus.length + ' SKU &middot; <span role="status">' + _spEsc(msg) + '</span></span>' + btn + '</div>';
     }
-    el.innerHTML = '<div style="font-size:11px;color:#94A3B8">Factory availability: checking…</div>';
-    Promise.resolve(window.KM.DB.factoryStockGuardGet({ shipping_plan_id: planId })).then(function (res) {
-        var d = (res && res.data) || null;
-        if (!res || res.success === false || !d || d.guard_available !== true) {
-            var why = (res && res.error && (res.error.code || res.error.message)) || (d && d.reason) || 'unavailable';
-            el.innerHTML = '<div style="font-size:11px;color:#B45309">Factory availability could not be read (' +
-                _spOvEsc(why) + '). The check still runs on Send to Pending Approval.';
-            return;
-        }
-        var pools = d.pools || [];
-        if (!pools.length) {
-            el.innerHTML = '<div style="font-size:11px;color:#94A3B8">Factory availability: this plan draws on no factory pool.</div>';
-            return;
-        }
-        var over = (d.overage_pools || []).length > 0;
-        var rows = pools.map(function (p) {
-            var short = Number(p.overage_qty) > 0;
-            return '<div style="display:flex;gap:10px;font-size:11px;padding:2px 0;' +
-                (short ? 'color:#B91C1C;font-weight:600' : 'color:#475569') + '">' +
-                '<span style="min-width:150px">' + _spOvEsc(p.source_warehouse_id) + ' / ' + _spOvEsc(p.sku) + '</span>' +
-                '<span>Available ' + _spOvNum(p.factory_available_stock) + '</span>' +
-                '<span>Allocated ' + _spOvNum(p.already_allocated_qty) + '</span>' +
-                '<span>This plan ' + _spOvNum(p.current_plan_qty) + '</span>' +
-                (short ? '<span>Overage +' + _spOvNum(p.overage_qty) + '</span>' : '') +
-                '</div>';
-        }).join('');
-        el.innerHTML = '<div style="margin-top:6px;padding:8px;border-radius:4px;background:' +
-            (over ? '#FEF2F2' : '#F8FAFC') + ';border-left:3px solid ' + (over ? '#EF4444' : '#CBD5E1') + '">' +
-            '<div style="font-size:11px;font-weight:600;margin-bottom:2px">Shared factory stock' +
-            (over ? ' — this plan currently exceeds it' : '') + '</div>' + rows +
-            '<div style="font-size:10px;color:#94A3B8;margin-top:4px">Information only. ' +
-            (over ? 'You will be asked to confirm the overage when you send this plan for approval.'
-                  : 'No confirmation will be required.') + '</div></div>';
-    }, function () {
-        el.innerHTML = '<div style="font-size:11px;color:#B45309">Factory availability could not be read. ' +
-            'The check still runs on Send to Pending Approval.</div>';
+    var short = 0, none = 0, rows = '';
+    var cell = function (p, n) { return '<td style="text-align:right;padding:4px 6px;white-space:nowrap;' + (n === 'available_to_allocate' && p[n] < 0 ? 'color:#b91c1c;font-weight:600;' : '') + '">' + _spEsc(p[n]) + (n === 'factory_current_stock' && p.factory_stock_row === false ? ' (no stock row)' : '') + '</td>'; };
+    skus.forEach(function (sku) {
+        var pools = (typeof helper.displayPoolsFor === 'function' ? helper.displayPoolsFor(sku) : helper.poolsFor(sku)) || [];
+        if (!pools.length) { none++; rows += '<tr data-fg-sku="' + _spEsc(sku) + '"><td style="padding:4px 6px">' + _spEsc(sku) + '</td><td colspan="6" style="padding:4px 6px;color:#64748B">No factory stock record.</td></tr>'; return; }
+        if (pools.some(function (p) { return p.available_to_allocate < 0; })) short++;
+        pools.forEach(function (p, i) { rows += '<tr data-fg-sku="' + _spEsc(sku) + '"><td style="padding:4px 6px">' + (i ? '' : _spEsc(sku)) + '</td><td style="padding:4px 6px">Factory</td>' + ['factory_current_stock', 'factory_reserved_stock', 'active_allocation_draft_qty', 'active_shipping_plan_qty', 'available_to_allocate'].map(function (n) { return cell(p, n); }).join('') + '</tr>'; });
     });
+    var tag = short ? ' &middot; <span class="sp-fg-short" style="color:#b91c1c;font-weight:600">' + short + ' short</span>' : ' &middot; none short';
+    if (none) tag += ' &middot; ' + none + ' no record';
+    var at = displayAt || (typeof helper.freshAt === 'function' ? helper.freshAt() : 0);
+    if (st !== 'READY') tag += ' &middot; ' + (st === 'LOADING' ? 'Updating...' : 'Refresh before planning.');
+    return '<details class="sp-fg" data-plan-id="' + _spEsc(planId) + '" data-fg-state="' + _spEsc(st) + '" data-fg-short="' + short + '" ontoggle="_spFgToggle_(this)"' + open + '>' + head(tag) +
+        '<div style="overflow-x:auto;margin-top:6px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr>' + ['SKU', 'Factory', 'On hand', 'Reserved', 'Drafts', 'Plans', 'Free to plan'].map(function (h) { return '<th style="padding:4px 6px;text-align:left;white-space:nowrap">' + h + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        '<small>Shared pool &middot; all sites' + (at ? ' &middot; ' + _spEsc(new Date(at).toLocaleTimeString()) : '') + '</small></details>';
+}
+function _spFgPaintAll_(helper) { Array.prototype.forEach.call(document.querySelectorAll('[id^="sp-factory-guard-"]'), function (node) { node.innerHTML = _spFactoryPlanHtml_(node.id.slice('sp-factory-guard-'.length), helper); }); }
+function spFactoryGuardRefresh(planId) {
+    var el = document.getElementById('sp-factory-guard-' + planId), helper = window.KM && window.KM.factoryAvailability;
+    if (!el) return;
+    function paint() { var cur = document.getElementById('sp-factory-guard-' + planId); if (cur) cur.innerHTML = _spFactoryPlanHtml_(planId, helper); }
+    if (!helper) { paint(); return; }
+    if (!window.__spFactorySubscriber14) { window.__spFactorySubscriber14 = true; helper.subscribe(function () { _spFgPaintAll_(helper); }); }
+    paint(); helper.ensure(false).then(paint);   // ensure() is single-flight: every card of the page joins the same read
 }
 try { if (typeof window !== 'undefined') window.spFactoryGuardRefresh = spFactoryGuardRefresh; } catch (eFG) {}
 
@@ -1577,15 +1829,16 @@ function spDbSubmit(planId) {
     // is surfaced and STOPS the Submit — no more "qty error shown while the plan already became Pending".
     var lines = _spCollectQtyLines(planId);
     _spRunCommand_(planId + ':submit', function () {
-        var pre = lines.length ? window.KM.DB.updateShippingPlanLineQty({ lines: lines }) : Promise.resolve({ success: true });
+        var spTok_ = _spPlanTok_(planId), pre = lines.length ? window.KM.DB.updateShippingPlanLineQty(_spQtyBody_(planId, lines)) : Promise.resolve({ success: true });   // R71-FE-1: tokens
         return Promise.resolve(pre).then(function (qtyRes) {
             if (qtyRes && qtyRes.success === false && qtyRes.error && qtyRes.error.code !== 'ALREADY_IN_TARGET_STATE') return qtyRes; // stop
-            if (lines.length && qtyRes && qtyRes.success) _spPatchLocalQty(lines);
+            if (lines.length && qtyRes && qtyRes.success) { _spPatchLocalQty(lines); _spAdoptLineTok_(lines, qtyRes); }
+            var qtySaved_ = !!(lines.length && qtyRes && qtyRes.success);   // R71-FE-2 (m-6): a refusal of the transition below must not say "nothing was written"
             // R6-R7-R5 §4 — SUBMIT, and if the server says an overage must be confirmed, ask a person and
             // send ONCE more with the confirmation attached. At most two attempts: looping here would turn a
             // stale fingerprint into a retry storm, and a stale fingerprint means the facts moved and somebody
             // has to look at them again.
-            return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system' })
+            return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system', expected_updated_at: spTok_ || undefined })   /* R71-FE-1: the plan token (a qty save does not move it) */
                 .then(function (res) {
                     var challenge = _spIsOverageChallenge(res);
                     if (!challenge) return res;
@@ -1594,21 +1847,21 @@ function spDbSubmit(planId) {
                         // and the plan is still a Draft the operator can edit.
                         if (!conf) return res;
                         return window.KM.DB.updateShippingPlanStatus({
-                            shipping_plan_id: planId, transition: 'submit', actor: 'operation-system',
+                            shipping_plan_id: planId, transition: 'submit', actor: 'operation-system', expected_updated_at: spTok_ || undefined,   /* R71-FE-1: the same token (the challenge wrote nothing) */
                             overage_confirmation: conf
                         });
                     });
-                });
+                }).then(function (res) { if (qtySaved_ && res && res.success === false && res.error) res.error.qtySaved = true; return res; });
         });
-    }, { successMsg: 'Submitted for approval.', failPrefix: 'Submit failed' });
+    }, { successMsg: 'Submitted for approval.', failPrefix: 'Submit failed', planId: planId, sent: lines });
 }
 
 function spDbApprove(planId) {
     // Approve = Execution Commit: the backend also creates the Shipment Draft (shipments + shipment_lines).
     _spRunCommand_(planId + ':approve', function () {
-        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'approve', actor: 'operation-system' });
+        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'approve', actor: 'operation-system', expected_updated_at: _spPlanTok_(planId) || undefined });
     }, {
-        failPrefix: 'Approve failed',
+        failPrefix: 'Approve failed', planId: planId,
         onSuccess: function (res) {
             // F1-7N-FC-1A §D — APPROVE NO LONGER REPORTS A HALF-DONE OPERATION AS DONE.
             //
@@ -1626,6 +1879,27 @@ function spDbApprove(planId) {
                     msg += '\n' + _spReservedStockLabel_(rv) + ' reserved at ' + (sh.source_warehouse_id || '') + ': ' +
                            rv.map(function (r) { return r.sku + ' x' + r.reserved_qty; }).join(', ') + '.';
                 }
+            // PHASE1 INT-CAND9 round 3 (review F1): a REVIEW answer is tested BEFORE 'already_exists' - the second click on an unmarked draft
+            // carries both, and the review warning must reach the operator.
+            } else if (d.recovery && d.recovery.review_required === true && (d.recovery.state === 'RESERVATION_BOOKS_REVIEW_REQUIRED' || d.recovery.state === 'SHIPMENT_CREATION_REFUSED_REVIEW_REQUIRED')) {   // round 4: + a refused create (legacy link / inconsistent dispatch)
+                // PHASE1 INT-CAND9 round 3 (review F6): the I1 books guard refused BEFORE any write - say so (not 'UNKNOWN'), never 'safe'.
+                var rb = d.recovery, rbKeys = (rb.keys_mismatched || []).concat(rb.keys_unknown || []);
+                msg = (rb.state === 'RESERVATION_BOOKS_REVIEW_REQUIRED' ? 'Plan approved — BUT THE SHIPMENT DRAFT WAS REFUSED: THE RESERVATION BOOKS NEED REVIEW.' : 'Plan approved — BUT THE SHIPMENT DRAFT WAS REFUSED: REVIEW REQUIRED (' + (rb.cause || '') + ').')
+                    + '\nThe approval is committed and kept. Nothing was written: no Shipment Draft and no stock reservation.'
+                    + '\nCause: ' + (rb.cause || 'UNKNOWN') + (rbKeys.length ? ('\nStock keys: ' + rbKeys.slice(0, 5).join('; ')) : '')
+                    + '\nDo NOT retry until the owner has reviewed; any retry is re-checked by the server and repairs nothing.' + (rb.state === 'RESERVATION_BOOKS_REVIEW_REQUIRED' ? ' A retry is refused while these books disagree.' : ' A retry is refused the same way until it is reviewed.');
+            } else if (d.recovery && d.recovery.review_required === true) {
+                // PHASE1 INT-CAND6 - the creation stopped after writes may have landed (a draft kept on purpose, or an unknown outcome).
+                // Never "not created", never "nothing reserved", never "retrying is safe": a retry only re-checks and repairs nothing.
+                var rr = d.recovery;
+                msg = 'Plan approved — BUT THE SHIPMENT DRAFT NEEDS REVIEW BEFORE ANYTHING ELSE.'
+                    + '\nThe approval is committed and kept.'
+                    + (rr.shipment_created === true
+                        ? '\nA Shipment Draft exists (' + (rr.draft_shipment_no || rr.draft_shipment_id || '') + ') but its creation did not finish cleanly: it may be incomplete.'
+                        : '\nWhether a Shipment Draft or a stock reservation was written is UNKNOWN.')
+                    + '\nCause: ' + (rr.cause || 'UNKNOWN')
+                    + '\nDo NOT retry until the owner has reviewed; any retry is re-checked by the server and repairs nothing.'
+                    + '\nAsk the system owner to review the draft, its lines and the reservation ledger.';
             } else if (sh && sh.reason === 'already_exists') {
                 msg += '\nShipment Draft already exists (' + (sh.shipment_id || '') + ').';
             } else if (d.execution_commit === 'APPROVED_SHIPMENT_CREATION_PENDING' || (sh && (sh.error || sh.reason))) {
@@ -1714,17 +1988,17 @@ function spDbReject(planId) {
     reason = String(reason).trim();
     if (!reason) { alert('Rejection reason is required.'); return; }
     _spRunCommand_(planId + ':reject', function () {
-        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'reject', rejected_reason: reason, actor: 'operation-system' });
-    }, { successMsg: 'Plan rejected and returned to Draft.', failPrefix: 'Reject failed' });
+        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'reject', rejected_reason: reason, actor: 'operation-system', expected_updated_at: _spPlanTok_(planId) || undefined });
+    }, { successMsg: 'Plan rejected and returned to Draft.', failPrefix: 'Reject failed', planId: planId });
 }
 
 // Decision Layer Completion (Done). Allowed only on an Approved + transferred plan. Writes
 // completed_at / completed_by; the card then leaves the Active view (preserved in DB).
 function spDbDone(planId) {
     if (!confirm('This shipping plan has already been transferred to Shipment Draft.\n\nMark this planning task as completed?')) return;
-    _spRunCommand_(planId + ':done', function () {
+    return _spRunCommand_(planId + ':done', function () {
         return window.KM.DB.completeShippingPlan({ shipping_plan_id: planId, actor: 'system_user' });
-    }, { successMsg: 'Planning task marked as completed.', failPrefix: 'Done failed' });
+    }, { successMsg: 'Completed. Continue in Shipment Overview.', failPrefix: 'Done failed', planId: planId });
 }
 
 // `statusType` is passed by the approved call site only. An approved plan is the only one whose
@@ -1737,8 +2011,8 @@ function spDbCancel(planId, statusType) {
           + 'created for it, this will be refused.'
         : 'Cancel this shipping plan?')) return;
     _spRunCommand_(planId + ':cancel', function () {
-        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'cancel', actor: 'operation-system' });
-    }, { failPrefix: 'Cancel failed' });   // silent success (matches prior UX: Cancel just refreshes)
+        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'cancel', actor: 'operation-system', expected_updated_at: _spPlanTok_(planId) || undefined });
+    }, { failPrefix: 'Cancel failed', planId: planId });   // silent success (matches prior UX: Cancel just refreshes)
 }
 
 // ---- Plan Rationale: Add Note (append-only to shipping_plans.note) ----
@@ -1763,6 +2037,306 @@ function spDbSaveNote(planId) {
     }, { successMsg: 'Note added.', failPrefix: 'Add note failed' });
 }
 
+// ============================================================================================================
+// R71-FE-11 — WEEKLY PLAN RATIONALE: Carrier -> Method -> Save (the server validates, prices, persists; the page re-reads).
+// The options are the plan's REAL lane, priced by the server (shippingPlan.rateCardOptions). Carrier first; Method lists only that
+// carrier's cards by their own shipping_method_label, with the raw method token underneath (never mixed into the label). The default
+// follows the route: the stored carrier, else the ONE carrier offering the route's method; the route's method is kept if this carrier
+// offers it, otherwise a choice is required - never the first option. Draft only; other states show the stored choice read-only.
+// ============================================================================================================
+var SP_RC_ = {}, SP_RC_DISPLAY_KEY_ = {};
+var SP_RC_REQUESTS_ = {};
+function _spMoney_(v, cur) { if (v === '' || v == null || !isFinite(Number(v))) return '--'; return (cur ? (_spEsc(cur) + ' ') : '') + Number(v).toFixed(2); }
+function _spRcPanelHtml_(plan, statusType) {
+    var pid = plan.shippingPlanId, editable = (statusType === 'draft');
+    var cur = '<div class="sp-rationale-item"><strong>Carrier:</strong> ' + (plan.carrierId ? _spEsc(plan.carrierName || plan.carrierId) : '--') + '</div>' +
+        '<div class="sp-rationale-item"><strong>Method:</strong> ' + _spEsc(plan.shippingMethod || '--') + '</div>';
+    if (!editable) return cur;
+    return '<div id="sp-rc-' + _spEsc(pid) + '" data-plan-id="' + _spEsc(pid) + '" data-rc-editable="1" class="sp-rc-panel" style="margin:6px 0;padding:8px;border:1px solid #E2E8F0;border-radius:6px;">' +
+        cur + '<div class="sp-rc-body" style="font-size:12px;color:#64748B;margin-top:4px;">' + _spRcLoadingHtml_('Loading rate cards...') + '</div></div>';
+}
+function _spRcLoadingHtml_(message) {
+    return '<label style="display:block;margin-top:4px;">Carrier</label><select aria-label="Carrier" disabled style="width:100%;height:30px;"><option>Loading...</option></select>' +
+        '<label style="display:block;margin-top:4px;">Shipping Method</label><select aria-label="Shipping Method" disabled style="width:100%;height:30px;"><option>Loading...</option></select>' +
+        '<div role="status" style="min-height:20px;">' + _spEsc(message) + '</div>';
+}
+function _spCostBreakdownHtml_(plan, totalPcs) {
+    var raw = plan.raw || {}, cur = String(plan.currency || raw.currency || '').trim();
+    if (raw.estimated_duty_currency && raw.estimated_duty_currency !== cur && raw.estimated_freight_cost !== '' && raw.estimated_duty !== '' && raw.estimated_duty != null) return '<div class="sp-section" id="sp-cost-' + _spEsc(plan.shippingPlanId) + '"><h4>Cost Breakdown</h4><div>Freight ' + _spMoney_(raw.estimated_freight_cost, cur) + '</div><div>Customs ' + _spMoney_(raw.estimated_customs_fee, cur) + '</div><div>Duty ' + _spMoney_(raw.estimated_duty, raw.estimated_duty_currency) + '</div><div>No combined total</div></div>';
+    var priced = String(plan.carrierId || '').trim() !== '' && !(raw.estimated_total_cost === '' || raw.estimated_total_cost == null);
+    var duty = (raw.estimated_duty === '' || raw.estimated_duty == null) ? null : Number(raw.estimated_duty), cfee = (raw.estimated_customs_fee === '' || raw.estimated_customs_fee == null) ? null : Number(raw.estimated_customs_fee);
+    var dc = (duty == null && cfee == null) ? '' : ((duty || 0) + (cfee || 0));
+    var total = priced ? Number(raw.estimated_total_cost) : null;
+    var unit = (priced && totalPcs > 0) ? (total / totalPcs) : null;
+    function row(l, v) { return '<div class="sp-cost-row"><span class="sp-cost-label">' + l + '</span><span class="sp-cost-value">' + v + '</span></div>'; }
+    // Carrier: name primary, id beside it - the S7-R2A1 pair form, kept verbatim (its test reads this expression from the source)
+        var cbCarrierName = String(plan.carrierName || '').trim();
+        var cbCarrierId = String(plan.carrierId || '').trim();
+        var cbCarrier = !cbCarrierId
+            ? '--'
+            : (cbCarrierName ? (_spEsc(cbCarrierName) + '  ·  ' + _spEsc(cbCarrierId)) : _spEsc(cbCarrierId));
+    return '<div class="sp-section" id="sp-cost-' + _spEsc(plan.shippingPlanId) + '">' +
+        '<h4 class="sp-section-title">Cost Breakdown</h4>' +
+        row('Carrier', cbCarrier) +
+        row('Freight', priced ? _spMoney_(raw.estimated_freight_cost, cur) : '--') +
+        row('Duty / Custom', priced ? _spMoney_(dc, cur) : '--') +
+        row('Total Cost', priced ? _spMoney_(total, cur) : '--') +
+        row('Currency', priced ? _spEsc(cur || '--') : '--') +
+        row('Cost per pcs', unit == null ? '--' : (_spEsc(cur) + ' ' + unit.toFixed(4))) +
+        '<div class="sp-cost-basis" style="font-size:11px;color:#94A3B8;margin-top:6px;">' + (priced
+            ? ('Plan estimate, server-priced from the chosen rate card for this plan\'s weight / CBM / cartons. The Shipment execution estimate is priced separately.')
+            : 'Not priced yet - choose a carrier and method in Plan Rationale.') + '</div>' +
+    '</div>';
+}
+// R15C-UI (Owner R15 P1, handoff 5): THE OPTIONS CACHE. Display only - it never authorises anything: the Save re-reads the cards and re-prices
+// inside the server lock and checks the plan's version token, so another user's write is still refused there, not here.
+//   key   = plan id + the plan's version token (no token on screen -> never cached) + company / country / marketplace + source warehouse +
+//           To + delivery warehouse + method + last mile + carrier + saved customs + the customs ASKED (preview) + the Taipei pricing day +
+//           every line (id, sku, qty, cartons, cbm, gross, line version) + the reference generation (below).
+//   TTL   = 60 s; an expired entry is dropped and read again (never shown as current).
+//   valid hit -> no request. Same key in flight -> the one request is joined (single flight).
+//   invalidation: any command on the plan (success, UNKNOWN, refusal) forgets that plan, including an answer still in flight; a write by a
+//           reference writer in this tab (rate cards, lead times, sku details, marketplaces) forgets every plan.
+//   latest choice: each refresh of a plan takes a ticket; only the newest ticket may paint the panel, so a slow answer for an earlier
+//           Customs / an earlier render never overwrites the latest choice.
+//   UNKNOWN recovery never reads it: an UNKNOWN command forgets the plan first, so the readback asks the server.
+var SP_RC_CACHE_ = {}, SP_RC_CACHE_TTL_MS_ = 60000, _spRcRefGen_ = 0, _spRcPlanGen_ = {}, _spRcAsk_ = {};
+var SP_RC_STATS_ = { hits: 0, misses: 0, joins: 0, dropped: 0, forgets: 0 };
+var SP_RC_REF_WRITERS_ = ['importCarrierRateTemplate', 'upsertCarrierLeadTime', 'upsertSkuDetail', 'upsertMarketplace', 'upsertMarketplaceSku', 'importMarketplaceSkusBatch'];
+function _spRcForgetAll_() { _spRcRefGen_++; SP_RC_CACHE_ = {}; SP_RC_DISPLAY_KEY_ = {}; SP_RC_STATS_.forgets++; }
+function _spRcForget_(planId) { var p = String(planId); delete SP_RC_DISPLAY_KEY_[p]; _spRcPlanGen_[p] = (_spRcPlanGen_[p] || 0) + 1; Object.keys(SP_RC_CACHE_).forEach(function (k) { if (SP_RC_CACHE_[k].planId === p) delete SP_RC_CACHE_[k]; }); SP_RC_STATS_.forgets++; }
+function _spRcObserveRefWriters_() {
+    var db = window.KM && window.KM.DB; if (!db || db.__spRcRefObserved) return; db.__spRcRefObserved = true;
+    SP_RC_REF_WRITERS_.forEach(function (name) {
+        var fn = db[name]; if (typeof fn !== 'function' || fn.__spRcRef) return;
+        var w = function () { _spRcForgetAll_(); var r; try { r = fn.apply(this, arguments); } catch (e) { _spRcForgetAll_(); throw e; }
+            return Promise.resolve(r).then(function (v) { _spRcForgetAll_(); return v; }, function (e) { _spRcForgetAll_(); throw e; }); };
+        Object.keys(fn).forEach(function (k) { w[k] = fn[k]; }); w.__spRcRef = true; db[name] = w;
+    });
+}
+function _spTaipeiDay_() { try { return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10); } catch (e) { return ''; } }
+function _spRcCacheKey_(planId, asked) {
+    var tok = _spPlanTok_(planId); if (!tok) return null;
+    var p = _spRcPlan_(planId), raw = p.raw || {};
+    var lines = ((_spLastModel && _spLastModel.lines) || []).filter(function (l) { return l.shippingPlanId === planId; })
+        .map(function (l) { return [l.shippingPlanLineId, l.sku, _spNum(l.approvedQty), _spNum(l.cartonQty), _spNum(l.cbm), _spNum(l.grossWeight), String((l.raw && l.raw.updated_at) || '')].join(':'); }).sort().join(',');
+    return JSON.stringify([String(planId), tok, p.company || '', p.country || '', p.marketplace || '', String(raw.source_warehouse_id || ''), p.destination || '', p.destinationWarehouseId || '',
+        p.shippingMethod || '', String(raw.last_mile_delivery || p.lastMileDelivery || ''), p.carrierId || '', String(raw.customs_type || p.customsType || ''), String(asked || ''), _spTaipeiDay_(), _spRcRefGen_, lines]);
+}
+function spRcRefresh(planId) {
+    var host = document.getElementById('sp-rc-' + planId), body = host && host.querySelector('.sp-rc-body');
+    if (!host || !body) return;
+    var db = window.KM && window.KM.DB;
+    if (!db || typeof db.getShippingPlanRateCardOptions !== 'function') { body.textContent = 'Carrier selection is not available on this build.'; return; }
+    _spRcObserveRefWriters_();
+    var sel0 = SP_RC_SEL_[planId], cur0 = SP_RC_[planId], saved0 = cur0 && cur0.lane ? String(cur0.lane.customs_type || '') : null;
+    var asked = (sel0 && sel0.customs && sel0.customs !== saved0) ? sel0.customs : '';   // exactly what _spWk1Options_ will ask
+    var readSeq = _spReadSeq, ticket = (_spRcAsk_[planId] = (_spRcAsk_[planId] || 0) + 1), pgen = _spRcPlanGen_[String(planId)] || 0;
+    var key = _spRcCacheKey_(planId, asked), hit = key ? SP_RC_CACHE_[key] : null, request;
+    if (hit && Date.now() - hit.at < SP_RC_CACHE_TTL_MS_) { SP_RC_STATS_.hits++; request = Promise.resolve(hit.res); }
+    else {
+        if (hit) delete SP_RC_CACHE_[key];
+        var requestKey = (key || ('NOKEY:' + planId + ':' + readSeq + ':' + asked)) + '#' + pgen;
+        request = SP_RC_REQUESTS_[requestKey];
+        if (request) SP_RC_STATS_.joins++;
+        else {
+            SP_RC_STATS_.misses++;
+            var rgen = _spRcRefGen_;
+            request = Promise.resolve().then(function () { return _spWk1Options_(planId); });   // WK1: customs preview
+            SP_RC_REQUESTS_[requestKey] = request;
+            request.then(function (r) {
+                delete SP_RC_REQUESTS_[requestKey];
+                // stored only when it answers THIS key: a success, for the customs asked (not the m-6 fallback to the saved customs), and nothing
+                // forgot the plan or the references while it was in flight
+                if (key && r && r.success === true && rgen === _spRcRefGen_ && pgen === (_spRcPlanGen_[String(planId)] || 0) && (!asked || String(r.preview_customs_type || '') === asked))
+                    SP_RC_CACHE_[key] = { at: Date.now(), res: r, planId: String(planId) };
+            }, function () { delete SP_RC_REQUESTS_[requestKey]; });
+        }
+    }
+    function paint(r) {
+        if (readSeq !== _spReadSeq || document.getElementById('sp-rc-' + planId) !== host) return;
+        if (ticket !== _spRcAsk_[planId]) { SP_RC_STATS_.dropped++; return; }   // R15C-UI: a newer choice / render owns this panel
+        if (!r || r.success !== true) { body.innerHTML = '<span style="color:#DC2626;">Could not load the rate cards: ' + _spEsc((r && (r.code || r.error)) || 'NO_ANSWER') + '. Nothing was changed.</span>'; return; }
+        SP_RC_[planId] = r; SP_RC_DISPLAY_KEY_[planId] = key; host.removeAttribute('data-sel-carrier'); host.removeAttribute('data-sel-card'); host.removeAttribute('data-sel-customs');
+        var keep9 = SP_RC_SEL_[planId];   // WK1: restore the unsaved lower selections (by identity) after any re-render
+        if (keep9 && keep9.base && _spWk1Base_(r) !== keep9.base) {   // WK1 r2 (m-7): the server's choice changed since the selection - never re-applied silently
+            delete SP_RC_SEL_[planId]; keep9 = null;
+            _spNotify_('The carrier / method / customs of this plan changed on the server since you chose. Your unsaved choice was discarded - choose again.');
+        }
+        if (keep9) { var oo9 = r.options || [];
+            if (keep9.carrier && oo9.some(function (x) { return x.carrier_id === keep9.carrier; })) host.setAttribute('data-sel-carrier', keep9.carrier);
+            if (keep9.rate_card_id) { for (var i9 = 0; i9 < oo9.length; i9++) if (oo9[i9].rate_card_id === keep9.rate_card_id && oo9[i9].carrier_id === keep9.carrier) { host.setAttribute('data-sel-card', String(i9)); break; } }
+            if (keep9.service_key) { for (var j15 = 0; j15 < oo9.length; j15++) if (oo9[j15].service_only && JSON.stringify([oo9[j15].carrier_id, oo9[j15].shipping_method, oo9[j15].last_mile_delivery]) === keep9.service_key) { host.setAttribute('data-sel-card', String(j15)); break; } }
+            if (keep9.customs && ((r.lane && r.lane.customs) || []).some(function (c) { return c.id === keep9.customs; })) host.setAttribute('data-sel-customs', keep9.customs); }
+        _spRcRender_(planId);
+        try { _spReholdBusy_(planId); } catch (eRh2) {}   // R15C-UI batch 2: the Save of a plan still saving stays held
+        try { _spMarkCostState12_(planId, (r.current && r.current.state) || 'NONE'); } catch (eMk) { /* R71-FE-12 */ }
+    }
+    // Repaint the exact same lane immediately; expired options stay disabled until revalidated.
+    if (key && SP_RC_DISPLAY_KEY_[planId] === key && SP_RC_[planId]) {
+        paint(SP_RC_[planId]);
+        if (!(hit && Date.now() - hit.at < SP_RC_CACHE_TTL_MS_)) {
+            Array.prototype.forEach.call(body.querySelectorAll('select,button'), function (el) { el.disabled = true; });
+            var pending = document.createElement('div'); pending.setAttribute('role', 'status'); pending.textContent = 'Updating rate cards...'; body.appendChild(pending);
+        }
+    }
+    return request.then(paint)['catch'](function (e) { if (readSeq === _spReadSeq && ticket === _spRcAsk_[planId] && document.getElementById('sp-rc-' + planId) === host) body.innerHTML = '<span style="color:#DC2626;">Could not load the rate cards: ' + _spEsc((e && e.message) || e) + '. Nothing was changed.</span>'; });
+}
+// WK1: the first-level Destination = the To saved by Site Inventory, with its country (read-only). Blank stays an honest dash.
+function _spWk1DestLabel_(plan) { var d = String((plan && plan.destination) || '').trim(), c = String((plan && plan.country) || '').trim().toUpperCase(); return d ? (c ? c + ' / ' + d : d) : '—'; }
+var SP_RC_SEL_ = {};   // WK1: the unsaved lower selections per plan, by identity { carrier, rate_card_id, customs } - survive any re-render
+var _SP_WK1_SAVING_ = {};   // WK1: one unified Save per plan at a time (double-click guard)
+function _spWk1Options_(planId) {   // the options read, with the pending customs as a read-only preview when it differs from the saved one
+    var sel = SP_RC_SEL_[planId], cur = SP_RC_[planId], saved = cur && cur.lane ? String(cur.lane.customs_type || '') : null;
+    if (sel && sel.customs && sel.customs !== saved) {   // WK1 r2 (M-1): the db-api READ with a preview customs; m-6: a failed preview recovers
+        var asked = sel.customs;
+        return Promise.resolve(window.KM.DB.getShippingPlanRateCardOptions(planId, asked)).then(function (r) {
+            if (r && r.success === true) return r;
+            if (SP_RC_SEL_[planId]) delete SP_RC_SEL_[planId].customs;
+            _spNotify_('The rate cards for the customs ' + asked + ' could not be loaded (' + String((r && (r.code || r.error)) || 'NO_ANSWER') + '). The saved customs is shown again; nothing was changed.');
+            return window.KM.DB.getShippingPlanRateCardOptions(planId);
+        });
+    }
+    return window.KM.DB.getShippingPlanRateCardOptions(planId);
+}
+function _spRcPlan_(planId) { var m = _spLastModel && _spLastModel.plans; return ((m || []).filter(function (p) { return p.shippingPlanId === planId; })[0]) || {}; }
+function _spRcRender_(planId) {
+    _spRcRenderBase13_(planId);   // WK1: no Delivery-warehouse / Save route panel
+}
+function _spRcRenderBase13_(planId) {
+    var host = document.getElementById('sp-rc-' + planId), body = host && host.querySelector('.sp-rc-body'), r = SP_RC_[planId];
+    if (!host || !body || !r) return;
+    var plan = _spRcPlan_(planId), routeM = String((r.current && r.current.shipping_method) || plan.shippingMethod || '').trim();
+    var opts = r.options || [], cars = [], seen = {};
+    opts.forEach(function (o) { if (!seen[o.carrier_id]) { seen[o.carrier_id] = 1; cars.push({ id: o.carrier_id, name: o.carrier_name || o.carrier_id }); } });
+    if (!opts.length) { body.innerHTML = _spRcLoadingHtml_('No active rate card matches this route. Check destination, method and validity.'); return; }
+    var selC = host.getAttribute('data-sel-carrier');
+    if (selC == null) {
+        selC = (r.current && r.current.carrier_id && seen[r.current.carrier_id]) ? r.current.carrier_id : '';
+        if (!selC) { var withM = cars.filter(function (c) { return opts.some(function (o) { return o.carrier_id === c.id && o.shipping_method === routeM; }); }); if (withM.length === 1) selC = withM[0].id; }
+    }
+    var mine = opts.map(function (o, i) { return { o: o, i: i }; }).filter(function (x) { return x.o.carrier_id === selC; });
+    var selI = host.getAttribute('data-sel-card');
+    if (selI == null || !opts[Number(selI)] || opts[Number(selI)].carrier_id !== selC) {
+        var same = mine.filter(function (x) { return x.o.shipping_method === routeM && (!r.current || x.o.last_mile_delivery === String(r.current.last_mile_delivery || '')); });
+        if (same.length !== 1) same = mine.filter(function (x) { return x.o.shipping_method === routeM; });
+        selI = same.length === 1 ? String(same[0].i) : '';
+    }
+    var o = selI !== '' ? opts[Number(selI)] : null, st = (r.current && r.current.state) || 'NONE';
+    var stTxt = { NONE: 'Not priced yet.', NOT_PRICED: 'Freight is not quoted yet.', PRICED: 'Priced by the server for the plan as saved.',
+        PREVIEW_CUSTOMS: 'Customs changed (not saved yet) - choose a carrier and a method priced for it, then Save.',
+        NEEDS_REPRICING: 'NEEDS RE-PRICING: the stored cost no longer matches the rate card or the plan - save again.', COST_SAVED_CARD_UNVERIFIED: _spWk1CardTxt_(r), NOT_APPLICABLE: 'The stored carrier / method no longer applies to this lane - choose again.', PENDING: 'The last carrier / method choice did not finish - choose again. Submit is refused until then.' }[st] || st;
+    body.innerHTML =
+        '<div style="color:' + (st === 'PRICED' ? '#059669' : (st === 'NONE' ? '#64748B' : '#B45309')) + ';margin-bottom:6px;">' + _spEsc(stTxt) + '</div>' + _spWk1KnownHtml_(r) +
+        '<label style="display:block;font-size:11px;color:#64748B;">Carrier</label>' +
+        '<select class="sp-rc-carrier" onchange="spRcPickCarrier(\'' + _spEsc(planId) + '\', this.value)" style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
+            '<option value=""' + (selC ? '' : ' selected') + '>-- Choose carrier --</option>' +
+            cars.map(function (c) { return '<option value="' + _spEsc(c.id) + '"' + (c.id === selC ? ' selected' : '') + '>' + _spEsc(c.name) + (c.name !== c.id ? ' (' + _spEsc(c.id) + ')' : '') + '</option>'; }).join('') +
+        '</select>' +
+        '<label style="display:block;font-size:11px;color:#64748B;margin-top:6px;">Shipping Method</label>' +
+        '<select class="sp-rc-method" onchange="spRcPickMethod(\'' + _spEsc(planId) + '\', this.value)"' + (selC ? '' : ' disabled') + ' style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
+            '<option value=""' + (o ? '' : ' selected') + '>' + (selC ? '-- Choose method --' : '-- Choose a carrier first --') + '</option>' +
+            mine.map(function (x) { return '<option value="' + x.i + '"' + (String(x.i) === selI ? ' selected' : '') + '>' + _spEsc(x.o.shipping_method_label || '(no label)') + (x.o.quote && x.o.quote.priced ? ' \u00b7 ' + (x.o.quote.split_currency ? ('Freight ' + _spMoney_(x.o.quote.freight, x.o.quote.currency) + ' / Duty ' + _spMoney_(x.o.quote.duty, x.o.quote.duty_currency)) : _spMoney_(x.o.quote.total, x.o.quote.currency)) : ' \u00b7 quote at Shipment Draft') + _spEuLead15e_(x.o) + '</option>'; }).join('') +
+        '</select>' +
+        '<details class="sp-rc-token" style="font-size:11px;color:#64748B;margin-top:2px;"><summary>Details</summary>' + (o ? ('method token: ' + _spEsc(o.shipping_method) + (o.last_mile_delivery ? ' \u00b7 last mile: ' + _spEsc(o.last_mile_delivery) : '') + ' \u00b7 card ' + _spEsc(o.rate_card_id)) : '') + '</details>' +
+        '<div class="sp-rc-lt" style="font-size:11px;margin-top:2px;">' + (o ? ((o.lead_time && o.lead_time.state === 'MATCHED') ? '<span style="color:#475569;">Lead time: ' + _spEsc(o.lead_time.days) + ' days \u00b7 ' + _spEsc(o.lead_time.origin_country || '?') + ' \u2192 ' + _spEsc(o.lead_time.destination_country || '?') + '</span>' : '<span style="color:#B45309;">Lead time: UNKNOWN for this carrier / method (' + _spEsc((o.lead_time && o.lead_time.reason) || 'no match') + ')</span>') : '') + '</div>' +
+        (function () { var cl = (r.lane && r.lane.customs) || [], cs = host.getAttribute('data-sel-customs') || (r.preview_customs_type != null ? r.preview_customs_type : String((r.lane && r.lane.customs_type) || ''));
+            return '<label style="display:block;font-size:11px;color:#64748B;margin-top:6px;">Customs</label>' +
+            '<select class="sp-rc-customs" onchange="spRcPickCustoms(\'' + _spEsc(planId) + '\', this.value)" style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
+            '<option value=""' + (cs ? '' : ' selected') + '>-- Choose customs --</option>' +
+            cl.map(function (c) { return '<option value="' + _spEsc(c.id) + '"' + (c.id === cs ? ' selected' : '') + '>' + _spEsc(c.label || c.id) + '</option>'; }).join('') + '</select>'; })() +
+        '<button type="button" class="sp-btn sp-btn-submit sp-rc-save" onclick="spRcSave(\'' + _spEsc(planId) + '\')"' + ((o && ((o.quote && o.quote.priced) || o.service_only)) || _spWk1CxPicked_(host, r) ? '' : ' disabled') + ' style="margin-top:6px;font-size:12px;padding:4px 12px;min-width:150px;">Save</button>';
+}
+// WK1 r3 (Owner): the plan stores no rate card id - the saved COST and the saved CARD are reported separately (current.card_check, 11_ r3)
+function _spWk1CardTxt_(r) { var c = (r && r.current && r.current.card_check) || {}; return 'COST SAVED, CARD NOT VERIFIED: the saved cost is still reproduced by a current rate card, but ' + (c.cards_with_saved_terms || 'several') + ' rate cards carry the same carrier / method / rate / customs and the plan does not record which one was chosen. Not verified as PRICED - choose the card again and Save to confirm it.'; }
+function _spWk1KnownHtml_(r) {
+    var c = (r && r.current) || {}, k = c.card_check || {};
+    if (!c.carrier_id || c.state === 'PENDING' || c.state === 'PREVIEW_CUSTOMS') return '';
+    var cost = c.cost_saved ? ('Saved cost: ' + _spEsc(String(c.currency || '')) + ' ' + _spEsc(String(c.total)) + ' (known)') : 'Saved cost: none (unpriced)';
+    var card = { UNIQUE: 'Rate card: ' + _spEsc(String(k.rate_card_id || '')) + ' (verified: the only card with the saved terms, valid today)', AMBIGUOUS: 'Rate card: NOT verifiable (' + _spEsc(String(k.cards_with_saved_terms)) + ' cards carry the saved terms)', NO_CURRENT_CARD: 'Rate card: no current card carries the saved terms' }[k.status] || 'Rate card: not checked';
+    return '<div class="sp-rc-known" data-card-check="' + _spEsc(String(k.status || 'NOT_CHECKED')) + '" style="font-size:11px;color:#475569;margin-bottom:6px;">' + cost + ' | ' + card + '</div>';
+}
+function _spWk1CxPicked_(host, r) { var b = String((r.lane && r.lane.customs_type) || ''), cs = host.getAttribute('data-sel-customs') || (r.preview_customs_type != null ? r.preview_customs_type : b); return (cs && cs !== b) ? cs : ''; }
+function _spWk1CustomsOnlyCx_(h, r) { var s = h ? h.querySelector('.sp-rc-customs') : null, cx = s ? String(s.value || '') : ''; return (cx && r && cx !== String((r.lane && r.lane.customs_type) || '')) ? cx : ''; }
+function _spSavedQuoteTextCp2d_(d) {
+    d = d || {};
+    function money(v, currency) {
+        if (v == null || typeof v === 'boolean' || (typeof v === 'string' && !v.trim()) || !isFinite(Number(v))) return '--';
+        return (currency ? String(currency) + ' ' : '') + Number(v).toFixed(2);
+    }
+    var currency = String(d.currency || ''), dutyCurrency = String(d.estimated_duty_currency || '');
+    var total = money(d.estimated_total_cost, currency);
+    if (currency && dutyCurrency && currency !== dutyCurrency) {
+        return 'Freight ' + money(d.estimated_freight_cost, currency) + ' / Duty ' + money(d.estimated_duty, dutyCurrency) + ' / Total -- (currencies kept separate)';
+    }
+    if (total !== '--') return 'total ' + total;
+    return 'Freight ' + money(d.estimated_freight_cost, currency) + ' / Duty ' + money(d.estimated_duty, dutyCurrency || currency) + ' / Total --';
+}
+function _spWk1SaveCustoms_(planId, h, r, cx) {   // WK1 r3 (Owner): a customs-only change saves through the registered writer; the server re-prices or marks it UNPRICED
+    var exp = String((r.current && r.current.carrier_id) || '');
+    if (!_spPlanTok_(planId)) { _spNotify_('This plan has no edit token on screen - it is being re-read. Nothing was sent; choose again after it reloads.'); try { _spReadbackAfterWrite_(); } catch (eT) {} return; }
+    if (_SP_WK1_SAVING_[planId]) return;
+    var btn = h ? h.querySelector('.sp-rc-save') : null; _SP_WK1_SAVING_[planId] = true; if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+    var tok = _spPlanTok_(planId);
+    return _spRunCommand_(planId + ':ratecard', function () {
+        if (!window.KM.DB || typeof window.KM.DB.saveShippingPlanCustoms !== 'function') return { success: false, error: { code: 'WEEKLY_SAVE_UNAVAILABLE', message: 'This build has no customs Save. Nothing was sent.' } };
+        return Promise.resolve(window.KM.DB.saveShippingPlanCustoms(planId, cx, exp, tok)).then(function (x) {
+            if (x && x.success) { if (String(x.customs_type || '') !== cx) return { success: false, error: { code: 'RATE_CARD_SELECTION_UNVERIFIED', message: 'The server did not confirm the customs ' + cx + '.' } }; return { success: true, data: x }; }
+            var code = (x && (x.code || (typeof x.error === 'string' ? x.error : (x.error && x.error.code)))) || 'SELECTION_FAILED';
+            return { success: false, error: { code: code, message: (x && x.message) || code } };
+        });
+    }, { failPrefix: 'Save customs failed', planId: planId,
+        onSuccess: function (res) { var d = res.data || {}, lbl = d.customs_type_label || d.customs_type; delete SP_RC_SEL_[planId];
+            return d.priced === true ? ('Saved customs ' + lbl + ' | re-priced by the server: ' + _spSavedQuoteTextCp2d_(d) + ' (read back).')
+                : ('Saved customs ' + lbl + ' | NOT PRICED (' + (d.unpriced_reason || 'NO_CARD') + '): the old cost was cleared - choose a carrier and a method priced for it, then Save.'); } })
+        .then(function (res) { delete _SP_WK1_SAVING_[planId]; return res; }, function (e) { delete _SP_WK1_SAVING_[planId]; throw e; });
+}
+function _spWk1Base_(r) { var c = (r && r.current) || {}; return JSON.stringify([String(c.carrier_id || ''), String(c.shipping_method || ''), String(c.last_mile_delivery || ''), String((r && r.lane && r.lane.customs_type) || ''), String(c.total == null ? '' : c.total)]); }
+function _spWk1Remember_(planId, patch) { var c = SP_RC_SEL_[planId] || {}; if (!c.base) c.base = _spWk1Base_(SP_RC_[planId]); Object.keys(patch).forEach(function (k) { c[k] = patch[k]; }); SP_RC_SEL_[planId] = c; }   // WK1 r2 (m-7): base = the server's choice when the first unsaved pick was made
+function spRcPickCustoms(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; _spWk1Remember_(planId, { customs: v || '' }); spRcRefresh(planId); }
+function spRcPickCarrier(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; _spWk1Remember_(planId, { carrier: v || '', rate_card_id: '' }); h.setAttribute('data-sel-carrier', v || ''); h.removeAttribute('data-sel-card'); _spRcRender_(planId); }
+function spRcPickMethod(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; var rr = SP_RC_[planId], oo = rr && rr.options && rr.options[Number(v)]; _spWk1Remember_(planId, { carrier: oo ? oo.carrier_id : ((SP_RC_SEL_[planId] || {}).carrier || ''), rate_card_id: oo ? oo.rate_card_id : '', service_key: oo && oo.service_only ? JSON.stringify([oo.carrier_id, oo.shipping_method, oo.last_mile_delivery]) : '' }); h.setAttribute('data-sel-card', v || ''); _spRcRender_(planId); }
+function spRcSave(planId) {
+    var h = document.getElementById('sp-rc-' + planId), r = SP_RC_[planId], i = h ? h.getAttribute('data-sel-card') : null;
+    if (!r || i == null || i === '' || !r.options[Number(i)]) {
+        var sel = h && h.querySelector('.sp-rc-method'); i = sel ? sel.value : '';
+        if (i === '' || !r || !r.options[Number(i)]) { var cx0 = _spWk1CustomsOnlyCx_(h, r); if (cx0) return _spWk1SaveCustoms_(planId, h, r, cx0); _spNotify_('Choose a carrier and a shipping method first.'); return; }   // WK1 r3: a customs-only change saves
+    }
+    var o = r.options[Number(i)], exp = String((r.current && r.current.carrier_id) || '');
+    if (!(o.quote && o.quote.priced) && !o.service_only) { var cx1 = _spWk1CustomsOnlyCx_(h, r); if (cx1) return _spWk1SaveCustoms_(planId, h, r, cx1); _spNotify_('This method is not priced for the plan. Nothing was sent.'); return; }   // WK1 r3
+    if (!_spPlanTok_(planId)) { _spNotify_('This plan has no edit token on screen - it is being re-read. Nothing was sent; choose again after it reloads.'); try { _spReadbackAfterWrite_(); } catch (eT) {} return; }   // R71-FE-12 (review MINOR-2)
+    var cSel = h ? h.querySelector('.sp-rc-customs') : null, cx = cSel ? String(cSel.value || '') : '';
+    if (r.lane && (r.lane.customs || []).length && !cx) { _spNotify_('Choose a customs type first. Nothing was sent.'); return; }
+    if (_SP_WK1_SAVING_[planId]) return;   // WK1: double-click guard (one unified Save per plan)
+    var btn = h ? h.querySelector('.sp-rc-save') : null; _SP_WK1_SAVING_[planId] = true; if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    var tok = _spPlanTok_(planId);
+    return _spRunCommand_(planId + ':ratecard', function () {
+        // WK1 r2 (M-1): the registered db-api source writer (planning / exposure epochs); fail closed without it
+        if (!window.KM.DB || typeof window.KM.DB.selectShippingPlanRateCardWithCustoms !== 'function') return { success: false, error: { code: 'WEEKLY_SAVE_UNAVAILABLE', message: 'This build has no unified Save. Nothing was sent.' } };
+        return Promise.resolve(window.KM.DB.selectShippingPlanRateCardWithCustoms(planId, o, exp, tok, cx)).then(function (x) {
+            if (x && x.success) {   // m-4: a Save that does not return the customs it was asked for is NOT saved - an UNKNOWN outcome, read back
+                if (cx && String(x.customs_type || '') !== cx) return { success: false, error: { code: 'RATE_CARD_SELECTION_UNVERIFIED', message: 'The server did not confirm the customs ' + cx + '.' } };
+                if (o.service_only && (x.carrier_id !== o.carrier_id || x.shipping_method !== o.shipping_method || x.last_mile_delivery !== o.last_mile_delivery)) return { success: false, error: { code: 'RATE_CARD_SELECTION_UNVERIFIED', message: 'Service readback mismatch.' } };
+                return { success: true, data: x };
+            }
+            var code = (x && (x.code || (typeof x.error === 'string' ? x.error : (x.error && x.error.code)))) || 'SELECTION_FAILED';
+            return { success: false, error: { code: code, message: (x && x.message) || code } };
+        });
+    }, { failPrefix: 'Save carrier failed', planId: planId,
+        onSuccess: function (res) { var d = res.data || {}; delete SP_RC_SEL_[planId]; if (d.priced === false) return 'Saved. Freight is not quoted yet; finish pricing in Shipment Draft.'; return 'Saved: ' + (o.carrier_name || o.carrier_id) + ' \u00b7 ' + (d.shipping_method_label || o.shipping_method_label) + (d.customs_type_label ? ' \u00b7 ' + d.customs_type_label : '') + ' \u00b7 ' + _spSavedQuoteTextCp2d_(d) + ' (priced by the server, read back).'; } })
+        .then(function (res) { delete _SP_WK1_SAVING_[planId]; return res; }, function (e) { delete _SP_WK1_SAVING_[planId]; throw e; });
+}
+function _spMarkCostState12_(planId, st) {   // R71-FE-12 (review MINOR-3)
+    var bad = (st === 'NEEDS_REPRICING' || st === 'NOT_APPLICABLE' || st === 'PENDING'), say = { NEEDS_REPRICING: 'NEEDS RE-PRICING', NOT_APPLICABLE: 'NO LONGER APPLIES', PENDING: 'CHOICE DID NOT FINISH' }[st] || '';
+    var cost = document.getElementById('sp-cost-' + planId), card = document.getElementById('sp-card-' + planId);
+    var vals = [];
+    if (cost) vals = vals.concat(Array.prototype.slice.call(cost.querySelectorAll('.sp-cost-value')));
+    if (card) Array.prototype.forEach.call(card.querySelectorAll('.sp-summary-item'), function (it) { var l = it.querySelector('.sp-summary-label'); if (l && /^(Total Cost|Unit Cost)$/.test(l.textContent.trim())) vals.push(it.querySelector('.sp-summary-value')); });
+    vals.forEach(function (v) { if (!v) return; v.style.textDecoration = bad ? 'line-through' : ''; v.style.color = bad ? '#94A3B8' : ''; v.setAttribute('data-cost-state', st); });
+    if (cost) { var b = cost.querySelector('.sp-cost-invalid'); if (bad) { if (!b) { b = document.createElement('div'); b.className = 'sp-cost-invalid'; b.style.cssText = 'color:#B45309;font-weight:600;font-size:12px;margin:4px 0;'; cost.insertBefore(b, cost.children[1] || null); } b.textContent = say + ': the stored cost below is not a quote any more - choose the carrier and method again.'; } else if (b) b.parentNode.removeChild(b); }
+    if (card) Array.prototype.forEach.call(card.querySelectorAll('.sp-summary-item'), function (it) { var l = it.querySelector('.sp-summary-label'); if (!l || l.textContent.trim() !== 'Total Cost') return; var t = it.querySelector('.sp-cost-invalid-tag'); if (bad && !t) { t = document.createElement('span'); t.className = 'sp-cost-invalid-tag'; t.style.cssText = 'display:block;color:#B45309;font-size:11px;'; it.appendChild(t); } if (t) t.textContent = bad ? say : ''; });
+}
+window.spRcRefresh = spRcRefresh; window.spRcPickCustoms = spRcPickCustoms; window.spRcPickCarrier = spRcPickCarrier; window.spRcPickMethod = spRcPickMethod; window.spRcSave = spRcSave;
 window.renderShippingPlanFromDb = renderShippingPlanFromDb;
 window.spDbShowNote = spDbShowNote;
 window.spDbCancelNote = spDbCancelNote;
@@ -1836,7 +2410,10 @@ if (window.KM && window.KM.lifecycle) {
                 // Only the LEGACY read path still requires the broad cache; do not force-load it in Workspace mode.
                 if (_spEffectiveWorkspace()) {
                     renderShippingPlan();
-                } else if (_spUseDb() && !window._opDbCache && window.KM.DB.loadOperationDb) {
+                // R71-FE-3 (review X7 / run6): _spUseDb() needs a PRIMED broad cache ('google-sheet'), so on a cold session in legacy mode (the
+                // weeklyShipping kill switch) this branch could never run and the page fell to the sessionStorage demo render ('No shipping
+                // plans available.'). The cold-start-independent predicate (isScopedReadEligible: API configured, not mock) now admits the load.
+                } else if (!window._opDbCache && window.KM.DB.loadOperationDb && (_spUseDb() || (typeof window.KM.DB.isScopedReadEligible === 'function' && window.KM.DB.isScopedReadEligible()))) {
                     window.KM.DB.loadOperationDb({ force: true }).then(renderShippingPlan).catch(renderShippingPlan);
                 } else {
                     renderShippingPlan();
@@ -1850,3 +2427,17 @@ if (window.KM && window.KM.lifecycle) {
         }
     });
 }
+
+// WK1: the Weekly Delivery-warehouse selector and its Save route were removed. The actual delivery warehouse is chosen only in Shipment
+// Draft; the plan's To (destination / destination_type / destination_warehouse_id) is never written from Weekly.
+
+// R15C-EU-SP (sbx-r15c-eu): patched
+// R15C-EU: an option of a planning-set plan (EU) names its member countries and each one's own transit time; anything else is unchanged.
+function _spEuLead15e_(o) {
+    var lt = o && o.lead_time;
+    if (!(lt && lt.state === 'REGION_UNDETERMINED')) return ((lt && lt.state === 'MATCHED') ? ' \u00b7 lead ' + _spEsc(lt.days) + ' d' : ' \u00b7 lead time unknown');
+    var cs = (o.destination_countries || []).slice(), by = lt.by_country || {};
+    return ' \u00b7 to ' + _spEsc(cs.join('/') || '?') + ' \u00b7 lead ' + (cs.map(function (c) { var x = by[c]; return _spEsc(c) + ' ' + ((x && x.state === 'MATCHED') ? _spEsc(x.days) + ' d' : 'unknown'); }).join(', ') || 'unknown') + ' (by warehouse country)';
+}
+
+// CODEX-TAX-SPLIT-1: local candidate, Owner fractional rates and separate currencies.

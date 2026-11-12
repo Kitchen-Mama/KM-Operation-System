@@ -1080,6 +1080,13 @@
 #request-order-section .ro-sku-expand-grid--v3 .ro-expand-fc-col { flex: 1 1 0; min-width: 0; }
 .ro-expand-subtitle--gap { margin-top: 12px; }
 .ro-expand-empty { text-align: center; color: #94A3B8; font-style: italic; }
+.ro-l2-state { margin: 0 0 8px; padding: 6px 10px; border: 1px solid #FCD34D; border-radius: 4px; background: #FFFBEB; color: #92400E; font-size: 12px; }
+.ro-l2-state[data-l2-state="FAILED"] { border-color: #FCA5A5; background: #FEF2F2; color: #991B1B; }
+.ro-this-month-note { margin-left: 6px; font-weight: 400; font-size: 11px; color: #6B7280; }
+.ro-ongoing-issues { margin: 4px 0 0; font-size: 11px; color: #6B7280; overflow-wrap: anywhere; }
+.ro-incoming-table .ro-inc-total td { font-weight: 600; border-top: 1px solid #D1D5DB; }
+.ro-incoming-table .ro-inc-draft td { color: #6B7280; font-style: italic; }
+.ro-og-open { margin-left: 2px; color: #92400E; font-weight: 700; cursor: help; }
 .ro-alloc-qty { width: 68px; padding: 4px 6px; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 12px; box-sizing: border-box; }
 .ro-alloc-note { width: 100%; min-width: 60px; padding: 4px 6px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 12px; box-sizing: border-box; }
 
@@ -2230,3 +2237,28 @@
 .ro-ai-plan-result__reasons { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border-color, #e5e7eb); overflow-wrap: anywhere; }
 .ro-ai-plan-result__reasons .rh { color: var(--text-secondary, #6b7280); font-weight: 600; cursor: pointer; }
 @media (max-width: 640px) { .ro-ai-plan-result { right: 16px; left: 16px; width: auto; } }
+/* ---- POST-NIGHT 2026-10-28 · phone detail mode (max-width 480px ONLY) ----
+   At 360 / 390 the open panel used to live inside the table's own horizontal scroll, about 184px of it visible beside the
+   fixed SKU column. On phones it now opens as a full-screen detail view (z 2100: above the top bar 2000, below the modal
+   scrims 2200+ that Edit Target % / FC Update open and the nav drawer 2300 / 2400). Its bar carries the row's two actions
+   with the SAME handlers and Close (the row's own toggle). The fixed column's spacer is not stretched to the panel height.
+   Wider screens: nothing here applies - the bar stays hidden and the panel stays in the table as before. */
+#request-order-section .ro-expand-mobile-bar { display: none; }
+#request-order-section .ro-incoming-scroll { max-width: 100%; overflow-x: auto; }
+@media (max-width: 480px) {
+  #request-order-section .ro-sku-expand-panel.is-open {
+    position: fixed; inset: 0; z-index: 2100; width: auto; min-width: 0; max-width: none;
+    overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 0 12px 24px; border: none; border-radius: 0; box-shadow: none;
+  }
+  #request-order-section .ro-expand-mobile-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; position: sticky; top: 0; z-index: 1;
+    margin: 0 -12px 8px; padding: 10px 12px; background: #ffffff; border-bottom: 1px solid #e5e7eb;
+  }
+  #request-order-section .ro-expand-mobile-title { flex: 1 1 100%; font-weight: 700; font-size: 13px; color: #0f172a; overflow-wrap: anywhere; }
+  #request-order-section .ro-expand-mobile-bar .btn { min-height: 36px; padding: 6px 10px; font-size: 12px; }
+  #request-order-section .ro-mbar-close { margin-left: auto; }
+  #request-order-section .ro-sku-expand-grid--v6 { grid-template-columns: minmax(0, 1fr); width: auto; min-width: 0; }
+  #request-order-section .ro-sku-expand-grid--v6 .ro-block { min-width: 0; overflow-x: auto; }
+  #request-order-section .ro-fixed-expand-spacer { height: auto !important; }
+}

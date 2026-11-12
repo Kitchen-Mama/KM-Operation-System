@@ -596,6 +596,98 @@
         if (btn && btn.isConnected) { btn.disabled = false; btn.removeAttribute('aria-busy'); if (btn.dataset.poLabel != null) { btn.textContent = btn.dataset.poLabel; delete btn.dataset.poLabel; } }
     }
 
+    // DC2-R2 D3 - ONE OPERATION ID PER INTENDED RECEIPT, HELD UNTIL THE SERVER HAS ANSWERED IT.
+    // DC2-R1 derived the key from the figures (32-bit FNV-1a over line:unreceived:qty), and two different
+    // receipts can share one: PO-REVIEW / POL-REVIEW with 839:8 and 1429:2 both gave PORCV-UI-abe317bb. The id is
+    // now random, and the server verifies the content: the same id with other lines or quantities is refused
+    // (PO_RECEIPT_IDEMPOTENCY_KEY_CONTENT_MISMATCH), never taken as already done. An operation whose answer never
+    // arrived stays pending, in this page and in sessionStorage across a reload: the next Confirm on that PO
+    // resends it with the SAME id and the SAME lines, and no new id is minted until the server has answered.
+    // It is held before dispatch; a server answer settles it either way, because every refusal of that handler is
+    // zero-write.
+    var _poPendingRcv = {};
+    function _poRcvKey_(id) { return 'km.po.receipt.pending.' + id; }
+    function _poRcvPending_(id) {
+        if (_poPendingRcv[id]) return _poPendingRcv[id];
+        try { var s = sessionStorage.getItem(_poRcvKey_(id)); if (s) _poPendingRcv[id] = JSON.parse(s); } catch (e) {}
+        return _poPendingRcv[id] || null;
+    }
+    function _poRcvHold_(id, op) {
+        if (op) _poPendingRcv[id] = op; else delete _poPendingRcv[id];
+        try { if (op) sessionStorage.setItem(_poRcvKey_(id), JSON.stringify(op)); else sessionStorage.removeItem(_poRcvKey_(id)); } catch (e) {}
+    }
+    function _poNewOpId_() {
+        try { if (typeof crypto !== 'undefined' && crypto && typeof crypto.randomUUID === 'function') return 'PORCV-UI-' + crypto.randomUUID().replace(/-/g, ''); } catch (e) {}
+        var r = ''; for (var i = 0; i < 4; i++) r += ('0000000' + Math.floor(Math.random() * 0x100000000).toString(16)).slice(-8);
+        return 'PORCV-UI-' + Date.now().toString(16) + r;
+    }
+
+    // R71-FE-3 (small-6 13_): a PO write refused because a receipt's PO header is not yet written. Zero writes. The page names the receipt
+    // that must be resent first and NEVER retries the refused write itself. Held in this tab with the named key -> offer the resend with the SAME
+    // key and lines (it cannot be counted twice); otherwise -> reload. STATE_UNKNOWN -> reload, nothing retried. Returns true when handled.
+    function _poHeaderGate_(id, e, what) {
+        var code = e && e.serverCode;
+        if (code === 'PO_RECEIPT_HEADER_STATE_UNKNOWN') {
+            alert('Not changed - the receipt evidence of this PO could not be read (' + ((e.data && e.data.why) || 'unknown') + '). Nothing was written and nothing was retried. Reload the page, then try again.');
+            loadAndRender(); return true;
+        }
+        if (code !== 'PO_RECEIPT_HEADER_PENDING') return false;
+        var d = e.data || {};
+        var op = _poRcvPending_(id), key = d.receipt_key || '';
+        var head = 'Not changed - receipt ' + key + ' on this PO was cut off before the PO header was written. Nothing was written; your ' + what + ' was NOT retried.';
+        if (d.lines_carry_it === false) { alert(head + String.fromCharCode(10, 10) + 'Its lines do not carry it either: ask the owner to review this PO before anything else is changed.'); loadAndRender(); return true; }
+        if (op && op.key && op.key === key) {
+            if (confirm(head + String.fromCharCode(10, 10) + 'This tab still holds that receipt. Resend it now with the SAME id and the same lines (it cannot be counted twice)? Then do your ' + what + ' again.')) _poResendHeld_(id);
+            else loadAndRender();
+            return true;
+        }
+        alert(head + String.fromCharCode(10, 10) + 'That receipt is not held in this tab. Reload this page; the tab that entered it (or the owner) must resend it first. Then do your ' + what + ' again.');
+        loadAndRender(); return true;
+    }
+    // the held receipt of this PO, resent with its SAME key and lines (only from the header-pending offer above)
+    function _poResendHeld_(id) {
+        var op = _poRcvPending_(id); if (!op || !op.key) { loadAndRender(); return; }
+        var key = id + ':receive'; if (!_poBeginCmd(key, null)) return;
+        window.KM.DB.receivePurchaseOrderLines({ purchase_order_id: id, lines: op.lines, actor: 'operation-system', idempotency_key: op.key })
+            .then(function (d) { _poRcvHold_(id, null); _poEndCmd(key, null); _poRcvRecorded_(op.key, d); loadAndRender(); })
+            .catch(function (e) {
+                var cls_ = _poRcvClass_(e), answered = cls_ !== 'NOANSWER', unproven = cls_ === 'HOLD' || cls_ === 'GATE';   // R71-FE-4: a HELD receipt stays held on a gate refusal
+                var released_ = _poHeldReleasedBy_(e);   // R71-FE-5 (F-1): a held receipt is released only by an outcome-proving refusal
+                if (released_) _poRcvHold_(id, null);
+                _poEndCmd(key, null);
+                alert('The resend of receipt ' + op.key + ' did not complete: ' + (e && e.message ? e.message : e) + (released_ ? '' : String.fromCharCode(10) + 'Receipt STILL HELD in this tab: resend it again later with the SAME id and quantities (' + _poHeldText_(op) + ') before changing this PO.'));
+                loadAndRender();
+            });
+    }
+    // R71-FE-3: a same-key resend that completed the missing PO header is RECORDED (said once; the hold is already released by the caller)
+    function _poRcvRecorded_(rkey, d) {
+        if (d && d.server_code === 'PO_RECEIPT_HEADER_COMPLETED') alert('Receipt ' + rkey + ' is recorded: its lines were already saved and the PO header is now completed. Nothing was counted twice.');
+    }
+
+    // R71-FE-4 (review N-1): what a server answer to a receipt means for its HOLD.
+    //   HOLD      the answer is about THIS key and uncertain (OUTCOME_UNKNOWN / PARTIALLY_RECORDED), or LINE_UNRESOLVED / STOCK_BOOKS_UNKNOWN
+    //             without a proven zero write -> keep it; any retry resends the SAME key and lines
+    //   GATE      a pre-write refusal of the books gate (RECEIPT_UNRESOLVED, PO_RECEIPT_HEADER_*, or a gate answer with zero_write === true):
+    //             nothing of THIS receipt was posted -> a NEW receipt is discarded (never resent later under its old quantities)
+    //   SETTLED   any other server answer;  NOANSWER  no server answer (network / timeout / non-JSON) -> keep it
+    function _poRcvClass_(e) {
+        if (!(e && e.kmServerAnswered)) return 'NOANSWER';
+        var c = String(e.code || ''), d = e.data || {}, zw = d.zero_write === true || e.stage === 'gate';
+        if (c === 'PO_RECEIPT_OUTCOME_UNKNOWN' || c === 'PO_RECEIPT_PARTIALLY_RECORDED') return 'HOLD';
+        if (c === 'PO_RECEIPT_RECEIPT_UNRESOLVED' || c.indexOf('PO_RECEIPT_HEADER_') === 0) return 'GATE';
+        if (c === 'PO_RECEIPT_LINE_UNRESOLVED' || c === 'PO_RECEIPT_STOCK_BOOKS_UNKNOWN') return zw ? 'GATE' : 'HOLD';
+        return 'SETTLED';
+    }
+    // R71-FE-5 (review F-1): the ONLY refusals that release a receipt this tab already HOLDS (a success always does). A refusal of the RESEND
+    // proves nothing about the ORIGINAL attempt unless it says what the books hold: 13_ (r71-int-2) l.2887 IDEMPOTENCY_KEY_CONTENT_MISMATCH (the
+    // key is posted with other content) and l.2899 RECORDED_STATUS_STALE (data.already_recorded: the receipt is on the books). Lock busy,
+    // EVIDENCE_READ_FAILED, any other zero-write and any unknown shape keep the hold (same key, same lines).
+    function _poHeldReleasedBy_(e) {
+        var c = String((e && e.code) || '');
+        return !!(e && e.kmServerAnswered) && (c === 'PO_RECEIPT_IDEMPOTENCY_KEY_CONTENT_MISMATCH' || (c === 'PO_RECEIPT_RECORDED_STATUS_STALE' && !!(e.data && e.data.already_recorded === true)));
+    }
+    function _poHeldText_(op) { return ((op && op.lines) || []).map(function (l) { return String(l.purchase_order_line_id) + ' x ' + String(l.receive_qty); }).join(', '); }
+
     function confirmReceive(id) {
         var overlay = document.getElementById('po-modal');
         if (!overlay) return;
@@ -608,13 +700,50 @@
             if (v > unreceived) { invalid = 'Receive Qty cannot exceed Unreceived Qty (' + unreceived.toLocaleString() + ').'; return; }
             if (v > 0) lines.push({ purchase_order_line_id: inp.getAttribute('data-line'), receive_qty: v });
         });
-        if (invalid) { alert(invalid); return; }
-        if (!lines.length) { alert('Enter a Receive Qty greater than 0 on at least one line.'); return; }
+        var op = _poRcvPending_(id), wasHeld_ = !!op;   // R71-FE-4: a gate refusal discards only a NEW receipt
+        if (op) {
+            // The previous receipt on this PO is unanswered: only that exact operation may be sent, to settle it.
+            if (JSON.stringify(op.lines) !== JSON.stringify(lines) &&
+                !confirm((op.unproven ? 'The previous receipt on this PO is NOT CONFIRMED (' + op.unproven + ') - do not re-enter it; ask the owner to review. It will be sent again ' :
+                    'The previous receipt on this PO got no answer, so it may already be recorded. It will be sent again ') +
+                    'exactly as it was (same lines, same quantities, same id) to find out; it cannot be counted twice. ' +
+                    'Enter a different receipt after that. Sent now: ' + _poHeldText_(op) + ' - the quantities on screen are NOT sent.')) return;   // R71-FE-4: the HELD qty
+        } else {
+            if (invalid) { alert(invalid); return; }
+            if (!lines.length) { alert('Enter a Receive Qty greater than 0 on at least one line.'); return; }
+            op = { key: _poNewOpId_(), lines: lines };
+        }
         var btn = overlay.querySelector('.pc-btn--primary'), key = id + ':receive';
         if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write
-        window.KM.DB.receivePurchaseOrderLines({ purchase_order_id: id, lines: lines, actor: 'operation-system' })
-            .then(function () { _poEndCmd(key, btn); closeModal(); loadAndRender(); })
-            .catch(function (e) { _poEndCmd(key, btn); alert('Receive failed: ' + (e && e.message ? e.message : e)); });
+        _poRcvHold_(id, op);
+        window.KM.DB.receivePurchaseOrderLines({ purchase_order_id: id, lines: op.lines, actor: 'operation-system',
+            idempotency_key: op.key })
+            .then(function (d) { _poRcvHold_(id, null); _poEndCmd(key, btn); closeModal(); _poRcvRecorded_(op.key, d); loadAndRender(); })   // R71-FE-3: HEADER_COMPLETED = recorded
+            .catch(function (e) {
+                var answered = !!(e && e.kmServerAnswered);
+                // FE-RECEIPT-1 (candidate): the server answers these when it cannot PROVE the outcome (13_ PO13 r3). Such an answer does not settle
+                // the pending operation: the hold is KEPT, so any retry resends the SAME key and lines, and no new receipt is minted for this PO here.
+                // R71-FE-4 (review N-1): only an uncertain answer about THIS key is held; a gate refusal proves this receipt was not posted
+                var cls_ = _poRcvClass_(e), unproven = cls_ === 'HOLD';
+                // R71-FE-5 (F-1): a NEW receipt keeps the fe-4 rules; a HELD one is released only by _poHeldReleasedBy_
+                if (wasHeld_ ? _poHeldReleasedBy_(e) : (cls_ === 'SETTLED' || cls_ === 'GATE')) _poRcvHold_(id, null);
+                _poEndCmd(key, btn);
+                if (cls_ === 'GATE') {
+                    alert('This receipt was NOT posted (' + e.code + '). An existing receipt on this PO must be resolved first. ' + (e && e.message ? e.message : '') +
+                        (wasHeld_ ? String.fromCharCode(10) + 'The receipt this tab holds (' + _poHeldText_(op) + ') stays held; its SAME id is resent later.' : String.fromCharCode(10) + 'Nothing is kept for it: enter it again once the existing receipt is resolved.'));
+                    closeModal(); loadAndRender(); return; }
+                if (wasHeld_ && cls_ !== 'HOLD' && !_poHeldReleasedBy_(e)) {   // R71-FE-5 (F-1): e.g. lock busy on the resend - the ORIGINAL outcome is still unknown
+                    alert('Receipt STILL HELD - not settled. The receipt this tab holds (' + op.key + ': ' + _poHeldText_(op) + ') was not answered for good (' + ((e && (e.code || e.message)) || 'no answer') + '). ' +
+                        'Press Confirm again later: the SAME receipt (same id, same quantities) is resent; it cannot be counted twice. Do not enter it again as a new receipt.');
+                    return; }
+                if (unproven) { op.unproven = e.code; _poRcvHold_(id, op);
+                    alert('Receipt NOT CONFIRMED - do not re-enter it. The server could not prove whether this receipt is recorded (' + e.code + '). ' +
+                        'Ask the owner to review this PO and its factory stock. If you press Confirm again, the SAME receipt is resent (it cannot be counted twice).');
+                    closeModal(); loadAndRender(); return; }
+                alert('Receive failed: ' + (e && e.message ? e.message : e) + (answered ? '' :
+                    '\nThe server did not answer, so this receipt may already be recorded. Confirm again to resend the same receipt and find out.'));
+                if (answered && e.code === 'PO_RECEIPT_IDEMPOTENCY_KEY_CONTENT_MISMATCH') { closeModal(); loadAndRender(); }
+            });
     }
 
     // ========================================
@@ -679,7 +808,7 @@
             // keeps its group/section/position, so a bounded single-PO readback + in-place merge is coherent. sendPo/
             // receive/cancel stay on the full loadAndRender readback (section-move / removal → not single-PO reconcilable).
             .then(function () { _poEndCmd(key, btn); closeModal(); _poBoundedReadback_(id); })
-            .catch(function (e) { _poEndCmd(key, btn); alert('Save failed: ' + (e && e.message ? e.message : e)); });
+            .catch(function (e) { _poEndCmd(key, btn); if (_poHeaderGate_(id, e, 'edit')) { closeModal(); return; } alert('Save failed: ' + (e && e.message ? e.message : e)); });   // R71-FE-3
     }
 
     // F1-7M-B2-3 · bounded post-write readback for a status-invariant PO edit: re-read ONLY the written PO
@@ -769,6 +898,7 @@
                 // attached to the Error, and the blocked-document case is rendered here with its real cause: the
                 // stage that blocked, the reason code, the unresolved required placeholders, whether the fix is
                 // configuration, and whether a retry can help. The PO is still Draft either way.
+                if (_poHeaderGate_(id, e, 'Send PO')) return;   // R71-FE-3: zero writes, never retried here
                 var env = (e && e.envelope) || null;
                 if (env && env.stage === 'document_generation') {
                     var dg = env.document_generation || {};
@@ -797,7 +927,7 @@
         if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write
         window.KM.DB.updatePurchaseOrderStatus({ purchase_order_id: id, transition: 'cancel', actor: 'operation-system' })
             .then(function () { _poEndCmd(key, btn); loadAndRender(); })
-            .catch(function (e) { _poEndCmd(key, btn); alert('Cancel failed: ' + (e && e.message ? e.message : e)); });
+            .catch(function (e) { _poEndCmd(key, btn); if (_poHeaderGate_(id, e, 'cancel')) return; alert('Cancel failed: ' + (e && e.message ? e.message : e)); });   // R71-FE-3
     }
 
     // ---- selectors / pagination ----

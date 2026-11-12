@@ -59,30 +59,30 @@
         return _polRegion;
     }
     // Scoped read: Workspace (canonical) → getWorkspace('purchaseOrder') → adapt; Legacy → broad cache. Fail-closed.
-    function _polRefresh_() {
+    function _polRefresh_(strictReadback) {
         var mySeq = ++_polReadSeq;
         var rg = _polRegion_();
         if (_polEffectiveWorkspace()) {
             var _tb = document.getElementById('pol-tbody');
             var _hasRows = !!(_tb && _tb.querySelector('tr') && !_tb.querySelector('.procurement-empty'));
             if (rg) rg.beginLoad(_hasRows);
-            if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _polRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Purchase Order Workspace API unavailable.' }); return; }
-            Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { page: { number: 1, size: 2000 } })).then(function (env) {
-                if (mySeq !== _polReadSeq) return;
+            if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _polRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Purchase Order Workspace API unavailable.' }); if (strictReadback) return Promise.reject(new Error('Purchase Order readback unavailable.')); return; }
+            return Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { page: { number: 1, size: 2000 } })).then(function (env) {
+                if (mySeq !== _polReadSeq) { if (strictReadback) throw new Error('Purchase Order readback superseded.'); return; }
                 if (env && env.success) {
                     _polReadModel = window.KM.DB.adaptPurchaseOrderWorkspace(env.data);
                     if (rg) rg.set(_polReadModel.orders.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
                     renderRows();
                 } else {
                     _polRenderError_((env && env.errors && env.errors[0]) || { code: 'WORKSPACE_ERROR', message: 'Purchase Order workspace request failed.' });
+                    if (strictReadback) throw new Error('Purchase Order readback failed.');
                 }
-            }).catch(function (e) { if (mySeq !== _polReadSeq) return; _polRenderError_({ code: 'PO_READ_FAILED', message: String(e && e.message || e) }); });
-            return;
+            }).catch(function (e) { if (mySeq === _polReadSeq) _polRenderError_({ code: 'PO_READ_FAILED', message: String(e && e.message || e) }); if (strictReadback) throw e; });
         }
         // Legacy broad-DB path (unchanged behavior) — no silent fallback FROM Workspace mode (this branch is Legacy-only).
         _polReadModel = null;
         if (!window._opDbCache && window.KM.DB.loadOperationDb) {
-            window.KM.DB.loadOperationDb({ force: true }).then(renderRows).catch(renderRows);
+            return window.KM.DB.loadOperationDb({ force: true }).then(renderRows).catch(function (e) { if (strictReadback) throw e; renderRows(); });
         } else {
             renderRows();
         }
@@ -105,6 +105,59 @@
         loadAndRender();
     }
     if (typeof window !== 'undefined') { window.polRetryRead = polRetryRead; }
+
+    // R3-IMPORT (2026-10-29, local candidate) - More Options -> the shared batch import (KM.importBatch, lazy-loaded). Outside click /
+    // Escape close, arrow keys move between items (the Factory / Overseas menu behaviour).
+    function polToggleActionsMenu(ev) {
+        if (ev) { try { ev.stopPropagation(); } catch (e) {} }
+        var t = document.getElementById('polActionsTrigger'), l = document.getElementById('polActionsList'); if (!t || !l) return;
+        var open = l.hidden; l.hidden = !open; t.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) { var f = l.querySelector('[role=menuitem]'); if (f) f.focus(); }
+        if (!window.__polMenuBound) {
+            window.__polMenuBound = true;
+            document.addEventListener('click', function (e) { var L = document.getElementById('polActionsList'); if (L && !L.hidden && !(e.target.closest && e.target.closest('#polActionsMenu'))) polCloseActionsMenu(); });
+            document.addEventListener('keydown', function (e) { var L = document.getElementById('polActionsList'); if (!L || L.hidden) return; var it = [].slice.call(L.querySelectorAll('[role=menuitem]')), i = it.indexOf(document.activeElement);
+                if (e.key === 'Escape') { e.preventDefault(); polCloseActionsMenu(); var T = document.getElementById('polActionsTrigger'); if (T) T.focus(); }
+                else if (e.key === 'ArrowDown') { e.preventDefault(); (it[(i + 1) % it.length] || it[0]).focus(); } else if (e.key === 'ArrowUp') { e.preventDefault(); (it[(i - 1 + it.length) % it.length] || it[0]).focus(); } });
+        }
+    }
+    function polCloseActionsMenu() { var t = document.getElementById('polActionsTrigger'), l = document.getElementById('polActionsList'); if (l) l.hidden = true; if (t) t.setAttribute('aria-expanded', 'false'); }
+    function polRunLegacyImportAction(kind) {
+        polCloseActionsMenu();
+        if (kind !== 'import') return;
+        function go() { window.KM.importBatch.open({
+            domain: 'purchase_order', title: 'Import Purchase Order',
+            modes: [
+                { value: 'ADD_NEW', label: 'Add New (opening / historical POs)', help: 'Creates new POs + lines only, as an opening record up to the as-of date: no Send PO, no receipt, no document, e-mail or stock movement. An existing PO number in the company is refused.' },
+                { value: 'UPDATE', label: 'Update existing POs', help: 'By PO id + line id from an exported update file; only the fields its status allows. POs and lines not in the file are untouched; an export older than a receipt is refused.' },
+                // R4 (2026-10-29): the opening reconciliation (79_ RECONCILE_OPENING)
+                { value: 'RECONCILE_OPENING', label: 'Opening reconciliation (received before the cut-off)', help: 'Exports the historical PO lines whose received units are still HELD out of shipment FIFO, with what each still needs. Type opening_shipped_qty once where it is blank; the line is released only when the historical shipments prove it and the factory stock covers the rest. Nothing posts stock or shipped quantities.' }
+            ],
+            scopeFields: [
+                { key: 'company', label: 'Company', required: true, options: (function (domain, list) { return function () { return window.KM.DB.importTemplateGet({ domain: domain, mode: 'UPDATE', scope: {} }).then(function (t) { return ((t && t.lists && t.lists[list]) || []).map(function (o) { return { value: o.value, label: o.label && o.label !== o.value ? o.value + ' — ' + o.label : o.value }; }); }); }; })('purchase_order', 'companies') },
+                { key: 'warehouse_id', label: 'Factory', options: (function (domain, list) { return function () { return window.KM.DB.importTemplateGet({ domain: domain, mode: 'UPDATE', scope: {} }).then(function (t) { return ((t && t.lists && t.lists[list]) || []).map(function (o) { return { value: o.value, label: o.label && o.label !== o.value ? o.value + ' — ' + o.label : o.value }; }); }); }; })('purchase_order', 'factories') },
+                { key: 'as_of_date', label: 'Opening cut-off (as of)', type: 'date', required: true, modes: ['ADD_NEW'] }
+            ],
+            scopeLabel: function (v) { return v && v.company ? 'Company ' + v.company + (v.warehouse_id ? ' · factory ' + v.warehouse_id : ' · all factories') + '. The update export holds EVERY PO of this scope, not the visible page.' : 'Choose the company first.'; },
+            actor: function () { return (window.KM && window.KM.currentUser && window.KM.currentUser.email) || ''; },
+            onCommitted: function () { if (typeof window.polRetryRead === 'function') window.polRetryRead(); }
+        }); }
+        if (window.KM && window.KM.importBatch) return go();
+        var L = window.KM && window.KM.scriptLoader; if (!L) { alert('The import module could not be loaded.'); return; }
+        return L.load('assets/js/utils/import-batch.js').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+    }
+    function polRunAction(kind) {
+        polCloseActionsMenu();
+        if (kind !== 'import') return;
+        function go() { return window.KM.poFactoryImport.open({ onCommitted: function () { return _polRefresh_(true); } }); }
+        if (window.KM && window.KM.poFactoryImport) return go();
+        return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js').then(function (ok) {
+            if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
+            return go();
+        }).catch(function (e) { alert(String(e.message || e)); });
+    }
+    window.polToggleActionsMenu = polToggleActionsMenu; window.polRunAction = polRunAction;
+
 
     // Pagination (25 PO rows / page). Reset to 1 on filter / search / reset / date-apply / tab-switch.
     var POL_PAGE_SIZE = 25;

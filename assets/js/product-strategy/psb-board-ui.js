@@ -966,6 +966,7 @@
   }
 
   /* ---- THE CONTROLS: price view, activity, simulation editor, competitors ------------------------ */
+  var DEAL_LABEL_SEQ = 0;   // R64-F1 - ids for the deal labels the top layer references
   function demoControls(panel, category) {
     /* PSB-DEMO-R2 — ONE SET OF CONTROLS PER PANEL, AND EVERY ID NAMES ITS PANEL. R1 gave both panels the
        same ids, so a label, a test or a person reaching for "#compAdd" got whichever came first, and the
@@ -980,10 +981,28 @@
     box.setAttribute('data-price-view', DEMO.priceView);
     box.setAttribute('data-activity', DEMO.activityId);
 
-    /* ---- 1. price view ---- */
-    var g1 = el('div', 'ctl-group');
+    /* PSB-UX-R1 — ONE COMPACT TOOLBAR. The controls were three stacked groups with a paragraph under each;
+       what an operator needs on screen is the control and the one state that matters (what is simulated
+       and not saved). Every explanation moved to the page help (the header's single `i`, P.HELP), and
+       every control, role id, keyboard path and per-panel / per-currency rule is the same as before. */
+    function iconBtn(role, d, label, tip, text) {
+      var b = el('button', 'btn btn-sm btn-icon');
+      cid(b, role); b.setAttribute('type', 'button');
+      b.setAttribute('aria-label', label); b.setAttribute('title', tip);
+      var s = svg('svg', { viewBox: '0 0 20 20', 'class': 'ic', 'aria-hidden': 'true', focusable: 'false' });
+      s.appendChild(svg('path', { d: d }));
+      b.appendChild(s);
+      if (text) b.appendChild(el('span', 'btn-icon__text', text)); else b.className += ' btn-icon--only';
+      return b;
+    }
+    var IC_UNDO = 'M7.5 5.5 4 9l3.5 3.5M4.5 9H12a4 4 0 0 1 0 8H9.5';
+    var IC_RESET = 'M15.5 10a5.5 5.5 0 1 1-1.6-3.9M14.2 3.2v3h-3';
+
+    /* ---- 1. price view: a segmented switch ---- */
+    var g1 = el('div', 'ctl-group seg');
     g1.setAttribute('data-group', 'price-view');
-    g1.appendChild(el('span', 'ctl-label', 'Prices'));
+    g1.setAttribute('role', 'group');
+    g1.setAttribute('aria-label', 'Prices');
     [['everyday', 'Everyday price'], ['activity', 'Activity price']].forEach(function (m) {
       var b = el('button', 'segbtn' + (DEMO.priceView === m[0] ? ' is-on' : ''), m[1]);
       cid(b, 'priceView-' + m[0]);
@@ -999,11 +1018,12 @@
     });
     box.appendChild(g1);
 
+    /* ---- the activity menu: only in the activity view ---- */
     if (DEMO.priceView === 'activity') {
       var cat = demoCatalogue();
       var g2 = el('div', 'ctl-group demo-activity');
       g2.setAttribute('data-group', 'activity');
-      var lab = el('label', 'ctl-label', 'Activity');
+      var lab = el('label', 'ctl-label sr-only', 'Activity');
       lab.setAttribute('for', 'activitySelect-' + CUR);
       g2.appendChild(lab);
       var sel = document.createElement('select');
@@ -1023,44 +1043,34 @@
       });
       sel.value = DEMO.activityId;
       sel.disabled = !cat.activities.length;
+      var a = demoActivity();
+      /* a long activity name is cut by the box, never by the data: the whole label is the tooltip */
+      sel.setAttribute('title', a ? demoActivityLabel(a) : (cat.activities.length ? 'Choose an activity' : 'No activity is recorded for this site'));
       sel.addEventListener('change', function () {
         demoCancelDrag();   // PSB-DEMO-R2
         DEMO.activityId = sel.value; DEMO.selected = null; DEMO.simError = null;
         renderData();
       });
       g2.appendChild(sel);
-      var a = demoActivity();
-      var note = el('p', 'demo-note');
+      /* the one state worth a word on screen; the explanation is in the page help */
+      var note = el('span', 'demo-note demo-note--inline');
       cid(note, 'activityNote');
-      if (a) {
-        note.appendChild(document.createTextNode('Showing the deal prices recorded for this activity ('
-          + a.sku_count + ' SKU' + (a.sku_count === 1 ? '' : 's') + '). Recorded period and status are '
-          + 'shown as recorded — this view does not say the activity is running today. The everyday '
-          + 'price stays on the chart for comparison.'));
-      } else if (cat.activities.length) {
-        note.appendChild(document.createTextNode('Choose an activity to see its recorded deal prices.'));
-      } else {
-        note.appendChild(document.createTextNode('This site’s rows carry no campaign line with a '
-          + 'campaign id, so there is no activity to show.'));
-      }
-      if (cat.unidentified_lines) {
-        note.appendChild(document.createTextNode(' ' + cat.unidentified_lines + ' campaign line'
-          + (cat.unidentified_lines === 1 ? '' : 's') + ' without a campaign id are not listed.'));
-      }
+      var nt = a ? (a.sku_count + ' SKU' + (a.sku_count === 1 ? '' : 's') + ' · recorded deal prices · this view does not say the activity is running today')
+        : (cat.activities.length ? 'Choose an activity' : 'No activity with a campaign id on this site');
+      if (cat.unidentified_lines) nt += ' · ' + cat.unidentified_lines + ' line' + (cat.unidentified_lines === 1 ? '' : 's') + ' without an id not listed';
+      note.appendChild(document.createTextNode(nt));
       g2.appendChild(note);
       box.appendChild(g2);
     }
 
-    /* ---- 2. the simulation editor ---- */
+    /* ---- 2. simulation: the not-saved state, the editor for the SELECTED product, Undo / Reset all ---- */
     var g3 = el('div', 'ctl-group demo-sim');
     g3.setAttribute('data-group', 'simulation');
     var count = demoSimCount(CUR);
-    g3.appendChild(el('span', 'ctl-label', 'Simulation'));
-    var tag = el('span', 'demo-tag', count
-      ? count + ' simulated · not saved · gone on reload'
-      : 'Drag a product’s ' + (demoActivityOn() ? 'deal price' : 'price') + ' point, or select it and type a price');
+    var tag = el('span', 'demo-tag' + (count ? '' : ' is-empty'), count ? count + ' simulated · not saved' : '');
     cid(tag, 'simCount');
     tag.setAttribute('data-count', String(count));
+    tag.setAttribute('role', 'status');
     g3.appendChild(tag);
     var n = DEMO.selected ? demoNodeByKey(DEMO.selected) : null;
     if (n && (n.currency || '') !== CUR) n = null;   // the editor belongs to the selected product's panel
@@ -1070,12 +1080,12 @@
       cid(ed, 'simEditor');
       ed.setAttribute('data-node-key', n.key);
       ed.appendChild(el('b', null, n.label));
-      ed.appendChild(document.createTextNode('  Original ' + money(pt.base_c, n.currency) + '  →  Simulated '));
+      ed.appendChild(el('span', 'demo-editor__was', money(pt.base_c, n.currency) + ' →'));
       var inp = document.createElement('input');
       cid(inp, 'simInput');
       inp.className = 'demo-input';
       inp.setAttribute('inputmode', 'decimal');
-      inp.setAttribute('aria-label', 'Simulated price for ' + n.label);
+      inp.setAttribute('aria-label', 'Simulated price for ' + n.label + ' (recorded ' + money(pt.base_c, n.currency) + ')');
       inp.value = pt.shown_c === null ? '' : String(fromCents(pt.shown_c));
       function applyInput() {
         var c = demoParseMoney(inp.value);
@@ -1090,30 +1100,28 @@
       cid(ap, 'simApply'); ap.setAttribute('type', 'button');
       ap.addEventListener('click', applyInput);
       ed.appendChild(ap);
-      var r1 = el('button', 'btn btn-sm', 'Reset this product');
-      cid(r1, 'simResetOne'); r1.setAttribute('type', 'button');
+      var r1 = iconBtn('simResetOne', IC_RESET, 'Reset this product to its recorded price',
+        'Reset this product (' + n.label + ') to its recorded price', 'This product');
       r1.disabled = !pt.sim;
       r1.addEventListener('click', function () { if (demoResetOne(n.key)) renderData(); });
       ed.appendChild(r1);
       g3.appendChild(ed);
     }
-    var ub = el('button', 'btn btn-sm', 'Undo');
-    cid(ub, 'simUndo'); ub.setAttribute('type', 'button');
+    var ub = iconBtn('simUndo', IC_UNDO, 'Undo the last change in this panel', 'Undo the last simulated change in this panel');
     ub.disabled = !demoUndoAvailable(CUR);
     ub.addEventListener('click', function () { if (demoUndo(CUR)) renderData(); });
     g3.appendChild(ub);
-    var rb = el('button', 'btn btn-sm', 'Reset all');
-    cid(rb, 'simResetAll'); rb.setAttribute('type', 'button');
+    var rb = iconBtn('simResetAll', IC_RESET, 'Reset every simulated price in this panel',
+      'Reset all: every simulated price in this panel returns to its recorded price', 'All');
     rb.disabled = !count;
     rb.addEventListener('click', function () { if (demoResetAll(CUR)) { DEMO.selected = null; renderData(); } });
     g3.appendChild(rb);
     if (DEMO.simError && n) { var se = el('p', 'demo-error', DEMO.simError); cid(se, 'simError'); g3.appendChild(se); }
     box.appendChild(g3);
 
-    /* ---- 3. competitors: entered here, kept here, never mixed into this site's products ---- */
+    /* ---- 3. competitors: a secondary action at the end; the chips only when there are some ---- */
     var g4 = el('div', 'ctl-group demo-comp');
     g4.setAttribute('data-group', 'competitors');
-    g4.appendChild(el('span', 'ctl-label', 'Competitors'));
     var comps = demoCompetitors(category, CUR);
     var formHere = DEMO.compFormOpen && DEMO.compFormCur === CUR;
     var list = el('span', 'demo-comp-list');
@@ -1128,6 +1136,7 @@
       var eb = el('button', 'chip-btn', 'Edit');
       eb.setAttribute('type', 'button');
       eb.setAttribute('data-action', 'edit');
+      eb.setAttribute('aria-label', 'Edit competitor ' + c.name);
       eb.addEventListener('click', function () {
         DEMO.compFormOpen = true; DEMO.compFormCur = CUR; DEMO.compEditing = c.id; DEMO.compError = null; renderData();
       });
@@ -1145,10 +1154,11 @@
       chip.appendChild(xb);
       list.appendChild(chip);
     });
-    g4.appendChild(list);
+    if (comps.length) g4.appendChild(list);
     if (!formHere) {
-      var add = el('button', 'btn btn-sm', 'Add competitor');
+      var add = el('button', 'btn btn-sm btn-quiet demo-comp-add', '+ Competitor');
       cid(add, 'compAdd'); add.setAttribute('type', 'button');
+      add.setAttribute('title', 'Add a competitor price for this discussion (not saved)');
       add.addEventListener('click', function () {
         DEMO.compFormOpen = true; DEMO.compFormCur = CUR; DEMO.compEditing = null; DEMO.compError = null; renderData();
       });
@@ -1209,8 +1219,6 @@
       if (DEMO.compError) { var ce = el('p', 'demo-error', DEMO.compError); cid(ce, 'compError'); form.appendChild(ce); }
       g4.appendChild(form);
     }
-    g4.appendChild(el('p', 'demo-note', 'Entered for this discussion only: not saved, not one of this '
-      + 'site’s products, and not part of any finding, count or data-quality figure.'));
     box.appendChild(g4);
     return box;
   }
@@ -1566,6 +1574,24 @@
       });
     }
 
+    /* DC2-R3 (D-S8-B3-203) - WHERE A DEAL LABEL MAY GO. At 820px a label printed right of its diamond ran into the
+       NEXT column's diamond. Every column's diamond is known before any is drawn, so a label takes the first place -
+       right, left, below, above - whose box clears every OTHER column's diamond. Nothing else is an obstacle, so a label
+       that collided with nothing stays exactly where it was. The type size never shrinks and no price coordinate
+       moves; only the label's place does, and data-deal-place says which. */
+    var DEAL_OBST = [];
+    ns.forEach(function (n2, j) {
+      var dp2 = demoPointFor(n2), cx2 = x(j), h2 = (lay.imageSize || 50) / 2, d2 = Math.max(4, Math.min(7, lay.colW * 0.16)) * 1.5;
+      if (dp2.act && dp2.act.deal_c !== null) {
+        var dc2 = dp2.sim ? dp2.sim.to_c : dp2.act.deal_c, ax2 = cx2 + h2 + 12;
+        DEAL_OBST.push({ col: j, x0: ax2 - d2, x1: ax2 + d2, y0: y(dc2) - d2, y1: y(dc2) + d2 });
+      }
+    });
+    function dealClear(b, col) {
+      if (b.x0 < 2 || b.x1 > W - 4 || b.y0 < 0 || b.y1 > H) return false;
+      return !DEAL_OBST.some(function (o) { return o.col !== col && b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0; });
+    }
+
     ns.forEach(function (n, i) {
       var cx = x(i);
       var scen = n._scenario && n._scenario.active;
@@ -1670,13 +1696,20 @@
              for 44.79): then on its left, anchored to the end. */
           var dLine1 = plain(dealShown) + (dpt.act.state === 'PRICED_PARTIAL' ? ' *' : '');
           var dLine2 = dpt.disc ? dpt.disc.text : '—';
-          var dRight = ax + dia * 1.5 + 4;
-          var dFlip = dRight + Math.max(textW(dLine1, lay.dealPx), textW(dLine2, lay.dealPx - 1)) > W - 4;
-          var dX = dFlip ? ax - dia * 1.5 - 4 : dRight;
-          var dAnchor = dFlip ? 'end' : 'start';
-          ag.appendChild(svgText({ x: dX, y: y(dealShown) - 2, 'class': 'mk-activity-label',
-            style: pxStyle(lay.dealPx), 'data-flipped': String(dFlip), 'text-anchor': dAnchor }, dLine1));
-          ag.appendChild(svgText({ x: dX, y: y(dealShown) - 2 + lay.dealPx * 1.25, 'class': 'mk-activity-disc',
+          var dD = dia * 1.5, dyc = y(dealShown), dpx = lay.dealPx;
+          var dW = Math.max(textW(dLine1, dpx), textW(dLine2, dpx - 1)), dTall = dpx * 2.25 + 2;
+          var dPlaces = [
+            { place: 'right', x: ax + dD + 4, anchor: 'start', b: { x0: ax + dD + 4, x1: ax + dD + 4 + dW, y0: dyc - 2 - dpx, y1: dyc + dpx * 1.25 } },
+            { place: 'left', x: ax - dD - 4, anchor: 'end', b: { x0: ax - dD - 4 - dW, x1: ax - dD - 4, y0: dyc - 2 - dpx, y1: dyc + dpx * 1.25 } },
+            { place: 'below', x: ax, anchor: 'middle', top: dyc + dD + 2, b: { x0: ax - dW / 2, x1: ax + dW / 2, y0: dyc + dD + 2, y1: dyc + dD + 2 + dTall } },
+            { place: 'above', x: ax, anchor: 'middle', top: dyc - dD - 2 - dTall, b: { x0: ax - dW / 2, x1: ax + dW / 2, y0: dyc - dD - 2 - dTall, y1: dyc - dD - 2 } }];
+          var dP = dPlaces.filter(function (p) { return dealClear(p.b, i); })[0]
+            || (ax + dD + 4 + dW > W - 4 ? dPlaces[1] : dPlaces[0]);   // nothing clears: the pre-R3 right-or-flip rule
+          var dFlip = dP.place === 'left', dX = dP.x, dAnchor = dP.anchor;
+          var dY1 = dP.top !== undefined ? dP.top + dpx : dyc - 2;
+          ag.appendChild(svgText({ x: dX, y: dY1, 'class': 'mk-activity-label',
+            style: pxStyle(lay.dealPx), 'data-flipped': String(dFlip), 'data-deal-place': dP.place, 'text-anchor': dAnchor }, dLine1));
+          ag.appendChild(svgText({ x: dX, y: dY1 + lay.dealPx * 1.25, 'class': 'mk-activity-disc',
             style: pxStyle(lay.dealPx - 1), 'data-discount-state': dpt.disc ? dpt.disc.state : '',
             'data-discount-pct': dpt.disc && dpt.disc.pct !== null ? dpt.disc.pct : '',
             'text-anchor': dAnchor }, dLine2));
@@ -1785,6 +1818,24 @@
       g.addEventListener('blur', hideTip);
       s.appendChild(g);
     });
+    /* R64-F1 — A DEAL LABEL IS READ ON TOP. It runs right of its diamond into the next column, whose floor / list
+       caps are painted later and so drew THROUGH the price — which reads as a struck-out, old price. Each label is
+       re-painted by reference (<use>) above every column, with its own halo. Nothing moves and no text is copied:
+       the label stays where it is, with its position, its value and its drag. */
+    var dealTop = svg('g', { 'class': 'deal-label-top', 'aria-hidden': 'true', 'pointer-events': 'none' });
+    Array.prototype.forEach.call(s.querySelectorAll('.mk-activity-label, .mk-activity-disc'), function (t) {
+      if (!t.id) t.id = 'psb-deal-' + (++DEAL_LABEL_SEQ);
+      /* the copy inherits its look from the <use>, so the <use> carries the label's role and discount state */
+      var isDisc = /mk-activity-disc/.test(t.getAttribute('class') || '');
+      dealTop.appendChild(svg('use', { href: '#' + t.id, 'class': isDisc ? 'deal-top-disc' : 'deal-top-label',
+        'data-discount-state': t.getAttribute('data-discount-state') || '' }));
+    });
+    /* ...and the deal diamonds once more above the labels, so a label's halo never hides a neighbour's price point */
+    Array.prototype.forEach.call(s.querySelectorAll('polygon.mk-activity'), function (d) {
+      if (!d.id) d.id = 'psb-deal-' + (++DEAL_LABEL_SEQ);
+      dealTop.appendChild(svg('use', { href: '#' + d.id, 'class': 'deal-top-mark' + (/is-simulated/.test(d.getAttribute('class') || '') ? ' is-simulated' : '') }));
+    });
+    if (dealTop.childNodes.length) s.appendChild(dealTop);
 
     /* ---- PSB-DEMO-R1: THE TEMPORARY COMPETITORS, IN THEIR OWN COLUMNS AFTER THIS SITE'S PRODUCTS ----
        Separated by a rule and marked on every surface. Only the price point is drawn unless both band

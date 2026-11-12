@@ -98,6 +98,9 @@
     ready_to_ship: 'APPROVED_SHIPPING_PLAN',
     shipped: 'SHIPPED_IN_TRANSIT', in_transit: 'SHIPPED_IN_TRANSIT',
     arrived: 'SHIPPED_IN_TRANSIT',        // F1-3a SC-11.4-B (was DELIVERED_NOT_RECEIVED — that inferred delivery from arrived, violating SC-11.4-C)
+    // R4 (2026-10-29): a partial arrival (31_ writes partially_received; partial_received = its legacy spelling) - its REMAINDER is still
+    // in transit (quantityRemaining = shipped - received). Before R4 both were UNKNOWN_STATUS here and the remainder was dropped.
+    partially_received: 'SHIPPED_IN_TRANSIT', partial_received: 'SHIPPED_IN_TRANSIT',
     received: OMIT_RECEIVING_AUTHORITY,   // F1-3b SC-11.4-B/SC-11.5 (was RECEIVED_NOT_REFLECTED — raw status never itself a receiving authority)
     closed: OMIT_POSTED,
     cancelled: 'CANCELLED_INVALID'

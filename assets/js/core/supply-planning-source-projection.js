@@ -394,7 +394,9 @@
     // path derives physical qty / receiver identity from the shipment header. Malformed / unresolved rows fail
     // closed via the resolver + KMSF/KMQI scope gates (never a header-scope fabrication).
     ships.forEach(function (r) { shipAsOf.push(r.source_data_as_of); });
-    var slBuilt = KMSLS.buildShipmentLineCandidates({ shipmentLines: shipLines, shipments: ships, shippingPlanLines: planLines, shippingPlans: plans });
+    var slLinks = normalizeCanonical(snaps.shipmentPlanLinks, 'sourceSnapshots.shipmentPlanLinks');   // XCO-R15G projection
+    var slBuilt = KMSLS.buildShipmentLineCandidates({ shipmentLines: shipLines, shipments: ships, shippingPlanLines: planLines, shippingPlans: plans,
+      shipmentLinkCountById: (typeof KMSLS.shipmentLinkCountsFromRows === 'function' && snaps.shipmentPlanLinks) ? KMSLS.shipmentLinkCountsFromRows(slLinks) : undefined });
     var shipmentInputs = slBuilt.shipmentInputs;
     (slBuilt.issues || []).forEach(function (x) { addIssue('SUPPLY', 'shipment_line@' + x.i, x.reason); });
     if (ships.length) asOfByType.shipments = maxAsOf(shipAsOf);
@@ -562,3 +564,6 @@
     projectAndRead: projectAndRead
   };
 });
+
+// XCO-R15G: the line candidates receive the ever-merged link counts.
+// XCO-R15G-PROJ-KMSP (xco-r15g-impl): patched

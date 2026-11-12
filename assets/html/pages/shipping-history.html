@@ -5,6 +5,12 @@
     <div class="page-shipping-history">
         <div class="page-header">
             <h2 class="page-title">Shipment Overview</h2>
+            <div class="km-page-actions-menu" id="shActionsMenu">
+            <button type="button" class="km-page-actions-menu__trigger" id="shActionsTrigger" aria-haspopup="menu" aria-expanded="false" aria-controls="shActionsList" onclick="shToggleActionsMenu(event)">⋯ More Options</button>
+            <div class="km-page-actions-menu__list" id="shActionsList" role="menu" aria-label="Shipment actions" hidden>
+                <button type="button" role="menuitem" class="km-page-actions-menu__item" onclick="shRunAction('import')">Import Shipment</button>
+            </div>
+        </div>
         </div>
 
         <!-- Filter Bar -->

@@ -1059,7 +1059,13 @@
     // ---- Template Import (append-only; validated server-side) ----
     var CRC_FORBIDDEN_COLS = ['transit_days', 'min_days', 'max_days', 'avg_days', 'lead_time_id'];
 
+    function _crcImportUi_() {
+    if (!(window.KM && window.KM.importFeedback)) throw new Error('Import feedback is not loaded. Reload this page.');
+    return window.KM.importFeedback.controller('carrier', {"roots":["crc-update-modal","crc-master-modal"],"buttons":"[onclick=\"crcModalImport()\"],[onclick=\"crcModalImportMaster()\"],#crcImportBtn"});
+}
+
     function openImport() {
+        if (!_crcImportUi_().reset()) return;
         if (!useDb()) { alert('Enable the cloud DB to import Carrier Rate Templates.'); return; }
         var input = document.getElementById('crcImportFile');
         if (input) { input.value = ''; input.click(); }
@@ -1077,10 +1083,13 @@
     // (direct import). The Import Job runtime is NOT implemented here.
     function crcImportFile(file, carrierScopeId, forceMode) {
         if (!file) { alert('Choose a file to import.'); return; }
+        var ui = _crcImportUi_();
+        if (!ui.begin()) return;
         var isXlsx = /\.xlsx$/i.test(file.name);
-        var done = function (parsed) { crcRunImport(parsed, file.name, carrierScopeId, forceMode); };
+        var done = function (parsed) { try { return crcRunImport(parsed, file.name, carrierScopeId, forceMode); } finally { ui.endRead(); } };
         if (isXlsx) {
-            crcReadXlsxFile(file).then(done).catch(function (err) {
+            Promise.resolve().then(function () { return crcReadXlsxFile(file); }).then(done).catch(function (err) {
+                ui.fail(err);
                 alert('Could not read the XLSX file: ' + (err && err.message ? err.message : err));
             });
         } else {
@@ -1088,11 +1097,12 @@
             reader.onload = function (e) {
                 var parsed;
                 try { parsed = _crcParseCsv(String(e.target.result || '')); }
-                catch (err) { alert('Could not parse the file: ' + (err && err.message ? err.message : err)); return; }
+                catch (err) { ui.endRead(); alert('Could not parse the file: ' + (err && err.message ? err.message : err)); return; }
                 done(parsed);
             };
-            reader.onerror = function () { alert('Could not read the file.'); };
-            reader.readAsText(file);
+            reader.onerror = function () { ui.endRead(); alert('Could not read the file.'); };
+            reader.onabort = reader.onerror;
+            try { reader.readAsText(file); } catch (err) { ui.endRead(); alert(err.message); }
         }
     }
 
@@ -1111,10 +1121,11 @@
         var mode = forceMode || (/master/i.test(fileName || '') ? 'master' : 'update');
         var payload = { rows: parsed.rows, columns: parsed.columns, source_file_name: fileName || 'carrier_rate_template', mode: mode };
         if (carrierScopeId) payload.carrier_scope = { carrier_id: carrierScopeId };
-        window.KM.DB.importCarrierRateTemplate(payload)
+        var ui = _crcImportUi_(); ui.writing();
+        return Promise.resolve().then(function () { return window.KM.DB.importCarrierRateTemplate(payload); })
             // F1-7J-A3: canonical → scoped re-read before re-search (writer refreshed the broad cache the page no longer reads).
-            .then(function (data) { _crcShowImportResult(data, mode); _crcAfterWrite(function () { if (crcSearched) search(); }); })
-            .catch(function (err) { alert('Import failed: ' + (err && err.message ? err.message : err)); });
+            .then(function (data) { if (!data || typeof data !== 'object' || data.success === false) { ui.fail(data); return; } ui.finish({ success: true }); _crcShowImportResult(data, mode); _crcAfterWrite(function () { if (crcSearched) search(); }); })
+            .catch(function (err) { ui.fail(err); alert('Import failed: ' + (err && err.message ? err.message : err)); });
     }
 
     // Client-side XLSX → {columns, rows} using ExcelJS (already loaded). Reads the first non-_SYSTEM
@@ -1182,6 +1193,7 @@
         sel.value = cur || pageCarrier || '';
     }
     function openUpdateModal() {
+        if (!_crcImportUi_().reset()) return;
         if (!useDb()) { alert('Enable the cloud DB to update Carrier Rate Cards.'); return; }
         var m = document.getElementById('crc-update-modal');
         if (!m) return;
@@ -1189,7 +1201,7 @@
         var f = document.getElementById('crcUpdFile'); if (f) f.value = '';
         m.style.display = '';
     }
-    function closeUpdateModal() { var m = document.getElementById('crc-update-modal'); if (m) m.style.display = 'none'; }
+    function closeUpdateModal() { if (_crcImportUi_().active()) return; var m = document.getElementById('crc-update-modal'); if (m) m.style.display = 'none'; }
     function modalDownloadUpdate() {
         var sel = document.getElementById('crcUpdCarrier');
         var carrierId = sel ? sel.value : '';
@@ -1197,6 +1209,8 @@
         exportUpdateTemplateXlsx(carrierId);
     }
     function modalImport() {
+        if (_crcImportUi_().done()) { closeUpdateModal(); return; }
+        if (_crcImportUi_().blocked()) return;
         var sel = document.getElementById('crcUpdCarrier');
         var carrierId = sel ? sel.value : '';
         var input = document.getElementById('crcUpdFile');
@@ -1206,15 +1220,18 @@
 
     // ---- Master Template modal (unified: download full editable XLSX → upload → import, master mode) ----
     function openMasterModal() {
+        if (!_crcImportUi_().reset()) return;
         if (!useDb()) { alert('Enable the cloud DB to use the Carrier Master Template.'); return; }
         var m = document.getElementById('crc-master-modal');
         if (!m) return;
         var f = document.getElementById('crcMasterFile'); if (f) f.value = '';
         m.style.display = '';
     }
-    function closeMasterModal() { var m = document.getElementById('crc-master-modal'); if (m) m.style.display = 'none'; }
+    function closeMasterModal() { if (_crcImportUi_().active()) return; var m = document.getElementById('crc-master-modal'); if (m) m.style.display = 'none'; }
     function modalDownloadMaster() { exportMasterTemplateXlsx(); }
     function modalImportMaster() {
+        if (_crcImportUi_().done()) { closeMasterModal(); return; }
+        if (_crcImportUi_().blocked()) return;
         var input = document.getElementById('crcMasterFile');
         if (!input || !input.files || !input.files[0]) { alert('Choose a file to import.'); return; }
         crcImportFile(input.files[0], '', 'master');   // no carrier scope; force master mode

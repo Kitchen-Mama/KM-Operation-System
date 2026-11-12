@@ -2051,9 +2051,43 @@ body.is-fullscreen .psb-page .scn-drawer { display: none; }
 .psb-page .sw-activity { background: #c2410c; transform: rotate(45deg); border-radius: 2px; }
 .psb-page .sw-sim { background: #fff; border: 1.5px dashed var(--scn-mark); }
 
+/* ---------------------------------------------------------------- PSB-UX-R1 -------------------
+   ONE COMPACT TOOLBAR: a segmented price switch, the activity menu only in that view, the not-saved state, the
+   editor only for a selected product, icon Undo / Reset, and Competitor as a quiet trailing action. */
+.psb-page .demo-ctl { gap: 6px 16px; align-items: center; padding: 6px 8px; }
+.psb-page .demo-ctl .seg { gap: 0; flex-wrap: nowrap; }
+.psb-page .demo-ctl .seg .segbtn { border-radius: 0; }
+.psb-page .demo-ctl .seg .segbtn + .segbtn { margin-left: -1px; }
+.psb-page .demo-ctl .seg .segbtn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.psb-page .demo-ctl .seg .segbtn:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.psb-page .demo-ctl .demo-select { min-width: 160px; max-width: 300px; text-overflow: ellipsis; }
+.psb-page .demo-ctl .demo-note--inline { margin: 0; flex-basis: auto; font-size: 11.5px; white-space: nowrap; }
+.psb-page .demo-ctl .demo-tag.is-empty { display: none; }
+.psb-page .demo-ctl .demo-editor__was { color: var(--ink-3); white-space: nowrap; }
+.psb-page .demo-ctl .btn-icon { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; }
+.psb-page .demo-ctl .btn-icon--only { width: 28px; min-width: 28px; padding: 0; justify-content: center; }
+.psb-page .demo-ctl .btn-icon .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round; }
+.psb-page .demo-ctl .demo-comp { margin-left: auto; }
+.psb-page .demo-ctl .demo-comp-add { background: transparent; border-color: transparent; color: var(--ink-3);
+  text-decoration: underline; text-underline-offset: 2px; }
+.psb-page .demo-ctl .demo-comp-add:hover { color: var(--ink-1, #1f2937); }
+.psb-page .demo-ctl .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; margin: -1px; padding: 0; border: 0; }
+.psb-page .deal-label-top use { pointer-events: none; }
+/* R64-F1 - the repainted deal label looks exactly like the label it repaints (inherited through the <use>) */
+/* a wider halo than the label’s own, so a cap that ENDS beside a price does not read as a minus sign */
+.psb-page .deal-label-top .deal-top-label { font-weight: 700; fill: #9a3412; paint-order: stroke; stroke: #fff; stroke-width: 5px; stroke-linejoin: round; }
+.psb-page .deal-label-top .deal-top-disc { font-weight: 600; fill: #9a3412; paint-order: stroke; stroke: #fff; stroke-width: 5px; stroke-linejoin: round; }
+.psb-page .deal-label-top .deal-top-disc[data-discount-state]:not([data-discount-state="OK"]) { fill: #6b7280; }
+.psb-page .deal-label-top .deal-top-mark { fill: #c2410c; stroke: #fff; stroke-width: 1.5; }
+.psb-page .deal-label-top .deal-top-mark.is-simulated { fill: var(--scn-mark); }
+
 @media (max-width: 820px) {
-  .psb-page .demo-ctl { flex-direction: column; }
-  .psb-page .demo-select { min-width: 0; width: 100%; max-width: 100%; }
+  .psb-page .demo-ctl .demo-activity { flex-basis: 100%; flex-wrap: nowrap; }
+  .psb-page .demo-ctl .demo-select { min-width: 0; flex: 1 1 auto; max-width: none; }
+  .psb-page .demo-ctl .demo-note--inline { white-space: normal; }
+  .psb-page .demo-ctl .demo-comp { margin-left: 0; }
 }
 @media print {
   .psb-page .demo-ctl .btn-sm, .psb-page .demo-comp-form, .psb-page .chip-btn { display: none; }

@@ -70,7 +70,10 @@
 
   // ---- active-status + effective window (identical token set to the EP `_execRateCardUsable` deny-list) -----------
   var INACTIVE_STATUS = { inactive: 1, disabled: 1, archived: 1, expired: 1, void: 1, deleted: 1 };
-  function statusActive(status) { var st = low(status); return st === '' ? true : !INACTIVE_STATUS[st]; }
+  // MC1 (ITEM III D-5): ONE "active" rule for a rate card, the server's own (17_ shippingRateActive_: status === 'active',
+  // and the 17_ importer accepts only active / inactive). A blank or unknown status is NOT active - it used to be here and
+  // in the browser registry, so the Execution Plan offered methods no Weekly card could ever price.
+  function statusActive(status) { return low(status) === 'active'; }
   function inEffectiveWindow(effectiveFrom, effectiveTo, asOfOrdinal) {
     if (asOfOrdinal == null) return true;                 // no as-of supplied → do not date-gate
     var from = dateToOrdinal(effectiveFrom), to = dateToOrdinal(effectiveTo);
@@ -115,6 +118,7 @@
       destinationCountry: s(pick(raw.destination_country, raw.destinationCountry)),
       destinationWarehouseCode: s(pick(raw.destination_warehouse_code, raw.destinationWarehouseCode)),
       marketplace: s(pick(raw.marketplace, raw.marketplace)),
+      batteryType: low(pick(raw.battery_type, raw.batteryType)),   // MC1 (D-2)
       shippingMethod: method,
       shippingMethodLabel: s(pick(raw.shipping_method_label, raw.shippingMethodLabel)) || method,
       methodKey: canonicalMethodKey(method),
@@ -160,10 +164,29 @@
     if (c === '') return true;          // card is a wildcard on this axis
     return c === q;                     // both present → must match exactly
   }
+  // MC1 (D-2): the battery axis, the SAME rule as 17_ shippingRateMatch_ (:602-604): a lithium SKU uses only lithium_battery
+  // cards, any other SKU never uses one. 'unclassified' refuses every card (17_ :596). A query that names no battery class
+  // is read as 17_ reads it - not lithium - so a lithium-only card never reaches it (the safe direction; a caller with
+  // lithium SKUs must pass batteryType).
+  var BATTERY_UNCLASSIFIED = 'unclassified';
+  function batteryOk(cardBattery, queryBattery) {
+    var q = low(queryBattery), c = low(cardBattery);
+    if (q === BATTERY_UNCLASSIFIED) return false;
+    return q === 'lithium_battery' ? c === 'lithium_battery' : c !== 'lithium_battery';
+  }
+  // R15C-EU: the planning-set definition is KMCID's (Node require / Apps Script bundle global / browser window.KM.countryIdentity).
+  function getKMCID15e() { try { if (typeof require === 'function') { var k0 = require('./supply-planning-country-identity'); if (k0 && k0.planningSetMembers) return k0; } } catch (e) {} try { if (typeof KMCID !== 'undefined' && KMCID) return KMCID; } catch (e1) {} try { if (typeof window !== 'undefined' && window.KM && window.KM.countryIdentity) return window.KM.countryIdentity; } catch (e2) {} return null; }
+  function planningSetMembers(code) { var k = getKMCID15e(); try { return (k && typeof k.planningSetMembers === 'function') ? k.planningSetMembers(code) : null; } catch (e) { return null; } }
+  // R15C-EU: a planning-set destination (EU) admits a card / lead time of a MEMBER country (or a blank = every destination); any other
+  // destination is the exact axis rule. The row keeps its own country - the set never becomes a country.
+  function destinationOk(cardVal, queryVal) { var set = planningSetMembers(queryVal); if (!set) return axisOk(cardVal, queryVal); var c = s(cardVal).toUpperCase(); return c === '' || set.indexOf(c) !== -1; }
   function cardMatchesRoute(dto, query) {
     return axisOk(dto.originCountry, query.originCountry)
-      && axisOk(dto.destinationCountry, query.destinationCountry)
-      && axisOk(dto.marketplace, query.marketplace);
+      && destinationOk(dto.destinationCountry, query.destinationCountry)   // R15C-EU
+      && axisOk(dto.marketplace, query.marketplace)
+      // MC1 (D-4): the destination-warehouse axis (blank on the card = any warehouse; blank in the query = not constrained)
+      && axisOk(dto.destinationWarehouseCode, query.destinationWarehouseCode)
+      && batteryOk(dto.batteryType, query.batteryType);
   }
 
   // laneCards(query, cards, opts) → the USABLE, route-matching normalized cards (the shared candidate SET). KMWRR
@@ -208,6 +231,7 @@
   function leadDays(query, leadTimes, method, opts) {
     query = query || {}; opts = opts || {};
     var key = canonicalMethodKey(method); if (!key) return { days: null, source: null };
+    if (planningSetMembers(query.destinationCountry)) return { days: null, source: 'REGION_DESTINATION_NOT_CHOSEN' };   // R15C-EU: never a set-wide transit
     var rows = (leadTimes || []).map(normalizeLeadTime).filter(function (lt) {
       return lt.methodKey === key
         && axisOk(lt.originCountry, query.originCountry)
@@ -286,15 +310,15 @@
   }
 
   return {
-    VERSION: 'kmra-r6f2d-1',
+    VERSION: 'kmra-r15c-eu-1',
     // date + status primitives
-    dateToOrdinal: dateToOrdinal, statusActive: statusActive, inEffectiveWindow: inEffectiveWindow,
+    dateToOrdinal: dateToOrdinal, statusActive: statusActive, batteryOk: batteryOk, inEffectiveWindow: inEffectiveWindow,
     // method alias authority
     METHOD_ALIAS_RULES: METHOD_ALIAS_RULES, canonicalMethodKey: canonicalMethodKey,
     // DTO
     normalizeRateCard: normalizeRateCard, normalizeLeadTime: normalizeLeadTime, rateCardUsable: rateCardUsable,
     // shared candidate authority (EP parity)
-    axisOk: axisOk, cardMatchesRoute: cardMatchesRoute, laneCards: laneCards, eligibleMethods: eligibleMethods,
+    axisOk: axisOk, cardMatchesRoute: cardMatchesRoute, destinationOk: destinationOk, planningSetMembers: planningSetMembers, laneCards: laneCards, eligibleMethods: eligibleMethods,
     // shared transit-day authority
     leadDays: leadDays,
     // warehouse resolution priority

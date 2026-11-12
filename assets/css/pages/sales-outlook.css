@@ -1,0 +1,114 @@
+/* Sales Outlook (TARGET-SALES-R2, a LOCAL CANDIDATE). Every rule is scoped to .page-sales-outlook or to a so-* class, so
+   nothing here can restyle another page. The date picker keeps the shared .fr-date-* look (components.css); only its preset
+   items and month arrows are restated under this page's own class names, because Forecast Review, Purchase Orders and
+   Shipping History bind the shared ones document-wide. Regular = slate, Special Event = orange, everywhere on the page. */
+.page-sales-outlook { --so-regular: #475569; --so-event: #FF8C42; --so-warn: #b45309; --so-muted: #64748b; --so-line: #e2e8f0; }
+.page-sales-outlook .so-header { margin-bottom: 0.25rem; }
+.page-sales-outlook .so-subtitle { margin: 0.25rem 0 0; color: var(--so-muted); font-size: 0.8125rem; }
+/* the filter row: Forecast Review's row (.forecast-filters in fc-overview.css) restated for this page, wrapping allowed */
+.page-sales-outlook .so-filters { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: var(--space-lg, 1rem); padding: var(--space-md, 0.75rem);
+  background: var(--bg-surface, #fff); border-radius: var(--radius-md, 8px); }
+.page-sales-outlook .so-filter--date { min-width: 200px; flex: 0 0 220px; }
+.page-sales-outlook .so-filter--actions { flex: 0 0 auto; }
+/* the colour is explicit: a shared button rule elsewhere paints button text white, which left Refresh white on white */
+.page-sales-outlook .so-btn { border: 1px solid var(--so-line); background: #fff; color: #1e293b; border-radius: 6px; padding: 0.4rem 0.8rem; font-size: 0.8125rem; cursor: pointer; width: auto; }
+.page-sales-outlook .so-btn:hover { background: #f8fafc; }
+
+/* tabs — the FC Summary underline look, this page's own classes */
+.page-sales-outlook .so-tabs { display: flex; align-items: flex-end; gap: 0.25rem; border-bottom: 1px solid var(--so-line); margin: 0.75rem 0 0.5rem; flex-wrap: wrap; }
+.page-sales-outlook .so-tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.5rem 0.9rem; color: #64748B; font-size: 0.875rem; cursor: pointer; }
+.page-sales-outlook .so-tab--active { color: #1E293B; font-weight: 600; border-bottom-color: #FF8C42; }
+.page-sales-outlook .so-tab:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.page-sales-outlook .so-tab-note { margin-left: auto; color: var(--so-muted); font-size: 0.75rem; padding: 0 0 0.5rem; }
+
+/* status line and banners */
+.page-sales-outlook .so-status { font-size: 0.8125rem; color: var(--so-muted); margin: 0.25rem 0 0.75rem; }
+.page-sales-outlook .so-banner { border-left: 3px solid var(--so-warn); background: #fffbeb; color: #78350f; padding: 0.5rem 0.75rem; margin: 0.25rem 0; font-size: 0.8125rem; }
+.page-sales-outlook .so-banner--error { border-left-color: #dc2626; background: #fef2f2; color: #7f1d1d; }
+.page-sales-outlook .so-banner--info { border-left-color: #3b82f6; background: #eff6ff; color: #1e3a8a; }
+/* review fix 1 — one line per chosen site while a read runs */
+.page-sales-outlook .so-progress { margin: 0.35rem 0 0; padding-left: 1.1rem; font-size: 0.75rem; columns: 2 16rem; }
+
+/* blocks: full width, no card frame, compact headings */
+.page-sales-outlook .so-block { margin: 1.25rem 0 0; }
+.page-sales-outlook .so-block-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; border-bottom: 1px solid var(--so-line); padding-bottom: 0.35rem; margin-bottom: 0.5rem; }
+.page-sales-outlook .so-block-head h3 { margin: 0; font-size: 0.9375rem; font-weight: 600; color: #1e293b; }
+.page-sales-outlook .so-block-note { color: var(--so-muted); font-size: 0.75rem; }
+.page-sales-outlook .so-sku-search { border: 1px solid var(--so-line); border-radius: 6px; padding: 0.3rem 0.6rem; font-size: 0.8125rem; min-width: 12rem; }
+
+/* tables */
+.page-sales-outlook .km-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.page-sales-outlook .so-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.page-sales-outlook .so-table th { text-align: left; font-weight: 600; color: #334155; border-bottom: 1px solid var(--so-line); padding: 0.4rem 0.5rem; white-space: nowrap; background: #f8fafc; position: sticky; top: 0; }
+.page-sales-outlook .so-table th[data-so-sort] { cursor: pointer; }
+.page-sales-outlook .so-table th[data-so-sort]:hover { color: #1e40af; }
+.page-sales-outlook .so-table td { border-bottom: 1px solid #f1f5f9; padding: 0.35rem 0.5rem; vertical-align: top; }
+.page-sales-outlook .so-table .km-num, .page-sales-outlook .so-table th.km-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.page-sales-outlook .so-row--subtotal td { font-weight: 600; background: #f8fafc; }
+.page-sales-outlook .so-row--child td:first-child { padding-left: 1.5rem; }
+.page-sales-outlook .so-row--detail td { background: #fcfcfd; color: #334155; }
+.page-sales-outlook .so-expand { border: 0; background: none; cursor: pointer; padding: 0 0.25rem 0 0; color: #475569; font-size: 0.75rem; }
+.page-sales-outlook .so-reg { color: var(--so-regular); }
+.page-sales-outlook .so-evt { color: var(--so-event); }
+.page-sales-outlook .so-tag { display: inline-block; font-size: 0.6875rem; border-radius: 4px; padding: 0 0.3rem; margin-left: 0.25rem; border: 1px solid var(--so-line); color: var(--so-muted); white-space: nowrap; }
+.page-sales-outlook .so-tag--est { border-color: #fdba74; color: #9a3412; }
+.page-sales-outlook .so-tag--default { border-color: #cbd5e1; }
+.page-sales-outlook .so-tag--warn { border-color: #fcd34d; color: var(--so-warn); }
+.page-sales-outlook .so-missing { color: #94a3b8; }
+.page-sales-outlook .so-complete { white-space: nowrap; }
+.page-sales-outlook .so-complete--partial { color: var(--so-warn); }
+.page-sales-outlook .so-formula { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.75rem; white-space: normal; word-break: break-word; }
+.page-sales-outlook .so-pager { display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; font-size: 0.75rem; color: var(--so-muted); padding: 0.4rem 0; }
+
+/* the month trend: stacked Regular / Event bars per month and currency */
+.page-sales-outlook .so-trend { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.page-sales-outlook .so-trend-cur { min-width: 14rem; flex: 1 1 18rem; }
+.page-sales-outlook .so-trend-cur h4 { margin: 0 0 0.25rem; font-size: 0.75rem; color: var(--so-muted); font-weight: 600; }
+.page-sales-outlook .so-trend svg { width: 100%; height: 7rem; display: block; }
+.page-sales-outlook .so-trend-x { display: flex; font-size: 0.6875rem; color: var(--so-muted); }
+.page-sales-outlook .so-trend-x span { flex: 1 1 0; text-align: center; white-space: nowrap; overflow: hidden; }
+.page-sales-outlook .so-spark { display: inline-block; vertical-align: middle; }
+.page-sales-outlook .so-legend { font-size: 0.6875rem; color: var(--so-muted); }
+.page-sales-outlook .so-legend i { display: inline-block; width: 0.6rem; height: 0.6rem; margin: 0 0.25rem 0 0.5rem; vertical-align: -1px; }
+
+/* R3 — two sections, the overview, and Units YoY (a sign and a word, never colour alone) */
+.page-sales-outlook .so-section { margin-top: 1.75rem; }
+.page-sales-outlook .so-section-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; border-bottom: 2px solid #cbd5e1; padding-bottom: 0.35rem; }
+.page-sales-outlook .so-section-head h3 { margin: 0; font-size: 1rem; font-weight: 700; color: #0f172a; }
+.page-sales-outlook .so-block-head h4 { margin: 0; font-size: 0.875rem; font-weight: 600; color: #1e293b; }
+.page-sales-outlook .so-dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 2px; margin-right: 0.4rem; vertical-align: 0; }
+.page-sales-outlook .so-dot--reg { background: var(--so-regular); }
+.page-sales-outlook .so-dot--evt { background: var(--so-event); }
+.page-sales-outlook .so-yoy { white-space: nowrap; }
+.page-sales-outlook .so-yoy--up { color: #166534; }
+.page-sales-outlook .so-yoy--down { color: #991b1b; }
+.page-sales-outlook .so-yoy--flat, .page-sales-outlook .so-yoy--na { color: var(--so-muted); }
+.page-sales-outlook .so-cov { display: block; font-size: 0.6875rem; color: var(--so-warn); }
+.page-sales-outlook .so-seg { display: inline-flex; border: 1px solid var(--so-line); border-radius: 6px; overflow: hidden; }
+.page-sales-outlook .so-seg-btn { border: 0; background: #fff; padding: 0.2rem 0.6rem; font-size: 0.75rem; cursor: pointer; color: #475569; }
+.page-sales-outlook .so-seg-btn + .so-seg-btn { border-left: 1px solid var(--so-line); }
+.page-sales-outlook .so-seg-btn--on { background: #1e293b; color: #fff; }
+.page-sales-outlook .so-event-presence { font-size: 0.8125rem; margin-top: 0.5rem; }
+
+/* the month picker — the shared look, this page's preset items and arrows */
+.so-date-modal .so-preset-item { padding: 0.75rem 1.5rem; cursor: pointer; transition: all 0.2s; font-size: 0.875rem; color: #4a5568; }
+.so-date-modal .so-preset-item:hover, .so-date-modal .so-preset-item:focus-visible { background: #f7fafc; outline: none; }
+.so-date-modal .so-preset-item.is-active { background: #e6f7ff; color: #1e40af; border-left: 3px solid #3b82f6; }
+.so-date-modal .so-calendar-nav { background: none; border: 1px solid #e2e8f0; border-radius: 4px; width: 2rem; height: 2rem; cursor: pointer; color: #4a5568; font-size: 1rem; }
+.so-date-modal .so-calendar-nav:hover { background: #f7fafc; }
+.so-date-modal .so-date-hint { margin: 0 0 0.75rem; font-size: 0.75rem; color: #64748b; }
+.so-date-modal .so-date-summary { margin-right: auto; font-size: 0.8125rem; color: #1e293b; font-weight: 600; }
+.so-date-modal .fr-date-modal-footer { display: flex; align-items: center; gap: 0.5rem; }
+
+@media (max-width: 768px) {
+  .page-sales-outlook .so-tab-note { margin-left: 0; width: 100%; }
+  .page-sales-outlook .so-sku-search { min-width: 0; width: 100%; }
+}
+@media (max-width: 420px) {
+  .page-sales-outlook .so-filters .filter-group { flex: 1 1 100%; min-width: 0; }
+  .page-sales-outlook .so-date-trigger { width: 100%; justify-content: space-between; }
+  .page-sales-outlook .so-table { font-size: 0.75rem; }
+  .page-sales-outlook .so-trend-cur { min-width: 0; }
+  .so-date-modal .fr-date-modal-footer { flex-wrap: wrap; }
+  .so-date-modal .so-date-summary { width: 100%; }
+}

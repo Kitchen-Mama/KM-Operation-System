@@ -715,6 +715,11 @@
 
     function request(opts) {
       opts = opts || {};
+      var access = typeof window !== 'undefined' && window.KM && window.KM.passwordAccess;
+      if (access && !access.isSignedIn()) {
+        if (opts.kind === 'write') return Promise.resolve(fail(PHASE.BUILD, 'AUTH_REQUIRED', 'Sign in required. Nothing was sent.', { zero_write: true, retryable: false }, {}));
+        return access.whenSignedIn(opts.signal).then(function () { return request(opts); });
+      }
       var action = str(opts.action);
       var kind = (str(opts.kind) === 'write') ? 'write' : 'read';
       var requestId = str(opts.requestId);

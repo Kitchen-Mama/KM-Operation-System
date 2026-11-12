@@ -1298,7 +1298,7 @@ function saveFcChanges() {
             + _fcCountsLine_(s));
         });
       } };
-    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_base_edit' })
+    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'active', sourceDefault: 'fc_summary_base_edit' })
       .then(function (res) { _fcSettleWrite_(res, _beOpts); })
       .catch(function (err) { _fcFailWrite_(err, _beOpts); });
     return;
@@ -6368,7 +6368,7 @@ function saveRegularUpdate() {
             'Rows written: ' + toWrite.length + _fcCountsLine_(s));
         });
       } };
-    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_builder' })
+    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'active', sourceDefault: 'fc_summary_builder' })
       .then(function(res){ _fcSettleWrite_(res, _rgOpts); })
       .catch(function(err){ _fcFailWrite_(err, _rgOpts); });
     return;
@@ -9233,6 +9233,7 @@ function _fcImportSetResolvedText(message, color) {
 }
 
 function openFcImportModal() {
+    if (!_fcImportUi_().reset()) return;
     var yearEl = document.getElementById('fc-import-year');
     if (yearEl) {
         var ySel = document.getElementById('fc-year-select');
@@ -9261,6 +9262,7 @@ function openFcImportModal() {
 }
 
 function closeFcImportModal() {
+    if (_fcImportUi_().active()) return;
     if (typeof closeFcModal === 'function') closeFcModal();
 }
 
@@ -9401,7 +9403,15 @@ function _fcRenderImportResult(data, invalidCount) {
     box.innerHTML = html;
 }
 
+function _fcImportUi_() {
+    if (!(window.KM && window.KM.importFeedback)) throw new Error('Import feedback is not loaded. Reload this page.');
+    return window.KM.importFeedback.controller('forecast', {"roots":["fc-import-modal"],"buttons":"#fc-import-run-btn"});
+}
+
 function runFcImport() {
+    var ui = _fcImportUi_();
+    if (ui.done()) { _fcImportDone(); return; }
+    if (ui.blocked()) return;
     // If the button is in "Done" state (after a clean success), this click completes the modal
     // instead of re-importing — prevents accidental double imports.
     var _modeBtn = document.getElementById('fc-import-run-btn');
@@ -9419,8 +9429,10 @@ function runFcImport() {
     var meta = _fcImportResolved;
     var runBtn = document.getElementById('fc-import-run-btn');
     var file = fileEl.files[0];
+    if (!ui.begin()) return;
     var reader = new FileReader();
     reader.onload = function(e) {
+      try {
         var cells;
         try { cells = _parseFcCsv(e.target.result); } catch (err) { _fcRenderImportError('Failed to parse CSV: ' + (err && err.message ? err.message : err)); return; }
         if (!cells || cells.length < 2) { _fcRenderImportError('No data rows found (need a header row + at least one data row).'); return; }
@@ -9479,13 +9491,15 @@ function runFcImport() {
         if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Importing...'; }
         if (!_fcWriteBegin_('import')) return;      // FC-SUMMARY-R1: the existing guard, now shared
         var _imEpoch = _fcEpoch_();
-        window.KM.DB.importFcRegularForecastBatch(rows, { forecastStatusDefault: 'draft', sourceDefault: 'import' })
+        ui.writing();
+        Promise.resolve().then(function () { return window.KM.DB.importFcRegularForecastBatch(rows, { forecastStatusDefault: 'active', sourceDefault: 'import' }); })
             .then(function(result) {
+                ui.finish(result);
                 var _imOutcome = _fcClassifyWrite_(result);
                 if (_imOutcome === FC_WRITE_.SUCCESS) _fcReceipt_('Import Forecast', rows.length, result);
                 _fcWriteEnd_('import', _imOutcome);
                 if (!_fcOwns_(_imEpoch)) { _fcWriteState_['import'] = FC_WRITE_.UNMOUNTED; return; }
-                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                if (runBtn && !ui.blocked() && !ui.done()) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
                 // An unreadable answer is NOT an import failure — it is an unknown outcome, and the
                 // remedy offered is a read, never a second import.
                 if (_imOutcome === FC_WRITE_.UNKNOWN) { _fcUnknownOutcome_('import', null); return; }
@@ -9517,18 +9531,22 @@ function runFcImport() {
                 }
             })
             .catch(function(err) {
+                ui.fail(err);
                 // FC-SUMMARY-R2B-A — the same four-way classification the other five controls use.
                 var _imProven = _fcZeroWriteProven_(err);
                 _fcWriteEnd_('import', _imProven ? FC_WRITE_.REFUSAL : FC_WRITE_.UNKNOWN);
                 if (!_fcOwns_(_imEpoch)) { _fcWriteState_['import'] = FC_WRITE_.UNMOUNTED; return; }
-                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                if (runBtn && !ui.blocked() && !ui.done()) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
                 if (_imProven) _fcZeroWriteRefusal_('import', err);
                 else _fcUnknownOutcome_('import', err);
                 _fcRenderImportError(err && err.message ? err.message : 'Import request failed.');
             });
+      } catch (err) { ui.fail(err); _fcRenderImportError(err.message || String(err)); }
+      finally { ui.endRead(); }
     };
-    reader.onerror = function() { _fcRenderImportError('Could not read the selected file.'); };
-    reader.readAsText(file);
+    reader.onerror = function() { ui.endRead(); _fcRenderImportError('Could not read the selected file.'); };
+    reader.onabort = reader.onerror;
+    try { reader.readAsText(file); } catch (err) { ui.endRead(); _fcRenderImportError(err.message); }
 }
 
 // Completion action for the "Done" state: close modal, clear result/file, reset button.

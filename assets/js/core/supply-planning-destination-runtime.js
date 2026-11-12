@@ -60,7 +60,11 @@
 
   // ACTIVE incoming lifecycle statuses (source-proven, still in flight). Frozen SHIPMENT lifecycle vocabulary
   // (SHIPMENT_CENTER_SPEC): draft/cancelled/received/closed are NOT active-in-flight incoming.
-  var ACTIVE_INCOMING_STATUS = { shipped: 1, in_transit: 1, arrived: 1, ready_to_ship: 1, approved: 1 };
+  // R4 (2026-10-29): partially_received (the 31_ writer's value) / partial_received (its legacy spelling) = ONE partial arrival whose
+  // remainder is in flight. KNOWN_NOT_INCOMING is the rest of the vocabulary; a token in neither is UNKNOWN_STATUS (Qualified Incoming
+  // REVIEW, named) - never filed with the known exclusions as if it were one.
+  var ACTIVE_INCOMING_STATUS = { shipped: 1, in_transit: 1, arrived: 1, ready_to_ship: 1, approved: 1, partially_received: 1, partial_received: 1 };
+  var KNOWN_NOT_INCOMING_STATUS = { draft: 1, pending_approval: 1, cancelled: 1, canceled: 1, received: 1, closed: 1, completed: 1, delivered: 1, stuck: 1, planned: 1 };
 
   // ================================ §3 destination normalizer (single owner, re-exported) ====================
   function normalizeRecommendationDestination(input, authorities) {
@@ -143,7 +147,7 @@
     var q = qtyNum(has(c, 'quantity') ? c.quantity : c.quantityRemaining);
     var status = s(c.status).toLowerCase();
     var statusEligible = ACTIVE_INCOMING_STATUS[status] === 1;
-    var statusClass = statusEligible ? 'ELIGIBLE_INCOMING_STATUS' : (status ? 'STATUS_NOT_ELIGIBLE' : 'MISSING_STATUS');
+    var statusClass = statusEligible ? 'ELIGIBLE_INCOMING_STATUS' : (!status ? 'MISSING_STATUS' : KNOWN_NOT_INCOMING_STATUS[status] === 1 ? 'STATUS_NOT_ELIGIBLE' : 'UNKNOWN_STATUS');
     var eta = s(c.eta);
     var ref = s(c.ref || c.shipmentId || c.lineageKey || c.supplyCandidateId) || ('mkt-inc-' + idx);
     return {
@@ -171,10 +175,14 @@
     }
     var cands = Array.isArray(input.candidates) ? input.candidates : [];
     var identity = resolveMarketplaceIncomingIdentity({ candidates: cands, marketplaces: input.marketplaces, scope: input.scope || {} });
-    var resolvedResults = [], unresolvedRefs = [];
+    var resolvedResults = [], unresolvedRefs = [], unknownStatusRefs = [];
     identity.forEach(function (r, i) {
       var c = cands[i] || {};
       if (r.issueCode) issues.push(iss(r.issueCode, 'incoming candidate ' + (s(c.ref || c.shipmentId) || ('@' + i)) + ' → ' + r.resolutionStatus, 'marketplace'));
+      // R4 (2026-10-29): a status outside the shipment vocabulary may or may not be in flight - potentially relevant, so NEVER a confirmed
+      // zero: it makes the incoming PARTIAL (blocks canonical) and is named, exactly like an unresolved identity.
+      var st0 = s(c.status).toLowerCase(), unknownStatus = !!st0 && ACTIVE_INCOMING_STATUS[st0] !== 1 && KNOWN_NOT_INCOMING_STATUS[st0] !== 1;
+      if ((r.resolutionStatus === 'RESOLVED' || r.resolutionStatus === 'UNRESOLVED') && unknownStatus) unknownStatusRefs.push(s(c.ref || c.shipmentId || c.lineageKey) || ('@' + i));
       if (r.resolutionStatus === 'RESOLVED') {
         resolvedResults.push(_toKmIncomingResult(c, r.marketplaceId, i));
       } else if (r.resolutionStatus === 'UNRESOLVED') {
@@ -182,7 +190,8 @@
         if (ACTIVE_INCOMING_STATUS[s(c.status).toLowerCase()] === 1) unresolvedRefs.push(s(c.ref || c.shipmentId || c.lineageKey) || ('@' + i));
       }
     });
-    unresolvedRefs.sort(cmpStr);
+    unresolvedRefs.sort(cmpStr); unknownStatusRefs.sort(cmpStr);
+    if (unknownStatusRefs.length) issues.push(iss('MARKETPLACE_INCOMING_STATUS_UNKNOWN', 'incoming shipment(s) ' + unknownStatusRefs.join(', ') + ' carry a status outside the shipment vocabulary - neither counted nor a confirmed 0', 'status'));
 
     var confirmed = 0, qiEvents = [];
     if (resolvedResults.length) {
@@ -195,10 +204,10 @@
       QI.evaluateQualifiedIncoming({ requiredByDate: s(input.requiredByDate) || '2000-01-01', kmShipmentResults: [], externalAuthorityResults: input.externalIncomingResults });
     }
 
-    var completeness = unresolvedRefs.length > 0 ? 'PARTIAL' : 'COMPLETE';
+    var completeness = unresolvedRefs.length > 0 || unknownStatusRefs.length > 0 ? 'PARTIAL' : 'COMPLETE';
     return {
       confirmedQualifiedIncomingQty: confirmed, incomingCompleteness: completeness,
-      unresolvedIncomingCount: unresolvedRefs.length, unresolvedIncomingRefs: unresolvedRefs, issues: issues, perCandidate: identity,
+      unresolvedIncomingCount: unresolvedRefs.length, unresolvedIncomingRefs: unresolvedRefs, unknownStatusIncomingRefs: unknownStatusRefs, issues: issues, perCandidate: identity,
       qualifiedEvents: qiEvents   // F1-4B-FM3c-1 additive: ETA-dated qualified events (empty on UNAVAILABLE / no resolved candidates)
     };
   }
@@ -293,7 +302,7 @@
       var stockRes = resolveMarketplaceCurrentStock({ rows: (rawSnapshots.amazonInventory !== undefined ? rawSnapshots.amazonInventory : options.amazonInventory), scope: { country: dest.country, marketplace: dest.marketplace, sku: scope.sku } });
       var qir = resolveMarketplaceQualifiedIncoming({ candidates: (rawSnapshots.marketplaceIncomingCandidates !== undefined ? rawSnapshots.marketplaceIncomingCandidates : options.marketplaceIncomingCandidates), marketplaces: authorities.marketplaces, scope: dest, requiredByDate: options.requiredByDate || request.requiredByDate, externalIncomingResults: options.externalIncomingResults });
       var mrec = resolveMarketplaceRecommendation({ demandQty: demandQty, currentStockQty: stockRes.qty, confirmedQualifiedIncomingQty: qir.confirmedQualifiedIncomingQty, incomingCompleteness: qir.incomingCompleteness, approvedCommittedSupplyQty: options.approvedCommittedSupplyQty, unitsPerCarton: options.unitsPerCarton });
-      var mline = { destination: dest, recommendationMode: mrec.recommendationMode, calculatedGap: mrec.calculatedGap, recommendedQty: mrec.recommendedQty, provisionalOrderNeed: mrec.provisionalOrderNeed, blocked: mrec.blocked, blockedReason: mrec.blockedReason, incomingCompleteness: mrec.incomingCompleteness, currentStockQty: stockRes.qty, confirmedQualifiedIncomingQty: qir.confirmedQualifiedIncomingQty, unresolvedIncomingCount: qir.unresolvedIncomingCount, unresolvedIncomingRefs: qir.unresolvedIncomingRefs, qualifiedEvents: qir.qualifiedEvents || [] };
+      var mline = { destination: dest, recommendationMode: mrec.recommendationMode, calculatedGap: mrec.calculatedGap, recommendedQty: mrec.recommendedQty, provisionalOrderNeed: mrec.provisionalOrderNeed, blocked: mrec.blocked, blockedReason: mrec.blockedReason, incomingCompleteness: mrec.incomingCompleteness, currentStockQty: stockRes.qty, confirmedQualifiedIncomingQty: qir.confirmedQualifiedIncomingQty, unresolvedIncomingCount: qir.unresolvedIncomingCount, unresolvedIncomingRefs: qir.unresolvedIncomingRefs, unknownStatusIncomingRefs: qir.unknownStatusIncomingRefs || [], qualifiedEvents: qir.qualifiedEvents || [] };
       var mIssues = (mrec.issues || []).concat(stockRes.issues || []).concat(qir.issues || []);
       return { ready: !mrec.blocked, destination: dest, recommendationMode: 'MARKETPLACE_ORDER_NEED', line: mline, issues: mIssues, meta: meta };
     }

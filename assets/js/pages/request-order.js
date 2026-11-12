@@ -95,6 +95,18 @@ function _roL2State_() {
   if (!_roL2Registered_()) return _roL2Ready ? 'READY' : 'NOT_LOADED';
   return window.KM.deferredRead.state(RO_L2);
 }
+// What the second layer may say about tables it has not got (order-planning-l1-l2-r1, F5). Only READY lets an empty
+// block mean "no data"; NOT_LOADED / LOADING / FAILED are said as such and never drawn as "--" or "No ...". Demo
+// data has no read, so it is READY.
+function _roL2Gate_() {
+  var s = _roUseDb() ? _roL2State_() : 'READY';
+  return { state: s, ready: s === 'READY', word: s === 'READY' ? '' : s === 'LOADING' ? 'Loading…' : s === 'FAILED' ? 'Not loaded (read failed)' : 'Not loaded' };
+}
+function _roL2StateNote_(g) {
+  if (g.ready) return '';
+  return '<div class="ro-l2-state" role="status" data-l2-state="' + _roEsc(g.state) + '">Special FC, factory stock and incoming supply: ' + _roEsc(g.word) +
+    (g.state === 'FAILED' ? ' <button type="button" class="btn btn-sm" onclick="roRetryL2Scopes()">Retry</button>' : '') + '</div>';
+}
 var _roL2Flight = null;
 function _roEnsureL2Tables(force) {
   if (!_roUseDb() || !(window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')) return Promise.resolve();
@@ -134,6 +146,17 @@ function _roDistinct(arr) {
 function _roFmt(v) {
   if (v == null) return '--';
   return (typeof v === 'number') ? v.toLocaleString() : String(v);
+}
+// POST-NIGHT 2026-10-28 (F4): the Ongoing cell never presents unverified supply as a settled number or as "none". When the
+// SKU's Ongoing has parts no site holds (review / unallocated) or lines it could not count, the cell keeps its own verified
+// share and adds a marker; with no share it reads "?" instead of "--" (which means no Ongoing). The detail is in the title
+// and in the row's Incoming table. Display only - no number changes.
+function _roOngoingCellHtml(item) {
+  var d = item && item.ongoingDetail, t = item ? item.totalOngoingOrders : null, sum = function (a) { return (a || []).reduce(function (s, x) { return s + (+x.qty || 0); }, 0); };
+  var rv = d ? sum(d.review) : 0, un = d ? sum(d.unallocated) : 0, uc = d ? (d.uncounted || []).length : 0;
+  if (!rv && !un && !uc) return _roFmt(t);
+  var tip = 'Not verified: this SKU also has ' + [rv ? rv + ' in review' : '', un ? un + ' given to no site' : '', uc ? uc + ' line(s) not counted' : ''].filter(Boolean).join(', ') + ' - see the row’s Incoming';
+  return (t == null ? '' : _roFmt(t)) + '<span class="ro-og-open" title="' + _roEsc(tip) + '" aria-label="' + _roEsc(tip) + '">' + (t == null ? '?' : '*') + '</span>';
 }
 
 // ---- Runtime month helper (Mapping v2) ----
@@ -324,13 +347,110 @@ function _roFactoryOrdersBySku(sku) {
   return byKey;
 }
 
+// ORDER PLANNING ONGOING v3 (post-night 2026-10-28) - the SAME rules and the same text as 56_ aplOgSku_ (its comment is the
+// reference): a formal PO's unreceived quantity, admitted line by line and split to sites by KMOOP (A1 request-source shares,
+// A2 the company's FC share, floor rounding, the residual unallocated); every line not admitted is named (review / uncounted);
+// drafts apart. This copy serves the kill-switch path (_buildRequestOrderRowsFromDb); the live path is the 56_ composer.
+// index.html does not load KMOOP, so on that path every admitted line is review KMOOP_UNAVAILABLE - never the old pooled sum.
+var _roOgOPEN_ = { issued: 1, in_production: 1, partial_completed: 1, partial_shipped: 1, partially_shipped: 1, ready_to_ship: 1, confirmed: 1 };
+var _roOgSHUT_ = { draft: 1, completed: 1, shipped: 1, closure: 1, closed: 1, cancelled: 1 };
+var _roOgCOLS_ = { KM: 'km_qty', RESUS: 'resus_qty', RESTW: 'restw_qty' };
+function _roOgS_(v) { return String(v == null ? '' : v).trim(); }
+function _roOgU_(v) { return _roOgS_(v).toUpperCase(); }
+function _roOgQ_(v) { var t = _roOgS_(v); return /^-?\d+(\.\d+)?$/.test(t) ? +t : null; }
+function _roOgSite_(c, k, m) { return _roOgU_(c) + '|' + _roOgU_(k) + '|' + _roOgU_(m); }
+function _roOgDead_(l) { return /^(cancell?ed|void|deleted)$/i.test(_roOgS_(l.line_status)); }
+function _roOgSku_(lines, c) {
+  var o = { bySite: {}, unallocated: [], review: [], uncounted: [], draft: { qty: 0, lines: 0 }, total: 0 }, ok = [], ids = {};
+  lines.forEach(function (l) { var id = _roOgS_(l.purchase_order_line_id); ids[id] = (ids[id] || 0) + 1; });
+  lines.forEach(function (l, i) {
+    var id = _roOgS_(l.purchase_order_line_id), name = id || '#' + (i + 1), st = c.statusOf(l), co = _roOgU_(l.company);
+    var q = _roOgQ_(l.ordered_qty), r = _roOgQ_(l.completed_qty), u = q === null || q < 0 || r === null || r < 0 || r > q ? null : q - r;
+    var day = _roOgS_(l.expected_completion_date) || c.poDay(l);
+    if (_roOgDead_(l)) return;
+    if (st === '#dup' || st === '#none') { o.uncounted.push({ line: name, reason: st === '#dup' ? 'DUPLICATE_PO_HEADER ' + _roOgS_(l.purchase_order_id) : 'PO_HEADER_MISSING' }); return; }
+    if (st === 'draft') { if (u === null) o.uncounted.push({ line: name, reason: 'DRAFT_QTY_UNREADABLE' }); else if (u) { o.draft.qty += u; o.draft.lines++; } return; }
+    if (_roOgOPEN_[st] !== 1) { if (_roOgSHUT_[st] !== 1) o.uncounted.push({ line: name, reason: 'UNKNOWN_PO_STATUS ' + (st || '(blank)') }); return; }
+    if (u === null) { o.uncounted.push({ line: name, reason: q === null || q < 0 ? 'ORDERED_QTY_UNREADABLE' : r === null || r < 0 ? 'COMPLETED_QTY_UNREADABLE' : 'OVER_RECEIVED ' + (r - q) }); return; }
+    if (!u) return;
+    o.total += u;
+    function review(why) { o.review.push({ line: name, company: _roOgS_(l.company), qty: u, date: day, reason: why }); }
+    if (!id || ids[id] > 1) return review(id ? 'DUPLICATE_PO_LINE_ID' : 'NO_PO_LINE_ID');
+    if (!co) return review('NO_COMPANY');
+    var reg = c.registered[co];
+    if (reg === undefined) return review('UNKNOWN_COMPANY ' + _roOgS_(l.company));
+    if (reg === '') return review('COMPANY_SPELLING_CONFLICT ' + co);
+    for (var x in _roOgCOLS_) if (x !== co && _roOgQ_(l[_roOgCOLS_[x]]) > 0) return review('MIXED_COMPANY_SPLIT');
+    var rol = _roOgS_(l.request_order_line_id), src = rol ? c.sourcesOf(rol) : [], sid = {}, facts = [], bad = '', pa = _roOgQ_(l.approved_qty), ref = pa === null ? q : pa;
+    if (rol && c.rolUse[rol] > 1) return review('SOURCE_SHARED_BY_PO_LINES ' + rol);
+    src.forEach(function (s) {
+      var k = _roOgSite_(s.company, s.country, s.marketplace), sq = _roOgQ_(s.requested_qty), si = _roOgS_(s.request_order_line_source_id || s.line_source_id), sa = _roOgS_(s.approved_qty);
+      bad = bad || (_roOgU_(s.sku) !== _roOgU_(c.sku) ? 'SOURCE_SKU_CONFLICT' : _roOgU_(s.company) !== co ? 'SOURCE_COMPANY_CONFLICT' : !c.sites[k] ? 'SOURCE_SITE_NOT_LISTED'
+        : sq === null || sq < 0 ? 'SOURCE_QTY_UNREADABLE' : sa !== '' && _roOgQ_(sa) !== ref ? 'SOURCE_APPROVED_NOT_LINE_DECISION ' + sa + ' != ' + ref : si && sid[si] ? 'DUPLICATE_SOURCE_ID ' + si : '');
+      sid[si] = 1;
+      if (!bad) facts.push({ requestOrderLineId: rol, company: reg, country: c.sites[k].country, marketplace: c.sites[k].marketplace, siteSku: '', requestedQty: sq });
+    });
+    if (bad) return review(bad);
+    var rq = _roOgQ_(l.requested_qty), sh = _roOgQ_(l.shipped_qty);
+    ok.push({ id: id, u: u, day: day, company: reg, review: review, facts: facts, line: { purchaseOrderLineId: id, purchaseOrderId: _roOgS_(l.purchase_order_id),
+      sku: c.sku, company: reg, orderedQty: q, requestedQty: rq === null ? NaN : rq, completedQty: r, shippedQty: sh === null ? (_roOgS_(l.shipped_qty) ? NaN : 0) : sh, requestOrderLineId: rol } });
+  });
+  if (!ok.length) return o;
+  var fc = [], seen = {}, res = null, byId = {};
+  ok.forEach(function (e) {
+    if (seen[e.company]) return; seen[e.company] = 1;
+    Object.keys(c.sites).sort().forEach(function (k) { var s = c.sites[k], w = _roOgU_(s.company) === _roOgU_(e.company) ? c.fcBasis(s) : null; if (w !== null) fc.push({ company: e.company, country: s.country, marketplace: s.marketplace, siteSku: '', siteFcBasis: w }); });
+  });
+  try { res = c.kmoop ? c.kmoop.projectOngoingOrderSupply({ purchaseOrderLines: ok.map(function (e) { return e.line; }), requestSourceFacts: [].concat.apply([], ok.map(function (e) { return e.facts; })), monthlySiteFcFacts: fc }) : null; } catch (err) { res = null; }
+  ((res && res.lines) || []).forEach(function (pl) { byId[pl.purchaseOrderLineId] = pl; });
+  ok.forEach(function (e) {
+    var pl = byId[e.id], got = 0;
+    if (!pl) return e.review(c.kmoop ? 'KMOOP_ERROR' : 'KMOOP_UNAVAILABLE');
+    if (pl.allocationMode === 'BLOCKED') return e.review('KMOOP ' + ((pl.issues[0] || {}).code || 'BLOCKED'));
+    pl.siteAllocations.forEach(function (a) { got += a.allocatedQty; });
+    if (got + pl.unallocatedResidualQty !== e.u) return e.review('KMOOP_QTY_MISMATCH ' + (got + pl.unallocatedResidualQty) + ' != ' + e.u);
+    pl.siteAllocations.forEach(function (a) { if (a.allocatedQty > 0) { var k = _roOgSite_(a.company, a.country, a.marketplace); (o.bySite[k] = o.bySite[k] || []).push({ line: e.id, qty: a.allocatedQty, date: e.day, basis: a.sourceReason }); } });
+    if (pl.unallocatedResidualQty > 0) o.unallocated.push({ line: e.id, company: e.company, qty: pl.unallocatedResidualQty, date: e.day, reason: (pl.issues[0] || {}).code || 'ROUNDING_RESIDUAL' });
+  });
+  return o;
+}
+function _roOgRow_(sk, site) {
+  var mine = sk.bySite[site] || [], t = 0; mine.forEach(function (x) { t += x.qty; });
+  return { total: t > 0 ? t : null, detail: { site: mine, unallocated: sk.unallocated, review: sk.review, uncounted: sk.uncounted, draft: sk.draft, skuTotal: sk.total } };
+}
+
+// Incoming v3 (Owner 2026-10-27): the SAME Ongoing quantity in time - never a second supply. Three parts, each split by
+// expected completion into mutually exclusive buckets - OVERDUE (before this month), THIS MONTH, N+1..N+3, LATER, UNDATED (no
+// strict yyyy-mm-dd: never guessed): THIS SITE = the row's own KMOOP share, so it adds up to the row's Ongoing cell exactly;
+// UNALLOCATED and REVIEW = the SKU's parts that belong to no site (the same on every row of the SKU, added to no row). Drafts
+// (not confirmed supply) and uncounted lines are listed apart. Reads only item.ongoingDetail - no second PO read.
+function _roIncomingProjection_(item) {
+  var d = (item && item.ongoingDetail) || null, now = _roMonthWindow(0, 1)[0], next = _roMonthWindow(1, 3), thisKey = _roYmKey(now), lastKey = _roYmKey(next[2]);
+  function blank() { return { overdue: 0, thisMonth: 0, next: [0, 0, 0], later: 0, undated: 0, total: 0 }; }
+  var out = { ready: !!d, site: blank(), unallocated: blank(), review: blank(), labels: next.map(function (mo) { return mo.label; }), thisLabel: now.label, lastLabel: next[2].label,
+    draft: d ? d.draft : { qty: 0, lines: 0 }, uncounted: d ? d.uncounted.map(function (x) { return x.line + ' ' + x.reason; }) : [], notes: [], skuTotal: d ? d.skuTotal : 0 };
+  if (!d) return out;
+  function put(b, x) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(x.date || '')), k = m ? m[1] + '-' + m[2] : '';
+    b.total += x.qty;
+    if (!m) { b.undated += x.qty; if (x.date) out.notes.push(x.line + ' DATE_NOT_YYYY_MM_DD (undated)'); }
+    else if (k < thisKey) b.overdue += x.qty;
+    else if (k === thisKey) b.thisMonth += x.qty;
+    else if (k > lastKey) b.later += x.qty;
+    else next.forEach(function (mo, i) { if (_roYmKey(mo) === k) b.next[i] += x.qty; });
+  }
+  d.site.forEach(function (x) { put(out.site, x); });
+  d.unallocated.forEach(function (x) { put(out.unallocated, x); out.notes.push(x.line + ' ' + x.company + ' unallocated ' + x.qty + ': ' + x.reason); });
+  d.review.forEach(function (x) { put(out.review, x); out.notes.push(x.line + ' needs review ' + x.qty + ': ' + x.reason); });
+  return out;
+}
 // Build Request Order rows from NORMALIZED DB data (Mapping v2). Row identity = SKU + Country +
 // Marketplace (marketplace_skus). Category / Series ← sku_details. REAL source mapping for:
 //   Basic(T3)      = Σ fc_regular_forecast next-3-months (by sku+country+marketplace, per year)
 //   Site Stock     = latest amazon_inventory_snapshot (available + fc_transfer + fc_processing)
 //   3rd Party      = Σ overseas_inventory_snapshot.available_stock (same-country non-factory WH)
 //   Factory Stock  = Σ factory_stock.current_stock per SKU (across factory warehouses)
-//   Ongoing Orders = Σ open-PO remaining_qty per SKU (purchase_order_lines ⋈ purchase_orders.status)
+//   Ongoing Orders = THIS SITE's KMOOP share of the formal POs' unreceived quantity (Ongoing v3, _roOgSku_ above)
 //   Lead Time      = supplier_price_list.lead_time_days (active row, latest effective_from)
 // Risk / Remaining / Suggested Order stay placeholders (null → "--"; no formula). Missing source → null.
 function _buildRequestOrderRowsFromDb() {
@@ -387,8 +507,8 @@ function _buildRequestOrderRowsFromDb() {
   // purchase_order_lines ⋈ purchase_orders (Ongoing Orders — open PO remaining qty).
   var poLines = (DB.getPurchaseOrderLines && DB.getPurchaseOrderLines()) || [];
   var pos = (DB.getPurchaseOrders && DB.getPurchaseOrders()) || [];
-  var poById = {};
-  pos.forEach(function(p) { poById[p.purchaseOrderId] = p; });
+  var poById = {}, poN = {};
+  pos.forEach(function(p) { poById[p.purchaseOrderId] = p; poN[_roOgS_(p.purchaseOrderId)] = (poN[_roOgS_(p.purchaseOrderId)] || 0) + 1; });
   var poLinesBySku = {};
   poLines.forEach(function(l) { (poLinesBySku[_roUpper(l.sku)] = poLinesBySku[_roUpper(l.sku)] || []).push(l); });
 
@@ -444,20 +564,31 @@ function _buildRequestOrderRowsFromDb() {
     });
     return matched ? total : null;
   }
-  function ongoing(sku) {
-    var lines = poLinesBySku[_roUpper(sku)];
-    if (!lines || !lines.length) return null;
-    var total = 0, any = false;
-    lines.forEach(function(l) {
-      var po = poById[l.purchaseOrderId];
-      var st = po ? _roLower(po.status) : '';
-      if (!RO_OPEN_PO_STATUS[st]) return;
-      var remaining = (l.remainingQty === '' || l.remainingQty == null)
-        ? Math.max(0, (l.orderedQty || 0) - Math.max(l.shippedQty || 0, l.completedQty || 0))
-        : (l.remainingQty || 0);
-      if (remaining > 0) { total += remaining; any = true; }
-    });
-    return any ? total : null;
+  // Ongoing v3 (_roOgSku_): the inputs 56_ reads - raw PO lines and request_order_line_sources, the registered companies and
+  // listed sites, the A2 weight from a KMFSA projection at the PLANNING-CYCLE month (as 56_; not the clock month above).
+  var ogSrc = {}, ogUse = {}, ogReg = {}, ogSites = {}, ogBySku = {}, ogProj = {}, ogK = (window.KM && window.KM.factorySiteAllocation) || null;
+  var ogKm = window.KMOOP || (window.KM && window.KM.core && window.KM.core.supplyPlanningOngoingOrderProjection) || null;
+  var ogNow = _roTpeNow(), ogMonth = ogNow.year + '-' + ('0' + (ogNow.monthIdx + 1)).slice(-2);
+  // two headers with one id: no status is read, whatever their order or values ('#dup'); no header at all: '#none' (F2)
+  function ogStatus(x) { var id = _roOgS_(x.purchase_order_id), po = poById[id]; return poN[id] > 1 ? '#dup' : !po ? '#none' : _roLower(po.status); }
+  ((DB.getRequestOrderLineSources && DB.getRequestOrderLineSources()) || []).forEach(function(s) { var x = s.raw || s, k = _roOgS_(x.request_order_line_id); if (k) (ogSrc[k] = ogSrc[k] || []).push(x); });
+  poLines.forEach(function(l) { var x = l.raw || {}, k = _roOgS_(x.request_order_line_id); if (k && !_roOgDead_(x) && _roOgOPEN_[ogStatus(x)] === 1) ogUse[k] = (ogUse[k] || 0) + 1; });
+  mskus.forEach(function(m) {
+    var c = _roOgU_(m.company), k = _roUpper(m.sku);
+    if (c) ogReg[c] = ogReg[c] === undefined || ogReg[c] === m.company ? m.company : '';
+    (ogSites[k] = ogSites[k] || {})[_roOgSite_(m.company, m.country, m.marketplace)] = { marketplaceId: m.marketplaceId, company: m.company, country: m.country, marketplace: m.marketplace };
+  });
+  function ongoingFor(m) {
+    var k = _roUpper(m.sku);
+    if (!ogBySku[k]) ogBySku[k] = _roOgSku_((poLinesBySku[k] || []).map(function(l) { return l.raw || {}; }), { sku: m.sku, kmoop: ogKm, statusOf: ogStatus, rolUse: ogUse, registered: ogReg, sites: ogSites[k] || {},
+      sourcesOf: function(rol) { return ogSrc[rol] || []; },
+      poDay: function(x) { var po = poById[_roOgS_(x.purchase_order_id)]; return po ? _roOgS_((po.raw || {}).expected_completion_date) : ''; },
+      fcBasis: function(s) {
+        if (!ogK) return null;
+        if (!Object.prototype.hasOwnProperty.call(ogProj, k)) { try { ogProj[k] = ogK.project({ sku: m.sku, factoryRows: factory, warehouses: warehouses, sites: mskus, forecastRows: fc, calculationMonth: ogMonth }); } catch (e) { ogProj[k] = null; } }
+        var e = ogProj[k] && ogProj[k].bySite[ogK.siteKey(s)]; return e ? e.forecastWeight : null;
+      } });
+    return _roOgRow_(ogBySku[k], _roOgSite_(m.company, m.country, m.marketplace));
   }
   function leadTime(sku) {
     var rows = splBySku[_roUpper(sku)];
@@ -470,7 +601,7 @@ function _buildRequestOrderRowsFromDb() {
   }
 
   return mskus.map(function(m) {
-    var d = detailBySku[m.sku] || {};
+    var d = detailBySku[m.sku] || {}, og = ongoingFor(m);
     return {
       // --- Identity + master (REAL) ---
       sku: m.sku,
@@ -488,7 +619,7 @@ function _buildRequestOrderRowsFromDb() {
       siteStock: siteStock(m.sku, m.country, m.marketplace),        // amazon_inventory_snapshot
       thirdPartyStock: thirdParty(m.sku, m.country),                // overseas_inventory_snapshot
       factoryStock: (function () { var a = _roFactoryAllocFor_(m.sku, { marketplaceId: m.marketplaceId, company: m.company, country: m.country, marketplace: m.marketplace, sku: m.sku }); return a ? a.total : null; })(),   // KMFSA site allocation
-      totalOngoingOrders: ongoing(m.sku),                           // open-PO remaining qty
+      totalOngoingOrders: og.total, ongoingDetail: og.detail,       // Ongoing v3: this site's KMOOP share; the SKU's other parts
       leadTime: leadTime(m.sku),                                    // supplier_price_list.lead_time_days
       // --- Placeholders (no formula — guardrail) ---
       risk: null,
@@ -1500,7 +1631,7 @@ function handleRecalcAllOrderPlanningGap(scopeSpec) {
       // F1-SMALL-GAP-JOB-DONE-NOTICE-R1: MANUAL runJob done() — fires only on terminal DONE AFTER refresh(); one notice
       // per manual run (keyed to _roActiveRunId). The resume-on-mount done() below does NOT announce (scheduled/resumed
       // jobs stay silent).
-      done: function (finalState) { _roShowCancel_(false); setBtn('Completed', true); _roAiSupportNotice_('ok', _recalcTitle, 'Recalculation completed. The materialized order-planning gap was refreshed; manual Order Qty was not changed.'); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_roActiveRunId, gr.formatDoneMessage('Order Planning', scopeSpec, finalState)); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      done: function (finalState) { _roShowCancel_(false); setBtn('Completed', true); var _oc = (gr && typeof gr.doneOutcome === 'function') ? gr.doneOutcome('Order Planning', scopeSpec, finalState) : { tone: 'ok' }; _roAiSupportNotice_(_oc.tone, _recalcTitle, (_oc.tone === 'ok' ? 'Recalculation completed. The materialized order-planning gap was refreshed' : _oc.text + ' The gap was refreshed') + '; manual Order Qty was not changed.'); /* R66 AI notice: the actual outcome */ try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_roActiveRunId, gr.formatDoneMessage('Order Planning', scopeSpec, finalState)); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       cancelled: function () { _roShowCancel_(false); setBtn('Cancelled — results preserved', true); _roAiSupportNotice_('warn', _recalcTitle, 'Cancelled. The sites already completed keep their results; nothing was rolled back.'); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       failed: function (st) { _roAiSupportNotice_('bad', _recalcTitle, _roGapJobFailMsg_('Order Planning', st)); alert(_roGapJobFailMsg_('Order Planning', st)); restore(); }
     }
@@ -2049,7 +2180,7 @@ function renderRequestOrderTable() {
           <div class="scroll-cell ro-group-start">${_roFmt(item.siteStock)}</div>
           <div class="scroll-cell">${_roFmt(item.thirdPartyStock)}</div>
           <div class="scroll-cell">${_roFmt(item.factoryStock)}</div>
-          <div class="scroll-cell">${_roFmt(item.totalOngoingOrders)}</div>
+          <div class="scroll-cell">${_roOngoingCellHtml(item)}</div>
           <!-- Coverage & Time 欄位 (2個): Remaining 起始群組邊界 (placeholder) / Lead Time (supplier_price_list) -->
           <div class="scroll-cell ro-group-start">${_roFmt(item.remaining)}</div>
           <div class="scroll-cell">${_roFmt(item.leadTime)}</div>
@@ -2098,9 +2229,18 @@ function renderExpandPanel(item) {
   // Scoped, active special events for this row. Bucketing is by PREPARATION-DATE month (Event Start − 30
   // days), the canonical monthly rule (SUPPLY_PLANNING_CALCULATION_RULES) — NOT the stored event_month.
   var scopedEvents = _roScopedActiveEvents({ sku: sku, company: company, country: country, marketplace: marketplace });
+  var l2 = _roL2Gate_();
 
   var past3 = _roPastMonths(3);
   var next3 = _roNextMonths(3);
+
+  // This month's preparation (order-planning R3, Owner 2026-10-27): the events whose PREPARATION month is the current month,
+  // which the N+1..N+3 window below never shows. DISPLAY ONLY - not added to Basic FC (T3), the forward totals, the gap or
+  // Send Request; no quantity here is summed into anything.
+  var thisMo = _roMonthWindow(0, 1)[0], thisEvs = _roEventsForPrepMonth(scopedEvents, thisMo);
+  var tmRows = thisEvs.length ? thisEvs.map(function (ev) {
+    return '<tr><td>' + _roEsc(ev.name) + '</td><td>' + _roEsc(ev.start || '—') + '</td><td>' + _roEsc(ev.prep || '—') + '</td><td>' + (ev.qty > 0 ? ev.qty.toLocaleString() : '—') + '</td></tr>';
+  }).join('') : '<tr><td colspan="4" class="ro-expand-empty ro-this-month-empty">' + (l2.ready ? 'No event prepares this month.' : _roEsc(l2.word)) + '</td></tr>';
 
   // Block 1 — Past Achievement (FC Qty real when available; Actual/Sessions/USP/Rate not sourced → "--").
   var p1Rows = past3.map(function(mo) {
@@ -2125,7 +2265,7 @@ function renderExpandPanel(item) {
                '<td class="ff-base ff-base-end" rowspan="' + span + '">' + tgtDisp + '</td>';
     if (!evs.length) {
       return '<tr>' + lead +
-        '<td class="ff-special ff-special-start">--</td><td class="ff-special">--</td>' +
+        '<td class="ff-special ff-special-start">' + (l2.ready ? '--' : _roEsc(l2.word)) + '</td><td class="ff-special">--</td>' +
         '<td class="ff-special">--</td><td class="ff-special">--</td></tr>';
     }
     return evs.map(function (ev, i) {
@@ -2155,7 +2295,7 @@ function renderExpandPanel(item) {
     var available = (hasReserved && !isNaN(reserved)) ? (r.currentStock - reserved) : null;
     return '<tr><td>' + _roFactoryName(r) + '</td><td>' +
       _roFmt(r.currentStock) + '</td><td>' + _roFmt(reserved) + '</td><td>' + _roFmt(available) + '</td></tr>';
-  }).join('') : '<tr><td colspan="4" class="ro-expand-empty">No factory stock</td></tr>';
+  }).join('') : '<tr><td colspan="4" class="ro-expand-empty">' + (l2.ready ? 'No factory stock' : _roEsc(l2.word)) + '</td></tr>';
 
   // Block 3b — Factory Orders / In Production (Future 3 Months) — REAL purchase_orders ⋈ purchase_order_lines,
   // bucketed by line expected_completion_date (header fallback), cancelled/closure excluded. Current / Next /
@@ -2285,7 +2425,18 @@ function renderExpandPanel(item) {
   var noDraftNote = (typeof _roIsNoDraftSku_ === 'function' && _roIsNoDraftSku_(item))
     ? '<div class="ro-rec-nodraft" title="This SKU has no active AI Plan draft; run AI Plan to generate one.">No active AI Plan draft</div>' : '';
 
-  // Incoming-supply empty state (F.6): no scheduled/completed across the next 3 months.
+  // Incoming v3: this row's Ongoing (and the SKU's unassigned parts) by expected completion - from the row itself, so the
+  // "This site" total IS the Ongoing cell. Columns: this site / SKU unallocated (company known, no site) / SKU needs review.
+  var inc = _roIncomingProjection_(item);
+  function incCell(q) { return q > 0 ? q.toLocaleString() : '0'; }
+  function incRow(cls, label, pick) { return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + label + '</td><td>' + incCell(pick(inc.site)) + '</td><td>' + incCell(pick(inc.unallocated)) + '</td><td>' + incCell(pick(inc.review)) + '</td></tr>'; }
+  var incomingRows = incRow('', 'Overdue (before ' + _roEsc(inc.thisLabel) + ')', function (b) { return b.overdue; }) +
+    incRow('', 'This month (' + _roEsc(inc.thisLabel) + ')', function (b) { return b.thisMonth; }) +
+    inc.labels.map(function (lb, i) { return incRow('ro-inc-window', _roEsc(lb), function (b) { return b.next[i]; }); }).join('') +
+    incRow('', 'Later (after ' + _roEsc(inc.lastLabel) + ')', function (b) { return b.later; }) +
+    incRow('', 'No completion date', function (b) { return b.undated; }) +
+    incRow('ro-inc-total', 'Total unreceived (formal POs)', function (b) { return b.total; }) +
+    '<tr class="ro-inc-draft"><td>Draft POs (not confirmed supply)</td><td colspan="3">' + incCell(inc.draft.qty) + ' (SKU)</td></tr>';
   var foHasData = foMonths.some(function (mo) { var rec = foBySku[_roYmKey(mo)]; return rec && (rec.scheduled > 0 || rec.completed > 0); });
 
   // Second-layer v6 — THREE decision blocks (D): (1) Achievement & Forecast · (2) Factory Supply ·
@@ -2293,6 +2444,16 @@ function renderExpandPanel(item) {
   // 34% / 30% / 36%; tablet: blocks 1–2 side-by-side, block 3 full row; mobile: single column.
   return `
     <div class="ro-sku-expand-panel is-open" id="${_roPanelId(_roRowKey(item))}" role="region" aria-label="Detail for ${_roAttr(item.sku)}" data-rowkey="${_roEsc(_roRowKey(item))}">
+      <!-- POST-NIGHT 2026-10-28 phone detail mode (CSS max-width 480px only; hidden on every wider screen): the open panel becomes a
+           full-screen detail view with this bar - the row's own two actions (the SAME handlers as the fixed column's buttons, which
+           the full-screen view covers) and Close (the SAME toggle the row uses). Desktop and tablet are unchanged. -->
+      <div class="ro-expand-mobile-bar" role="toolbar" aria-label="Detail actions">
+        <span class="ro-expand-mobile-title">${_roEsc(item.sku)} · ${_roEsc(item.company)} · ${_roEsc(item.country)} ${_roEsc(item.marketplace)}</span>
+        <button type="button" class="btn btn-secondary ro-mbar-edit-target" onclick="handleEditTargetPct('${_roJs(item.sku)}','${_roJs(item.country)}','${_roJs(item.marketplace)}')">Edit Target %</button>
+        <button type="button" class="btn btn-primary ro-mbar-update-fc" onclick="handleFcUpdate('${_roJs(item.sku)}','${_roJs(item.country)}','${_roJs(item.marketplace)}')">FC Update</button>
+        <button type="button" class="btn btn-secondary ro-mbar-close" aria-label="Close detail" onclick="toggleRequestOrderSkuExpand('${_roJs(item.sku)}','${_roJs(item.country)}','${_roJs(item.marketplace)}','${_roJs(item.company)}')">Close</button>
+      </div>
+      ${_roL2StateNote_(l2)}
       <div class="ro-sku-expand-grid ro-sku-expand-grid--v6">
 
         <!-- Block 1 · Achievement & Forecast — Historical, then Current-Month Remaining Demand, then Basic FC
@@ -2321,6 +2482,10 @@ function renderExpandPanel(item) {
               <tbody>${ffRows}</tbody>
             </table>
           </div>
+          <div class="ro-block-sub ro-this-month" data-this-month="${_roEsc(thisMo.label)}">
+            <div class="ro-subtitle">This Month · Event Preparation (${_roEsc(thisMo.label)}) <span class="ro-this-month-note">shown only · not in Basic FC, totals or Send Request</span></div>
+            <table class="ro-expand-table ro-this-month-table"><thead><tr><th>Event</th><th>Event Date</th><th>Prep Date</th><th>FC Qty</th></tr></thead><tbody>${tmRows}</tbody></table>
+          </div>
         </div>
 
         <!-- Block 2 · Factory Supply -->
@@ -2331,10 +2496,10 @@ function renderExpandPanel(item) {
             <table class="ro-expand-table"><thead><tr><th>Factory</th><th>Current Stock</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${factoryStockRows}</tbody></table>
           </div>
           <div class="ro-block-sub">
-            <div class="ro-subtitle">Incoming Supply — Next 3 Months</div>
-            ${foHasData
-              ? `<table class="ro-expand-table"><thead><tr><th>Completion Month</th><th>Incoming (Scheduled)</th><th>Completed</th></tr></thead><tbody>${factoryOrderRows}</tbody></table>`
-              : `<div class="ro-expand-empty ro-block-empty">No incoming supply in the next 3 months.</div>`}
+            <div class="ro-subtitle">Incoming Supply — the Ongoing quantity by expected completion (formal POs, unreceived)</div>
+            ${inc.ready
+              ? `<div class="ro-incoming-scroll"><table class="ro-expand-table ro-incoming-table"><thead><tr><th>Completion</th><th>This site</th><th>SKU unallocated</th><th>SKU needs review</th></tr></thead><tbody>${incomingRows}</tbody></table></div>${inc.notes.length ? '<div class="ro-ongoing-issues">' + _roEsc(inc.notes.join('; ')) + '</div>' : ''}${inc.uncounted.length ? '<div class="ro-ongoing-issues">Not counted: ' + _roEsc(inc.uncounted.join('; ')) + '</div>' : ''}`
+              : `<div class="ro-expand-empty ro-block-empty">--</div>`}
           </div>
         </div>
 
@@ -2423,7 +2588,13 @@ function _roAllocEdit(input) {
   // R4E3-PRE: for a row backed by a PERSISTED canonical draft, persist this committed order_qty incrementally to
   // request_order_allocation_draft_lines via the EXISTING locked decision writer (onchange → one write per committed
   // value; no keystroke storm). NO_DRAFT / conflict rows keep the in-memory planning behavior above (never auto-create).
-  if (rec[bucket].orderQty !== '' && rec[bucket].orderQty != null && _roIsCanonicalDraftSku_(input.dataset)) {
+  // R71-FE-3 (first-launch D1; FB-3C §3 rows 2 / 3 / 6): a row with NO draft (NO_SAVED_DRAFT, or the ordinary MANUAL row) and a positive committed
+  // qty also goes to the canonical writer, whose !ref0 branch CREATES the draft at save time (_roCreateCanonicalDraftFromEdit_ ->
+  // requestOrder.allocationDraft.ensureAndEdit: the canonical RD::MONTHLY_ORDER identity, every existing guard kept - ambiguous row / no cycle /
+  // non-canonical identity refused). A conflict row, a row still loading / unresolved / in error, a 0 qty and a note-only edit never create.
+  var _roUi_ = (typeof _roDraftUiState_ === 'function') ? _roDraftUiState_(input.dataset) : '';
+  var _roCanCreate_ = (_roUi_ === 'NO_SAVED_DRAFT' || _roUi_ === 'MANUAL') && Number(rec[bucket].orderQty) > 0;
+  if (rec[bucket].orderQty !== '' && rec[bucket].orderQty != null && (_roIsCanonicalDraftSku_(input.dataset) || _roCanCreate_)) {
     _roSaveOrderQtyToCanonicalDraft_(input.dataset, bucket, rec[bucket].orderQty, input);
   }
 }
@@ -2831,7 +3002,10 @@ function _opInvalidateL2Scopes_() {
 function roRetryL2Scopes() {
   _opL2ScopeError_ = null;
   if (_roL2State_() === 'FAILED' && window.KM && window.KM.deferredRead) {
-    window.KM.deferredRead.retry(RO_L2).then(function () { _opRepaintExpandedPanel_(); });
+    // night integration 2026-10-27: the Retry must REPAINT the open panel, as the expand path does after its own load -
+    // _opRepaintExpandedPanel_ only reloads the materialized gap, so a READY second layer stayed drawn as FAILED (found in
+    // the whole-app browser run: the tables re-read and READY, the panel unchanged until it was collapsed and reopened)
+    window.KM.deferredRead.retry(RO_L2).then(function () { if (requestOrderState.expandedRowKey) renderRequestOrderTable(); _opRepaintExpandedPanel_(); });
   }
   return _opPrefetchL2ForCurrentScopes_();
 }
@@ -2844,8 +3018,12 @@ function _opMatToLine(row, scope) {
       openingSupplyQty: null, incomingAddedQty: null, demandQty: null, coveredQty: null, remainingSupplyQty: null,
       remainingGapQty: _opNumOrNull(row[p[1] + '_gap_qty']), suggestedOrderQty: _opNumOrNull(row[p[1] + '_suggested_qty']) };
   });
+  // DC2-R2 D4: a BLOCKED row (e.g. a refused allocation, RECEIVER_PRIORITY_UNRESOLVED) is shown blocked with its
+  // own code; its tiers are blank, never 0.
+  var blocked = String(row.calculation_status) === 'BLOCKED';
   return { recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: scope.sku, siteSku: scope.siteSku || null,
-    destinationType: 'MARKETPLACE', destinationLabel: 'Order Planning', blocked: false, monthlyProjection: mp };
+    destinationType: 'MARKETPLACE', destinationLabel: 'Order Planning', blocked: blocked,
+    blockedReason: blocked ? (String(row.note || '') || 'BLOCKED') : null, monthlyProjection: mp };
 }
 function _opLoadMaterializedGap(item) {
   var scope = _opRecoScopeFor(item);
@@ -3323,7 +3501,7 @@ function _roSaveFc(item, edits) {
     byYear[yr].forEach(function(e) { row[RO_MONTH_KEYS[e.mo.idx]] = Math.round(e.val); });
     return row;
   });
-  return DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'request_order' });
+  return DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'active', sourceDefault: 'request_order' });
 }
 
 // Edit Target % — editable N+1..N+3 (Month / Current / New). Writes to canonical fc_target_rules.
@@ -3966,6 +4144,24 @@ window._roSendProgressFields_ = function () { return RO_SEND_PROGRESS_FIELDS_.sl
 //   ON THIS PAGE — 495 AI Plan rows / 234 SKU rows with a positive tier / 468 tier cells are CANDIDATE counts.
 //   WILL BE SENT — the SERVER's counts over PERSISTED allocation drafts. This is the authority, and it is the
 //                  FROZEN plan: the checksum shown here is the one the execute call must present back.
+// POST-NIGHT 2026-10-28 (branch A) — the server's ongoing_supply block, as text for the dialogs: the suggested tiers it WITHHELD
+// because their Ongoing supply is incomplete now (and why), and the operator-typed quantities it sends anyway. '' when none.
+function _roSendOngoingText_(plan) {
+  var o = plan && plan.ongoing_supply;
+  if (!o || (!(o.withheld || []).length && !(o.operator_qty || []).length && o.ok !== false)) return '';
+  function who(x) { var k = String(x.natural_key || '').split('|'); return k[0] + ' / ' + k[1] + ' / ' + k[2] + ' ' + k[3] + ' ' + x.request_bucket + ' ' + x.order_qty; }
+  function why(x) { return x.code + ((x.unaccounted || []).length ? ': ' + x.unaccounted.map(function (u) { return u.code + ' ' + u.line + ' ' + (u.qty == null ? 'qty unknown' : u.qty); }).join('; ') : ''); }
+  var t = '\n\nWITHHELD — ONGOING SUPPLY INCOMPLETE (server; the suggestion is not adopted until the data is repaired and recalculated)';
+  if (o.ok === false) t += '\n  The Ongoing check could not run (' + o.code + '): every suggested tier is withheld.';
+  (o.withheld || []).forEach(function (x) { t += '\n  ' + who(x) + '  <- ' + why(x)
+    + (x.operator_edit === 'SAME_AS_SUGGESTION' ? '\n      your saved quantity is the suggested one, so it counts as the suggestion - type a different quantity to send your own' : ''); });
+  if ((o.operator_qty || []).length) {
+    t += '\n  Sent anyway - a quantity you typed is your decision, not the suggestion:';
+    o.operator_qty.forEach(function (x) { t += '\n  ' + who(x) + '  (' + why(x) + ')'; });
+  }
+  return t;
+}
+window._roSendOngoingText_ = _roSendOngoingText_;
 function _roSendConfirmSummary_(pageCounts, plan, typeLabel) {
   var c = (plan && plan.counts) || {};
   var x = (plan && plan.excluded) || {};
@@ -4001,6 +4197,7 @@ function _roSendConfirmSummary_(pageCounts, plan, typeLabel) {
     '\n  Tier already sent (tier terminal)   : ' + (x.tier_terminal_already_sent || 0) +
     '\n  Tier saved as 0 (no line is created): ' + (x.tier_zero_or_blank_qty || 0) +
     '\n  Tier out of the selected scope      : ' + (x.tier_out_of_scope || 0) +
+    (typeof _roSendOngoingText_ === 'function' ? _roSendOngoingText_(plan) : '') +   // the summary stays self-contained
     '\n\nPlanning cycle: ' + (plan && plan.planning_cycle) +
     '\nFrozen source  : ' + (plan && plan.workset_checksum) +
     '\n\nEXACTLY this frozen set will be executed. If the persisted allocation changes before you confirm,' +
@@ -4178,11 +4375,18 @@ async function handleSendRequest() {
   const plan = pv.data || {};
   if (plan.status === 'NO_ELIGIBLE_PERSISTED_ALLOCATION' || !Number(((plan.counts) || {}).positive_selected_tier_allocations)) {
     _roSetSendState_('IDLE', '');
+    // branch A: when the server withheld the persisted suggestions, say THAT - the drafts exist, their supply is incomplete
+    if (((plan.ongoing_supply || {}).withheld || []).length) {
+      alert('Nothing can be sent — ' + typeLabel + '. Every persisted suggestion in scope was WITHHELD by the server because its Ongoing ' +
+        'supply is incomplete now. Repair the named PO data and recalculate; the suggestion becomes sendable again only then. ' +
+        'Nothing was written.' + _roSendOngoingText_(plan));
+      return;
+    }
     alert('No eligible PERSISTED allocation to send (NO_ELIGIBLE_PERSISTED_ALLOCATION) — ' + typeLabel + '.\n\n' +
       'The page shows ' + _roWorkset.sku_rows_with_positive_tier + ' SKU row(s) with a positive tier quantity, but the database holds no ' +
       'active persisted allocation draft carrying one for this planning cycle and tier scope.\n\n' +
       'Enter or re-enter an Order Qty on a SKU — a deliberate quantity edit now SAVES a canonical allocation draft ' +
-      'by itself — or run AI Plan, then Send again. Nothing was written.');
+      'by itself — or run AI Plan, then Send again. Nothing was written.' + _roSendOngoingText_(plan));   // ok:false check text, if any
     return;
   }
   const frozenChecksum = String(plan.confirm_with_checksum || plan.workset_checksum || '');

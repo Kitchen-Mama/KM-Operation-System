@@ -107,7 +107,7 @@
     labelModePersisted: true,
     sourceMode: 'not-loaded', diag: null,
     debug: (function () { try { return /(?:[?&])glmdebug=1/.test(location.search) || !!window.KM_GLM_DEBUG; } catch (e) { return false; } })(),
-    globe: null, globeHost: null, globeError: '', didFocus: false,
+    globe: null, globeHost: null, globeError: '', didFocus: false, selectSeq: 0, lastFocus: null,   // MAP-FOCUS-1
     lastFocusEl: null, escInstalled: false
   };
 
@@ -186,6 +186,19 @@
       out.push({ shipment_line_id: p.shipment_line_id, shipment_received_qty: v });
     });
     return out;
+  }
+  // R71-FE-1 (receipt resend, LOCAL CANDIDATE): the HELD receipt of a shipment - one whose answer never arrived. Memory + sessionStorage
+  // (survives a reload of this tab). The cumulative values ARE the receipt's identity on the server (31_ shipReceiptMovementRef_(line,
+  // cumulative)), so holding the exact lines is holding the key.
+  var _glmRcvHeldMem = {};
+  function glmRcvHeld_(sid) {
+    if (_glmRcvHeldMem[sid]) return _glmRcvHeldMem[sid];
+    try { var s = sessionStorage.getItem('km.shipment.receipt.pending.' + sid); if (s) _glmRcvHeldMem[sid] = JSON.parse(s); } catch (e) {}
+    return _glmRcvHeldMem[sid] || null;
+  }
+  function glmRcvHold_(sid, op) {
+    if (op) _glmRcvHeldMem[sid] = op; else delete _glmRcvHeldMem[sid];
+    try { if (op) sessionStorage.setItem('km.shipment.receipt.pending.' + sid, JSON.stringify(op)); else sessionStorage.removeItem('km.shipment.receipt.pending.' + sid); } catch (e) {}
   }
   // §12 PER-SHIPMENT ISSUE AUTHORITY (R8C) — derive a shipment's data/route-completeness issues from the SAME facts
   // already computed elsewhere (route-node count + resolved placement kind). This is NOT a new validation engine:
@@ -335,6 +348,9 @@
       var originCountry = (nodes[0] && nodes[0].country) || '';
       var vm = {
         shipmentId: s.shipmentId, shipmentNo: s.shipmentNo || s.shipmentId, company: s.company || '',
+        // FE-EXT-1 — what a person reads is the external shipment number; shipmentId stays the key for
+        // selection, indexes, route/event joins and every payload. originalNo keeps shipment_no searchable.
+        externalShipmentId: glmTrim_(s.externalShipmentId), originalNo: glmTrim_(s.shipmentNo), displayNo: glmDisplayNo_(s),
         // TEXTURE-3-R11 — `carrier` REMAINS the carrier_id: it is the filter key and the join key, and
         // filteredVms compares it. carrierLabel is what a person reads; it falls back to the id, never to a
         // blank, so an unresolved carrier is still identified.
@@ -360,17 +376,22 @@
       };
       out[s.shipmentId] = vm;
     });
+    // FE-EXT-1 — an external number can repeat across shipments; a shared one also names the internal id,
+    // so two rows that read the same are still told apart.
+    var seen = {};
+    Object.keys(out).forEach(function (k) { var d = out[k].displayNo; seen[d] = (seen[d] || 0) + 1; });
+    Object.keys(out).forEach(function (k) { out[k].displayNoShared = seen[out[k].displayNo] > 1; });
     return out;
   }
   function allVms() { return Object.keys(state.vms).map(function (k) { return state.vms[k]; }); }
 
   // ---------- position resolution ----------
   function resolveCurrentPosition(vm) {
-    for (var i = vm.events.length - 1; i >= 0; i--) { var e = vm.events[i]; if (validCoord(e.latitude, e.longitude)) return { lat: e.latitude, lng: e.longitude, source: 'LATEST_EVENT', drawable: true }; }
-    if (vm.currentNode && validCoord(vm.currentNode.latitude, vm.currentNode.longitude)) return { lat: vm.currentNode.latitude, lng: vm.currentNode.longitude, source: 'CURRENT_NODE', drawable: true };
-    if (vm.lastCompleted && validCoord(vm.lastCompleted.latitude, vm.lastCompleted.longitude)) return { lat: vm.lastCompleted.latitude, lng: vm.lastCompleted.longitude, source: 'LAST_COMPLETED_NODE', drawable: true };
+    for (var i = vm.events.length - 1; i >= 0; i--) { var e = vm.events[i]; if (validCoord(e.latitude, e.longitude)) return { lat: e.latitude, lng: e.longitude, source: 'LATEST_EVENT', drawable: true, at: String(e.eventTime || '').trim() }; }
+    if (vm.currentNode && validCoord(vm.currentNode.latitude, vm.currentNode.longitude)) return { lat: vm.currentNode.latitude, lng: vm.currentNode.longitude, source: 'CURRENT_NODE', drawable: true, at: String(vm.currentNode.actualArrivalDate || '').trim() };
+    if (vm.lastCompleted && validCoord(vm.lastCompleted.latitude, vm.lastCompleted.longitude)) return { lat: vm.lastCompleted.latitude, lng: vm.lastCompleted.longitude, source: 'LAST_COMPLETED_NODE', drawable: true, at: String(vm.lastCompleted.actualArrivalDate || '').trim() };
     var refNode = vm.currentNode || vm.lastCompleted;
-    if (refNode && refNode.locationRefId) { var loc = state.idx.locById[refNode.locationRefId]; if (loc && validCoord(loc.latitude, loc.longitude)) return { lat: loc.latitude, lng: loc.longitude, source: 'LOCATION_REF', drawable: true }; }
+    if (refNode && refNode.locationRefId) { var loc = state.idx.locById[refNode.locationRefId]; if (loc && validCoord(loc.latitude, loc.longitude)) return { lat: loc.latitude, lng: loc.longitude, source: 'LOCATION_REF', drawable: true, at: String(refNode.actualArrivalDate || '').trim() }; }
     return { lat: null, lng: null, source: 'COORDINATE_PENDING', drawable: false };
   }
   function resolveNodeCoord(n) {
@@ -457,11 +478,17 @@
     }
     return String(carrierId == null ? '' : carrierId);
   }
+  // FE-EXT-1 — display number: external shipment id, else shipment_no, else the internal id (blank = whitespace).
+  function glmTrim_(v) { return v == null ? '' : String(v).trim(); }
+  function glmDisplayNo_(s) { return glmTrim_(s.externalShipmentId) || glmTrim_(s.shipmentNo) || glmTrim_(s.shipmentId); }
+  function glmAccessibleName_(v) { return 'Shipment ' + v.displayNo + (v.displayNoShared ? ' (internal ' + v.shipmentId + ')' : ''); }
+  // search keeps every number a person may hold: external, shipment_no and the internal id
+  function glmSearchHay_(v) { return [v.displayNo, v.externalShipmentId, v.originalNo, v.shipmentId, v.tracking, v.container].join(' ').toLowerCase(); }
   function filteredVms() {
     var f = state.filters, q = f.search.trim().toLowerCase();
     return allVms().filter(function (v) {
       if (f.kpi && !v.flags[f.kpi]) return false;
-      if (q) { var hay = (v.shipmentNo + ' ' + v.tracking + ' ' + v.container).toLowerCase(); if (hay.indexOf(q) < 0) return false; }
+      if (q) { var hay = glmSearchHay_(v); if (hay.indexOf(q) < 0) return false; }
       if (f.company && v.company !== f.company) return false;
       if (f.originCountry && v.originCountry !== f.originCountry) return false;
       if (f.destCountry && v.destCountry !== f.destCountry) return false;
@@ -957,8 +984,8 @@
       var statusPill = '<span class="glm-ship__status glm-ship__status--' + stCls + '">' + esc(v.status || '—') + '</span>';
       // R11 §9/§12 — ROW 1: Shipment ID alone (full card width). ROW 2: compact badges (status · flags · issue ·
       // coord pending) — never competing with the ID width. ROW 3+: route / method / stage · ETA.
-      return '<div class="glm-ship' + (state.selectedShipmentId === v.shipmentId ? ' is-selected' : '') + '" data-ship="' + esc(v.shipmentId) + '" tabindex="0" role="button" aria-label="Shipment ' + esc(v.shipmentNo) + '">' +
-        '<div class="glm-ship__idrow"><span class="glm-ship__no">' + esc(v.shipmentNo) + '</span></div>' +
+      return '<div class="glm-ship' + (state.selectedShipmentId === v.shipmentId ? ' is-selected' : '') + '" data-ship="' + esc(v.shipmentId) + '" tabindex="0" role="button" aria-label="' + esc(glmAccessibleName_(v)) + '">' +
+        '<div class="glm-ship__idrow"><span class="glm-ship__no">' + esc(v.displayNo) + '</span>' + (v.displayNoShared ? ' <span class="glm-muted">· ' + esc(v.shipmentId) + '</span>' : '') + '</div>' +
         '<div class="glm-ship__badges">' + statusPill + flag + issueBadge + posBadge + '</div>' +
         '<div class="glm-ship__route">' + esc(v.originCountry || v.shipFrom || '?') + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + '</div>' +
         '<div class="glm-ship__meta">' + esc(v.carrierLabel || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
@@ -976,6 +1003,7 @@
     return '' +
       '<div class="glm-globe-slot" data-glm="globe-slot"></div>' +
       '<div class="glm-tip" data-glm="tip" aria-hidden="true"></div>' +
+      glmSelectionChipHtml_() +   // MAP-FOCUS-1
       renderMapControlPanel() +
       '<div class="glm-map-controls">' +
         '<button type="button" class="glm-btn" data-act="zoom-in" aria-label="Zoom in">+</button>' +
@@ -1085,7 +1113,9 @@
     // one-time initial framing per data load: focus the primary distribution, else global overview
     if (!state.didFocus) {
       state.didFocus = true;
-      if (focusPts.length) { var c = centroid(focusPts); state.globe.focus(c.lat, c.lng, { dist: focusPts.length > 1 ? 2.9 : 2.4 }); }
+      var selVm15 = (state.mode === 'runtime' && state.selectedShipmentId) ? state.vms[state.selectedShipmentId] : null;   // MAP-FOCUS-1
+      if (selVm15) { state.lastFocus = { shipmentId: selVm15.shipmentId, result: glmFocusSelected_(selVm15), refresh: true }; }
+      else if (focusPts.length) { var c = centroid(focusPts); state.globe.focus(c.lat, c.lng, { dist: focusPts.length > 1 ? 2.9 : 2.4 }); }
       else state.globe.overview();
     }
   }
@@ -1163,7 +1193,7 @@
     var html = '';
     if (id.indexOf('loc:') === 0) { var l = lookupLoc(id.slice(4)); if (l) html = '<strong>' + esc(l.locationName || l.locationCode) + '</strong><br>' + esc([l.country, l.locationType].filter(Boolean).join(' · ')); }
     else if (id.indexOf('tnode:') === 0) { html = '<strong>Route template node</strong>'; }
-    else { var sid = id.replace(/^(node:|pos:)/, ''); var vm = state.vms[sid] || (state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null); if (vm) html = '<strong>' + esc(vm.shipmentNo) + '</strong><br>' + esc(vm.company || '') + '<br>' + esc((vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) + '<br>' + esc(vm.status || '') + ' · ' + esc(shipMode(vm)) + '<br>ETA ' + esc(vm.eta || '—'); }
+    else { var sid = id.replace(/^(node:|pos:)/, ''); var vm = state.vms[sid] || (state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null); if (vm) html = '<strong>' + esc(vm.displayNo) + '</strong>' + (vm.displayNoShared ? ' (' + esc(vm.shipmentId) + ')' : '') + '<br>' + esc(vm.company || '') + '<br>' + esc((vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) + '<br>' + esc(vm.status || '') + ' · ' + esc(shipMode(vm)) + '<br>ETA ' + esc(vm.eta || '—'); }
     if (!html) { tip.setAttribute('aria-hidden', 'true'); return; }
     tip.innerHTML = html; tip.setAttribute('aria-hidden', 'false');
   }
@@ -1178,12 +1208,91 @@
   }
 
   // ---------- selection + drawer ----------
+  // MAP-FOCUS-1 (Owner): a card click selects at once and focuses the CURRENT position into the part of the globe the side
+  // panel leaves visible. With no current position the camera does NOT move to the destination / origin (an endpoint is never
+  // a position): the selection chip says "尚無位置資訊", and a separately labelled button may show the planned route.
+  // Every key stays the internal shipmentId; the same globe instance and its focus() are reused; nothing is read or polled.
   function selectShipment(id) {
+    var seq = ++state.selectSeq;
+    var ae = document.activeElement, cardHadFocus = !!(ae && ae.getAttribute && ae.getAttribute('data-ship') !== null);
     state.selectedShipmentId = id;
     render();
-    var vm = state.vms[id];
-    if (vm && state.globe) { var pos = resolveCurrentPosition(vm); if (pos.drawable) state.globe.focus(pos.lat, pos.lng, { dist: 2.2 }); else { var pl = resolveShipmentPlacement(vm); if (pl.kind !== 'pending') state.globe.focus(pl.lat, pl.lng, { dist: 2.4 }); } }
-    openShipmentDrawer(id);
+    if (seq !== state.selectSeq) return;
+    var vm = state.vms[id], r = root();
+    if (cardHadFocus && r) { var card = r.querySelector('[data-ship="' + cssEsc(id) + '"]'); if (card) try { card.focus({ preventScroll: true }); } catch (e) {} }
+    // The side panel opens only when the globe keeps a visible area beside it. Measured at 1280 px: the panel (420) plus the map control panel
+    // leave NO visible globe, so there - as on a phone - the selection stays on the map and the panel opens from the chip's Details.
+    if (!glmNarrow_() && glmRoomBesidePanel_()) openShipmentDrawer(id);
+    else { if (typeof drawerOpen === 'function' && drawerOpen()) closeDrawer(); glmRevealMap_(); }
+    if (vm) state.lastFocus = { shipmentId: id, result: glmFocusSelected_(vm) };
+  }
+  function glmNarrow_() { try { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); } catch (e) { return false; } }
+  function glmRevealMap_() { var r = root(), w = r && r.querySelector('.glm-mapwrap'); if (w && w.scrollIntoView) try { w.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {} }
+  // The part of the globe canvas that is on screen and covered by neither the open side panel nor the in-map control panel, inset by a margin.
+  // (Measured in a real browser: at 1280 px the map column is ~615 px wide and the control panel alone covers the canvas centre.)
+  function glmRoomBesidePanel_() { var cv = state.globeHost && state.globeHost.querySelector('canvas'); if (!cv) return false; var f = glmFreeRect_(cv.getBoundingClientRect(), true); return !!(f && f.w >= 160 && f.h >= 160); }
+  function glmFreeRect_(cr, assumePanelOpen) {
+    var vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
+    var L = Math.max(cr.left, 0), R = Math.min(cr.right, vw), T = Math.max(cr.top, 0), B = Math.min(cr.bottom, vh), r = root();
+    var dr = r && r.querySelector('[data-glm="drawer"]');
+    if (dr && (assumePanelOpen === true || dr.classList.contains('is-open')) && dr.offsetWidth) R =Math.min(R, Math.max(L, vw - dr.offsetWidth));   // fixed right:0; its FINAL edge, not mid-slide
+    var mcp = r && r.querySelector('.glm-mcp');
+    if (mcp && mcp.offsetWidth) { var m = mcp.getBoundingClientRect();
+      if (m.right > L && m.left < R && m.bottom > T && m.top < B) {   // the panel overlaps what is left: keep the larger of "right of it" and "below it"
+        var right = { L: Math.max(L, m.right), R: R, T: T, B: B }, below = { L: L, R: R, T: Math.max(T, m.bottom), B: B };
+        var area = function (q) { return Math.max(0, q.R - q.L) * Math.max(0, q.B - q.T); }, best = area(right) >= area(below) ? right : below;
+        L = best.L; R = best.R; T = best.T; B = best.B; } }
+    var g = 24; L += g; R -= g; T += g; B -= g;
+    return (R - L >= 60 && B - T >= 60) ? { x: L, y: T, w: R - L, h: B - T } : null;
+  }
+  // The aim point whose focus() puts (lat,lng) at the centre of the free rect - solved with the engine's OWN math (KMGlobe.math).
+  function glmAimFor_(lat, lng, dist) {
+    var M = window.KMGlobe && window.KMGlobe.math, cv = state.globeHost && state.globeHost.querySelector('canvas');
+    if (!M || !M.projectToScreen || !cv) return null;
+    var cr = cv.getBoundingClientRect(); if (cr.width < 40 || cr.height < 40) return null;
+    var fr = glmFreeRect_(cr); if (!fr) return null;
+    var W = cr.width, H = cr.height, D = Math.PI / 180, tx = fr.x + fr.w / 2 - cr.left, ty = fr.y + fr.h / 2 - cr.top;
+    var v = M.latLngToVec3(lat, lng, 1.03), pv = M.mat4Mul(M.mat4Perspective(45 * D, W / H, 0.01, 100), M.mat4Translate(0, 0, -dist));
+    function at(a, b) { var model = M.modelMatrix(-b * D, Math.max(-1.5, Math.min(1.5, a * D))), p = M.projectToScreen(M.mat4Mul(pv, model), model, v, W, H); return p && p.front ? p : null; }
+    var a = lat, b = lng, h = 0.25;
+    for (var i = 0; i < 14; i++) {
+      var p = at(a, b); if (!p) return null;
+      var ex = p.x - tx, ey = p.y - ty; if (Math.abs(ex) < 1 && Math.abs(ey) < 1) break;
+      var pa = at(a + h, b), pb = at(a, b + h); if (!pa || !pb) return null;
+      var j11 = (pa.x - p.x) / h, j21 = (pa.y - p.y) / h, j12 = (pb.x - p.x) / h, j22 = (pb.y - p.y) / h, det = j11 * j22 - j12 * j21;
+      if (Math.abs(det) < 1e-9) return null;
+      var da = (j22 * ex - j12 * ey) / det, db = (-j21 * ex + j11 * ey) / det, st = Math.max(Math.abs(da), Math.abs(db));
+      if (st > 15) { da *= 15 / st; db *= 15 / st; }
+      a = Math.max(-85, Math.min(85, a - da)); b = b - db;
+    }
+    var f = at(a, b);
+    return (f && Math.abs(f.x - tx) < 6 && Math.abs(f.y - ty) < 6) ? { lat: a, lng: b, x: Math.round(cr.left + tx), y: Math.round(cr.top + ty) } : null;
+  }
+  function glmFocusSelected_(vm) {
+    if (!state.globe || !vm) return 'NO_GLOBE';
+    var pos = resolveCurrentPosition(vm); if (!pos.drawable) return 'NO_POSITION';   // never an endpoint, never a centroid
+    var d = 2.2, aim = glmAimFor_(pos.lat, pos.lng, d);
+    if (aim) state.globe.focus(aim.lat, aim.lng, { dist: d }); else state.globe.focus(pos.lat, pos.lng, { dist: d });
+    return aim ? 'FOCUSED_VISIBLE' : 'FOCUSED_CENTRE';
+  }
+  function glmReportedAge_(at) {
+    var t = Date.parse(String(at || '').trim().replace(' ', 'T')); if (!isFinite(t)) t = parseDate(at); if (!isFinite(t) || t == null) return '';
+    var hrs = (Date.now() - t) / 3600000; if (hrs < 0) return '';
+    return hrs < 1 ? ' (within 1 h)' : hrs < 48 ? ' (' + Math.round(hrs) + ' h ago' + (hrs >= 6 ? ' - may be outdated' : '') + ')' : ' (' + Math.round(hrs / 24) + ' d ago - outdated, not live)';
+  }
+  function glmSelectionChipHtml_() {
+    if (state.mode !== 'runtime' || !state.selectedShipmentId) return '';
+    var vm = state.vms[state.selectedShipmentId]; if (!vm) return '';
+    var pos = resolveCurrentPosition(vm), hasRoute = vm.nodes.some(function (n) { return resolveNodeCoord(n).drawable; });
+    var line = pos.drawable ? ('Last reported: ' + (pos.at ? esc(pos.at) + esc(glmReportedAge_(pos.at)) : 'time unknown')) : '尚無位置資訊';
+    var btn = 'style="font-size:11px;padding:3px 8px;"';
+    return '<div class="glm-selchip" data-glm="selchip" role="status" aria-live="polite" data-sel="' + esc(vm.shipmentId) + '" data-pos="' + (pos.drawable ? '1' : '0') + '" ' +
+      'style="position:absolute;left:12px;bottom:12px;z-index:7;max-width:calc(100% - 24px);box-sizing:border-box;background:rgba(10,14,23,0.94);color:#E2E8F0;border:1px solid rgba(148,163,184,0.35);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.5;">' +
+      '<strong>' + esc(vm.displayNo) + '</strong>' + (vm.displayNoShared ? ' <span style="opacity:.75;">(' + esc(vm.shipmentId) + ')</span>' : '') +
+      '<br><span data-glm="selchip-pos">' + line + '</span>' +
+      '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">' +
+      (!pos.drawable && hasRoute ? '<button type="button" class="glm-btn" data-act="sel-route" ' + btn + '>View planned route (not a position)</button>' : '') +
+      '<button type="button" class="glm-btn" data-act="sel-details" ' + btn + '>Details</button></div></div>';
   }
   function renderDrawerShell() {
     return '<div class="glm-drawer" data-glm="drawer" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="glmDrawerTitle">' +
@@ -1396,17 +1505,50 @@
     };
     function keepReceivingOpen() { var d = r.querySelector('[data-glm="receiving-details"]'); if (d) d.open = true; }
     var saveBtn = r.querySelector('[data-act="receipt-save"]');
+    // R71-FE-1: a held receipt (no answer) is settled by THIS re-read when the saved values now equal it (recorded); otherwise its values are
+    // put back, locked, and Save resends exactly them. A new receipt can be entered only after that.
+    var held = glmRcvHeld_(vm.shipmentId);
+    function heldInput(hl) { return r.querySelector('[data-recv-line="' + cssEsc(hl.shipment_line_id) + '"]'); }
+    function pinHeld() { (held ? held.lines : []).forEach(function (hl) { var hi = heldInput(hl); if (hi) { hi.value = hl.shipment_received_qty; hi.readOnly = true; if (typeof hi.oninput === 'function') hi.oninput(); } }); }
+    if (held && saveBtn) {
+      // R71-FE-2 (review m-4): a receipt the server reported INCOMPLETE is never settled by a re-read - only the server's answer to the resend ends it
+      if (!held.incomplete && held.lines.every(function (hl) { var hi = heldInput(hl); return !!hi && parseFloat(hi.getAttribute('data-prev')) === Number(hl.shipment_received_qty); })) {
+        glmRcvHold_(vm.shipmentId, null); held = null;
+        // R71-FE-2 (review M-1): equal saved quantities prove the LINES only, never the stock posting (final-cand5 writes the lines before it posts)
+        receiptMsg('The earlier receipt that got no answer: the received quantities are saved (this re-read shows them). This page cannot confirm the stock posting - if a receipt error was reported, tell the owner.', '');
+      } else {
+        pinHeld(); keepReceivingOpen();
+        receiptMsg(held.incomplete ? 'The last receipt STOPPED PART WAY (SHIPMENT_RECEIPT_INCOMPLETE). Save Receipt resends exactly the same received values to complete it (it never posts twice).' :
+          'The last receipt got NO ANSWER, so it may already be recorded. Save Receipt resends exactly the same received values (they cannot be counted twice). Reload to see whether it was recorded.', 'error');
+      }
+    }
     if (saveBtn) saveBtn.onclick = function () {
       if (!(window.KM.DB && window.KM.DB.updateShipmentReceipt)) { receiptMsg('Receipt API unavailable.', 'error'); keepReceivingOpen(); return; }
       var pairs = [];
       r.querySelectorAll('[data-recv-line]').forEach(function (inp) {
         pairs.push({ shipment_line_id: inp.getAttribute('data-recv-line'), value: inp.value, prev: inp.getAttribute('data-prev') });
       });
-      var lines = glmReceiptChangedLines(pairs);   // §9.1 — only changed cumulative values are submitted
+      var lines = held ? held.lines.slice() : glmReceiptChangedLines(pairs);   // §9.1 — only changed cumulative values are submitted; R71-FE-1: a held receipt exactly
       if (!lines.length) { receiptMsg('No changes to save.', ''); return; }
       saveBtn.disabled = true; receiptMsg('Saving receipt…', '');
+      glmRcvHold_(vm.shipmentId, { lines: lines });   // R71-FE-1: held BEFORE dispatch
       window.KM.DB.updateShipmentReceipt({ shipment_id: vm.shipmentId, lines: lines, actor: glmActor() }).then(function (resp) {
+        // R71-FE-2 (review m-4): rcv's SHIPMENT_RECEIPT_INCOMPLETE (retry_safe, nothing undone) takes the lost-answer path: held, locked, resent unchanged
+        var incomplete = !!resp && resp.code === 'SHIPMENT_RECEIPT_INCOMPLETE', inc_ = incomplete || !!(held && held.incomplete);
+        var unanswered = !resp || resp.code === 'network' || incomplete;   // the db-api answers 'network' for a dropped / failed / non-JSON / timed-out response
+        if (!unanswered) glmRcvHold_(vm.shipmentId, null);   // any other server answer settles the held receipt
+        else glmRcvHold_(vm.shipmentId, { lines: lines, incomplete: inc_ || undefined });
         if (resp && resp.success) { afterShipmentWrite(vm.shipmentId); }
+        else if (unanswered) {
+          held = { lines: lines, incomplete: inc_ || undefined }; pinHeld(); saveBtn.disabled = false; keepReceivingOpen();
+          receiptMsg(incomplete ? ('Receipt STOPPED PART WAY (' + resp.code + (resp.data && resp.data.stage ? ' at ' + resp.data.stage : '') + '). Nothing was undone. Save Receipt resends exactly the same received values to complete it (it never posts twice).') :
+            ('Receipt got NO ANSWER (' + ((resp && resp.error) || 'no response') + '), so it may already be recorded. Save Receipt resends exactly the same received values (they cannot be counted twice). Reload to see whether it was recorded.'), 'error');
+        }
+        else if (resp && (resp.code === 'SHIPMENT_RECEIPT_POSTING_UNKNOWN' || resp.code === 'SHIPMENT_RECEIPT_BOOKS_UNKNOWN')) {
+          // FE-RECEIPT-1 (candidate): the server could not prove the stock posting (31_ RCV31): Save stays disabled, the shipment is reloaded
+          receiptMsg('Receipt NOT CONFIRMED - do not re-enter it; ask the owner to review the stock of this shipment at its destination (' + resp.code + ').', 'error');
+          afterShipmentWrite(vm.shipmentId);
+        }
         else {
           saveBtn.disabled = false; keepReceivingOpen();   // §17.L keep expanded + values preserved on validation error
           var detail = (resp && resp.invalid_lines && resp.invalid_lines.length) ? (' [' + resp.invalid_lines.map(function (x) { return (x.shipment_line_id || '?') + ':' + x.code; }).join(', ') + ']') : '';
@@ -1477,8 +1619,8 @@
     var vm = state.vms[id]; var els = drawerEls(); if (!vm || !els) return;
     openDrawerCommon();
     var pos = resolveCurrentPosition(vm), pl = resolveShipmentPlacement(vm);
-    var posLine = pos.drawable ? (pos.lat.toFixed(3) + ', ' + pos.lng.toFixed(3) + ' · ' + esc(pos.source))
-      : '<span class="glm-badge glm-badge--pending">Coordinate Pending</span>' + (pl.kind !== 'pending' ? ' <span class="glm-muted">(shown at ' + esc(pl.kind) + ' endpoint)</span>' : '');
+    var posLine = pos.drawable ? (pos.lat.toFixed(3) + ', ' + pos.lng.toFixed(3) + ' · ' + esc(pos.source) + ' · last reported ' + (pos.at ? esc(pos.at) + esc(glmReportedAge_(pos.at)) : 'time unknown'))
+      : '尚無位置資訊 · <span class="glm-badge glm-badge--pending">Coordinate Pending</span>' + (pl.kind !== 'pending' ? ' <span class="glm-muted">(shown at ' + esc(pl.kind) + ' endpoint)</span>' : '');
     // §14 — explain the shipment's data/route issues in the drawer (same detector as the card badge; no page banner).
     var issues = glmShipmentIssues({ nodeCount: vm.nodes.length, placementKind: pl.kind });
     var issueSection = issues.hasIssue
@@ -1498,12 +1640,12 @@
         '<div class="glm-step__meta">' + esc(e.eventTime || '') + (e.locationName ? ' · ' + esc(e.locationName) : '') + (e.rawStatus ? ' · raw: ' + esc(e.rawStatus) : '') + (e.source ? ' · ' + esc(e.source) : '') + '</div></div>';
     }).join('') : '<p class="glm-muted">No actual events yet. Upcoming nodes are shown in the Route above (never as planned events).</p>';
 
-    els.title.textContent = vm.shipmentNo;
+    els.title.textContent = vm.displayNo;
     els.body.innerHTML =
       '<section class="glm-dsec"><h4 class="glm-dsec__h--close">Identity<button type="button" class="glm-dsec__close" data-act="drawer-close" aria-label="Close shipment details" title="Close (Esc)">&times;</button></h4>' +
         // The drawer is the identity section, so it shows BOTH: the name an operator recognises and the id
         // every join and support conversation is actually about.
-        kv('Shipment No.', vm.shipmentNo) + kv('Company', vm.company) +
+        kv('Shipment ID (external)', vm.externalShipmentId) + kv('Shipment No.', vm.originalNo) + kv('Internal ID', vm.shipmentId) + kv('Company', vm.company) +
         kv('Carrier', vm.carrierLabel === vm.carrier ? vm.carrier : (vm.carrierLabel + '  ·  ' + vm.carrier)) +
         kv('Shipping Method', vm.method) +
         kv('Origin → Destination', (vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) +
@@ -1649,7 +1791,14 @@
     });
     var acts = {
       'zoom-in': function () { if (state.globe) state.globe.zoomIn(); }, 'zoom-out': function () { if (state.globe) state.globe.zoomOut(); }, 'reset': function () { if (state.globe) state.globe.reset(); },
-      'drawer-close': closeDrawer, 'clear-filters': clearFilters, 'clear-kpi': function () { state.filters.kpi = ''; render(); },
+      'drawer-close': closeDrawer, 'clear-filters': clearFilters,
+      'sel-details': function () { if (state.selectedShipmentId && state.vms[state.selectedShipmentId]) openShipmentDrawer(state.selectedShipmentId); },   // MAP-FOCUS-1
+      'sel-route': function () {   // MAP-FOCUS-1: the planned route on request, labelled as NOT a position
+        var vm = state.vms[state.selectedShipmentId]; if (!vm || !state.globe) return;
+        var pts = vm.nodes.map(resolveNodeCoord).filter(function (c) { return c.drawable; }).map(function (c) { return [c.lat, c.lng]; }); if (!pts.length) return;
+        var c = centroid(pts); state.globe.focus(c.lat, c.lng, { dist: pts.length > 1 ? 2.9 : 2.4 });
+        var el = root() && root().querySelector('[data-glm="selchip-pos"]'); if (el) el.textContent = '尚無位置資訊 - showing the planned route, not a position';
+      }, 'clear-kpi': function () { state.filters.kpi = ''; render(); },
       // R12 — collapse/expand the in-map Map Control Panel (canonical UI state; no duplicate DOM). Focus returns to
       // the toggle after the re-render (§14 keyboard/focus behavior).
       'toggle-map-panel': function () { state.mapPanelCollapsed = !state.mapPanelCollapsed; render(); var rr = root(); var tb = rr && rr.querySelector('[data-act="toggle-map-panel"]'); if (tb) try { tb.focus(); } catch (e) {} },
@@ -1715,6 +1864,7 @@
      runner reads it before, during and after a load, and across a navigation, so "the canvas vanished" can
      be attributed rather than merely noticed. */
   window.KM = window.KM || {};
+  window.KM.glmSelectionDiag = function () { return { selectedShipmentId: state.selectedShipmentId || '', selectSeq: state.selectSeq, lastFocus: state.lastFocus }; };   // MAP-FOCUS-1 (read-only)
   window.KM.glmDiag = function () {
     var host = state.globeHost || null;
     var inDoc = !!(host && (document.contains ? document.contains(host) : host.parentNode));

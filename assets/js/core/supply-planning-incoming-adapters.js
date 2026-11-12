@@ -18,7 +18,11 @@
 })(this, function () {
   'use strict';
 
-  var ELIGIBLE_STATUSES = { ready_to_ship: 1, shipped: 1, in_transit: 1, arrived: 1 };
+  // R4 (2026-10-29): partially_received (what the 31_ receipt writer stores) and partial_received (its legacy spelling) are ONE state - a
+  // shipment some of whose units arrived - and its UNRECEIVED remainder is still in flight (quantityRemaining = shipped - received, B4-R1).
+  // Exactly these two tokens; no fuzzy rule. Before R4 the writer's own value was UNKNOWN_STATUS and the legacy one an exclusion, so a
+  // single real receipt made the whole remainder vanish from planning.
+  var ELIGIBLE_STATUSES = { ready_to_ship: 1, shipped: 1, in_transit: 1, arrived: 1, partially_received: 1, partial_received: 1 };
 
   // Deterministic canonical ordering for reason arrays (output is always emitted in this order, unique).
   var EXCLUSION_ORDER = [
@@ -65,7 +69,7 @@
     if (s === 'received') return 'EXCLUDED_ALREADY_RECEIVED';
     if (s === 'closed') return 'EXCLUDED_TERMINAL';
     if (s === 'cancelled' || s === 'canceled') return 'EXCLUDED_CANCELLED';
-    if (s === 'planned' || s === 'completed' || s === 'partial_received') return 'EXCLUDED_LEGACY_STATUS';
+    if (s === 'planned' || s === 'completed') return 'EXCLUDED_LEGACY_STATUS';
     if (s === 'stuck') return 'EXCLUDED_OPERATIONAL_ALERT';
     if (s === 'delivered') return 'EXCLUDED_EVENT_TOKEN';
     return 'UNKNOWN_STATUS';

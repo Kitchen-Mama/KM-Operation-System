@@ -367,6 +367,8 @@
   function formatDoneMessage(product, scopeSpec, finalState) {
     var p = String(product == null ? '' : product);
     var st = finalState || {};
+    var oc = doneOutcome(p, scopeSpec, st);   // R66 AI notice: a run with BLOCKED / failed rows is not announced as a success
+    if (oc.tone !== 'ok') return oc.text;
     var total = (typeof st.scopesTotal === 'number') ? st.scopesTotal : null;
     var proc = (typeof st.scopesProcessed === 'number') ? st.scopesProcessed : (total != null ? total : null);
     var mode = scopeSpec && scopeSpec.mode;
@@ -380,11 +382,30 @@
     if (parts.length) return p + ' recalculation completed — ' + parts.join(' / ') + '.';
     return (total != null) ? (base + '\n' + (proc != null ? proc : total) + ' / ' + total + ' scope' + (total === 1 ? '' : 's') + ' processed.') : base;
   }
+  // R66 AI notice (the L-2 UI finding: BLOCKED rows announced as "Recalculation completed"). PURE: the DONE payload's own counts
+  // (readyCount / blockedCount / errorCount) and, when the backend carries it, its blockedReasons tally {CODE: n}. tone 'ok' only
+  // when nothing was blocked or failed; 'warn' when rows were blocked; 'bad' when rows failed. Counts absent -> 'ok' as before.
+  function doneOutcome(product, scopeSpec, finalState) {
+    var p = String(product == null ? '' : product), st = finalState || {};
+    var n = function (v) { return (typeof v === 'number' && isFinite(v)) ? v : null; };
+    var ready = n(st.readyCount), blocked = n(st.blockedCount) || 0, errors = n(st.errorCount) || 0;
+    if (!blocked && !errors) return { tone: 'ok', ready: ready, blocked: 0, errors: 0, reasons: [], text: '' };
+    var rs = st.blockedReasons && typeof st.blockedReasons === 'object' ? Object.keys(st.blockedReasons).map(function (k) { return [k, Number(st.blockedReasons[k]) || 0]; }) : [];
+    rs.sort(function (a, b) { return b[1] - a[1] || (a[0] < b[0] ? -1 : 1); });
+    var where = (scopeSpec && (scopeSpec.country || scopeSpec.marketplace)) ? ' — ' + [scopeSpec.country, scopeSpec.marketplace].filter(Boolean).join(' / ') : '';
+    var lines = [p + ' recalculation finished with ' + (errors ? 'failed' : 'blocked') + ' rows' + where + '.',
+      (ready != null ? ready + ' ready, ' : '') + blocked + ' blocked, ' + errors + ' failed.'];
+    if (rs.length) lines.push('Blocked because: ' + rs.slice(0, 4).map(function (r) { return r[0] + ' (' + r[1] + ')'; }).join(', ') + (rs.length > 4 ? ', …' : '') + '.');
+    if (st.lastError) lines.push('Last error: ' + String(st.lastError) + '.');
+    lines.push('Blocked rows have no suggested quantity; expand a row to see its reason.');
+    return { tone: errors ? 'bad' : 'warn', ready: ready, blocked: blocked, errors: errors, reasons: rs, text: lines.join('\n') };
+  }
 
   return {
     CLASSIFICATION: CLASSIFICATION, OUTCOME: OUTCOME, DEFAULT_SCHEDULE: DEFAULT_SCHEDULE.slice(),
     isTransportError: isTransportError, verify: verify, recover: recover,
     announceManualDone: announceManualDone, formatDoneMessage: formatDoneMessage,   // F1-SMALL-GAP-JOB-DONE-NOTICE-R1 (manual terminal-DONE notice; dedup by runId)
+    doneOutcome: doneOutcome,   // R66 AI notice: the counts / reasons a DONE run actually produced
     // R4J job lifecycle (backend-owned; browser only starts + read-only polls)
     JOB_STATUS: JOB_STATUS, DEFAULT_JOB_POLL_MS: DEFAULT_JOB_POLL_MS, DEFAULT_JOB_MAX_POLLS: DEFAULT_JOB_MAX_POLLS,
     DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,

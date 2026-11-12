@@ -35,6 +35,7 @@
   // ---- canonical Sheet-name registry (real Operation DB tables; overridable via config.sheetNames) ----------
   // key = the KMSP.sourceSnapshots key; sheet = the canonical DB Sheet name; required = whether the recommendation
   // read is blocked when absent (the Projection Runtime itself is the fail-closed authority on required rows).
+  var XCO_PLAN_LINKS_READ_MODE = 'A';   // XCO-R15G: 'A' (default, Owner) reads shipment_plan_links; 'D' does not (detection from data already read). Code constant only - never a Property.
   var CANONICAL_TABLES = [
     { key: 'skuDetails', sheet: 'sku_details', required: false },
     { key: 'marketplaceSkus', sheet: 'marketplace_skus', required: false },
@@ -51,6 +52,8 @@
     // lineage via shipping_plan_lines → shipping_plans). Read once per canonical snapshot; NO per-line DB read.
     { key: 'shipmentLines', sheet: 'shipment_lines', required: false },
     { key: 'shippingPlanLines', sheet: 'shipping_plan_lines', required: false },
+    // XCO-R15G projection: the plan links (ever merged = distinct plans per shipment; ended rows included). Not required: missing -> no map.
+    { key: 'shipmentPlanLinks', sheet: 'shipment_plan_links', required: false },
     // F1-4B-FM1-T: multi-warehouse demand-allocation ratios (read-only; missing → structured source issue, never a default).
     { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false },
     // F1-4B-FM3f-1 (Authority E): Target % rules — read-only; missing → 100% (frozen fallback), never invented.
@@ -116,6 +119,7 @@
     var out = [];
     CANONICAL_TABLES.forEach(function (e) {
       if (only && only.indexOf(e.key) === -1) return;
+      if (e.key === 'shipmentPlanLinks' && XCO_PLAN_LINKS_READ_MODE !== 'A') return;   // XCO-R15G option D: no extra sheet read
       out.push({ key: e.key, sheet: over[e.key] ? str(over[e.key]) : e.sheet, required: e.required });
     });
     return out;
@@ -237,7 +241,14 @@
     CANONICAL_TABLES: CANONICAL_TABLES.map(function (e) { var c = {}; for (var k in e) c[k] = e[k]; return c; }),
     tablesFor: tablesFor,
     readCanonicalSnapshots: readCanonicalSnapshots,
+    xcoPlanLinksReadMode: XCO_PLAN_LINKS_READ_MODE,   // XCO-R15G
     resolveProductionFacts: resolveProductionFacts,
     buildProductionRecommendationSource: buildProductionRecommendationSource
   };
 });
+
+// XCO-R15G: shipment_plan_links joins the canonical read (not required).
+// XCO-R15G-PROJ-SRC (xco-r15g-impl): patched
+
+// XCO-R15G option D switch: XCO_PLAN_LINKS_READ_MODE (code constant, default A).
+// XCO-R15G-OPTD-SRC (xco-r15g-impl): patched

@@ -578,3 +578,12 @@ select.pc-input:disabled {
     #purchase-order-list-section .pol-cell { padding: 8px; }
     #purchase-order-list-section .pol-gantt-axis, #purchase-order-list-section .pol-gantt-label { margin-left: 0; width: 90px; flex-basis: 90px; }
 }
+
+/* R3-IMPORT (2026-10-29): the page's More Options menu - the Factory / Overseas pattern (grey trigger, white panel), scoped here */
+#purchase-order-list-section .km-page-actions-menu { position: relative; }
+#purchase-order-list-section .km-page-actions-menu__trigger { display: inline-flex; align-items: center; gap: 6px; height: var(--btn-height, 34px); background: #f1f5f9; color: #334155; border: 1px solid var(--border-light, #e2e8f0); padding: 0 var(--btn-padding-inline, 12px); border-radius: var(--btn-radius, 6px); font-size: var(--btn-font-size, 13px); white-space: nowrap; cursor: pointer; }
+#purchase-order-list-section .km-page-actions-menu__trigger:hover, #purchase-order-list-section .km-page-actions-menu__trigger[aria-expanded="true"] { background: #e2e8f0; }
+#purchase-order-list-section .km-page-actions-menu__list { position: absolute; top: calc(100% + 6px); right: 0; min-width: 220px; width: max-content; max-width: min(340px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--border-light, #e2e8f0); border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,0.14); padding: 4px; z-index: 140; display: flex; flex-direction: column; gap: 2px; }
+#purchase-order-list-section .km-page-actions-menu__list[hidden] { display: none; }
+#purchase-order-list-section .km-page-actions-menu__item { display: flex; align-items: center; width: 100%; text-align: left; background: none; border: none; padding: 9px 10px; border-radius: 6px; font-size: 14px; color: #1e293b; cursor: pointer; }
+#purchase-order-list-section .km-page-actions-menu__item:hover, #purchase-order-list-section .km-page-actions-menu__item:focus { background: #f1f5f9; outline: none; }

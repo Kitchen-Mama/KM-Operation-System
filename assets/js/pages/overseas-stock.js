@@ -824,6 +824,7 @@ function _showOverseasModal(id) {
 }
 
 function closeOverseasModals() {
+    if (_ovsImportUi_().active()) return;
     var root = document.querySelector('#overseas-stock-section');
     if (!root) return;
     var overlay = root.querySelector('#overseas-modal-overlay');
@@ -979,6 +980,7 @@ function _ovsClearImportFile_() {
 }
 
 function openOverseasImportModal() {
+    if (!_ovsImportUi_().reset()) return;
     _ovsImportScope = { company: '', country: '', warehouseId: '' };
     _ovsClearImportFile_();
     _ovsRenderImportScope();
@@ -1154,7 +1156,15 @@ function _parseOverseasXlsx(file) {
     });
 }
 
+function _ovsImportUi_() {
+    if (!(window.KM && window.KM.importFeedback)) throw new Error('Import feedback is not loaded. Reload this page.');
+    return window.KM.importFeedback.controller('overseas', {"roots":["overseas-import-modal"],"buttons":"#overseas-import-run-btn"});
+}
+
 function runOverseasImport() {
+    var ui = _ovsImportUi_();
+    if (ui.done()) { closeOverseasModals(); return; }
+    if (ui.blocked()) return;
     var runBtn = document.getElementById('overseas-import-run-btn');
     if (runBtn && runBtn.dataset.mode === 'done') { closeOverseasModals(); return; }
 
@@ -1167,14 +1177,16 @@ function runOverseasImport() {
     var name = String(file.name || '').toLowerCase();
     var isXlsx = /\.xlsx$/.test(name), isCsv = /\.csv$/.test(name);
     if (!isXlsx && !isCsv) { _ovsRenderImportError('Unsupported file type. Use .xlsx or .csv.'); return; }
-    (isXlsx ? _parseOverseasXlsx(file) : _parseOverseasCsvFile(file))
-        .then(function (cells) { _ovsProcessImportCells(cells, runBtn); })
-        .catch(function (err) { _ovsRenderImportError((err && err.message) ? err.message : 'Could not read the file.'); });
+    if (!ui.begin()) return;
+    Promise.resolve().then(function () { return isXlsx ? _parseOverseasXlsx(file) : _parseOverseasCsvFile(file); })
+        .then(function (cells) { try { return _ovsProcessImportCells(cells, runBtn); } finally { ui.endRead(); } })
+        .catch(function (err) { ui.fail(err); _ovsRenderImportError((err && err.message) ? err.message : 'Could not read the file.'); });
 }
 
 // Shared row extraction + backend call (fed by either the .xlsx or .csv parser). warehouse_id identity is
 // re-validated on the server (active + non-factory); this client pass only does field/number shape checks.
 function _ovsProcessImportCells(cells, runBtn) {
+        var ui = _ovsImportUi_();
         if (!cells || cells.length < 2) { _ovsRenderImportError('No data rows found (need a header row + at least one data row).'); return; }
         var headers = cells[0].map(function(h) { return String(h == null ? '' : h).trim().toLowerCase(); });
         var idxOf = {};
@@ -1234,9 +1246,11 @@ function _ovsProcessImportCells(cells, runBtn) {
         // F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1: carry the SELECTED context; the server re-validates the scope +
         // every row against the canonical warehouses master (frontend filtering is UX only).
         var _ovsScope = { company: _ovsImportScope.company, country: _ovsImportScope.country, warehouse_id: _ovsImportScope.warehouseId };
-        window.KM.DB.importOverseasInventorySnapshotBatch(rows, { createdBy: 'operation-system', scope: _ovsScope })
+        ui.writing();
+        return Promise.resolve().then(function () { return window.KM.DB.importOverseasInventorySnapshotBatch(rows, { createdBy: 'operation-system', scope: _ovsScope }); })
             .then(function(result) {
-                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                ui.finish(result);
+                if (runBtn && !ui.blocked() && !ui.done()) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
                 if (!result || result.success === false) {
                     _ovsRenderImportError(result && result.error ? result.error : 'Import failed. API may not be configured.');
                     return;
@@ -1263,7 +1277,8 @@ function _ovsProcessImportCells(cells, runBtn) {
                 if (mergedSummary.error === 0 && runBtn) { runBtn.textContent = 'Done'; runBtn.dataset.mode = 'done'; }
             })
             .catch(function(err) {
-                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                ui.fail(err);
+                if (runBtn && !ui.blocked() && !ui.done()) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
                 _ovsRenderImportError(err && err.message ? err.message : 'Import request failed.');
             });
 }
@@ -1679,6 +1694,33 @@ window.renderOverseasMovementTable = renderOverseasMovementTable;
 window.switchOverseasTab = switchOverseasTab;
 window.openOverseasInfo = openOverseasInfo;
 window.closeOverseasModals = closeOverseasModals;
+// R3-IMPORT (2026-10-29, local candidate) - Import Inventory opens the shared batch import (KM.importBatch, lazy-loaded). One file = one
+// overseas warehouse (key warehouse_id + sku), chosen from the same eligible list; company / country travel with it as a check.
+function _ovsOpenBatchImport() {
+  var whs = _ovsEligibleWarehouses();
+  function go() {
+    window.KM.importBatch.open({
+      domain: 'overseas_inventory', title: 'Import Overseas Inventory',
+      modes: [
+        { value: 'SET', label: 'Set snapshot (overwrite)', help: 'GROSS available from the warehouse report: stored available = file - reserved (refused below reserved); damaged / on the way / ETA as given. SKUs not in the file are untouched.' },
+        { value: 'ADD', label: 'Add to available (Add New)', help: 'The file quantity is added to available: 100 + 30 = 130, one +30 movement; the same batch sent again stays 130. Reserved, damaged and on the way are not touched. Never prefilled.' }
+      ],
+      scopeFields: [{ key: 'warehouse_id', label: 'Warehouse', required: true, options: whs.map(function (w) { return { value: w.warehouseId, label: (w.warehouseName || w.warehouseCode || w.warehouseId) + ' — ' + _ovsWhCompany(w) + ' / ' + _ovsWhCountry(w) }; }) }],
+      scope: function () { return {}; },
+      scopeLabel: function (v) { var w = v && v.warehouse_id ? _ovsWhById(v.warehouse_id) : null; return w ? 'One file = one warehouse: ' + w.warehouseId + ' (' + _ovsWhCompany(w) + ' / ' + _ovsWhCountry(w) + '). The export holds ALL its snapshot rows.' : 'Choose the warehouse first.'; },
+      actor: function () { return (window.KM && window.KM.currentUser && window.KM.currentUser.email) || ''; },
+      onCommitted: function () {
+        var root = document.querySelector('#overseas-stock-section');
+        return new Promise(function (res) { _osAfterWrite(function () { _refreshOverseasFilters(root); renderOverseasSnapshotTable(root); renderOverseasMovementTable(root); res(); }); });
+      }
+    });
+  }
+  if (window.KM && window.KM.importBatch) return go();
+  var L = window.KM && window.KM.scriptLoader;
+  if (!L) { alert('The import module could not be loaded.'); return; }
+  return L.load('assets/js/utils/import-batch.js').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+}
+window._ovsOpenBatchImport = _ovsOpenBatchImport;
 window.openOverseasImportModal = openOverseasImportModal;
 window.downloadOverseasImportTemplate = downloadOverseasImportTemplate;
 window.runOverseasImport = runOverseasImport;
@@ -1792,7 +1834,7 @@ function toggleOverseasActionsMenu(ev) {
 // Run one action = reuse the EXISTING handler verbatim, then close the menu (one item → one handler call).
 function runOverseasAction(kind) {
     _overseasActionsClose(false);
-    if (kind === 'import' && typeof openOverseasImportModal === 'function') return openOverseasImportModal();
+    if (kind === 'import') return _ovsOpenBatchImport();   // R3-IMPORT: the shared import (SET / ADD); the old modal stays in the code as the rollback path
     if (kind === 'adjust' && typeof openOverseasAdjustModal === 'function') return openOverseasAdjustModal();
 }
 // Bind outside-click + keyboard ONCE (guarded — repeated open/close never stacks listeners). Acts only while open.
