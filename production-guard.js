@@ -51,14 +51,14 @@
     }
     if (navigator.sendBeacon) { var beacon = navigator.sendBeacon.bind(navigator); navigator.sendBeacon = function (url, data) { if (/^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+\.)?script\.googleusercontent\.com|script\.googleapis\.com)\//.test(String(url))) return false; return beacon(url, data); }; }
     function restrictUi() {
-        // Only the owner-tool entry is exposed; business administration stays gated.
-        document.querySelectorAll('[data-parent="administration"] .menu-item:not([data-owner-password-entry]),#replen-ai-plan-btn,#ro-ai-plan-btn').forEach(function (el) { el.hidden = true; el.style.display = 'none'; });
+        // ADMIN-RESTORE (2026-11-13): every Administration entry is visible; each action stays gated by production-config/01_
+        // (reads only; every Administration write is refused by control() and by 01_). Only the AI Plan buttons stay hidden.
+        document.querySelectorAll('#replen-ai-plan-btn,#ro-ai-plan-btn').forEach(function (el) { el.hidden = true; el.style.display = 'none'; });
     }
     function mount() {
         restrictUi();
         var old = window.showSection;
         if (typeof old === 'function') window.showSection = function (name) {
-            if (['automation', 'shipment-grouping', 'site-priority', 'fx-rate-book'].indexOf(name) >= 0) return false;
             return old.apply(this, arguments);
         };
         new MutationObserver(restrictUi).observe(document.body, { childList: true, subtree: true });

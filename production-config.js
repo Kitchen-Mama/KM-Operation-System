@@ -9,6 +9,7 @@
     "aiPlanFirstLayer.get",
     "appendShippingPlanNote",
     "auditFcSpecialEventIds",
+    "automationSchedule.get",
     "cancelRequestOrderTier",
     "cancelShipmentDraft",
     "cancelShippingAllocationDraft",
@@ -31,6 +32,7 @@
     "fcSummary.raw.get",
     "fcSummary.workspace.get",
     "finalizeShipmentFinalOutput",
+    "fxRateBook.get",
     "generateShipmentLineAllocations",
     "getClientCapabilities",
     "getOperationDb",
@@ -78,6 +80,7 @@
     "requestOrder.sendWorkset.get",
     "requestOrder.workspace.get",
     "requestOrderDraft.getActive",
+    "shipment.consolidationPolicy.get",
     "shipment.eta.update",
     "shipment.rateCardOptions",
     "shipment.receipt.update",
@@ -130,12 +133,14 @@
   ],
   "reads": [
     "aiPlanFirstLayer.get",
+    "automationSchedule.get",
     "document.export",
     "document.exportNonce",
     "document.get",
     "factoryStockGuard.get",
     "fcSummary.raw.get",
     "fcSummary.workspace.get",
+    "fxRateBook.get",
     "getClientCapabilities",
     "getOperationDb",
     "getRecommendationDraftToken",
@@ -164,6 +169,7 @@
     "requestOrder.sendWorkset.get",
     "requestOrder.workspace.get",
     "requestOrderDraft.getActive",
+    "shipment.consolidationPolicy.get",
     "shipment.rateCardOptions",
     "shipment.workspace.get",
     "shipmentDocument.get",
@@ -194,5 +200,5 @@
       "ADD"
     ]
   },
-  "policy_sha256": "76d621de5a23fe4e6d0efc91031740c577202a566aabe83e45b6013eebeca391"
+  "policy_sha256": "5b8dcdad207268676abb36ab452d5a54a187d776498bb2218a16d59f1e2a8939"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

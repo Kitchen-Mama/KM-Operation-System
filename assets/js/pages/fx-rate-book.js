@@ -199,6 +199,12 @@
         return m ? (m[1] + ' ' + m[2] + ' UTC') : (s || '—');
     }
     function dash(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
+    // ADMIN-RESTORE FX (Owner 2026-11-13): the page never DISPLAYS who saved a change. change_log[].by is still in
+    // the fxRateBook.get response (75_ is unchanged), so it remains visible to anyone reading the network response;
+    // this only keeps it (and any e-mail-shaped text) out of the rendered log and warning panels.
+    function noEmail(html) { return String(html == null ? '' : html).replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g, '[hidden]'); }
+    // (a dotted domain is required: the server's pair keys are BASE/QUOTE@yyyy-mm-dd and must stay visible)
+    function withoutBy(r) { var o = {}; for (var k in r) { if (Object.prototype.hasOwnProperty.call(r, k) && k !== 'by') o[k] = r[k]; } return o; }
     function summarise(o) {
         if (!o) return '';
         return ['rate', 'source', 'as_of', 'status'].filter(function (k) { return o[k] !== undefined; })
@@ -208,8 +214,8 @@
         var host = el('fx-book-logbody');
         if (!host) return;
         if (!_state.log.length) { host.innerHTML = '<div class="fx-book-note">No changes recorded yet.</div>'; return; }
-        host.innerHTML = '<table class="fx-book-logtable"><thead><tr>'
-            + '<th>When</th><th>Who</th><th>Pair</th><th>Change</th><th>What moved</th></tr></thead><tbody>'
+        host.innerHTML = noEmail('<table class="fx-book-logtable"><thead><tr>'
+            + '<th>When</th><th>Pair</th><th>Change</th><th>What moved</th></tr></thead><tbody>'
             + _state.log.slice().reverse().map(function (r) {
                 r = r || {};
                 var kind = String(r.change || '').toUpperCase();
@@ -226,15 +232,14 @@
                 } else {
                     // An entry in a shape this build does not know is SHOWN, not dropped. A log that
                     // silently hides what it cannot parse is how a history stops being one.
-                    what = '<code>' + esc(JSON.stringify(r).slice(0, 160)) + '</code>';
+                    what = '<code>' + esc(JSON.stringify(withoutBy(r)).slice(0, 160)) + '</code>';
                 }
                 return '<tr class="fx-log-' + esc(kind.toLowerCase() || 'other') + '">'
                     + '<td title="' + esc(r.at || '') + '">' + esc(stampOf(r.at)) + '</td>'
-                    + '<td>' + esc(dash(r.by)) + '</td>'
                     + '<td>' + esc(dash(r.pair)) + '</td>'
                     + '<td>' + esc(kind || 'CHANGED') + '</td>'
                     + '<td>' + what + '</td></tr>';
-            }).join('') + '</tbody></table>';
+            }).join('') + '</tbody></table>');
     }
 
     function showWarnings(errors) {
@@ -242,9 +247,9 @@
         if (!host) return;
         if (!errors || !errors.length) { host.hidden = true; host.innerHTML = ''; return; }
         host.hidden = false;
-        host.innerHTML = '<ul class="fx-book-errs">' + errors.map(function (e) {
+        host.innerHTML = noEmail('<ul class="fx-book-errs">' + errors.map(function (e) {
             return '<li><code>' + esc(e.code || 'FX_ERROR') + '</code> ' + esc(e.message || e.detail || '') + '</li>';
-        }).join('') + '</ul>';
+        }).join('') + '</ul>');
     }
 
     function say(msg) { var s = el('fx-book-savestate'); if (s) s.textContent = msg || ''; }
