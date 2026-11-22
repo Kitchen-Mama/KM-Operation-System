@@ -7190,3 +7190,15 @@ Plan: `docs/planning/PSB_R3_CLOSEOUT_AND_FC1_FINAL.md`.
 - No Apps Script, manifest or Property change. Production P3 stays FAIL until re-accepted after deployment.
 
 **NOT PUSHED. NOT DEPLOYED.**
+
+## 2026-11-22 - AD4 Production Final-UAT Release
+
+- Owner explicitly requested the Production Git push in this turn and reported the Production GS update complete. This is not a live GS byte-readback or business acceptance result.
+- Application source commit: `fd6a9d85`, derived from the frozen AD3-c2 plus the domestic overseas-3PL customs hotfix. The 26-file cumulative Production sync set and frontend are unchanged in this documentation follow-up.
+- Scope: completed A-route code and supporting changes already integrated in reviewed c2. Unfinished isolated B8 and later C work are excluded; no unreviewed branch is added because its author reported partial progress.
+- Verification rerun: Production focused server tests 35/0; release hashes 860/860; public policy/stamp mirror and Production target gate verified locally. No live transaction was run by Codex in this turn.
+- Bundle source hash: `9c604f38df99c3a3c399a3a49dd77ad40cdbc8242c9fac67bd281840ee1a2242`; publication SHA-256: `65c65a789274141d15c98cd55afa21436115b03004dd10a6176ad2e33e07ce0a` (same as frozen c2).
+- Legacy bundle checks are NOT all green: raw `--check` fails on publication comment/layout differences; the old suite reports 72 pass / 2 fail (raw equality plus the superseded `kmcid-fm5r5d-eu-1` version assertion). The added read-only publication check proves the full 60-module AST equivalent to a fresh build, the source digest equal, and the current `kmcid-r15g-eu-1` country/group API intact. No runtime/bundle file is rewritten to hide the discrepancy.
+- Final test sheet: `docs/handoffs/PRODUCTION_FINAL_UAT_20261122.txt`. Owner will perform Production health, P0, U1-U7, real document download/open, dispatch/receipt and ledger reconciliation.
+- Deployment version number, runtime health and final business acceptance remain pending evidence; Git push and Pages publication must each be verified separately after committing this record.
+- No DB writes, schema migration, master-data activation, test-data cleanup, opening-stock import or formal go-live declaration is authorized/performed by this follow-up. Test cleanup and the final announcement await the Owner's next instruction.

@@ -1,0 +1,87 @@
+Production 最終驗收清單 / 2026-11-22
+====================================
+目標：完成目前首批採用的 A 路線實機驗收。這不是已通過的結果單。
+Owner 回報 Production GS 更新完成；目前部署版號、GS 實際讀回與實機結果仍需補記。
+程式來源：fd6a9d85（A c2 累積修復 + AD4）；本次另附驗收紀錄文件與唯讀 bundle 核對工具。
+B8（AI Plan 新分配整合、海外倉各站點分配）仍未整合/驗收，不在這次推送範圍。c2 原本已完成並整合的支援修復保留，不另摘取舊 B/C 分支。
+現在不清理測試資料，也不宣告正式上線；兩件事都等 Owner 測完後另行指示。
+
+0. 先確認正在測正確版本（未通過不要寫交易）
+[ ] 開正式網站，不是 127.0.0.1:59511；畫面/設定為 KM_PRODUCTION。
+[ ] 確認 GitHub Pages 已服務新版：shipping-plan.js 與 production-config.js 的 URL token 有 -ad4。
+[ ] 硬重新整理並重新登入；guard 為 VERIFIED。
+[ ] 執行 release-final/tools/PROD_HEALTH_COPY_A2.v2_1.js 的既有收集器，JSON 只存本機，不分享 session/token/URL。
+[ ] 用 release-final/tools/check-prod-health-ad4.cjs 檢查新 JSON，需 PROD_HEALTH_AD4 MATCH，mixed_deployment=false，stale/absent 都空。
+[ ] 記下 Apps Script 的部署版本號、測試時間與前端 commit。
+[ ] 確認 Production 33 欄、BU1 無重加或搬動；前輪表頭已唯讀通過。暫時不做欄位縮減。
+[ ] 測試前先備份，隔離其他寫入；使用可追溯的 UAT 單，記錄公司、SKU、From/To、數量及庫存基線。
+[ ] 檢查實際倉庫/Carrier/服務主檔；不因缺資料而啟用停用時效、製作假 rate card 或改 guard。
+
+1. P0 畫面與規劃回歸（Production 仍需重驗）
+[ ] Site Inventory 正常查詢、展開/收合、儲存與重載，沒有重疊或值消失。
+[ ] From 清單不出現不可用/錯公司倉；工廠必須有伺服器證明的庫存，不能自動選第一筆。
+[ ] 平台在途與海外在途分開；Shipping Shipment 顯示 0-18 / 19-30 天，其他總數不漏算。
+[ ] 同資料的 Gap/RO/DoS 沒有因展示拆分改變；海外庫存未直接算成平台可售或保證 18 天到貨。
+
+2. U1 + U4：海外倉 -> Amazon / BestWay
+[ ] 在 Production 新建自己的獨立 UAT Plan；不要把 Sandbox 的 SP-UAT-AD3-* ID 或庫存 8160 當正式站事實。
+[ ] 建議使用同公司 US 3PL -> 實際 Amazon FC（如主檔已有 ABE2），SKU/數量採 Owner 核准的少量；記下 Shipment ID。
+[ ] 核准數量正常儲存，重載一致，從 Plan 建立 Draft 正常。
+[ ] Customs 顯示 not applicable，不再要求 Choose a customs type。
+[ ] BestWay 只有 LTL，對應 truck/truck；沒有 SPD；Save service 重載仍正確。
+[ ] 無 rate card 時不擋住流程，費用 pending/空白，不是 0 元；略過報價必填真實原因。
+[ ] 實際存在且有效的報價卡：選卡、儲存、重載，核對金額/幣別/適用目的倉；沒有真卡就記 NOT_RUN，首批不宣稱報價分支已驗。
+[ ] Draft 填好真實目的倉、日期、箱號/箱數、參考號；不編造 booking 或 tracking。
+[ ] 產生 Shipment Details，下載並真正開啟；核對單號/公司/From/To/SKU/數量/箱數。
+[ ] 只有已證明缺少 Carrier 專屬範本才走出貨明細備援；讀取、權限、逾時錯誤不應假裝成功。
+[ ] 無 PO 的合法海外調撥不要求工廠 PO allocation/工廠文件；工廠規則不放寬。
+[ ] 無路線先提示人工可用且零扣庫存；明確選人工物流再 Confirm 才成 Shipped。
+[ ] Confirm/重載/重試後，來源 shipment_out 恰好一筆；工廠與 PO 數量不變。
+
+3. U2：物流 -> 部分/全部收貨 -> 重試
+[ ] 人工回報 in_transit -> arrived，狀態與日期正確；到達不自動收貨、不再扣來源。
+[ ] 部分收貨，重載實收一致；相同操作重送/雙擊只能拒絕或重用結果，不重複入帳。
+[ ] 再收完剩餘量；先確認介面欄位是累計或增量，不把「累計總數」再加一次。
+[ ] 超收、過期 edit token、終態重送不能造成額外庫存/收貨寫入。
+[ ] Amazon/FBA 收貨不得增加 overseas_inventory_snapshot。
+[ ] 來源 movement 以 Shipment ID + company + SKU 對帳，總出貨量只扣一次。
+
+4. U5：US 海外倉 -> 海外倉
+[ ] 另建同公司、同 US、不同實體 3PL 的獨立 UAT Plan，不覆蓋上一張。
+[ ] 核准 -> Draft -> 合法 Carrier/服務 -> Shipment Details -> Confirm -> 人工物流全流程通過。
+[ ] Customs 不適用；零卡可 pending；來源只扣一次，工廠/PO 不變。
+[ ] 到達時目的倉還未加庫存；部分收貨才加實收，最後累計等於出貨量。
+[ ] 目的原來沒有 snapshot：由正常收貨服務建立，不手填假列。
+[ ] 同一收貨重送不重加；對照兩倉 movement/snapshot，考慮 reserved，不把保留當已出貨。
+[ ] 留下兩份文件、兩張 Shipment ID，以及測前/測後對帳結果。
+
+5. U3：Carrier 待指派 / 實際 Carrier
+[ ] 另用正常 UI 建立具 server 待指派標記的少量 UAT Draft，不手寫 marker、不清掉 BestWay 假裝待指派。
+[ ] Confirm 顯示 To be assigned / cost pending；未勾確認不能送；須手選人工物流。
+[ ] 出貨後正常「指派 Carrier」，重載一致；不能覆蓋已有 Carrier，也不能在已收貨終態亂改。
+[ ] Amazon partnered 的「記錄實際承運商」有使用才另測；未測則首批不採用該模式，明列 NOT_RUN。
+
+6. U6：WFS 限制
+[ ] 邏輯 WFS 倉不能當實際收貨地 Confirm；首批送 WFS 實體倉仍暫停。
+[ ] Walmart 自配送不因此整站停用；不要用假 WFS FC 測正式交易。
+
+7. U7：停用時效列 / 規劃回歸
+[ ] 54 個時效列、18 範本維持停用，不刪、不啟用。
+[ ] Weekly Plan / Inventory Replenishment 不採用停用列的估計天數或服務；檢查資料來源，不只憑 5/12 天數字。
+[ ] CN 起運既有正常航線結果維持一致。
+[ ] AI 入口若被既有 Production gate 關閉，記 NOT_RUN；不為測試開 DB 生成或改 gate。
+[ ] 沒有這些列時，只能說正式站當下未受影響，不能聲稱完成「有/無 54 列」比較；Production S7 維持封鎖，待另有證據/核准。
+
+8. 舊功能與錯誤處理
+[ ] 既有工廠單的 PO/庫存/必要文件要求仍正常；實機優先唯讀，寫入只用已授權 UAT 單。
+[ ] 跨公司、跨國、未知/停用/重複倉、不合法目的倉沒有因 Customs 豁免而自動放行。
+[ ] 有真實 Carrier 範本的正常文件路徑仍可用；非缺範本錯誤不可走靜默備援。
+[ ] 既有唯讀 Administration / 匯率頁可讀，沒有新增寫入權限。
+
+9. 驗收結論與停止規則
+每項填 PASS / FAIL / NOT_RUN，附單號與證據；NOT_RUN 不等於通過。未驗證路徑列入首批暫停清單。
+缺資料與程式 bug 分開回報；不為了測過而假造費用、倉庫、時效、文件或狀態。
+任何 UNKNOWN/PARTIAL、CONFIRM_ROLLBACK_UNVERIFIED、重複扣庫存、收貨增量不符、文件打不開、health/guard 不過：停止該單，保留資料，回報 Codex。
+回報格式：步驟 / Plan ID / Shipment ID / 公司與SKU / 錯誤碼 / 預期與實際 / 截圖 / 操作時間；不要含 token、session 或密碼。
+測完再由 Owner 通知：測試資料清理清單、受支援沖銷/調整方式、正式上線宣告。
+現在不刪除任何測試帳務/交易，不將「程式已推送」寫成「業務驗收已完成」。
